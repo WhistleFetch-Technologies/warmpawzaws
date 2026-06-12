@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useState, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import {
   User,
   Store,
@@ -13,7 +13,9 @@ import {
   Building,
   Eye,
   EyeOff,
+  Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import {
   EnhancedAddressAutocomplete,
@@ -23,47 +25,160 @@ import { UseCurrentLocationButton } from '@/components/shared/UseCurrentLocation
 import type { VendorAddressFromGeolocationResult } from '@/lib/address-from-geolocation';
 import { SellerSecuritySection } from './SellerSecuritySection';
 
+export type SellerSettingsFormData = {
+  business_name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  gstin: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  latitude: number | undefined;
+  longitude: number | undefined;
+  bank_name: string;
+  account_number: string;
+  ifsc_code: string;
+  upi_id: string;
+};
+
+function mapVendorToFormData(
+  v: Record<string, unknown> | null | undefined,
+  bank?: Record<string, unknown> | null,
+  upi?: Record<string, unknown> | null
+): SellerSettingsFormData {
+  const bankDetails = bank ?? {};
+  const upiData = upi ?? {};
+  return {
+    business_name: String(v?.business_name || v?.businessName || ''),
+    contact_name: String(
+      v?.owner_name || v?.ownerName || v?.full_name || v?.fullName || v?.contact_person || ''
+    ),
+    email: String(v?.email || ''),
+    phone: String(v?.phone || ''),
+    gstin: String(v?.gst_number || v?.gstin || ''),
+    address: String(v?.address || ''),
+    city: String(v?.city || ''),
+    state: String(v?.state || ''),
+    pincode: String(v?.pincode || ''),
+    latitude: v?.latitude != null ? Number(v.latitude) : undefined,
+    longitude: v?.longitude != null ? Number(v.longitude) : undefined,
+    bank_name: String(bankDetails.bank_name || bankDetails.bankName || v?.bank_name || ''),
+    account_number: String(
+      bankDetails.account_number || bankDetails.accountNumber || v?.account_number || ''
+    ),
+    ifsc_code: String(bankDetails.ifsc_code || bankDetails.ifscCode || v?.ifsc_code || ''),
+    upi_id: String(
+      upiData.upi_id || upiData.upiId || v?.upi_id || v?.upiId || ''
+    ),
+  };
+}
+
 export type SellerSettingsHandle = {
   save: () => Promise<void>;
+  isSaving: () => boolean;
 };
 
 interface SellerSettingsProps {
   sellerId: string;
   sellerData: any;
+  onSavingChange?: (saving: boolean) => void;
 }
 
 export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsProps>(
-  function SellerSettings({ sellerId, sellerData }, ref) {
+  function SellerSettings({ sellerId, sellerData, onSavingChange }, ref) {
   const [activeTab, setActiveTab] = useState('profile');
-  const [formData, setFormData] = useState({
-    business_name: sellerData?.business_name || sellerData?.businessName || '',
-    contact_name: sellerData?.full_name || sellerData?.fullName || sellerData?.contact_person || '',
-    email: sellerData?.email || '',
-    phone: sellerData?.phone || '',
-    gstin: sellerData?.gst_number || sellerData?.gstin || '',
-    address: sellerData?.address || '',
-    city: sellerData?.city || '',
-    state: sellerData?.state || '',
-    pincode: sellerData?.pincode || '',
-    latitude: sellerData?.latitude ?? undefined,
-    longitude: sellerData?.longitude ?? undefined,
-    bank_name: sellerData?.bank_name || '',
-    account_number: sellerData?.account_number || '',
-    ifsc_code: sellerData?.ifsc_code || '',
-    upi_id: sellerData?.upi_id || ''
-  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState<SellerSettingsFormData>(() =>
+    mapVendorToFormData(sellerData)
+  );
   const [showAccountNumber, setShowAccountNumber] = useState(false);
 
   const tabs = [
     { id: 'profile', label: 'Business Profile', icon: Store },
     { id: 'payment', label: 'Payment Settings', icon: CreditCard },
     { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'security', label: 'Security', icon: Shield }
+    { id: 'security', label: 'Security', icon: Shield },
   ];
 
-  const handleSave = useCallback(async () => {
+  const loadSettings = useCallback(async () => {
+    if (!sellerId) {
+      setLoading(false);
+      return;
+    }
     try {
-      await apiClient.put(`/vendor/${sellerId}/profile`, {
+      setLoading(true);
+      const [profileRes, bankRes, upiRes] = await Promise.all([
+        apiClient.get<any>(`/vendor/${sellerId}/profile`).catch(() => null),
+        apiClient.get<any>(`/vendor/${sellerId}/bank-details`).catch(() => null),
+        apiClient.get<any>(`/vendor/${sellerId}/upi`).catch(() => null),
+      ]);
+
+      const vendor = profileRes?.success ? profileRes.vendor : sellerData;
+      const bankDetails = bankRes?.success ? bankRes.bankDetails : null;
+      const upi = upiRes?.success ? upiRes.upi : null;
+
+      if (vendor) {
+        const mapped = mapVendorToFormData(vendor, bankDetails, upi);
+        // #region agent log
+        fetch('http://127.0.0.1:7507/ingest/bc4efe81-37d4-4685-8941-a5e34dbd571c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7935b4'},body:JSON.stringify({sessionId:'7935b4',location:'SellerSettings.tsx:loadSettings',message:'profile loaded',data:{profileSuccess:!!profileRes?.success,rawGstNumber:vendor?.gst_number??null,rawGstin:vendor?.gstin??null,mappedGstinLen:mapped.gstin.length},timestamp:Date.now(),hypothesisId:'C-D'})}).catch(()=>{});
+        // #endregion
+        setFormData(mapped);
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+      toast.error('Failed to load settings');
+    } finally {
+      setLoading(false);
+    }
+  }, [sellerId, sellerData]);
+
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  const syncLocalStorage = useCallback((data: SellerSettingsFormData) => {
+    try {
+      const current = JSON.parse(localStorage.getItem('vendorData') || '{}');
+      localStorage.setItem(
+        'vendorData',
+        JSON.stringify({
+          ...current,
+          business_name: data.business_name,
+          businessName: data.business_name,
+          owner_name: data.contact_name,
+          ownerName: data.contact_name,
+          email: data.email,
+          phone: data.phone,
+          gst_number: data.gstin,
+          gstin: data.gstin,
+          address: data.address,
+          city: data.city,
+          state: data.state,
+          pincode: data.pincode,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          upi_id: data.upi_id,
+        })
+      );
+    } catch {
+      // non-fatal
+    }
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!sellerId || saving) return;
+
+    setSaving(true);
+    onSavingChange?.(true);
+    try {
+      const gstPayload = formData.gstin.trim() || undefined;
+      // #region agent log
+      fetch('http://127.0.0.1:7507/ingest/bc4efe81-37d4-4685-8941-a5e34dbd571c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7935b4'},body:JSON.stringify({sessionId:'7935b4',location:'SellerSettings.tsx:handleSave:pre',message:'save payload gst',data:{formGstinLen:formData.gstin.length,gstPayloadSent:!!gstPayload,gstPayloadLen:gstPayload?.length??0},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      const profileRes = await apiClient.put<any>(`/vendor/${sellerId}/profile`, {
         businessName: formData.business_name,
         ownerName: formData.contact_name,
         email: formData.email,
@@ -72,23 +187,86 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
         city: formData.city,
         state: formData.state,
         pincode: formData.pincode,
+        gstNumber: gstPayload,
+        ...(gstPayload && { gst_number: gstPayload }),
         ...(formData.latitude != null && { latitude: formData.latitude }),
         ...(formData.longitude != null && { longitude: formData.longitude }),
       });
-      await apiClient.put(`/vendor/${sellerId}/settings`, formData);
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      alert('Failed to save settings');
-    }
-  }, [sellerId, formData]);
+      // #region agent log
+      const respGst = profileRes?.vendor?.gst_number ?? profileRes?.vendor?.gstin ?? null;
+      fetch('http://127.0.0.1:7507/ingest/bc4efe81-37d4-4685-8941-a5e34dbd571c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7935b4'},body:JSON.stringify({sessionId:'7935b4',location:'SellerSettings.tsx:handleSave:post',message:'save response gst',data:{success:profileRes?.success??null,respGstNumber:profileRes?.vendor?.gst_number??null,respGstin:profileRes?.vendor?.gstin??null,changedFields:profileRes?.changedFields??null},timestamp:Date.now(),hypothesisId:'B',runId:'post-fix'})}).catch(()=>{});
+      // #endregion
 
-  useImperativeHandle(ref, () => ({ save: handleSave }), [handleSave]);
+      if (gstPayload && !respGst) {
+        toast.warning(
+          'GSTIN could not be saved. Deploy the latest API to dev (./scripts/deploy-lambda-direct.sh), then try again.'
+        );
+      }
+
+      if (profileRes && profileRes.success === false) {
+        throw new Error(profileRes.error || 'Failed to save profile');
+      }
+
+      const hasBankFields =
+        formData.account_number.trim() &&
+        formData.ifsc_code.trim() &&
+        !formData.account_number.startsWith('****');
+
+      if (hasBankFields) {
+        const accountHolderName =
+          formData.contact_name.trim() || formData.business_name.trim() || 'Account Holder';
+        await apiClient.put(`/vendor/${sellerId}/bank-details`, {
+          account_number: formData.account_number,
+          ifsc_code: formData.ifsc_code,
+          bank_name: formData.bank_name,
+          account_holder_name: accountHolderName,
+        });
+      }
+
+      if (formData.upi_id.trim() && formData.upi_id.includes('@')) {
+        try {
+          await apiClient.post(`/vendor/${sellerId}/upi`, { upi_id: formData.upi_id.trim() });
+        } catch (upiError: any) {
+          const msg = upiError?.message || 'Failed to save UPI ID';
+          toast.error(msg);
+        }
+      }
+
+      syncLocalStorage(formData);
+      await loadSettings();
+      toast.success('Changes saved');
+    } catch (error: any) {
+      console.error('Error saving settings:', error);
+      toast.error(error?.message || 'Failed to save settings');
+      throw error;
+    } finally {
+      setSaving(false);
+      onSavingChange?.(false);
+    }
+  }, [sellerId, formData, saving, onSavingChange, syncLocalStorage, loadSettings]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      save: handleSave,
+      isSaving: () => saving,
+    }),
+    [handleSave, saving]
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       {/* Tabs */}
       <div className="flex gap-2 border-b border-slate-200 pb-4 overflow-x-auto">
-        {tabs.map(tab => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -254,7 +432,7 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
         <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-6">
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
             <p className="text-sm text-blue-700">
-              <strong>💡 Tip:</strong> Adding your bank details ensures faster payouts. Payouts are processed every 7 days.
+              <strong>Tip:</strong> Adding your bank details ensures faster payouts. Payouts are processed every 7 days.
             </p>
           </div>
 
@@ -297,7 +475,11 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
                     onClick={() => setShowAccountNumber(!showAccountNumber)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 rounded"
                   >
-                    {showAccountNumber ? <EyeOff className="w-5 h-5 text-slate-400" /> : <Eye className="w-5 h-5 text-slate-400" />}
+                    {showAccountNumber ? (
+                      <EyeOff className="w-5 h-5 text-slate-400" />
+                    ) : (
+                      <Eye className="w-5 h-5 text-slate-400" />
+                    )}
                   </button>
                 </div>
               </div>
@@ -323,14 +505,14 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
       {activeTab === 'notifications' && (
         <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-4">
           <h4 className="font-semibold text-slate-900 mb-4">Notification Preferences</h4>
-          
+
           {[
             { label: 'New Order Alerts', description: 'Get notified when you receive a new order' },
             { label: 'Order Status Updates', description: 'Updates when order status changes' },
             { label: 'Low Stock Alerts', description: 'Notify when products are running low' },
             { label: 'Payout Notifications', description: 'Updates about your payouts' },
             { label: 'Promotional Messages', description: 'Tips and offers from Warmpawz' },
-            { label: 'Weekly Reports', description: 'Weekly sales and performance summary' }
+            { label: 'Weekly Reports', description: 'Weekly sales and performance summary' },
           ].map((item, index) => (
             <div key={index} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
               <div>
