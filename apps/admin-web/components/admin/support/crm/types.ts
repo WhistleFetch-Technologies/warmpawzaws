@@ -103,6 +103,7 @@ export interface TicketMessage {
 	content: string;
 	timestamp: string;
 	role: "agent" | "customer" | "system";
+	attachments?: Array<{ name: string; url: string; type?: string }>;
 }
 
 export interface TicketActivity {

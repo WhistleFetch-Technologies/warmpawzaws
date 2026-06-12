@@ -10,6 +10,7 @@ import {
   SUPPORT_TICKET_EVENT_TYPES,
 } from './support-ticket-activity';
 import { notifySupportTicketCustomerSms } from './support-ticket-notify';
+import { assignSupportTicket, getSupportRoutingSettings } from './support-ticket-auto-assign';
 
 const FALLBACK_ACK =
   "We've received your request and will assign it to the appropriate support specialist shortly.";
@@ -126,6 +127,68 @@ async function loadCustomerName(customerId: string | null): Promise<string | nul
   }
 }
 
+function isUnassigned(ticket: Record<string, unknown>): boolean {
+  const assigned = ticket.assigned_to;
+  return assigned == null || assigned === '';
+}
+
+async function tryAutoAssignAfterAck(ticketId: string): Promise<void> {
+  try {
+    const settings = await getSupportRoutingSettings();
+    if (!settings.assignAfterAiAck) return;
+
+    const result = await assignSupportTicket(ticketId);
+    if (!result.assigned) {
+      console.warn('[support-ai-ack] auto-assign skipped:', ticketId, result.reason, result.poolKey);
+      if (result.reason === 'no_eligible_agent') {
+        const rows = await select('support_tickets', { id: ticketId });
+        const meta =
+          rows[0]?.metadata != null &&
+          typeof rows[0].metadata === 'object' &&
+          !Array.isArray(rows[0].metadata)
+            ? { ...(rows[0].metadata as Record<string, unknown>) }
+            : {};
+        await update('support_tickets', { id: ticketId }, {
+          last_updated_at: new Date().toISOString(),
+          metadata: {
+            ...meta,
+            assignment_blocked_reason: 'no_eligible_agent',
+            assignment_blocked_at: new Date().toISOString(),
+            assignment_pool_key: result.poolKey ?? null,
+          },
+        }).catch(() => undefined);
+      }
+    }
+  } catch (err) {
+    console.error('[support-ai-ack] auto-assign failed:', ticketId, err);
+  }
+}
+
+/**
+ * Repair tickets stuck after partial AI ack (response posted but never assigned).
+ */
+async function repairStuckUnassignedAck(ticket: Record<string, unknown>): Promise<boolean> {
+  const ticketId = String(ticket.id || '');
+  if (!ticketId || !isUnassigned(ticket)) return false;
+
+  const status = String(ticket.status || '').toLowerCase();
+  if (status !== 'ai_acknowledged' && status !== 'awaiting_assignment') return false;
+
+  const hasAck = await hasExistingAiAck(ticketId);
+  if (!hasAck) return false;
+
+  const now = new Date().toISOString();
+  if (status === 'ai_acknowledged') {
+    await update('support_tickets', { id: ticketId }, {
+      status: 'awaiting_assignment',
+      last_updated_at: now,
+    });
+  }
+
+  await tryAutoAssignAfterAck(ticketId);
+  return true;
+}
+
 /**
  * Process AI acknowledgement (idempotent). Safe to call multiple times.
  */
@@ -138,8 +201,17 @@ export async function processSupportTicketAiAck(ticketId: string): Promise<void>
 
     const ticket = tickets[0] as Record<string, unknown>;
 
-    if (ticket.ai_ack_success === true) return;
-    if (await hasExistingAiAck(ticketId)) return;
+    if (ticket.ai_ack_success === true) {
+      await repairStuckUnassignedAck(ticket);
+      return;
+    }
+
+    if (await hasExistingAiAck(ticketId)) {
+      if (isUnassigned(ticket)) {
+        await repairStuckUnassignedAck(ticket);
+      }
+      return;
+    }
 
     const status = String(ticket.status || 'open');
     if (status !== 'open') {
@@ -183,8 +255,9 @@ export async function processSupportTicketAiAck(ticketId: string): Promise<void>
     });
 
     const now = new Date().toISOString();
+    const nextStatus = isUnassigned(ticket) ? 'awaiting_assignment' : 'ai_acknowledged';
     const updatePayload: Record<string, unknown> = {
-      status: 'ai_acknowledged',
+      status: nextStatus,
       ai_ack_generated_at: now,
       ai_ack_latency_ms: latencyMs,
       ai_ack_success: true,
@@ -193,13 +266,6 @@ export async function processSupportTicketAiAck(ticketId: string): Promise<void>
     };
 
     await update('support_tickets', { id: ticketId }, updatePayload);
-
-    if (!ticket.assigned_to) {
-      await update('support_tickets', { id: ticketId }, {
-        status: 'awaiting_assignment',
-        last_updated_at: new Date().toISOString(),
-      });
-    }
 
     await recordSupportTicketActivity({
       ticketId,
@@ -213,16 +279,18 @@ export async function processSupportTicketAiAck(ticketId: string): Promise<void>
       },
     });
 
-    await recordSupportTicketActivity({
-      ticketId,
-      eventType: SUPPORT_TICKET_EVENT_TYPES.STATUS_CHANGED,
-      eventActorType: 'system',
-      eventTitle: 'Status changed to Awaiting Assignment',
-      eventMetadata: {
-        from: status,
-        to: ticket.assigned_to ? 'ai_acknowledged' : 'awaiting_assignment',
-      },
-    });
+    if (isUnassigned(ticket)) {
+      await recordSupportTicketActivity({
+        ticketId,
+        eventType: SUPPORT_TICKET_EVENT_TYPES.STATUS_CHANGED,
+        eventActorType: 'system',
+        eventTitle: 'Status changed to Awaiting Assignment',
+        eventMetadata: {
+          from: status,
+          to: 'awaiting_assignment',
+        },
+      });
+    }
 
     await notifySupportTicketCustomerSms(
       {
@@ -232,6 +300,10 @@ export async function processSupportTicketAiAck(ticketId: string): Promise<void>
       },
       message
     );
+
+    if (isUnassigned(ticket)) {
+      await tryAutoAssignAfterAck(ticketId);
+    }
   } catch (err) {
     console.error('[support-ai-ack] failed for ticket', ticketId, err);
     try {
@@ -255,4 +327,22 @@ export function scheduleSupportTicketAiAck(ticketId: string): void {
   void processSupportTicketAiAck(ticketId).catch((err) => {
     console.error('[support-ai-ack] background task failed:', ticketId, err);
   });
+}
+
+/** Retry post-AI-ack assignment for tickets stuck without an agent (e.g. agents at capacity). */
+export async function retryPostAckAssignment(ticketId: string): Promise<void> {
+  if (!ticketId) return;
+  const tickets = await select('support_tickets', { id: ticketId });
+  if (!tickets.length) return;
+  const ticket = tickets[0] as Record<string, unknown>;
+  if (!isUnassigned(ticket)) return;
+
+  const status = String(ticket.status || '').toLowerCase();
+  if (status === 'ai_acknowledged' || status === 'awaiting_assignment') {
+    await repairStuckUnassignedAck(ticket);
+    return;
+  }
+  if (status === 'open' && !(await hasExistingAiAck(ticketId))) {
+    await processSupportTicketAiAck(ticketId);
+  }
 }

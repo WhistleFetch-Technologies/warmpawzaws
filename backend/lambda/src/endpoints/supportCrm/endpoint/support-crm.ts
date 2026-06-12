@@ -39,10 +39,17 @@ import {
   resolveActorDisplayName,
   SUPPORT_TICKET_EVENT_TYPES,
 } from '../support-ticket-activity';
-import { scheduleSupportTicketAiAck } from '../support-ticket-ai-ack';
+import { scheduleSupportTicketAiAck, retryPostAckAssignment } from '../support-ticket-ai-ack';
+import { enrichSupportTicketMetadataAttachments } from '../support-ticket-attachments';
 import { notifySupportTicketCustomerSms } from '../support-ticket-notify';
 import { resolveSupportTicketOrderLink } from '../resolve-support-ticket-order-link';
 import { normalizeSupportTicketCategory, isExtendedSupportCategory } from '../normalize-support-ticket-category';
+import {
+  assignSupportTicket,
+  assignSupportTicketBatch,
+  getSupportRoutingSettings,
+  updateSupportRoutingSettings,
+} from '../support-ticket-auto-assign';
 
 async function logTicketStatusActivity(
   ticketId: string,
@@ -425,6 +432,15 @@ export function registerSupportCrmEndpoints(app: Hono) {
         enrichment.mealOrderContext,
       );
 
+      const enrichedMetadata = await enrichSupportTicketMetadataAttachments(ticket.metadata);
+      if (enrichedMetadata) {
+        ticket.metadata = enrichedMetadata;
+      }
+
+      void retryPostAckAssignment(ticketId).catch((err) => {
+        console.warn('[CRM] post-ack assignment retry failed:', ticketId, err);
+      });
+
       return c.json({
         success: true,
         customerName: ticket.customer_name || null,
@@ -746,6 +762,10 @@ export function registerSupportCrmEndpoints(app: Hono) {
       const safeTickets = await Promise.all(
         (tickets.rows || []).map(async (t: any) => {
           try {
+            const enrichedMetadata = await enrichSupportTicketMetadataAttachments(t.metadata);
+            if (enrichedMetadata) {
+              t.metadata = enrichedMetadata;
+            }
             const enrichment = await enrichSupportTicket(t);
             return mapTicketForCrmList(t, enrichment);
           } catch (err) {
@@ -1308,76 +1328,146 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
   /**
    * POST /crm/tickets/auto-route
-   * Auto-route tickets to available agents
+   * Auto-route ticket(s) via round-robin (manual trigger; bypasses auto_assign_enabled).
    */
   app.post("/crm/tickets/auto-route", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
       const { ticketId } = body;
 
-      // If a specific ticketId is provided, route only that ticket
-      // Otherwise, route all unassigned open tickets
-      const unassigned = await query(
-        ticketId 
-          ? `SELECT * FROM support_tickets WHERE id = $1 AND status IN ('open', 'ai_acknowledged', 'awaiting_assignment') AND assigned_to IS NULL`
-          : `SELECT * FROM support_tickets WHERE status IN ('open', 'ai_acknowledged', 'awaiting_assignment') AND assigned_to IS NULL ORDER BY created_at ASC LIMIT 10`,
-        ticketId ? [ticketId] : []
-      ).catch(() => ({ rows: [] }));
-
-      // Get available agents (sorted by current workload)
-      const agents = await query(`
-        SELECT s.id, s.name,
-          COUNT(t.id) as current_workload
-        FROM staff s
-        LEFT JOIN support_tickets t ON s.id = t.assigned_to 
-          AND t.status IN ('open', 'in_progress')
-        WHERE (s.role = 'support' OR s.can_handle_support = true)
-        AND s.is_active = true
-        GROUP BY s.id, s.name
-        ORDER BY current_workload ASC
-      `).catch(() => ({ rows: [] }));
-
-      if (agents.rows.length === 0) {
+      if (ticketId) {
+        const result = await assignSupportTicket(String(ticketId), { force: true });
+        if (result.assigned) {
+          return c.json({
+            success: true,
+            message: `Ticket assigned to ${result.assigneeName || 'agent'}`,
+            routed: 1,
+            assignedAgent: result.assigneeName,
+            assigneeId: result.assigneeId,
+            poolKey: result.poolKey,
+          });
+        }
         return c.json({
           success: true,
-          message: 'No available agents',
+          message:
+            result.reason === 'no_eligible_agent'
+              ? 'No eligible agent available'
+              : result.reason === 'already_assigned'
+                ? 'Ticket is already assigned'
+                : 'Ticket could not be auto-routed',
           routed: 0,
+          reason: result.reason,
+          poolKey: result.poolKey,
         });
       }
 
-      let routed = 0;
-      let assignedAgent = null;
-      for (let i = 0; i < unassigned.rows.length; i++) {
-        const ticket = unassigned.rows[i];
-        const agent = agents.rows[i % agents.rows.length];
-
-        await update('support_tickets', { id: ticket.id }, {
-          assigned_to: agent.id,
-          assigned_at: new Date().toISOString(),
-          status: 'assigned',
-          last_updated_at: new Date().toISOString(),
-        });
-        const assigneeName = agent.name || 'agent';
-        await recordSupportTicketActivity({
-          ticketId: String(ticket.id),
-          eventType: SUPPORT_TICKET_EVENT_TYPES.ASSIGNED,
-          eventActorType: 'system',
-          eventTitle: `Assigned to ${assigneeName}`,
-          eventMetadata: { assigneeId: agent.id, assigneeName, autoRouted: true },
-        });
-        routed++;
-        assignedAgent = agent.name;
-      }
-
+      const batch = await assignSupportTicketBatch({ force: true });
+      const lastAssigned = batch.results.filter((r) => r.assigned).pop();
       return c.json({
         success: true,
-        message: `Routed ${routed} ticket(s)`,
-        routed,
-        assignedAgent: assignedAgent,
+        message: batch.timedOut
+          ? `Routed ${batch.routed} ticket(s) (time limit reached — run again for more)`
+          : `Routed ${batch.routed} ticket(s)`,
+        routed: batch.routed,
+        skipped: batch.skipped,
+        timedOut: batch.timedOut,
+        assignedAgent: lastAssigned?.assigneeName,
       });
     } catch (error: any) {
       console.error('Error auto-routing tickets:', error);
       return c.json({ error: error.message || 'Failed to auto-route tickets' }, 500);
+    }
+  });
+
+  /**
+   * POST /crm/tickets/auto-assign-batch
+   * Sweeper / cron: assign oldest unassigned tickets (respects auto_assign_enabled unless force).
+   * Auth: INTERNAL_CRON_SECRET header when env is set.
+   */
+  app.post("/crm/tickets/auto-assign-batch", async (c) => {
+    const cronSecret = process.env.INTERNAL_CRON_SECRET?.trim();
+    const hdr = c.req.header('x-internal-cron-secret')?.trim();
+    const body = await c.req.json().catch(() => ({}));
+    const force = body?.force === true;
+
+    if (cronSecret && hdr !== cronSecret && !force) {
+      return c.json({ success: false, error: 'Unauthorized', code: 'INVALID_CRON_SECRET' }, 401);
+    }
+
+    try {
+      const settings = await getSupportRoutingSettings();
+      let limit = settings.sweeperBatchSize;
+      if (body?.limit != null) {
+        const n = parseInt(String(body.limit), 10);
+        if (Number.isFinite(n)) limit = Math.min(100, Math.max(1, n));
+      } else if (force) {
+        // Manual admin sweeper: smaller default batch to stay within API Gateway timeout
+        limit = Math.min(limit, 10);
+      }
+
+      const batch = await assignSupportTicketBatch({
+        limit,
+        force: force || !cronSecret,
+        updateSweeperStats: Boolean(cronSecret && hdr === cronSecret),
+      });
+
+      console.log(
+        JSON.stringify({
+          metric: 'support.auto_assign.batch',
+          routed: batch.routed,
+          skipped: batch.skipped,
+          timedOut: batch.timedOut,
+          processed: batch.processed,
+        })
+      );
+
+      return c.json({
+        success: true,
+        routed: batch.routed,
+        skipped: batch.skipped,
+        processed: batch.processed,
+        timedOut: batch.timedOut,
+        message: batch.timedOut
+          ? `Assigned ${batch.routed} ticket(s) before time limit — run again for more`
+          : `Assigned ${batch.routed} ticket(s)`,
+      });
+    } catch (error: any) {
+      console.error('Error in auto-assign batch:', error);
+      return c.json({ error: error.message || 'Failed to auto-assign batch' }, 500);
+    }
+  });
+
+  /**
+   * GET /support/settings/routing
+   * Round-robin auto-assignment configuration.
+   */
+  app.get("/support/settings/routing", async (c) => {
+    try {
+      const settings = await getSupportRoutingSettings();
+      return c.json({ success: true, routing: settings });
+    } catch (error: any) {
+      console.error('Error fetching routing settings:', error);
+      return c.json({ error: error.message || 'Failed to fetch routing settings' }, 500);
+    }
+  });
+
+  /**
+   * PUT /support/settings/routing
+   * Update round-robin auto-assignment configuration.
+   */
+  app.put("/support/settings/routing", async (c) => {
+    try {
+      const body = await c.req.json();
+      const routing = await updateSupportRoutingSettings({
+        autoAssignEnabled: body.autoAssignEnabled,
+        assignAfterAiAck: body.assignAfterAiAck,
+        sweeperBatchSize: body.sweeperBatchSize,
+        fallbackToGeneralSpecialty: body.fallbackToGeneralSpecialty,
+      });
+      return c.json({ success: true, routing, message: 'Routing settings updated' });
+    } catch (error: any) {
+      console.error('Error updating routing settings:', error);
+      return c.json({ error: error.message || 'Failed to update routing settings' }, 500);
     }
   });
 
@@ -1738,7 +1828,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
   app.post("/support/settings/agents", async (c) => {
     try {
       const body = await c.req.json();
-      const { staffId, role, maxConcurrentTickets, specialties } = body;
+      const { staffId, role, maxConcurrentTickets, specialties, availabilityStatus } = body;
 
       if (!staffId) {
         return c.json({ error: 'staffId (user/admin id) is required' }, 400);
@@ -1788,19 +1878,20 @@ export function registerSupportCrmEndpoints(app: Hono) {
               role = COALESCE($2, role),
               max_concurrent_tickets = COALESCE($3, max_concurrent_tickets),
               specialties = COALESCE($4, specialties),
+              availability_status = COALESCE($5, availability_status),
               is_active = true
           WHERE user_id = $1 OR (user_id IS NULL AND staff_id = $1)
           RETURNING *
-        `, [staffId, role, maxConcurrentTickets, specialties]);
+        `, [staffId, role, maxConcurrentTickets, specialties, availabilityStatus ?? 'available']);
         
         return c.json({ success: true, agent: updated.rows[0], message: 'Agent updated' });
       } else {
         // Create new admin-backed agent: user_id only — staff_id NULL (avoids staff_id FK to staff(id)).
         const created = await query(`
-          INSERT INTO support_agents (user_id, staff_id, role, max_concurrent_tickets, specialties, is_active)
-          VALUES ($1, NULL, $2, $3, $4, true)
+          INSERT INTO support_agents (user_id, staff_id, role, max_concurrent_tickets, specialties, availability_status, is_active)
+          VALUES ($1, NULL, $2, $3, $4, $5, true)
           RETURNING *
-        `, [staffId, role || 'agent', maxConcurrentTickets || 10, specialties || ['general']]);
+        `, [staffId, role || 'agent', maxConcurrentTickets || 10, specialties || ['general'], availabilityStatus ?? 'available']);
         
         return c.json({ success: true, agent: created.rows[0], message: 'Agent created' });
       }
@@ -1810,7 +1901,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       if (error.message?.includes('user_id') || error.message?.includes('column')) {
         try {
           const body = await c.req.json();
-          const { staffId, role, maxConcurrentTickets, specialties } = body;
+          const { staffId, role, maxConcurrentTickets, specialties, availabilityStatus } = body;
           
           const existing = await query('SELECT id FROM support_agents WHERE staff_id = $1', [staffId]);
           
@@ -1820,17 +1911,18 @@ export function registerSupportCrmEndpoints(app: Hono) {
               SET role = COALESCE($2, role),
                   max_concurrent_tickets = COALESCE($3, max_concurrent_tickets),
                   specialties = COALESCE($4, specialties),
+                  availability_status = COALESCE($5, availability_status),
                   is_active = true
               WHERE staff_id = $1
               RETURNING *
-            `, [staffId, role, maxConcurrentTickets, specialties]);
+            `, [staffId, role, maxConcurrentTickets, specialties, availabilityStatus ?? 'available']);
             return c.json({ success: true, agent: updated.rows[0], message: 'Agent updated' });
           } else {
             const created = await query(`
-              INSERT INTO support_agents (staff_id, role, max_concurrent_tickets, specialties, is_active)
-              VALUES ($1, $2, $3, $4, true)
+              INSERT INTO support_agents (staff_id, role, max_concurrent_tickets, specialties, availability_status, is_active)
+              VALUES ($1, $2, $3, $4, $5, true)
               RETURNING *
-            `, [staffId, role || 'agent', maxConcurrentTickets || 10, specialties || ['general']]);
+            `, [staffId, role || 'agent', maxConcurrentTickets || 10, specialties || ['general'], availabilityStatus ?? 'available']);
             return c.json({ success: true, agent: created.rows[0], message: 'Agent created' });
           }
         } catch (fallbackError: any) {

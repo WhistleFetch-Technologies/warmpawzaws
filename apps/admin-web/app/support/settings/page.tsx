@@ -21,6 +21,7 @@ import {
   Phone,
   CheckCircle,
   FileText,
+  GitBranch,
 } from "lucide-react";
 import {
   Button,
@@ -109,15 +110,35 @@ interface Staff {
   canHandleSupport: boolean;
 }
 
+interface RoutingSettings {
+  autoAssignEnabled: boolean;
+  assignAfterAiAck: boolean;
+  sweeperBatchSize: number;
+  fallbackToGeneralSpecialty: boolean;
+  lastSweeperRunAt?: string | null;
+  lastSweeperAssignedCount?: number;
+}
+
+const AGENT_SPECIALTY_OPTIONS = [
+  { value: "general", label: "General" },
+  { value: "booking", label: "Booking" },
+  { value: "meal_order", label: "Meal order" },
+  { value: "billing", label: "Billing / refunds" },
+  { value: "account", label: "Account" },
+] as const;
+
 const BRAND_ORANGE = "#FF8C42";
 
 export default function SupportSettingsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
-    "agents" | "sla" | "categories" | "escalation" | "saved_replies"
+    "agents" | "routing" | "sla" | "categories" | "escalation" | "saved_replies"
   >("agents");
   const [savedRepliesCount, setSavedRepliesCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [routingSettings, setRoutingSettings] = useState<RoutingSettings | null>(null);
+  const [savingRouting, setSavingRouting] = useState(false);
+  const [runningSweeper, setRunningSweeper] = useState(false);
   
   // Data states
   const [agents, setAgents] = useState<SupportAgent[]>([]);
@@ -147,6 +168,7 @@ export default function SupportSettingsPage() {
     try {
       await Promise.all([
         loadAgents(),
+        loadRoutingSettings(),
         loadSLAConfigs(),
         loadCategories(),
         loadEscalationRules(),
@@ -165,6 +187,73 @@ export default function SupportSettingsPage() {
     } catch (error) {
       console.error("Failed to load agents:", error);
     }
+  };
+
+  const loadRoutingSettings = async () => {
+    try {
+      const res = await apiClient.get<any>("/support/settings/routing");
+      if (res.success && res.routing) setRoutingSettings(res.routing);
+    } catch (error) {
+      console.error("Failed to load routing settings:", error);
+    }
+  };
+
+  const saveRoutingSettings = async (patch: Partial<RoutingSettings>) => {
+    if (!routingSettings) return;
+    setSavingRouting(true);
+    try {
+      const res = await apiClient.put<any>("/support/settings/routing", {
+        autoAssignEnabled: patch.autoAssignEnabled ?? routingSettings.autoAssignEnabled,
+        assignAfterAiAck: patch.assignAfterAiAck ?? routingSettings.assignAfterAiAck,
+        sweeperBatchSize: patch.sweeperBatchSize ?? routingSettings.sweeperBatchSize,
+        fallbackToGeneralSpecialty:
+          patch.fallbackToGeneralSpecialty ?? routingSettings.fallbackToGeneralSpecialty,
+      });
+      if (res.success) {
+        setRoutingSettings(res.routing);
+        toast.success("Routing settings saved");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to save routing settings");
+    } finally {
+      setSavingRouting(false);
+    }
+  };
+
+  const runAssignmentSweeper = async () => {
+    setRunningSweeper(true);
+    try {
+      const res = await apiClient.post<any>("/crm/tickets/auto-assign-batch", {
+        force: true,
+        limit: Math.min(routingSettings?.sweeperBatchSize ?? 10, 10),
+      });
+      if (res.success) {
+        const msg =
+          res.timedOut && (res.routed ?? 0) > 0
+            ? `Assigned ${res.routed} ticket(s). More remain — run sweeper again.`
+            : res.timedOut
+              ? "Time limit reached before assignments completed. Try again."
+              : `Assigned ${res.routed ?? 0} ticket(s)`;
+        toast.success(msg);
+        await loadRoutingSettings();
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Sweeper failed");
+    } finally {
+      setRunningSweeper(false);
+    }
+  };
+
+  const toggleAgentSpecialty = (specialty: string) => {
+    if (!editingAgent) return;
+    const current = editingAgent.specialties || [];
+    const next = current.includes(specialty)
+      ? current.filter((s) => s !== specialty)
+      : [...current, specialty];
+    setEditingAgent({
+      ...editingAgent,
+      specialties: next.length ? next : ["general"],
+    });
   };
 
   const loadSLAConfigs = async () => {
@@ -224,7 +313,8 @@ export default function SupportSettingsPage() {
         staffId: editingAgent.staffId,
         role: editingAgent.role || "agent",
         maxConcurrentTickets: editingAgent.maxConcurrentTickets || 10,
-        specialties: editingAgent.specialties || ["general"],
+        specialties: editingAgent.specialties?.length ? editingAgent.specialties : ["general"],
+        availabilityStatus: editingAgent.availabilityStatus || "available",
       });
 
       if (res.success) {
@@ -398,6 +488,7 @@ export default function SupportSettingsPage() {
             <div className="flex gap-2">
               {[
                 { id: "agents", label: "Support Agents", icon: Users, count: agents.length },
+                { id: "routing", label: "Auto Routing", icon: GitBranch, count: null },
                 { id: "sla", label: "SLA Configuration", icon: Timer, count: slaConfigs.length },
                 { id: "categories", label: "Categories", icon: Tag, count: categories.length },
                 { id: "escalation", label: "Escalation Rules", icon: ArrowUpRight, count: escalationRules.length },
@@ -414,11 +505,13 @@ export default function SupportSettingsPage() {
                 >
                   <tab.icon className="w-4 h-4" />
                   {tab.label}
+                  {tab.count != null && (
                   <span className={`px-2 py-0.5 rounded-full text-xs ${
                     activeTab === tab.id ? "bg-white/20" : "bg-white"
                   }`}>
                     {tab.count}
                   </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -439,7 +532,7 @@ export default function SupportSettingsPage() {
                 </div>
                 <Button
                   onClick={() => {
-                    setEditingAgent({});
+                    setEditingAgent({ specialties: ["general"], availabilityStatus: "available" });
                     setShowAgentModal(true);
                   }}
                   className="bg-[#FF8C42] hover:bg-[#E07830] text-white"
@@ -481,9 +574,9 @@ export default function SupportSettingsPage() {
                         </div>
                       </div>
                       <Badge className={`${
-                        agent.availabilityStatus === "online" 
-                          ? "bg-green-100 text-green-700" 
-                          : agent.availabilityStatus === "busy"
+                        agent.availabilityStatus === "available"
+                          ? "bg-green-100 text-green-700"
+                          : agent.availabilityStatus === "away"
                             ? "bg-yellow-100 text-yellow-700"
                             : "bg-gray-100 text-gray-500"
                       }`}>
@@ -554,6 +647,110 @@ export default function SupportSettingsPage() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Routing Tab */}
+          {activeTab === "routing" && !routingSettings && (
+            <div className="text-sm text-gray-500 py-8">Loading routing settings…</div>
+          )}
+
+          {activeTab === "routing" && routingSettings && (
+            <div className="space-y-4 max-w-2xl">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Round-robin auto-assignment</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Automatically assign tickets to agents by specialty pool after AI acknowledgement.
+                </p>
+              </div>
+
+              <Card className="p-5 border border-gray-200 space-y-5">
+                <label className="flex items-center justify-between gap-4 cursor-pointer">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Enable auto-assign</p>
+                    <p className="text-xs text-gray-500">When off, only manual Auto route assigns tickets.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={routingSettings.autoAssignEnabled}
+                    disabled={savingRouting}
+                    onChange={(e) => void saveRoutingSettings({ autoAssignEnabled: e.target.checked })}
+                    className="h-5 w-5 rounded border-gray-300 text-[#FF8C42] focus:ring-[#FF8C42]"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between gap-4 cursor-pointer">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Assign after AI acknowledgement</p>
+                    <p className="text-xs text-gray-500">Trigger round-robin when ticket reaches Awaiting Assignment.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={routingSettings.assignAfterAiAck}
+                    disabled={savingRouting || !routingSettings.autoAssignEnabled}
+                    onChange={(e) => void saveRoutingSettings({ assignAfterAiAck: e.target.checked })}
+                    className="h-5 w-5 rounded border-gray-300 text-[#FF8C42] focus:ring-[#FF8C42]"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between gap-4 cursor-pointer">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Fallback to general specialty</p>
+                    <p className="text-xs text-gray-500">
+                      If no agent matches the ticket pool, try agents with the general specialty.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={routingSettings.fallbackToGeneralSpecialty}
+                    disabled={savingRouting}
+                    onChange={(e) =>
+                      void saveRoutingSettings({ fallbackToGeneralSpecialty: e.target.checked })
+                    }
+                    className="h-5 w-5 rounded border-gray-300 text-[#FF8C42] focus:ring-[#FF8C42]"
+                  />
+                </label>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                    Sweeper batch size
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={routingSettings.sweeperBatchSize}
+                    disabled={savingRouting}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      const n = parseInt(e.target.value, 10);
+                      if (Number.isFinite(n)) {
+                        setRoutingSettings({ ...routingSettings, sweeperBatchSize: n });
+                      }
+                    }}
+                    onBlur={() => void saveRoutingSettings({})}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Max unassigned tickets processed per sweeper run (cron every 2–5 min).
+                  </p>
+                </div>
+
+                {routingSettings.lastSweeperRunAt && (
+                  <p className="text-xs text-gray-500 border-t border-gray-100 pt-3">
+                    Last sweeper: {new Date(routingSettings.lastSweeperRunAt).toLocaleString()} — assigned{" "}
+                    {routingSettings.lastSweeperAssignedCount ?? 0} ticket(s)
+                  </p>
+                )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={runningSweeper}
+                  onClick={() => void runAssignmentSweeper()}
+                  className="w-full sm:w-auto"
+                >
+                  {runningSweeper ? "Running sweeper…" : "Run assignment sweeper now"}
+                </Button>
+              </Card>
             </div>
           )}
 
@@ -831,6 +1028,51 @@ export default function SupportSettingsPage() {
                   value={editingAgent?.maxConcurrentTickets || 10}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingAgent({ ...editingAgent, maxConcurrentTickets: parseInt(e.target.value) })}
                 />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Availability</label>
+                <Select
+                  value={editingAgent?.availabilityStatus || "available"}
+                  onValueChange={(value: string) =>
+                    setEditingAgent({ ...editingAgent, availabilityStatus: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="available">Available</SelectItem>
+                    <SelectItem value="away">Away</SelectItem>
+                    <SelectItem value="offline">Offline</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">Specialties</label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Tickets route to agents whose specialty matches the pool (booking, meal order, billing, etc.).
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {AGENT_SPECIALTY_OPTIONS.map((opt) => {
+                    const selected = (editingAgent?.specialties || []).includes(opt.value);
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => toggleAgentSpecialty(opt.value)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                          selected
+                            ? "bg-[#FF8C42]/15 border-[#FF8C42] text-[#E07830]"
+                            : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
             <DialogFooter>

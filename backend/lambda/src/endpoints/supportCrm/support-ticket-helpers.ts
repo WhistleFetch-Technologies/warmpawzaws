@@ -586,5 +586,6 @@ export function mapTicketForCrmList(t: Record<string, unknown>, enrichment?: Sup
       (t.refund_status as string | undefined) ||
       (refundMeta?.status as string | undefined) ||
       undefined,
+    metadata: meta,
   };
 }

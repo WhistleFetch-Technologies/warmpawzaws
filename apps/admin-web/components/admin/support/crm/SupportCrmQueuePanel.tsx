@@ -21,6 +21,7 @@ import {
 	isMealOrderTicket,
 	ticketHasAssignee,
 	ticketLastUpdated,
+	ticketQueueAssigneeBadge,
 } from "./crm-utils";
 
 const QUEUE_FILTERS: { value: QueueView; label: string }[] = [
@@ -195,12 +196,17 @@ export function SupportCrmQueuePanel({
 											</span>
 										</Badge>
 									) : (
-										<Badge
-											variant="outline"
-											className="text-[10px] h-5 px-1.5 border-red-200 text-red-600 bg-red-50 shrink-0"
-										>
-											Unassigned
-										</Badge>
+										(() => {
+											const badge = ticketQueueAssigneeBadge(ticket);
+											return (
+												<Badge
+													variant="outline"
+													className={`text-[10px] h-5 px-1.5 shrink-0 ${badge.className}`}
+												>
+													{badge.label}
+												</Badge>
+											);
+										})()
 									)}
 								</div>
 							</div>

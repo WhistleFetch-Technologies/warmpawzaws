@@ -403,7 +403,7 @@ export function SupportHelpCenter({
           ? 'Tell us what went wrong — our team can review payment and refunds for this booking.'
           : isMealOrderTicket
             ? 'Tell us what went wrong — our team can review payment, delivery, and refunds for this meal order.'
-            : 'For refunds, cancellations, order issues, or account-related concerns.'}
+            : 'For general questions or account-related concerns. For booking or order help, open Help from that booking or order.'}
       </p>
       {isBookingTicket && activeBooking ? (
         <div className="mb-4 rounded-xl border border-[#FF8C42]/30 bg-[#FFF3E8] p-4">

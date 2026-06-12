@@ -23,6 +23,7 @@ import type { Agent, Ticket, TicketActivity } from "./types";
 import {
 	assigneeDisplayLabel,
 	canProcessRefund,
+	collectTicketAttachments,
 	getStatusColor,
 	isBookingTicket,
 	isMealOrderTicket,
@@ -31,6 +32,7 @@ import {
 	resolveVendorPhone,
 	ticketHasAssignee,
 } from "./crm-utils";
+import { SupportAttachmentList } from "./SupportAttachmentList";
 
 interface SupportCrmContextPanelProps {
 	ticket: Ticket;
@@ -65,9 +67,7 @@ export function SupportCrmContextPanel({
 	onShowCompletePlanModal,
 	onViewFullActivity,
 }: SupportCrmContextPanelProps) {
-	const attachments = Array.isArray(ticket.metadata?.attachments)
-		? (ticket.metadata!.attachments as Array<Record<string, unknown>>)
-		: [];
+	const attachments = collectTicketAttachments(ticket);
 
 	const aiInsights = ticket.aiConversation?.slice(-1)[0];
 	const recentActivity = activityEntries.slice(0, 5);
@@ -227,15 +227,30 @@ export function SupportCrmContextPanel({
 
 				{attachments.length > 0 && (
 					<Section title="Attachments" icon={<Paperclip className="w-3.5 h-3.5" />}>
-						<ul className="space-y-1">
-							{attachments.map((att, i) => (
-								<li key={i} className="text-xs text-blue-600 truncate">
-									{String(att.name ?? att.url ?? att.filename ?? `Attachment ${i + 1}`)}
-								</li>
-							))}
-						</ul>
+						<p className="text-[10px] text-gray-500 mb-2">
+							Click a filename or image preview to open in a new tab
+						</p>
+						<SupportAttachmentList attachments={attachments} />
 					</Section>
 				)}
+
+				{!ticketHasAssignee(ticket) &&
+				(ticket.status === "ai_acknowledged" ||
+					ticket.status === "awaiting_assignment") ? (
+					<Section title="Assignment" icon={<User className="w-3.5 h-3.5" />}>
+						<p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md p-2 leading-relaxed">
+							AI has acknowledged this ticket. A human agent is assigned automatically when
+							someone is available in the routing pool.
+							{ticket.metadata?.assignment_blocked_reason === "no_eligible_agent" ? (
+								<>
+									{" "}
+									Right now all eligible agents are at max capacity — resolve or reassign
+									existing tickets, or raise max concurrent tickets in Support Settings.
+								</>
+							) : null}
+						</p>
+					</Section>
+				) : null}
 
 				{aiInsights && (
 					<Section title="AI insights" icon={<Sparkles className="w-3.5 h-3.5" />}>

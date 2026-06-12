@@ -112,6 +112,11 @@ export function SupportTicketDetailView({
                 ? String(detail.ticket.created_at)
                 : null
             }
+            metadata={
+              detail.ticket.metadata != null && typeof detail.ticket.metadata === 'object'
+                ? (detail.ticket.metadata as Record<string, unknown>)
+                : undefined
+            }
             responses={detail.responses}
             fillAvailable
             className={embeddedInModal ? undefined : 'flex-1 min-h-[200px]'}

@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import { Badge, Button, Textarea } from "@warmpawz/ui";
 import type { DetailTab, Ticket, TicketActivity, TicketMessage } from "./types";
-import { getPriorityColor, getStatusColor } from "./crm-utils";
+import { getPriorityColor, getStatusColor, initialRequestAttachments } from "./crm-utils";
+import { SupportAttachmentList } from "./SupportAttachmentList";
 import { SavedReplyTemplatePicker } from "./SavedReplyTemplatePicker";
 
 interface SupportCrmConversationPanelProps {
@@ -69,6 +70,7 @@ export function SupportCrmConversationPanel({
 
 	const systemMessages = (ticket.messages || []).filter((m) => m.role === "system");
 	const threadMessages = (ticket.messages || []).filter((m) => m.role !== "system");
+	const initialAttachments = initialRequestAttachments(ticket.metadata);
 
 	return (
 		<div className="flex-1 flex flex-col min-w-0 min-h-0 bg-gray-50/50">
@@ -116,6 +118,9 @@ export function SupportCrmConversationPanel({
 							<p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
 								{ticket.description}
 							</p>
+							{initialAttachments.length > 0 ? (
+								<SupportAttachmentList attachments={initialAttachments} compact />
+							) : null}
 						</div>
 
 						{systemMessages.map((msg) => (
@@ -292,6 +297,9 @@ function MessageBubble({ msg }: { msg: TicketMessage }) {
 					<span>{new Date(msg.timestamp).toLocaleTimeString()}</span>
 				</div>
 				<p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+				{msg.attachments && msg.attachments.length > 0 ? (
+					<SupportAttachmentList attachments={msg.attachments} compact />
+				) : null}
 			</div>
 		</div>
 	);

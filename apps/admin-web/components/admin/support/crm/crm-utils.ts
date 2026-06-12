@@ -62,6 +62,32 @@ export function ticketHasAssignee(t: Ticket | null | undefined): boolean {
 	return Boolean(t && (t.assignedTo || t.assignedAgent));
 }
 
+/** Queue badge when ticket has no human assignee yet. */
+export function ticketQueueAssigneeBadge(t: Ticket): {
+	label: string;
+	className: string;
+} {
+	if (ticketHasAssignee(t)) {
+		return {
+			label: assigneeDisplayLabel(t, []),
+			className: "border-[#FF8C42]/30 text-[#FF8C42] bg-[#FFF3E8]",
+		};
+	}
+	if (
+		t.status === "ai_acknowledged" ||
+		t.status === "awaiting_assignment"
+	) {
+		return {
+			label: "Awaiting agent",
+			className: "border-amber-200 text-amber-700 bg-amber-50",
+		};
+	}
+	return {
+		label: "Unassigned",
+		className: "border-red-200 text-red-600 bg-red-50",
+	};
+}
+
 export function assigneeDisplayLabel(t: Ticket, agents: Agent[]): string {
 	if (t.assignedAgent) return t.assignedAgent;
 	if (t.assignedTo && agents.length) {
@@ -73,10 +99,115 @@ export function assigneeDisplayLabel(t: Ticket, agents: Agent[]): string {
 }
 
 export function getAttachmentCount(ticket: Ticket): number {
+	return collectTicketAttachments(ticket).length;
+}
+
+export type TicketAttachmentView = {
+	name: string;
+	url: string;
+	type?: string;
+};
+
+export function collectTicketAttachments(ticket: Ticket): TicketAttachmentView[] {
 	const meta = ticket.metadata;
-	if (!meta) return 0;
-	const attachments = meta.attachments;
-	return Array.isArray(attachments) ? attachments.length : 0;
+	if (!meta) return [];
+	const seen = new Set<string>();
+	const out: TicketAttachmentView[] = [];
+
+	const push = (raw: unknown) => {
+		if (!raw || typeof raw !== "object") return;
+		const att = raw as Record<string, unknown>;
+		const url = String(att.displayUrl || att.url || "").trim();
+		if (!url || seen.has(url)) return;
+		seen.add(url);
+		out.push({
+			name: String(att.name || att.filename || "Attachment"),
+			url,
+			type: att.type ? String(att.type) : undefined,
+		});
+	};
+
+	if (Array.isArray(meta.attachments)) {
+		for (const att of meta.attachments) push(att);
+	}
+
+	const responseAttachments = meta.response_attachments;
+	if (responseAttachments && typeof responseAttachments === "object" && !Array.isArray(responseAttachments)) {
+		for (const list of Object.values(responseAttachments as Record<string, unknown>)) {
+			if (Array.isArray(list)) for (const att of list) push(att);
+		}
+	}
+
+	return out;
+}
+
+export function attachmentsForResponse(
+	metadata: Record<string, unknown> | undefined,
+	responseId: string
+): TicketAttachmentView[] {
+	if (!metadata?.response_attachments || typeof metadata.response_attachments !== "object") {
+		return [];
+	}
+	const map = metadata.response_attachments as Record<string, unknown>;
+	const list = map[responseId];
+	if (!Array.isArray(list)) return [];
+	return list
+		.map((raw) => {
+			if (!raw || typeof raw !== "object") return null;
+			const att = raw as Record<string, unknown>;
+			const url = String(att.displayUrl || att.url || "").trim();
+			if (!url) return null;
+			return {
+				name: String(att.name || att.filename || "Attachment"),
+				url,
+				type: att.type ? String(att.type) : undefined,
+			};
+		})
+		.filter(Boolean) as TicketAttachmentView[];
+}
+
+/** Attachments on ticket creation (not tied to a follow-up response). */
+export function initialRequestAttachments(
+	metadata: Record<string, unknown> | undefined
+): TicketAttachmentView[] {
+	if (!metadata?.attachments || !Array.isArray(metadata.attachments)) return [];
+
+	const linked = new Set<string>();
+	const responseAttachments = metadata.response_attachments;
+	if (
+		responseAttachments &&
+		typeof responseAttachments === "object" &&
+		!Array.isArray(responseAttachments)
+	) {
+		for (const list of Object.values(responseAttachments as Record<string, unknown>)) {
+			if (!Array.isArray(list)) continue;
+			for (const raw of list) {
+				if (!raw || typeof raw !== "object") continue;
+				const att = raw as Record<string, unknown>;
+				const url = String(att.displayUrl || att.url || "").trim();
+				if (url) linked.add(url);
+			}
+		}
+	}
+
+	return metadata.attachments
+		.map((raw) => {
+			if (!raw || typeof raw !== "object") return null;
+			const att = raw as Record<string, unknown>;
+			const url = String(att.displayUrl || att.url || "").trim();
+			if (!url || linked.has(url)) return null;
+			return {
+				name: String(att.name || att.filename || "Attachment"),
+				url,
+				type: att.type ? String(att.type) : undefined,
+			};
+		})
+		.filter(Boolean) as TicketAttachmentView[];
+}
+
+export function isImageAttachment(att: TicketAttachmentView): boolean {
+	if (att.type?.startsWith("image/")) return true;
+	return /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(att.name || att.url);
 }
 
 export function formatRelativeTime(iso: string): string {

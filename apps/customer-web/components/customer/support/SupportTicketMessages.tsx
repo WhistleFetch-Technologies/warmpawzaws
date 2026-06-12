@@ -3,6 +3,13 @@
 import { useMemo } from 'react';
 import { cn } from '@/components/ui/utils';
 import {
+  attachmentsForResponse,
+  initialRequestAttachments,
+  isAttachmentOnlyMessage,
+  type SupportTicketAttachmentView,
+} from '@/lib/support-ticket-attachments';
+import { SupportAttachmentList } from './SupportAttachmentList';
+import {
   SupportTicketMessageBubble,
   formatTicketStatusLabel,
 } from './SupportTicketMessageBubble';
@@ -13,6 +20,7 @@ export interface SupportTicketMessagesProps {
   initialMessage?: string | null;
   initialCreatedAt?: string | null;
   responses: SupportTicketResponseRow[];
+  metadata?: Record<string, unknown>;
   fillAvailable?: boolean;
   className?: string;
 }
@@ -41,6 +49,7 @@ export function SupportTicketMessages({
   initialMessage,
   initialCreatedAt,
   responses,
+  metadata,
   fillAvailable = false,
   className,
 }: SupportTicketMessagesProps) {
@@ -54,10 +63,12 @@ export function SupportTicketMessages({
       body: string;
       createdAt?: string | null;
       showReadReceipt?: boolean;
+      attachments?: SupportTicketAttachmentView[];
     }> = [];
 
     const initialBody = normalizeMessage(initialMessage);
-    if (initialBody) {
+    const initialAttachments = initialRequestAttachments(metadata);
+    if (initialBody || initialAttachments.length) {
       items.push({
         key: 'initial',
         variant: 'customer',
@@ -65,13 +76,17 @@ export function SupportTicketMessages({
         body: initialBody,
         createdAt: initialCreatedAt,
         showReadReceipt: true,
+        attachments: initialAttachments.length ? initialAttachments : undefined,
       });
     }
 
     for (let idx = 0; idx < responses.length; idx++) {
       const row = responses[idx];
       const body = normalizeMessage(row.message);
-      if (!body) continue;
+      const responseId = row.id ? String(row.id) : '';
+      const rowAttachments = attachmentsForResponse(metadata, responseId);
+
+      if (!body && !rowAttachments.length) continue;
 
       const responder = String(row.responder_type || '').toLowerCase();
       const variant = resolveMessageVariant(responder);
@@ -79,7 +94,8 @@ export function SupportTicketMessages({
       if (
         variant === 'customer' &&
         initialBody &&
-        body.toLowerCase() === initialBody.toLowerCase()
+        body.toLowerCase() === initialBody.toLowerCase() &&
+        !rowAttachments.length
       ) {
         continue;
       }
@@ -96,11 +112,12 @@ export function SupportTicketMessages({
         body,
         createdAt: row.created_at,
         showReadReceipt: variant === 'customer',
+        attachments: rowAttachments.length ? rowAttachments : undefined,
       });
     }
 
     return items;
-  }, [initialMessage, initialCreatedAt, responses]);
+  }, [initialMessage, initialCreatedAt, responses, metadata]);
 
   return (
     <div
@@ -118,7 +135,12 @@ export function SupportTicketMessages({
             key={item.key}
             variant={item.variant}
             label={item.label}
-            body={item.body}
+            body={
+              item.attachments?.length && isAttachmentOnlyMessage(item.body)
+                ? ''
+                : item.body
+            }
+            attachments={item.attachments}
             createdAt={item.createdAt}
             statusLabel={item.variant === 'ai' ? statusLabel : undefined}
             showReadReceipt={item.showReadReceipt}

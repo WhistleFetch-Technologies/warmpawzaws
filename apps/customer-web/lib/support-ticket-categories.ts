@@ -15,21 +15,26 @@ export const DEFAULT_LINKED_SUPPORT_CATEGORY: LinkedSupportTicketCategory = 'bil
 
 /** General help center ticket (no linked booking/order). */
 export const GENERAL_SUPPORT_TICKET_CATEGORIES = [
-  { value: 'general', label: 'General inquiry' },
-  { value: 'billing', label: 'Payment or refund' },
-  { value: 'service', label: 'Booking / service issue' },
-  { value: 'other', label: 'Order / other issue' },
-  { value: 'technical', label: 'Technical support' },
+  { value: 'general', label: 'General query' },
   { value: 'account', label: 'Account' },
 ] as const;
+
+/** Labels for legacy general categories (existing tickets only). */
+const LEGACY_GENERAL_CATEGORY_LABELS: Record<string, string> = {
+  billing: 'Payment or refund',
+  service: 'Booking / service issue',
+  other: 'Order / other issue',
+  technical: 'Technical support',
+};
 
 const LINKED_LABELS: Record<string, string> = Object.fromEntries(
   LINKED_SUPPORT_TICKET_CATEGORIES.map((c) => [c.value, c.label]),
 );
 
-const GENERAL_LABELS: Record<string, string> = Object.fromEntries(
-  GENERAL_SUPPORT_TICKET_CATEGORIES.map((c) => [c.value, c.label]),
-);
+const GENERAL_LABELS: Record<string, string> = {
+  ...Object.fromEntries(GENERAL_SUPPORT_TICKET_CATEGORIES.map((c) => [c.value, c.label])),
+  ...LEGACY_GENERAL_CATEGORY_LABELS,
+};
 
 export function supportTicketCategoryLabel(category?: string | null): string {
   const key = (category || '').trim().toLowerCase();

@@ -56,8 +56,10 @@ import type {
 	QueueView,
 	Ticket,
 	TicketActivity,
+	TicketMessage,
 } from "@/components/admin/support/crm/types";
 import {
+	attachmentsForResponse,
 	isBookingTicket,
 	matchesQueueView,
 	matchesSearch,
@@ -247,13 +249,20 @@ export default function SupportCRM() {
 		try {
 			const res = await apiClient.get<any>(`/support/tickets/${ticketId}`);
 			if (res.success && res.ticket) {
+				const raw = res.ticket;
+				const meta =
+					raw.metadata != null && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
+						? (raw.metadata as Record<string, unknown>)
+						: undefined;
+
 				// Transform responses into messages format expected by UI
 				const messages: TicketMessage[] = (res.responses || []).map((r: any) => {
 					const rt = String(r.responder_type || 'customer');
 					const isAgent = rt === 'agent';
 					const isSystemAi = rt === 'system_ai';
+					const responseId = r.id ? String(r.id) : '';
 					return {
-						id: r.id || String(Date.now()),
+						id: responseId || String(Date.now()),
 						sender: isSystemAi
 							? (r.responder_name || 'Warmpawz Support')
 							: isAgent
@@ -262,21 +271,17 @@ export default function SupportCRM() {
 						content: r.message,
 						timestamp: r.created_at,
 						role: isSystemAi ? 'system' : (rt === 'agent' ? 'agent' : 'customer'),
+						attachments: attachmentsForResponse(meta, responseId),
 					};
 				});
 
 				// Update selected ticket with full details including messages
-				const raw = res.ticket;
 				const assignedToRaw = raw.assigned_to ?? raw.assignedTo ?? raw.assigned_agent_id;
 				const assignedTo = assignedToRaw ? String(assignedToRaw) : undefined;
 				const assignedAgent =
 					raw.assigned_agent_name ||
 					raw.assignedAgent ||
 					undefined;
-				const meta =
-					raw.metadata != null && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
-						? (raw.metadata as Record<string, unknown>)
-						: undefined;
 				const fullTicket: Ticket = {
 					id: raw.id,
 					customerId: raw.customer_id || '',
@@ -453,8 +458,13 @@ export default function SupportCRM() {
 			});
 
 			if (res.success) {
-				toast.success(`Ticket auto-routed to ${res.assignedAgent || "agent"}`);
+				if (res.routed > 0) {
+					toast.success(`Ticket auto-routed to ${res.assignedAgent || "agent"}`);
+				} else {
+					toast.info(res.message || "No eligible agent available for this ticket");
+				}
 				await loadTickets();
+				if (selectedTicket?.id) await loadTicketDetail(selectedTicket.id);
 				await loadAgentMetrics();
 			}
 		} catch (error) {

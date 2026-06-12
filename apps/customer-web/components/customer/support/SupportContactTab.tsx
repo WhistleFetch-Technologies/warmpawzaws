@@ -95,10 +95,11 @@ export function SupportContactTab({
 
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-gray-900 leading-snug">
-              Need a refund or account help?
+              General or account help?
             </p>
             <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-              For refunds, cancellations, order issues, and account-related concerns.
+              Create a ticket for general questions or account issues. For booking or order refunds,
+              use Help on that booking or order.
             </p>
           </div>
 
