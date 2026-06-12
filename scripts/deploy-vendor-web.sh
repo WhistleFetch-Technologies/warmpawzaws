@@ -113,14 +113,19 @@ else
   exit 1
 fi
 
-# Step 2.5: Set short cache on HTML and config so CDN/browsers don't serve stale index (avoids "Unexpected token '<'" when chunk names change)
+# Step 2.5: Set short cache on ALL HTML + runtime-config so route shells (e.g. services.html, settings.html)
+# revalidate after deploy — avoids "Loading chunk N failed" on Android WebView / direct deep links.
 echo -e "${BLUE}📄 Setting cache headers on HTML and runtime-config...${NC}"
-for f in index.html 404.html runtime-config.js; do
-  if [ -f "apps/${APP_NAME}/dist/${f}" ]; then
-    aws s3 cp "apps/${APP_NAME}/dist/${f}" "s3://${S3_BUCKET}/${f}" --cache-control "public, max-age=0, must-revalidate" --content-type "$( [ "${f%.html}" != "$f" ] && echo "text/html" || echo "application/javascript")" 2>/dev/null || true
-  fi
+if [ -f "apps/${APP_NAME}/dist/runtime-config.js" ]; then
+  aws s3 cp "apps/${APP_NAME}/dist/runtime-config.js" "s3://${S3_BUCKET}/runtime-config.js" \
+    --cache-control "public, max-age=0, must-revalidate" --content-type "application/javascript" 2>/dev/null || true
+fi
+find "apps/${APP_NAME}/dist" -name '*.html' -type f | while read -r html; do
+  rel="${html#apps/${APP_NAME}/dist/}"
+  aws s3 cp "$html" "s3://${S3_BUCKET}/${rel}" \
+    --cache-control "public, max-age=0, must-revalidate" --content-type "text/html" 2>/dev/null || true
 done
-echo -e "${GREEN}✅ Cache headers set (HTML/config revalidate; chunks remain long-cached)${NC}"
+echo -e "${GREEN}✅ Cache headers set (all HTML + runtime-config revalidate; chunks remain long-cached)${NC}"
 
 # Step 3: Invalidate CloudFront cache
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"

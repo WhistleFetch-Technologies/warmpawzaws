@@ -14,6 +14,7 @@ import { getVendorRoleId, normalizeServiceStyle, hasVendorRole, getVendorAllowed
 import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';
 import CapabilityHelper from '@/lib/capability-helper';
 import PerformanceMonitor from '@/lib/performance-monitor';
+import { vendorNavigate } from '@/lib/vendor-route-nav';
 // Removed unused import: Analytics
 import {
   Calendar,
@@ -804,7 +805,7 @@ export function VendorDashboard({
 
           <button
             type="button"
-            onClick={() => router.push('/settings')}
+            onClick={() => vendorNavigate('/settings', router)}
             className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
               }`}
           >
@@ -972,7 +973,7 @@ export function VendorDashboard({
             {/* ✅ FIX: Route directly to /services to show VendorServiceManagementComplete UI */}
             {!isPharmacy && (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities) || CapabilityHelper.hasCapability(capabilities, 'services') || hasVendorRole(vendorData, ['pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance'])) && (
               <button
-                onClick={() => router.push('/services')}
+                onClick={() => vendorNavigate('/services', router)}
                 className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
               >
                 <Activity className="w-6 h-6 mb-2" />
@@ -1855,11 +1856,11 @@ export function VendorDashboard({
               {capabilities.catalog && !capabilities.booking ? 'Your Products' : 'Your Services'}
             </h2>
             <div className="flex items-center justify-center mb-2">
-              <button className="text-sm text-[#FF8C42]" onClick={() => router.push('/services')}>See All →</button>
+              <button className="text-sm text-[#FF8C42]" onClick={() => vendorNavigate('/services', router)}>See All →</button>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-2 justify-center">
               <button
-                onClick={() => router.push('/services')}
+                onClick={() => vendorNavigate('/services', router)}
                 className="flex-shrink-0 w-16 h-16 bg-purple-100 rounded-xl flex flex-col items-center justify-center hover:bg-purple-200 transition-colors"
               >
                 <Plus className="w-6 h-6 text-purple-600 mb-1" />

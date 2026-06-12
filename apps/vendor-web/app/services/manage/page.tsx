@@ -17,6 +17,7 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { vendorNavigate, vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 import { 
   Search, 
   Filter, 
@@ -397,7 +398,7 @@ export default function SoloProviderServiceManagePage() {
         <VendorHeader
           title="Manage Services"
           subtitle="Enable and publish services for customers"
-          onBack={() => router.back()}
+          onBack={() => vendorNavigateBackFromShell('/services')}
           actions={
             hasChanges
               ? [
@@ -615,7 +616,7 @@ export default function SoloProviderServiceManagePage() {
                 Can't find the service you want to offer? Create your own custom services.
               </p>
               <Button
-                onClick={() => router.push('/services?add=true')}
+                onClick={() => vendorNavigate('/services?add=true', router)}
                 className="bg-white text-orange-600 hover:bg-gray-100 font-semibold"
               >
                 <Plus className="w-4 h-4 mr-2" />

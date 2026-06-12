@@ -38,6 +38,7 @@ import {
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
 import { bookingNeedsWalkLiveTracker } from '@/lib/vendor-walk-live-tracker';
+import { vendorNavigate } from '@/lib/vendor-route-nav';
 import { isPackageSessionOneStarted } from '@/lib/vendor-package-parent-decline';
 import {
   isVendorTeleConsultationBooking,
@@ -937,7 +938,7 @@ export function VendorBookingManagement({
     }
     if (!payoutsData?.bankAccount?.verified) {
       toast.error('Please add and verify your bank account in Settings first.');
-      router.push('/settings?tab=bank');
+      vendorNavigate('/settings?tab=bank', router);
       return;
     }
     
@@ -1780,7 +1781,7 @@ export function VendorBookingManagement({
                           type="button"
                           variant="secondary"
                           className="h-9 px-3 bg-white text-orange-700 hover:bg-orange-50 font-semibold"
-                          onClick={() => router.push('/earnings')}
+                          onClick={() => vendorNavigate('/earnings?tab=tier', router)}
                         >
                           Upgrade tier
                         </Button>
@@ -1789,7 +1790,7 @@ export function VendorBookingManagement({
                           type="button"
                           variant="secondary"
                           className="h-9 px-3 bg-white/95 text-orange-800 hover:bg-white font-medium"
-                          onClick={() => router.push('/earnings')}
+                          onClick={() => vendorNavigate('/earnings?tab=tier', router)}
                         >
                           Tiers & earnings
                         </Button>
@@ -1993,7 +1994,7 @@ export function VendorBookingManagement({
                             <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">Verified</span>
                           )}
                           <button
-                            onClick={() => router.push('/settings?tab=bank')}
+                            onClick={() => vendorNavigate('/settings?tab=bank', router)}
                             className="text-sm text-[#FF8C42] font-medium hover:underline"
                           >
                             Change
@@ -2008,7 +2009,7 @@ export function VendorBookingManagement({
                     <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center">
                       <div className="text-gray-500 mb-2">No bank account linked</div>
                       <button
-                        onClick={() => router.push('/settings?tab=bank')}
+                        onClick={() => vendorNavigate('/settings?tab=bank', router)}
                         className="text-sm text-[#FF8C42] font-medium hover:underline"
                       >
                         + Add Bank Account

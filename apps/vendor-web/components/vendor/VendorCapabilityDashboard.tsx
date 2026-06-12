@@ -10,6 +10,7 @@ import {
 } from '@/lib/vendor-payout';
 import { VendorDynamicNavigation } from './navigation/VendorDynamicNavigation';
 import { CAPABILITY_ROUTES, getCapabilitiesByCategory } from '@/lib/capability-routes';
+import { vendorNavigate } from '@/lib/vendor-route-nav';
 import { MealPlansComingSoonPanel } from './MealPlansComingSoonPanel';
 
 // ============================================================================
@@ -838,7 +839,7 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
 
       {/* View Full Dashboard Button */}
       <button 
-        onClick={() => router.push('/earnings')}
+        onClick={() => vendorNavigate('/earnings', router)}
         className="w-full py-3 bg-orange-500 text-white rounded-xl font-semibold hover:bg-orange-600 transition"
       >
         View Full Earnings Dashboard
@@ -1153,7 +1154,7 @@ function PricingSection({ vendorId }: { vendorId: string }) {
         </div>
       </div>
       <button 
-        onClick={() => router.push('/services/pricing')}
+        onClick={() => vendorNavigate('/services/pricing', router)}
         className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
       >
         Manage Pricing
@@ -1424,7 +1425,7 @@ function AdoptionSection({ vendorId }: { vendorId: string }) {
         </div>
       </div>
       <button 
-        onClick={() => router.push('/services')}
+        onClick={() => vendorNavigate('/services', router)}
         className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
       >
         Manage Listings
@@ -1571,7 +1572,7 @@ function DiagnosticsSection({ vendorId }: { vendorId: string }) {
         </div>
       </div>
       <button 
-        onClick={() => router.push('/services/tests')}
+        onClick={() => vendorNavigate('/services/tests', router)}
         className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
       >
         Manage Tests
@@ -1709,7 +1710,7 @@ function TrainingSection({ vendorId }: { vendorId: string }) {
         </div>
       </div>
       <button 
-        onClick={() => router.push('/services')}
+        onClick={() => vendorNavigate('/services', router)}
         className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
       >
         Manage Training
@@ -2096,7 +2097,7 @@ function PackagesSection({ vendorId }: { vendorId: string }) {
         </div>
       </div>
       <button 
-        onClick={() => router.push('/services/packages')}
+        onClick={() => vendorNavigate('/services/packages', router)}
         className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
       >
         Manage Packages
@@ -2136,7 +2137,7 @@ function SubscriptionsSection({ vendorId }: { vendorId: string }) {
         </div>
       </div>
       <button 
-        onClick={() => router.push('/services/subscriptions')}
+        onClick={() => vendorNavigate('/services/subscriptions', router)}
         className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
       >
         Manage Subscriptions
@@ -2676,7 +2677,7 @@ function MenuSection({ vendorId }: { vendorId: string }) {
         </div>
       </div>
       <button 
-        onClick={() => router.push('/services/menu')}
+        onClick={() => vendorNavigate('/services/menu', router)}
         className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
       >
         Manage Menu
@@ -3079,7 +3080,7 @@ function SettingsSection({ vendorId }: { vendorId: string }) {
         </div>
       </div>
       <button 
-        onClick={() => router.push('/settings')}
+        onClick={() => vendorNavigate('/settings', router)}
         className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
       >
         Open Settings
@@ -3120,7 +3121,7 @@ function TestCatalogSection({ vendorId }: { vendorId: string }) {
         </div>
       </div>
       <button 
-        onClick={() => router.push('/services/tests')}
+        onClick={() => vendorNavigate('/services/tests', router)}
         className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
       >
         Manage Test Catalog

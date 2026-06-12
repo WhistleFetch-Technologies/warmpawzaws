@@ -11,6 +11,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { resolveLedgerVendorId } from '@/lib/vendor-ledger-id';
+import { vendorNavigate, vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 import {
   fetchVendorEarningsSummary,
   resolveSessionVendorIdForEarnings,
@@ -135,10 +136,17 @@ interface VendorPayoutHistoryRow {
 
 export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp }: VendorEarningsSettlementDashboardProps) {
   const router = useRouter();
-  const handleBack = onBackProp ?? (() => router.push('/'));
+  const handleBack = onBackProp ?? (() => vendorNavigateBackFromShell('/'));
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'earnings' | 'settlements' | 'tier'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'earnings' | 'settlements' | 'tier'>(() => {
+    if (typeof window === 'undefined') return 'overview';
+    const tab = new URLSearchParams(window.location.search).get('tab')?.toLowerCase();
+    if (tab === 'tier' || tab === 'earnings' || tab === 'settlements' || tab === 'overview') {
+      return tab;
+    }
+    return 'overview';
+  });
   const [period, setPeriod] = useState<'week' | 'month' | 'year' | 'all'>('month');
   
   // Data states
@@ -436,7 +444,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     }
     if (!bankVerified || !bankAccount) {
       toast.error('Please add and verify your bank account in Settings first.');
-      router.push('/settings?tab=bank');
+      vendorNavigate('/settings?tab=bank', router);
       return;
     }
     if (!confirm(`Request payout of ₹${availableAmount.toLocaleString()}?`)) return;
@@ -721,12 +729,12 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                       <span className="text-sm text-gray-600">
                         Account: {bankAccount.account_number?.includes('*') || bankAccount.account_number?.includes('•') ? bankAccount.account_number : `****${String(bankAccount.account_number || '').slice(-4)}`} | IFSC: {bankAccount.ifsc_code}
                       </span>
-                      <Button variant="outline" size="sm" onClick={() => router.push('/settings?tab=bank')}>
+                      <Button variant="outline" size="sm" onClick={() => vendorNavigate('/settings?tab=bank', router)}>
                         Change Account
                       </Button>
                     </>
                   ) : (
-                    <Button onClick={() => router.push('/settings?tab=bank')} className="bg-amber-600 hover:bg-amber-700 text-white">
+                    <Button onClick={() => vendorNavigate('/settings?tab=bank', router)} className="bg-amber-600 hover:bg-amber-700 text-white">
                       Add Bank Account
                     </Button>
                   )}
@@ -749,7 +757,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                   {bankAccount.account_holder_name} | {bankAccount.bank_name} | {bankAccount.account_number?.includes('*') || bankAccount.account_number?.includes('•') ? bankAccount.account_number : `****${String(bankAccount.account_number || '').slice(-4)}`}
                 </p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => router.push('/settings?tab=bank')}>
+              <Button variant="outline" size="sm" onClick={() => vendorNavigate('/settings?tab=bank', router)}>
                 Change
               </Button>
             </div>
