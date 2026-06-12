@@ -14,6 +14,7 @@ import { withBannerNavigationOrigin } from '@/lib/banner-navigation-origin';
 
 import {
   buildArticleBannerPath,
+  isBannerInformationalNonClickable,
   isInAppCategoryBannerTargetMetadata,
   parseArticleSlugFromBannerPath,
   parseArticleSlugFromCtaLink,
@@ -257,4 +258,52 @@ export async function resolveBannerDeepLinkNavigation(input: {
   });
 
   return navTargetToInitialBannerNavigation(navTarget);
+}
+
+export type HomeBannerClickInput = BannerNavInput & {
+  id?: string | number;
+  isInformational?: boolean;
+  comingSoon?: boolean;
+};
+
+/** True when banner has a resolvable destination (empty cta_link + metadata is valid for service_type). */
+export function hasActionableBannerDestination(
+  banner: Pick<BannerNavInput, 'ctaLink' | 'navTarget' | 'metadata'>
+): boolean {
+  if (String(banner.ctaLink ?? '').trim()) return true;
+  if (banner.navTarget) return true;
+  if (isInAppCategoryBannerTargetMetadata(banner.metadata)) return true;
+  if (parseBannerArticleSlugFromMetadata(banner.metadata)) return true;
+  if (resolveBannerArticlePath(banner)) return true;
+  return false;
+}
+
+/** Unified home-banner CTA click — tracking + navigateBannerCta. */
+export async function clickHomeBannerCta(
+  banner: HomeBannerClickInput,
+  onNavigate: NavigateFn | undefined,
+  router: AppRouterInstance,
+  opts?: { returnScreen?: string; trackingSource?: string }
+): Promise<boolean> {
+  if (banner.comingSoon || isBannerInformationalNonClickable(banner)) return false;
+  if (!hasActionableBannerDestination(banner)) return false;
+
+  if (banner.id != null && opts?.trackingSource) {
+    apiClient
+      .post(`/banners/${banner.id}/click`, { source: opts.trackingSource })
+      .catch(() => {});
+  }
+
+  return navigateBannerCta(
+    {
+      ctaLink: banner.ctaLink,
+      title: banner.title,
+      subtitle: banner.subtitle,
+      metadata: banner.metadata,
+      navTarget: banner.navTarget,
+      returnScreen: opts?.returnScreen ?? 'home',
+    },
+    onNavigate,
+    router
+  );
 }

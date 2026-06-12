@@ -68,6 +68,7 @@ import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { useCart } from '@/context/CartContext';
 import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
 import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
+import { toast } from 'sonner';
 
 // ============================================================================
 // Lazy-loaded shell screens
@@ -965,6 +966,15 @@ export function CustomerHomeWrapper({
       if ((data as any)?.startStep === 'home') setVetClinicFromHome(true);
       else setVetClinicFromHome(false);
       setCurrentScreen('vet-clinic-list');
+      return;
+    }
+    else if (
+      service === 'grooming_home' ||
+      service === 'grooming_center' ||
+      service === 'training_home' ||
+      service === 'training_center'
+    ) {
+      setCurrentScreen(service as ScreenType);
       return;
     }
     else if (service === 'grooming') {

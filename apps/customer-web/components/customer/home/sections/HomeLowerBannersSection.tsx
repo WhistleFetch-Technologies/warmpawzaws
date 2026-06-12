@@ -2,7 +2,8 @@
 
 import React, { memo } from 'react';
 import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import { useRouter } from 'next/navigation';
+import { clickHomeBannerCta } from '@/lib/banner-cta-navigation';
 import { isBannerInformationalNonClickable } from '@/lib/banner-cta-target';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import {
@@ -44,6 +45,7 @@ function HomeLowerBannersSectionComponent({
   onNavigate,
   className = '',
 }: HomeLowerBannersSectionProps) {
+  const router = useRouter();
   if (lowerBanners.length === 0) return null;
 
   return (
@@ -94,12 +96,10 @@ function HomeLowerBannersSectionComponent({
                   <button
                     type="button"
                     onClick={() => {
-                      if (banner.id) {
-                        apiClient
-                          .post(`/banners/${banner.id}/click`, { source: 'home_lower_featured' })
-                          .catch(() => {});
-                      }
-                      banner.ctaLink && onNavigate(String(banner.ctaLink));
+                      void clickHomeBannerCta(banner, onNavigate, router, {
+                        trackingSource: 'home_lower_featured',
+                        returnScreen: 'home',
+                      });
                     }}
                     className="rounded-full bg-white px-5 py-2.5 text-sm font-medium text-indigo-600"
                   >
