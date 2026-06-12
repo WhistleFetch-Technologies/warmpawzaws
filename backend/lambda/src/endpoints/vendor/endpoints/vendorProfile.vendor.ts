@@ -954,6 +954,8 @@ export function registerVendorProfileEndpoints(app: Hono) {
         updatedAt: 'updated_at',
         availableForInstantTele: 'available_for_instant_tele', // ✅ Added for instant tele toggle
         serviceDistanceKm: 'service_distance_km',
+        gstNumber: 'gst_number',
+        gstin: 'gst_number',
       };
 
       const updates: any = {};
@@ -993,6 +995,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       // Known safe columns that can be updated
       const safeColumns = [
         'business_name', 'owner_name', 'phone', 'email', 'address', 'city', 'state', 'pincode',
+        'gst_number',
         'description', 'profile_photo_url', 'latitude', 'longitude', 'is_active', 'status',
         'setup_completed', 'services_setup_completed', 'availability_setup_completed', 'metadata',
         'experience_years', 'qualifications', 'service_area', 'specializations', // ✅ Added for solo provider profile
@@ -1008,6 +1011,12 @@ export function registerVendorProfileEndpoints(app: Hono) {
           updateData[key] = value;
         }
       }
+
+      // #region agent log
+      if (updates.gst_number !== undefined || rawUpdates.gstNumber !== undefined || rawUpdates.gstin !== undefined) {
+        console.log(JSON.stringify({ sessionId: '7935b4', location: 'vendorProfile.vendor.ts:profileUpdate', message: 'gst update path', data: { receivedGstNumber: rawUpdates.gstNumber ?? null, receivedGstin: rawUpdates.gstin ?? null, updatesGstNumber: updates.gst_number ?? null, inUpdateData: updateData.gst_number ?? null, inSafeColumns: safeColumns.includes('gst_number'), columnExists: existingColumns.has('gst_number') }, hypothesisId: 'B', timestamp: Date.now() }));
+      }
+      // #endregion
 
       await appendVendorGeocodeToProfileUpdate({
         vendor,

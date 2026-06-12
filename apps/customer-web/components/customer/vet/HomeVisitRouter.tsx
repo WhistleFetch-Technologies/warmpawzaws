@@ -110,6 +110,7 @@ export function HomeVisitRouter({ phone, onBack, onNavigate, initialAddressFromB
           serviceStyle="at_home"
           title="Home Visit"
           subtitle="Vet comes to your doorstep"
+          compactFilterSheet
           onBack={handleBack}
           onNavigate={onNavigate}
           onSelectProvider={handleSelectProvider}
@@ -144,6 +145,7 @@ export function HomeVisitRouter({ phone, onBack, onNavigate, initialAddressFromB
           serviceStyle="at_home"
           title="Home Visit"
           subtitle="Vet comes to your doorstep"
+          compactFilterSheet
           onBack={handleBack}
           onNavigate={onNavigate}
           onSelectProvider={handleSelectProvider}

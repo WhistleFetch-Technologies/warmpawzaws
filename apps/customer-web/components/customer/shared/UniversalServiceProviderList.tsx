@@ -97,6 +97,8 @@ interface UniversalServiceProviderListProps {
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onSelectProvider: (provider: Provider) => void;
+  /** Shorter bottom sheet for vet tele / home visit — does not affect other consumers */
+  compactFilterSheet?: boolean;
 }
 
 // ============================================================================
@@ -109,6 +111,7 @@ interface FilterModalProps {
   filters: FilterState;
   onApply: (filters: FilterState) => void;
   specializations: string[];
+  compact?: boolean;
 }
 
 interface FilterState {
@@ -119,7 +122,7 @@ interface FilterState {
   sortBy: 'rating' | 'distance' | 'price' | 'experience' | 'availability';
 }
 
-function FilterModal({ isOpen, onClose, filters, onApply, specializations }: FilterModalProps) {
+function FilterModal({ isOpen, onClose, filters, onApply, specializations, compact = false }: FilterModalProps) {
   const [localFilters, setLocalFilters] = useState(filters);
 
   useEffect(() => {
@@ -131,7 +134,11 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
   return (
     <div className="fixed inset-0 bg-black/50 z-[60] flex items-end justify-center">
       <div
-        className="bg-white w-full max-w-lg rounded-t-3xl flex flex-col max-h-[calc(100dvh-var(--customer-tabbed-nav-offset)-0.75rem)] mb-[var(--customer-tabbed-nav-offset)]"
+        className={`bg-white w-full max-w-lg rounded-t-3xl flex flex-col mb-[var(--customer-tabbed-nav-offset)] ${
+          compact
+            ? 'max-h-[min(86dvh,40rem)]'
+            : 'max-h-[calc(100dvh-var(--customer-tabbed-nav-offset)-0.75rem)]'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 bg-white p-4 border-b flex items-center justify-between">
@@ -588,6 +595,7 @@ export function UniversalServiceProviderList({
   onBack,
   onNavigate,
   onSelectProvider,
+  compactFilterSheet = false,
 }: UniversalServiceProviderListProps) {
   // Use problemId as alias for specialization if provided
   const specializationFilter = specialization || problemId;
@@ -1074,6 +1082,7 @@ export function UniversalServiceProviderList({
         filters={filters}
         onApply={setFilters}
         specializations={specializations}
+        compact={compactFilterSheet}
       />
     </div>
   );

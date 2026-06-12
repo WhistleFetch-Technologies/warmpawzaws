@@ -3506,12 +3506,73 @@ export function CustomerHomeWrapper({
             } else if (screen === 'problem_selected') {
               setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Nutrition', roleId: 'pet_nutritionist' });
               setCurrentScreen('problem_grid_flow');
+            } else if (screen === 'expert-nutritionists') {
+              setPreviousScreen('nutritionist');
+              setCurrentScreen('expert-nutritionists');
             } else if (screen) {
               setCurrentScreen(screen as ScreenType);
             } else {
               handleBack();
             }
           }} 
+        />
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'expert-nutritionists') {
+    return (
+      <CustomerScreenWrapper customerPhone={phone}
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+        accountSidebar={accountSidebarOverlay}
+      >
+        <ExpertNutritionistsList
+          phone={phone}
+          onBack={() => setCurrentScreen('nutritionist')}
+          onNavigate={(screen, data) => {
+            if (screen === 'nutrition-meal-plans') {
+              if (!isCustomerMealPlansEnabled()) {
+                toast.info('Meal plans are coming soon.');
+                return;
+              }
+              if (data?.vendorId) {
+                setMealPlanVendorFocus({
+                  vendorId: String(data.vendorId),
+                  vendorSnapshot:
+                    data.vendorSnapshot && typeof data.vendorSnapshot === 'object'
+                      ? (data.vendorSnapshot as Record<string, unknown>)
+                      : undefined,
+                });
+              } else {
+                setMealPlanVendorFocus(null);
+              }
+              setPreviousScreen('expert-nutritionists');
+              setCurrentScreen('nutrition-meal-plans');
+            } else if (screen === 'nutritionist-booking') {
+              setPreviousScreen('expert-nutritionists');
+              setSelectedVendorId(data?.vendorId);
+              setVetServiceData({
+                vendorId: data?.vendorId,
+                serviceType: data?.serviceType || data?.category || 'pet_nutritionist',
+                serviceStyle: data?.serviceStyle || 'tele',
+                nutritionist: data?.nutritionist,
+                serviceId: data?.serviceId,
+              });
+              setCurrentScreen('nutritionist-booking');
+            } else if (screen === 'create-booking') {
+              setPreviousScreen('expert-nutritionists');
+              setSelectedVendorId(data?.vendorId);
+              setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'pet_nutritionist' });
+              setCurrentScreen('create-booking');
+            } else if (screen === 'pets') {
+              navigateToPets();
+            } else if (screen) {
+              setCurrentScreen(screen as ScreenType);
+            } else {
+              setCurrentScreen('nutritionist');
+            }
+          }}
         />
       </CustomerScreenWrapper>
     );

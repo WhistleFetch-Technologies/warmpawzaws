@@ -1162,6 +1162,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
           serviceStyle="tele"
           title="Tele Consultation"
           subtitle="Choose a vet for video consultation"
+          compactFilterSheet
           onBack={handleBack}
           onNavigate={onNavigate}
           onSelectProvider={handleSelectProvider}
