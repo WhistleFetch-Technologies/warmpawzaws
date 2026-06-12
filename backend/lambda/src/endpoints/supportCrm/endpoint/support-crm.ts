@@ -28,6 +28,7 @@ import {
   buildPaymentSnapshot,
   enrichSupportTicket,
   resolveCustomerProfile,
+  resolveVendorProfile,
   mapTicketForCrmList,
 } from '../support-ticket-helpers';
 import {
@@ -362,12 +363,17 @@ export function registerSupportCrmEndpoints(app: Hono) {
       }
 
       const enrichment = await enrichSupportTicket(ticket);
+      const vendorProfile = await resolveVendorProfile(
+        ticket.vendor_id ? String(ticket.vendor_id) : null,
+        enrichment.bookingContext
+      );
 
       return c.json({
         success: true,
         customerName: ticket.customer_name || null,
         customerEmail: ticket.customer_email || null,
         customerPhone: ticket.customer_phone || null,
+        vendorPhone: vendorProfile.vendorPhone || null,
         ticket: {
           ...ticket,
           ticket_type: enrichment.ticketType,
@@ -643,10 +649,12 @@ export function registerSupportCrmEndpoints(app: Hono) {
           COALESCE(NULLIF(TRIM(c.full_name), ''), NULLIF(TRIM(t.customer_name), '')) as customer_name,
           COALESCE(NULLIF(TRIM(c.email), ''), NULLIF(TRIM(t.customer_email), '')) as customer_email,
           COALESCE(NULLIF(TRIM(c.phone), ''), NULLIF(TRIM(t.customer_phone), '')) as customer_phone,
+          vnd.phone as vendor_phone,
           COALESCE(s.name, adm.name, adm.email) as assigned_agent_name,
           t.assigned_to as assigned_agent_id
         FROM support_tickets t
         LEFT JOIN customers c ON t.customer_id = c.id
+        LEFT JOIN vendors vnd ON t.vendor_id = vnd.id
         LEFT JOIN staff s ON t.assigned_to = s.id
         LEFT JOIN admins adm ON t.assigned_to = adm.id
         WHERE 1=1

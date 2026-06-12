@@ -175,6 +175,8 @@ export default function SupportCRM() {
 					lastUpdatedAt: t.lastUpdatedAt || t.last_updated_at || t.createdAt || t.created_at,
 					customerName: t.customerName || t.customer_name,
 					customerEmail: t.customerEmail || t.customer_email,
+					customerPhone: t.customerPhone || t.customer_phone,
+					vendorPhone: t.vendorPhone || t.vendor_phone,
 				}));
 				setTickets(ticketList);
 				
@@ -280,6 +282,12 @@ export default function SupportCRM() {
 					customerId: raw.customer_id || '',
 					customerName: raw.customer_name || res.customerName,
 					customerEmail: raw.customer_email || res.customerEmail,
+					customerPhone: raw.customer_phone || res.customerPhone,
+					vendorPhone:
+						res.vendorPhone ||
+						res.bookingContext?.vendorPhone ||
+						raw.vendor_phone ||
+						undefined,
 					lastUpdatedAt: raw.last_updated_at || raw.lastUpdatedAt || raw.created_at,
 					subject: raw.subject || '',
 					description: raw.message || raw.description || '',

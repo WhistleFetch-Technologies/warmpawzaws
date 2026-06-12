@@ -25,6 +25,7 @@ import {
 	getStatusColor,
 	isBookingTicket,
 	resolveCustomerDisplayName,
+	resolveVendorPhone,
 	ticketHasAssignee,
 } from "./crm-utils";
 
@@ -82,6 +83,7 @@ export function SupportCrmContextPanel({
 					{ticket.customerEmail && (
 						<p className="text-xs text-gray-500 break-all">{ticket.customerEmail}</p>
 					)}
+					<ContactPhone phone={ticket.customerPhone} />
 					<p className="text-[10px] font-mono text-gray-400 mt-1">{ticket.customerId}</p>
 					<div className="flex items-center gap-1.5 mt-2 text-xs text-gray-500">
 						<Clock className="w-3 h-3" />
@@ -124,11 +126,12 @@ export function SupportCrmContextPanel({
 					</Section>
 				)}
 
-				{(ticket.vendorId || ticket.bookingContext?.vendorName) && (
+				{(ticket.vendorId || ticket.bookingContext?.vendorName || resolveVendorPhone(ticket)) && (
 					<Section title="Vendor" icon={<User className="w-3.5 h-3.5" />}>
 						<p className="text-sm text-gray-900">
 							{ticket.bookingContext?.vendorName || "Linked vendor"}
 						</p>
+						<ContactPhone phone={resolveVendorPhone(ticket)} />
 						{ticket.vendorId && (
 							<p className="text-[10px] font-mono text-gray-500 break-all">{ticket.vendorId}</p>
 						)}
@@ -366,6 +369,20 @@ function Row({ label, value }: { label: string; value?: string | null }) {
 	return (
 		<p>
 			<span className="text-gray-500">{label}:</span> {value || "—"}
+		</p>
+	);
+}
+
+function ContactPhone({ phone }: { phone?: string | null }) {
+	const display = phone?.trim();
+	if (!display) return null;
+	const tel = display.replace(/[^\d+]/g, "");
+	return (
+		<p className="text-xs mt-1">
+			<span className="text-gray-500">Phone:</span>{" "}
+			<a href={`tel:${tel}`} className="text-[#FF8C42] hover:underline font-medium">
+				{display}
+			</a>
 		</p>
 	);
 }

@@ -17,6 +17,7 @@ export type BookingSnapshot = {
   amount?: number;
   vendorId?: string;
   vendorName?: string;
+  vendorPhone?: string;
   paymentStatus?: string;
 };
 
@@ -86,7 +87,8 @@ export async function buildBookingSnapshot(bookingId: string): Promise<BookingSn
       `SELECT b.id::text, b.status, b.booking_date, b.booking_time, b.total_amount::text,
               b.payment_status, b.service_style, b.service_type, b.vendor_id::text,
               COALESCE(s.name, b.service_type) AS service_name,
-              v.business_name AS vendor_name
+              v.business_name AS vendor_name,
+              v.phone AS vendor_phone
        FROM bookings b
        LEFT JOIN services s ON b.service_id = s.id
        LEFT JOIN vendors v ON b.vendor_id = v.id
@@ -107,6 +109,7 @@ export async function buildBookingSnapshot(bookingId: string): Promise<BookingSn
       amount: parseFloat(String(row.total_amount ?? '0')) || 0,
       vendorId: row.vendor_id ? String(row.vendor_id) : undefined,
       vendorName: row.vendor_name ? String(row.vendor_name) : undefined,
+      vendorPhone: row.vendor_phone ? String(row.vendor_phone) : undefined,
       paymentStatus: row.payment_status ? String(row.payment_status) : undefined,
     };
   } catch (err) {
@@ -299,6 +302,39 @@ export async function resolveCustomerProfile(ticket: {
   return { customerName: name, customerEmail: email, customerPhone: phone };
 }
 
+export type VendorProfile = {
+  vendorName: string | null;
+  vendorPhone: string | null;
+};
+
+export async function resolveVendorProfile(
+  vendorId?: string | null,
+  bookingContext?: BookingSnapshot | null
+): Promise<VendorProfile> {
+  let name = bookingContext?.vendorName?.trim() || null;
+  let phone = bookingContext?.vendorPhone?.trim() || null;
+
+  if (!vendorId) {
+    return { vendorName: name, vendorPhone: phone };
+  }
+
+  try {
+    const res = await query(
+      `SELECT business_name, phone FROM vendors WHERE id = $1::uuid LIMIT 1`,
+      [vendorId]
+    );
+    const row = res.rows?.[0] as Record<string, unknown> | undefined;
+    if (row) {
+      if (!name && row.business_name) name = String(row.business_name).trim();
+      if (!phone && row.phone) phone = String(row.phone).trim();
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return { vendorName: name, vendorPhone: phone };
+}
+
 export function mapTicketForCrmList(t: Record<string, unknown>, enrichment?: SupportTicketEnrichment) {
   const meta = (t.metadata as Record<string, unknown> | undefined) ?? {};
   const refundMeta = meta.refund_result as Record<string, unknown> | undefined;
@@ -318,9 +354,14 @@ export function mapTicketForCrmList(t: Record<string, unknown>, enrichment?: Sup
     category: t.category || undefined,
     customerName: t.customer_name || '',
     customerEmail: t.customer_email || '',
+    customerPhone: t.customer_phone || '',
     ticketType,
     bookingId: t.booking_id ? String(t.booking_id) : undefined,
     vendorId: t.vendor_id ? String(t.vendor_id) : undefined,
+    vendorPhone:
+      (t.vendor_phone as string | undefined) ||
+      enrichment?.bookingContext?.vendorPhone ||
+      '',
     isRefundable: enrichment?.isRefundable ?? false,
     refundBlockReason: enrichment?.refundBlockReason,
     bookingSummary: enrichment?.bookingContext

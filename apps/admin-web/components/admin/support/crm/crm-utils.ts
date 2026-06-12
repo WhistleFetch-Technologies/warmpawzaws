@@ -156,6 +156,14 @@ export function resolveCustomerDisplayName(ticket: Ticket): string {
 	return "Unknown customer";
 }
 
+export function resolveVendorPhone(ticket: Ticket): string | null {
+	const direct = ticket.vendorPhone?.trim();
+	if (direct) return direct;
+	const fromBooking = ticket.bookingContext?.vendorPhone?.trim();
+	if (fromBooking) return fromBooking;
+	return null;
+}
+
 export function matchesSearch(ticket: Ticket, query: string): boolean {
 	if (!query.trim()) return true;
 	const q = query.trim().toLowerCase();

@@ -15,6 +15,7 @@ export interface BookingContextPanel {
 	amount?: number;
 	vendorId?: string;
 	vendorName?: string;
+	vendorPhone?: string;
 	paymentStatus?: string;
 }
 
@@ -36,6 +37,7 @@ export interface Ticket {
 	customerId: string;
 	customerName?: string;
 	customerEmail?: string;
+	customerPhone?: string;
 	subject: string;
 	description: string;
 	status:
@@ -61,6 +63,7 @@ export interface Ticket {
 	ticketType?: "general" | "booking";
 	bookingId?: string;
 	vendorId?: string;
+	vendorPhone?: string;
 	isRefundable?: boolean;
 	refundBlockReason?: string;
 	bookingSummary?: BookingSummary;

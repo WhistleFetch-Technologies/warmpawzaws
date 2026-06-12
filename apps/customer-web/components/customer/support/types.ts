@@ -6,6 +6,7 @@ export interface SupportTicketResponseRow {
   id?: string;
   message?: string;
   responder_type?: string;
+  responder_name?: string;
   created_at?: string;
   is_internal?: boolean;
 }
