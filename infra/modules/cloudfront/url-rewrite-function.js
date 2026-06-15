@@ -52,6 +52,8 @@ function handler(event) {
     { pattern: /^\/nutritionist\/[^/]+$/, rewrite: '/nutritionist/placeholder.html' },
     // Shop product detail — static export only builds /shop/placeholder; real ids hydrate client-side.
     { pattern: /^\/shop\/[^/]+$/, rewrite: '/shop/placeholder.html' },
+    // Referral invite links — /invite/WARM… → placeholder shell (client reads code from URL).
+    { pattern: /^\/invite\/[^/]+$/, rewrite: '/invite/placeholder.html' },
   ];
 
   for (var i = 0; i < dynamicRoutes.length; i++) {

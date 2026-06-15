@@ -11,6 +11,10 @@ import { select, query, update, insert, withTransaction } from '../../database/r
 import type { AwardPointsParams } from './loyalty&reward/loyalty-points-service';
 import { loyaltyPointsService } from './loyalty&reward/loyalty-points-service';
 import { loyaltyRulesInitService } from './loyalty-rules-init-service';
+import { getReferralProgramSettings } from './referral-program-settings';
+
+export { getReferralProgramSettings } from './referral-program-settings';
+export type { ReferralProgramSettings } from './referral-program-settings';
 
 export interface ProcessReferralSignupParams {
   customerId?: string;
@@ -226,6 +230,14 @@ export async function processReferralSignup(
       referrals = caseInsensitiveResult.rows;
     }
 
+    const programSettings = await getReferralProgramSettings();
+    if (!programSettings.is_enabled) {
+      return {
+        success: false,
+        error: 'Referral program is temporarily paused',
+      };
+    }
+
     const rulesInit = await loyaltyRulesInitService.initializeReferralRules();
     if (!rulesInit.referralSignup || !rulesInit.referFriend) {
       console.error(`[REFERRAL] ❌ CRITICAL: Loyalty rules not initialized! referralSignup=${rulesInit.referralSignup}, referFriend=${rulesInit.referFriend}`);
@@ -260,28 +272,48 @@ export async function processReferralSignup(
       };
     }
 
-    // 4. Deprecated: Points are not awarded from endpoints/services. Action-source handles awards.
-    let referredPoints = 0;
+    // 4. Atomic max-redemption + insert redemption row (no points at signup)
+    const maxCap =
+      referral.max_redemptions != null
+        ? Number(referral.max_redemptions)
+        : programSettings.max_redemptions_per_code;
 
-    // 5. Award points to referrer (via refer_friend rule) - CRITICAL: Must succeed
-    let referrerPoints = 0;
-    let referrerPointsAttempts = 0;
-    const maxRetries = 2;
-    
-    // No direct awarding here; handled by consumer on appropriate ActionOccurred event
-    
-    // No awards attempted; keep record linking only
-
-    // 6. Record peer redemption (one code, many friends; master referrals row is not overwritten)
     try {
-      await query(
-        `INSERT INTO referral_redemptions (referral_id, referred_id, created_at)
-         VALUES ($1, $2, NOW())`,
-        [referral.id, customerId]
-      );
+      await withTransaction(async (client) => {
+        if (maxCap != null && Number.isFinite(maxCap) && maxCap > 0) {
+          const capResult = await client.query(
+            `UPDATE referrals
+             SET redemption_count = redemption_count + 1
+             WHERE id = $1
+               AND redemption_count < $2
+             RETURNING id`,
+            [referral.id, maxCap]
+          );
+          if (capResult.rowCount === 0) {
+            throw new Error('REFERRAL_LIMIT_REACHED');
+          }
+        } else {
+          await client.query(
+            `UPDATE referrals SET redemption_count = redemption_count + 1 WHERE id = $1`,
+            [referral.id]
+          );
+        }
+
+        await client.query(
+          `INSERT INTO referral_redemptions (referral_id, referred_id, status, created_at)
+           VALUES ($1, $2, 'pending', NOW())`,
+          [referral.id, customerId]
+        );
+      });
       console.log(`[REFERRAL] ✅ referral_redemptions row for referral ${referral.id}, referred ${customerId}`);
     } catch (insErr: unknown) {
       const msg = String((insErr as { message?: string })?.message || insErr);
+      if (msg === 'REFERRAL_LIMIT_REACHED') {
+        return {
+          success: false,
+          error: 'Referral code limit reached',
+        };
+      }
       if (msg.includes('referral_redemptions_referred_id_uidx') || msg.includes('duplicate key') || msg.includes('unique')) {
         return {
           success: false,
@@ -918,10 +950,12 @@ export async function processCustomerReferralFirstBookingReward(
   }
 
   const bookingRes = await query(
-    `SELECT id, customer_id, status FROM bookings WHERE id = $1`,
+    `SELECT id, customer_id, status, total_amount FROM bookings WHERE id = $1`,
     [bookingId]
   );
-  const booking = bookingRes.rows?.[0] as { id: string; customer_id: string; status?: string } | undefined;
+  const booking = bookingRes.rows?.[0] as
+    | { id: string; customer_id: string; status?: string; total_amount?: number | string }
+    | undefined;
   if (!booking?.customer_id) {
     console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Booking not found or no customer_id', { eventId, bookingId });
     return;
@@ -943,12 +977,77 @@ export async function processCustomerReferralFirstBookingReward(
     return;
   }
 
-  const link = await resolvePeerReferralByRefereeId(refereeId);
-  if (!link) {
-    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] No peer referral link for customer', { eventId, refereeId });
+  const programSettings = await getReferralProgramSettings();
+  if (!programSettings.is_enabled) {
+    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Program disabled', { eventId });
     return;
   }
-  const { referralId, referrerId, referralCode, redemptionId } = link;
+
+  const bookingAmount = Number(booking.total_amount ?? 0);
+  if (
+    programSettings.minimum_booking_amount != null &&
+    bookingAmount < Number(programSettings.minimum_booking_amount)
+  ) {
+    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Booking below minimum amount', {
+      eventId,
+      bookingAmount,
+      minimum: programSettings.minimum_booking_amount,
+    });
+    return;
+  }
+
+  const fromRedemption = await query(
+    `SELECT rr.id AS redemption_id, rr.status AS redemption_status,
+            r.id AS referral_id, r.referrer_id, r.referral_code
+     FROM referral_redemptions rr
+     INNER JOIN referrals r ON r.id = rr.referral_id
+     WHERE rr.referred_id = $1
+     LIMIT 1`,
+    [refereeId]
+  );
+
+  let referralId: string;
+  let referrerId: string;
+  let referralCode: string;
+  let redemptionId: string | null = null;
+  let redemptionStatus: string | null = null;
+
+  if (fromRedemption.rows.length > 0) {
+    const row = fromRedemption.rows[0] as {
+      redemption_id: string;
+      redemption_status?: string;
+      referral_id: string;
+      referrer_id: string;
+      referral_code: string;
+    };
+    redemptionId = row.redemption_id;
+    redemptionStatus = row.redemption_status ?? 'pending';
+    referralId = row.referral_id;
+    referrerId = row.referrer_id;
+    referralCode = row.referral_code;
+  } else {
+    const leg = await query(
+      `SELECT id, referrer_id, referral_code, referred_id FROM referrals WHERE referred_id = $1 LIMIT 1`,
+      [refereeId]
+    );
+    if (leg.rows.length === 0) {
+      console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] No peer referral link for customer', { eventId, refereeId });
+      return;
+    }
+    const referral = leg.rows[0] as {
+      id: string;
+      referrer_id: string;
+      referral_code: string;
+      referred_id: string;
+    };
+    referralId = referral.id;
+    referrerId = referral.referrer_id;
+    referralCode = referral.referral_code;
+    if (!referrerId || referrerId === referral.referred_id) {
+      console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Invalid referrer', { eventId, referralId: referral.id });
+      return;
+    }
+  }
 
   if (!referrerId || referrerId === refereeId) {
     console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Invalid referrer_id', { eventId, referralId });
@@ -961,49 +1060,149 @@ export async function processCustomerReferralFirstBookingReward(
     return;
   }
 
-  const dup = await query(
-    `SELECT 1 FROM loyalty_transactions
-     WHERE customer_id = $1
-       AND transaction_type = 'earned'
-       AND reference_type = 'customer_referral'
-       AND reference_id = $2
-     LIMIT 1`,
-    [referrerId, refereeId]
+  if (redemptionId && redemptionStatus === 'rewarded') {
+    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Already rewarded', { eventId, redemptionId });
+    return;
+  }
+
+  if (redemptionId && redemptionStatus === 'rejected') {
+    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Redemption rejected', { eventId, redemptionId });
+    return;
+  }
+
+  const referrerAction = programSettings.referrer_action_name || 'customer_referral';
+  const refereeAction = programSettings.referee_action_name || 'referral_signup';
+  const awardReferenceId = redemptionId ?? refereeId;
+
+  async function alreadyAwarded(
+    customerId: string,
+    actionName: string,
+    referenceType: string,
+    referenceId: string
+  ): Promise<boolean> {
+    const byRedemption = await query(
+      `SELECT 1 FROM loyalty_transactions
+       WHERE customer_id = $1
+         AND transaction_type = 'earned'
+         AND reference_type = $2
+         AND reference_id = $3
+       LIMIT 1`,
+      [customerId, referenceType, referenceId]
+    );
+    if (byRedemption.rows.length > 0) return true;
+
+    if (referenceType === 'customer_referral' && referenceId === redemptionId && redemptionId) {
+      const legacy = await query(
+        `SELECT 1 FROM loyalty_transactions
+         WHERE customer_id = $1
+           AND transaction_type = 'earned'
+           AND reference_type = 'customer_referral'
+           AND reference_id = $2
+         LIMIT 1`,
+        [customerId, refereeId]
+      );
+      if (legacy.rows.length > 0) return true;
+    }
+    return false;
+  }
+
+  if (redemptionId) {
+    await query(
+      `UPDATE referral_redemptions
+       SET status = 'qualified', qualified_at = COALESCE(qualified_at, NOW())
+       WHERE id = $1 AND status IN ('pending', 'qualified')`,
+      [redemptionId]
+    );
+  }
+
+  const referrerAlreadyAwarded = await alreadyAwarded(
+    referrerId,
+    referrerAction,
+    'customer_referral',
+    awardReferenceId
   );
-  if (dup.rows.length > 0) {
-    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Referrer already awarded for this friend', {
+
+  if (!referrerAlreadyAwarded) {
+    const result = await loyaltyPointsService.awardPoints({
+      customerId: referrerId,
+      actionName: referrerAction,
+      referenceType: 'customer_referral',
+      referenceId: awardReferenceId,
+      description: 'Referral reward — friend booked first appointment',
+      metadata: {
+        eventId,
+        referralsId: referralId,
+        redemptionId,
+        referrerId,
+        referredId: refereeId,
+        referralCode,
+        bookingId,
+      },
+    });
+
+    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Award result (referrer)', {
+      eventId,
+      referrerId,
+      refereeId,
+      bookingId,
+      points: result.points,
+      walletCredited: result.walletCredited,
+    });
+  } else {
+    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Referrer already awarded', {
       eventId,
       referrerId,
       refereeId,
     });
-    return;
   }
 
-  const result = await loyaltyPointsService.awardPoints({
-    customerId: referrerId,
-    actionName: 'customer_referral',
-    referenceType: 'customer_referral',
-    referenceId: refereeId,
-    description: 'Referral reward — friend booked first appointment',
-    metadata: {
-      eventId,
-      referralsId: referralId,
-      redemptionId,
-      referrerId,
-      referredId: refereeId,
-      referralCode,
-      bookingId,
-    },
-  });
-
-  console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Award result (referrer)', {
-    eventId,
-    referrerId,
+  const refereeAlreadyAwarded = await alreadyAwarded(
     refereeId,
-    bookingId,
-    points: result.points,
-    walletCredited: result.walletCredited,
-  });
+    refereeAction,
+    'referral_signup',
+    awardReferenceId
+  );
+
+  if (!refereeAlreadyAwarded) {
+    const refereeResult = await loyaltyPointsService.awardPoints({
+      customerId: refereeId,
+      actionName: refereeAction,
+      referenceType: 'referral_signup',
+      referenceId: awardReferenceId,
+      description: 'Welcome bonus — first booking with referral code',
+      metadata: {
+        eventId,
+        referralsId: referralId,
+        redemptionId,
+        referrerId,
+        referredId: refereeId,
+        referralCode,
+        bookingId,
+      },
+    });
+
+    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Award result (referee)', {
+      eventId,
+      refereeId,
+      bookingId,
+      points: refereeResult.points,
+      walletCredited: refereeResult.walletCredited,
+    });
+  } else {
+    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Referee already awarded', {
+      eventId,
+      refereeId,
+    });
+  }
+
+  if (redemptionId) {
+    await query(
+      `UPDATE referral_redemptions
+       SET status = 'rewarded', rewarded_at = COALESCE(rewarded_at, NOW())
+       WHERE id = $1`,
+      [redemptionId]
+    );
+  }
 }
 
 export interface CustomerReferralRefereeBookingRewardParams {

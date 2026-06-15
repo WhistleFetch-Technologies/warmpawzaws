@@ -279,7 +279,7 @@ export function CustomerSidebar({
               {/* ✅ NEW: Referral & Rewards Link */}
               <button 
                 onClick={() => {
-                  onNavigate?.('referral');
+                  onNavigate?.('referral-system');
                   onClose();
                 }}
                 className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-xl hover:shadow-md transition-all"

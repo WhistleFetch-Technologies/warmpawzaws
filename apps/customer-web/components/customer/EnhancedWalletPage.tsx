@@ -481,7 +481,7 @@ export function EnhancedWalletPage({
             </button>
             
             <button 
-              onClick={() => onNavigate?.('referral')}
+              onClick={() => onNavigate?.('referral-system')}
               className="flex flex-col items-center p-3 rounded-2xl hover:bg-gray-50 transition"
             >
               <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mb-2">

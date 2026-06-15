@@ -8,6 +8,10 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import {
+  buildReferralShareBody,
+  buildReferralShareMessage,
+} from '@/lib/referral-share';
 
 interface ReferralSystemPageProps {
   phone?: string;
@@ -175,11 +179,9 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
   const shareReferral = async () => {
     if (!stats?.referral_code) return;
 
-    const shareTitle = 'Join Warmpawz';
     const code = stats.referral_code;
-    const referralLink = `${window.location.origin}/auth?ref=${encodeURIComponent(code)}`;
-    const shareLine = `Join Warmpawz and get amazing pet care services! Use my referral code: ${code}`;
-    const combinedBody = `${shareLine}\n${referralLink}`;
+    const { title: shareTitle, text: shareLine, url: referralLink } = buildReferralShareMessage(code);
+    const combinedBody = buildReferralShareBody(code);
     const isAndroid = /Android/i.test(navigator.userAgent);
 
     const textPayloadForIntent =
@@ -296,26 +298,34 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
             <div className="text-center mb-4">
               <GiftIcon className="w-12 h-12 mx-auto mb-3" />
               <h2 className="text-xl font-bold mb-2">Your Referral Code</h2>
-              <div className="flex items-center justify-center gap-3 mb-4">
-                <code className="text-3xl font-bold bg-white/20 px-4 py-2 rounded-lg">
-                  {stats?.referral_code || 'REF123'}
-                </code>
+              <p className="text-sm text-white/90 mb-4">Share this permanent code with friends</p>
+              <div className="flex items-center gap-2 mb-4">
+                <input
+                  type="text"
+                  readOnly
+                  value={stats?.referral_code || 'REF123'}
+                  className="flex-1 text-center text-xl font-bold tracking-wider bg-white/15 text-white border border-white/30 rounded-xl px-4 py-3 cursor-default select-all"
+                  aria-label="Your referral code"
+                />
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={copyReferralCode}
-                  className="text-white hover:bg-white/20"
+                  className="text-white hover:bg-white/20 shrink-0"
+                  aria-label="Copy referral code"
                 >
                   {copied ? <CheckCircle2 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={shareReferral}
+                  className="text-white hover:bg-white/20 shrink-0"
+                  aria-label="Share referral link"
+                >
+                  <Share2 className="w-5 h-5" />
+                </Button>
               </div>
-              <Button
-                onClick={shareReferral}
-                className="w-full bg-white text-[#FF8C42] hover:bg-gray-100"
-              >
-                <Share2 className="w-4 h-4 mr-2" />
-                Share Referral Link
-              </Button>
             </div>
           </Card>
 
@@ -353,7 +363,7 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
                   </div>
                   <div className="flex items-start gap-3">
                     <div className="w-6 h-6 rounded-full bg-[#FF8C42] text-white flex items-center justify-center flex-shrink-0 text-xs font-bold">3</div>
-                    <p>You both earn rewards! ₹100 for you, ₹50 for them</p>
+                    <p>You both earn Pawints after their first paid booking!</p>
                   </div>
                 </div>
               </Card>
