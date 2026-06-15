@@ -202,7 +202,7 @@ export default function SetPasswordPage() {
           style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
         >
           <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-xl mb-4 p-2">
-            <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
+            <img src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-black text-center">Create password</h1>
           <p className="text-sm text-black/80 text-center mt-2 px-2">

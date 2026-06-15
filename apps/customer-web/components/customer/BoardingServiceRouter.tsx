@@ -41,7 +41,7 @@ import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 
 const BOARDING_IMG = '/images/home/Boarding';
 
-const BOARDING_HEADER_TRAILING = `${BOARDING_IMG}/header-img.png`;
+const BOARDING_HEADER_TRAILING = `${BOARDING_IMG}/header-img.webp`;
 
 const BOARDING_HEADER_PILLS = [
   { icon: Shield, label: 'Verified Caregivers' },
@@ -120,7 +120,7 @@ const BOARDING_CARD_LINKS: {
     subtitle: 'Extended stays',
     Icon: Moon,
     iconWrap: HUB_SERVICE_ICON_WRAP.overnightMoon,
-    image: `${BOARDING_IMG}/overnight.png`,
+    image: `${BOARDING_IMG}/overnight.webp`,
     cardBg: 'bg-indigo-50',
     badge: 'Popular',
   },
@@ -130,7 +130,7 @@ const BOARDING_CARD_LINKS: {
     subtitle: 'All-day care',
     Icon: Sun,
     iconWrap: HUB_SERVICE_ICON_WRAP.sunDaytime,
-    image: `${BOARDING_IMG}/full-day.png`,
+    image: `${BOARDING_IMG}/full-day.webp`,
     cardBg: 'bg-amber-50',
   },
   {
@@ -139,7 +139,7 @@ const BOARDING_CARD_LINKS: {
     subtitle: 'Flexible hours',
     Icon: Clock,
     iconWrap: HUB_SERVICE_ICON_WRAP.clockFlexible,
-    image: `${BOARDING_IMG}/half-day.png`,
+    image: `${BOARDING_IMG}/half-day.webp`,
     cardBg: 'bg-rose-50',
   },
   {
@@ -148,7 +148,7 @@ const BOARDING_CARD_LINKS: {
     subtitle: 'Fri–Sun stays',
     Icon: CalendarRange,
     iconWrap: HUB_SERVICE_ICON_WRAP.calendarWeekend,
-    image: `${BOARDING_IMG}/weekend-board.png`,
+    image: `${BOARDING_IMG}/weekend-board.webp`,
     cardBg: 'bg-purple-50',
   },
   {
@@ -157,7 +157,7 @@ const BOARDING_CARD_LINKS: {
     subtitle: '7-day packages',
     Icon: Calendar,
     iconWrap: HUB_SERVICE_ICON_WRAP.calendarWeekly,
-    image: `${BOARDING_IMG}/weekly-board.png`,
+    image: `${BOARDING_IMG}/weekly-board.webp`,
     cardBg: 'bg-orange-50',
   },
 ];

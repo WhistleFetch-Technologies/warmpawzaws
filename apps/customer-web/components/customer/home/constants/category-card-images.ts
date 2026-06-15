@@ -21,7 +21,7 @@ export const HOME_CATEGORY_IMAGE_URLS: Record<string, string> = {
 };
 
 /** Default hero pet image when CMS banner has no imageUrl. */
-export const DEFAULT_HOME_HERO_IMAGE_URL = '/images/home/dog-peep.png';
+export const DEFAULT_HOME_HERO_IMAGE_URL = '/images/home/dog-peep.webp';
 
 export function getCategoryCardImageUrl(screenOrCategory: string | undefined): string | undefined {
   if (!screenOrCategory) return undefined;

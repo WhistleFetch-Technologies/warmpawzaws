@@ -99,7 +99,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
           <>
             {/* Logo */}
             <div className="flex justify-center pt-8 mb-6">
-              <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
+              <img src={'/logo.webp'} alt="Warmpawz" className="w-16 h-16 object-contain" />
             </div>
 
             {/* Orange Circle Icon */}
@@ -177,7 +177,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
           <>
             {/* Logo */}
             <div className="flex justify-center pt-8 mb-6">
-              <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
+              <img src={'/logo.webp'} alt="Warmpawz" className="w-16 h-16 object-contain" />
             </div>
 
             {/* Orange Circle Icon */}
@@ -313,7 +313,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
           <>
             {/* Logo */}
             <div className="flex justify-center pt-8 mb-6">
-              <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
+              <img src={'/logo.webp'} alt="Warmpawz" className="w-16 h-16 object-contain" />
             </div>
 
             {/* Orange Circle Icon */}

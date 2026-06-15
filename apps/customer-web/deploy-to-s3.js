@@ -102,6 +102,7 @@ function getContentType(filename) {
     '.css': 'text/css',
     '.json': 'application/json',
     '.png': 'image/png',
+    '.webp': 'image/webp',
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
     '.gif': 'image/gif',

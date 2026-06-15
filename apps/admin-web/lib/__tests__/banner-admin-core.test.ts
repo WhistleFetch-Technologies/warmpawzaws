@@ -52,11 +52,11 @@ describe('banner image URL helpers', () => {
 
   it('isBrokenBannerImageUrl detects legacy hero-pet path', () => {
     expect(isBrokenBannerImageUrl('/images/home/hero-pet.webp')).toBe(true);
-    expect(isBrokenBannerImageUrl('/images/home/dog-peep.png')).toBe(false);
+    expect(isBrokenBannerImageUrl('/images/home/dog-peep.webp')).toBe(false);
   });
 
   it('DEFAULT_HOME_HERO_BANNER_IMAGE_PATH aligns with customer-web asset', () => {
-    expect(DEFAULT_HOME_HERO_BANNER_IMAGE_PATH).toBe('/images/home/dog-peep.png');
+    expect(DEFAULT_HOME_HERO_BANNER_IMAGE_PATH).toBe('/images/home/dog-peep.webp');
   });
 });
 

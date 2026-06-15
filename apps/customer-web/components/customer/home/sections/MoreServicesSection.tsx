@@ -6,10 +6,10 @@ import { Users, Shield, Dog, Coffee, ChevronRight, PawPrint, Heart, MapPin, Spar
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
 const MORE_SERVICES_IMAGES = {
-  peer: '/images/home/more services/peer.png',
-  insurance: '/images/home/more services/insurance.png',
-  walker: '/images/home/more services/walker.png',
-  cafe: '/images/home/more services/cafe.png',
+  peer: '/images/home/more services/peer.webp',
+  insurance: '/images/home/more services/insurance.webp',
+  walker: '/images/home/more services/walker.webp',
+  cafe: '/images/home/more services/cafe.webp',
 } as const;
 
 const MORE_SERVICES_CARDS = [

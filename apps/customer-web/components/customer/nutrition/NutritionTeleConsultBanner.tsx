@@ -11,7 +11,7 @@ import {
   PawPrint,
 } from 'lucide-react';
 
-const BANNER_IMAGE = '/images/home/Nutrition/banner-img.png';
+const BANNER_IMAGE = '/images/home/Nutrition/banner-img.webp';
 
 const FEATURE_PILLS = [
   { Icon: ShieldCheck, label: 'Expert Nutritionists' },

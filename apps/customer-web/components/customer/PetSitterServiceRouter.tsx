@@ -36,8 +36,8 @@ import { HUB_SERVICE_ICON_WRAP } from "@/lib/hub-service-option-styles";
 
 const SITTING_IMG = "/images/home/Sitting";
 
-const SITTING_HEADER_TRAILING = `${SITTING_IMG}/header.png`;
-const SITTING_BANNER_IMAGE = `${SITTING_IMG}/banner-img.png`;
+const SITTING_HEADER_TRAILING = `${SITTING_IMG}/header.webp`;
+const SITTING_BANNER_IMAGE = `${SITTING_IMG}/banner-img.webp`;
 
 const SITTING_HEADER_ICON =
   "fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none";
@@ -99,7 +99,7 @@ const SITTING_OPTIONS: {
     price: "₹899+",
     icon: Moon,
     iconWrap: HUB_SERVICE_ICON_WRAP.overnightMoon,
-    image: `${SITTING_IMG}/overnight.png`,
+    image: `${SITTING_IMG}/overnight.webp`,
     cardBg: "bg-indigo-50",
   },
   {
@@ -109,7 +109,7 @@ const SITTING_OPTIONS: {
     price: "₹549+",
     icon: Sun,
     iconWrap: HUB_SERVICE_ICON_WRAP.sunDaytime,
-    image: `${SITTING_IMG}/day-visit.png`,
+    image: `${SITTING_IMG}/day-visit.webp`,
     cardBg: "bg-amber-50",
   },
   {
@@ -119,7 +119,7 @@ const SITTING_OPTIONS: {
     price: "₹1,499+",
     icon: Calendar,
     iconWrap: HUB_SERVICE_ICON_WRAP.calendarWeekly,
-    image: `${SITTING_IMG}/extended-sitting.png`,
+    image: `${SITTING_IMG}/extended-sitting.webp`,
     cardBg: "bg-orange-50",
   },
   {
@@ -129,7 +129,7 @@ const SITTING_OPTIONS: {
     price: "₹249+",
     icon: Clock,
     iconWrap: HUB_SERVICE_ICON_WRAP.clockFlexible,
-    image: `${SITTING_IMG}/dropin-visit.png`,
+    image: `${SITTING_IMG}/dropin-visit.webp`,
     cardBg: "bg-rose-50",
   },
 ];

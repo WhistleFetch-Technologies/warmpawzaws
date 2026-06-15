@@ -67,17 +67,17 @@ const TITLE_ICON_RULES: { match: RegExp; Icon: LucideIcon }[] = [
 ];
 
 const TITLE_IMAGE_RULES: { match: RegExp; src: string }[] = [
-  { match: /skin|coat|fur|derma|groom/i, src: `${TRENDING_NOW_IMAGES_BASE}/skun-and-coat.png` },
-  { match: /dental|teeth|tooth|oral/i, src: `${TRENDING_NOW_IMAGES_BASE}/dental-care.png` },
-  { match: /heart|cardio|cardiovascular/i, src: `${TRENDING_NOW_IMAGES_BASE}/heart-and-cardiovascular.png` },
-  { match: /general|health|wellness|immune/i, src: `${TRENDING_NOW_IMAGES_BASE}/general-health.png` },
+  { match: /skin|coat|fur|derma|groom/i, src: `${TRENDING_NOW_IMAGES_BASE}/skun-and-coat.webp` },
+  { match: /dental|teeth|tooth|oral/i, src: `${TRENDING_NOW_IMAGES_BASE}/dental-care.webp` },
+  { match: /heart|cardio|cardiovascular/i, src: `${TRENDING_NOW_IMAGES_BASE}/heart-and-cardiovascular.webp` },
+  { match: /general|health|wellness|immune/i, src: `${TRENDING_NOW_IMAGES_BASE}/general-health.webp` },
 ];
 
 const RANK_FALLBACK_IMAGES = [
-  `${TRENDING_NOW_IMAGES_BASE}/skun-and-coat.png`,
-  `${TRENDING_NOW_IMAGES_BASE}/dental-care.png`,
-  `${TRENDING_NOW_IMAGES_BASE}/heart-and-cardiovascular.png`,
-  `${TRENDING_NOW_IMAGES_BASE}/general-health.png`,
+  `${TRENDING_NOW_IMAGES_BASE}/skun-and-coat.webp`,
+  `${TRENDING_NOW_IMAGES_BASE}/dental-care.webp`,
+  `${TRENDING_NOW_IMAGES_BASE}/heart-and-cardiovascular.webp`,
+  `${TRENDING_NOW_IMAGES_BASE}/general-health.webp`,
 ];
 
 /** Rank-based color theme (cycles after 4). */
@@ -93,7 +93,7 @@ export function getTrendingCardIcon(title: string, rankIndex: number): LucideIco
   return getTrendingCardTheme(rankIndex).Icon;
 }
 
-/** Pick a PNG icon from problem title, falling back to rank-based image. */
+/** Pick a WebP icon from problem title, falling back to rank-based image. */
 export function getTrendingCardImage(title: string, rankIndex: number): string {
   for (const rule of TITLE_IMAGE_RULES) {
     if (rule.match.test(title)) return rule.src;

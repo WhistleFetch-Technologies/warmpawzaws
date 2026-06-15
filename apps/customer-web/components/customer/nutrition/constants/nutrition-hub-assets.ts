@@ -15,7 +15,7 @@ import {
 export const NUTRITION_IMG = '/images/home/Nutrition';
 
 /** Dog + cat composite for header hero (no dedicated nutrition header asset yet). */
-export const NUTRITION_HEADER_BANNER = `${NUTRITION_IMG}/prescription-diet.png`;
+export const NUTRITION_HEADER_BANNER = `${NUTRITION_IMG}/prescription-diet.webp`;
 
 export type NutritionNeedCardDef = {
   id: string;
@@ -31,7 +31,7 @@ export const NUTRITION_NEED_CARDS: NutritionNeedCardDef[] = [
   {
     id: 'lab_diagnostics',
     name: 'Lab & Diagnostics',
-    image: `${NUTRITION_IMG}/lab-diagonosis.png`,
+    image: `${NUTRITION_IMG}/lab-diagonosis.webp`,
     Icon: FlaskConical,
     iconColor: 'text-blue-600',
     iconBg: 'bg-blue-100',
@@ -40,7 +40,7 @@ export const NUTRITION_NEED_CARDS: NutritionNeedCardDef[] = [
   {
     id: 'palliative',
     name: 'Palliative & End-of-Life Care',
-    image: `${NUTRITION_IMG}/palliative.png`,
+    image: `${NUTRITION_IMG}/palliative.webp`,
     Icon: Sun,
     iconColor: 'text-pink-600',
     iconBg: 'bg-pink-100',
@@ -48,7 +48,7 @@ export const NUTRITION_NEED_CARDS: NutritionNeedCardDef[] = [
   {
     id: 'reproductive',
     name: 'Reproductive & Breeding',
-    image: `${NUTRITION_IMG}/productive.png`,
+    image: `${NUTRITION_IMG}/productive.webp`,
     Icon: Heart,
     iconColor: 'text-pink-600',
     iconBg: 'bg-pink-100',
@@ -57,7 +57,7 @@ export const NUTRITION_NEED_CARDS: NutritionNeedCardDef[] = [
   {
     id: 'diet_plan',
     name: 'Custom Diet Plans',
-    image: `${NUTRITION_IMG}/custom-diet.png`,
+    image: `${NUTRITION_IMG}/custom-diet.webp`,
     Icon: FileText,
     iconColor: 'text-green-600',
     iconBg: 'bg-green-100',
@@ -66,7 +66,7 @@ export const NUTRITION_NEED_CARDS: NutritionNeedCardDef[] = [
   {
     id: 'puppy_nutrition',
     name: 'Puppy Nutrition',
-    image: `${NUTRITION_IMG}/puppy-nutrition.png`,
+    image: `${NUTRITION_IMG}/puppy-nutrition.webp`,
     Icon: Dog,
     iconColor: 'text-blue-600',
     iconBg: 'bg-blue-100',
@@ -75,7 +75,7 @@ export const NUTRITION_NEED_CARDS: NutritionNeedCardDef[] = [
   {
     id: 'senior_nutrition',
     name: 'Senior Pet Nutrition',
-    image: `${NUTRITION_IMG}/senior-pet-nutrition.png`,
+    image: `${NUTRITION_IMG}/senior-pet-nutrition.webp`,
     Icon: Heart,
     iconColor: 'text-purple-600',
     iconBg: 'bg-purple-100',
@@ -84,7 +84,7 @@ export const NUTRITION_NEED_CARDS: NutritionNeedCardDef[] = [
   {
     id: 'weight_management',
     name: 'Weight Management',
-    image: `${NUTRITION_IMG}/weight-measurment.png`,
+    image: `${NUTRITION_IMG}/weight-measurment.webp`,
     Icon: Activity,
     iconColor: 'text-orange-600',
     iconBg: 'bg-orange-100',
@@ -93,7 +93,7 @@ export const NUTRITION_NEED_CARDS: NutritionNeedCardDef[] = [
   {
     id: 'allergies',
     name: 'Allergy Diet',
-    image: `${NUTRITION_IMG}/allergy-diet.png`,
+    image: `${NUTRITION_IMG}/allergy-diet.webp`,
     Icon: AlertTriangle,
     iconColor: 'text-red-600',
     iconBg: 'bg-red-100',
@@ -102,7 +102,7 @@ export const NUTRITION_NEED_CARDS: NutritionNeedCardDef[] = [
   {
     id: 'special_diet',
     name: 'Prescription Diet',
-    image: `${NUTRITION_IMG}/prescription-diet.png`,
+    image: `${NUTRITION_IMG}/prescription-diet.webp`,
     Icon: Pill,
     iconColor: 'text-teal-600',
     iconBg: 'bg-teal-100',
@@ -115,7 +115,7 @@ export const NUTRITION_SERVICE_CARDS = [
     id: 'diet_consultation',
     label: 'Diet Consultation',
     description: 'Personalized meal plans for your pet',
-    image: `${NUTRITION_IMG}/diet-consultation.png`,
+    image: `${NUTRITION_IMG}/diet-consultation.webp`,
     Icon: UtensilsCrossed,
     iconColor: 'text-green-600',
     iconBg: 'bg-green-100',
@@ -127,7 +127,7 @@ export const NUTRITION_SERVICE_CARDS = [
     id: 'meal_plans',
     label: 'Meal Plans',
     description: 'Complete balanced meal plans',
-    image: `${NUTRITION_IMG}/meal-plans.png`,
+    image: `${NUTRITION_IMG}/meal-plans.webp`,
     Icon: Calendar,
     iconColor: 'text-amber-600',
     iconBg: 'bg-amber-100',

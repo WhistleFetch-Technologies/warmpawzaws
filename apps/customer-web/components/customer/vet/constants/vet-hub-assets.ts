@@ -10,7 +10,7 @@ import {
 
 export const VET_IMG = '/images/home/Vet';
 
-export const VET_HEADER_BANNER = `${VET_IMG}/banner-dog-and-cat.png`;
+export const VET_HEADER_BANNER = `${VET_IMG}/banner-dog-and-cat.webp`;
 
 export const VET_SERVICE_CARDS: {
   id: string;
@@ -27,7 +27,7 @@ export const VET_SERVICE_CARDS: {
     id: 'tele',
     name: 'Tele Consultation',
     description: 'Video call with vets',
-    image: `${VET_IMG}/tele-consult.png`,
+    image: `${VET_IMG}/tele-consult.webp`,
     Icon: Video,
     iconColor: 'text-orange-600',
     iconBg: 'bg-orange-100',
@@ -37,7 +37,7 @@ export const VET_SERVICE_CARDS: {
     id: 'clinic',
     name: 'Clinic Visit',
     description: 'Book appointment',
-    image: `${VET_IMG}/clinic-visit.png`,
+    image: `${VET_IMG}/clinic-visit.webp`,
     Icon: Building2,
     iconColor: 'text-green-600',
     iconBg: 'bg-green-100',
@@ -47,7 +47,7 @@ export const VET_SERVICE_CARDS: {
     id: 'home',
     name: 'Home Visit',
     description: 'Vet comes to you',
-    image: `${VET_IMG}/home-visit.png`,
+    image: `${VET_IMG}/home-visit.webp`,
     Icon: HomeIcon,
     iconColor: 'text-orange-600',
     iconBg: 'bg-orange-100',
@@ -57,7 +57,7 @@ export const VET_SERVICE_CARDS: {
     id: 'lab',
     name: 'Lab Tests',
     description: 'Sample collection',
-    image: `${VET_IMG}/lab.png`,
+    image: `${VET_IMG}/lab.webp`,
     Icon: FlaskConical,
     iconColor: 'text-purple-600',
     iconBg: 'bg-purple-100',
@@ -67,7 +67,7 @@ export const VET_SERVICE_CARDS: {
     id: 'medicine',
     name: 'Medicine',
     description: 'Order medicines',
-    image: `${VET_IMG}/medicine.png`,
+    image: `${VET_IMG}/medicine.webp`,
     Icon: Pill,
     iconColor: 'text-pink-600',
     iconBg: 'bg-pink-100',
@@ -78,7 +78,7 @@ export const VET_SERVICE_CARDS: {
     id: 'physiotherapy',
     name: 'Physiotherapy',
     description: 'Rehabilitation & follow-up',
-    image: `${VET_IMG}/physio.png`,
+    image: `${VET_IMG}/physio.webp`,
     Icon: Activity,
     iconColor: 'text-teal-600',
     iconBg: 'bg-teal-100',
@@ -89,19 +89,19 @@ export const VET_SERVICE_CARDS: {
 
 /** Card pet photos cycled onto consult-by-problem tiles (goal mockup order). */
 export const VET_PROBLEM_PET_IMAGES = [
-  `${VET_IMG}/card-dog5.png`,
-  `${VET_IMG}/card-cat2.png`,
-  `${VET_IMG}/card-dog5.png`,
-  `${VET_IMG}/card-cat5.png`,
-  `${VET_IMG}/card-dog6.png`,
-  `${VET_IMG}/card-dog1.png`,
-  `${VET_IMG}/card-dog3.png`,
-  `${VET_IMG}/card-dog2.png`,
-  `${VET_IMG}/card-cat1.png`,
-  `${VET_IMG}/card-dog5.png`,
-  `${VET_IMG}/card-dog5.png`,
-  `${VET_IMG}/card-dog4.png`,
-  `${VET_IMG}/card-cat3.png`,
+  `${VET_IMG}/card-dog5.webp`,
+  `${VET_IMG}/card-cat2.webp`,
+  `${VET_IMG}/card-dog5.webp`,
+  `${VET_IMG}/card-cat5.webp`,
+  `${VET_IMG}/card-dog6.webp`,
+  `${VET_IMG}/card-dog1.webp`,
+  `${VET_IMG}/card-dog3.webp`,
+  `${VET_IMG}/card-dog2.webp`,
+  `${VET_IMG}/card-cat1.webp`,
+  `${VET_IMG}/card-dog5.webp`,
+  `${VET_IMG}/card-dog5.webp`,
+  `${VET_IMG}/card-dog4.webp`,
+  `${VET_IMG}/card-cat3.webp`,
 ];
 
 export function isVetGroomingProblem(problem: { id?: string; name?: string }): boolean {
