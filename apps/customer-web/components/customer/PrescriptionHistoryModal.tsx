@@ -641,19 +641,6 @@ export function PrescriptionHistoryModal({
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {isVendorPrescription(prescription) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedPrescription(prescription);
-                            setShowUploadModal(true);
-                          }}
-                          className="p-2 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
-                          title="Upload additional file for this record"
-                        >
-                          <Upload className="w-4 h-4 text-blue-600" />
-                        </button>
-                      )}
                       <button
                         onClick={() => handleViewPrescription(prescription)}
                         className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
@@ -694,7 +681,7 @@ export function PrescriptionHistoryModal({
           >
             <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 pb-4 pt-6 rounded-t-[32px] bg-white">
               <h3 id="upload-prescription-title" className="font-bold text-gray-800 pr-2">
-                {selectedPrescription ? 'Upload Additional File' : 'Upload Handwritten Prescription'}
+                Upload Handwritten Prescription
               </h3>
               <button
                 type="button"
@@ -703,7 +690,6 @@ export function PrescriptionHistoryModal({
                   setUploadingFile(null);
                   setRecordDate('');
                   setContext('');
-                  setSelectedPrescription(null);
                 }}
                 className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200"
               >
@@ -714,30 +700,14 @@ export function PrescriptionHistoryModal({
             <div
               className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-6 pt-4 [-webkit-overflow-scrolling:touch] scroll-pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pb-[calc(1rem+5.5rem+env(safe-area-inset-bottom,0px))]"
             >
-              {selectedPrescription && (
-                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm text-blue-900">
-                    <strong>Adding file to:</strong> {selectedPrescription.title}
-                  </p>
-                  <p className="text-xs text-blue-700 mt-1">
-                    Date: {formatDate(getPrescriptionDate(selectedPrescription))}
-                  </p>
-                </div>
-              )}
-
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Prescription Date <span className="text-red-500">*</span>
-                    {selectedPrescription && (
-                      <span className="text-xs text-gray-500 ml-2">
-                        (for this record: {formatDate(getPrescriptionDate(selectedPrescription))})
-                      </span>
-                    )}
                   </label>
                   <input
                     type="date"
-                    value={recordDate || (selectedPrescription && getPrescriptionDate(selectedPrescription) ? new Date(getPrescriptionDate(selectedPrescription)).toISOString().split('T')[0] : '')}
+                    value={recordDate}
                     onChange={(e) => setRecordDate(e.target.value)}
                     max={new Date().toISOString().split('T')[0]}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"

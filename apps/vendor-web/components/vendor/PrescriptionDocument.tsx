@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { Capacitor } from '@capacitor/core';
 import { apiClient } from '@/lib/api-client';
 import { saveGeneratedPdfBlob } from '@/lib/capacitor-pdf-save';
 import { getCustomerWebOrigin } from '@/lib/customer-web-url';
@@ -481,7 +482,11 @@ export default function PrescriptionDocument({
       if (result === 'shared') {
         toast.success('Choose Drive, Files, or another app in the share sheet to save the PDF.');
       } else if (result === 'downloaded') {
-        toast.success('PDF downloaded.');
+        if (Capacitor.getPlatform() === 'android') {
+          toast.success('PDF opened — use the menu (⋮) to save or share the file.');
+        } else {
+          toast.success('PDF downloaded.');
+        }
       } else {
         toast.message('PDF export failed on this device. Opening print instead…');
         handlePrint();

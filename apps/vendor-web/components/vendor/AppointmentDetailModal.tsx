@@ -164,6 +164,13 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [showTracking, setShowTracking] = useState(false);
   const [showA4Document, setShowA4Document] = useState(false);
   const [selectedPrescriptionForA4, setSelectedPrescriptionForA4] = useState<any>(null);
+  const [showMedicalRecordViewer, setShowMedicalRecordViewer] = useState(false);
+  const [selectedMedicalRecord, setSelectedMedicalRecord] = useState<{
+    id: string;
+    title?: string;
+    file_url?: string;
+  } | null>(null);
+  const [loadingMedicalRecordView, setLoadingMedicalRecordView] = useState(false);
   
   // OTP States
   const [otp, setOtp] = useState('');
@@ -557,6 +564,42 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       console.error('Error loading appointment details:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleViewMedicalRecord = async (recordData: {
+    id: string;
+    booking_id?: string;
+    title?: string;
+    file_url?: string;
+  }) => {
+    if (!recordData?.id) {
+      toast.error('Document not found');
+      return;
+    }
+
+    try {
+      setLoadingMedicalRecordView(true);
+      const recordBookingId = recordData.booking_id || bookingId;
+      const result = (await apiClient.get(
+        `/medical-records/booking/${recordBookingId}/view/${recordData.id}`
+      )) as { fileUrl?: string };
+
+      if (!result.fileUrl) {
+        toast.error('Could not load document');
+        return;
+      }
+
+      setSelectedMedicalRecord({
+        ...recordData,
+        file_url: result.fileUrl,
+      });
+      setShowMedicalRecordViewer(true);
+    } catch (error) {
+      console.error('Error viewing medical record:', error);
+      toast.error('Failed to load document');
+    } finally {
+      setLoadingMedicalRecordView(false);
     }
   };
   
@@ -1937,15 +1980,21 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                                 )}
                               </div>
                               {(activity as any).medicalRecordData.file_url && (
-                                <a
-                                  href={(activity as any).medicalRecordData.file_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors"
+                                <button
+                                  type="button"
+                                  disabled={loadingMedicalRecordView}
+                                  onClick={() =>
+                                    void handleViewMedicalRecord((activity as any).medicalRecordData)
+                                  }
+                                  className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors disabled:opacity-60"
                                 >
-                                  <Eye className="w-3 h-3" />
+                                  {loadingMedicalRecordView ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Eye className="w-3 h-3" />
+                                  )}
                                   View Document
-                                </a>
+                                </button>
                               )}
                             </div>
                           )}
@@ -2844,6 +2893,44 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             setSelectedPrescriptionForA4(null);
           }}
         />
+      )}
+
+      {/* Customer-uploaded medical record viewer (presigned S3 URL — raw keys break in Capacitor WebView) */}
+      {showMedicalRecordViewer && selectedMedicalRecord?.file_url && (
+        <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-bold text-gray-800 truncate pr-2">
+                {selectedMedicalRecord.title || 'Uploaded Document'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMedicalRecordViewer(false);
+                  setSelectedMedicalRecord(null);
+                }}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 shrink-0"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              {selectedMedicalRecord.file_url.includes('.pdf') ? (
+                <iframe
+                  src={selectedMedicalRecord.file_url}
+                  className="w-full h-full min-h-[500px] rounded-lg"
+                  title="Medical record PDF"
+                />
+              ) : (
+                <img
+                  src={selectedMedicalRecord.file_url}
+                  alt={selectedMedicalRecord.title || 'Medical record'}
+                  className="w-full h-auto rounded-lg"
+                />
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {packageSessionsOverlayId && (
