@@ -152,12 +152,13 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
           </div>
         </div>
 
-        {/* Tabs — horizontal scroll on narrow viewports (iOS/Android) */}
-        <div className="flex border-b border-gray-200 px-2 sm:px-6 pt-2 bg-white sticky top-0 z-10 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+        {/* Tabs — wrap on mobile so all options stay visible (no clipped horizontal scroll) */}
+        <div className="border-b border-gray-200 px-2 sm:px-6 pt-2 bg-white sticky top-0 z-10 shrink-0">
+          <div className="grid grid-cols-2 gap-x-1 sm:flex sm:flex-nowrap">
           <button
             type="button"
             onClick={() => setActiveTab('all')}
-            className={`pb-3 px-3 sm:px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+            className={`pb-3 px-2 sm:px-4 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap text-center sm:text-left ${
               activeTab === 'all' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -166,7 +167,7 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
           <button
             type="button"
             onClick={() => setActiveTab('prescriptions')}
-            className={`pb-3 px-3 sm:px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+            className={`pb-3 px-2 sm:px-4 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap text-center sm:text-left ${
               activeTab === 'prescriptions' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -175,7 +176,7 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
           <button
             type="button"
             onClick={() => setActiveTab('reports')}
-            className={`pb-3 px-3 sm:px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+            className={`pb-3 px-2 sm:px-4 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap text-center sm:text-left ${
               activeTab === 'reports' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -184,12 +185,13 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
           <button
             type="button"
             onClick={() => setActiveTab('notes')}
-            className={`pb-3 px-3 sm:px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+            className={`pb-3 px-2 sm:px-4 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap text-center sm:text-left ${
               activeTab === 'notes' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             Consultation Notes
           </button>
+          </div>
         </div>
 
         {/* Content */}
