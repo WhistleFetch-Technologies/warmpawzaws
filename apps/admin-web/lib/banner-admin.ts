@@ -4,7 +4,7 @@
  */
 
 /** Customer-web static hero asset — preview / explicit opt-in only; never auto-persisted. */
-export const DEFAULT_HOME_HERO_BANNER_IMAGE_PATH = '/images/home/dog-peep.png';
+export const DEFAULT_HOME_HERO_BANNER_IMAGE_PATH = '/images/home/dog-peep.webp';
 
 const BROKEN_BANNER_IMAGE_PATHS = new Set(['/images/home/hero-pet.webp']);
 

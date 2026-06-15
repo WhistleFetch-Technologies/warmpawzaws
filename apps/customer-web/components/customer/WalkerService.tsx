@@ -54,9 +54,9 @@ import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 
 const WALKING_IMG = '/images/home/Walking';
 
-const WALKING_HEADER_TRAILING = `${WALKING_IMG}/ChatGPT_Image_May_30__2026__01_19_16_PM-removebg-preview.png`;
+const WALKING_HEADER_TRAILING = `${WALKING_IMG}/ChatGPT_Image_May_30__2026__01_19_16_PM-removebg-preview.webp`;
 
-const WALKING_BANNER_ILLUSTRATION = `${WALKING_IMG}/${encodeURIComponent('ChatGPT Image May 30, 2026, 01_15_12 PM.png')}`;
+const WALKING_BANNER_ILLUSTRATION = `${WALKING_IMG}/${encodeURIComponent('ChatGPT Image May 30, 2026, 01_15_12 PM.webp')}`;
 
 const WALKING_HEADER_PILLS = [
   { icon: Shield, label: 'Verified Walkers' },

@@ -734,7 +734,7 @@ function AuthPageContent() {
           <div className={authHeaderClass} style={authOrangeHeaderStyle}>
             {/* Warmpawz Logo */}
             <div className={authLogoRingClass}>
-              <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
+              <img src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
             </div>
 
             {/* Title */}
@@ -894,7 +894,7 @@ function AuthPageContent() {
         <div className={authHeaderClass} style={authOrangeHeaderStyle}>
           {/* Warmpawz Logo */}
           <div className={authLogoRingClass}>
-            <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
+            <img src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
 
           {/* Welcome Text */}

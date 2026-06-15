@@ -36,8 +36,8 @@ function setupFirebaseMessaging(config) {
         body,
         data:  payload.data ?? {},
         tag:   'warmpawz-push',
-        icon:  '/icons/icon-192x192.png',
-        badge: '/icons/badge-72x72.png',
+        icon:  '/icons/icon-192x192.webp',
+        badge: '/icons/badge-72x72.webp',
       };
 
       self.registration.showNotification(title, notificationOptions);

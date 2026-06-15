@@ -15,7 +15,7 @@ export const defaultBanners = [
         Icon: Stethoscope,
         ctaText: "Book Now",
         ctaLink: "vet",
-        imageUrl: '/images/home/dog-peep.png',
+        imageUrl: '/images/home/dog-peep.webp',
     },
 ];
 

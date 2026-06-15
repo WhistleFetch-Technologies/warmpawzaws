@@ -15,7 +15,7 @@ import { toast } from 'sonner';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
-const SUPPORT_IMAGE = '/images/home/support/support.png';
+const SUPPORT_IMAGE = '/images/home/support/support.webp';
 
 const FEATURE_ITEMS = [
   {

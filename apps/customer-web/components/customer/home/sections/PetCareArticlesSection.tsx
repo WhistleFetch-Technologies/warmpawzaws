@@ -274,7 +274,7 @@ function PetCareArticlesSectionComponent({
             <div className="article-hero-glow absolute inset-x-1 bottom-0 h-3.5 rounded-full bg-teal-500/15 blur-md" />
             <div className="article-hero-float relative h-14 w-16 sm:h-[3.75rem] sm:w-[4.5rem]">
               <Image
-                src="/images/home/article.png"
+                src="/images/home/article.webp"
                 alt=""
                 fill
                 className="object-contain object-center drop-shadow-[0_4px_10px_rgba(13,148,136,0.18)]"

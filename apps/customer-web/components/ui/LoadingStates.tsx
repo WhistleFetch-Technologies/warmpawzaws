@@ -112,7 +112,7 @@ export function FullPageLoading({ message = 'Loading...' }: { message?: string }
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white">
       <div className="w-16 h-16 mb-4">
-        <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain animate-pulse" />
+        <img src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain animate-pulse" />
       </div>
       <LoadingSpinner size="lg" />
       <p className="mt-4 text-sm text-gray-500">{message}</p>

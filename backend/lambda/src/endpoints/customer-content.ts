@@ -120,7 +120,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
             id: 'default-vet-checkup',
             title: 'Free Health Checkup',
             subtitle: 'Book Vet Appointment Today',
-            imageUrl: '/images/home/dog-peep.png',
+            imageUrl: '/images/home/dog-peep.webp',
             gradientFrom: '#4CAF50',
             gradientTo: '#2E7D32',
             ctaText: 'Book Now',

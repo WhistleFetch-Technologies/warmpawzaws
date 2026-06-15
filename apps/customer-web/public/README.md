@@ -15,8 +15,8 @@ The logo should be:
 ## Push Notification Icons
 
 The Firebase messaging service worker references notification icons at:
-- /icons/icon-192x192.png  (192×192 px, PNG)
-- /icons/badge-72x72.png   (72×72 px, PNG, monochrome recommended)
+- /icons/icon-192x192.webp  (192×192 px, PNG)
+- /icons/badge-72x72.webp   (72×72 px, PNG, monochrome recommended)
 
 To enable icons in push notifications:
 1. Create a folder: public/icons/

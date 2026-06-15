@@ -20,10 +20,10 @@ export type WhatsNewAnnouncement = {
 const WHATS_NEW_IMAGE_DIR = "/images/home/what's new image";
 
 export const WHATS_NEW_ICON_IMAGES = {
-  assistant: `${WHATS_NEW_IMAGE_DIR}/assistant.png`,
-  track: `${WHATS_NEW_IMAGE_DIR}/track.png`,
-  plus: `${WHATS_NEW_IMAGE_DIR}/plus.png`,
-  tips: `${WHATS_NEW_IMAGE_DIR}/tips.png`,
+  assistant: `${WHATS_NEW_IMAGE_DIR}/assistant.webp`,
+  track: `${WHATS_NEW_IMAGE_DIR}/track.webp`,
+  plus: `${WHATS_NEW_IMAGE_DIR}/plus.webp`,
+  tips: `${WHATS_NEW_IMAGE_DIR}/tips.webp`,
 } as const;
 
 export function getWhatsNewIconImage(announcement: WhatsNewAnnouncement): string | undefined {

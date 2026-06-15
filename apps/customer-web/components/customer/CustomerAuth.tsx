@@ -164,7 +164,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
         <div className="px-6 pt-4 pb-16 flex flex-col items-center">
           {/* Logo */}
           <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-2">
-            <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
+            <img src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
 
           <h1 className="text-2xl font-bold text-black italic text-center">
@@ -266,7 +266,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
       <div className="px-6 pb-20 flex flex-col items-center" style={authOrangeHeaderTop}>
         {/* Logo */}
         <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-3">
-          <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
+          <img src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
         </div>
 
         <h1 className="text-2xl font-bold text-black italic text-center">

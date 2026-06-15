@@ -17,7 +17,7 @@ import {
 
 export const TRAINING_IMG = '/images/home/Training';
 
-export const TRAINING_HEADER_BANNER = `${TRAINING_IMG}/header.png`;
+export const TRAINING_HEADER_BANNER = `${TRAINING_IMG}/header.webp`;
 
 export const TRAINING_TYPE_CARDS = [
   {
@@ -61,7 +61,7 @@ export const TRAINING_GOAL_CARDS: TrainingGoalCardDef[] = [
   {
     id: 'basic_obedience',
     name: 'Basic Obedience',
-    image: `${TRAINING_IMG}/basic-obedience.png`,
+    image: `${TRAINING_IMG}/basic-obedience.webp`,
     Icon: GraduationCap,
     iconColor: 'text-purple-600',
     iconBg: 'bg-purple-100',
@@ -69,7 +69,7 @@ export const TRAINING_GOAL_CARDS: TrainingGoalCardDef[] = [
   {
     id: 'house_training',
     name: 'House Training',
-    image: `${TRAINING_IMG}/house-training.png`,
+    image: `${TRAINING_IMG}/house-training.webp`,
     Icon: Home,
     iconColor: 'text-green-600',
     iconBg: 'bg-green-100',
@@ -78,7 +78,7 @@ export const TRAINING_GOAL_CARDS: TrainingGoalCardDef[] = [
   {
     id: 'leash_walking',
     name: 'Leash Walking',
-    image: `${TRAINING_IMG}/leash-walking.png`,
+    image: `${TRAINING_IMG}/leash-walking.webp`,
     Icon: DogLeash,
     iconColor: 'text-blue-600',
     iconBg: 'bg-blue-100',
@@ -87,7 +87,7 @@ export const TRAINING_GOAL_CARDS: TrainingGoalCardDef[] = [
   {
     id: 'socialization',
     name: 'Socialization',
-    image: `${TRAINING_IMG}/socialization.png`,
+    image: `${TRAINING_IMG}/socialization.webp`,
     Icon: PawPrint,
     iconColor: 'text-blue-600',
     iconBg: 'bg-blue-100',
@@ -95,7 +95,7 @@ export const TRAINING_GOAL_CARDS: TrainingGoalCardDef[] = [
   {
     id: 'advanced_training',
     name: 'Advanced Training',
-    image: `${TRAINING_IMG}/advance-training.png`,
+    image: `${TRAINING_IMG}/advance-training.webp`,
     Icon: Trophy,
     iconColor: 'text-amber-600',
     iconBg: 'bg-amber-100',
@@ -104,7 +104,7 @@ export const TRAINING_GOAL_CARDS: TrainingGoalCardDef[] = [
   {
     id: 'aggression',
     name: 'Aggression Fix',
-    image: `${TRAINING_IMG}/agression-fix.png`,
+    image: `${TRAINING_IMG}/agression-fix.webp`,
     Icon: AlertTriangle,
     iconColor: 'text-red-600',
     iconBg: 'bg-red-100',
@@ -113,7 +113,7 @@ export const TRAINING_GOAL_CARDS: TrainingGoalCardDef[] = [
   {
     id: 'separation_anxiety',
     name: 'Separation Anxiety',
-    image: `${TRAINING_IMG}/separation-anxiety.png`,
+    image: `${TRAINING_IMG}/separation-anxiety.webp`,
     Icon: Frown,
     iconColor: 'text-yellow-600',
     iconBg: 'bg-yellow-100',
@@ -121,7 +121,7 @@ export const TRAINING_GOAL_CARDS: TrainingGoalCardDef[] = [
   {
     id: 'excessive_barking',
     name: 'Excessive Barking',
-    image: `${TRAINING_IMG}/excessive-barking.png`,
+    image: `${TRAINING_IMG}/excessive-barking.webp`,
     Icon: Volume2,
     iconColor: 'text-orange-600',
     iconBg: 'bg-orange-100',
@@ -130,7 +130,7 @@ export const TRAINING_GOAL_CARDS: TrainingGoalCardDef[] = [
   {
     id: 'fear_phobia',
     name: 'Fear & Phobias',
-    image: `${TRAINING_IMG}/fear-n-phobia.png`,
+    image: `${TRAINING_IMG}/fear-n-phobia.webp`,
     Icon: Ghost,
     iconColor: 'text-indigo-600',
     iconBg: 'bg-indigo-100',
@@ -139,7 +139,7 @@ export const TRAINING_GOAL_CARDS: TrainingGoalCardDef[] = [
   {
     id: 'destructive',
     name: 'Destructive Behavior',
-    image: `${TRAINING_IMG}/destructive-behaviour.png`,
+    image: `${TRAINING_IMG}/destructive-behaviour.webp`,
     Icon: Bomb,
     iconColor: 'text-rose-600',
     iconBg: 'bg-rose-100',
@@ -148,7 +148,7 @@ export const TRAINING_GOAL_CARDS: TrainingGoalCardDef[] = [
   {
     id: 'resource_guarding',
     name: 'Possessive Behavior',
-    image: `${TRAINING_IMG}/possessive-behaviour.png`,
+    image: `${TRAINING_IMG}/possessive-behaviour.webp`,
     Icon: Shield,
     iconColor: 'text-blue-600',
     iconBg: 'bg-blue-100',
