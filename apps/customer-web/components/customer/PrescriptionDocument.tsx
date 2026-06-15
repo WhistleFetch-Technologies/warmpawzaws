@@ -16,7 +16,55 @@ import {
   Clock
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
+import { Capacitor } from '@capacitor/core';
 import { saveGeneratedPdfBlob } from '@/lib/capacitor-pdf-save';
+
+/** Print without a popup — works on many mobile WebViews where window.open is blocked. */
+function printPrescriptionFromHtml(htmlBody: string, title: string): boolean {
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.cssText =
+    'position:fixed;left:0;top:0;width:0;height:0;border:none;opacity:0;pointer-events:none;';
+  document.body.appendChild(iframe);
+  const win = iframe.contentWindow;
+  const doc = win?.document;
+  if (!doc) {
+    try {
+      document.body.removeChild(iframe);
+    } catch {
+      /* */
+    }
+    return false;
+  }
+  const styles = `@page{size:A4;margin:10mm;}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#1a1a1a;}`;
+  doc.open();
+  doc.write(
+    `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${title}</title><style>${styles}</style></head><body>${htmlBody}</body></html>`
+  );
+  doc.close();
+
+  const runPrint = () => {
+    try {
+      win?.focus();
+      win?.print();
+    } catch (e) {
+      console.warn('[PrescriptionDocument] iframe.print failed', e);
+    }
+    setTimeout(() => {
+      try {
+        document.body.removeChild(iframe);
+      } catch {
+        /* */
+      }
+    }, 1500);
+  };
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(runPrint);
+  });
+  return true;
+}
 
 interface Medication {
   name: string;
@@ -345,9 +393,18 @@ export default function PrescriptionDocument({
     const printContent = printRef.current;
     if (!printContent) return;
 
+    const title = `Prescription - ${prescription.pet.name}`;
+    const bodyHtml = printContent.outerHTML;
+
+    if (printPrescriptionFromHtml(bodyHtml, title)) {
+      return;
+    }
+
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
-      alert('Please allow pop-ups to print the prescription');
+      toast.error(
+        'Could not open the print dialog. Allow pop-ups for this site, or use Download and print the PDF from Files / Drive.'
+      );
       return;
     }
 
@@ -355,25 +412,36 @@ export default function PrescriptionDocument({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Prescription - ${prescription.pet.name}</title>
+          <meta charset="utf-8"/>
+          <title>${title}</title>
           <style>
-            @page { size: A4; margin: 0; }
-            body { margin: 0; padding: 0; }
+            @page { size: A4; margin: 10mm; }
+            body { margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
             * { box-sizing: border-box; }
           </style>
-          <script src="https://cdn.tailwindcss.com"></script>
         </head>
         <body>
-          ${printContent.outerHTML}
+          ${bodyHtml}
         </body>
       </html>
     `);
     printWindow.document.close();
-    
+
     setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
+      try {
+        printWindow.focus();
+        printWindow.print();
+      } catch {
+        toast.error('Print could not be started on this device. Try Download, then open the PDF and use Share → Print.');
+      }
+      setTimeout(() => {
+        try {
+          printWindow.close();
+        } catch {
+          /* */
+        }
+      }, 500);
+    }, 300);
   };
 
   const handleDownload = async () => {
@@ -382,8 +450,7 @@ export default function PrescriptionDocument({
       const { jsPDF } = await import('jspdf');
 
       if (!printRef.current) {
-        handlePrint();
-        onDownload?.();
+        toast.error('Nothing to export yet.');
         return;
       }
 
@@ -410,40 +477,59 @@ export default function PrescriptionDocument({
         shareText: 'Save the PDF to Drive, Files, or another app.',
       });
 
-      if (result === 'failed') {
+      if (result === 'shared') {
+        toast.success('Choose Drive, Files, or another app in the share sheet to save the PDF.');
+      } else if (result === 'downloaded') {
+        if (Capacitor.getPlatform() === 'android') {
+          toast.success('PDF opened — use the menu (⋮) to save or share the file.');
+        } else {
+          toast.success('PDF downloaded.');
+        }
+      } else {
+        toast.message('PDF export failed on this device. Opening print instead…');
         handlePrint();
+        onDownload?.();
+        return;
       }
-    } catch {
-      handlePrint();
-    }
 
-    onDownload?.();
+      onDownload?.();
+    } catch (err) {
+      console.warn('[PrescriptionDocument] PDF export failed', err);
+      toast.message('PDF export failed on this device. Opening print instead…');
+      handlePrint();
+      onDownload?.();
+    }
   };
 
   const handleShare = async () => {
-    // Try Web Share API first
+    const title = `Prescription for ${prescription.pet.name}`;
+    const text = `Prescription from ${prescription.doctor.businessName || prescription.doctor.name}`;
+    const shareUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/prescriptions/${encodeURIComponent(prescription.id)}/view`
+        : undefined;
+
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `Prescription for ${prescription.pet.name}`,
-          text: `Prescription from ${prescription.doctor.businessName || prescription.doctor.name}`,
-          url: window.location.href
+          title,
+          text,
+          ...(shareUrl ? { url: shareUrl } : {}),
         });
         onShare?.();
         return;
-      } catch (err) {
-        console.log('Share cancelled');
+      } catch {
+        /* user cancelled or share failed */
       }
     }
 
-    // Fallback: Copy prescription summary to clipboard for WhatsApp
     const summary = generatePrescriptionText(prescription);
     try {
-      await navigator.clipboard.writeText(summary);
-      alert('Prescription copied to clipboard! You can paste it in WhatsApp.');
+      await navigator.clipboard.writeText(shareUrl ? `${summary}\n${shareUrl}` : summary);
+      toast.success('Prescription copied to clipboard.');
       onShare?.();
     } catch {
-      alert('Unable to copy. Please use the print option instead.');
+      toast.error('Unable to copy. Please use the print option instead.');
     }
   };
 
@@ -570,6 +656,53 @@ function generatePrescriptionText(prescription: PrescriptionData): string {
 }
 
 // Export helper to transform API data to PrescriptionData format
+function firstNonEmpty(...values: (string | number | null | undefined)[]): string | undefined {
+  for (const value of values) {
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function resolvePetAgeFields(apiData: any): { age_years?: number; age_months?: number } {
+  const yearsRaw = apiData.pet_age_years ?? apiData.pet?.age_years ?? apiData.pet?.ageYears;
+  const monthsRaw = apiData.pet_age_months ?? apiData.pet?.age_months ?? apiData.pet?.ageMonths;
+  if (yearsRaw != null || monthsRaw != null) {
+    const years = yearsRaw != null ? Number(yearsRaw) : undefined;
+    const months = monthsRaw != null ? Number(monthsRaw) : undefined;
+    return {
+      ...(Number.isFinite(years) ? { age_years: years } : {}),
+      ...(Number.isFinite(months) ? { age_months: months } : {}),
+    };
+  }
+
+  const ageRaw = apiData.petAge ?? apiData.pet_age ?? apiData.pet?.age;
+  if (ageRaw == null || ageRaw === '') return {};
+
+  const asNumber = Number(ageRaw);
+  if (Number.isFinite(asNumber) && asNumber >= 0) {
+    return { age_years: asNumber };
+  }
+
+  const ageText = String(ageRaw);
+  const yearMatch = ageText.match(/(\d+)\s*(?:yr|year|y)/i);
+  if (yearMatch) {
+    const monthsMatch = ageText.match(/(\d+)\s*(?:mo|month|m)/i);
+    return {
+      age_years: parseInt(yearMatch[1], 10),
+      ...(monthsMatch ? { age_months: parseInt(monthsMatch[1], 10) } : {}),
+    };
+  }
+
+  const digitsOnly = ageText.match(/(\d+)/);
+  if (digitsOnly) {
+    return { age_years: parseInt(digitsOnly[1], 10) };
+  }
+
+  return {};
+}
+
 export function transformPrescriptionData(apiData: any): PrescriptionData {
   // Parse medications - handle both array format and legacy single medication
   let medications: Medication[] = [];
@@ -616,13 +749,18 @@ export function transformPrescriptionData(apiData: any): PrescriptionData {
     prescriptionNumber: apiData.prescription_number || `RX-${apiData.id?.slice(-8).toUpperCase()}`,
     medications,
     pet: {
-      name: apiData.pet_name || apiData.pet?.name || 'Unknown',
-      species: apiData.pet_species || apiData.pet?.species,
-      breed: apiData.pet_breed || apiData.pet?.breed,
-      age_years: apiData.pet_age_years || apiData.pet?.age_years,
-      age_months: apiData.pet_age_months || apiData.pet?.age_months,
-      gender: apiData.pet_gender || apiData.pet?.gender,
-      weight_kg: apiData.pet_weight_kg || apiData.pet?.weight_kg,
+      name: firstNonEmpty(apiData.pet_name, apiData.petName, apiData.pet?.name) || 'Unknown',
+      species: firstNonEmpty(
+        apiData.pet_species,
+        apiData.petSpecies,
+        apiData.petType,
+        apiData.pet_type,
+        apiData.pet?.species
+      ),
+      breed: firstNonEmpty(apiData.pet_breed, apiData.petBreed, apiData.pet_breed, apiData.pet?.breed),
+      ...resolvePetAgeFields(apiData),
+      gender: firstNonEmpty(apiData.pet_gender, apiData.pet?.gender),
+      weight_kg: apiData.pet_weight_kg ?? apiData.pet?.weight_kg,
     },
     doctor: {
       name: apiData.vendor_owner_name || apiData.doctor_name || apiData.vendor?.owner_name || 'Veterinarian',

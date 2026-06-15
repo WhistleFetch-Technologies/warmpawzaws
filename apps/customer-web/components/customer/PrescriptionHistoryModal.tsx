@@ -141,7 +141,7 @@ export function PrescriptionHistoryModal({
   onOrderMedicine, // ✅ FIX: Add pharmacy ordering callback
 }: PrescriptionHistoryModalProps) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
-  const [fullPrescriptionData, setFullPrescriptionData] = useState<any>(null);
+  const [a4PrescriptionDetails, setA4PrescriptionDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -238,10 +238,6 @@ export function PrescriptionHistoryModal({
             record_type: 'prescription',
           }))
         );
-        
-        if (prescriptions.length > 0) {
-          setFullPrescriptionData(prescriptionResult);
-        }
       } else if (prescriptionResponse.status === 401) {
         console.warn('Unauthorized access to prescriptions - session may have expired');
       }
@@ -286,6 +282,57 @@ export function PrescriptionHistoryModal({
   };
 
   const getBaseUrl = (): string => getApiBaseUrl() || '';
+
+  const openA4Document = async (prescription: Prescription) => {
+    setSelectedPrescription(prescription);
+    setA4PrescriptionDetails(null);
+    setLoadingPrescriptionView(true);
+    try {
+      const baseUrl = getBaseUrl();
+      const token = localStorage.getItem('authToken') || localStorage.getItem('cognitoIdToken');
+      const response = await fetch(
+        `${baseUrl}/prescriptions/${prescription.id}?includeDetails=true`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        setA4PrescriptionDetails(result.prescription || result);
+      } else {
+        const fallbackResponse = await fetch(
+          `${baseUrl}/prescriptions/booking/${bookingId}?includeDetails=true`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          }
+        );
+        if (fallbackResponse.ok) {
+          const fallbackResult = await fallbackResponse.json();
+          const match = (fallbackResult.prescriptions || []).find(
+            (row: Record<string, any>) => row.id === prescription.id
+          );
+          setA4PrescriptionDetails(match || prescription);
+        } else {
+          setA4PrescriptionDetails(prescription);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load full prescription for A4 view:', error);
+      setA4PrescriptionDetails(prescription);
+    } finally {
+      setLoadingPrescriptionView(false);
+      setShowA4Document(true);
+    }
+  };
 
   const handleUpload = async () => {
     if (!uploadingFile || !recordDate) {
@@ -787,7 +834,7 @@ export function PrescriptionHistoryModal({
                   <button
                     onClick={() => {
                       setShowViewer(false);
-                      setShowA4Document(true);
+                      void openA4Document(selectedPrescription);
                     }}
                     className="p-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-lg transition-colors"
                     title="View Full Prescription (A4)"
@@ -1030,9 +1077,10 @@ export function PrescriptionHistoryModal({
         <PrescriptionDocument
           prescription={transformPrescriptionData({
             ...selectedPrescription,
-            ...fullPrescriptionData,
+            ...(a4PrescriptionDetails || {}),
             // Combine medications if available
-            medications: selectedPrescription.content_data?.medications || 
+            medications: a4PrescriptionDetails?.medications ||
+              selectedPrescription.content_data?.medications || 
               (selectedPrescription.medication_name ? [{
                 name: selectedPrescription.medication_name,
                 dosage: (selectedPrescription as any).dosage,
@@ -1041,7 +1089,10 @@ export function PrescriptionHistoryModal({
                 instructions: selectedPrescription.instructions
               }] : [])
           })}
-          onClose={() => setShowA4Document(false)}
+          onClose={() => {
+            setShowA4Document(false);
+            setA4PrescriptionDetails(null);
+          }}
           onOrderMedicine={() => {
             if (onOrderMedicine) {
               const medications = selectedPrescription.content_data?.medications || [];

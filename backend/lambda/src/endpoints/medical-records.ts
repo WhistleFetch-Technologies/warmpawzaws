@@ -1284,15 +1284,21 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           `SELECT pr.*, 
                   v.business_name as vendor_name,
                   p.name as pet_name,
+                  p.species as pet_species,
+                  p.breed as pet_breed,
+                  p.age_years as pet_age_years,
+                  p.age_months as pet_age_months,
+                  p.gender as pet_gender,
+                  p.weight_kg as pet_weight_kg,
                   'prescriptions' as source,
                   'prescription' as record_type
            FROM prescriptions pr
            LEFT JOIN vendors v ON pr.vendor_id = v.id
-           LEFT JOIN pets p ON pr.pet_id = p.id
+           LEFT JOIN pets p ON COALESCE(pr.pet_id, $2::uuid) = p.id
            WHERE ${petId ? 'pr.pet_id = $1::uuid' : 'pr.booking_id = $1::uuid'}
            AND pr.is_active = true
            AND (pr.status IS NULL OR pr.status = 'published' OR pr.status != 'cancelled')`,
-          [petId || bookingId]
+          [petId || bookingId, petId || null]
         );
         prescriptionsTableRecords = (prescriptionsResult as any).rows || [];
         console.log(`[Prescriptions] Found ${prescriptionsTableRecords.length} prescriptions from prescriptions table`);

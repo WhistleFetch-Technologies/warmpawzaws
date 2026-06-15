@@ -508,7 +508,7 @@ export function registerPrescriptionEndpoints(app: Hono) {
                 -- Booking details
                 b.booking_date, b.booking_time
          FROM prescriptions p
-         LEFT JOIN pets pet ON p.pet_id = pet.id
+         LEFT JOIN pets pet ON COALESCE(p.pet_id, b.pet_id) = pet.id
          LEFT JOIN customers c ON p.customer_id = c.id
          LEFT JOIN vendors v ON p.vendor_id = v.id
          LEFT JOIN staff s ON p.staff_id = s.id
@@ -599,7 +599,8 @@ export function registerPrescriptionEndpoints(app: Hono) {
                 s.name as staff_name,
                 s.phone as staff_phone
          FROM prescriptions p
-         LEFT JOIN pets pet ON p.pet_id = pet.id
+         LEFT JOIN bookings b ON p.booking_id = b.id
+         LEFT JOIN pets pet ON COALESCE(p.pet_id, b.pet_id) = pet.id
          LEFT JOIN customers c ON p.customer_id = c.id
          LEFT JOIN vendors v ON p.vendor_id = v.id
          LEFT JOIN staff s ON p.staff_id = s.id
@@ -658,7 +659,7 @@ export function registerPrescriptionEndpoints(app: Hono) {
          FROM prescriptions p
          LEFT JOIN bookings b ON p.booking_id = b.id
          LEFT JOIN vendors v ON p.vendor_id = v.id
-         LEFT JOIN pets pet ON p.pet_id = pet.id
+         LEFT JOIN pets pet ON COALESCE(p.pet_id, b.pet_id) = pet.id
          WHERE p.customer_id = $1
          AND (p.status = 'published' OR p.status IS NULL)
          ORDER BY p.created_at DESC`,
@@ -776,7 +777,7 @@ export function registerPrescriptionEndpoints(app: Hono) {
            FROM prescriptions p
            LEFT JOIN bookings b ON p.booking_id = b.id
            LEFT JOIN customers c ON p.customer_id = c.id
-           LEFT JOIN pets pet ON p.pet_id = pet.id
+           LEFT JOIN pets pet ON COALESCE(p.pet_id, b.pet_id) = pet.id
            WHERE p.vendor_id = $1
            AND (p.status IS NULL OR p.status IN ('draft', 'published'))
            ORDER BY p.status ASC, p.created_at DESC`,
@@ -838,7 +839,7 @@ export function registerPrescriptionEndpoints(app: Hono) {
          FROM prescriptions p
          LEFT JOIN bookings b ON p.booking_id = b.id
          LEFT JOIN vendors v ON p.vendor_id = v.id
-         LEFT JOIN pets pet ON p.pet_id = pet.id
+         LEFT JOIN pets pet ON COALESCE(p.pet_id, b.pet_id) = pet.id
          WHERE p.customer_id = $1
          AND (p.status = 'published' OR p.status IS NULL)
          ORDER BY p.created_at DESC`,

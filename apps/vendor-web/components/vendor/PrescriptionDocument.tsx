@@ -691,6 +691,53 @@ function generatePrescriptionText(prescription: PrescriptionData): string {
 }
 
 // Export helper to transform API data to PrescriptionData format
+function firstNonEmpty(...values: (string | number | null | undefined)[]): string | undefined {
+  for (const value of values) {
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function resolvePetAgeFields(apiData: any): { age_years?: number; age_months?: number } {
+  const yearsRaw = apiData.pet_age_years ?? apiData.pet?.age_years ?? apiData.pet?.ageYears;
+  const monthsRaw = apiData.pet_age_months ?? apiData.pet?.age_months ?? apiData.pet?.ageMonths;
+  if (yearsRaw != null || monthsRaw != null) {
+    const years = yearsRaw != null ? Number(yearsRaw) : undefined;
+    const months = monthsRaw != null ? Number(monthsRaw) : undefined;
+    return {
+      ...(Number.isFinite(years) ? { age_years: years } : {}),
+      ...(Number.isFinite(months) ? { age_months: months } : {}),
+    };
+  }
+
+  const ageRaw = apiData.petAge ?? apiData.pet_age ?? apiData.pet?.age;
+  if (ageRaw == null || ageRaw === '') return {};
+
+  const asNumber = Number(ageRaw);
+  if (Number.isFinite(asNumber) && asNumber >= 0) {
+    return { age_years: asNumber };
+  }
+
+  const ageText = String(ageRaw);
+  const yearMatch = ageText.match(/(\d+)\s*(?:yr|year|y)/i);
+  if (yearMatch) {
+    const monthsMatch = ageText.match(/(\d+)\s*(?:mo|month|m)/i);
+    return {
+      age_years: parseInt(yearMatch[1], 10),
+      ...(monthsMatch ? { age_months: parseInt(monthsMatch[1], 10) } : {}),
+    };
+  }
+
+  const digitsOnly = ageText.match(/(\d+)/);
+  if (digitsOnly) {
+    return { age_years: parseInt(digitsOnly[1], 10) };
+  }
+
+  return {};
+}
+
 export function transformPrescriptionData(apiData: any): PrescriptionData {
   // Parse medications - handle both array format and legacy single medication
   let medications: Medication[] = [];
@@ -737,13 +784,18 @@ export function transformPrescriptionData(apiData: any): PrescriptionData {
     prescriptionNumber: apiData.prescription_number || `RX-${apiData.id?.slice(-8).toUpperCase()}`,
     medications,
     pet: {
-      name: apiData.pet_name || apiData.pet?.name || 'Unknown',
-      species: apiData.pet_species || apiData.pet?.species,
-      breed: apiData.pet_breed || apiData.pet?.breed,
-      age_years: apiData.pet_age_years || apiData.pet?.age_years,
-      age_months: apiData.pet_age_months || apiData.pet?.age_months,
-      gender: apiData.pet_gender || apiData.pet?.gender,
-      weight_kg: apiData.pet_weight_kg || apiData.pet?.weight_kg,
+      name: firstNonEmpty(apiData.pet_name, apiData.petName, apiData.pet?.name) || 'Unknown',
+      species: firstNonEmpty(
+        apiData.pet_species,
+        apiData.petSpecies,
+        apiData.petType,
+        apiData.pet_type,
+        apiData.pet?.species
+      ),
+      breed: firstNonEmpty(apiData.pet_breed, apiData.petBreed, apiData.pet_breed, apiData.pet?.breed),
+      ...resolvePetAgeFields(apiData),
+      gender: firstNonEmpty(apiData.pet_gender, apiData.pet?.gender),
+      weight_kg: apiData.pet_weight_kg ?? apiData.pet?.weight_kg,
     },
     doctor: {
       name: apiData.vendor_owner_name || apiData.doctor_name || apiData.vendor?.owner_name || 'Veterinarian',

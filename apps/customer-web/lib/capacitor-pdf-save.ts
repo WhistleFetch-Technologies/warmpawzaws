@@ -38,10 +38,13 @@ export async function saveGeneratedPdfBlob(options: {
       return 'shared';
     }
 
-    // Anchor download does not write to user-visible storage inside Capacitor WebView.
-    // On Android it often "succeeds" with no file in Downloads — do not treat as success.
     if (platform === 'android') {
-      console.log('[Native Save] Failed — Web Share unavailable on Android WebView');
+      const viaAndroidOpen = tryAndroidOpenPdf(blob);
+      if (viaAndroidOpen === 'downloaded') {
+        console.log('[Native Save] Opened PDF in WebView (use menu to save)');
+        return 'downloaded';
+      }
+      console.log('[Native Save] Failed — install app update for Share plugin, or use Print');
       return 'failed';
     }
 
@@ -79,7 +82,6 @@ async function tryWebShareWithFile(
     canShare?: (data: { files?: File[] }) => boolean;
   };
 
-  // Android WebView often reports canShare=false even when share({ files }) works.
   if (
     !isAndroid &&
     (typeof nav.canShare !== 'function' || !nav.canShare({ files: [file] }))
@@ -109,37 +111,56 @@ async function tryFilesystemAndShare(
   title?: string,
   shareText?: string
 ): Promise<'shared' | 'skipped'> {
-  if (
-    !Capacitor.isPluginAvailable('Filesystem') ||
-    !Capacitor.isPluginAvailable('Share')
-  ) {
+  if (!Capacitor.isNativePlatform()) {
     return 'skipped';
   }
 
   try {
     const [{ Filesystem, Directory }, { Share }] = await Promise.all([
-      import(/* webpackIgnore: true */ '@capacitor/filesystem'),
-      import(/* webpackIgnore: true */ '@capacitor/share'),
+      import('@capacitor/filesystem'),
+      import('@capacitor/share'),
     ]);
 
     const base64 = await blobToBase64(blob);
     const safeName = fileName.replace(/[^\w.-]+/g, '_');
     const path = `warmpawz/${Date.now()}-${safeName}`;
+    const isAndroid = Capacitor.getPlatform() === 'android';
 
     const written = await Filesystem.writeFile({
       path,
       data: base64,
-      directory: Directory.Cache,
+      directory: isAndroid ? Directory.Documents : Directory.Cache,
       recursive: true,
     });
 
     await Share.share({
       title: title ?? fileName,
-      text: shareText,
+      text: shareText ?? 'Save the PDF to Drive, Files, or another app.',
       url: written.uri,
+      dialogTitle: 'Save prescription PDF',
     });
 
     return 'shared';
+  } catch (err) {
+    console.warn('[Native Save] Filesystem+Share failed', err);
+    return 'skipped';
+  }
+}
+
+function tryAndroidOpenPdf(blob: Blob): 'downloaded' | 'skipped' {
+  if (Capacitor.getPlatform() !== 'android') {
+    return 'skipped';
+  }
+
+  try {
+    const url = URL.createObjectURL(blob);
+    const opened = window.open(url, '_blank');
+    if (!opened) {
+      URL.revokeObjectURL(url);
+      return 'skipped';
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    return 'downloaded';
   } catch {
     return 'skipped';
   }

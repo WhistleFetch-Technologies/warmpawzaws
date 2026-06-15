@@ -262,6 +262,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       const petIdFromBooking = rawBooking.petId || rawBooking.pet_id;
       const petIdFromPetObject = data.pet?.id;
       let finalPetId = petIdFromBooking || petIdFromPetObject;
+      let resolvedPetFromLookup: any = null;
       
       // ✅ FIX: If petId is still missing but we have customerId and petName, fetch it
       if (!finalPetId && (rawBooking.customerId || rawBooking.customer_id) && rawBooking.petName) {
@@ -290,6 +291,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             
             if (matchingPet?.id) {
               finalPetId = matchingPet.id;
+              resolvedPetFromLookup = matchingPet;
               console.log('[AppointmentDetailModal] ✅ Found petId:', { 
                 petId: finalPetId, 
                 bookingPetName: petName,
@@ -329,15 +331,26 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         customerName: rawBooking.customerName || 'Unknown Customer',
         customerPhone: rawBooking.customerPhone || '',
         // Pet info  
-        petName: rawBooking.pet?.name || rawBooking.petName || 'Unknown Pet',
-        petType: rawBooking.pet?.species || rawBooking.petType || rawBooking.petSpecies || '',
-        petBreed: rawBooking.pet?.breed || rawBooking.petBreed || '',
+        petName: rawBooking.pet?.name || rawBooking.petName || resolvedPetFromLookup?.name || 'Unknown Pet',
+        petType:
+          rawBooking.pet?.species ||
+          rawBooking.petType ||
+          rawBooking.petSpecies ||
+          resolvedPetFromLookup?.species ||
+          '',
+        petBreed: rawBooking.pet?.breed || rawBooking.petBreed || resolvedPetFromLookup?.breed || '',
         petAge:
           rawBooking.petAge != null && rawBooking.petAge !== ''
             ? `${rawBooking.petAge} years`
-            : rawBooking.pet?.age != null
-              ? `${rawBooking.pet.age} years`
-              : '',
+            : rawBooking.pet?.age_years != null
+              ? `${rawBooking.pet.age_years} years`
+              : rawBooking.pet?.age != null
+                ? `${rawBooking.pet.age} years`
+                : resolvedPetFromLookup?.age_years != null
+                  ? `${resolvedPetFromLookup.age_years} years`
+                  : resolvedPetFromLookup?.age != null
+                    ? `${resolvedPetFromLookup.age} years`
+                    : '',
         // Service info (details API may put label on nested service; list uses service?.name first)
         serviceName:
           rawBooking.serviceName ||
@@ -2794,9 +2807,18 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           showActions={true}
           prescription={transformPrescriptionData({
             ...selectedPrescriptionForA4,
-            pet_name: booking.petName,
-            pet_species: booking.petType,
-            pet_breed: booking.petBreed,
+            pet_name: selectedPrescriptionForA4.pet_name || booking.petName,
+            pet_species: selectedPrescriptionForA4.pet_species || booking.petType,
+            pet_breed: selectedPrescriptionForA4.pet_breed || booking.petBreed,
+            pet_age_years:
+              selectedPrescriptionForA4.pet_age_years ??
+              (booking as any).pet?.age_years ??
+              undefined,
+            pet_age_months:
+              selectedPrescriptionForA4.pet_age_months ??
+              (booking as any).pet?.age_months ??
+              undefined,
+            petAge: booking.petAge,
             customer_name: booking.customerName,
             customer_phone: booking.customerPhone,
             vendor_name: vendorData?.businessName || vendorData?.business_name,
