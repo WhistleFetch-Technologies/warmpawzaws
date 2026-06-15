@@ -1,13 +1,13 @@
 "use client";
 
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { cn } from '@/components/ui/utils';
 import { SupportTicketMessages } from './SupportTicketMessages';
 import { SupportTicketReplyComposer } from './SupportTicketReplyComposer';
 import { SupportTicketSummaryHeader } from './SupportTicketSummaryHeader';
 import type { SupportTicketDetailBundle } from './types';
+import type { SupportAttachment } from '@/lib/support-attachment-upload';
 
 export interface SupportTicketDetailViewProps {
   loadingInitial: boolean;
@@ -15,14 +15,11 @@ export interface SupportTicketDetailViewProps {
   replyText: string;
   onReplyTextChange: (value: string) => void;
   sendingReply: boolean;
-  onSendReply: () => void;
+  onSendReply: (attachments?: SupportAttachment[]) => void;
+  replyAttachments?: SupportAttachment[];
+  onReplyAttachmentsChange?: (attachments: SupportAttachment[]) => void;
   onBack: () => void;
-  /** Passed to message list: user taps Refresh to reload `GET /support/tickets/:id`. */
   onMessagesRefresh?: () => void | Promise<void>;
-  /**
-   * Set when the view sits in a fixed-height shell (e.g. messages inbox sheet with `overflow-hidden`).
-   * Uses flex + internal scrolling so the reply composer stays visible like vendor chat.
-   */
   embeddedInModal?: boolean;
 }
 
@@ -33,65 +30,104 @@ export function SupportTicketDetailView({
   onReplyTextChange,
   sendingReply,
   onSendReply,
+  replyAttachments = [],
+  onReplyAttachmentsChange,
   onBack,
   onMessagesRefresh,
   embeddedInModal = false,
 }: SupportTicketDetailViewProps) {
+  const ticket = detail?.ticket;
+
   return (
     <div
       className={cn(
-        'flex flex-col gap-4',
-        embeddedInModal && 'h-full min-h-0 overflow-hidden'
+        'flex flex-col flex-1 min-h-0 overflow-hidden',
+        !embeddedInModal && 'min-h-[min(72dvh,640px)]'
       )}
     >
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="shrink-0 gap-2 -ml-2 text-gray-700"
-        onClick={onBack}
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to My Tickets
-      </Button>
+      <div className="shrink-0 space-y-3 pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-[#FF8C42] -ml-0.5"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to My Tickets
+          </button>
+          {onMessagesRefresh ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 rounded-xl border-gray-200 text-xs"
+              onClick={() => void onMessagesRefresh()}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
+          ) : null}
+        </div>
 
-      {loadingInitial && !detail ? (
-        <Card className="p-8 text-center">
-          <div className="w-8 h-8 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-gray-500">Loading conversation…</p>
-        </Card>
-      ) : null}
+        {loadingInitial && !detail ? (
+          <div className="py-12 text-center">
+            <div className="w-8 h-8 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm text-gray-500">Loading conversation…</p>
+          </div>
+        ) : null}
+
+        {ticket ? (
+          <SupportTicketSummaryHeader
+            status={String(ticket.status || 'open')}
+            ticketNumber={
+              ticket.ticket_number != null ? String(ticket.ticket_number) : null
+            }
+            ticketId={ticket.id != null ? String(ticket.id) : undefined}
+            subject={String(ticket.subject || 'Support')}
+            createdAt={
+              ticket.created_at != null ? String(ticket.created_at) : null
+            }
+            category={ticket.category != null ? String(ticket.category) : null}
+            bookingId={
+              ticket.booking_id != null ? String(ticket.booking_id) : undefined
+            }
+            metadata={
+              ticket.metadata != null && typeof ticket.metadata === 'object'
+                ? (ticket.metadata as Record<string, unknown>)
+                : undefined
+            }
+          />
+        ) : null}
+      </div>
 
       {detail ? (
         <>
-          <div className="shrink-0">
-            <SupportTicketSummaryHeader
-              status={String(detail.ticket.status || 'open')}
-              ticketNumber={
-                detail.ticket.ticket_number != null
-                  ? String(detail.ticket.ticket_number)
-                  : null
-              }
-              subject={String(detail.ticket.subject || 'Support')}
-            />
-          </div>
           <SupportTicketMessages
+            ticketStatus={String(detail.ticket.status || 'open')}
             initialMessage={
               detail.ticket.message != null ? String(detail.ticket.message) : null
             }
             initialCreatedAt={
-              detail.ticket.created_at != null ? String(detail.ticket.created_at) : null
+              detail.ticket.created_at != null
+                ? String(detail.ticket.created_at)
+                : null
+            }
+            metadata={
+              detail.ticket.metadata != null && typeof detail.ticket.metadata === 'object'
+                ? (detail.ticket.metadata as Record<string, unknown>)
+                : undefined
             }
             responses={detail.responses}
-            onRefresh={onMessagesRefresh}
-            fillAvailable={embeddedInModal}
+            fillAvailable
+            className={embeddedInModal ? undefined : 'flex-1 min-h-[200px]'}
           />
           <SupportTicketReplyComposer
             value={replyText}
             onChange={onReplyTextChange}
             sending={sendingReply}
             onSend={onSendReply}
-            compact={embeddedInModal}
+            attachments={replyAttachments}
+            onAttachmentsChange={onReplyAttachmentsChange}
           />
         </>
       ) : null}

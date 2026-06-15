@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { useParams, usePathname, useSearchParams } from 'next/navigation';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { 
   Package, MapPin, Truck, Clock, Check, AlertCircle, 
-  Phone, ChevronRight, ArrowLeft, Navigation, RefreshCcw, MessageCircle, CheckCircle
+  Phone, ChevronRight, ArrowLeft, Navigation, RefreshCcw, MessageCircle, CheckCircle, HelpCircle
 } from 'lucide-react';
 import {
   MealPlanOrderTrackingUI,
@@ -30,6 +30,10 @@ import { parseMealRefundReview } from '@/lib/meal-refund-review';
 import { MealRefundReviewTrackingCard } from '@/components/customer/meal-plans/MealRefundReviewListBanner';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
+import {
+  buildSupportMealOrderContext,
+  navigateToMealOrderSupport,
+} from '@/lib/support-contact';
 
 interface TrackingData {
   success: boolean;
@@ -103,6 +107,7 @@ const deliveryStatusSteps = [
 ];
 
 export function TrackingPageClient({ orderId }: { orderId: string }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const routeParams = useParams();
   const pathname = usePathname();
@@ -293,6 +298,13 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
 
     const refundReview = parseMealRefundReview(tracking.order.refundReview);
 
+    const openMealOrderHelp = () => {
+      navigateToMealOrderSupport(
+        router,
+        buildSupportMealOrderContext(tracking.order as Record<string, unknown>),
+      );
+    };
+
     return (
       <MealPlanOrderTrackingUI
         orderDisplayId={formatMealOrderDisplayId(tracking.order)}
@@ -312,15 +324,25 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
           </a>
         }
         headerActions={
-          <button
-            type="button"
-            onClick={() => loadTracking(true)}
-            disabled={refreshing}
-            className="p-2 rounded-full hover:bg-white/15 text-white transition disabled:opacity-50"
-            aria-label="Refresh"
-          >
-            <RefreshCcw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={openMealOrderHelp}
+              className="p-2 rounded-full hover:bg-white/15 text-white transition"
+              aria-label="Help with this order"
+            >
+              <HelpCircle className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => loadTracking(true)}
+              disabled={refreshing}
+              className="p-2 rounded-full hover:bg-white/15 text-white transition disabled:opacity-50"
+              aria-label="Refresh"
+            >
+              <RefreshCcw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         }
         deliveryOtpBanner={
           otp &&
@@ -416,12 +438,14 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
                   ? `Delivered ${formatDate(tracking.tracking.deliveredAt)}`
                   : 'Your meal plan order has been delivered.'}
               </p>
-              <a
-                href="/support"
-                className="inline-block mt-4 text-sm font-semibold text-white underline underline-offset-2 hover:text-white/90"
+              <button
+                type="button"
+                onClick={openMealOrderHelp}
+                className="mt-4 px-6 py-2 rounded-full font-medium border-2 border-white/90 text-white hover:bg-white/15 inline-flex items-center justify-center gap-2"
               >
-                Need help?
-              </a>
+                <HelpCircle className="w-4 h-4" />
+                Need help with this order?
+              </button>
             </div>
           ) : undefined
         }
@@ -434,14 +458,25 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
         orderDetailsCollapsible={
           <MealOrderDetailsCollapsible order={tracking.order as Record<string, unknown>} />
         }
-        floatingChatButton={
-          <a
-            href="/support"
-            className="w-14 h-14 bg-white shadow-lg rounded-full flex items-center justify-center border border-slate-100 hover:bg-slate-50 transition"
-            aria-label="Help"
+        supportHelpCard={
+          <button
+            type="button"
+            onClick={openMealOrderHelp}
+            className="w-full rounded-2xl border border-[#FF8C42]/30 bg-[#FFF3E8] px-4 py-3.5 text-sm font-semibold text-[#FF8C42] hover:bg-[#FFE8D4] transition flex items-center justify-center gap-2"
           >
-            <MessageCircle className="w-7 h-7 text-slate-600" />
-          </a>
+            <HelpCircle className="w-5 h-5" />
+            Need help with this order?
+          </button>
+        }
+        floatingChatButton={
+          <button
+            type="button"
+            onClick={openMealOrderHelp}
+            className="w-14 h-14 bg-white shadow-lg rounded-full flex items-center justify-center border border-slate-100 hover:bg-slate-50 transition"
+            aria-label="Help with this order"
+          >
+            <HelpCircle className="w-7 h-7 text-[#FF8C42]" />
+          </button>
         }
       />
     );

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   MapPin, Package, Truck, CheckCircle, Clock, Phone, 
   Navigation, ChevronDown, Star, ArrowLeft,
-  AlertCircle, Loader2, X
+  AlertCircle, Loader2, X, HelpCircle
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import {
@@ -30,6 +31,11 @@ import { parseMealRefundReview } from '@/lib/meal-refund-review';
 import { MealRefundReviewTrackingCard } from '@/components/customer/meal-plans/MealRefundReviewListBanner';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
+import {
+  buildSupportMealOrderContext,
+  navigateToMealOrderSupport,
+  type SupportMealOrderContext,
+} from '@/lib/support-contact';
 
 interface DeliveryPerson {
   name: string;
@@ -60,6 +66,8 @@ interface OrderTrackingScreenProps {
   orderId: string;
   orderType: 'pharmacy' | 'meal';
   onBack?: () => void;
+  /** Opens Help & Support with this meal order pre-linked (in-app shell). */
+  onNeedHelp?: (ctx: SupportMealOrderContext) => void;
 }
 
 const statusSteps = [
@@ -145,7 +153,8 @@ function resolveDeliveryAddressText(order: Record<string, unknown>): string {
   return '';
 }
 
-export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackingScreenProps) {
+export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: OrderTrackingScreenProps) {
+  const router = useRouter();
   const [order, setOrder] = useState<any>(null);
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [mealCustomer, setMealCustomer] = useState<Record<string, unknown> | null>(null);
@@ -291,6 +300,24 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
     );
     const riderPhoto = resolveRiderPhoto(tracking as Record<string, unknown>);
     const refundReview = parseMealRefundReview(order.refundReview);
+    const openMealOrderHelp = () => {
+      const ctx = buildSupportMealOrderContext(order as Record<string, unknown>);
+      if (onNeedHelp) {
+        onNeedHelp(ctx);
+      } else {
+        navigateToMealOrderSupport(router, ctx);
+      }
+    };
+    const mealHelpButton = (
+      <button
+        type="button"
+        onClick={openMealOrderHelp}
+        className="w-full rounded-2xl border border-[#FF8C42]/30 bg-[#FFF3E8] px-4 py-3.5 text-sm font-semibold text-[#FF8C42] hover:bg-[#FFE8D4] transition flex items-center justify-center gap-2"
+      >
+        <HelpCircle className="w-5 h-5" />
+        Need help with this order?
+      </button>
+    );
 
     return (
       <>
@@ -310,6 +337,16 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
               aria-label="Back"
             >
               <ArrowLeft className="w-6 h-6" />
+            </button>
+          }
+          headerActions={
+            <button
+              type="button"
+              onClick={openMealOrderHelp}
+              className="p-2 rounded-full hover:bg-white/15 text-white transition"
+              aria-label="Help with this order"
+            >
+              <HelpCircle className="w-5 h-5" />
             </button>
           }
           deliveryOtpBanner={
@@ -410,6 +447,14 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
                     <Star className="w-4 h-4 fill-current" /> Thank you for your review!
                   </p>
                 ) : null}
+                <button
+                  type="button"
+                  onClick={openMealOrderHelp}
+                  className="mt-4 px-6 py-2 rounded-full font-medium border-2 border-white/90 text-white hover:bg-white/15 inline-flex items-center justify-center gap-2"
+                >
+                  <HelpCircle className="w-4 h-4" />
+                  Need help with this order?
+                </button>
               </div>
             ) : undefined
           }
@@ -421,6 +466,17 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
           }
           orderDetailsCollapsible={
             <MealOrderDetailsCollapsible order={order as Record<string, unknown>} />
+          }
+          supportHelpCard={mealHelpButton}
+          floatingChatButton={
+            <button
+              type="button"
+              onClick={openMealOrderHelp}
+              className="w-14 h-14 bg-white shadow-lg rounded-full flex items-center justify-center border border-slate-100 hover:bg-slate-50 transition"
+              aria-label="Help with this order"
+            >
+              <HelpCircle className="w-7 h-7 text-[#FF8C42]" />
+            </button>
           }
         />
         {showReviewModal && (

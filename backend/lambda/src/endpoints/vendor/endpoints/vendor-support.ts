@@ -85,6 +85,21 @@ export function registerVendorSupportEndpoints(app: Hono) {
         updated_at: new Date().toISOString(),
       });
 
+      const createdId = String(ticket[0].id);
+      const { recordSupportTicketActivity, SUPPORT_TICKET_EVENT_TYPES } = await import(
+        '../../supportCrm/support-ticket-activity'
+      );
+      const { scheduleSupportTicketAiAck } = await import('../../supportCrm/support-ticket-ai-ack');
+      void recordSupportTicketActivity({
+        ticketId: createdId,
+        eventType: SUPPORT_TICKET_EVENT_TYPES.TICKET_CREATED,
+        eventActorType: 'vendor',
+        eventActorId: vendorId,
+        eventTitle: 'Ticket created',
+        eventMetadata: { source: 'vendor_dashboard', ticketNumber },
+      });
+      scheduleSupportTicketAiAck(createdId);
+
       return c.json({
         success: true,
         ticket: ticket[0],

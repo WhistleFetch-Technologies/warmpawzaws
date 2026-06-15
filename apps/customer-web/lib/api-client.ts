@@ -987,6 +987,14 @@ export const supportCrmApi = {
     message: string;
     responderId?: string;
     responderType?: 'agent' | 'customer';
+    attachments?: Array<{
+      name: string;
+      url: string;
+      displayUrl?: string;
+      fileKey?: string;
+      type?: string;
+      size?: number;
+    }>;
   }) => apiClient.post(`/support/tickets/${ticketId}/respond`, data),
   
   updateTicketStatus: (ticketId: string, status: string, resolution?: string) =>

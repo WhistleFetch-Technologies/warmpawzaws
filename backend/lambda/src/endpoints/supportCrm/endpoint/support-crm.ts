@@ -17,8 +17,6 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../../../database/rds-connection';
-import { getSnsClient } from '../../../utils/sns-client';
-import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { generateSupportTicketNumber } from '../../../utils/support-ticket-number';
 import { isValidUUID } from '../../../types/entities';
@@ -29,8 +27,60 @@ import {
   buildBookingSnapshot,
   buildPaymentSnapshot,
   enrichSupportTicket,
+  resolveMealOrderIdFromTicket,
+  buildMealOrderPaymentSnapshot,
+  resolveCustomerProfile,
+  resolveVendorProfile,
   mapTicketForCrmList,
 } from '../support-ticket-helpers';
+import {
+  recordSupportTicketActivity,
+  listSupportTicketActivity,
+  resolveActorDisplayName,
+  SUPPORT_TICKET_EVENT_TYPES,
+} from '../support-ticket-activity';
+import { scheduleSupportTicketAiAck, retryPostAckAssignment } from '../support-ticket-ai-ack';
+import { enrichSupportTicketMetadataAttachments } from '../support-ticket-attachments';
+import { notifySupportTicketCustomerSms } from '../support-ticket-notify';
+import {
+  scheduleSupportTicketNotification,
+  shouldNotifyCustomerOnAgentReply,
+} from '../support-ticket-notification-dispatch';
+import {
+  getSupportNotificationSettings,
+  updateSupportNotificationSettings,
+} from '../support-ticket-notification-settings';
+import { processSupportTicketEscalationBatch } from '../support-ticket-escalation-processor';
+import { resolveSupportTicketOrderLink } from '../resolve-support-ticket-order-link';
+import { normalizeSupportTicketCategory, isExtendedSupportCategory } from '../normalize-support-ticket-category';
+import {
+  assignSupportTicket,
+  assignSupportTicketBatch,
+  getSupportRoutingSettings,
+  updateSupportRoutingSettings,
+} from '../support-ticket-auto-assign';
+
+async function logTicketStatusActivity(
+  ticketId: string,
+  fromStatus: string | null | undefined,
+  toStatus: string,
+  actorType = 'system',
+  actorId?: string | null
+): Promise<void> {
+  await recordSupportTicketActivity({
+    ticketId,
+    eventType: SUPPORT_TICKET_EVENT_TYPES.STATUS_CHANGED,
+    eventActorType: actorType,
+    eventActorId: actorId ?? null,
+    eventTitle: `Status changed to ${toStatus.replace(/_/g, ' ')}`,
+    eventMetadata: { from: fromStatus ?? null, to: toStatus },
+  });
+}
+
+async function resolveAssigneeName(assigneeId: string | null | undefined): Promise<string | null> {
+  if (!assigneeId) return null;
+  return resolveActorDisplayName('agent', assigneeId);
+}
 
 export function registerSupportCrmEndpoints(app: Hono) {
   /**
@@ -75,10 +125,28 @@ export function registerSupportCrmEndpoints(app: Hono) {
       let resolvedBookingId: string | null = bookingId || null;
       let resolvedCustomerId: string | null = customerId || null;
       let resolvedVendorId: string | null = null;
-      let resolvedCategory = category || null;
-      let ticketType: 'general' | 'booking' = 'general';
+      let resolvedCategory = normalizeSupportTicketCategory(category);
+      let resolvedOrdersTableId: string | null = null;
+      let resolvedMealOrderId: string | null = null;
+      const metaTicketType =
+        typeof metaRest.ticket_type === 'string' ? metaRest.ticket_type : undefined;
+      let ticketType: 'general' | 'booking' | 'meal_order' = 'general';
       let bookingSnapshot = null;
       let paymentSnapshot = null;
+
+      if (orderId) {
+        const orderLink = await resolveSupportTicketOrderLink(String(orderId), metaTicketType);
+        if (orderLink.kind === 'error') {
+          return c.json({ error: orderLink.error }, 400);
+        }
+        if (orderLink.kind === 'orders') {
+          resolvedOrdersTableId = orderLink.orderId;
+          ticketType = metaTicketType === 'meal_order' ? 'meal_order' : 'general';
+        } else if (orderLink.kind === 'meal_orders') {
+          resolvedMealOrderId = orderLink.mealOrderId;
+          ticketType = 'meal_order';
+        }
+      }
 
       if (resolvedBookingId) {
         try {
@@ -98,16 +166,31 @@ export function registerSupportCrmEndpoints(app: Hono) {
         } catch (snapErr) {
           console.warn('[support/tickets] booking snapshot failed (ticket will still be created):', snapErr);
         }
+      } else if (ticketType === 'meal_order') {
+        if (!resolvedCategory || resolvedCategory === 'general') {
+          resolvedCategory = 'billing';
+        }
       } else {
         ticketType = 'general';
         if (!resolvedCategory) resolvedCategory = 'general';
       }
 
       // Create support ticket
-      const ticket = await insert('support_tickets', {
+      let customerProfile: Awaited<ReturnType<typeof resolveCustomerProfile>> | null = null;
+      if (resolvedCustomerId || customerPhone) {
+        customerProfile = await resolveCustomerProfile({
+          customer_id: resolvedCustomerId,
+          customer_phone: customerPhone || null,
+          booking_id: resolvedBookingId,
+        });
+      }
+
+      const ticketPayload: Record<string, unknown> = {
         ticket_number: generateSupportTicketNumber(),
         customer_id: resolvedCustomerId || null,
-        customer_phone: customerPhone || null,
+        customer_name: customerProfile?.customerName || null,
+        customer_email: customerProfile?.customerEmail || null,
+        customer_phone: customerProfile?.customerPhone || customerPhone || null,
         vendor_id: resolvedVendorId || null,
         subject,
         message,
@@ -115,61 +198,75 @@ export function registerSupportCrmEndpoints(app: Hono) {
         priority,
         category: resolvedCategory,
         booking_id: resolvedBookingId,
-        order_id: orderId || null,
+        order_id: resolvedOrdersTableId,
         status: 'open',
         metadata: {
           ...metaRest,
           attachments: attachmentList,
           ticket_type: ticketType,
+          issue_category: category || resolvedCategory,
+          ...(resolvedMealOrderId ? { linked_meal_order_id: resolvedMealOrderId } : {}),
           ...(bookingSnapshot ? { booking_snapshot: bookingSnapshot } : {}),
           ...(paymentSnapshot ? { payment_snapshot: paymentSnapshot } : {}),
         },
         created_at: new Date().toISOString(),
+      };
+
+      if (resolvedMealOrderId) {
+        ticketPayload.meal_order_id = resolvedMealOrderId;
+      }
+
+      let ticket: Awaited<ReturnType<typeof insert>>;
+      try {
+        ticket = await insert('support_tickets', ticketPayload);
+      } catch (insertErr: unknown) {
+        const msg = String((insertErr as Error)?.message || insertErr || '');
+        const retryPayload = { ...ticketPayload };
+        let shouldRetry = false;
+
+        if (resolvedMealOrderId && msg.includes('meal_order_id')) {
+          delete retryPayload.meal_order_id;
+          shouldRetry = true;
+        }
+        if (isExtendedSupportCategory(resolvedCategory) && msg.includes('support_tickets_category_check')) {
+          retryPayload.category =
+            { cancellation: 'service', delivery: 'service', wrong_items: 'other', quality: 'service' }[
+              resolvedCategory
+            ] || 'other';
+          shouldRetry = true;
+        }
+
+        if (!shouldRetry) throw insertErr;
+        ticket = await insert('support_tickets', retryPayload);
+      }
+
+      const createdTicket = ticket[0];
+      const createdId = String(createdTicket.id);
+
+      void recordSupportTicketActivity({
+        ticketId: createdId,
+        eventType: SUPPORT_TICKET_EVENT_TYPES.TICKET_CREATED,
+        eventActorType: source === 'customer' ? 'customer' : 'system',
+        eventActorId: resolvedCustomerId || null,
+        eventTitle: 'Ticket created',
+        eventMetadata: {
+          ticketNumber: createdTicket.ticket_number,
+          source,
+          ticketType,
+        },
       });
 
-      // Notify support team (if configured)
-      try {
-        const { select } = require('../../../database/rds-connection');
-        const { publishToSNS } = require('../../../utils/aws-clients');
-        
-        // Get support team contact from platform settings
-        const settings = await select('platform_settings', {
-          setting_key: 'support:team:contact',
-        });
-        
-        if (settings.length > 0) {
-          const supportContact = settings[0].setting_value as any;
-          const supportPhone = supportContact?.phone;
-          const supportEmail = supportContact?.email;
-          
-          // Send notification to support team
-          if (supportPhone || supportEmail) {
-            await publishToSNS('platform-notifications', {
-              type: 'support_ticket',
-              ticket_id: ticket[0].id,
-              priority: priority || 'medium',
-              subject: subject,
-              message: message,
-              customer_id: customerId,
-              vendor_id: null,
-              phone: supportPhone,
-              email: supportEmail,
-            }, {
-              messageType: 'Transactional',
-              priority: priority || 'medium',
-            });
-            
-            console.log(`✅ Support ticket notification sent to support team`);
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to send support notification', e);
-        // Don't fail the request if notification fails
-      }
+      scheduleSupportTicketNotification({
+        event: 'ticket_created',
+        ticket: createdTicket as Record<string, unknown>,
+        messagePreview: message,
+      });
+
+      scheduleSupportTicketAiAck(createdId);
 
       return c.json({
         success: true,
-        ticket: ticket[0],
+        ticket: createdTicket,
         message: 'Support ticket created successfully',
       });
     } catch (error: any) {
@@ -221,12 +318,26 @@ export function registerSupportCrmEndpoints(app: Hono) {
     try {
       const { ticketId } = c.req.param();
 
-      const tickets = await select('support_tickets', { id: ticketId });
-      if (tickets.length === 0) {
+      const ticketRows = await query(
+        `SELECT t.*,
+                COALESCE(NULLIF(TRIM(c.full_name), ''), NULLIF(TRIM(t.customer_name), '')) AS customer_name,
+                COALESCE(NULLIF(TRIM(c.email), ''), NULLIF(TRIM(t.customer_email), '')) AS customer_email,
+                COALESCE(NULLIF(TRIM(c.phone), ''), NULLIF(TRIM(t.customer_phone), '')) AS customer_phone
+         FROM support_tickets t
+         LEFT JOIN customers c ON t.customer_id = c.id
+         WHERE t.id = $1::uuid
+         LIMIT 1`,
+        [ticketId]
+      );
+      if (!ticketRows.rows?.length) {
         return c.json({ error: 'Support ticket not found' }, 404);
       }
 
-      const ticket: any = { ...tickets[0] };
+      const ticket: any = { ...ticketRows.rows[0] };
+      const customerProfile = await resolveCustomerProfile(ticket);
+      if (customerProfile.customerName) ticket.customer_name = customerProfile.customerName;
+      if (customerProfile.customerEmail) ticket.customer_email = customerProfile.customerEmail;
+      if (customerProfile.customerPhone) ticket.customer_phone = customerProfile.customerPhone;
       const assigneeId = ticket.assigned_to;
       if (assigneeId) {
         try {
@@ -290,9 +401,27 @@ export function registerSupportCrmEndpoints(app: Hono) {
       }
 
       const enrichment = await enrichSupportTicket(ticket);
+      const vendorProfile = await resolveVendorProfile(
+        ticket.vendor_id ? String(ticket.vendor_id) : null,
+        enrichment.bookingContext,
+        enrichment.mealOrderContext,
+      );
+
+      const enrichedMetadata = await enrichSupportTicketMetadataAttachments(ticket.metadata);
+      if (enrichedMetadata) {
+        ticket.metadata = enrichedMetadata;
+      }
+
+      void retryPostAckAssignment(ticketId).catch((err) => {
+        console.warn('[CRM] post-ack assignment retry failed:', ticketId, err);
+      });
 
       return c.json({
         success: true,
+        customerName: ticket.customer_name || null,
+        customerEmail: ticket.customer_email || null,
+        customerPhone: ticket.customer_phone || null,
+        vendorPhone: vendorProfile.vendorPhone || null,
         ticket: {
           ...ticket,
           ticket_type: enrichment.ticketType,
@@ -300,6 +429,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
         },
         ticketType: enrichment.ticketType,
         bookingContext: enrichment.bookingContext,
+        mealOrderContext: enrichment.mealOrderContext,
         paymentContext: enrichment.paymentContext,
         isRefundable: enrichment.isRefundable,
         refundBlockReason: enrichment.refundBlockReason,
@@ -319,7 +449,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
   app.post("/support/tickets/:ticketId/respond", async (c) => {
     try {
       const { ticketId } = c.req.param();
-      const { message, responderId, responderType, isInternal = false } = await c.req.json();
+      const { message, responderId, responderType, isInternal = false, attachments } = await c.req.json();
 
       if (!message) {
         return c.json({ error: 'message is required' }, 400);
@@ -343,6 +473,33 @@ export function registerSupportCrmEndpoints(app: Hono) {
         created_at: new Date().toISOString(),
       });
 
+      const attachmentList = Array.isArray(attachments) ? attachments : [];
+      if (attachmentList.length > 0) {
+        const meta =
+          ticket.metadata != null && typeof ticket.metadata === 'object' && !Array.isArray(ticket.metadata)
+            ? { ...(ticket.metadata as Record<string, unknown>) }
+            : {};
+        const existing = Array.isArray(meta.attachments) ? [...meta.attachments] : [];
+        const responseAttachments =
+          meta.response_attachments != null && typeof meta.response_attachments === 'object' && !Array.isArray(meta.response_attachments)
+            ? { ...(meta.response_attachments as Record<string, unknown>) }
+            : {};
+        const responseId = String(response[0]?.id || '');
+        responseAttachments[responseId] = attachmentList;
+        await update(
+          'support_tickets',
+          { id: ticketId },
+          {
+            metadata: {
+              ...meta,
+              attachments: [...existing, ...attachmentList],
+              response_attachments: responseAttachments,
+            },
+            last_updated_at: new Date().toISOString(),
+          }
+        );
+      }
+
       // Update ticket status
       if (ticket.status === 'open' && responderType === 'agent') {
         await update('support_tickets',
@@ -354,25 +511,38 @@ export function registerSupportCrmEndpoints(app: Hono) {
         );
       }
 
-      // Notify customer if agent responded
-      if (responderType === 'agent' && !isInternal && (ticket.customer_phone || ticket.customer_id)) {
-        try {
-          const snsClient = getSnsClient();
-          const customerPhone = ticket.customer_phone || 
-            (ticket.customer_id ? (await select('customers', { id: ticket.customer_id }))[0]?.phone : null);
-          
-          if (customerPhone) {
-            await snsClient.send(new PublishCommand({
-              PhoneNumber: customerPhone,
-              Message: `Support Update: ${message.substring(0, 100)}...`,
-              MessageAttributes: {
-                'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
-              },
-            })).catch(err => console.error('SNS notification failed:', err));
-          }
-        } catch (e) {
-          console.warn('Failed to send notification', e);
+      if (isInternal) {
+        await recordSupportTicketActivity({
+          ticketId,
+          eventType: SUPPORT_TICKET_EVENT_TYPES.INTERNAL_NOTE_ADDED,
+          eventActorType: responderType === 'agent' ? 'agent' : 'system',
+          eventActorId: responderId || null,
+          eventTitle: 'Internal note added',
+        });
+      } else if (responderType === 'agent') {
+        await recordSupportTicketActivity({
+          ticketId,
+          eventType: SUPPORT_TICKET_EVENT_TYPES.AGENT_REPLIED,
+          eventActorType: 'agent',
+          eventActorId: responderId || null,
+          eventTitle: 'Agent replied',
+        });
+        if (await shouldNotifyCustomerOnAgentReply(ticket as Record<string, unknown>)) {
+          await notifySupportTicketCustomerSms(ticket, message);
         }
+      } else if (responderType === 'customer') {
+        await recordSupportTicketActivity({
+          ticketId,
+          eventType: SUPPORT_TICKET_EVENT_TYPES.CUSTOMER_REPLIED,
+          eventActorType: 'customer',
+          eventActorId: responderId || ticket.customer_id || null,
+          eventTitle: 'Customer replied',
+        });
+        scheduleSupportTicketNotification({
+          event: 'customer_replied',
+          ticket: ticket as Record<string, unknown>,
+          messagePreview: message?.substring(0, 200),
+        });
       }
 
       return c.json({
@@ -409,6 +579,13 @@ export function registerSupportCrmEndpoints(app: Hono) {
         }
       );
 
+      scheduleSupportTicketNotification({
+        event: 'assigned',
+        ticket: updated[0] as Record<string, unknown>,
+        assigneeId: agentId,
+        assigneeName: agentName,
+      });
+
       return c.json({
         success: true,
         ticket: updated[0],
@@ -429,9 +606,16 @@ export function registerSupportCrmEndpoints(app: Hono) {
       const { ticketId } = c.req.param();
       const { status, resolution } = await c.req.json();
 
-      if (!status || !['open', 'in_progress', 'resolved', 'closed', 'cancelled'].includes(status)) {
+      const allowedStatuses = [
+        'open', 'ai_acknowledged', 'awaiting_assignment', 'assigned', 'in_progress',
+        'waiting_for_customer', 'resolved', 'closed', 'escalated', 'cancelled',
+      ];
+      if (!status || !allowedStatuses.includes(status)) {
         return c.json({ error: 'Valid status is required' }, 400);
       }
+
+      const existing = await select('support_tickets', { id: ticketId });
+      const prevStatus = existing[0]?.status;
 
       const updateData: any = {
         status,
@@ -447,6 +631,34 @@ export function registerSupportCrmEndpoints(app: Hono) {
         { id: ticketId },
         updateData
       );
+
+      if (prevStatus !== status) {
+        await logTicketStatusActivity(ticketId, prevStatus, status, 'admin');
+        if (status === 'resolved') {
+          await recordSupportTicketActivity({
+            ticketId,
+            eventType: SUPPORT_TICKET_EVENT_TYPES.TICKET_RESOLVED,
+            eventActorType: 'admin',
+            eventTitle: 'Ticket resolved',
+          });
+          scheduleSupportTicketNotification({
+            event: 'resolved',
+            ticket: updated[0] as Record<string, unknown>,
+          });
+        }
+        if (status === 'closed') {
+          await recordSupportTicketActivity({
+            ticketId,
+            eventType: SUPPORT_TICKET_EVENT_TYPES.TICKET_CLOSED,
+            eventActorType: 'admin',
+            eventTitle: 'Ticket closed',
+          });
+          scheduleSupportTicketNotification({
+            event: 'closed',
+            ticket: updated[0] as Record<string, unknown>,
+          });
+        }
+      }
 
       return c.json({
         success: true,
@@ -505,13 +717,15 @@ export function registerSupportCrmEndpoints(app: Hono) {
       let queryStr = `
         SELECT 
           t.*,
-          c.full_name as customer_name,
-          c.phone as customer_phone,
-          c.email as customer_email,
+          COALESCE(NULLIF(TRIM(c.full_name), ''), NULLIF(TRIM(t.customer_name), '')) as customer_name,
+          COALESCE(NULLIF(TRIM(c.email), ''), NULLIF(TRIM(t.customer_email), '')) as customer_email,
+          COALESCE(NULLIF(TRIM(c.phone), ''), NULLIF(TRIM(t.customer_phone), '')) as customer_phone,
+          vnd.phone as vendor_phone,
           COALESCE(s.name, adm.name, adm.email) as assigned_agent_name,
           t.assigned_to as assigned_agent_id
         FROM support_tickets t
         LEFT JOIN customers c ON t.customer_id = c.id
+        LEFT JOIN vendors vnd ON t.vendor_id = vnd.id
         LEFT JOIN staff s ON t.assigned_to = s.id
         LEFT JOIN admins adm ON t.assigned_to = adm.id
         WHERE 1=1
@@ -545,6 +759,10 @@ export function registerSupportCrmEndpoints(app: Hono) {
       const safeTickets = await Promise.all(
         (tickets.rows || []).map(async (t: any) => {
           try {
+            const enrichedMetadata = await enrichSupportTicketMetadataAttachments(t.metadata);
+            if (enrichedMetadata) {
+              t.metadata = enrichedMetadata;
+            }
             const enrichment = await enrichSupportTicket(t);
             return mapTicketForCrmList(t, enrichment);
           } catch (err) {
@@ -678,6 +896,10 @@ export function registerSupportCrmEndpoints(app: Hono) {
         return c.json({ error: 'Ticket not found' }, 404);
       }
 
+      const ticketBefore = tickets[0];
+      const prevStatus = ticketBefore.status;
+      const prevAssignee = ticketBefore.assigned_to;
+
       const updateData: any = {
         last_updated_at: new Date().toISOString(),
       };
@@ -685,9 +907,10 @@ export function registerSupportCrmEndpoints(app: Hono) {
       switch (action) {
         case 'assign':
           if (actionData.assignTo || actionData.agentId) {
-            updateData.assigned_to = actionData.assignTo || actionData.agentId;
+            const assigneeId = actionData.assignTo || actionData.agentId;
+            updateData.assigned_to = assigneeId;
             updateData.assigned_at = new Date().toISOString();
-            updateData.status = 'in_progress';
+            updateData.status = 'assigned';
           }
           break;
         case 'escalate':
@@ -711,11 +934,14 @@ export function registerSupportCrmEndpoints(app: Hono) {
           const ticket = tickets[0];
           let refundResult: Record<string, unknown> | null = null;
           let refundProcessed = false;
+          const mealOrderId = resolveMealOrderIdFromTicket(ticket);
+          const bookingId = ticket.booking_id ? String(ticket.booking_id) : null;
 
-          if (!ticket.booking_id) {
+          if (!bookingId && !mealOrderId) {
             refundResult = {
               status: 'failed',
-              message: 'This is a general ticket with no booking linked. Attach a booking before processing a refund.',
+              message:
+                'This ticket is not linked to a booking or meal order. Link an order before processing a refund.',
             };
           } else if (!ticket.customer_id) {
             refundResult = {
@@ -724,6 +950,52 @@ export function registerSupportCrmEndpoints(app: Hono) {
             };
           } else {
             try {
+              if (mealOrderId && !bookingId) {
+                const paymentSnapshot = await buildMealOrderPaymentSnapshot(mealOrderId);
+                const refundAmount =
+                  actionData.amount != null
+                    ? parseFloat(String(actionData.amount))
+                    : paymentSnapshot?.refundableBalance ?? 0;
+
+                if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+                  throw new Error('Invalid refund amount');
+                }
+
+                if (paymentSnapshot && refundAmount > paymentSnapshot.refundableBalance + 0.01) {
+                  throw new Error(
+                    `Refund amount exceeds refundable balance (₹${paymentSnapshot.refundableBalance.toFixed(2)})`,
+                  );
+                }
+
+                const { processMealOrderAdminOriginalRefund } = await import(
+                  '../../../utils/payments/meal-order-original-refund'
+                );
+                const processed = await processMealOrderAdminOriginalRefund(
+                  mealOrderId,
+                  refundAmount,
+                  actionData.reason || `Support ticket refund (${action})`,
+                  { initiatedBy: 'support' },
+                );
+
+                const ticketRefundStatus =
+                  processed.status === 'failed' ? 'failed' : 'processing';
+                updateData.refund_id = processed.refundId;
+                updateData.refund_amount = processed.totalAmount;
+                updateData.refund_status = ticketRefundStatus;
+
+                refundResult = {
+                  refundId: processed.refundId,
+                  amount: processed.totalAmount,
+                  status: processed.status,
+                  razorpayRefundId: processed.razorpayRefundId,
+                  walletCredited: processed.walletCredited,
+                  message: processed.message,
+                };
+                refundProcessed = processed.status !== 'failed';
+                console.log(
+                  `✅ [CRM] Meal order refund processed for ticket ${ticketId}: ₹${processed.totalAmount}`,
+                );
+              } else if (bookingId) {
               const payments = await query(
                 `SELECT id, amount::text, payment_status FROM payments
                  WHERE booking_id = $1::uuid
@@ -787,6 +1059,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
                   message: 'No completed payment found for this booking',
                 };
               }
+              }
             } catch (refundError: any) {
               console.error('Error processing refund:', refundError);
               refundResult = {
@@ -798,7 +1071,12 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
           updateData.metadata = {
             ...(ticket.metadata || {}),
-            ticket_type: 'booking',
+            ticket_type:
+              mealOrderId && !bookingId
+                ? 'meal_order'
+                : bookingId
+                  ? 'booking'
+                  : ((ticket.metadata as Record<string, unknown> | undefined)?.ticket_type ?? 'general'),
             refund_requested: true,
             refund_amount: actionData.amount ?? refundResult?.amount,
             refund_reason: actionData.reason,
@@ -810,6 +1088,29 @@ export function registerSupportCrmEndpoints(app: Hono) {
           };
 
           const updatedRefund = await update('support_tickets', { id: ticketId }, updateData);
+
+          if (refundProcessed) {
+            await recordSupportTicketActivity({
+              ticketId,
+              eventType: SUPPORT_TICKET_EVENT_TYPES.REFUND_INITIATED,
+              eventActorType: 'agent',
+              eventTitle: `${action === 'partial_refund' ? 'Partial refund' : 'Full refund'} initiated`,
+              eventMetadata: {
+                amount: refundResult?.amount,
+                refundId: refundResult?.refundId,
+                status: refundResult?.status,
+              },
+            });
+            if (refundResult?.status === 'completed') {
+              await recordSupportTicketActivity({
+                ticketId,
+                eventType: SUPPORT_TICKET_EVENT_TYPES.REFUND_COMPLETED,
+                eventActorType: 'system',
+                eventTitle: 'Refund completed',
+                eventMetadata: { refundId: refundResult?.refundId },
+              });
+            }
+          }
 
           return c.json({
             success: refundProcessed,
@@ -855,6 +1156,77 @@ export function registerSupportCrmEndpoints(app: Hono) {
       }
 
       const updated = await update('support_tickets', { id: ticketId }, updateData);
+      const newStatus = updated[0]?.status;
+
+      if (action === 'assign' && updateData.assigned_to) {
+        const assigneeName = await resolveAssigneeName(String(updateData.assigned_to));
+        const isReassign = prevAssignee && String(prevAssignee) !== String(updateData.assigned_to);
+        await recordSupportTicketActivity({
+          ticketId,
+          eventType: isReassign
+            ? SUPPORT_TICKET_EVENT_TYPES.REASSIGNED
+            : SUPPORT_TICKET_EVENT_TYPES.ASSIGNED,
+          eventActorType: 'admin',
+          eventTitle: isReassign
+            ? `Reassigned to ${assigneeName || 'agent'}`
+            : `Assigned to ${assigneeName || 'agent'}`,
+          eventMetadata: {
+            assigneeId: updateData.assigned_to,
+            assigneeName,
+            previousAssigneeId: prevAssignee ?? null,
+          },
+        });
+        if (prevStatus !== newStatus) {
+          await logTicketStatusActivity(ticketId, prevStatus, String(newStatus), 'admin');
+        }
+        scheduleSupportTicketNotification({
+          event: isReassign ? 'reassigned' : 'assigned',
+          ticket: updated[0] as Record<string, unknown>,
+          assigneeId: String(updateData.assigned_to),
+          assigneeName: assigneeName || undefined,
+          previousAssigneeId: prevAssignee ? String(prevAssignee) : null,
+        });
+      } else if (action === 'escalate') {
+        await recordSupportTicketActivity({
+          ticketId,
+          eventType: SUPPORT_TICKET_EVENT_TYPES.ESCALATED,
+          eventActorType: 'admin',
+          eventTitle: 'Ticket escalated',
+          eventMetadata: { reason: updateData.escalation_reason },
+        });
+        if (prevStatus !== newStatus) {
+          await logTicketStatusActivity(ticketId, prevStatus, String(newStatus), 'admin');
+        }
+        scheduleSupportTicketNotification({
+          event: 'escalated',
+          ticket: updated[0] as Record<string, unknown>,
+          reason: String(updateData.escalation_reason || 'Escalated by admin'),
+        });
+      } else if (action === 'reopen') {
+        await recordSupportTicketActivity({
+          ticketId,
+          eventType: SUPPORT_TICKET_EVENT_TYPES.TICKET_REOPENED,
+          eventActorType: 'admin',
+          eventTitle: 'Ticket reopened',
+        });
+        if (prevStatus !== newStatus) {
+          await logTicketStatusActivity(ticketId, prevStatus, String(newStatus), 'admin');
+        }
+      } else if (action === 'close') {
+        await recordSupportTicketActivity({
+          ticketId,
+          eventType: SUPPORT_TICKET_EVENT_TYPES.TICKET_CLOSED,
+          eventActorType: 'admin',
+          eventTitle: 'Ticket closed',
+        });
+        if (prevStatus !== newStatus) {
+          await logTicketStatusActivity(ticketId, prevStatus, String(newStatus), 'admin');
+        }
+        scheduleSupportTicketNotification({
+          event: 'closed',
+          ticket: updated[0] as Record<string, unknown>,
+        });
+      }
 
       return c.json({
         success: true,
@@ -894,12 +1266,24 @@ export function registerSupportCrmEndpoints(app: Hono) {
         created_at: new Date().toISOString(),
       });
 
-      // Update ticket status if agent replied
+      const ticket = tickets[0];
+
       if (responderType === 'agent') {
+        const prevStatus = ticket.status;
         await update('support_tickets', { id: ticketId }, {
-          status: 'in_progress',
+          status: prevStatus === 'assigned' ? 'in_progress' : (prevStatus || 'in_progress'),
           last_updated_at: new Date().toISOString(),
         });
+        await recordSupportTicketActivity({
+          ticketId,
+          eventType: SUPPORT_TICKET_EVENT_TYPES.AGENT_REPLIED,
+          eventActorType: 'agent',
+          eventActorId: responderId || null,
+          eventTitle: 'Agent replied',
+        });
+        if (await shouldNotifyCustomerOnAgentReply(ticket as Record<string, unknown>)) {
+          await notifySupportTicketCustomerSms(ticket, message);
+        }
       }
 
       return c.json({
@@ -926,11 +1310,29 @@ export function registerSupportCrmEndpoints(app: Hono) {
         return c.json({ error: 'ticketId is required' }, 400);
       }
 
+      const existing = await select('support_tickets', { id: ticketId });
+      const prevStatus = existing[0]?.status;
+
       const updated = await update('support_tickets', { id: ticketId }, {
         status: 'closed',
         resolution: resolution || null,
         resolved_at: new Date().toISOString(),
         last_updated_at: new Date().toISOString(),
+      });
+
+      await recordSupportTicketActivity({
+        ticketId,
+        eventType: SUPPORT_TICKET_EVENT_TYPES.TICKET_CLOSED,
+        eventActorType: 'admin',
+        eventTitle: 'Ticket closed',
+      });
+      if (prevStatus !== 'closed') {
+        await logTicketStatusActivity(ticketId, prevStatus, 'closed', 'admin');
+      }
+
+      scheduleSupportTicketNotification({
+        event: 'closed',
+        ticket: updated[0] as Record<string, unknown>,
       });
 
       return c.json({
@@ -946,68 +1348,214 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
   /**
    * POST /crm/tickets/auto-route
-   * Auto-route tickets to available agents
+   * Auto-route ticket(s) via round-robin (manual trigger; bypasses auto_assign_enabled).
    */
   app.post("/crm/tickets/auto-route", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
       const { ticketId } = body;
 
-      // If a specific ticketId is provided, route only that ticket
-      // Otherwise, route all unassigned open tickets
-      const unassigned = await query(
-        ticketId 
-          ? `SELECT * FROM support_tickets WHERE id = $1 AND status = 'open' AND assigned_to IS NULL`
-          : `SELECT * FROM support_tickets WHERE status = 'open' AND assigned_to IS NULL ORDER BY created_at ASC LIMIT 10`,
-        ticketId ? [ticketId] : []
-      ).catch(() => ({ rows: [] }));
-
-      // Get available agents (sorted by current workload)
-      const agents = await query(`
-        SELECT s.id, s.name,
-          COUNT(t.id) as current_workload
-        FROM staff s
-        LEFT JOIN support_tickets t ON s.id = t.assigned_to 
-          AND t.status IN ('open', 'in_progress')
-        WHERE (s.role = 'support' OR s.can_handle_support = true)
-        AND s.is_active = true
-        GROUP BY s.id, s.name
-        ORDER BY current_workload ASC
-      `).catch(() => ({ rows: [] }));
-
-      if (agents.rows.length === 0) {
+      if (ticketId) {
+        const result = await assignSupportTicket(String(ticketId), { force: true });
+        if (result.assigned) {
+          return c.json({
+            success: true,
+            message: `Ticket assigned to ${result.assigneeName || 'agent'}`,
+            routed: 1,
+            assignedAgent: result.assigneeName,
+            assigneeId: result.assigneeId,
+            poolKey: result.poolKey,
+          });
+        }
         return c.json({
           success: true,
-          message: 'No available agents',
+          message:
+            result.reason === 'no_eligible_agent'
+              ? 'No eligible agent available'
+              : result.reason === 'already_assigned'
+                ? 'Ticket is already assigned'
+                : 'Ticket could not be auto-routed',
           routed: 0,
+          reason: result.reason,
+          poolKey: result.poolKey,
         });
       }
 
-      let routed = 0;
-      let assignedAgent = null;
-      for (let i = 0; i < unassigned.rows.length; i++) {
-        const ticket = unassigned.rows[i];
-        const agent = agents.rows[i % agents.rows.length];
-
-        await update('support_tickets', { id: ticket.id }, {
-          assigned_to: agent.id,
-          assigned_at: new Date().toISOString(),
-          status: 'in_progress',
-          last_updated_at: new Date().toISOString(),
-        });
-        routed++;
-        assignedAgent = agent.name;
-      }
-
+      const batch = await assignSupportTicketBatch({ force: true });
+      const lastAssigned = batch.results.filter((r) => r.assigned).pop();
       return c.json({
         success: true,
-        message: `Routed ${routed} ticket(s)`,
-        routed,
-        assignedAgent: assignedAgent,
+        message: batch.timedOut
+          ? `Routed ${batch.routed} ticket(s) (time limit reached — run again for more)`
+          : `Routed ${batch.routed} ticket(s)`,
+        routed: batch.routed,
+        skipped: batch.skipped,
+        timedOut: batch.timedOut,
+        assignedAgent: lastAssigned?.assigneeName,
       });
     } catch (error: any) {
       console.error('Error auto-routing tickets:', error);
       return c.json({ error: error.message || 'Failed to auto-route tickets' }, 500);
+    }
+  });
+
+  /**
+   * POST /crm/tickets/auto-assign-batch
+   * Sweeper / cron: assign oldest unassigned tickets (respects auto_assign_enabled unless force).
+   * Auth: INTERNAL_CRON_SECRET header when env is set.
+   */
+  app.post("/crm/tickets/auto-assign-batch", async (c) => {
+    const cronSecret = process.env.INTERNAL_CRON_SECRET?.trim();
+    const hdr = c.req.header('x-internal-cron-secret')?.trim();
+    const body = await c.req.json().catch(() => ({}));
+    const force = body?.force === true;
+
+    if (cronSecret && hdr !== cronSecret && !force) {
+      return c.json({ success: false, error: 'Unauthorized', code: 'INVALID_CRON_SECRET' }, 401);
+    }
+
+    try {
+      const settings = await getSupportRoutingSettings();
+      let limit = settings.sweeperBatchSize;
+      if (body?.limit != null) {
+        const n = parseInt(String(body.limit), 10);
+        if (Number.isFinite(n)) limit = Math.min(100, Math.max(1, n));
+      } else if (force) {
+        // Manual admin sweeper: smaller default batch to stay within API Gateway timeout
+        limit = Math.min(limit, 10);
+      }
+
+      const batch = await assignSupportTicketBatch({
+        limit,
+        force: force || !cronSecret,
+        updateSweeperStats: Boolean(cronSecret && hdr === cronSecret),
+      });
+
+      console.log(
+        JSON.stringify({
+          metric: 'support.auto_assign.batch',
+          routed: batch.routed,
+          skipped: batch.skipped,
+          timedOut: batch.timedOut,
+          processed: batch.processed,
+        })
+      );
+
+      return c.json({
+        success: true,
+        routed: batch.routed,
+        skipped: batch.skipped,
+        processed: batch.processed,
+        timedOut: batch.timedOut,
+        message: batch.timedOut
+          ? `Assigned ${batch.routed} ticket(s) before time limit — run again for more`
+          : `Assigned ${batch.routed} ticket(s)`,
+      });
+    } catch (error: any) {
+      console.error('Error in auto-assign batch:', error);
+      return c.json({ error: error.message || 'Failed to auto-assign batch' }, 500);
+    }
+  });
+
+  /**
+   * POST /crm/tickets/escalation-batch
+   * Sweeper / cron: evaluate escalation rules and send escalation emails.
+   * Auth: INTERNAL_CRON_SECRET header when env is set.
+   */
+  app.post("/crm/tickets/escalation-batch", async (c) => {
+    const cronSecret = process.env.INTERNAL_CRON_SECRET?.trim();
+    const hdr = c.req.header('x-internal-cron-secret')?.trim();
+    const body = await c.req.json().catch(() => ({}));
+    const force = body?.force === true;
+
+    if (cronSecret && hdr !== cronSecret && !force) {
+      return c.json({ success: false, error: 'Unauthorized', code: 'INVALID_CRON_SECRET' }, 401);
+    }
+
+    try {
+      let limit = 50;
+      if (body?.limit != null) {
+        const n = parseInt(String(body.limit), 10);
+        if (Number.isFinite(n)) limit = Math.min(100, Math.max(1, n));
+      }
+
+      const batch = await processSupportTicketEscalationBatch({ limit });
+
+      return c.json({
+        success: true,
+        evaluated: batch.evaluated,
+        fired: batch.fired,
+        skipped: batch.skipped,
+        timedOut: batch.timedOut,
+        message: batch.timedOut
+          ? `Fired ${batch.fired} escalation(s) before time limit — run again for more`
+          : `Fired ${batch.fired} escalation(s)`,
+      });
+    } catch (error: any) {
+      console.error('Error in escalation batch:', error);
+      return c.json({ error: error.message || 'Failed to process escalation batch' }, 500);
+    }
+  });
+
+  /**
+   * GET /support/settings/notifications
+   * Global ops inbox, escalation defaults, and channel toggles.
+   */
+  app.get("/support/settings/notifications", async (c) => {
+    try {
+      const settings = await getSupportNotificationSettings();
+      return c.json({ success: true, notifications: settings });
+    } catch (error: any) {
+      console.error('Error fetching notification settings:', error);
+      return c.json({ error: error.message || 'Failed to fetch notification settings' }, 500);
+    }
+  });
+
+  /**
+   * PUT /support/settings/notifications
+   */
+  app.put("/support/settings/notifications", async (c) => {
+    try {
+      const body = await c.req.json();
+      const settings = await updateSupportNotificationSettings(body);
+      return c.json({ success: true, notifications: settings });
+    } catch (error: any) {
+      console.error('Error updating notification settings:', error);
+      return c.json({ error: error.message || 'Failed to update notification settings' }, 500);
+    }
+  });
+
+  /**
+   * GET /support/settings/routing
+   * Round-robin auto-assignment configuration.
+   */
+  app.get("/support/settings/routing", async (c) => {
+    try {
+      const settings = await getSupportRoutingSettings();
+      return c.json({ success: true, routing: settings });
+    } catch (error: any) {
+      console.error('Error fetching routing settings:', error);
+      return c.json({ error: error.message || 'Failed to fetch routing settings' }, 500);
+    }
+  });
+
+  /**
+   * PUT /support/settings/routing
+   * Update round-robin auto-assignment configuration.
+   */
+  app.put("/support/settings/routing", async (c) => {
+    try {
+      const body = await c.req.json();
+      const routing = await updateSupportRoutingSettings({
+        autoAssignEnabled: body.autoAssignEnabled,
+        assignAfterAiAck: body.assignAfterAiAck,
+        sweeperBatchSize: body.sweeperBatchSize,
+        fallbackToGeneralSpecialty: body.fallbackToGeneralSpecialty,
+      });
+      return c.json({ success: true, routing, message: 'Routing settings updated' });
+    } catch (error: any) {
+      console.error('Error updating routing settings:', error);
+      return c.json({ error: error.message || 'Failed to update routing settings' }, 500);
     }
   });
 
@@ -1163,20 +1711,22 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
       console.log(`✅ [SUPPORT-HANDOFF] Support ticket created: ${ticket[0].id}`);
 
-      // Notify support team
-      try {
-        const { publishToSNS } = require('../../../utils/aws-clients');
-        await publishToSNS('platform-notifications', {
-          type: 'chat_handoff',
-          ticket_id: ticket[0].id,
-          booking_id: bookingId,
-          customer_name: customer[0]?.full_name || 'Customer',
-          vendor_name: vendor[0]?.business_name || 'Vendor',
-          priority: 'medium',
-        }).catch(() => {});
-      } catch (e) {
-        // Silent fail for notifications
-      }
+      const handoffId = String(ticket[0].id);
+      void recordSupportTicketActivity({
+        ticketId: handoffId,
+        eventType: SUPPORT_TICKET_EVENT_TYPES.TICKET_CREATED,
+        eventActorType: 'customer',
+        eventActorId: booking.customer_id || customerId || null,
+        eventTitle: 'Ticket created (chat handoff)',
+        eventMetadata: { bookingId, source: 'chat_handoff' },
+      });
+      scheduleSupportTicketAiAck(handoffId);
+
+      scheduleSupportTicketNotification({
+        event: 'ticket_created',
+        ticket: ticket[0] as Record<string, unknown>,
+        messagePreview: reason || ticket[0].message,
+      });
 
       return c.json({
         success: true,
@@ -1357,7 +1907,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
   app.post("/support/settings/agents", async (c) => {
     try {
       const body = await c.req.json();
-      const { staffId, role, maxConcurrentTickets, specialties } = body;
+      const { staffId, role, maxConcurrentTickets, specialties, availabilityStatus } = body;
 
       if (!staffId) {
         return c.json({ error: 'staffId (user/admin id) is required' }, 400);
@@ -1407,19 +1957,20 @@ export function registerSupportCrmEndpoints(app: Hono) {
               role = COALESCE($2, role),
               max_concurrent_tickets = COALESCE($3, max_concurrent_tickets),
               specialties = COALESCE($4, specialties),
+              availability_status = COALESCE($5, availability_status),
               is_active = true
           WHERE user_id = $1 OR (user_id IS NULL AND staff_id = $1)
           RETURNING *
-        `, [staffId, role, maxConcurrentTickets, specialties]);
+        `, [staffId, role, maxConcurrentTickets, specialties, availabilityStatus ?? 'available']);
         
         return c.json({ success: true, agent: updated.rows[0], message: 'Agent updated' });
       } else {
         // Create new admin-backed agent: user_id only — staff_id NULL (avoids staff_id FK to staff(id)).
         const created = await query(`
-          INSERT INTO support_agents (user_id, staff_id, role, max_concurrent_tickets, specialties, is_active)
-          VALUES ($1, NULL, $2, $3, $4, true)
+          INSERT INTO support_agents (user_id, staff_id, role, max_concurrent_tickets, specialties, availability_status, is_active)
+          VALUES ($1, NULL, $2, $3, $4, $5, true)
           RETURNING *
-        `, [staffId, role || 'agent', maxConcurrentTickets || 10, specialties || ['general']]);
+        `, [staffId, role || 'agent', maxConcurrentTickets || 10, specialties || ['general'], availabilityStatus ?? 'available']);
         
         return c.json({ success: true, agent: created.rows[0], message: 'Agent created' });
       }
@@ -1429,7 +1980,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       if (error.message?.includes('user_id') || error.message?.includes('column')) {
         try {
           const body = await c.req.json();
-          const { staffId, role, maxConcurrentTickets, specialties } = body;
+          const { staffId, role, maxConcurrentTickets, specialties, availabilityStatus } = body;
           
           const existing = await query('SELECT id FROM support_agents WHERE staff_id = $1', [staffId]);
           
@@ -1439,17 +1990,18 @@ export function registerSupportCrmEndpoints(app: Hono) {
               SET role = COALESCE($2, role),
                   max_concurrent_tickets = COALESCE($3, max_concurrent_tickets),
                   specialties = COALESCE($4, specialties),
+                  availability_status = COALESCE($5, availability_status),
                   is_active = true
               WHERE staff_id = $1
               RETURNING *
-            `, [staffId, role, maxConcurrentTickets, specialties]);
+            `, [staffId, role, maxConcurrentTickets, specialties, availabilityStatus ?? 'available']);
             return c.json({ success: true, agent: updated.rows[0], message: 'Agent updated' });
           } else {
             const created = await query(`
-              INSERT INTO support_agents (staff_id, role, max_concurrent_tickets, specialties, is_active)
-              VALUES ($1, $2, $3, $4, true)
+              INSERT INTO support_agents (staff_id, role, max_concurrent_tickets, specialties, availability_status, is_active)
+              VALUES ($1, $2, $3, $4, $5, true)
               RETURNING *
-            `, [staffId, role || 'agent', maxConcurrentTickets || 10, specialties || ['general']]);
+            `, [staffId, role || 'agent', maxConcurrentTickets || 10, specialties || ['general'], availabilityStatus ?? 'available']);
             return c.json({ success: true, agent: created.rows[0], message: 'Agent created' });
           }
         } catch (fallbackError: any) {
@@ -1717,6 +2269,31 @@ export function registerSupportCrmEndpoints(app: Hono) {
   });
 
   /**
+   * GET /crm/tickets/:ticketId/activity
+   * Admin operational timeline (not customer-facing).
+   */
+  app.get("/crm/tickets/:ticketId/activity", async (c) => {
+    try {
+      const { ticketId } = c.req.param();
+      const tickets = await select('support_tickets', { id: ticketId });
+      if (tickets.length === 0) {
+        return c.json({ error: 'Ticket not found' }, 404);
+      }
+
+      const activities = await listSupportTicketActivity(ticketId);
+
+      return c.json({
+        success: true,
+        activities,
+        count: activities.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching ticket activity:', error);
+      return c.json({ error: error.message || 'Failed to fetch activity' }, 500);
+    }
+  });
+
+  /**
    * POST /support/tickets/:ticketId/suggest-reply
    * Bedrock-assisted draft replies for agents (does not post to customer).
    */
@@ -1800,6 +2377,158 @@ ${thread || '(no replies yet)'}`;
         { error: error.message || 'Failed to suggest reply', suggestions: [] as string[] },
         500
       );
+    }
+  });
+
+  const mapReplyTemplateRow = (row: Record<string, unknown>) => ({
+    id: String(row.id || ''),
+    name: String(row.name || ''),
+    category: String(row.category || 'General'),
+    content: String(row.content || ''),
+    isActive: row.is_active !== false,
+    isSystem: row.is_system === true,
+    createdBy: row.created_by ? String(row.created_by) : undefined,
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+    updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+  });
+
+  /**
+   * GET /crm/reply-templates
+   * Active saved replies for support agents (optional search)
+   */
+  app.get('/crm/reply-templates', async (c) => {
+    try {
+      const search = (c.req.query('search') || '').trim().toLowerCase();
+      const result = await query(
+        `SELECT id, name, category, content
+         FROM support_reply_templates
+         WHERE is_active = true
+         ORDER BY category, name`
+      );
+
+      let templates = result.rows.map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        category: String(row.category || 'General'),
+        content: String(row.content),
+      }));
+
+      if (search) {
+        templates = templates.filter(
+          (t) =>
+            t.name.toLowerCase().includes(search) ||
+            t.category.toLowerCase().includes(search) ||
+            t.content.toLowerCase().includes(search)
+        );
+      }
+
+      return c.json({ success: true, templates });
+    } catch (error: any) {
+      console.error('Error fetching reply templates:', error);
+      return c.json({ error: error.message || 'Failed to fetch reply templates' }, 500);
+    }
+  });
+
+  /**
+   * GET /support/settings/reply-templates
+   * All saved replies for admin settings (includes inactive)
+   */
+  app.get('/support/settings/reply-templates', async (c) => {
+    try {
+      const result = await query(
+        `SELECT * FROM support_reply_templates ORDER BY is_active DESC, category, name`
+      );
+      return c.json({
+        success: true,
+        templates: result.rows.map((row) => mapReplyTemplateRow(row as Record<string, unknown>)),
+      });
+    } catch (error: any) {
+      console.error('Error fetching reply templates (settings):', error);
+      return c.json({ error: error.message || 'Failed to fetch reply templates' }, 500);
+    }
+  });
+
+  /**
+   * POST /support/settings/reply-templates
+   * Create or update a saved reply template
+   */
+  app.post('/support/settings/reply-templates', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { id, name, category, content, isActive, createdBy } = body;
+
+      if (!name || !String(name).trim()) {
+        return c.json({ error: 'name is required' }, 400);
+      }
+      if (!content || !String(content).trim()) {
+        return c.json({ error: 'content is required' }, 400);
+      }
+
+      const cat = category || 'General';
+      const active = isActive !== false;
+
+      if (id) {
+        const updated = await query(
+          `UPDATE support_reply_templates
+           SET name = $2, category = $3, content = $4, is_active = $5, updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [id, String(name).trim(), cat, String(content).trim(), active]
+        );
+        if (!updated.rows.length) {
+          return c.json({ error: 'Template not found' }, 404);
+        }
+        return c.json({
+          success: true,
+          template: mapReplyTemplateRow(updated.rows[0] as Record<string, unknown>),
+          message: 'Template updated',
+        });
+      }
+
+      const created = await query(
+        `INSERT INTO support_reply_templates (name, category, content, is_active, is_system, created_by)
+         VALUES ($1, $2, $3, $4, false, $5)
+         RETURNING *`,
+        [String(name).trim(), cat, String(content).trim(), active, createdBy || null]
+      );
+
+      return c.json({
+        success: true,
+        template: mapReplyTemplateRow(created.rows[0] as Record<string, unknown>),
+        message: 'Template created',
+      });
+    } catch (error: any) {
+      if (error?.code === '23505') {
+        return c.json({ error: 'A template with this name already exists' }, 409);
+      }
+      console.error('Error saving reply template:', error);
+      return c.json({ error: error.message || 'Failed to save reply template' }, 500);
+    }
+  });
+
+  /**
+   * DELETE /support/settings/reply-templates/:templateId
+   * Delete a custom saved reply (system templates cannot be deleted)
+   */
+  app.delete('/support/settings/reply-templates/:templateId', async (c) => {
+    try {
+      const { templateId } = c.req.param();
+      const existing = await query(
+        'SELECT id, is_system FROM support_reply_templates WHERE id = $1',
+        [templateId]
+      );
+      if (!existing.rows.length) {
+        return c.json({ error: 'Template not found' }, 404);
+      }
+      if (existing.rows[0].is_system === true) {
+        return c.json({ error: 'System templates cannot be deleted. Disable them instead.' }, 400);
+      }
+
+      await query('DELETE FROM support_reply_templates WHERE id = $1', [templateId]);
+      return c.json({ success: true, message: 'Template deleted' });
+    } catch (error: any) {
+      console.error('Error deleting reply template:', error);
+      return c.json({ error: error.message || 'Failed to delete reply template' }, 500);
     }
   });
 

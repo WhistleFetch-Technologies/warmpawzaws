@@ -22,6 +22,27 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 const INVOICE_BUCKET = process.env.S3_INVOICES_BUCKET || process.env.S3_UPLOADS_BUCKET || 'warmpawz-invoices';
 
+/** Public logo URL for HTML invoices (override per env). */
+function getInvoiceLogoUrl(): string {
+  if (process.env.INVOICE_LOGO_URL) return process.env.INVOICE_LOGO_URL;
+  const customerWeb = process.env.CUSTOMER_WEB_URL?.replace(/\/$/, '');
+  if (customerWeb) return `${customerWeb}/logo.png`;
+  return 'https://dg69gqp2frh39.cloudfront.net/logo.png';
+}
+
+interface BookingServiceTaxMeta {
+  serviceName: string;
+  serviceDescription: string;
+  hsnCode: string;
+  hsnDescription: string;
+  gstRate: number;
+  serviceCategory: string | null;
+  catalogCategoryId: string | null;
+  hsnCodeId: string | null;
+  taxCategoryId: string | null;
+  roleId: string | null;
+}
+
 export function registerTaxInvoicePdfEndpoints(app: Hono) {
 
   // ============================================================================
@@ -92,7 +113,7 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
       });
 
       // Generate HTML invoice
-      const htmlContent = generateInvoiceHTML(invoiceData);
+      const htmlContent = generateInvoiceHTML(normalizeInvoiceDataForHtml(invoiceData));
 
       // Store invoice record
       const [invoice] = await insert('invoices', {
@@ -226,32 +247,7 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
       // If invoice doesn't exist, generate one from booking data
       if (invoiceResult.rows.length === 0) {
         // Get booking details
-        const bookingQuery = `
-          SELECT b.*,
-                 v.business_name as vendor_name,
-                 v.owner_name as vendor_owner,
-                 v.phone as vendor_phone,
-                 v.email as vendor_email,
-                 v.address as vendor_address,
-                 v.city as vendor_city,
-                 v.state as vendor_state,
-                 v.pincode as vendor_pincode,
-                 v.gst_number as vendor_gst,
-                 c.full_name as customer_name,
-                 c.phone as customer_phone,
-                 c.email as customer_email,
-                 c.address as customer_address,
-                 c.city as customer_city,
-                 c.state as customer_state,
-                 c.pincode as customer_pincode,
-                 s.name as service_name,
-                 s.description as service_description
-          FROM bookings b
-          LEFT JOIN vendors v ON b.vendor_id = v.id
-          LEFT JOIN customers c ON b.customer_id = c.id
-          LEFT JOIN services s ON b.service_id = s.id
-          WHERE b.id = $1
-        `;
+        const bookingQuery = BOOKING_FOR_INVOICE_SQL;
         const bookingResult = await query(bookingQuery, [bookingId]);
 
         if (bookingResult.rows.length === 0) {
@@ -263,100 +259,16 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
         // Generate invoice number
         const invoiceNumber = await generateInvoiceNumber(booking.vendor_id);
 
-        // Build invoice data from booking
-        const basePrice = parseFloat(booking.base_price || booking.total_amount || '0');
-        const taxAmount = parseFloat(booking.tax_amount || '0');
-        const discountAmount = parseFloat(booking.discount_amount || '0');
-        const totalAmount = parseFloat(booking.total_amount || '0');
-
-        // Calculate GST (assuming 18% if tax exists, otherwise 0)
-        const gstRate = taxAmount > 0 ? (taxAmount / basePrice) * 100 : 0;
-        const isInterState = booking.customer_state && booking.vendor_state && booking.customer_state !== booking.vendor_state;
-        
-        let cgst = 0, sgst = 0, igst = 0;
-        if (isInterState) {
-          igst = taxAmount;
-        } else {
-          cgst = taxAmount / 2;
-          sgst = taxAmount / 2;
-        }
-
-        // Multi-service: build line items from selected_services when present
-        const selectedServices = parseSelectedServices(booking.selected_services);
-        const items = selectedServices.length > 0
-          ? selectedServices.map((s: any) => {
-              const qty = s.quantity ?? 1;
-              const unitPrice = parseFloat(s.price) || 0;
-              const taxableValue = unitPrice * qty;
-              const itemTax = taxAmount > 0 && basePrice > 0 ? (taxableValue / basePrice) * taxAmount : 0;
-              const itemCgst = isInterState ? 0 : itemTax / 2;
-              const itemSgst = isInterState ? 0 : itemTax / 2;
-              const itemIgst = isInterState ? itemTax : 0;
-              return {
-                name: s.name || s.serviceName || 'Service',
-                description: (s.description || '').toString(),
-                quantity: qty,
-                unitPrice,
-                taxableValue,
-                hsnCode: '998314',
-                cgst: itemCgst,
-                sgst: itemSgst,
-                igst: itemIgst,
-                taxRate: gstRate,
-                total: taxableValue + itemTax,
-              };
-            })
-          : [{
-              name: booking.service_name || 'Service',
-              description: booking.service_description || '',
-              quantity: 1,
-              unitPrice: basePrice,
-              taxableValue: basePrice,
-              hsnCode: '998314',
-              cgst: cgst,
-              sgst: sgst,
-              igst: igst,
-              taxRate: gstRate,
-              total: basePrice + taxAmount,
-            }];
-
-        const invoiceData = {
+        const serviceMeta = await resolveBookingServiceTaxMeta(booking);
+        const invoiceData = await buildBookingInvoiceData({
+          booking,
+          bookingId,
           invoiceNumber,
-          invoiceDate: new Date(booking.created_at || new Date()).toLocaleDateString('en-IN'),
-          vendor: {
-            name: booking.vendor_name || 'Vendor',
-            owner: booking.vendor_owner || '',
-            address: booking.vendor_address || '',
-            city: booking.vendor_city || '',
-            state: booking.vendor_state || '',
-            pincode: booking.vendor_pincode || '',
-            phone: booking.vendor_phone || '',
-            email: booking.vendor_email || '',
-            gstin: booking.vendor_gst || '',
-          },
-          customer: {
-            name: booking.customer_name || 'Customer',
-            address: booking.customer_address || '',
-            city: booking.customer_city || '',
-            state: booking.customer_state || '',
-            pincode: booking.customer_pincode || '',
-            phone: booking.customer_phone || '',
-            email: booking.customer_email || '',
-          },
-          items,
-          subtotal: basePrice,
-          cgst: cgst,
-          sgst: sgst,
-          igst: igst,
-          totalTax: taxAmount,
-          discount: discountAmount,
-          total: totalAmount,
-          isInterState,
-          placeOfSupply: booking.customer_state || booking.vendor_state || '',
-        };
+          serviceMeta,
+        });
 
         // Generate HTML invoice
-        const htmlContent = generateInvoiceHTML(invoiceData);
+        const htmlContent = generateInvoiceHTML(normalizeInvoiceDataForHtml(invoiceData));
 
         // Store invoice record (store booking_id in invoice_data since table doesn't have booking_id column)
         try {
@@ -378,7 +290,7 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
             igst_amount: invoiceData.igst,
             discount_amount: invoiceData.discount,
             total_amount: invoiceData.total,
-            is_inter_state: isInterState,
+            is_inter_state: invoiceData.isInterState,
             place_of_supply: invoiceData.placeOfSupply,
             invoice_data: JSON.stringify(invoiceDataWithBooking),
             status: 'generated',
@@ -396,17 +308,16 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
         });
       }
 
-      // Invoice exists, return it
+      // Invoice exists — rebuild from live booking so HSN/tax/wording stay current
       const invoice = invoiceResult.rows[0];
-      const invoiceData = typeof invoice.invoice_data === 'string' 
-        ? JSON.parse(invoice.invoice_data) 
-        : invoice.invoice_data;
+      const refreshed = await rebuildBookingInvoiceFromDb(bookingId, invoice.invoice_number);
+      const invoicePayload = refreshed || normalizeInvoiceDataForHtml(
+        typeof invoice.invoice_data === 'string'
+          ? JSON.parse(invoice.invoice_data)
+          : invoice.invoice_data
+      );
 
-      if (!invoiceData) {
-        return c.json({ success: false, error: 'Invoice data not available' }, 400);
-      }
-
-      const htmlContent = generateInvoiceHTML(invoiceData);
+      const htmlContent = generateInvoiceHTML(invoicePayload);
       
       return c.html(htmlContent, 200, {
         'Content-Type': 'text/html',
@@ -447,16 +358,28 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
         }
       }
 
-      // Regenerate HTML on the fly
-      const invoiceData = typeof invoice.invoice_data === 'string' 
-        ? JSON.parse(invoice.invoice_data) 
-        : invoice.invoice_data;
+      // Regenerate HTML on the fly (refresh booking invoices from live data)
+      let invoicePayload: InvoiceData | null = null;
+      const storedRaw =
+        typeof invoice.invoice_data === 'string'
+          ? JSON.parse(invoice.invoice_data)
+          : invoice.invoice_data;
 
-      if (!invoiceData) {
+      if (!storedRaw) {
         return c.json({ success: false, error: 'Invoice data not available' }, 400);
       }
 
-      const htmlContent = generateInvoiceHTML(invoiceData);
+      const bookingIdFromStore = storedRaw.booking_id;
+      if (bookingIdFromStore) {
+        invoicePayload = await rebuildBookingInvoiceFromDb(
+          String(bookingIdFromStore),
+          invoice.invoice_number
+        );
+      }
+
+      const htmlContent = generateInvoiceHTML(
+        invoicePayload || normalizeInvoiceDataForHtml(storedRaw)
+      );
       
       return c.html(htmlContent, 200, {
         'Content-Disposition': `attachment; filename="invoice_${invoice.invoice_number}.html"`,
@@ -799,7 +722,371 @@ function buildInvoiceData(params: {
   };
 }
 
+const BOOKING_FOR_INVOICE_SQL = `
+  SELECT b.*,
+         v.business_name as vendor_name,
+         v.owner_name as vendor_owner,
+         v.phone as vendor_phone,
+         v.email as vendor_email,
+         v.address as vendor_address,
+         v.city as vendor_city,
+         v.state as vendor_state,
+         v.pincode as vendor_pincode,
+         v.gst_number as vendor_gst,
+         v.role_id as vendor_role_id,
+         c.full_name as customer_name,
+         c.phone as customer_phone,
+         c.email as customer_email,
+         c.address as customer_address,
+         c.city as customer_city,
+         c.state as customer_state,
+         c.pincode as customer_pincode,
+         COALESCE(vs.service_name, sc.service_name, s.name) as service_name,
+         COALESCE(vs.custom_description, sc.description, s.description) as service_description,
+         sc.hsn_code_id as catalog_hsn_code_id,
+         sc.tax_category_id as catalog_tax_category_id,
+         sc.category_id as catalog_category_id,
+         sc.category_name as catalog_category_name
+  FROM bookings b
+  LEFT JOIN vendors v ON b.vendor_id = v.id
+  LEFT JOIN customers c ON b.customer_id = c.id
+  LEFT JOIN vendor_services vs ON vs.id = b.service_id
+  LEFT JOIN service_catalog sc ON sc.id = COALESCE(vs.service_id, b.service_id)
+  LEFT JOIN services s ON s.id = b.service_id
+  WHERE b.id = $1
+`;
+
+async function rebuildBookingInvoiceFromDb(
+  bookingId: string,
+  invoiceNumber: string
+): Promise<InvoiceData | null> {
+  const bookingResult = await query(BOOKING_FOR_INVOICE_SQL, [bookingId]);
+  if (!bookingResult.rows?.length) return null;
+
+  const booking = bookingResult.rows[0];
+  const serviceMeta = await resolveBookingServiceTaxMeta(booking);
+  return normalizeInvoiceDataForHtml(
+    await buildBookingInvoiceData({
+      booking,
+      bookingId,
+      invoiceNumber,
+      serviceMeta,
+    })
+  );
+}
+
+async function resolveHsnRowById(hsnCodeId: string | null | undefined): Promise<Record<string, unknown> | null> {
+  if (!hsnCodeId) return null;
+  const result = await query(
+    `SELECT id, hsn_code, code, description, gst_rate, category_id
+     FROM hsn_codes WHERE id = $1 AND is_active = true LIMIT 1`,
+    [hsnCodeId]
+  );
+  return result.rows?.[0] || null;
+}
+
+function hsnCodeFromRow(row: Record<string, unknown> | null): string {
+  if (!row) return '';
+  const code = row.hsn_code ?? row.code;
+  return code != null ? String(code).trim() : '';
+}
+
+async function resolveBookingServiceTaxMeta(booking: Record<string, any>): Promise<BookingServiceTaxMeta> {
+  let hsnCodeId = booking.catalog_hsn_code_id || null;
+  let taxCategoryId = booking.catalog_tax_category_id || null;
+  let catalogCategoryId = booking.catalog_category_id || null;
+  let serviceCategory = booking.catalog_category_name || booking.service_type || null;
+  let serviceName = booking.service_name || 'Service';
+  let serviceDescription = booking.service_description || '';
+
+  if (booking.service_id && (!hsnCodeId || !serviceName)) {
+    const vsResult = await query(
+      `SELECT vs.service_name, vs.custom_description, vs.category,
+              sc.hsn_code_id, sc.tax_category_id, sc.category_id, sc.category_name, sc.service_name AS catalog_name
+       FROM vendor_services vs
+       LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+       WHERE vs.id = $1::uuid OR vs.service_id = $1::uuid
+       LIMIT 1`,
+      [booking.service_id]
+    ).catch(() => ({ rows: [] }));
+    if (vsResult.rows?.length > 0) {
+      const row = vsResult.rows[0];
+      serviceName = row.service_name || row.catalog_name || serviceName;
+      serviceDescription = row.custom_description || serviceDescription;
+      hsnCodeId = hsnCodeId || row.hsn_code_id;
+      taxCategoryId = taxCategoryId || row.tax_category_id;
+      catalogCategoryId = catalogCategoryId || row.category_id;
+      serviceCategory = serviceCategory || row.category_name || row.category;
+    }
+  }
+
+  const hsnRow = await resolveHsnRowById(hsnCodeId);
+  let hsnCode = hsnCodeFromRow(hsnRow);
+  let hsnDescription = hsnRow?.description ? String(hsnRow.description) : '';
+  let gstRate = 0;
+
+  if (hsnRow?.gst_rate != null && hsnRow.gst_rate !== '') {
+    gstRate = parseFloat(String(hsnRow.gst_rate)) || 0;
+  }
+
+  if (!gstRate && taxCategoryId) {
+    const tcResult = await query(
+      `SELECT tax_rate, default_gst_rate, gst_rate FROM tax_categories WHERE id = $1 AND is_active = true LIMIT 1`,
+      [taxCategoryId]
+    ).catch(() => ({ rows: [] }));
+    if (tcResult.rows?.length > 0) {
+      const tc = tcResult.rows[0];
+      gstRate = parseFloat(String(tc.tax_rate ?? tc.default_gst_rate ?? tc.gst_rate ?? 0)) || 0;
+    }
+  }
+
+  if (!hsnCode) {
+    const legacy = await query(`SELECT hsn_code FROM services WHERE id = $1 LIMIT 1`, [booking.service_id]).catch(() => ({ rows: [] }));
+    hsnCode = legacy.rows?.[0]?.hsn_code ? String(legacy.rows[0].hsn_code) : '';
+  }
+
+  if (!hsnCode) {
+    hsnCode = '998314';
+    hsnDescription = hsnDescription || 'Pet care services';
+  }
+
+  return {
+    serviceName,
+    serviceDescription,
+    hsnCode,
+    hsnDescription,
+    gstRate,
+    serviceCategory,
+    catalogCategoryId,
+    hsnCodeId,
+    taxCategoryId,
+    roleId: booking.vendor_role_id || null,
+  };
+}
+
+async function buildBookingInvoiceData(params: {
+  booking: Record<string, any>;
+  bookingId: string;
+  invoiceNumber: string;
+  serviceMeta: BookingServiceTaxMeta;
+}): Promise<InvoiceData> {
+  const { booking, bookingId, invoiceNumber, serviceMeta } = params;
+
+  const basePrice = parseFloat(booking.base_price || booking.total_amount || '0');
+  const taxAmount = parseFloat(booking.tax_amount || '0');
+  const discountAmount = parseFloat(booking.discount_amount || '0');
+  const totalAmount = parseFloat(booking.total_amount || '0');
+
+  const gstRate =
+    taxAmount > 0 && basePrice > 0
+      ? (taxAmount / basePrice) * 100
+      : serviceMeta.gstRate || 0;
+
+  const isInterState = Boolean(
+    booking.customer_state &&
+      booking.vendor_state &&
+      String(booking.customer_state).toLowerCase() !== String(booking.vendor_state).toLowerCase()
+  );
+
+  let cgst = 0;
+  let sgst = 0;
+  let igst = 0;
+  if (isInterState) {
+    igst = taxAmount;
+  } else {
+    cgst = taxAmount / 2;
+    sgst = taxAmount / 2;
+  }
+
+  const selectedServices = parseSelectedServices(booking.selected_services);
+  const items =
+    selectedServices.length > 0
+      ? selectedServices.map((s: any) => {
+          const qty = s.quantity ?? 1;
+          const unitPrice = parseFloat(s.price) || 0;
+          const taxableValue = unitPrice * qty;
+          const itemTax = taxAmount > 0 && basePrice > 0 ? (taxableValue / basePrice) * taxAmount : 0;
+          const itemCgst = isInterState ? 0 : itemTax / 2;
+          const itemSgst = isInterState ? 0 : itemTax / 2;
+          const itemIgst = isInterState ? itemTax : 0;
+          return {
+            name: s.name || s.serviceName || serviceMeta.serviceName || 'Service',
+            hsn: serviceMeta.hsnCode,
+            quantity: qty,
+            unitPrice,
+            gstRate,
+            taxableValue,
+            cgst: itemCgst,
+            sgst: itemSgst,
+            igst: itemIgst,
+            total: taxableValue + itemTax,
+          };
+        })
+      : [
+          {
+            name: serviceMeta.serviceName || booking.service_name || 'Service',
+            hsn: serviceMeta.hsnCode,
+            quantity: 1,
+            unitPrice: basePrice,
+            gstRate,
+            taxableValue: basePrice,
+            cgst,
+            sgst,
+            igst,
+            total: basePrice + taxAmount,
+          },
+        ];
+
+  const vendorAddress = [booking.vendor_address, booking.vendor_city, booking.vendor_state, booking.vendor_pincode]
+    .filter(Boolean)
+    .join(', ');
+
+  const customerAddress = {
+    address_line1: booking.customer_address || booking.address || '',
+    city: booking.customer_city || booking.city || '',
+    state: booking.customer_state || booking.state || '',
+    pincode: booking.customer_pincode || booking.pincode || '',
+  };
+
+  const total = totalAmount;
+
+  return {
+    invoiceNumber,
+    invoiceDate: new Date(booking.created_at || new Date()).toLocaleDateString('en-IN'),
+    orderNumber: `Booking #${String(bookingId).slice(0, 8)}`,
+    vendor: {
+      name: booking.vendor_name || 'Vendor',
+      gstin: booking.vendor_gst || '',
+      pan: '',
+      address: vendorAddress,
+    },
+    customer: {
+      name: booking.customer_name || 'Customer',
+      phone: booking.customer_phone || '',
+      email: booking.customer_email || '',
+      address: customerAddress,
+    },
+    items,
+    subtotal: basePrice,
+    cgst,
+    sgst,
+    igst,
+    totalTax: taxAmount,
+    shipping: 0,
+    discount: discountAmount,
+    total,
+    isInterState,
+    placeOfSupply: booking.customer_state || booking.vendor_state || '',
+    amountInWords: numberToWords(Math.round(total)),
+  };
+}
+
+function normalizeInvoiceItem(item: Record<string, any>): InvoiceData['items'][number] {
+  const gstRate = Number(item.gstRate ?? item.taxRate ?? 0);
+  return {
+    name: item.name || 'Item',
+    hsn: String(item.hsn ?? item.hsnCode ?? '—'),
+    quantity: Number(item.quantity ?? 1) || 1,
+    unitPrice: Number(item.unitPrice) || 0,
+    gstRate: Number.isFinite(gstRate) ? gstRate : 0,
+    taxableValue: Number(item.taxableValue) || 0,
+    cgst: Number(item.cgst) || 0,
+    sgst: Number(item.sgst) || 0,
+    igst: Number(item.igst) || 0,
+    total: Number(item.total) || 0,
+  };
+}
+
+function normalizeCustomerForHtml(customer: Record<string, any> | undefined): InvoiceData['customer'] {
+  if (!customer) {
+    return { name: 'Customer', phone: '', email: '', address: {} };
+  }
+  const addr = customer.address;
+  const address =
+    addr && typeof addr === 'object'
+      ? {
+          address_line1: addr.address_line1 || addr.line1 || '',
+          city: addr.city || customer.city || '',
+          state: addr.state || customer.state || '',
+          pincode: addr.pincode || customer.pincode || '',
+        }
+      : {
+          address_line1: typeof addr === 'string' ? addr : customer.address || '',
+          city: customer.city || '',
+          state: customer.state || '',
+          pincode: customer.pincode || '',
+        };
+  return {
+    name: customer.name || 'Customer',
+    phone: customer.phone || '',
+    email: customer.email || '',
+    address,
+    gstin: customer.gstin,
+  };
+}
+
+/** Map legacy/stored invoice JSON (booking + order) to the shape expected by generateInvoiceHTML. */
+function normalizeInvoiceDataForHtml(raw: Record<string, any>): InvoiceData {
+  const items = (raw.items || []).map((item: Record<string, any>) => normalizeInvoiceItem(item));
+  const total = Number(raw.total) || 0;
+  const vendor = raw.vendor || {};
+  const vendorAddress =
+    typeof vendor.address === 'string'
+      ? vendor.address
+      : [vendor.address, vendor.city, vendor.state, vendor.pincode].filter(Boolean).join(', ');
+
+  return {
+    invoiceNumber: raw.invoiceNumber || raw.invoice_number || '—',
+    invoiceDate: raw.invoiceDate || raw.invoice_date || new Date().toLocaleDateString('en-IN'),
+    orderNumber:
+      raw.orderNumber ||
+      raw.order_number ||
+      (raw.booking_id ? `Booking #${String(raw.booking_id).slice(0, 8)}` : '—'),
+    vendor: {
+      name: vendor.name || 'Vendor',
+      gstin: vendor.gstin || vendor.gst || '',
+      pan: vendor.pan || '',
+      address: vendorAddress || '',
+    },
+    customer: normalizeCustomerForHtml(raw.customer),
+    items,
+    subtotal: Number(raw.subtotal) || 0,
+    cgst: Number(raw.cgst) || 0,
+    sgst: Number(raw.sgst) || 0,
+    igst: Number(raw.igst) || 0,
+    totalTax: Number(raw.totalTax ?? raw.tax_amount) || 0,
+    shipping: Number(raw.shipping) || 0,
+    discount: Number(raw.discount) || 0,
+    total,
+    isInterState: Boolean(raw.isInterState ?? raw.is_inter_state),
+    placeOfSupply: raw.placeOfSupply || raw.place_of_supply || '',
+    amountInWords: raw.amountInWords || numberToWords(Math.round(total)),
+  };
+}
+
+function formatGstHalfRate(rate: number): string {
+  const safe = Number.isFinite(rate) ? rate : 0;
+  const half = safe / 2;
+  return Number.isFinite(half) ? half.toFixed(2).replace(/\.00$/, '') : '0';
+}
+
+function formatGstRate(rate: number): string {
+  const safe = Number.isFinite(rate) ? rate : 0;
+  return safe.toFixed(2).replace(/\.00$/, '');
+}
+
 function generateInvoiceHTML(data: InvoiceData): string {
+  const logoUrl = getInvoiceLogoUrl();
+  const customerAddr = data.customer.address || {};
+  const customerLine = [
+    customerAddr.address_line1,
+    [customerAddr.city, customerAddr.state, customerAddr.pincode].filter(Boolean).join(', '),
+  ]
+    .filter(Boolean)
+    .map((line) => `<p>${line}</p>`)
+    .join('');
+  const refLabel = String(data.orderNumber || '').startsWith('Booking') ? 'Booking' : 'Order';
+
   return `
 <!DOCTYPE html>
 <html>
@@ -810,9 +1097,11 @@ function generateInvoiceHTML(data: InvoiceData): string {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; line-height: 1.4; color: #333; }
     .invoice { max-width: 800px; margin: 20px auto; padding: 30px; border: 1px solid #ddd; }
-    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #f97316; padding-bottom: 20px; margin-bottom: 20px; }
-    .header-left h1 { color: #f97316; font-size: 24px; margin-bottom: 5px; }
-    .header-left p { color: #666; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #f97316; padding-bottom: 20px; margin-bottom: 20px; }
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .brand img { width: 56px; height: 56px; object-fit: contain; border-radius: 50%; }
+    .brand-text h1 { color: #f97316; font-size: 24px; margin-bottom: 4px; letter-spacing: 0.02em; }
+    .brand-text p { color: #666; font-size: 12px; }
     .header-right { text-align: right; }
     .header-right h2 { color: #333; font-size: 18px; margin-bottom: 10px; }
     .header-right .invoice-number { font-size: 14px; font-weight: bold; }
@@ -841,15 +1130,18 @@ function generateInvoiceHTML(data: InvoiceData): string {
 <body>
   <div class="invoice">
     <div class="header">
-      <div class="header-left">
-        <h1>🐾 WarmPawz</h1>
-        <p>Pet Care Marketplace</p>
+      <div class="brand">
+        <img src="${logoUrl}" alt="Warmpawz logo" onerror="this.style.display='none'" />
+        <div class="brand-text">
+          <h1>Warmpawz</h1>
+          <p>Pet Care Marketplace</p>
+        </div>
       </div>
       <div class="header-right">
         <h2>TAX INVOICE</h2>
         <p class="invoice-number">${data.invoiceNumber}</p>
         <p>Date: ${data.invoiceDate}</p>
-        <p>Order: ${data.orderNumber}</p>
+        <p>${refLabel}: ${data.orderNumber}</p>
       </div>
     </div>
 
@@ -864,8 +1156,7 @@ function generateInvoiceHTML(data: InvoiceData): string {
       <div class="party">
         <h3>Billing & Shipping</h3>
         <p><strong>${data.customer.name}</strong></p>
-        <p>${data.customer.address.address_line1 || ''}</p>
-        <p>${[data.customer.address.city, data.customer.address.state, data.customer.address.pincode].filter(Boolean).join(', ')}</p>
+        ${customerLine}
         <p>Phone: ${data.customer.phone}</p>
         ${data.customer.gstin ? `<p class="gstin">GSTIN: ${data.customer.gstin}</p>` : ''}
         <p>Place of Supply: ${data.placeOfSupply}</p>
@@ -892,14 +1183,14 @@ function generateInvoiceHTML(data: InvoiceData): string {
           <tr>
             <td>${idx + 1}</td>
             <td>${item.name}</td>
-            <td class="text-center">${item.hsn}</td>
+            <td class="text-center">${item.hsn || '—'}</td>
             <td class="text-right">${item.quantity}</td>
             <td class="text-right">₹${item.unitPrice.toFixed(2)}</td>
             <td class="text-right">₹${item.taxableValue.toFixed(2)}</td>
             ${data.isInterState 
-              ? `<td class="text-right">₹${item.igst.toFixed(2)}<br><small>(${item.gstRate}%)</small></td>`
-              : `<td class="text-right">₹${item.cgst.toFixed(2)}<br><small>(${item.gstRate/2}%)</small></td>
-                 <td class="text-right">₹${item.sgst.toFixed(2)}<br><small>(${item.gstRate/2}%)</small></td>`}
+              ? `<td class="text-right">₹${item.igst.toFixed(2)}<br><small>(${formatGstRate(item.gstRate)}%)</small></td>`
+              : `<td class="text-right">₹${item.cgst.toFixed(2)}<br><small>(${formatGstHalfRate(item.gstRate)}%)</small></td>
+                 <td class="text-right">₹${item.sgst.toFixed(2)}<br><small>(${formatGstHalfRate(item.gstRate)}%)</small></td>`}
             <td class="text-right"><strong>₹${item.total.toFixed(2)}</strong></td>
           </tr>
         `).join('')}

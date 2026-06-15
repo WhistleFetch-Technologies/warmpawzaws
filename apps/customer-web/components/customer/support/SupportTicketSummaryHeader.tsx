@@ -1,31 +1,68 @@
 "use client";
 
-import { Card } from '@/components/ui/card';
+import { Calendar, Tag } from 'lucide-react';
 import { SupportTicketStatusBadge } from './SupportTicketStatusBadge';
+import { SupportTicketCategoryBadge } from './SupportTicketCategoryBadge';
+import {
+  formatMessageTimestamp,
+  formatTicketDisplayId,
+  resolveTicketCategory,
+} from './support-ticket-ui-utils';
 
 export interface SupportTicketSummaryHeaderProps {
   status: string;
   ticketNumber?: string | null;
+  ticketId?: string;
   subject: string;
-  pollHint?: string;
+  createdAt?: string | null;
+  category?: string | null;
+  bookingId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export function SupportTicketSummaryHeader({
   status,
   ticketNumber,
+  ticketId,
   subject,
-  pollHint = 'New messages appear automatically every few seconds.',
+  createdAt,
+  category,
+  bookingId,
+  metadata,
 }: SupportTicketSummaryHeaderProps) {
+  const categoryKind = resolveTicketCategory({
+    booking_id: bookingId,
+    category: category || undefined,
+    metadata,
+  });
+
   return (
-    <Card className="p-4">
-      <div className="flex flex-wrap items-center gap-2 mb-2">
+    <div className="space-y-2 pb-1">
+      <h3 className="font-semibold text-gray-900 text-base leading-snug">{subject || 'Support'}</h3>
+      <div className="flex flex-wrap items-center gap-1.5">
         <SupportTicketStatusBadge status={status || 'open'} />
-        {ticketNumber != null && String(ticketNumber).trim() !== '' ? (
-          <span className="text-xs text-gray-400">{String(ticketNumber)}</span>
+        <SupportTicketCategoryBadge kind={categoryKind} />
+        <span className="text-[10px] text-gray-400 font-mono">
+          {formatTicketDisplayId({
+            ticket_number: ticketNumber || undefined,
+            id: ticketId || ticketNumber || '—',
+          })}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-400">
+        {createdAt ? (
+          <span className="inline-flex items-center gap-1">
+            <Calendar className="w-3 h-3" />
+            {formatMessageTimestamp(createdAt)}
+          </span>
+        ) : null}
+        {category ? (
+          <span className="inline-flex items-center gap-1 capitalize">
+            <Tag className="w-3 h-3" />
+            {category}
+          </span>
         ) : null}
       </div>
-      <h3 className="font-semibold text-gray-900 text-lg">{subject || 'Support'}</h3>
-      <p className="text-xs text-gray-400 mt-1">{pollHint}</p>
-    </Card>
+    </div>
   );
 }

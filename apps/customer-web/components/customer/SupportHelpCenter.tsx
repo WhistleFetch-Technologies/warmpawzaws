@@ -1,18 +1,13 @@
 "use client";
 
 import dynamic from 'next/dynamic';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Search,
   HelpCircle,
-  MessageCircle,
-  Bot,
-  Mail,
-  FileText,
-  ChevronRight,
-  RefreshCw,
   Calendar,
+  ArrowLeft,
+  UtensilsCrossed,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
@@ -22,7 +17,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { apiClient, supportCrmApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
-import { SUPPORT_INITIAL_TAB_KEY, clearSupportBookingContext, type SupportBookingContext } from '@/lib/support-contact';
+import { SUPPORT_INITIAL_TAB_KEY, clearSupportBookingContext, clearSupportMealOrderContext, resolveSupportContactContext, type SupportBookingContext, type SupportMealOrderContext } from '@/lib/support-contact';
+import {
+  DEFAULT_LINKED_SUPPORT_CATEGORY,
+  GENERAL_SUPPORT_TICKET_CATEGORIES,
+  LINKED_SUPPORT_TICKET_CATEGORIES,
+} from '@/lib/support-ticket-categories';
 
 const AIChatbotWidget = dynamic(
   () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
@@ -30,17 +30,26 @@ const AIChatbotWidget = dynamic(
 );
 import {
   SupportTicketDetailView,
-  SupportTicketStatusBadge,
+  SupportAttachmentPicker,
+  SupportFaqTab,
+  SupportContactTab,
+  SupportTicketsListTab,
+  useSupportTicketThread,
   type SupportTicketDetailBundle,
   type SupportTicketResponseRow,
 } from '@/components/customer/support';
+import { isOpenTicketStatus } from '@/components/customer/support/support-ticket-ui-utils';
+import { SUPPORT_FAQ_CATEGORIES } from '@/lib/support-faq-data';
+import type { SupportAttachment } from '@/lib/support-attachment-upload';
+import { playNotificationAlertSound } from '@/lib/notification-sound';
+import { useNotificationService } from '@/components/customer/useNotificationService';
 
 interface Ticket {
   id: string;
   ticket_number?: string;
   subject: string;
   message?: string;
-  status: 'open' | 'in_progress' | 'resolved' | 'closed';
+  status: string;
   priority: string;
   category?: string;
   created_at: string;
@@ -55,6 +64,8 @@ interface SupportHelpCenterProps {
   initialTab?: 'faq' | 'contact' | 'tickets';
   /** When set, contact form creates a booking-linked ticket for refunds. */
   bookingContext?: SupportBookingContext | null;
+  /** When set, contact form creates a meal-order-linked ticket from track order. */
+  mealOrderContext?: SupportMealOrderContext | null;
   /** In-app shell: route chatbot deep-links (services, support). Defaults to Next router for `/…` only. */
   onChatbotNavigate?: (dest: string, data?: unknown) => void;
 }
@@ -65,20 +76,40 @@ export function SupportHelpCenter({
   onCloseToHome,
   initialTab,
   bookingContext,
+  mealOrderContext,
   onChatbotNavigate,
 }: SupportHelpCenterProps) {
   const router = useRouter();
-  const isBookingTicket = Boolean(bookingContext?.bookingId);
+  const linked = resolveSupportContactContext(bookingContext, mealOrderContext);
+  const activeBooking = linked.booking;
+  const activeMeal = linked.meal;
+  const isBookingTicket = linked.kind === 'booking';
+  const isMealOrderTicket = linked.kind === 'meal';
+  const isLinkedTicket = linked.kind !== null;
+
+  const defaultMealSubject = activeMeal
+    ? activeMeal.planTitle
+      ? `Help with meal order: ${activeMeal.planTitle}`
+      : activeMeal.orderDisplayNumber
+        ? `Help with meal order ${activeMeal.orderDisplayNumber}`
+        : `Help with meal order #${activeMeal.orderId.slice(0, 8)}`
+    : '';
+
+  const defaultLinkedSubject = isBookingTicket
+    ? activeBooking?.serviceName
+      ? `Help with booking: ${activeBooking.serviceName}`
+      : activeBooking?.bookingId
+        ? `Help with booking #${activeBooking.bookingId.slice(0, 8)}`
+        : ''
+    : defaultMealSubject;
+
   const [showAIChat, setShowAIChat] = useState(false);
   const [activeTab, setActiveTab] = useState<'faq' | 'contact' | 'tickets'>('faq');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showContactForm, setShowContactForm] = useState(Boolean(bookingContext?.bookingId));
+  const [showContactForm, setShowContactForm] = useState(isLinkedTicket);
   const [contactForm, setContactForm] = useState({
-    subject: bookingContext?.serviceName
-      ? `Help with booking: ${bookingContext.serviceName}`
-      : '',
+    subject: defaultLinkedSubject,
     message: '',
-    category: bookingContext?.bookingId ? 'billing' : 'general',
+    category: isLinkedTicket ? DEFAULT_LINKED_SUPPORT_CATEGORY : 'general',
   });
   const [submitting, setSubmitting] = useState(false);
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -87,7 +118,23 @@ export function SupportHelpCenter({
   const [ticketDetail, setTicketDetail] = useState<SupportTicketDetailBundle | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [replyText, setReplyText] = useState('');
+  const [replyAttachments, setReplyAttachments] = useState<SupportAttachment[]>([]);
+  const [contactAttachments, setContactAttachments] = useState<SupportAttachment[]>([]);
   const [sendingReply, setSendingReply] = useState(false);
+  const supportSoundRef = useRef<{ ticketId: string | null; ready: boolean; lastStaffId: string | null }>({
+    ticketId: null,
+    ready: false,
+    lastStaffId: null,
+  });
+
+  useEffect(() => {
+    supportSoundRef.current = { ticketId: selectedTicketId, ready: false, lastStaffId: null };
+  }, [selectedTicketId]);
+
+  useNotificationService({
+    phone: phone || '',
+    enabled: Boolean(phone),
+  });
 
   // Deep-link from home "Live chat" (sessionStorage or prop)
   useEffect(() => {
@@ -113,21 +160,48 @@ export function SupportHelpCenter({
   }, [initialTab]);
 
   useEffect(() => {
-    if (!bookingContext?.bookingId) return;
-    setActiveTab('contact');
-    setShowContactForm(true);
-    setSelectedTicketId(null);
-    setTicketDetail(null);
-    setContactForm((prev) => ({
-      ...prev,
-      subject:
-        prev.subject.trim() ||
-        (bookingContext.serviceName
-          ? `Help with booking: ${bookingContext.serviceName}`
-          : `Help with booking #${bookingContext.bookingId.slice(0, 8)}`),
-      category: 'billing',
-    }));
-  }, [bookingContext?.bookingId, bookingContext?.serviceName]);
+    if (linked.kind === 'booking' && activeBooking?.bookingId) {
+      setActiveTab('contact');
+      setShowContactForm(true);
+      setSelectedTicketId(null);
+      setTicketDetail(null);
+      setContactForm({
+        subject: activeBooking.serviceName
+          ? `Help with booking: ${activeBooking.serviceName}`
+          : `Help with booking #${activeBooking.bookingId.slice(0, 8)}`,
+        message: '',
+        category: 'billing',
+      });
+      return;
+    }
+    if (linked.kind === 'meal' && activeMeal?.orderId) {
+      setActiveTab('contact');
+      setShowContactForm(true);
+      setSelectedTicketId(null);
+      setTicketDetail(null);
+      setContactForm({
+        subject: activeMeal.planTitle
+          ? `Help with meal order: ${activeMeal.planTitle}`
+          : activeMeal.orderDisplayNumber
+            ? `Help with meal order ${activeMeal.orderDisplayNumber}`
+            : `Help with meal order #${activeMeal.orderId.slice(0, 8)}`,
+        message: '',
+        category: DEFAULT_LINKED_SUPPORT_CATEGORY,
+      });
+    }
+  }, [
+    linked.kind,
+    activeBooking?.bookingId,
+    activeBooking?.serviceName,
+    activeMeal?.orderId,
+    activeMeal?.planTitle,
+    activeMeal?.orderDisplayNumber,
+  ]);
+
+  const clearLinkedTicketContext = useCallback(() => {
+    clearSupportBookingContext();
+    clearSupportMealOrderContext();
+  }, []);
 
   const loadTickets = useCallback(async () => {
     if (!phone) return;
@@ -151,13 +225,15 @@ export function SupportHelpCenter({
   }, [phone]);
 
   useEffect(() => {
-    if (activeTab !== 'tickets' || !phone) return;
+    if (!phone) return;
     void loadTickets();
-  }, [activeTab, phone, loadTickets]);
+  }, [phone, loadTickets]);
 
-  const loadTicketDetail = useCallback(async (ticketId: string) => {
+  const loadTicketDetail = useCallback(async (ticketId: string, options?: { silent?: boolean }) => {
     if (!ticketId.trim()) return;
-    setLoadingDetail(true);
+    if (!options?.silent) {
+      setLoadingDetail(true);
+    }
     try {
       const res = (await supportCrmApi.getTicket(ticketId)) as {
         success?: boolean;
@@ -167,17 +243,41 @@ export function SupportHelpCenter({
       if (res?.success && res.ticket) {
         const raw = res.responses || [];
         const visible = raw.filter((r) => !r.is_internal);
+        const staffResponses = visible.filter(
+          (r) => r.responder_type === 'agent' || r.responder_type === 'system_ai'
+        );
+        const lastStaff = staffResponses[staffResponses.length - 1];
+        const lastStaffId = lastStaff?.id ? String(lastStaff.id) : null;
+        const snap = supportSoundRef.current;
+        if (snap.ticketId !== ticketId) {
+          snap.ticketId = ticketId;
+          snap.ready = false;
+          snap.lastStaffId = null;
+        }
+        if (!snap.ready) {
+          snap.ready = true;
+          snap.lastStaffId = lastStaffId;
+        } else if (options?.silent && lastStaffId && lastStaffId !== snap.lastStaffId) {
+          playNotificationAlertSound();
+          snap.lastStaffId = lastStaffId;
+        } else {
+          snap.lastStaffId = lastStaffId;
+        }
         setTicketDetail({ ticket: res.ticket, responses: visible });
-      } else {
+      } else if (!options?.silent) {
         setTicketDetail(null);
         toast.error('Could not load this ticket.');
       }
     } catch (error) {
       console.error('Error loading ticket detail:', error);
-      toast.error('Could not load ticket.');
-      setTicketDetail(null);
+      if (!options?.silent) {
+        toast.error('Could not load ticket.');
+        setTicketDetail(null);
+      }
     } finally {
-      setLoadingDetail(false);
+      if (!options?.silent) {
+        setLoadingDetail(false);
+      }
     }
   }, []);
 
@@ -194,17 +294,26 @@ export function SupportHelpCenter({
     }
   }, [selectedTicketId, loadTicketDetail]);
 
-  const handleSendReply = async () => {
-    if (!selectedTicketId || !replyText.trim()) return;
+  useSupportTicketThread({
+    ticketId: selectedTicketId,
+    enabled: activeTab === 'tickets' && Boolean(selectedTicketId),
+    fetchDetail: loadTicketDetail,
+    pollIntervalMs: 4000,
+  });
+
+  const handleSendReply = async (attachments?: SupportAttachment[]) => {
+    if (!selectedTicketId || (!replyText.trim() && !attachments?.length)) return;
     setSendingReply(true);
     try {
       await supportCrmApi.respondToTicket(selectedTicketId, {
-        message: replyText.trim(),
+        message: replyText.trim() || '(attachment)',
         responderId: getResolvedCustomerId() || undefined,
         responderType: 'customer',
+        attachments,
       });
       toast.success('Message sent');
       setReplyText('');
+      setReplyAttachments([]);
       await loadTicketDetail(selectedTicketId);
       await loadTickets();
     } catch (error: unknown) {
@@ -214,57 +323,6 @@ export function SupportHelpCenter({
       setSendingReply(false);
     }
   };
-
-  const faqCategories = [
-    {
-      id: 'booking',
-      title: 'Booking & Services',
-      icon: FileText,
-      questions: [
-        { q: 'How do I book a service?', a: 'Navigate to the service you need, select a vendor, choose a date and time, and complete the booking. You can track your booking in the "My Bookings" section.' },
-        { q: 'Can I cancel or reschedule a booking?', a: 'Yes, you can cancel or reschedule bookings from the "My Bookings" section. Cancellation policies may vary by service type.' },
-        { q: 'What payment methods are accepted?', a: 'We accept credit/debit cards, UPI, net banking, and wallet payments through Razorpay.' }
-      ]
-    },
-    {
-      id: 'orders',
-      title: 'Orders & Products',
-      icon: FileText,
-      questions: [
-        { q: 'How do I track my order?', a: 'Go to "My Orders" and click on your order to see real-time tracking information and delivery status.' },
-        { q: 'What is the return policy?', a: 'Most products can be returned within 7 days of delivery if unopened. Pharmacy items may have different policies.' },
-        { q: 'How is GST calculated?', a: 'GST is calculated at 18% on the subtotal of your order, in compliance with Indian tax regulations.' }
-      ]
-    },
-    {
-      id: 'account',
-      title: 'Account & Payments',
-      icon: FileText,
-      questions: [
-        { q: 'How do I update my profile?', a: 'Go to your profile section and edit your personal information, addresses, and payment methods.' },
-        { q: 'How do I add a pet?', a: 'Navigate to "Pet Profile" and click "Add Pet" to register your pet\'s information and medical records.' },
-        { q: 'What are loyalty points?', a: 'Loyalty points are earned on bookings and purchases. You can redeem them for discounts on future services.' }
-      ]
-    },
-    {
-      id: 'technical',
-      title: 'Technical Support',
-      icon: FileText,
-      questions: [
-        { q: 'The app is not loading properly', a: 'Try clearing your browser cache, checking your internet connection, or updating to the latest version of the app.' },
-        { q: 'I forgot my password', a: 'Use the "Forgot Password" option on the login screen. You will receive an OTP to reset your password.' },
-        { q: 'Payment failed but money was deducted', a: 'Contact support immediately. In most cases, the money is automatically refunded within 5-7 business days.' }
-      ]
-    }
-  ];
-
-  const filteredFAQs = faqCategories.map(category => ({
-    ...category,
-    questions: category.questions.filter(q => 
-      q.q.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      q.a.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  })).filter(category => category.questions.length > 0);
 
   const handleSubmitContact = async () => {
     if (!contactForm.subject.trim() || !contactForm.message.trim()) {
@@ -281,29 +339,51 @@ export function SupportHelpCenter({
         category: contactForm.category,
         customerId,
         customerPhone: phone,
-        bookingId: bookingContext?.bookingId,
+        bookingId: isBookingTicket ? activeBooking?.bookingId : undefined,
+        orderId: isMealOrderTicket ? activeMeal?.orderId : undefined,
         source: 'customer',
-        priority: isBookingTicket ? 'high' : 'medium',
+        priority: isLinkedTicket ? 'high' : 'medium',
+        attachments: contactAttachments.length ? contactAttachments : undefined,
         metadata: isBookingTicket
-          ? { ticket_type: 'booking', booking_context: bookingContext }
-          : { ticket_type: 'general' },
+          ? { ticket_type: 'booking', booking_context: activeBooking }
+          : isMealOrderTicket
+            ? { ticket_type: 'meal_order', meal_order_context: activeMeal }
+            : { ticket_type: 'general' },
       });
 
-      if (response.success || response.ticketId) {
+      if (response.success || response.ticketId || response.ticket?.id) {
         toast.success(
           isBookingTicket
             ? 'Booking support ticket created. Our team can review payment and refunds for this booking.'
-            : 'Support ticket created successfully! We will get back to you soon.'
+            : isMealOrderTicket
+              ? 'Meal order support ticket created. Our team can review payment and delivery for this order.'
+              : 'Support ticket created successfully! We will get back to you soon.'
         );
-        clearSupportBookingContext();
+        clearLinkedTicketContext();
+        const created = response.ticket as Ticket | undefined;
+        const newTicketId = created?.id || response.ticketId;
         setContactForm({
           subject: '',
           message: '',
-          category: isBookingTicket ? 'billing' : 'general',
+          category: isLinkedTicket ? DEFAULT_LINKED_SUPPORT_CATEGORY : 'general',
         });
+        setContactAttachments([]);
         setShowContactForm(false);
         setActiveTab('tickets');
-        void loadTickets();
+        if (created) {
+          setTickets((prev) => {
+            const without = prev.filter((t) => t.id !== created.id);
+            return [created, ...without];
+          });
+        } else {
+          void loadTickets();
+        }
+        if (newTicketId) {
+          setSelectedTicketId(String(newTicketId));
+          setTicketDetail(null);
+          setReplyText('');
+          setReplyAttachments([]);
+        }
       }
     } catch (error: any) {
       console.error('Error creating support ticket:', error);
@@ -312,8 +392,6 @@ export function SupportHelpCenter({
       setSubmitting(false);
     }
   };
-
-  const openTickets = tickets.filter((t) => t.status === 'open' || t.status === 'in_progress').length;
 
   const handleChatbotNavigate = useCallback(
     (dest: string, data?: unknown) => {
@@ -331,11 +409,39 @@ export function SupportHelpCenter({
   );
 
   const ticketCreateForm = (
-    <Card className="p-4">
-      <h3 className="font-semibold text-gray-900 mb-4">
-        {isBookingTicket ? 'Help with this booking' : 'Create Support Ticket'}
+    <Card className="p-4 border border-gray-100 shadow-sm rounded-2xl pb-6">
+      <button
+        type="button"
+        onClick={() => {
+          setShowContactForm(false);
+          clearLinkedTicketContext();
+          setContactForm({
+            subject: '',
+            message: '',
+            category: 'general',
+          });
+          setContactAttachments([]);
+        }}
+        className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-[#FF8C42] mb-4 -ml-1"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back to contact options
+      </button>
+      <h3 className="font-semibold text-gray-900 mb-1">
+        {isBookingTicket
+          ? 'Help with this booking'
+          : isMealOrderTicket
+            ? 'Help with this meal order'
+            : 'Create support ticket'}
       </h3>
-      {isBookingTicket && bookingContext && (
+      <p className="text-sm text-gray-500 mb-4">
+        {isBookingTicket
+          ? 'Tell us what went wrong — our team can review payment and refunds for this booking.'
+          : isMealOrderTicket
+            ? 'Tell us what went wrong — our team can review payment, delivery, and refunds for this meal order.'
+            : 'For general questions or account-related concerns. For booking or order help, open Help from that booking or order.'}
+      </p>
+      {isBookingTicket && activeBooking ? (
         <div className="mb-4 rounded-xl border border-[#FF8C42]/30 bg-[#FFF3E8] p-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-lg bg-[#FF8C42]/15 flex items-center justify-center shrink-0">
@@ -344,36 +450,71 @@ export function SupportHelpCenter({
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900">Booking-linked ticket</p>
               <p className="text-sm text-gray-700 truncate">
-                {bookingContext.serviceName || 'Service booking'}
+                {activeBooking.serviceName || 'Service booking'}
               </p>
               <p className="text-xs text-gray-500 mt-1 font-mono">
-                ID: {bookingContext.bookingId.slice(0, 8)}…
+                ID: {activeBooking.bookingId.slice(0, 8)}…
               </p>
-              {bookingContext.vendorName && (
-                <p className="text-xs text-gray-600 mt-1">{bookingContext.vendorName}</p>
-              )}
+              {activeBooking.vendorName ? (
+                <p className="text-xs text-gray-600 mt-1">{activeBooking.vendorName}</p>
+              ) : null}
               <p className="text-xs text-[#FF8C42] mt-2">
                 Support can review payment and process refunds for this booking.
               </p>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
+      {isMealOrderTicket && activeMeal ? (
+        <div className="mb-4 rounded-xl border border-emerald-200/80 bg-emerald-50/80 p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+              <UtensilsCrossed className="w-5 h-5 text-emerald-700" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-900">Meal order ticket</p>
+              <p className="text-sm text-gray-700 truncate">
+                {activeMeal.planTitle || 'Meal plan order'}
+              </p>
+              {activeMeal.orderDisplayNumber ? (
+                <p className="text-xs text-gray-500 mt-1 font-mono">
+                  {activeMeal.orderDisplayNumber}
+                </p>
+              ) : (
+                <p className="text-xs text-gray-500 mt-1 font-mono">
+                  ID: {activeMeal.orderId.slice(0, 8)}…
+                </p>
+              )}
+              {activeMeal.vendorName ? (
+                <p className="text-xs text-gray-600 mt-1">{activeMeal.vendorName}</p>
+              ) : null}
+              {activeMeal.amount != null ? (
+                <p className="text-xs text-gray-600 mt-1">
+                  Amount: ₹{activeMeal.amount.toLocaleString('en-IN')}
+                </p>
+              ) : null}
+              <p className="text-xs text-emerald-700 mt-2">
+                Support can review payment, delivery, and process refunds for this order.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
           <select
             value={contactForm.category}
             onChange={(e) => setContactForm({ ...contactForm, category: e.target.value })}
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42]"
-            disabled={isBookingTicket}
+            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] bg-white"
           >
-            <option value="general">General Inquiry</option>
-            <option value="service">Booking / service issue</option>
-            <option value="other">Order / other issue</option>
-            <option value="billing">Payment or refund</option>
-            <option value="technical">Technical Support</option>
-            <option value="account">Account</option>
+            {(isLinkedTicket ? LINKED_SUPPORT_TICKET_CATEGORIES : GENERAL_SUPPORT_TICKET_CATEGORIES).map(
+              (option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ),
+            )}
           </select>
         </div>
 
@@ -398,36 +539,57 @@ export function SupportHelpCenter({
           />
         </div>
 
+        <SupportAttachmentPicker
+          attachments={contactAttachments}
+          onChange={setContactAttachments}
+          disabled={submitting}
+        />
+
         <div className="flex gap-3">
           <Button
             variant="outline"
             onClick={() => {
               setShowContactForm(false);
-              clearSupportBookingContext();
+              clearLinkedTicketContext();
               setContactForm({
                 subject: '',
                 message: '',
-                category: isBookingTicket ? 'billing' : 'general',
+                category: 'general',
               });
+              setContactAttachments([]);
             }}
-            className="flex-1"
+            className="flex-1 rounded-xl"
           >
             Cancel
           </Button>
           <Button
             onClick={handleSubmitContact}
             disabled={submitting}
-            className="flex-1 bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
+            className="flex-1 rounded-xl bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
           >
-            {submitting ? 'Submitting...' : isBookingTicket ? 'Submit booking ticket' : 'Submit'}
+            {submitting ? 'Submitting...' : isBookingTicket ? 'Submit ticket' : 'Submit ticket'}
           </Button>
         </div>
       </div>
     </Card>
   );
 
+  const contactHub = (
+    <SupportContactTab
+      onStartChat={() => setShowAIChat(true)}
+      onGoToTickets={() => {
+        setSelectedTicketId(null);
+        setTicketDetail(null);
+        setActiveTab('tickets');
+      }}
+      onCreateTicket={() => setShowContactForm(true)}
+    />
+  );
+
+  const openTickets = tickets.filter((t) => isOpenTicketStatus(t.status)).length;
+
   return (
-    <div className="flex flex-col flex-1 min-h-0 w-full bg-gray-50 max-w-customer mx-auto">
+    <div className="flex flex-col h-full min-h-0 w-full bg-gray-50 max-w-customer mx-auto">
       {/* Single sticky chrome: header + tabs share one stack so tab offset never uses a magic pixel height. */}
       <div className="sticky top-0 z-50 isolate shrink-0 bg-gray-50">
         <ServiceDashboardHeader
@@ -436,8 +598,13 @@ export function SupportHelpCenter({
           serviceSubtitle="We're here to help"
           serviceIcon={HelpCircle}
           iconColor="text-white"
+          headerTrailingImage="/images/home/support/support.png"
+          headerTrailingImageAlt="Warmpawz support mascot"
+          clipHeaderTrailingImage
+          headerTrailingImageClassName="pointer-events-none absolute bottom-0 right-0 top-[2.25rem] z-[5] flex w-[42%] max-w-[168px] items-end justify-end sm:top-10"
+          headerTrailingImageImgClassName="block h-full w-auto max-w-full origin-bottom-right scale-[1.08] object-contain object-right object-bottom drop-shadow-md"
           stats={[
-            { value: String(faqCategories.length), label: 'Topics' },
+            { value: String(SUPPORT_FAQ_CATEGORIES.length), label: 'Topics' },
             { value: phone ? String(tickets.length) : '—', label: 'Tickets' },
             { value: phone ? String(openTickets) : '—', label: 'Open' },
           ]}
@@ -469,6 +636,9 @@ export function SupportHelpCenter({
               onClick={() => {
                 setSelectedTicketId(null);
                 setTicketDetail(null);
+                if (!linked.kind) {
+                  setShowContactForm(false);
+                }
                 setActiveTab('contact');
               }}
               className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
@@ -494,208 +664,71 @@ export function SupportHelpCenter({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-4 pb-32 space-y-4">
+      <div
+        className={
+          activeTab === 'tickets' && selectedTicketId
+            ? 'flex flex-1 min-h-0 flex-col overflow-hidden p-4 pb-0'
+            : 'flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y p-4 pb-36 space-y-4'
+        }
+      >
         {activeTab === 'faq' && (
-          <>
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <Input
-                type="text"
-                placeholder="Search FAQ..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-
-            {/* FAQ Categories */}
-            {filteredFAQs.length === 0 ? (
-              <Card className="p-8 text-center">
-                <HelpCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No FAQs found</p>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {filteredFAQs.map((category) => (
-                  <Card key={category.id} className="p-4">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-10 h-10 bg-[#FF8C42]/10 rounded-lg flex items-center justify-center">
-                        <category.icon className="w-5 h-5 text-[#FF8C42]" />
-                      </div>
-                      <h3 className="font-semibold text-gray-900">{category.title}</h3>
-                    </div>
-                    <div className="space-y-4">
-                      {category.questions.map((faq, idx) => (
-                        <div key={idx} className="border-t border-gray-100 pt-4 first:border-t-0 first:pt-0">
-                          <h4 className="font-medium text-gray-900 mb-2">{faq.q}</h4>
-                          <p className="text-sm text-gray-600">{faq.a}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </>
+          <SupportFaqTab
+            onAskAI={() => setShowAIChat(true)}
+            onCreateTicket={() => {
+              setSelectedTicketId(null);
+              setTicketDetail(null);
+              setActiveTab('contact');
+              setShowContactForm(true);
+            }}
+            onGoToTickets={() => {
+              setSelectedTicketId(null);
+              setTicketDetail(null);
+              setActiveTab('tickets');
+            }}
+          />
         )}
 
         {activeTab === 'contact' && (
-          showContactForm || isBookingTicket ? (
-            ticketCreateForm
-          ) : (
-          <Card className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
-            <h3 className="font-semibold text-gray-900 mb-4">Contact Us</h3>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Mail className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Email</p>
-                  <p className="text-sm text-gray-600">support@warmpawz.com</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAIChat(true)}
-                className="flex w-full items-center gap-3 rounded-lg p-1 -m-1 text-left hover:bg-blue-100/60 transition-colors"
-              >
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
-                  <Bot className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Chat with us</p>
-                  <p className="text-sm text-gray-600">AI assistant · Available 24/7</p>
-                </div>
-              </button>
-              <p className="text-xs text-gray-500 pt-1">
-                For refunds or account issues, open <span className="font-medium">My Tickets</span> and tap{' '}
-                <span className="font-medium">Create New Ticket</span>.
-              </p>
-            </div>
-          </Card>
-          )
+          showContactForm || isLinkedTicket ? ticketCreateForm : contactHub
         )}
 
         {activeTab === 'tickets' && (
-          <div className="space-y-4">
-            {selectedTicketId ? (
-              <SupportTicketDetailView
-                loadingInitial={loadingDetail && !ticketDetail}
-                detail={ticketDetail}
-                replyText={replyText}
-                onReplyTextChange={setReplyText}
-                sendingReply={sendingReply}
-                onSendReply={() => void handleSendReply()}
-                onMessagesRefresh={refreshOpenTicket}
-                onBack={() => {
-                  setSelectedTicketId(null);
-                  setTicketDetail(null);
-                  setReplyText('');
-                }}
-              />
-            ) : showContactForm ? (
-              ticketCreateForm
-            ) : (
-              <>
-                {/* Refresh and Create buttons */}
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => void loadTickets()}
-                    variant="outline"
-                    size="sm"
-                    disabled={loadingTickets}
-                    className="flex items-center gap-2"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${loadingTickets ? 'animate-spin' : ''}`} />
-                    Refresh
-                  </Button>
-                  <Button
-                    onClick={() => setShowContactForm(true)}
-                    size="sm"
-                    className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
-                  >
-                    Create New Ticket
-                  </Button>
-                </div>
-
-                {/* Loading state */}
-                {loadingTickets && (
-                  <Card className="p-8 text-center">
-                    <div className="w-8 h-8 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-gray-500">Loading your tickets...</p>
-                  </Card>
-                )}
-
-                {/* Empty state */}
-                {!loadingTickets && tickets.length === 0 && (
-                  <Card className="p-8 text-center">
-                    <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500 mb-2">No support tickets yet</p>
-                    <p className="text-sm text-gray-400">
-                      Create a new ticket if you need help, or tap Refresh if you just submitted one
-                    </p>
-                  </Card>
-                )}
-
-                {/* Tickets list */}
-                {!loadingTickets && tickets.length > 0 && (
-                  <div className="space-y-3">
-                    {tickets.map((ticket) => (
-                      <button
-                        key={ticket.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedTicketId(ticket.id);
-                          setTicketDetail(null);
-                          setReplyText('');
-                        }}
-                        className="w-full text-left"
-                      >
-                        <Card className="p-4 transition-shadow hover:shadow-md cursor-pointer active:scale-[0.99]">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <SupportTicketStatusBadge status={ticket.status} />
-                                {(ticket.booking_id ||
-                                  (ticket.metadata as Record<string, unknown> | undefined)?.ticket_type ===
-                                    'booking') && (
-                                  <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-700">
-                                    Booking
-                                  </span>
-                                )}
-                                {!(ticket.booking_id ||
-                                  (ticket.metadata as Record<string, unknown> | undefined)?.ticket_type ===
-                                    'booking') && (
-                                  <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-gray-100 text-gray-600">
-                                    General
-                                  </span>
-                                )}
-                                {ticket.ticket_number && (
-                                  <span className="text-xs text-gray-400">{ticket.ticket_number}</span>
-                                )}
-                              </div>
-                              <h4 className="font-medium text-gray-900 truncate">{ticket.subject}</h4>
-                              {ticket.message && (
-                                <p className="text-sm text-gray-500 line-clamp-2 mt-1">{ticket.message}</p>
-                              )}
-                              <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                                <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
-                                {ticket.category && <span className="capitalize">{ticket.category}</span>}
-                              </div>
-                              <p className="text-xs text-[#FF8C42] mt-2 font-medium">Tap to open and reply</p>
-                            </div>
-                            <ChevronRight className="w-5 h-5 text-gray-300 flex-shrink-0 mt-1" />
-                          </div>
-                        </Card>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+          selectedTicketId ? (
+            <SupportTicketDetailView
+              loadingInitial={loadingDetail && !ticketDetail}
+              detail={ticketDetail}
+              replyText={replyText}
+              onReplyTextChange={setReplyText}
+              sendingReply={sendingReply}
+              onSendReply={(attachments) => void handleSendReply(attachments)}
+              replyAttachments={replyAttachments}
+              onReplyAttachmentsChange={setReplyAttachments}
+              onMessagesRefresh={refreshOpenTicket}
+              onBack={() => {
+                setSelectedTicketId(null);
+                setTicketDetail(null);
+                setReplyText('');
+                setReplyAttachments([]);
+                void loadTickets();
+              }}
+            />
+          ) : (
+            <SupportTicketsListTab
+              tickets={tickets}
+              loading={loadingTickets}
+              onRefresh={() => void loadTickets()}
+              onCreateTicket={() => {
+                setActiveTab('contact');
+                setShowContactForm(true);
+              }}
+              onOpenTicket={(ticketId) => {
+                setSelectedTicketId(ticketId);
+                setTicketDetail(null);
+                setReplyText('');
+                setReplyAttachments([]);
+              }}
+            />
+          )
         )}
       </div>
 

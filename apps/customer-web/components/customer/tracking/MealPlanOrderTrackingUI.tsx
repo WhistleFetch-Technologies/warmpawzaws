@@ -110,6 +110,7 @@ export interface MealPlanOrderTrackingUIProps {
   deliveredBanner?: ReactNode;
   customerDetailsCard?: ReactNode;
   orderDetailsCollapsible?: ReactNode;
+  supportHelpCard?: ReactNode;
   floatingChatButton?: ReactNode;
 }
 
@@ -127,6 +128,7 @@ export function MealPlanOrderTrackingUI({
   deliveredBanner,
   customerDetailsCard,
   orderDetailsCollapsible,
+  supportHelpCard,
   floatingChatButton,
 }: MealPlanOrderTrackingUIProps) {
   const { filled, current } = mealKitchenProgress(orderStatus, logisticsStatus);
@@ -220,6 +222,8 @@ export function MealPlanOrderTrackingUI({
           </ul>
         </section>
 
+        {supportHelpCard}
+
         {deliveredBanner}
 
         {customerDetailsCard}
@@ -228,7 +232,7 @@ export function MealPlanOrderTrackingUI({
       </main>
 
       {floatingChatButton ? (
-        <div className="fixed bottom-6 right-6 z-40">{floatingChatButton}</div>
+        <div className="fixed bottom-6 right-6 z-50">{floatingChatButton}</div>
       ) : null}
     </div>
   );

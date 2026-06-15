@@ -428,7 +428,11 @@ const SUPPORT_TICKET_SOURCES = new Set([
 
 const SUPPORT_TICKET_STATUSES = new Set([
   'open',
+  'ai_acknowledged',
+  'awaiting_assignment',
+  'assigned',
   'in_progress',
+  'waiting_for_customer',
   'resolved',
   'closed',
   'escalated',
