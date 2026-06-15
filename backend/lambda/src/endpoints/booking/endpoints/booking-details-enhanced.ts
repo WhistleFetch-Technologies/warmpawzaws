@@ -125,7 +125,7 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
         // Medical records for this booking
         query(
           `SELECT * FROM medical_records 
-           WHERE booking_id = $1 AND is_active = true 
+           WHERE booking_id = $1 
            ORDER BY created_at DESC`,
           [bookingId]
         ).catch(() => ({ rows: [] })),
@@ -298,7 +298,7 @@ class GetBookingMedicalRecordsHandler extends BaseHandler {
     try {
       const medicalRecords = await query(
         `SELECT * FROM medical_records 
-         WHERE booking_id = $1 AND is_active = true 
+         WHERE booking_id = $1 
          ORDER BY created_at DESC`,
         [bookingId]
       ).catch(() => ({ rows: [] }));

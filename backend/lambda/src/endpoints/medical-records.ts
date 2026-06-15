@@ -1317,7 +1317,6 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
            LEFT JOIN vendors v ON mr.vendor_id = v.id
            LEFT JOIN pets p ON mr.pet_id = p.id
            WHERE mr.booking_id = $1::uuid
-           AND mr.is_active = true
            AND (mr.record_type = 'prescription' 
                 OR (mr.record_type = 'treatment' AND mr.title ILIKE '%prescription%'))`,
           [bookingId]

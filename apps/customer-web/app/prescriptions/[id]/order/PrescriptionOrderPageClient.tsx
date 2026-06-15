@@ -48,7 +48,7 @@ function PrescriptionOrderPageContent() {
           <h1 className="text-xl font-semibold text-slate-800 mb-2">Log In Required</h1>
           <p className="text-slate-500 mb-4">
             Please log in with your phone number to order medicine from your prescription. 
-            You can also use the app and go to My Bookings → select booking → Prescription History → Order Medicine.
+            You can also use the app and go to My Bookings → select booking → Prescriptions & documents → Order Medicine.
           </p>
           <button
             onClick={() => router.push(`/auth?redirect=/prescriptions/${prescriptionId}/order`)}

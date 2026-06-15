@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star, Navigation, Upload, Key, Eye, EyeOff, HelpCircle } from 'lucide-react';
+import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, Download, Share2, Star, Navigation, Key, Eye, EyeOff, HelpCircle } from 'lucide-react';
 import { navigateToBookingSupport } from '@/lib/support-contact';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -138,6 +138,58 @@ function showPrescriptionAndMedicalRecords(
   }
 
   return false;
+}
+
+/** Booking includes lab/diagnostic work (diagnostics service or tests on a vet booking). */
+function bookingHasLabWork(booking: any): boolean {
+  if (!booking) return false;
+  if (booking.isDiagnostic || booking.hasDiagnosticTests) return true;
+
+  const serviceType = String(booking.serviceType || booking.service_type || '').toLowerCase();
+  const serviceCategory = String(booking.serviceCategory || booking.service_category || '').toLowerCase();
+  const serviceId = String(booking.serviceId || booking.service_id || '').toLowerCase();
+
+  if (
+    serviceType.includes('diagnostic') ||
+    serviceCategory.includes('diagnostic') ||
+    serviceId === 'diagnostics'
+  ) {
+    return true;
+  }
+
+  if (booking.notes) {
+    try {
+      const notesData = typeof booking.notes === 'string' ? JSON.parse(booking.notes) : booking.notes;
+      if (Array.isArray(notesData?.tests) && notesData.tests.length > 0) {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return false;
+}
+
+function bookingLabReportsActionVisible(booking: any): boolean {
+  if (!bookingHasLabWork(booking)) return false;
+
+  const statusStr = String(booking.status || '');
+  const statusLower = statusStr.toLowerCase().replace(/\s/g, '_').replace(/-/g, '_');
+
+  return (
+    statusLower === 'reports_ready' ||
+    statusLower === 'reportsready' ||
+    statusLower === 'completed' ||
+    statusLower === 'sample_collected' ||
+    statusLower === 'ready' ||
+    (statusLower.includes('report') && statusLower.includes('ready'))
+  );
+}
+
+function countPrescriptionDocuments(prescription: Prescription | null, medicalRecords: any[]): number {
+  const docRecords = medicalRecords.filter((r) => r.record_type !== 'diagnostic_report');
+  return docRecords.length + (prescription ? 1 : 0);
 }
 
 function BookingDetailPaymentHoldBanner({
@@ -524,58 +576,11 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
     return false;
   };
 
-  const canFollowUp = () => {
-    if (!booking || booking.status !== 'completed' || !booking.otpVerifiedAt) return false;
-    const completedAt = new Date(booking.otpVerifiedAt);
-    const now = new Date();
-    const daysDiff = Math.floor((now.getTime() - completedAt.getTime()) / (1000 * 60 * 60 * 24));
-    return daysDiff <= 7;
-  };
-
   const handleCopyOtp = () => {
     if (booking?.completionOTP) {
       copyTextToClipboard(booking.completionOTP);
       setCopiedOtp(true);
       setTimeout(() => setCopiedOtp(false), 2000);
-    }
-  };
-
-  const openMedicalRecord = async (rec: { id: string; file_url?: string; document_url?: string }) => {
-    const directUrl = (rec.document_url || rec.file_url || '').trim();
-    if (directUrl.startsWith('http://') || directUrl.startsWith('https://')) {
-      window.open(directUrl, '_blank', 'noopener,noreferrer');
-      toast.success('Opening document...');
-      return;
-    }
-
-    try {
-      const result = (await apiClient.get(
-        `/medical-records/booking/${bookingId}/view/${rec.id}`
-      )) as { fileUrl?: string; record?: { file_url?: string } };
-      const fileUrl = (result.fileUrl || result.record?.file_url || '').trim();
-      if (fileUrl) {
-        window.open(fileUrl, '_blank', 'noopener,noreferrer');
-        toast.success('Opening document...');
-        return;
-      }
-      setShowPrescriptionHistory(true);
-    } catch (error) {
-      console.error('Error opening medical record:', error);
-      toast.error('Failed to open document. Try again from Upload Documents.');
-    }
-  };
-
-  const formatMedicalRecordDate = (rec: { record_date?: string; created_at?: string }) => {
-    const raw = rec.record_date || rec.created_at;
-    if (!raw) return '';
-    try {
-      return new Date(raw).toLocaleDateString('en-IN', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      });
-    } catch {
-      return '';
     }
   };
 
@@ -1350,122 +1355,25 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
-              {/* Prescription History - Only for vet, diagnostics, nutritionist (not grooming/training/walker/behaviourist/sitter) */}
+              {/* Prescriptions & documents — vet, diagnostics, nutritionist */}
               {showPrescriptionAndMedicalRecords(booking.serviceType, booking.serviceCategory, booking) && (
                 <Button
                   onClick={() => setShowPrescriptionHistory(true)}
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
-                  disabled={loadingPrescription}
+                  className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                  disabled={loadingPrescription || loadingMedicalRecords}
                 >
                   <FileText className="w-5 h-5" />
-                  Prescription History
-                  {prescription && <span className="ml-auto bg-blue-700 px-2 py-0.5 rounded-full text-xs">Available</span>}
+                  Prescriptions &amp; documents
+                  {countPrescriptionDocuments(prescription, medicalRecords) > 0 && (
+                    <span className="ml-auto bg-indigo-700 px-2 py-0.5 rounded-full text-xs">
+                      {countPrescriptionDocuments(prescription, medicalRecords)}
+                    </span>
+                  )}
                 </Button>
               )}
 
-              {/* Upload Documents - Always visible */}
-              <Button
-                onClick={() => setShowPrescriptionHistory(true)}
-                className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
-              >
-                <Upload className="w-5 h-5" />
-                Upload Documents
-                {(prescription || medicalRecords.length > 0) && (
-                  <span className="ml-auto bg-indigo-700 px-2 py-0.5 rounded-full text-xs">
-                    {medicalRecords.length + (prescription ? 1 : 0)} uploaded
-                  </span>
-                )}
-              </Button>
-
-              {/* Uploaded documents — visible for all booking types */}
-              {medicalRecords.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-gray-700 px-1">Uploaded documents</p>
-                  {medicalRecords.map((rec: any) => {
-                    const hasFile =
-                      Boolean(rec.file_url || rec.document_url) ||
-                      rec.record_type === 'diagnostic_report';
-                    const recordDate = formatMedicalRecordDate(rec);
-                    return (
-                      <div
-                        key={rec.id}
-                        className="flex items-center justify-between gap-2 p-3 rounded-xl bg-indigo-50 border border-indigo-100"
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <FileText className="w-5 h-5 text-indigo-600 flex-shrink-0" />
-                          <div className="min-w-0">
-                            <p className="font-medium text-gray-900 truncate">
-                              {rec.title || rec.record_type || 'Document'}
-                            </p>
-                            <p className="text-xs text-gray-500 capitalize">
-                              {[rec.record_type?.replace(/_/g, ' '), recordDate].filter(Boolean).join(' · ')}
-                            </p>
-                          </div>
-                        </div>
-                        {hasFile ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-shrink-0 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
-                            onClick={() => openMedicalRecord(rec)}
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            View
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-shrink-0 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
-                            onClick={() => setShowPrescriptionHistory(true)}
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            Details
-                          </Button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Diagnostics: View Reports Button - For diagnostics bookings with ready reports */}
-              {(() => {
-                // ✅ Use the same detection logic as prescription history for consistency
-                const isDiagnosticBooking = showPrescriptionAndMedicalRecords(
-                  booking.serviceType, 
-                  booking.serviceCategory, 
-                  booking
-                );
-                
-                // ✅ FIX: Case-insensitive status check - handle multiple formats
-                const statusStr = (booking.status || '').toString();
-                const statusLower = statusStr.toLowerCase().replace(/\s/g, '_').replace(/-/g, '_');
-                const hasReportsReady = 
-                  statusLower === 'reports_ready' || 
-                  statusLower === 'reportsready' ||
-                  statusLower === 'completed' ||
-                  statusStr === 'Reports_ready' ||
-                  statusStr === 'Reports Ready' ||
-                  (statusLower.includes('report') && statusLower.includes('ready')) ||
-                  statusLower === 'ready';
-                
-                const shouldShow = isDiagnosticBooking && hasReportsReady;
-                console.log('🔍 [BOOKING-DETAIL] View Reports Button Check:', {
-                  isDiagnosticBooking,
-                  status: booking.status,
-                  statusLower,
-                  hasReportsReady,
-                  shouldShow,
-                  serviceId: booking.serviceId,
-                  serviceType: booking.serviceType,
-                  serviceCategory: booking.serviceCategory,
-                  isDiagnostic: booking.isDiagnostic,
-                  hasDiagnosticTests: booking.hasDiagnosticTests,
-                });
-                
-                return shouldShow;
-              })() && (
+              {/* Lab reports — diagnostics bookings and vet bookings with lab tests */}
+              {bookingLabReportsActionVisible(booking) && (
                 <Button
                   onClick={() => {
                     onNavigate?.('diagnostics-reports', { bookingId: booking.id });
@@ -1527,22 +1435,6 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               )}
 
 
-              {/* Follow-up Button - Only for completed bookings within 7 days */}
-              {canFollowUp() && (
-                <Button
-                  onClick={() => setCommunicationMode('chat')} // Opens same chat window
-                  className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
-                >
-                  <CalendarPlus className="w-5 h-5" />
-                  Follow-Up Chat
-                  {(booking.otpVerifiedAt || booking.updatedAt || booking.completedAt) && (
-                    <span className="ml-auto bg-orange-700 px-2 py-0.5 rounded-full text-xs">
-                      {Math.max(0, 7 - Math.floor((new Date().getTime() - new Date(booking.otpVerifiedAt || booking.updatedAt || booking.completedAt).getTime()) / (1000 * 60 * 60 * 24)))} days left
-                    </span>
-                  )}
-                </Button>
-              )}
-
               <Button
                 onClick={() => {
                   onClose();
@@ -1598,7 +1490,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         />
       )}
 
-      {/* Prescription History Modal */}
+      {/* Prescriptions & documents modal */}
       {showPrescriptionHistory && (
         <PrescriptionHistoryModal
           bookingId={bookingId}
