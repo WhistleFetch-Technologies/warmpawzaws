@@ -29,6 +29,10 @@ import {
 } from '../utils/pet-health-normalize';
 import { findCustomerByPhone } from '../utils/customer-phone-lookup';
 import { omitMissingPetsColumns } from '../utils/pets-table-schema';
+import {
+  petPayloadHasVaccinations,
+  petVaccinationsMeaningfullyUpdated,
+} from '../lib/pet-vaccination-loyalty';
 
 export function registerPetEndpoints(app: Hono) {
   /**
@@ -334,10 +338,15 @@ export function registerPetEndpoints(app: Hono) {
       });
 
       const pet = await insert('pets', insertPayload);
+      const created = pet[0] as Record<string, unknown>;
+      const vaccinationUpdated = petPayloadHasVaccinations(petData as Record<string, unknown>);
 
       return c.json({
         success: true,
-        pet: pet[0],
+        pet: created,
+        customerId: customerId,
+        petId: created.id,
+        vaccinationUpdated,
         message: 'Pet created successfully',
       });
     } catch (error: any) {
@@ -355,6 +364,7 @@ export function registerPetEndpoints(app: Hono) {
     try {
       const { petId } = c.req.param();
       const petData = await c.req.json();
+      const payloadHadVaccinations = petPayloadHasVaccinations(petData as Record<string, unknown>);
 
       // Get existing pet to merge medical history
       const existingPets = await select('pets', { id: petId });
@@ -436,9 +446,20 @@ export function registerPetEndpoints(app: Hono) {
         return c.json({ error: 'Pet not found' }, 404);
       }
 
+      const afterPet = updated[0] as Record<string, unknown>;
+      const beforePet = (existingPets[0] || {}) as Record<string, unknown>;
+      const vaccinationUpdated = petVaccinationsMeaningfullyUpdated(
+        beforePet,
+        afterPet,
+        payloadHadVaccinations
+      );
+
       return c.json({
         success: true,
-        pet: updated[0],
+        pet: afterPet,
+        customerId: afterPet.customer_id,
+        petId: afterPet.id ?? petId,
+        vaccinationUpdated,
         message: 'Pet updated successfully',
       });
     } catch (error: any) {

@@ -744,6 +744,64 @@ export async function processCustomerReferralForVendorSignup(params: {
   }
 }
 
+export type PeerReferralLink = {
+  referralId: string;
+  referrerId: string;
+  referralCode: string;
+  redemptionId: string | null;
+};
+
+/** Resolve customer→customer referral via referral_redemptions (704+), legacy referrals.referred_id fallback. */
+export async function resolvePeerReferralByRefereeId(
+  refereeId: string
+): Promise<PeerReferralLink | null> {
+  const fromRedemption = await query(
+    `SELECT rr.id AS redemption_id, r.id AS referral_id, r.referrer_id, r.referral_code
+     FROM referral_redemptions rr
+     INNER JOIN referrals r ON r.id = rr.referral_id
+     WHERE rr.referred_id = $1
+     LIMIT 1`,
+    [refereeId]
+  );
+
+  if (fromRedemption.rows.length > 0) {
+    const row = fromRedemption.rows[0] as {
+      redemption_id: string;
+      referral_id: string;
+      referrer_id: string;
+      referral_code: string;
+    };
+    if (!row.referrer_id || row.referrer_id === refereeId) return null;
+    return {
+      referralId: row.referral_id,
+      referrerId: row.referrer_id,
+      referralCode: row.referral_code,
+      redemptionId: row.redemption_id,
+    };
+  }
+
+  const leg = await query(
+    `SELECT id, referrer_id, referral_code, referred_id FROM referrals WHERE referred_id = $1 LIMIT 1`,
+    [refereeId]
+  );
+  if (leg.rows.length === 0) return null;
+
+  const referral = leg.rows[0] as {
+    id: string;
+    referrer_id: string;
+    referral_code: string;
+    referred_id: string;
+  };
+  if (!referral.referrer_id || referral.referrer_id === referral.referred_id) return null;
+
+  return {
+    referralId: referral.id,
+    referrerId: referral.referrer_id,
+    referralCode: referral.referral_code,
+    redemptionId: null,
+  };
+}
+
 /** Params for `customer_referral` ActionOccurred from HTTP action_sources (e.g. POST /auth/otp/verify). */
 export interface CustomerReferralOtpVerifyRewardParams {
   eventId: string;
@@ -753,7 +811,7 @@ export interface CustomerReferralOtpVerifyRewardParams {
 }
 
 /**
- * Award the referrer when the friend completes OTP: resolve `referrals.referrer_id` for `referred_id` = friend,
+ * Award the referrer when the friend completes OTP: resolve peer link via referral_redemptions,
  * dedupe one earned row per referrer + friend (`reference_id` = friend’s customer id), credit referrer only.
  */
 export async function processCustomerReferralOtpVerifyReward(
@@ -778,29 +836,16 @@ export async function processCustomerReferralOtpVerifyReward(
     return;
   }
 
-  const refRes = await query(
-    `SELECT id, referrer_id, referral_code, referred_id
-     FROM referrals
-     WHERE referred_id = $1
-     LIMIT 1`,
-    [refereeId]
-  );
-  if (refRes.rows.length === 0) {
-    console.info('[CUSTOMER-REFERRAL-OTP] No referral row for referred customer; skip award', { eventId, refereeId });
+  const link = await resolvePeerReferralByRefereeId(refereeId);
+  if (!link) {
+    console.info('[CUSTOMER-REFERRAL-OTP] No peer referral link for referred customer; skip award', {
+      eventId,
+      refereeId,
+    });
     return;
   }
-  const referral = refRes.rows[0] as {
-    id: string;
-    referrer_id: string;
-    referral_code: string;
-    referred_id: string;
-  };
 
-  const referrerId = referral.referrer_id;
-  if (!referrerId || referrerId === referral.referred_id) {
-    console.warn('[CUSTOMER-REFERRAL-OTP] Invalid referrer_id, skipping', { eventId, referralId: referral.id });
-    return;
-  }
+  const { referralId, referrerId, referralCode, redemptionId } = link;
 
   const referrerRows = await select('customers', { id: referrerId });
   if (!referrerRows.length) {
@@ -834,10 +879,11 @@ export async function processCustomerReferralOtpVerifyReward(
     description: 'Referral reward — friend verified with your code',
     metadata: {
       eventId,
-      referralsId: referral.id,
+      referralsId: referralId,
+      redemptionId,
       referrerId,
       referredId: refereeId,
-      referralCode: referral.referral_code,
+      referralCode,
     },
   });
 
@@ -897,54 +943,12 @@ export async function processCustomerReferralFirstBookingReward(
     return;
   }
 
-  const fromRedemption = await query(
-    `SELECT rr.id AS redemption_id, r.id AS referral_id, r.referrer_id, r.referral_code
-     FROM referral_redemptions rr
-     INNER JOIN referrals r ON r.id = rr.referral_id
-     WHERE rr.referred_id = $1
-     LIMIT 1`,
-    [refereeId]
-  );
-
-  let referralId: string;
-  let referrerId: string;
-  let referralCode: string;
-  let redemptionId: string | null = null;
-
-  if (fromRedemption.rows.length > 0) {
-    const row = fromRedemption.rows[0] as {
-      redemption_id: string;
-      referral_id: string;
-      referrer_id: string;
-      referral_code: string;
-    };
-    redemptionId = row.redemption_id;
-    referralId = row.referral_id;
-    referrerId = row.referrer_id;
-    referralCode = row.referral_code;
-  } else {
-    const leg = await query(
-      `SELECT id, referrer_id, referral_code, referred_id FROM referrals WHERE referred_id = $1 LIMIT 1`,
-      [refereeId]
-    );
-    if (leg.rows.length === 0) {
-      console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] No peer referral link for customer', { eventId, refereeId });
-      return;
-    }
-    const referral = leg.rows[0] as {
-      id: string;
-      referrer_id: string;
-      referral_code: string;
-      referred_id: string;
-    };
-    referralId = referral.id;
-    referrerId = referral.referrer_id;
-    referralCode = referral.referral_code;
-    if (!referrerId || referrerId === referral.referred_id) {
-      console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Invalid referrer', { eventId, referralId: referral.id });
-      return;
-    }
+  const link = await resolvePeerReferralByRefereeId(refereeId);
+  if (!link) {
+    console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] No peer referral link for customer', { eventId, refereeId });
+    return;
   }
+  const { referralId, referrerId, referralCode, redemptionId } = link;
 
   if (!referrerId || referrerId === refereeId) {
     console.warn('[CUSTOMER-REFERRAL-FIRST-BOOKING] Invalid referrer_id', { eventId, referralId });
@@ -995,6 +999,91 @@ export async function processCustomerReferralFirstBookingReward(
   console.info('[CUSTOMER-REFERRAL-FIRST-BOOKING] Award result (referrer)', {
     eventId,
     referrerId,
+    refereeId,
+    bookingId,
+    points: result.points,
+    walletCredited: result.walletCredited,
+  });
+}
+
+export interface CustomerReferralRefereeBookingRewardParams {
+  eventId: string;
+  bookingId?: string;
+  customerId?: string;
+}
+
+/**
+ * Award the **referred friend** when their first paid booking completes (referral_signup rule, 50 pts).
+ * Requires a row in referral_redemptions. Idempotent: one earn per referee (reference_id = referee customer id).
+ */
+export async function processCustomerReferralRefereeBookingReward(
+  params: CustomerReferralRefereeBookingRewardParams
+): Promise<void> {
+  const { eventId, bookingId, customerId: entityCustomerId } = params;
+  if (!bookingId) {
+    console.warn('[CUSTOMER-REFERRAL-REFEREE] Missing bookingId', { eventId });
+    return;
+  }
+
+  const bookingRes = await query(
+    `SELECT id, customer_id FROM bookings WHERE id = $1`,
+    [bookingId]
+  );
+  const booking = bookingRes.rows?.[0] as { id: string; customer_id: string } | undefined;
+  if (!booking?.customer_id) {
+    console.warn('[CUSTOMER-REFERRAL-REFEREE] Booking not found or no customer_id', { eventId, bookingId });
+    return;
+  }
+
+  const refereeId = booking.customer_id as string;
+  if (entityCustomerId && entityCustomerId !== refereeId) {
+    console.warn('[CUSTOMER-REFERRAL-REFEREE] Entity id does not match booking customer', {
+      eventId,
+      entityCustomerId,
+      refereeId,
+    });
+    return;
+  }
+
+  const link = await resolvePeerReferralByRefereeId(refereeId);
+  if (!link) {
+    console.info('[CUSTOMER-REFERRAL-REFEREE] No peer referral link; skip referee award', { eventId, refereeId });
+    return;
+  }
+
+  const dup = await query(
+    `SELECT 1 FROM loyalty_transactions
+     WHERE customer_id = $1
+       AND transaction_type = 'earned'
+       AND reference_type = 'referral_signup'
+       AND reference_id = $2
+     LIMIT 1`,
+    [refereeId, refereeId]
+  );
+  if (dup.rows.length > 0) {
+    console.info('[CUSTOMER-REFERRAL-REFEREE] Referee already awarded referral_signup', { eventId, refereeId });
+    return;
+  }
+
+  const result = await loyaltyPointsService.awardPoints({
+    customerId: refereeId,
+    actionName: 'referral_signup',
+    referenceType: 'referral_signup',
+    referenceId: refereeId,
+    description: 'Referral welcome bonus — first booking with a friend\'s code',
+    metadata: {
+      eventId,
+      referralsId: link.referralId,
+      redemptionId: link.redemptionId,
+      referrerId: link.referrerId,
+      referredId: refereeId,
+      referralCode: link.referralCode,
+      bookingId,
+    },
+  });
+
+  console.info('[CUSTOMER-REFERRAL-REFEREE] Award result (referee)', {
+    eventId,
     refereeId,
     bookingId,
     points: result.points,

@@ -126,7 +126,7 @@ export class LoyaltyRulesInitService {
   }
 
   /**
-   * Ensure referral_signup rule exists with 500 points
+   * Ensure referral_signup rule exists with 50 points (referee welcome bonus)
    */
   async ensureReferralSignupRule(): Promise<boolean> {
     try {
@@ -141,22 +141,22 @@ export class LoyaltyRulesInitService {
       const ruleExists = await this.checkRuleExists('referral_signup');
       
       if (ruleExists) {
-        // Update existing rule to ensure it has 500 points
+        // Update existing rule to ensure it has 50 points
         try {
           await query(
             `UPDATE loyalty_action_rules 
-             SET points_value = 500,
+             SET points_value = 50,
                  action_category = 'referral_rewards',
                  user_type = 'customer',
                  points_type = 'fixed',
                  frequency_type = 'one_time',
-                 description = 'Sign up with referral code',
+                 description = 'Sign up with referral code and complete first booking',
                  is_active = true,
                  priority = 50,
                  updated_at = NOW()
              WHERE action_name = 'referral_signup'`
           );
-          console.log('[LOYALTY_INIT] ✅ Updated referral_signup rule to 500 points');
+          console.log('[LOYALTY_INIT] ✅ Updated referral_signup rule to 50 points');
         } catch (updateError: any) {
           console.error('[LOYALTY_INIT] Error updating referral_signup rule:', updateError);
         }
@@ -164,22 +164,22 @@ export class LoyaltyRulesInitService {
       }
 
       // Create new rule
-      console.log('[LOYALTY_INIT] Creating referral_signup rule with 500 points...');
+      console.log('[LOYALTY_INIT] Creating referral_signup rule with 50 points...');
       await insert('loyalty_action_rules', {
         action_name: 'referral_signup',
         action_category: 'referral_rewards',
         user_type: 'customer',
         points_type: 'fixed',
-        points_value: 500,
+        points_value: 50,
         base_amount: null,
         frequency_type: 'one_time',
-        description: 'Sign up with referral code',
+        description: 'Sign up with referral code and complete first booking',
         is_active: true,
         priority: 50,
-        notes: 'Awarded to new users who sign up with a referral code',
+        notes: 'Awarded to referred users who used a peer referral code and paid for first booking',
       });
 
-      console.log('[LOYALTY_INIT] ✅ Created referral_signup rule with 500 points');
+      console.log('[LOYALTY_INIT] ✅ Created referral_signup rule with 50 points');
       return true;
     } catch (error: any) {
       // Handle unique constraint violation (rule already exists)
