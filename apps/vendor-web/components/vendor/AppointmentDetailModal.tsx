@@ -1922,20 +1922,6 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   </div>
                 </div>
 
-                {/* Create Prescription (Vet Summary) - ONLY for vet consultation (clinic/tele/home). NOT for diagnostics lab bookings. */}
-                {isVetOrNutritionist && !isDiagnosticsBooking && booking.status !== 'cancelled' && (
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-                    <p className="text-sm text-purple-700 font-medium mb-2">Consultation Summary (Prescription)</p>
-                    <p className="text-xs text-purple-600 mb-3">Add diagnosis, medicines, and notes. Saved to history for future vets and pet medical records.</p>
-                    <button
-                      onClick={() => setShowVetSummaryModal(true)}
-                      className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:from-purple-700 hover:to-purple-800 transition-all shadow-md"
-                    >
-                      <Stethoscope className="w-5 h-5" />
-                      Add Consultation Summary (Prescription)
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 
@@ -2193,15 +2179,6 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                       </div>
                       );
                     })}
-                    
-                    {isVetOrNutritionist && booking.status !== 'cancelled' && (
-                      <button
-                        onClick={() => setShowVetSummaryModal(true)}
-                        className="w-full px-4 py-2 bg-purple-50 text-purple-700 rounded-lg font-medium hover:bg-purple-100 transition-colors"
-                      >
-                        + Add Consultation Summary
-                      </button>
-                    )}
                   </>
                 )}
               </div>
@@ -2310,10 +2287,10 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               )}
             </div>
             
-            {/* Prescription + Medical History (vet consultation); Lab Report Upload (diagnostics) */}
+            {/* Medical History (vet consultation); Lab Report Upload (diagnostics) */}
             {((isVetOrNutritionist && !isDiagnosticsBooking) || isDiagnosticsBooking) && booking.status !== 'cancelled' && (
               <div className="space-y-2">
-                <div className="flex gap-2">
+                {isVetOrNutritionist && !isDiagnosticsBooking && (
                   <button
                     onClick={async () => {
                       console.log('[Medical History] Button clicked, booking data:', {
@@ -2393,22 +2370,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                       
                       setShowMedicalHistory(true);
                     }}
-                    className="flex-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                    className="w-full py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
                   >
                     <FileText className="w-4 h-4" />
                     Medical History
                   </button>
-                  {/* Consultation Summary: ONLY for vet consultation, NOT for diagnostics lab orders */}
-                  {isVetOrNutritionist && !isDiagnosticsBooking && (
-                    <button
-                      onClick={() => setShowVetSummaryModal(true)}
-                      className="flex-1 py-3 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl font-medium flex items-center justify-center gap-2"
-                    >
-                      <Stethoscope className="w-4 h-4" />
-                      Consultation Summary (Prescription)
-                    </button>
-                  )}
-                </div>
+                )}
                 {/* Lab/diagnostics: Upload Report so customer can view/download */}
                 {isDiagnosticsBooking && (
                   <button
