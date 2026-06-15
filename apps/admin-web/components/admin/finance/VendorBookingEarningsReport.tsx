@@ -108,6 +108,7 @@ export function VendorBookingEarningsReport() {
   const [bookings, setBookings] = useState<BookingLine[]>([]);
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const parsedMonth = parseYearMonth(yearMonth);
   const periodWord = periodType === 'day' ? 'day' : 'month';
@@ -192,20 +193,81 @@ export function VendorBookingEarningsReport() {
     void loadVendorBookings(vendorId);
   };
 
-  const exportCsv = (vendorId?: string) => {
-    const base = getApiBaseUrl();
-    const uat = isUatMode() ? '&uat=1' : '';
-    const vendorPart = vendorId ? `&vendorId=${encodeURIComponent(vendorId)}` : '';
-    let periodPart = '';
-    if (periodType === 'month' && parsedMonth) {
-      periodPart = `year=${parsedMonth.year}&month=${parsedMonth.month}`;
-    } else {
-      periodPart = `reportDate=${encodeURIComponent(reportDate)}`;
+  const exportCsv = async (vendorId?: string) => {
+    if (periodType === 'month' && !parsedMonth) {
+      setError('Pick a valid month (YYYY-MM)');
+      return;
     }
-    window.open(
-      `${base}/admin/finance/vendor-booking-earnings/export.csv?${periodPart}${vendorPart}${uat}`,
-      '_blank',
-    );
+
+    setError(null);
+    setExporting(true);
+    try {
+      const base = getApiBaseUrl().replace(/\/+$/, '');
+      const token =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('adminAuthToken') ||
+            (() => {
+              try {
+                const { getCognitoIdToken } = require('@/lib/cognito-auth');
+                return getCognitoIdToken();
+              } catch {
+                return null;
+              }
+            })()
+          : null;
+
+      const vendorPart = vendorId ? `&vendorId=${encodeURIComponent(vendorId)}` : '';
+      let periodPart = '';
+      if (periodType === 'month' && parsedMonth) {
+        periodPart = `year=${parsedMonth.year}&month=${parsedMonth.month}`;
+      } else {
+        periodPart = `reportDate=${encodeURIComponent(reportDate)}`;
+      }
+
+      const url = `${base}/admin/finance/vendor-booking-earnings/export.csv?${periodPart}${vendorPart}`;
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      if (isUatMode()) {
+        headers['X-UAT-Mode'] = 'true';
+        if (token?.startsWith('uat-token-')) headers['X-UAT-Token'] = token;
+      }
+
+      const res = await fetch(url, { headers, credentials: 'include' });
+      if (!res.ok) {
+        const text = await res.text();
+        let message = text || `HTTP ${res.status}`;
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.error) message = String(parsed.error);
+        } catch {
+          /* raw text */
+        }
+        throw new Error(message);
+      }
+
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const filenameMatch = /filename="([^"]+)"/i.exec(disposition);
+      const fallbackLabel =
+        periodType === 'month' && parsedMonth
+          ? `${parsedMonth.year}-${String(parsedMonth.month).padStart(2, '0')}`
+          : reportDate;
+      const filename =
+        filenameMatch?.[1] ||
+        (vendorId
+          ? `vendor-booking-earnings-${fallbackLabel}-bookings.csv`
+          : `vendor-booking-earnings-summary-${fallbackLabel}.csv`);
+
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Download failed');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const switchPeriodType = (next: PeriodType) => {
@@ -218,8 +280,6 @@ export function VendorBookingEarningsReport() {
     setPeriodTotals(null);
     setError(null);
   };
-
-  const selectedVendor = vendors.find((v) => v.vendorId === selectedVendorId);
 
   return (
     <div className="space-y-4">
@@ -278,13 +338,13 @@ export function VendorBookingEarningsReport() {
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
           Load
         </Button>
-        <Button variant="outline" onClick={() => exportCsv()} disabled={!vendors.length}>
-          <Download className="mr-2 h-4 w-4" />
+        <Button variant="outline" onClick={() => void exportCsv()} disabled={!vendors.length || exporting}>
+          {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
           Export vendor summary CSV
         </Button>
         {selectedVendorId && (
-          <Button variant="outline" onClick={() => exportCsv(selectedVendorId)}>
-            <Download className="mr-2 h-4 w-4" />
+          <Button variant="outline" onClick={() => void exportCsv(selectedVendorId)} disabled={exporting}>
+            {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
             Export booking CSV
           </Button>
         )}
@@ -367,165 +427,198 @@ export function VendorBookingEarningsReport() {
             {vendors.map((v) => {
               const open = selectedVendorId === v.vendorId;
               return (
-                <tr
-                  key={v.vendorId}
-                  className={`cursor-pointer hover:bg-orange-50/60 ${open ? 'bg-orange-50' : ''}`}
-                  onClick={() => selectVendor(v.vendorId)}
-                >
-                  <td className="px-2 py-2 text-gray-400">
-                    {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  </td>
-                  <td className="px-3 py-2 font-medium">{v.businessName || '—'}</td>
-                  <td className="px-3 py-2">{v.ownerName || '—'}</td>
-                  <td className="px-3 py-2 text-center">{v.bookingCount}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.customerPaidTotal)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.serviceBaseTotal)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.discountTotal)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.gstTotal)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.platformFeeTotal)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.vendorGross)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.commissionTotal)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.vendorNet)}</td>
-                </tr>
+                <Fragment key={v.vendorId}>
+                  <tr
+                    className={`cursor-pointer hover:bg-orange-50/60 ${open ? 'bg-orange-50' : ''}`}
+                    onClick={() => selectVendor(v.vendorId)}
+                  >
+                    <td className="px-2 py-2 text-gray-400">
+                      {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </td>
+                    <td className="px-3 py-2 font-medium">{v.businessName || '—'}</td>
+                    <td className="px-3 py-2">{v.ownerName || '—'}</td>
+                    <td className="px-3 py-2 text-center">{v.bookingCount}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.customerPaidTotal)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.serviceBaseTotal)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.discountTotal)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.gstTotal)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.platformFeeTotal)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.vendorGross)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.commissionTotal)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyCell(v.vendorNet)}</td>
+                  </tr>
+                  {open && (
+                    <tr className="bg-orange-50/40">
+                      <td colSpan={12} className="px-3 py-3">
+                        <div className="space-y-2 rounded-lg border border-orange-100 bg-white p-3">
+                          <h3 className="text-sm font-semibold text-gray-900">
+                            Bookings — {v.businessName || v.vendorId}
+                            {loadingBookings && (
+                              <Loader2 className="ml-2 inline h-4 w-4 animate-spin text-gray-400" />
+                            )}
+                          </h3>
+                          <div className="overflow-x-auto rounded-md border border-gray-200">
+                            <table className="min-w-full divide-y divide-gray-200 text-sm">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="w-8 px-2 py-2" />
+                                  <th className="px-3 py-2 text-left font-medium text-gray-700">Booking</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-700">Service</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-700">Customer</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Customer paid</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Base</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Discount</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-700">Coupon</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">GST</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Platform</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Delivery</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Gross</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Commission</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Net</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {bookings.length === 0 && !loadingBookings && (
+                                  <tr>
+                                    <td colSpan={14} className="px-3 py-6 text-center text-gray-500">
+                                      No bookings for this vendor in the selected {periodWord}.
+                                    </td>
+                                  </tr>
+                                )}
+                                {bookings.map((b) => {
+                                  const expanded = expandedBookingId === b.bookingId;
+                                  return (
+                                    <Fragment key={b.bookingId}>
+                                      <tr
+                                        className="cursor-pointer hover:bg-gray-50"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedBookingId(expanded ? null : b.bookingId);
+                                        }}
+                                      >
+                                        <td className="px-2 py-2 text-gray-400">
+                                          {expanded ? (
+                                            <ChevronDown className="h-4 w-4" />
+                                          ) : (
+                                            <ChevronRight className="h-4 w-4" />
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 font-mono text-xs" title={b.bookingId}>
+                                          {shortId(b.bookingId)}
+                                        </td>
+                                        <td
+                                          className="max-w-[160px] truncate px-3 py-2"
+                                          title={b.serviceName || ''}
+                                        >
+                                          {b.serviceName || '—'}
+                                        </td>
+                                        <td className="px-3 py-2">{b.customerName || '—'}</td>
+                                        <td className="px-3 py-2 text-right tabular-nums font-medium">
+                                          {moneyCell(b.customerPaidTotal)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right tabular-nums">
+                                          {moneyCell(b.serviceBase)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right tabular-nums">
+                                          {moneyCell(b.discountAmount)}
+                                        </td>
+                                        <td className="px-3 py-2 text-xs">{b.couponCode || '—'}</td>
+                                        <td className="px-3 py-2 text-right tabular-nums">
+                                          {moneyCell(b.gstTotal)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right tabular-nums">
+                                          {moneyCell(b.platformFee)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right tabular-nums">
+                                          {moneyCell(b.deliveryFee)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right tabular-nums">
+                                          {moneyCell(b.vendorGross)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right tabular-nums">
+                                          {moneyCell(b.commissionAmount)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right tabular-nums">
+                                          {moneyCell(b.vendorNet)}
+                                        </td>
+                                      </tr>
+                                      {expanded && (
+                                        <tr className="bg-gray-50/80">
+                                          <td colSpan={14} className="px-6 py-3">
+                                            <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                                              <div>
+                                                <span className="text-gray-500">Customer paid</span>
+                                                <div className="font-semibold">{moneyCell(b.customerPaidTotal)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Service base</span>
+                                                <div>{moneyCell(b.serviceBase)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Discount</span>
+                                                <div>{moneyCell(b.discountAmount)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Coupon</span>
+                                                <div>{b.couponCode || '—'}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">GST</span>
+                                                <div>{moneyCell(b.gstTotal)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Platform fee</span>
+                                                <div>{moneyCell(b.platformFee)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Convenience fee</span>
+                                                <div>{moneyCell(b.convenienceFee)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Delivery fee</span>
+                                                <div>{moneyCell(b.deliveryFee)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Vendor gross</span>
+                                                <div>{moneyCell(b.vendorGross)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Commission</span>
+                                                <div>
+                                                  {moneyCell(b.commissionAmount)}
+                                                  {b.commissionRate != null ? ` (${b.commissionRate}%)` : ''}
+                                                </div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Vendor net</span>
+                                                <div className="font-semibold">{moneyCell(b.vendorNet)}</div>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Fee source</span>
+                                                <div className="text-xs capitalize">
+                                                  {b.feeSource.replace(/_/g, ' ')}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </Fragment>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
         </table>
       </div>
-
-      {selectedVendor && (
-        <div className="space-y-2">
-          <h3 className="text-base font-semibold text-gray-900">
-            Bookings — {selectedVendor.businessName || selectedVendor.vendorId}
-            {loadingBookings && <Loader2 className="ml-2 inline h-4 w-4 animate-spin text-gray-400" />}
-          </h3>
-          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="w-8 px-2 py-2" />
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">Booking</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">Service</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">Customer</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">Customer paid</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">Base</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">Discount</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">Coupon</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">GST</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">Platform</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">Delivery</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">Gross</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">Commission</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-700">Net</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {bookings.length === 0 && !loadingBookings && (
-                  <tr>
-                    <td colSpan={14} className="px-3 py-6 text-center text-gray-500">
-                      No bookings for this vendor in the selected {periodWord}.
-                    </td>
-                  </tr>
-                )}
-                {bookings.map((b) => {
-                  const expanded = expandedBookingId === b.bookingId;
-                  return (
-                    <Fragment key={b.bookingId}>
-                      <tr
-                        className="hover:bg-gray-50 cursor-pointer"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedBookingId(expanded ? null : b.bookingId);
-                        }}
-                      >
-                        <td className="px-2 py-2 text-gray-400">
-                          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </td>
-                        <td className="px-3 py-2 font-mono text-xs" title={b.bookingId}>
-                          {shortId(b.bookingId)}
-                        </td>
-                        <td className="px-3 py-2 max-w-[160px] truncate" title={b.serviceName || ''}>
-                          {b.serviceName || '—'}
-                        </td>
-                        <td className="px-3 py-2">{b.customerName || '—'}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium">{moneyCell(b.customerPaidTotal)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.serviceBase)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.discountAmount)}</td>
-                        <td className="px-3 py-2 text-xs">{b.couponCode || '—'}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.gstTotal)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.platformFee)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.deliveryFee)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.vendorGross)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.commissionAmount)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{moneyCell(b.vendorNet)}</td>
-                      </tr>
-                      {expanded && (
-                        <tr key={`${b.bookingId}-detail`} className="bg-gray-50/80">
-                          <td colSpan={14} className="px-6 py-3">
-                            <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                              <div>
-                                <span className="text-gray-500">Customer paid</span>
-                                <div className="font-semibold">{moneyCell(b.customerPaidTotal)}</div>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Service base</span>
-                                <div>{moneyCell(b.serviceBase)}</div>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Discount</span>
-                                <div>{moneyCell(b.discountAmount)}</div>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Coupon</span>
-                                <div>{b.couponCode || '—'}</div>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">GST</span>
-                                <div>{moneyCell(b.gstTotal)}</div>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Platform fee</span>
-                                <div>{moneyCell(b.platformFee)}</div>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Convenience fee</span>
-                                <div>{moneyCell(b.convenienceFee)}</div>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Delivery fee</span>
-                                <div>{moneyCell(b.deliveryFee)}</div>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Vendor gross</span>
-                                <div>{moneyCell(b.vendorGross)}</div>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Commission</span>
-                                <div>
-                                  {moneyCell(b.commissionAmount)}
-                                  {b.commissionRate != null ? ` (${b.commissionRate}%)` : ''}
-                                </div>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Vendor net</span>
-                                <div className="font-semibold">{moneyCell(b.vendorNet)}</div>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Fee source</span>
-                                <div className="text-xs capitalize">{b.feeSource.replace(/_/g, ' ')}</div>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
