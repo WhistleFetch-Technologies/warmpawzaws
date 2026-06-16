@@ -1100,15 +1100,10 @@ function AuthPageContent() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            invalidateForgotInFlightRequest();
-                            setForgotStep(1);
-                            setForgotOtp('');
-                            setError(null);
-                          }}
+                          onClick={closeForgotPassword}
                           className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-2"
                         >
-                          Back
+                          Entered wrong number?
                         </button>
                       </>
                     )}

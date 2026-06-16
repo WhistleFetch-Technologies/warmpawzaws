@@ -1288,15 +1288,10 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        invalidateForgotInFlightRequest();
-                        setForgotStep(1);
-                        setForgotOtp('');
-                        setError('');
-                      }}
+                      onClick={closeForgotPassword}
                       className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-1"
                     >
-                      Back
+                      Entered wrong number?
                     </button>
                   </>
                 )}
