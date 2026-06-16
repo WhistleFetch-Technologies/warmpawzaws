@@ -6,7 +6,10 @@ import { AdminRouteGuard } from "@/components/admin/layout/AdminRouteGuard";
 import { Breadcrumbs } from "@/components/admin/shared/Breadcrumbs";
 import { GlobalSearch } from "@/components/admin/shared/GlobalSearch";
 import { AdminCopilotPanel } from "@/components/admin/copilot/AdminCopilotPanel";
-import { useRouter, usePathname } from "next/navigation";
+import { getFirstAllowedAdminRoute } from '@warmpawz/shared-types';
+import { getStoredAdminPermissions } from '@/lib/admin-permissions';
+import { hrefForAdminSidebarView } from '@/lib/admin-sidebar-nav';
+import { useRouter, usePathname } from 'next/navigation';
 
 export function AdminLayout({
 	children,
@@ -16,21 +19,17 @@ export function AdminLayout({
 	const router = useRouter();
 	const pathname = usePathname();
 	
-	// Determine active view from current path
-	// Improved activeView logic: always use the first segment after root
 	const activeView =
-		pathname && pathname !== "/" ? pathname.split("/")[1] : "dashboard";
+		pathname && pathname !== "/" ? pathname.split("/")[1] : "analytics";
 
-	// Handle navigation from sidebar
 	const handleNavigate = (view: string) => {
-		console.log('🔧 [AdminLayout] Navigating to:', view);
-		if (view === "dashboard") {
-			router.push("/");
-		} else {
-			const route = `/${view}`;
-			console.log('🔧 [AdminLayout] Pushing route:', route);
-			router.push(route);
+		const route = hrefForAdminSidebarView(view);
+		if (route === '/') {
+			const dest = getFirstAllowedAdminRoute(getStoredAdminPermissions());
+			router.push(dest ?? '/');
+			return;
 		}
+		router.push(route);
 	};
 
 	return (

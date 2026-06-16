@@ -19,7 +19,7 @@ export function CreateAdminUserModal({ open, onClose, onCreated }: CreateAdminUs
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [roleId, setRoleId] = useState('');
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -29,7 +29,16 @@ export function CreateAdminUserModal({ open, onClose, onCreated }: CreateAdminUs
         setLoadingRoles(true);
         const data = await apiClient.get<any>('/admin/roles?active=false&role_type=admin');
         const rows = Array.isArray(data?.roles) ? data.roles : [];
-        if (!cancelled) setRoles(rows.map((r: any) => ({ id: r.id || r.roleId, display_name: r.display_name, name: r.name, description: r.description })));
+        if (!cancelled) {
+          setRoles(
+            rows.map((r: any) => ({
+              id: r.id || r.roleId,
+              display_name: r.display_name,
+              name: r.name,
+              description: r.description,
+            }))
+          );
+        }
       } catch (e) {
         console.error(e);
         if (!cancelled) setRoles([]);
@@ -47,11 +56,17 @@ export function CreateAdminUserModal({ open, onClose, onCreated }: CreateAdminUs
       setEmail('');
       setPassword('');
       setName('');
-      setRoleId('');
+      setSelectedRoleIds([]);
     }
   }, [open]);
 
   if (!open) return null;
+
+  const toggleRole = (roleId: string) => {
+    setSelectedRoleIds((prev) =>
+      prev.includes(roleId) ? prev.filter((id) => id !== roleId) : [...prev, roleId]
+    );
+  };
 
   const handleSubmit = async () => {
     const em = email.trim();
@@ -59,8 +74,8 @@ export function CreateAdminUserModal({ open, onClose, onCreated }: CreateAdminUs
       alert('Email and password are required');
       return;
     }
-    if (!roleId) {
-      alert('Please select a role');
+    if (selectedRoleIds.length === 0) {
+      alert('Please select at least one role');
       return;
     }
     try {
@@ -69,7 +84,7 @@ export function CreateAdminUserModal({ open, onClose, onCreated }: CreateAdminUs
         email: em,
         password,
         name: name.trim() || em,
-        roleId,
+        roleIds: selectedRoleIds,
       });
       if (data?.success) {
         onCreated();
@@ -86,8 +101,8 @@ export function CreateAdminUserModal({ open, onClose, onCreated }: CreateAdminUs
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-      <div className="bg-white rounded-xl w-full max-w-md shadow-xl">
-        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+      <div className="bg-white rounded-xl w-full max-w-lg shadow-xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 shrink-0">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <UserPlus className="w-5 h-5 text-orange-600" />
             Create admin user
@@ -97,7 +112,7 @@ export function CreateAdminUserModal({ open, onClose, onCreated }: CreateAdminUs
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-4 overflow-y-auto flex-1">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
             <input
@@ -129,30 +144,52 @@ export function CreateAdminUserModal({ open, onClose, onCreated }: CreateAdminUs
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">RBAC role *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              RBAC roles * ({selectedRoleIds.length} selected)
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              Select one or more roles. The user receives the combined permissions of all assigned roles.
+            </p>
             {loadingRoles ? (
               <div className="flex items-center gap-2 text-gray-500 text-sm py-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Loading roles…
               </div>
             ) : (
-              <select
-                value={roleId}
-                onChange={(e) => setRoleId(e.target.value)}
-                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
-              >
-                <option value="">Select a role</option>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.display_name || r.name} ({r.name})
-                  </option>
-                ))}
-              </select>
+              <div className="space-y-2 max-h-56 overflow-y-auto border-2 border-gray-200 rounded-lg p-2">
+                {roles.map((r) => {
+                  const checked = selectedRoleIds.includes(r.id);
+                  return (
+                    <label
+                      key={r.id}
+                      className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                        checked ? 'border border-orange-300 bg-orange-50' : 'border border-transparent hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleRole(r.id)}
+                        className="mt-1 w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900">
+                          {r.display_name || r.name}
+                          {r.name ? <span className="text-gray-500 font-normal"> ({r.name})</span> : null}
+                        </div>
+                        {r.description ? (
+                          <p className="text-xs text-gray-500 mt-0.5">{r.description}</p>
+                        ) : null}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
 
-        <div className="flex gap-3 border-t border-gray-200 px-4 py-3">
+        <div className="flex gap-3 border-t border-gray-200 px-4 py-3 shrink-0">
           <button
             type="button"
             onClick={onClose}

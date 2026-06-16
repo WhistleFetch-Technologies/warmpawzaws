@@ -39,7 +39,11 @@ import {
 import { computePolicyDeliveryFeeForOrder } from '../../../utils/customer-delivery-fee-quote';
 import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
 import { normalizeCategoryImageUrlForStorage } from '../../../utils/ecommerce-category-display';
-import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
+import {
+  canManageRbacAdmin,
+  isMasterAdminEmail,
+  MASTER_ADMIN_ID,
+} from '../../../utils/admin-rbac-permissions';
 import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
 import {
   putSettlementCalculateDailyCron,
@@ -108,6 +112,72 @@ function hashAdminPasswordPlain(password: string): string {
   const salt = randomBytes(16).toString('hex');
   const hash = pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
   return `${salt}:${hash}`;
+}
+
+async function resolveRoleIdsFromRbacBody(body: Record<string, unknown>): Promise<string[]> {
+  const ids = new Set<string>();
+  if (Array.isArray(body.roleIds)) {
+    for (const id of body.roleIds) {
+      const s = String(id || '').trim();
+      if (isValidUUID(s)) ids.add(s);
+    }
+  }
+  const single = String(body.roleId || '').trim();
+  if (single && isValidUUID(single)) ids.add(single);
+  if (ids.size > 0) return [...ids];
+
+  const roleName = String(body.role || '').trim();
+  if (roleName) {
+    const r = await query('SELECT id FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1', [
+      roleName.replace(/\s+/g, '_'),
+    ]);
+    if (r.rows?.[0]?.id) return [String(r.rows[0].id)];
+  }
+  return [];
+}
+
+async function validateActiveRoleIds(roleIds: string[]): Promise<{ ok: boolean; error?: string }> {
+  if (roleIds.length === 0) {
+    return { ok: false, error: 'At least one valid roleId is required' };
+  }
+  for (const roleId of roleIds) {
+    const roleCheck = await query('SELECT id FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1', [roleId]);
+    if (!roleCheck.rows?.length) {
+      return { ok: false, error: 'One or more roles were not found or are inactive' };
+    }
+  }
+  return { ok: true };
+}
+
+async function syncAdminUserRoles(
+  userId: string,
+  roleIds: string[],
+  callerId: string | undefined
+): Promise<void> {
+  const unique = [...new Set(roleIds)];
+  await query(`UPDATE user_roles SET is_active = false, updated_at = NOW() WHERE user_id = $1::uuid`, [userId]);
+  for (const roleId of unique) {
+    await query(
+      `INSERT INTO user_roles (user_id, role_id, assigned_by, is_active, created_at, updated_at)
+       VALUES ($1::uuid, $2::uuid, $3, true, NOW(), NOW())
+       ON CONFLICT (user_id, role_id) DO UPDATE SET is_active = true, assigned_by = EXCLUDED.assigned_by, updated_at = NOW()`,
+      [userId, roleId, callerId ?? null]
+    );
+  }
+}
+
+function parseRbacRolesFromRow(row: any): { id: string; display_name?: string; name?: string }[] {
+  const raw = row?.rbac_roles;
+  if (Array.isArray(raw)) return raw.filter((r) => r?.id);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((r) => r?.id) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 /** Normalizes content_pages.metadata from API body or DB (JSONB / string). */
@@ -439,17 +509,23 @@ class GetRolesHandler extends BaseHandler {
 class GetRBACUsersHandler extends BaseHandler {
   async handle(_context: HandlerContext): Promise<HandlerResponse> {
     const mapRows = (rows: any[]) =>
-      (rows || []).map((row: any) => ({
-        id: row.id,
-        name: row.name || row.email,
-        email: row.email,
-        role: row.rbac_role_display_name || row.rbac_role_code || row.role || 'admin',
-        status: row.is_active === false ? 'inactive' : 'active',
-        lastLogin: row.last_login_at,
-        rbacRoleId: row.rbac_role_id,
-        rbacRoleCode: row.rbac_role_code,
-        adminRole: row.role,
-      }));
+      (rows || []).map((row: any) => {
+        const rbacRoles = parseRbacRolesFromRow(row);
+        const roleLabels = rbacRoles.map((r) => r.display_name || r.name).filter(Boolean);
+        return {
+          id: row.id,
+          name: row.name || row.email,
+          email: row.email,
+          role: roleLabels.length ? roleLabels.join(', ') : row.rbac_role_display_name || row.rbac_role_code || row.role || 'admin',
+          status: row.is_active === false ? 'inactive' : 'active',
+          lastLogin: row.last_login_at,
+          rbacRoleIds: rbacRoles.map((r) => r.id),
+          rbacRoles,
+          rbacRoleId: rbacRoles[0]?.id ?? row.rbac_role_id ?? null,
+          rbacRoleCode: rbacRoles[0]?.name ?? row.rbac_role_code ?? null,
+          adminRole: row.role,
+        };
+      });
 
     try {
       const result = await query(`
@@ -460,18 +536,25 @@ class GetRBACUsersHandler extends BaseHandler {
           a.role,
           a.is_active,
           a.last_login_at,
-          r.id AS rbac_role_id,
-          r.display_name AS rbac_role_display_name,
-          r.name AS rbac_role_code
+          a.created_at,
+          COALESCE(
+            (
+              SELECT json_agg(row_to_json(t))
+              FROM (
+                SELECT DISTINCT r2.id, r2.display_name, r2.name
+                FROM user_roles ur2
+                JOIN roles r2 ON ur2.role_id = r2.id
+                WHERE ur2.user_id = a.id AND ur2.is_active = true
+              ) t
+            ),
+            '[]'::json
+          ) AS rbac_roles
         FROM admins a
-        LEFT JOIN user_roles ur ON a.id = ur.user_id AND ur.is_active = true
-        LEFT JOIN roles r ON ur.role_id = r.id
         ORDER BY a.created_at DESC NULLS LAST
       `);
       return this.success({ success: true, users: mapRows(result.rows) });
     } catch (error: any) {
       const msg = String(error?.message || '');
-      // Some RDS setups have no `users` / `permissions` tables, or a broken `user_roles` view referencing `users`.
       if (msg.includes('does not exist') && msg.includes('users')) {
         try {
           const fallback = await query(`
@@ -482,9 +565,7 @@ class GetRBACUsersHandler extends BaseHandler {
               a.role,
               a.is_active,
               a.last_login_at,
-              NULL::uuid AS rbac_role_id,
-              NULL::text AS rbac_role_display_name,
-              NULL::text AS rbac_role_code
+              '[]'::json AS rbac_roles
             FROM admins a
             ORDER BY a.created_at DESC NULLS LAST
           `);
@@ -1203,23 +1284,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const email = String(body.email || '').trim();
       const password = String(body.password || '');
       const name = String(body.name || email).trim();
-      let roleId = String(body.roleId || '').trim();
-      const roleName = String(body.role || '').trim();
       if (!email || !password) {
         return c.json({ success: false, error: 'email and password are required' }, 400);
       }
-      if (!roleId && roleName) {
-        const r = await query('SELECT id FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1', [
-          roleName.replace(/\s+/g, '_'),
-        ]);
-        if (r.rows?.[0]?.id) roleId = r.rows[0].id;
-      }
-      if (!roleId || !isValidUUID(roleId)) {
-        return c.json({ success: false, error: 'Valid roleId is required' }, 400);
-      }
-      const roleCheck = await query('SELECT id FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1', [roleId]);
-      if (!roleCheck.rows?.length) {
-        return c.json({ success: false, error: 'Role not found' }, 404);
+      const roleIds = await resolveRoleIdsFromRbacBody(body as Record<string, unknown>);
+      const roleValidation = await validateActiveRoleIds(roleIds);
+      if (!roleValidation.ok) {
+        return c.json({ success: false, error: roleValidation.error }, 400);
       }
       const existing = await query('SELECT id FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1', [email]);
       if (existing.rows?.length) {
@@ -1233,14 +1304,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         [email, password_hash, name]
       );
       const admin = ins.rows[0];
-      await query(
-        `INSERT INTO user_roles (user_id, role_id, assigned_by, is_active, created_at, updated_at)
-         VALUES ($1::uuid, $2::uuid, $3, true, NOW(), NOW())`,
-        [admin.id, roleId, callerId]
-      );
+      await syncAdminUserRoles(String(admin.id), roleIds, callerId);
       return c.json({
         success: true,
         admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role },
+        roleIds,
       });
     } catch (error: unknown) {
       console.error('[POST /admin/rbac/users/create]', error);
@@ -1260,24 +1328,14 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Invalid userId' }, 400);
       }
       const body = await c.req.json().catch(() => ({}));
-      let roleId = String(body.roleId || '').trim();
-      const roleName = String(body.role || '').trim();
-      if (!roleId && roleName) {
-        const r = await query('SELECT id FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1', [
-          roleName.replace(/\s+/g, '_'),
-        ]);
-        if (r.rows?.[0]?.id) roleId = r.rows[0].id;
-      }
-      if (!roleId || !isValidUUID(roleId)) {
-        return c.json({ success: false, error: 'Valid roleId or role name is required' }, 400);
+      const roleIds = await resolveRoleIdsFromRbacBody(body as Record<string, unknown>);
+      const roleValidation = await validateActiveRoleIds(roleIds);
+      if (!roleValidation.ok) {
+        return c.json({ success: false, error: roleValidation.error }, 400);
       }
       const adminRow = await query('SELECT id FROM admins WHERE id = $1::uuid LIMIT 1', [userId]);
       if (!adminRow.rows?.length) {
         return c.json({ success: false, error: 'Admin user not found' }, 404);
-      }
-      const roleCheck = await query('SELECT id FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1', [roleId]);
-      if (!roleCheck.rows?.length) {
-        return c.json({ success: false, error: 'Role not found' }, 404);
       }
 
       const newPassword = String(body.password ?? '').trim();
@@ -1285,13 +1343,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Password must be at least 8 characters' }, 400);
       }
 
-      await query(`UPDATE user_roles SET is_active = false, updated_at = NOW() WHERE user_id = $1::uuid`, [userId]);
-      await query(
-        `INSERT INTO user_roles (user_id, role_id, assigned_by, is_active, created_at, updated_at)
-         VALUES ($1::uuid, $2::uuid, $3, true, NOW(), NOW())
-         ON CONFLICT (user_id, role_id) DO UPDATE SET is_active = true, assigned_by = EXCLUDED.assigned_by, updated_at = NOW()`,
-        [userId, roleId, callerId]
-      );
+      await syncAdminUserRoles(userId, roleIds, callerId);
 
       if (newPassword.length > 0) {
         const password_hash = hashAdminPasswordPlain(newPassword);
@@ -1301,10 +1353,66 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         );
       }
 
-      return c.json({ success: true, message: 'Role updated', userId, roleId });
+      return c.json({ success: true, message: 'Roles updated', userId, roleIds });
     } catch (error: unknown) {
       console.error('[PUT /admin/rbac/users/:userId/role]', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to assign role', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.delete('/admin/rbac/users/:userId', async (c) => {
+    try {
+      const callerId = c.get('userId') as string | undefined;
+      const emailHint = rbacCallerEmailHint(c);
+      if (!(await canManageRbacAdmin(callerId, emailHint))) {
+        return c.json({ success: false, error: 'RBAC management permission required' }, 403);
+      }
+      const userId = c.req.param('userId');
+      if (!userId || !isValidUUID(userId)) {
+        return c.json({ success: false, error: 'Invalid userId' }, 400);
+      }
+      if (userId === MASTER_ADMIN_ID) {
+        return c.json({ success: false, error: 'The master admin account cannot be deleted' }, 403);
+      }
+
+      let callerAdminId: string | null = null;
+      if (callerId && isValidUUID(callerId)) {
+        const callerRow = await query('SELECT id FROM admins WHERE id = $1::uuid LIMIT 1', [callerId]);
+        if (callerRow.rows?.length) callerAdminId = String(callerRow.rows[0].id);
+      }
+      if (!callerAdminId && emailHint) {
+        const callerRow = await query(
+          'SELECT id FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1',
+          [emailHint]
+        );
+        if (callerRow.rows?.length) callerAdminId = String(callerRow.rows[0].id);
+      }
+      if (callerAdminId && callerAdminId === userId) {
+        return c.json({ success: false, error: 'You cannot delete your own admin account' }, 403);
+      }
+
+      const adminRow = await query('SELECT id, email FROM admins WHERE id = $1::uuid LIMIT 1', [userId]);
+      if (!adminRow.rows?.length) {
+        return c.json({ success: false, error: 'Admin user not found' }, 404);
+      }
+      const targetEmail = String(adminRow.rows[0].email || '');
+      if (isMasterAdminEmail(targetEmail)) {
+        return c.json({ success: false, error: 'The master admin account cannot be deleted' }, 403);
+      }
+
+      await query('DELETE FROM user_roles WHERE user_id = $1::uuid', [userId]);
+      try {
+        await query('UPDATE events SET reviewed_by = NULL WHERE reviewed_by = $1::uuid', [userId]);
+      } catch {
+        // events.reviewed_by may not exist on all environments
+      }
+      await query('DELETE FROM admins WHERE id = $1::uuid', [userId]);
+
+      return c.json({ success: true, message: 'Admin user deleted', userId });
+    } catch (error: unknown) {
+      console.error('[DELETE /admin/rbac/users/:userId]', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to delete admin user', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });

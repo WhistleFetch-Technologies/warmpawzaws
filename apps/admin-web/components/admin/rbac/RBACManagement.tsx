@@ -7,6 +7,7 @@ import { UsersTab } from './UsersTab';
 import { CreateAdminUserModal } from './CreateAdminUserModal';
 
 interface Permission {
+  navKey: string;
   permissionId: string;
   permissionName: string;
   permissionCode: string;
@@ -99,9 +100,10 @@ export function RBACManagement() {
       const capsData = await apiClient.get<any>('/admin/admin-capabilities');
       if (capsData?.capabilities?.length || capsData?.success) {
         const mappedPermissions = (capsData.capabilities || []).map((c: any) => ({
-          permissionId: c.id,
+          navKey: c.navKey || c.id,
+          permissionId: c.permissionId || c.id,
           permissionName: c.name,
-          permissionCode: c.id,
+          permissionCode: c.permissionId || c.id,
           category: c.category || 'Admin Portal',
           description: c.description || '',
         }));
@@ -162,7 +164,7 @@ export function RBACManagement() {
         name: formData.roleCode.toLowerCase().replace(/\s+/g, '_'),
         display_name: formData.roleName,
         description: formData.description,
-        capabilities: formData.permissions,
+        capabilities: [...new Set(formData.permissions)],
         is_active: formData.isActive,
       };
 
@@ -257,21 +259,23 @@ export function RBACManagement() {
   };
 
   const toggleCategoryPermissions = (category: string) => {
-    const categoryPermissions = permissions
-      .filter(p => p.category === category)
-      .map(p => p.permissionId);
+    const categoryPermissionIds = [
+      ...new Set(
+        permissions.filter(p => p.category === category).map(p => p.permissionId)
+      ),
+    ];
     
-    const allSelected = categoryPermissions.length > 0 && categoryPermissions.every(p => formData.permissions.includes(p));
+    const allSelected = categoryPermissionIds.length > 0 && categoryPermissionIds.every(p => formData.permissions.includes(p));
     
     if (allSelected) {
       setFormData(prev => ({
         ...prev,
-        permissions: prev.permissions.filter(p => !categoryPermissions.includes(p)),
+        permissions: prev.permissions.filter(p => !categoryPermissionIds.includes(p)),
       }));
     } else {
       setFormData(prev => ({
         ...prev,
-        permissions: [...new Set([...prev.permissions, ...categoryPermissions])],
+        permissions: [...new Set([...prev.permissions, ...categoryPermissionIds])],
       }));
     }
   };
@@ -540,7 +544,7 @@ export function RBACManagement() {
                         <div className="p-4 space-y-2">
                           {categoryPerms.map(permission => (
                             <label
-                              key={permission.permissionId}
+                              key={permission.navKey}
                               className="flex items-start gap-3 p-0 hover:bg-gray-50 rounded-lg cursor-pointer"
                             >
                               <input

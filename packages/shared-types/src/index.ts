@@ -11,3 +11,4 @@ export * from './meal-delivery-status';
 export * from './meal-booking-policy';
 export * from './meal-pidge-scheduling';
 export * from './meal-vendor-prep-scheduling';
+export * from './admin-portal-nav';

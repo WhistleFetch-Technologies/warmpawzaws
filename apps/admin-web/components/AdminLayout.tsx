@@ -11,7 +11,6 @@ interface AdminLayoutProps {
 }
 
 const menuItems: { id: string; icon: string; label: string; href: string; permission: string }[] = [
-  { id: 'dashboard', icon: '📊', label: 'Dashboard', href: '/', permission: 'admin.dashboard' },
   { id: 'analytics', icon: '📈', label: 'Analytics', href: '/analytics', permission: 'admin.analytics' },
   { id: 'vendors', icon: '🏪', label: 'Vendors', href: '/vendors', permission: 'admin.vendors' },
   { id: 'roles', icon: '👤', label: 'Roles & User Management', href: '/roles', permission: 'admin.roles' },
