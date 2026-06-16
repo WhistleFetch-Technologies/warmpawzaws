@@ -1103,6 +1103,19 @@ export async function processCustomerReferralFirstBookingReward(
       );
       if (legacy.rows.length > 0) return true;
     }
+
+    if (referenceType === 'referral_signup' && referenceId === redemptionId && redemptionId) {
+      const legacyReferee = await query(
+        `SELECT 1 FROM loyalty_transactions
+         WHERE customer_id = $1
+           AND transaction_type = 'earned'
+           AND reference_type = 'referral_signup'
+           AND reference_id = $2
+         LIMIT 1`,
+        [customerId, refereeId]
+      );
+      if (legacyReferee.rows.length > 0) return true;
+    }
     return false;
   }
 
@@ -1212,8 +1225,9 @@ export interface CustomerReferralRefereeBookingRewardParams {
 }
 
 /**
- * Award the **referred friend** when their first paid booking completes (referral_signup rule, 50 pts).
- * Requires a row in referral_redemptions. Idempotent: one earn per referee (reference_id = referee customer id).
+ * Legacy handler for referral_signup ActionOccurred on booking payment (1036 action_sources).
+ * Disabled by migration 1039 — referee credit is via processCustomerReferralFirstBookingReward.
+ * Idempotent: reference_id = redemptionId ?? refereeId (matches first-booking handler).
  */
 export async function processCustomerReferralRefereeBookingReward(
   params: CustomerReferralRefereeBookingRewardParams
@@ -1250,14 +1264,16 @@ export async function processCustomerReferralRefereeBookingReward(
     return;
   }
 
+  const awardReferenceId = link.redemptionId ?? refereeId;
+
   const dup = await query(
     `SELECT 1 FROM loyalty_transactions
      WHERE customer_id = $1
        AND transaction_type = 'earned'
        AND reference_type = 'referral_signup'
-       AND reference_id = $2
+       AND reference_id = ANY($2::text[])
      LIMIT 1`,
-    [refereeId, refereeId]
+    [refereeId, [awardReferenceId, refereeId]]
   );
   if (dup.rows.length > 0) {
     console.info('[CUSTOMER-REFERRAL-REFEREE] Referee already awarded referral_signup', { eventId, refereeId });
@@ -1268,7 +1284,7 @@ export async function processCustomerReferralRefereeBookingReward(
     customerId: refereeId,
     actionName: 'referral_signup',
     referenceType: 'referral_signup',
-    referenceId: refereeId,
+    referenceId: awardReferenceId,
     description: 'Referral welcome bonus — first booking with a friend\'s code',
     metadata: {
       eventId,
