@@ -11,6 +11,8 @@ import { hasAdminPortalPermission } from '@/lib/admin-permissions';
 
 type Phase = 'loading' | 'allowed' | 'denied';
 
+const AUTH_ME_TIMEOUT_MS = 10_000;
+
 function AccessDeniedPanel({ rule }: { rule: AdminRouteGateRule }) {
   const required = formatRequiredPermissions(rule);
   return (
@@ -33,6 +35,16 @@ function AccessDeniedPanel({ rule }: { rule: AdminRouteGateRule }) {
   );
 }
 
+async function fetchAdminMeWithTimeout(): Promise<{ success?: boolean; permissions?: string[] } | null> {
+  const { apiClient } = await import('@/lib/api-client');
+  return Promise.race([
+    apiClient.get<{ success?: boolean; permissions?: string[] }>('/admin/auth/me'),
+    new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), AUTH_ME_TIMEOUT_MS);
+    }),
+  ]);
+}
+
 /**
  * Refreshes permissions from /admin/auth/me (same idea as roles/page.tsx), then
  * enforces getAdminRouteGateRule for the current path. If there is no rule, children render.
@@ -48,14 +60,18 @@ export function AdminRouteGuard({ children }: { children: React.ReactNode }) {
 
     (async () => {
       try {
-        const { apiClient } = await import('@/lib/api-client');
-        const me = await apiClient.get<{ success?: boolean; permissions?: string[] }>('/admin/auth/me');
-        if (!cancelled && me && me.success !== false && Array.isArray(me.permissions)) {
-          const perms = me.permissions.length ? me.permissions : ['admin.full_access'];
-          localStorage.setItem('adminPermissions', JSON.stringify(perms));
+        const me = await fetchAdminMeWithTimeout();
+        if (
+          !cancelled &&
+          me &&
+          me.success !== false &&
+          Array.isArray(me.permissions) &&
+          me.permissions.length > 0
+        ) {
+          localStorage.setItem('adminPermissions', JSON.stringify(me.permissions));
         }
       } catch {
-        // Stale token — keep existing localStorage permissions for the check below
+        // Keep existing localStorage permissions for the check below
       }
 
       if (cancelled) return;

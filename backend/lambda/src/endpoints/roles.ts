@@ -20,6 +20,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select, insert, update } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getAdminPortalCapabilitiesApiPayload } from '@warmpawz/shared-types';
 
 // ============================================================================
 // CANONICAL SERVICE STYLES (Phase 1 - single source of truth)
@@ -733,40 +734,10 @@ class DeleteRoleHandler extends BaseHandler {
   }
 }
 
-/** Admin portal sections — stored in role_permissions.permission_name for admin RBAC roles. */
+/** Admin portal sections — derived from shared admin-portal-nav (sidebar = RBAC catalog). */
 class GetAdminCapabilitiesHandler extends BaseHandler {
   async handle(_context: HandlerContext): Promise<HandlerResponse> {
-    const capabilities = [
-      { id: 'admin.dashboard', name: 'Dashboard', category: 'Admin Portal', description: 'Admin home / dashboard' },
-      { id: 'admin.analytics', name: 'Analytics', category: 'Admin Portal', description: 'Analytics and metrics' },
-      { id: 'admin.vendors', name: 'Vendor administration', category: 'Admin Portal', description: 'Vendors list, approval, vendor management' },
-      { id: 'admin.customers', name: 'Customer administration', category: 'Admin Portal', description: 'Customer accounts, lifecycle, insights' },
-      { id: 'admin.catalog', name: 'Service catalog', category: 'Admin Portal', description: 'Service catalog management' },
-      { id: 'admin.settlements', name: 'Settlements', category: 'Admin Portal', description: 'Settlements and finance payouts' },
-      { id: 'admin.reports', name: 'Reports', category: 'Admin Portal', description: 'Reports' },
-      { id: 'admin.integrations', name: 'Integrations', category: 'Admin Portal', description: 'Integrations settings' },
-      { id: 'admin.notifications.view', name: 'Notifications — View', category: 'Admin Portal', description: 'View notification campaigns' },
-      { id: 'admin.notifications.create', name: 'Notifications — Create', category: 'Admin Portal', description: 'Create notification campaigns' },
-      { id: 'admin.notifications.edit', name: 'Notifications — Edit', category: 'Admin Portal', description: 'Edit notification campaigns' },
-      { id: 'admin.notifications.approve', name: 'Notifications — Approve', category: 'Admin Portal', description: 'Approve notification campaigns' },
-      { id: 'admin.notifications.send', name: 'Notifications — Send', category: 'Admin Portal', description: 'Send or schedule campaigns' },
-      { id: 'admin.notifications.analytics', name: 'Notifications — Analytics', category: 'Admin Portal', description: 'Campaign analytics' },
-      { id: 'admin.governance', name: 'Governance', category: 'Admin Portal', description: 'Governance' },
-      { id: 'admin.logistics', name: 'Logistics', category: 'Admin Portal', description: 'Logistics' },
-      { id: 'admin.refunds', name: 'Refunds', category: 'Admin Portal', description: 'Refunds management' },
-      { id: 'admin.support', name: 'Support & CRM', category: 'Admin Portal', description: 'Support and CRM' },
-      { id: 'admin.events', name: 'Events', category: 'Admin Portal', description: 'Events management' },
-      { id: 'admin.ecommerce', name: 'Ecommerce', category: 'Admin Portal', description: 'Ecommerce / seller setup' },
-      { id: 'admin.platform_settings', name: 'Platform settings', category: 'Admin Portal', description: 'Platform-wide settings' },
-      { id: 'admin.roles', name: 'RBAC management', category: 'Admin Portal', description: 'Create roles, create users, assign roles' },
-      {
-        id: 'admin.ai_copilot',
-        name: 'Admin AI copilot',
-        category: 'Admin Portal',
-        description: 'Bedrock assistant with read-only tools (assign with care)',
-      },
-      { id: 'admin.full_access', name: 'Full admin access', category: 'Admin Portal', description: 'All admin sections including RBAC' },
-    ];
+    const capabilities = getAdminPortalCapabilitiesApiPayload();
     return this.success({
       success: true,
       capabilities,

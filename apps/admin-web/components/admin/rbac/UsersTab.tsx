@@ -13,6 +13,8 @@ interface AdminUser {
   status: 'active' | 'inactive';
   lastLogin?: string;
   rbacRoleId?: string | null;
+  rbacRoleIds?: string[];
+  rbacRoles?: { id: string; display_name?: string; name?: string }[];
 }
 
 export function UsersTab() {
@@ -87,10 +89,20 @@ export function UsersTab() {
               <div className="flex-1">
                 <h3 className="font-semibold text-gray-900">{user.name}</h3>
                 <p className="text-sm text-gray-600 mb-0">{user.email}</p>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
-                    {user.role}
-                  </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(user.rbacRoles?.length
+                    ? user.rbacRoles.map((r) => r.display_name || r.name || 'Role')
+                    : user.role
+                      ? user.role.split(',').map((s) => s.trim()).filter(Boolean)
+                      : ['admin']
+                  ).map((label) => (
+                    <span
+                      key={`${user.id}-${label}`}
+                      className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded"
+                    >
+                      {label}
+                    </span>
+                  ))}
                   <span
                     className={`text-xs px-2 py-0.5 rounded ${
                       user.status === 'active'
@@ -110,7 +122,7 @@ export function UsersTab() {
               <button
                 onClick={() => setSelectedUser(user)}
                 className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                title="Assign role"
+                title="Assign roles"
               >
                 <Edit className="w-4 h-4" />
               </button>

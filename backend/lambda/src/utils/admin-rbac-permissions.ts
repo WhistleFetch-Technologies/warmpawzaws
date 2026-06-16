@@ -22,33 +22,10 @@ export function isMasterAdminEmail(email: string | null | undefined): boolean {
   return masterAdminEmailSet().has(email.trim().toLowerCase());
 }
 
-/** Static list of admin-scoped capability IDs (must match GetAdminCapabilitiesHandler + migrations). */
-export const ALL_ADMIN_PERMISSION_IDS = [
-  'admin.dashboard',
-  'admin.analytics',
-  'admin.vendors',
-  'admin.customers',
-  'admin.catalog',
-  'admin.settlements',
-  'admin.reports',
-  'admin.integrations',
-  'admin.notifications.view',
-  'admin.notifications.create',
-  'admin.notifications.edit',
-  'admin.notifications.approve',
-  'admin.notifications.send',
-  'admin.notifications.analytics',
-  'admin.governance',
-  'admin.logistics',
-  'admin.refunds',
-  'admin.support',
-  'admin.events',
-  'admin.ecommerce',
-  'admin.platform_settings',
-  'admin.roles',
-  'admin.ai_copilot',
-  'admin.full_access',
-] as const;
+import { getAllAdminPermissionIds } from '@warmpawz/shared-types';
+
+/** All assignable admin capability IDs (derived from shared admin-portal-nav). */
+export const ALL_ADMIN_PERMISSION_IDS = getAllAdminPermissionIds();
 
 export function hasAdminPermission(
   permissions: string[] | null | undefined,

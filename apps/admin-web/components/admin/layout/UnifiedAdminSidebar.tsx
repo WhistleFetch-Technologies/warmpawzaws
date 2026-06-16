@@ -1,20 +1,20 @@
 'use client';
 
-import { 
-  LayoutDashboard, 
-  Users, 
+import {
+  LayoutDashboard,
+  Users,
   ShoppingCart,
-  Globe, 
-  Megaphone, 
-  Headphones, 
-  BookOpen, 
-  Database, 
-  Calendar, 
-  FileText, 
-  Package, 
-  Wallet, 
-  UserCog, 
-  BarChart3, 
+  Globe,
+  Megaphone,
+  Headphones,
+  BookOpen,
+  Database,
+  Calendar,
+  FileText,
+  Package,
+  Wallet,
+  UserCog,
+  BarChart3,
   Settings,
   LogOut,
   Briefcase,
@@ -26,11 +26,19 @@ import {
   ChevronDown,
   ChevronRight,
   RefreshCw,
+  type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { getStoredAdminPermissions, hasAdminPortalPermission } from '@/lib/admin-permissions';
+import {
+  adminPortalNavItemVisible,
+  getAdminPortalFooterNavItems,
+  getAdminPortalMainNavItems,
+  getAdminPortalMarketingNavItems,
+  type AdminPortalNavItem,
+} from '@warmpawz/shared-types';
 
 const logoImage = '/logo.png';
 
@@ -39,26 +47,91 @@ interface UnifiedAdminSidebarProps {
   onNavigate: (view: string) => void;
 }
 
-type NavEntry = {
-  icon: typeof LayoutDashboard;
-  label: string;
-  id: string;
-  href?: string;
-  permission?: string;
-  permissionsAny?: string[];
-  onClick: () => void;
+const NAV_ICONS: Record<string, LucideIcon> = {
+  dashboard: LayoutDashboard,
+  analytics: BarChart3,
+  'product-analytics': BarChart3,
+  enterprise: Briefcase,
+  vendors: Users,
+  customers: UserCircle,
+  ecommerce: ShoppingCart,
+  regions: Globe,
+  loyalty: Gift,
+  support: Headphones,
+  catalog: BookOpen,
+  'database-seeding': Database,
+  events: Calendar,
+  content: FileText,
+  'pet-info': Package,
+  finance: Wallet,
+  refunds: RefreshCw,
+  roles: UserCog,
+  marketing: Megaphone,
+  'notification-engine': Bell,
+  reports: BarChart3,
+  'platform-settings': Settings,
 };
 
-type NavGroup = {
-  icon: typeof LayoutDashboard;
-  label: string;
-  id: string;
-  permission?: string;
-  children: NavEntry[];
-};
+function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void): () => void {
+  if (item.id === 'vendors') {
+    return () => {
+      window.location.href = '/vendors';
+    };
+  }
+  if (item.id === 'customers') {
+    return () => {
+      window.location.href = '/customers';
+    };
+  }
+  if (item.id === 'refunds') {
+    return () => {
+      window.location.href = '/refunds';
+    };
+  }
+  if (item.id === 'notification-engine') {
+    return () => {
+      window.location.href = '/notification-engine';
+    };
+  }
+  return () => onNavigate(item.id);
+}
+
+function isNavItemActive(item: AdminPortalNavItem, activeView: string, pathname: string | null): boolean {
+  if (activeView === item.id) return true;
+  if (item.id === 'vendors') {
+    return activeView === 'vendor-admin' || activeView === 'vendor-management' || pathname === '/vendors';
+  }
+  if (item.id === 'customers') {
+    return activeView === 'customer-admin' || pathname === '/customers';
+  }
+  if (item.id === 'regions') {
+    return activeView === 'region-manager';
+  }
+  if (item.id === 'catalog') {
+    return activeView === 'catalog-and-services';
+  }
+  if (item.id === 'marketing') {
+    return pathname?.startsWith('/marketing') ?? false;
+  }
+  if (item.id === 'notification-engine') {
+    return pathname?.startsWith('/notification-engine') ?? false;
+  }
+  if (item.pathPrefixes?.length && pathname) {
+    return item.pathPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  }
+  return false;
+}
+
+function canSeeNavItem(item: AdminPortalNavItem, hydrated: boolean): boolean {
+  if (!hydrated) return true;
+  const perms = getStoredAdminPermissions();
+  if (item.permissionsAny?.length) {
+    return hasAdminPortalPermission(item.permissionsAny);
+  }
+  return adminPortalNavItemVisible(item, perms);
+}
 
 export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSidebarProps) {
-  // Desktop (md+): sidebar open by default so "entry point" to other menus is visible. Mobile: closed.
   const [open, setOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const pathname = usePathname();
@@ -78,126 +151,39 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
     const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
     if (isDesktop) setOpen(true);
   }, []);
-  
+
   const handleSignOut = async () => {
     apiClient.clearAuth();
     window.location.href = '/';
   };
 
-  const navigationItems = useMemo(() => {
-    const all: NavEntry[] = [
-      { icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard', permission: 'admin.dashboard', onClick: () => onNavigate('dashboard') },
-      { icon: BarChart3, label: 'Analytics & Insights', id: 'analytics', permission: 'admin.analytics', onClick: () => onNavigate('analytics') },
-      { icon: BarChart3, label: 'Product analytics', id: 'product-analytics', permission: 'admin.analytics', onClick: () => onNavigate('product-analytics') },
-      { icon: Briefcase, label: 'Enterprise & Revenue', id: 'enterprise', permission: 'admin.governance', onClick: () => onNavigate('enterprise') },
-      {
-        icon: Users,
-        label: 'Vendor Administration',
-        id: 'vendors',
-        permission: 'admin.vendors',
-        onClick: () => {
-          window.location.href = '/vendors';
-        },
-      },
-      {
-        icon: UserCircle,
-        label: 'Customer Administration',
-        id: 'customers',
-        permission: 'admin.customers',
-        onClick: () => {
-          window.location.href = '/customers';
-        },
-      },
-      { icon: ShoppingCart, label: 'E-Commerce', id: 'ecommerce', permission: 'admin.ecommerce', onClick: () => onNavigate('ecommerce') },
-      { icon: Globe, label: 'Region Manager', id: 'regions', permission: 'admin.platform_settings', onClick: () => onNavigate('regions') },
-      { icon: Gift, label: 'Loyalty & Rewards', id: 'loyalty', permission: 'admin.integrations', onClick: () => onNavigate('loyalty') },
-      { icon: Headphones, label: 'Support & CRM', id: 'support', permission: 'admin.support', onClick: () => onNavigate('support') },
-      { icon: BookOpen, label: 'Catalog & Services', id: 'catalog', permission: 'admin.catalog', onClick: () => onNavigate('catalog') },
-      { icon: Database, label: 'Database Seeding', id: 'database-seeding', permission: 'admin.platform_settings', onClick: () => onNavigate('database-seeding') },
-      { icon: Calendar, label: 'Event Management', id: 'events', permission: 'admin.events', onClick: () => onNavigate('events') },
-      { icon: FileText, label: 'Content Management', id: 'content', permission: 'admin.governance', onClick: () => onNavigate('content') },
-      { icon: Package, label: 'Pet Info Management', id: 'pet-info', permission: 'admin.catalog', onClick: () => onNavigate('pet-info') },
-      {
-        icon: Wallet,
-        label: 'Finance & Logistics',
-        id: 'finance',
-        permissionsAny: ['admin.settlements', 'admin.logistics'],
-        onClick: () => onNavigate('finance'),
-      },
-      {
-        icon: RefreshCw,
-        label: 'Refunds',
-        id: 'refunds',
-        permission: 'admin.refunds',
-        onClick: () => {
-          window.location.href = '/refunds';
-        },
-      },
-      { icon: UserCog, label: 'Role & User Management', id: 'roles', permission: 'admin.roles', onClick: () => onNavigate('roles') },
-    ];
-    if (!hydrated) {
-      return all;
-    }
+  const mainNavItems = useMemo(() => getAdminPortalMainNavItems(), []);
+  const footerNavItems = useMemo(() => getAdminPortalFooterNavItems(), []);
+  const marketingNavItems = useMemo(() => getAdminPortalMarketingNavItems(), []);
+
+  const visibleMainNav = useMemo(() => {
+    if (!hydrated) return mainNavItems;
     const perms = getStoredAdminPermissions();
-    if (perms.includes('admin.full_access') || perms.includes('*')) {
-      return all;
-    }
-    return all.filter((item) => {
-      if (item.permissionsAny?.length) {
-        return hasAdminPortalPermission(item.permissionsAny);
-      }
-      if (!item.permission) return true;
-      return hasAdminPortalPermission(item.permission);
-    });
-  }, [hydrated, pathname, activeView, onNavigate]);
+    if (perms.includes('admin.full_access') || perms.includes('*')) return mainNavItems;
+    return mainNavItems.filter((item) => canSeeNavItem(item, hydrated));
+  }, [hydrated, mainNavItems, pathname, activeView]);
 
-  const marketingGroup: NavGroup = useMemo(() => ({
-    icon: Megaphone,
-    label: 'Marketing & Promotions',
-    id: 'marketing-group',
-    permission: 'admin.integrations',
-    children: [
-      {
-        icon: Megaphone,
-        label: 'Marketing Hub',
-        id: 'marketing',
-        href: '/marketing',
-        permissionsAny: ['admin.integrations', 'admin.notifications.view'],
-        onClick: () => onNavigate('marketing'),
-      },
-      {
-        icon: Bell,
-        label: 'Notification Engine',
-        id: 'notification-engine',
-        href: '/notification-engine',
-        permission: 'admin.notifications.view',
-        onClick: () => {
-          window.location.href = '/notification-engine';
-        },
-      },
-    ],
-  }), [onNavigate]);
+  const visibleMarketingNav = useMemo(() => {
+    if (!hydrated) return marketingNavItems;
+    return marketingNavItems.filter((item) => canSeeNavItem(item, hydrated));
+  }, [hydrated, marketingNavItems, pathname, activeView]);
 
-  const canSeeNavEntry = (item: NavEntry) => {
-    if (!hydrated) return true;
+  const visibleFooterNav = useMemo(() => {
+    if (!hydrated) return footerNavItems;
     const perms = getStoredAdminPermissions();
-    if (perms.includes('admin.full_access') || perms.includes('*')) return true;
-    if (item.permissionsAny?.length) return hasAdminPortalPermission(item.permissionsAny);
-    if (!item.permission) return true;
-    return hasAdminPortalPermission(item.permission);
-  };
+    if (perms.includes('admin.full_access') || perms.includes('*')) return footerNavItems;
+    return footerNavItems.filter((item) => canSeeNavItem(item, hydrated));
+  }, [hydrated, footerNavItems]);
 
-  const canSeeGroup = (group: NavGroup) => {
-    if (!hydrated) return true;
-    return group.children.some(canSeeNavEntry);
-  };
+  const sidebarWidth = 256;
 
-  // Sidebar width
-  const sidebarWidth = 256; // 64 * 4 (w-64)
-  
   return (
     <>
-      {/* Open button (shows when sidebar is closed) - fixed positioning */}
       {!open && (
         <button
           className="fixed cursor-pointer top-4 left-4 z-40 bg-white border border-gray-200 rounded-full p-2 shadow-md hover:shadow-lg transition-all hover:bg-gray-50"
@@ -208,7 +194,6 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
         </button>
       )}
 
-      {/* Blur overlay (shows when sidebar is open) - z-40 to be above content */}
       {open && (
         <div
           className="fixed inset-0 z-40 transition-all duration-300 cursor-pointer backdrop-blur-sm bg-black/20"
@@ -217,12 +202,10 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
         />
       )}
 
-      {/* Sidebar - z-50 to be above overlay */}
       <aside
-        className={`w-64 bg-white border-r border-gray-200 flex flex-col fixed inset-y-0 left-0 z-50 h-screen transition-transform duration-300 ease-in-out shadow-xl ${open ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none"}`}
-        style={{ WebkitOverflowScrolling: "touch", width: sidebarWidth }}
+        className={`w-64 bg-white border-r border-gray-200 flex flex-col fixed inset-y-0 left-0 z-50 h-screen transition-transform duration-300 ease-in-out shadow-xl ${open ? 'translate-x-0 pointer-events-auto' : '-translate-x-full pointer-events-none'}`}
+        style={{ WebkitOverflowScrolling: 'touch', width: sidebarWidth }}
       >
-        {/* Close button (always visible when sidebar is open) */}
         {open && (
           <button
             className="absolute cursor-pointer top-4 right-4 z-50 bg-white border border-gray-200 rounded-full p-1 shadow transition-opacity hover:bg-gray-100"
@@ -232,8 +215,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
             <X className="w-5 h-5 text-gray-700" />
           </button>
         )}
-        
-        {/* Logo */}
+
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <img src={logoImage} alt="Warmpawz" className="w-10 h-10" />
@@ -244,32 +226,27 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
           </div>
         </div>
 
-        {/* Navigation */}
         <div className="flex-1 overflow-y-auto py-2">
           <div className="px-2">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2">
               Main Menu
             </h3>
             <nav className="space-y-1">
-              {navigationItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeView === item.id || 
-                               (item.id === 'vendors' && (activeView === 'vendor-admin' || activeView === 'vendor-management' || pathname === '/vendors')) ||
-                               (item.id === 'customers' && (activeView === 'customer-admin' || pathname === '/customers')) ||
-                               (item.id === 'regions' && activeView === 'region-manager') ||
-                               (item.id === 'catalog' && activeView === 'catalog-and-services');
-                
+              {visibleMainNav.map((item) => {
+                const Icon = NAV_ICONS[item.id] ?? LayoutDashboard;
+                const isActive = isNavItemActive(item, activeView, pathname);
+
                 return (
                   <button
                     key={item.id}
                     onClick={() => {
-                      item.onClick();
+                      navOnClick(item, onNavigate)();
                       setOpen(false);
                     }}
                     className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors rounded-lg ${
                       isActive
-                        ? "text-[#FF8C42] bg-orange-50 font-medium"
-                        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                        ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                     }`}
                   >
                     <Icon className="w-4 h-4 shrink-0" />
@@ -278,7 +255,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                 );
               })}
 
-              {canSeeGroup(marketingGroup) && (
+              {visibleMarketingNav.length > 0 && (
                 <div className="pt-1">
                   <button
                     type="button"
@@ -290,21 +267,19 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                     }`}
                   >
                     <Megaphone className="w-4 h-4 shrink-0" />
-                    <span className="truncate flex-1 text-left">{marketingGroup.label}</span>
+                    <span className="truncate flex-1 text-left">Marketing & Promotions</span>
                     {marketingOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </button>
                   {marketingOpen && (
                     <div className="ml-4 mt-1 space-y-1 border-l border-gray-200 pl-2">
-                      {marketingGroup.children.filter(canSeeNavEntry).map((child) => {
-                        const ChildIcon = child.icon;
-                        const childActive =
-                          pathname === child.href ||
-                          activeView === child.id;
+                      {visibleMarketingNav.map((item) => {
+                        const ChildIcon = NAV_ICONS[item.id] ?? Megaphone;
+                        const childActive = isNavItemActive(item, activeView, pathname);
                         return (
                           <button
-                            key={child.id}
+                            key={item.id}
                             onClick={() => {
-                              child.onClick();
+                              navOnClick(item, onNavigate)();
                               setOpen(false);
                             }}
                             className={`w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors rounded-lg ${
@@ -314,7 +289,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                             }`}
                           >
                             <ChildIcon className="w-4 h-4 shrink-0" />
-                            <span className="truncate">{child.label}</span>
+                            <span className="truncate">{item.label}</span>
                           </button>
                         );
                       })}
@@ -326,40 +301,28 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
           </div>
         </div>
 
-        {/* Bottom Items - Reports & Platform Settings (with active state) */}
         <div className="border-t border-gray-200 p-3 space-y-1">
-          {hydrated && hasAdminPortalPermission('admin.reports') && (
-          <button
-            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg transition-colors ${
-              activeView === 'reports'
-                ? 'text-[#FF8C42] bg-orange-50 font-medium'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-            onClick={() => {
-              onNavigate('reports');
-              setOpen(false);
-            }}
-          >
-            <BarChart3 className="w-4 h-4 shrink-0" />
-            <span>Reports</span>
-          </button>
-          )}
-          {hydrated && hasAdminPortalPermission('admin.platform_settings') && (
-          <button
-            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg transition-colors ${
-              activeView === 'platform-settings'
-                ? 'text-[#FF8C42] bg-orange-50 font-medium'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-            onClick={() => {
-              onNavigate('platform-settings');
-              setOpen(false);
-            }}
-          >
-            <Settings className="w-4 h-4 shrink-0" />
-            <span>Platform Settings</span>
-          </button>
-          )}
+          {visibleFooterNav.map((item) => {
+            const Icon = NAV_ICONS[item.id] ?? Settings;
+            const isActive = isNavItemActive(item, activeView, pathname);
+            return (
+              <button
+                key={item.id}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg transition-colors ${
+                  isActive
+                    ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                }`}
+                onClick={() => {
+                  navOnClick(item, onNavigate)();
+                  setOpen(false);
+                }}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
           <button
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
             onClick={handleSignOut}
@@ -372,4 +335,3 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
     </>
   );
 }
-

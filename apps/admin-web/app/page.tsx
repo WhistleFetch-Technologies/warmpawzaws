@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AdminApp } from '@/components/AdminApp';
 import { NoSSR } from '@/components/NoSSR';
+import { getFirstAllowedAdminRoute } from '@warmpawz/shared-types';
 
 // Prevent prerendering - this page uses localStorage and React context
 export const dynamic = 'force-dynamic';
@@ -80,6 +81,7 @@ export default function AdminHomePage() {
   const [error, setError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
   const [uatMode, setUatMode] = useState(false);
+  const [noAccessibleRoute, setNoAccessibleRoute] = useState(false);
 
   // Check for existing session on mount (client-side only to prevent hydration mismatch)
   useEffect(() => {
@@ -170,13 +172,14 @@ export default function AdminHomePage() {
         localStorage.setItem('adminName', response.admin.name || response.admin.email);
         localStorage.setItem(
           'adminPermissions',
-          JSON.stringify(response.permissions?.length ? response.permissions : ['admin.full_access'])
+          JSON.stringify(Array.isArray(response.permissions) ? response.permissions : [])
         );
         
         // Set sessionStorage flag
         sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
         
         console.log(isUatMode() ? '✅ [UAT] Admin login successful (API + RDS)' : '✅ Admin login successful');
+        setNoAccessibleRoute(false);
         setIsAuthenticated(true);
       } else {
         setError('Login failed. Invalid response from server.');
@@ -208,24 +211,21 @@ export default function AdminHomePage() {
     setIsAuthenticated(false);
   };
 
-  // After login, send users to a route they are allowed to see (vendor-only → /vendors, not /analytics).
+  // After login, send users to the first route their role allows (never `/` — that is the login shell).
   useEffect(() => {
     if (!isAuthenticated || pathname !== '/') return;
     try {
       const raw = typeof window !== 'undefined' ? localStorage.getItem('adminPermissions') : null;
       const perms: string[] = raw ? JSON.parse(raw) : [];
-      const full = perms.includes('admin.full_access') || perms.includes('*');
-      let dest = '/analytics';
-      if (full || perms.includes('admin.analytics')) {
-        dest = '/analytics';
-      } else if (perms.includes('admin.dashboard')) {
-        dest = '/';
-      } else if (perms.includes('admin.vendors')) {
-        dest = '/vendors';
+      const dest = getFirstAllowedAdminRoute(perms);
+      if (!dest) {
+        setNoAccessibleRoute(true);
+        return;
       }
-      router.push(dest);
+      setNoAccessibleRoute(false);
+      router.replace(dest);
     } catch {
-      router.push('/analytics');
+      setNoAccessibleRoute(true);
     }
   }, [isAuthenticated, pathname, router]);
 
@@ -248,11 +248,28 @@ export default function AdminHomePage() {
         <>
           {/* If we're on a non-root route, don't render AdminApp - let Next.js route to dedicated pages */}
           {/* This prevents AdminApp from intercepting routes and showing placeholder content */}
-          {pathname && pathname !== '/' ? null : (
+          {pathname && pathname !== '/' ? null : noAccessibleRoute ? (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+              <div className="max-w-md text-center rounded-xl border border-amber-200 bg-amber-50 p-6">
+                <h1 className="text-lg font-semibold text-amber-900">No portal pages assigned</h1>
+                <p className="text-sm text-amber-800 mt-2">
+                  Your account is active, but your role does not include access to any admin module yet.
+                  Ask an administrator to assign permissions (for example Customers, Support, or Analytics).
+                </p>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="mt-4 px-4 py-2 bg-white border border-amber-300 rounded-lg text-sm font-medium text-amber-900 hover:bg-amber-100"
+                >
+                  Sign out
+                </button>
+              </div>
+            </div>
+          ) : (
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-                <p className="mt-4 text-gray-600">Redirecting to Analytics & Insight...</p>
+                <p className="mt-4 text-gray-600">Opening your workspace…</p>
               </div>
             </div>
           )}

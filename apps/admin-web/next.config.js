@@ -34,7 +34,7 @@ const nextConfig = {
   ...(process.argv[2] === 'build' && process.env.NEXT_EXPORT !== 'false' ? { output: 'export' } : {}),
   distDir: resolveDistDir(),
   reactStrictMode: true,
-  transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs'],
+  transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs', '@warmpawz/shared-types'],
   swcMinify: true,
   compress: true,
   images: { unoptimized: true },
@@ -66,6 +66,10 @@ const nextConfig = {
       ...(config.resolve.modules || []),
     ];
     if (!config.resolve.alias) config.resolve.alias = {};
+    config.resolve.alias['@warmpawz/shared-types'] = path.resolve(
+      __dirname,
+      '../../packages/shared-types/src/index.ts'
+    );
     if (!isServer && config.optimization?.splitChunks) {
       config.optimization.splitChunks.cacheGroups = {
         ...config.optimization.splitChunks.cacheGroups,
