@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Clock, TrendingUp, MapPin, Star, ChevronRight, Trash2 } from 'lucide-react';
+import { Search, X, Clock, MapPin, Star, ChevronRight, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
@@ -35,7 +35,7 @@ interface SearchResult {
 
 interface SearchSuggestion {
   text: string;
-  type: 'recent' | 'trending' | 'autocomplete';
+  type: 'autocomplete';
 }
 
 interface EnhancedSearchBarProps {
@@ -59,7 +59,6 @@ export function EnhancedSearchBar({
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
   const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<SearchSuggestion[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -83,8 +82,6 @@ export function EnhancedSearchBar({
       placeholder,
       recentSearchesCount: recentSearches.length,
       recentSearchesPreview: recentSearches.slice(0, 5),
-      suggestionsCount: suggestions.length,
-      suggestionsPreview: suggestions.slice(0, 5).map((s) => s.text),
     });
   }, []);
 
@@ -108,10 +105,9 @@ export function EnhancedSearchBar({
     );
   }, []);
 
-  // Load recent searches and suggestions
+  // Load recent searches
   useEffect(() => {
     loadRecentSearches();
-    loadSearchSuggestions();
   }, [customerId]);
 
   // Click outside handler
@@ -222,34 +218,6 @@ export function EnhancedSearchBar({
     }
   };
 
-  const loadSearchSuggestions = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (customerId) params.append('customerId', customerId);
-
-      // AWS Serverless compatible - use apiClient
-      const result = await apiClient.get<{ data?: { suggestions?: any[] }, suggestions?: any[] }>(`/customer/search-suggestions?${params.toString()}`);
-      const suggestionsData = result.data?.suggestions || result.suggestions || [];
-      
-      // Handle both string[] and object[] suggestions
-      setSuggestions(suggestionsData.map((s: any) => {
-        // If s is already an object with text, use it; otherwise convert to string
-        if (typeof s === 'object' && s !== null) {
-          return { 
-            text: String(s.text || s.name || s.query || ''), 
-            type: 'trending' as const 
-          };
-        }
-        return { text: String(s || ''), type: 'trending' as const };
-      }).filter(s => s.text)); // Remove empty suggestions
-      traceSearch('EnhancedSearchBar.loadSearchSuggestions', {
-        suggestions: suggestionsData.map((s) => s.text),
-      });
-    } catch (error) {
-      console.error('Error loading suggestions:', error);
-    }
-  };
-
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     traceSearch('EnhancedSearchBar.handleInputChange', { value, placeholder });
@@ -259,7 +227,6 @@ export function EnhancedSearchBar({
     const hasContent =
       value.trim().length > 0 ||
       recentSearches.length > 0 ||
-      suggestions.length > 0 ||
       autocompleteSuggestions.length > 0;
     setIsOpen(hasContent);
 
@@ -525,7 +492,6 @@ export function EnhancedSearchBar({
       queryState: query,
       placeholder,
       recentSearchesPreview: recentSearches.slice(0, 5),
-      suggestionsPreview: suggestions.slice(0, 5).map((s) => s.text),
       hasOnSearch: typeof onSearch === 'function',
     });
     saveSearch(searchQuery);
@@ -563,7 +529,6 @@ export function EnhancedSearchBar({
   };
 
   const showRecentSearches = !query && recentSearches.length > 0;
-  const showSuggestions = !query && suggestions.length > 0;
   const showAutocomplete = query.trim().length >= 2 && autocompleteSuggestions.length > 0;
 
   useEffect(() => {
@@ -590,7 +555,7 @@ export function EnhancedSearchBar({
     });
   }, [showRecentSearches, recentSearches, customerId]);
   const hasContent =
-    showRecentSearches || showSuggestions || showAutocomplete || results.length > 0 || loading;
+    showRecentSearches || showAutocomplete || results.length > 0 || loading;
   
   // Auto-close dropdown if there's no content to show (prevents empty white space)
   useEffect(() => {
@@ -614,7 +579,7 @@ export function EnhancedSearchBar({
             onChange={handleInputChange}
             onFocus={() => {
               // Only open if we have content to show
-              const hasContent = query.trim().length > 0 || recentSearches.length > 0 || suggestions.length > 0 || results.length > 0;
+              const hasContent = query.trim().length > 0 || recentSearches.length > 0 || results.length > 0;
               setIsOpen(hasContent);
             }}
             placeholder={placeholder}
@@ -652,7 +617,7 @@ export function EnhancedSearchBar({
       </form>
 
       {/* Dropdown - Only show when there's content to display */}
-      {isOpen && (showRecentSearches || showSuggestions || showAutocomplete || results.length > 0 || loading) && (
+      {isOpen && (showRecentSearches || showAutocomplete || results.length > 0 || loading) && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden max-h-[70vh] overflow-y-auto z-50">
           {/* Loading */}
           {loading && (
@@ -720,35 +685,6 @@ export function EnhancedSearchBar({
                   className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg text-left transition-colors group"
                 >
                   <Search className="w-4 h-4 text-gray-400 group-hover:text-orange-500" />
-                  <span className="text-gray-700 group-hover:text-gray-900 capitalize">
-                    {String(suggestion.text || '')}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Trending Suggestions */}
-          {!loading && showSuggestions && (
-            <div className="p-2 border-b border-gray-100">
-              <h3 className="text-xs uppercase tracking-wide text-gray-500 px-3 py-2">
-                Trending Searches
-              </h3>
-              {suggestions.slice(0, 5).map((suggestion, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    traceHomeSearchUpstream('EnhancedSearchBar.suggestion.click', {
-                      suggestionText: suggestion.text,
-                      placeholder,
-                      queryBefore: query,
-                    });
-                    setQuery(suggestion.text);
-                    handleSearch(suggestion.text);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg text-left transition-colors group"
-                >
-                  <TrendingUp className="w-4 h-4 text-orange-500" />
                   <span className="text-gray-700 group-hover:text-gray-900 capitalize">
                     {String(suggestion.text || '')}
                   </span>
@@ -842,7 +778,7 @@ export function EnhancedSearchBar({
           )}
 
           {/* No Results */}
-          {!loading && query && results.length === 0 && !showRecentSearches && !showSuggestions && !showAutocomplete && (
+          {!loading && query && results.length === 0 && !showRecentSearches && !showAutocomplete && (
             <div className="p-8 text-center">
               <p className="text-gray-500 text-sm">No results found for "{query}"</p>
               <p className="text-gray-400 text-xs mt-1">Try a different search term</p>
