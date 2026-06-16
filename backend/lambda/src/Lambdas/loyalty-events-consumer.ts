@@ -7,9 +7,11 @@ import {
 	processVendorReferralFirstBookingRewardVendorToCustomer,
 	processCustomerReferralOtpVerifyReward,
 	processCustomerReferralFirstBookingReward,
+	processCustomerReferralRefereeBookingReward,
 	processCustomerReferralVendorApprovalReward,
 	processLoyaltyActionOccurredForQualifyingPurchase,
 } from 'src/lib/services/referral-service';
+import { isUpdateHealthRecordAwardEligible } from 'src/lib/loyalty-update-health-record';
 
 // Avoid circular import at module init by dynamic import inside handler for heavy deps.
 
@@ -173,6 +175,28 @@ export const handler: SQSHandler = async (event) => {
 						throw specErr;
 					}
 				}
+			} else if (evt.actionName === 'referral_signup') {
+				if (evt.reference?.type === 'booking' && evt.reference?.id) {
+					try {
+						await processCustomerReferralRefereeBookingReward({
+							eventId: evt.eventId,
+							bookingId: evt.reference.id,
+							customerId:
+								evt.entity.type === 'customer' || evt.entity.type === 'auto' ? evt.entity.id : undefined,
+						});
+					} catch (specErr: any) {
+						console.error('[LOYALTY CONSUMER][referral_signup][booking] handler error', {
+							eventId: evt.eventId,
+							error: String(specErr?.message || specErr),
+						});
+						throw specErr;
+					}
+				} else {
+					console.info('[LOYALTY CONSUMER][referral_signup] Unsupported reference type', {
+						eventId: evt.eventId,
+						reference: evt.reference,
+					});
+				}
 			} else if (evt.actionName === 'vendor_refer_customer_first_booking') {
 				console.info('[LOYALTY CONSUMER] customer referral first booking path requires vendor mapping; skipping for now', {
 					eventId: evt.eventId,
@@ -199,6 +223,26 @@ export const handler: SQSHandler = async (event) => {
 			} else {
 				const customerId = evt.entity.type === 'vendor' ? undefined : evt.entity.id;
 				const vendorId = evt.entity.type === 'vendor' ? evt.entity.id : undefined;
+
+				if (evt.actionName === 'update_health_record') {
+					const eligible = await isUpdateHealthRecordAwardEligible(evt.reference);
+					if (!eligible) {
+						console.info('[LOYALTY CONSUMER][update_health_record] Skipped: not pet/vaccination', {
+							eventId: evt.eventId,
+							reference: evt.reference,
+						});
+						await insert('processed_events', {
+							event_id: evt.eventId,
+							action_name: evt.actionName,
+							entity_type: evt.entity.type,
+							entity_id: evt.entity.id,
+							reference_type: evt.reference?.type || null,
+							reference_id: evt.reference?.id || null,
+						});
+						return;
+					}
+				}
+
 				try {
 					await loyaltyPointsService.awardPoints({
 						customerId,

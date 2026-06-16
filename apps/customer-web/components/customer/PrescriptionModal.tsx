@@ -384,7 +384,7 @@ Instructions: ${p.instructions || 'N/A'}
         <PrescriptionDocument
           prescription={transformPrescriptionData({
             ...prescriptions[0],
-            ...fullPrescriptionData,
+            ...(fullPrescriptionData?.prescription || {}),
             // Combine all medications from all prescriptions into one
             medications: prescriptions.flatMap(p => {
               if (p.medications && Array.isArray(p.medications)) {

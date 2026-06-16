@@ -1,31 +1,57 @@
 #!/bin/bash
 # Direct AWS CLI deployment script for vendor-web
-# Usage: ./scripts/deploy-vendor-web.sh [--deploy-only]
+# Usage: ./scripts/deploy-vendor-web.sh [--deploy-only] [--prod] [--yes]
 #   --deploy-only  Skip build; inject config and upload existing dist (fails if dist missing).
+#   --prod         Deploy to PRODUCTION (S3 + CloudFront prod, prod HTTP API).
+#   --yes, -y      Skip confirmation prompt when using --prod.
 
 set -e
 
-# Only skip build when explicitly requested via flag
+# Parse flags
 DEPLOY_ONLY=false
+PROD=false
+SKIP_CONFIRM=false
 for arg in "$@"; do
-  if [ "$arg" = "--deploy-only" ] || [ "$arg" = "--skip-build" ]; then
-    DEPLOY_ONLY=true
-    break
-  fi
+  case "$arg" in
+    --deploy-only|--skip-build) DEPLOY_ONLY=true ;;
+    --prod)                     PROD=true ;;
+    --yes|-y)                   SKIP_CONFIRM=true ;;
+  esac
 done
 
-echo "🚀 Deploying vendor-web to AWS dev environment..."
+if [ "${ENVIRONMENT:-}" = "prod" ]; then
+  PROD=true
+fi
 
 # Configuration: read from config/urls.json or env only (no hardcoded URLs)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="vendor-web"
-S3_BUCKET="warmpawz-dev-vendor-frontend-ap-south-1"
-CLOUDFRONT_DIST_ID="E95171GX1I6HN"
-if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
-  CLOUDFRONT_URL="${CLOUDFRONT_URL:-$(jq -r '.cloudfront.vendor // empty' "$PROJECT_ROOT/config/urls.json")}"
+
+if [ "$PROD" = true ]; then
+  echo "🚀 Deploying vendor-web to AWS PRODUCTION environment..."
+  S3_BUCKET="warmpawz-prod-vendor-frontend-ap-south-1"
+  CLOUDFRONT_DIST_ID="E3JDHOY1XIFOWE"
+  CLOUDFRONT_URL="https://d1y5ywletev82x.cloudfront.net"
+  API_BASE_URL="https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"
+  if [ "$SKIP_CONFIRM" = false ]; then
+    echo "⚠️  WARNING: This will deploy vendor-web to PRODUCTION!"
+    read -p "Type 'yes' to proceed: " confirm
+    if [ "$confirm" != "yes" ]; then
+      echo "❌ Deployment cancelled"
+      exit 1
+    fi
+  fi
+else
+  echo "🚀 Deploying vendor-web to AWS dev environment..."
+  S3_BUCKET="warmpawz-dev-vendor-frontend-ap-south-1"
+  CLOUDFRONT_DIST_ID="E95171GX1I6HN"
+  if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+    CLOUDFRONT_URL="${CLOUDFRONT_URL:-$(jq -r '.cloudfront.vendor // empty' "$PROJECT_ROOT/config/urls.json")}"
+  fi
+  CLOUDFRONT_URL="${CLOUDFRONT_URL:-}"
+  API_BASE_URL=""
 fi
-CLOUDFRONT_URL="${CLOUDFRONT_URL:-}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -52,36 +78,64 @@ fi
 # Step 1.5: Inject runtime-config.js with API Gateway URL (API calls must go to backend, not CloudFront)
 echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
 cd "$PROJECT_ROOT"
-API_BASE_URL=""
-# Priority: config/urls.json apiGatewayDefaultUrl (main API) → AWS query → fallback
-if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
-  API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
-fi
-if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
+if [ "$PROD" = false ] && [ -z "$API_BASE_URL" ]; then
+  # Priority: config/urls.json apiGatewayDefaultUrl (main API) → AWS query → fallback
+  if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+    API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
+  fi
+  if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
+    if command -v aws &>/dev/null; then
+      API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
+    fi
+    if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
+      if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+        API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
+      fi
+      if [ -z "$API_BASE_URL" ]; then
+        echo -e "${YELLOW}❌ Set API_BASE_URL or ensure config/urls.json has apiGatewayDefaultUrl${NC}"
+        exit 1
+      fi
+      echo -e "${YELLOW}⚠️  Using API URL from config/urls.json: $API_BASE_URL${NC}"
+    else
+      echo -e "${GREEN}✅ API Gateway endpoint (from AWS): $API_BASE_URL${NC}"
+    fi
+  else
+    echo -e "${GREEN}✅ API Gateway endpoint (from config/urls.json): $API_BASE_URL${NC}"
+  fi
+elif [ "$PROD" = true ] && { [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; }; then
   if command -v aws &>/dev/null; then
-    API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
+    API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-prod-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
   fi
   if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
-    # Fallback: read from config/urls.json (no hardcoded URL in script)
-    if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
-      API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
-    fi
-    if [ -z "$API_BASE_URL" ]; then
-      echo -e "${YELLOW}❌ Set API_BASE_URL or ensure config/urls.json has apiGatewayDefaultUrl${NC}"
-      exit 1
-    fi
-    echo -e "${YELLOW}⚠️  Using API URL from config/urls.json: $API_BASE_URL${NC}"
-  else
-    echo -e "${GREEN}✅ API Gateway endpoint (from AWS): $API_BASE_URL${NC}"
+    API_BASE_URL="https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"
   fi
-else
-  echo -e "${GREEN}✅ API Gateway endpoint (from config/urls.json): $API_BASE_URL${NC}"
+  echo -e "${GREEN}✅ API Gateway endpoint (prod): $API_BASE_URL${NC}"
 fi
 # Ensure no trailing slash
 API_BASE_URL="${API_BASE_URL%/}"
 
 # Inject runtime-config.js into dist folder
-cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
+if [ "$PROD" = true ]; then
+  cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
+// Runtime Configuration for Warmpawz ${APP_NAME} (PRODUCTION)
+(function() {
+  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+    apiBaseUrl: "${API_BASE_URL}",
+    uatMode: false,
+    environment: "production",
+    firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+    firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+    firebaseProjectId:         "warmpawz-b9baf",
+    firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+    firebaseMessagingSenderId: "771876271254",
+    firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+    firebaseMeasurementId:     "G-PYF54Y34BP"
+  };
+  console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
+})();
+EOF
+else
+  cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
 // Runtime Configuration for Warmpawz ${APP_NAME}
 // Injected at deployment - API base is API Gateway (backend), not CloudFront
 (function() {
@@ -99,6 +153,7 @@ cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
 EOF
+fi
 
 echo -e "${GREEN}✅ runtime-config.js injected (apiBaseUrl -> API Gateway)${NC}"
 
@@ -144,9 +199,15 @@ fi
 
 # Summary
 echo ""
-echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   ✅ DIRECT AWS DEPLOYMENT COMPLETED                          ║${NC}"
-echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
+if [ "$PROD" = true ]; then
+  echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${GREEN}║   ✅ VENDOR-WEB PRODUCTION DEPLOYMENT COMPLETED               ║${NC}"
+  echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
+else
+  echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${GREEN}║   ✅ DIRECT AWS DEPLOYMENT COMPLETED                          ║${NC}"
+  echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
+fi
 echo ""
 echo -e "📦 Deployment Summary:"
 echo -e "   ✅ ${APP_NAME}: Built successfully"

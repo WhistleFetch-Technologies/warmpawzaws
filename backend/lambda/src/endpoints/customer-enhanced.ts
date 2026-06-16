@@ -25,6 +25,10 @@ import { randomUUID } from 'crypto';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { query, select, insert, update } from '../database/rds-connection';
 import {
+  petPayloadHasVaccinations,
+  petVaccinationsMeaningfullyUpdated,
+} from '../lib/pet-vaccination-loyalty';
+import {
   UpdateCustomerProfileRequestSchema,
   AddPetRequestSchema,
 } from '@warmpawz/api-contracts/customers';
@@ -737,6 +741,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
 
       const customer = customers[0];
       const savedPets = [];
+      let vaccinationUpdated = false;
 
       for (const pet of pets) {
         try {
@@ -802,12 +807,23 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
 
           if (existingPets.length > 0) {
             // Update existing pet
+            const beforePet = existingPets[0] as Record<string, unknown>;
+            const payloadHadVac = petPayloadHasVaccinations(pet as Record<string, unknown>);
             const updated = await update('pets', { id: existingPets[0].id }, petData);
-            savedPets.push({ ...updated[0], id: existingPets[0].id });
+            const afterPet = updated[0] as Record<string, unknown>;
+            if (
+              petVaccinationsMeaningfullyUpdated(beforePet, afterPet, payloadHadVac)
+            ) {
+              vaccinationUpdated = true;
+            }
+            savedPets.push({ ...afterPet, id: existingPets[0].id });
           } else {
             // Insert new pet
             const inserted = await insert('pets', petData);
             savedPets.push(inserted[0]);
+            if (petPayloadHasVaccinations(pet as Record<string, unknown>)) {
+              vaccinationUpdated = true;
+            }
           }
         } catch (petError: any) {
           console.error(`Error saving pet ${pet.name}:`, petError);
@@ -833,6 +849,9 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         success: true,
         message: `${savedPets.length} pet(s) saved successfully`,
         pets: savedPets,
+        customerId: customer.id,
+        petId: savedPets[0]?.id ?? null,
+        vaccinationUpdated,
       });
     } catch (error: any) {
       console.error('Error saving customer pets:', error);

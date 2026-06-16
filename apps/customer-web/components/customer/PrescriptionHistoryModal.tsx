@@ -106,6 +106,32 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   }
 }
 
+/** Vendor-issued Rx (doctor); customer uploads use recordType === 'uploaded'. */
+function isVendorPrescription(p: Prescription): boolean {
+  return p.recordType === 'prescription';
+}
+
+function isCustomerUpload(p: Prescription): boolean {
+  return p.recordType === 'uploaded';
+}
+
+/** Map API row to list item recordType (vendor Rx vs customer upload). */
+function mapRecordType(row: Record<string, unknown>): 'prescription' | 'uploaded' {
+  const source = String(row.source || '');
+  const apiRecordType = String(row.record_type || row.recordType || '');
+  if (source === 'medical_records' || apiRecordType === 'uploaded') return 'uploaded';
+  if (source === 'prescriptions' || apiRecordType === 'prescription') return 'prescription';
+  if (row.file_url && !row.medications && !row.content_data) return 'uploaded';
+  return 'prescription';
+}
+
+function normalizePrescriptionRow(row: Record<string, any>): Prescription {
+  return {
+    ...row,
+    recordType: mapRecordType(row),
+  };
+}
+
 export function PrescriptionHistoryModal({
   bookingId,
   petId,
@@ -115,7 +141,7 @@ export function PrescriptionHistoryModal({
   onOrderMedicine, // ✅ FIX: Add pharmacy ordering callback
 }: PrescriptionHistoryModalProps) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
-  const [fullPrescriptionData, setFullPrescriptionData] = useState<any>(null);
+  const [a4PrescriptionDetails, setA4PrescriptionDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -134,63 +160,86 @@ export function PrescriptionHistoryModal({
 
   // ✅ FIX: Safe version that uses fetch to avoid automatic redirect on 401
   const loadPrescriptionsSafe = async () => {
-    const allPrescriptions: any[] = [];
+    const allPrescriptions: Prescription[] = [];
+    const seenIds = new Set<string>();
     const baseUrl = getBaseUrl();
     const token = localStorage.getItem('authToken') || localStorage.getItem('cognitoIdToken');
+    const authHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    const pushUnique = (rows: Record<string, any>[]) => {
+      for (const row of rows) {
+        if (!row?.id || seenIds.has(row.id)) continue;
+        seenIds.add(row.id);
+        allPrescriptions.push(normalizePrescriptionRow(row));
+      }
+    };
     
-    // 1. Fetch uploaded medical records (handwritten prescriptions)
+    // 1. Combined prescriptions + customer uploads for this booking
     try {
       const medicalResponse = await fetch(`${baseUrl}/medical-records/booking/${bookingId}/prescriptions`, {
         method: 'GET',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders,
       });
       
       if (medicalResponse.ok) {
         const medicalResult = await medicalResponse.json();
-        const medicalRecords = medicalResult.prescriptions || [];
-        medicalRecords.forEach((record: any) => {
-          record.recordType = 'uploaded';
-        });
-        allPrescriptions.push(...medicalRecords);
+        pushUnique(medicalResult.prescriptions || []);
       } else if (medicalResponse.status === 401) {
         console.warn('Unauthorized access to medical records - session may have expired');
-        // Don't throw, just skip this data
       }
     } catch (error) {
       console.warn('Failed to load medical records:', error);
     }
+
+    // 2. Fallback: raw medical_records for this booking (customer uploads)
+    try {
+      const recordsResponse = await fetch(`${baseUrl}/bookings/${bookingId}/medical-records`, {
+        method: 'GET',
+        headers: authHeaders,
+      });
+      if (recordsResponse.ok) {
+        const recordsResult = await recordsResponse.json();
+        const uploads = (recordsResult.medicalRecords || recordsResult.records || []).filter(
+          (r: Record<string, any>) =>
+            r.record_type === 'prescription' ||
+            (r.record_type === 'treatment' && String(r.title || '').toLowerCase().includes('prescription'))
+        );
+        pushUnique(
+          uploads.map((r: Record<string, any>) => ({
+            ...r,
+            source: 'medical_records',
+            record_type: 'uploaded',
+          }))
+        );
+      }
+    } catch (error) {
+      console.warn('Failed to load booking medical records fallback:', error);
+    }
     
-    // 2. Fetch published prescriptions from vendors (with full details for A4 document)
+    // 3. Published vendor prescriptions (full details for A4 document)
     try {
       const prescriptionResponse = await fetch(`${baseUrl}/prescriptions/booking/${bookingId}?includeDetails=true`, {
         method: 'GET',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders,
       });
       
       if (prescriptionResponse.ok) {
         const prescriptionResult = await prescriptionResponse.json();
-        const prescriptions = prescriptionResult.prescriptions || [];
-        prescriptions.forEach((prescription: any) => {
-          prescription.recordType = 'prescription';
-          // Only include published prescriptions for customers
-          if (prescription.status === 'published' || !prescription.status) {
-            allPrescriptions.push(prescription);
-          }
-        });
-        
-        // Store full data for A4 document view
-        if (prescriptions.length > 0) {
-          setFullPrescriptionData(prescriptionResult);
-        }
+        const prescriptions = (prescriptionResult.prescriptions || []).filter(
+          (p: Record<string, any>) => p.status === 'published' || !p.status
+        );
+        pushUnique(
+          prescriptions.map((p: Record<string, any>) => ({
+            ...p,
+            source: 'prescriptions',
+            record_type: 'prescription',
+          }))
+        );
       } else if (prescriptionResponse.status === 401) {
         console.warn('Unauthorized access to prescriptions - session may have expired');
-        // Don't throw, just skip this data
       }
     } catch (error) {
       console.warn('Failed to load prescriptions:', error);
@@ -233,6 +282,57 @@ export function PrescriptionHistoryModal({
   };
 
   const getBaseUrl = (): string => getApiBaseUrl() || '';
+
+  const openA4Document = async (prescription: Prescription) => {
+    setSelectedPrescription(prescription);
+    setA4PrescriptionDetails(null);
+    setLoadingPrescriptionView(true);
+    try {
+      const baseUrl = getBaseUrl();
+      const token = localStorage.getItem('authToken') || localStorage.getItem('cognitoIdToken');
+      const response = await fetch(
+        `${baseUrl}/prescriptions/${prescription.id}?includeDetails=true`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        setA4PrescriptionDetails(result.prescription || result);
+      } else {
+        const fallbackResponse = await fetch(
+          `${baseUrl}/prescriptions/booking/${bookingId}?includeDetails=true`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          }
+        );
+        if (fallbackResponse.ok) {
+          const fallbackResult = await fallbackResponse.json();
+          const match = (fallbackResult.prescriptions || []).find(
+            (row: Record<string, any>) => row.id === prescription.id
+          );
+          setA4PrescriptionDetails(match || prescription);
+        } else {
+          setA4PrescriptionDetails(prescription);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load full prescription for A4 view:', error);
+      setA4PrescriptionDetails(prescription);
+    } finally {
+      setLoadingPrescriptionView(false);
+      setShowA4Document(true);
+    }
+  };
 
   const handleUpload = async () => {
     if (!uploadingFile || !recordDate) {
@@ -280,6 +380,20 @@ export function PrescriptionHistoryModal({
       if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Upload failed' }));
         throw new Error(error.error || 'Upload failed');
+      }
+
+      const uploadResult = await response.json().catch(() => ({}));
+      const uploadedRecord = uploadResult.record;
+      if (uploadedRecord?.id) {
+        setPrescriptions((prev) => {
+          const next = normalizePrescriptionRow({
+            ...uploadedRecord,
+            source: 'medical_records',
+            file_url: uploadResult.fileUrl || uploadedRecord.file_url,
+          });
+          if (prev.some((p) => p.id === next.id)) return prev;
+          return [next, ...prev];
+        });
       }
 
       toast.success('Prescription uploaded successfully');
@@ -493,7 +607,7 @@ export function PrescriptionHistoryModal({
         <div className="bg-white w-full max-w-customer rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto">
           {/* Header */}
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
-            <h2 className="font-bold text-gray-800">Prescription History</h2>
+            <h2 className="font-bold text-gray-800">Prescriptions &amp; documents</h2>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowUploadModal(true)}
@@ -519,8 +633,10 @@ export function PrescriptionHistoryModal({
           ) : sortedPrescriptions.length === 0 ? (
             <div className="text-center py-20 px-6">
               <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600 mb-2">No prescriptions found</p>
-              <p className="text-sm text-gray-500">Upload a handwritten prescription or wait for doctor to create one</p>
+              <p className="text-gray-600 mb-2">No prescriptions or documents yet</p>
+              <p className="text-sm text-gray-500">
+                Upload a photo or PDF, or wait for your vet to publish a prescription
+              </p>
             </div>
           ) : (
             <div className="p-6 space-y-4">
@@ -547,9 +663,14 @@ export function PrescriptionHistoryModal({
                         <h3 className="font-semibold text-gray-800">
                           {prescription.diagnosis || prescription.title || prescription.medication_name || 'Prescription'}
                         </h3>
-                        {prescription.recordType === 'prescription' && (
+                        {isVendorPrescription(prescription) && (
                           <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
-                            Prescription
+                            From vet
+                          </span>
+                        )}
+                        {isCustomerUpload(prescription) && (
+                          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-medium rounded-full">
+                            Your upload
                           </span>
                         )}
                       </div>
@@ -567,24 +688,22 @@ export function PrescriptionHistoryModal({
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {/* ✅ FIX: Add upload button for older records */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPrescription(prescription);
-                          setShowUploadModal(true);
-                        }}
-                        className="p-2 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
-                        title="Upload additional file for this record"
-                      >
-                        <Upload className="w-4 h-4 text-blue-600" />
-                      </button>
                       <button
                         onClick={() => handleViewPrescription(prescription)}
                         className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                        title="View prescription"
+                        title="View"
                       >
                         <Eye className="w-4 h-4 text-gray-600" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void shareSelectedPrescription(prescription);
+                        }}
+                        className="p-2 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
+                        title="Share"
+                      >
+                        <Share2 className="w-4 h-4 text-blue-600" />
                       </button>
                     </div>
                   </div>
@@ -609,7 +728,7 @@ export function PrescriptionHistoryModal({
           >
             <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 pb-4 pt-6 rounded-t-[32px] bg-white">
               <h3 id="upload-prescription-title" className="font-bold text-gray-800 pr-2">
-                {selectedPrescription ? 'Upload Additional File' : 'Upload Handwritten Prescription'}
+                Upload Handwritten Prescription
               </h3>
               <button
                 type="button"
@@ -618,7 +737,6 @@ export function PrescriptionHistoryModal({
                   setUploadingFile(null);
                   setRecordDate('');
                   setContext('');
-                  setSelectedPrescription(null);
                 }}
                 className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200"
               >
@@ -629,30 +747,14 @@ export function PrescriptionHistoryModal({
             <div
               className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-6 pt-4 [-webkit-overflow-scrolling:touch] scroll-pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pb-[calc(1rem+5.5rem+env(safe-area-inset-bottom,0px))]"
             >
-              {selectedPrescription && (
-                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm text-blue-900">
-                    <strong>Adding file to:</strong> {selectedPrescription.title}
-                  </p>
-                  <p className="text-xs text-blue-700 mt-1">
-                    Date: {formatDate(getPrescriptionDate(selectedPrescription))}
-                  </p>
-                </div>
-              )}
-
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Prescription Date <span className="text-red-500">*</span>
-                    {selectedPrescription && (
-                      <span className="text-xs text-gray-500 ml-2">
-                        (for this record: {formatDate(getPrescriptionDate(selectedPrescription))})
-                      </span>
-                    )}
                   </label>
                   <input
                     type="date"
-                    value={recordDate || (selectedPrescription && getPrescriptionDate(selectedPrescription) ? new Date(getPrescriptionDate(selectedPrescription)).toISOString().split('T')[0] : '')}
+                    value={recordDate}
                     onChange={(e) => setRecordDate(e.target.value)}
                     max={new Date().toISOString().split('T')[0]}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
@@ -727,12 +829,12 @@ export function PrescriptionHistoryModal({
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="font-bold text-gray-800">{selectedPrescription.title}</h3>
               <div className="flex items-center gap-2">
-                {/* View A4 Document Button - Only for published prescriptions with full data */}
-                {selectedPrescription.recordType === 'prescription' && (
+                {/* A4 document — vendor prescriptions only */}
+                {isVendorPrescription(selectedPrescription) && (
                   <button
                     onClick={() => {
                       setShowViewer(false);
-                      setShowA4Document(true);
+                      void openA4Document(selectedPrescription);
                     }}
                     className="p-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-lg transition-colors"
                     title="View Full Prescription (A4)"
@@ -748,12 +850,11 @@ export function PrescriptionHistoryModal({
                 >
                   <Share2 className="w-4 h-4" />
                 </button>
-                {/* ✅ FIX: Broadcast Prescription Button - Share with pharmacies */}
-                {selectedPrescription.file_url && (
+                {/* Broadcast / pharmacy — vendor prescriptions only */}
+                {isVendorPrescription(selectedPrescription) && selectedPrescription.file_url && (
                   <button
                     onClick={async () => {
                       try {
-                        // Broadcast prescription to pharmacies for ordering
                         if (onOrderMedicine) {
                           onOrderMedicine(selectedPrescription.id, bookingId, []);
                           toast.success('Broadcasting prescription to pharmacies...');
@@ -779,9 +880,9 @@ export function PrescriptionHistoryModal({
                     <span className="text-xs font-medium">Broadcast</span>
                   </button>
                 )}
-                
-                {/* Pharmacy order: implementation in openPharmacyOrderFromViewer; toggle PHARMACY_ORDER_BUTTON_ENABLED to re-enable */}
-                {(selectedPrescription.content_data || selectedPrescription.file_url) && (
+
+                {isVendorPrescription(selectedPrescription) &&
+                  (selectedPrescription.content_data || selectedPrescription.file_url) && (
                   <button
                     type="button"
                     disabled={!PHARMACY_ORDER_BUTTON_ENABLED}
@@ -976,9 +1077,10 @@ export function PrescriptionHistoryModal({
         <PrescriptionDocument
           prescription={transformPrescriptionData({
             ...selectedPrescription,
-            ...fullPrescriptionData,
+            ...(a4PrescriptionDetails || {}),
             // Combine medications if available
-            medications: selectedPrescription.content_data?.medications || 
+            medications: a4PrescriptionDetails?.medications ||
+              selectedPrescription.content_data?.medications || 
               (selectedPrescription.medication_name ? [{
                 name: selectedPrescription.medication_name,
                 dosage: (selectedPrescription as any).dosage,
@@ -987,7 +1089,10 @@ export function PrescriptionHistoryModal({
                 instructions: selectedPrescription.instructions
               }] : [])
           })}
-          onClose={() => setShowA4Document(false)}
+          onClose={() => {
+            setShowA4Document(false);
+            setA4PrescriptionDetails(null);
+          }}
           onOrderMedicine={() => {
             if (onOrderMedicine) {
               const medications = selectedPrescription.content_data?.medications || [];

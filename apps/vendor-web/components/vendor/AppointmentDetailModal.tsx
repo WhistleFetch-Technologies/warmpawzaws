@@ -164,6 +164,13 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [showTracking, setShowTracking] = useState(false);
   const [showA4Document, setShowA4Document] = useState(false);
   const [selectedPrescriptionForA4, setSelectedPrescriptionForA4] = useState<any>(null);
+  const [showMedicalRecordViewer, setShowMedicalRecordViewer] = useState(false);
+  const [selectedMedicalRecord, setSelectedMedicalRecord] = useState<{
+    id: string;
+    title?: string;
+    file_url?: string;
+  } | null>(null);
+  const [loadingMedicalRecordView, setLoadingMedicalRecordView] = useState(false);
   
   // OTP States
   const [otp, setOtp] = useState('');
@@ -255,6 +262,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       const petIdFromBooking = rawBooking.petId || rawBooking.pet_id;
       const petIdFromPetObject = data.pet?.id;
       let finalPetId = petIdFromBooking || petIdFromPetObject;
+      let resolvedPetFromLookup: any = null;
       
       // ✅ FIX: If petId is still missing but we have customerId and petName, fetch it
       if (!finalPetId && (rawBooking.customerId || rawBooking.customer_id) && rawBooking.petName) {
@@ -283,6 +291,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             
             if (matchingPet?.id) {
               finalPetId = matchingPet.id;
+              resolvedPetFromLookup = matchingPet;
               console.log('[AppointmentDetailModal] ✅ Found petId:', { 
                 petId: finalPetId, 
                 bookingPetName: petName,
@@ -322,15 +331,26 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         customerName: rawBooking.customerName || 'Unknown Customer',
         customerPhone: rawBooking.customerPhone || '',
         // Pet info  
-        petName: rawBooking.pet?.name || rawBooking.petName || 'Unknown Pet',
-        petType: rawBooking.pet?.species || rawBooking.petType || rawBooking.petSpecies || '',
-        petBreed: rawBooking.pet?.breed || rawBooking.petBreed || '',
+        petName: rawBooking.pet?.name || rawBooking.petName || resolvedPetFromLookup?.name || 'Unknown Pet',
+        petType:
+          rawBooking.pet?.species ||
+          rawBooking.petType ||
+          rawBooking.petSpecies ||
+          resolvedPetFromLookup?.species ||
+          '',
+        petBreed: rawBooking.pet?.breed || rawBooking.petBreed || resolvedPetFromLookup?.breed || '',
         petAge:
           rawBooking.petAge != null && rawBooking.petAge !== ''
             ? `${rawBooking.petAge} years`
-            : rawBooking.pet?.age != null
-              ? `${rawBooking.pet.age} years`
-              : '',
+            : rawBooking.pet?.age_years != null
+              ? `${rawBooking.pet.age_years} years`
+              : rawBooking.pet?.age != null
+                ? `${rawBooking.pet.age} years`
+                : resolvedPetFromLookup?.age_years != null
+                  ? `${resolvedPetFromLookup.age_years} years`
+                  : resolvedPetFromLookup?.age != null
+                    ? `${resolvedPetFromLookup.age} years`
+                    : '',
         // Service info (details API may put label on nested service; list uses service?.name first)
         serviceName:
           rawBooking.serviceName ||
@@ -558,6 +578,88 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleViewMedicalRecord = async (recordData: {
+    id: string;
+    booking_id?: string;
+    title?: string;
+    file_url?: string;
+  }) => {
+    if (!recordData?.id) {
+      toast.error('Document not found');
+      return;
+    }
+
+    try {
+      setLoadingMedicalRecordView(true);
+      const recordBookingId = recordData.booking_id || bookingId;
+      const result = (await apiClient.get(
+        `/medical-records/booking/${recordBookingId}/view/${recordData.id}`
+      )) as { fileUrl?: string };
+
+      if (!result.fileUrl) {
+        toast.error('Could not load document');
+        return;
+      }
+
+      setSelectedMedicalRecord({
+        ...recordData,
+        file_url: result.fileUrl,
+      });
+      setShowMedicalRecordViewer(true);
+    } catch (error) {
+      console.error('Error viewing medical record:', error);
+      toast.error('Failed to load document');
+    } finally {
+      setLoadingMedicalRecordView(false);
+    }
+  };
+
+  const openPetMedicalHistory = async () => {
+    if (!booking) return;
+
+    let petIdToUse = booking.petId || (booking as any)?.pet_id;
+
+    if (!petIdToUse && booking.customerId && booking.petName) {
+      try {
+        const petsResponse = (await apiClient.get(`/pets/customer/${booking.customerId}`)) as any;
+
+        if (petsResponse?.pets && Array.isArray(petsResponse.pets)) {
+          let matchingPet = petsResponse.pets.find(
+            (p: any) => p.name?.toLowerCase().trim() === booking.petName?.toLowerCase().trim()
+          );
+
+          if (!matchingPet && petsResponse.pets.length === 1) {
+            matchingPet = petsResponse.pets[0];
+          }
+
+          if (matchingPet?.id) {
+            petIdToUse = matchingPet.id;
+            setBooking((prev) => (prev ? { ...prev, petId: petIdToUse } : null));
+          } else {
+            toast.error(
+              `Pet "${booking.petName}" not found. Available: ${petsResponse.pets.map((p: any) => p.name).join(', ') || 'none'}`
+            );
+            return;
+          }
+        } else {
+          toast.error('Could not fetch customer pets. Please try again.');
+          return;
+        }
+      } catch (error: any) {
+        console.error('[Medical History] Error fetching pet:', error);
+        toast.error(`Failed to fetch pet information: ${error.message || 'Unknown error'}`);
+        return;
+      }
+    }
+
+    if (!petIdToUse) {
+      toast.error('Pet information not available. Cannot open medical history.');
+      return;
+    }
+
+    setShowMedicalHistory(true);
   };
   
   // Vet/nutritionist: show prescription for ALL vet appointments (tele, home, center, custom) per role config. Not gated by service type.
@@ -1879,25 +1981,23 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   </div>
                 </div>
 
-                {/* Create Prescription (Vet Summary) - ONLY for vet consultation (clinic/tele/home). NOT for diagnostics lab bookings. */}
-                {isVetOrNutritionist && !isDiagnosticsBooking && booking.status !== 'cancelled' && (
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-                    <p className="text-sm text-purple-700 font-medium mb-2">Consultation Summary (Prescription)</p>
-                    <p className="text-xs text-purple-600 mb-3">Add diagnosis, medicines, and notes. Saved to history for future vets and pet medical records.</p>
-                    <button
-                      onClick={() => setShowVetSummaryModal(true)}
-                      className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:from-purple-700 hover:to-purple-800 transition-all shadow-md"
-                    >
-                      <Stethoscope className="w-5 h-5" />
-                      Add Consultation Summary (Prescription)
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 
             {activeTab === 'history' && (
               <div className="p-4 space-y-3">
+                {isVetOrNutritionist && !isDiagnosticsBooking && (
+                  <div className="flex items-center justify-between gap-2 pb-1">
+                    <p className="text-xs text-gray-500">Activity for this appointment</p>
+                    <button
+                      type="button"
+                      onClick={() => void openPetMedicalHistory()}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-800 shrink-0 touch-manipulation"
+                    >
+                      Full pet record (all visits) →
+                    </button>
+                  </div>
+                )}
                 {/* Medical records / prescriptions appear here from loadAppointmentDetails (historyData.history + activities) */}
                 {activities.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
@@ -1937,15 +2037,21 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                                 )}
                               </div>
                               {(activity as any).medicalRecordData.file_url && (
-                                <a
-                                  href={(activity as any).medicalRecordData.file_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors"
+                                <button
+                                  type="button"
+                                  disabled={loadingMedicalRecordView}
+                                  onClick={() =>
+                                    void handleViewMedicalRecord((activity as any).medicalRecordData)
+                                  }
+                                  className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors disabled:opacity-60"
                                 >
-                                  <Eye className="w-3 h-3" />
+                                  {loadingMedicalRecordView ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Eye className="w-3 h-3" />
+                                  )}
                                   View Document
-                                </a>
+                                </button>
                               )}
                             </div>
                           )}
@@ -2144,15 +2250,6 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                       </div>
                       );
                     })}
-                    
-                    {isVetOrNutritionist && booking.status !== 'cancelled' && (
-                      <button
-                        onClick={() => setShowVetSummaryModal(true)}
-                        className="w-full px-4 py-2 bg-purple-50 text-purple-700 rounded-lg font-medium hover:bg-purple-100 transition-colors"
-                      >
-                        + Add Consultation Summary
-                      </button>
-                    )}
                   </>
                 )}
               </div>
@@ -2261,115 +2358,16 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               )}
             </div>
             
-            {/* Prescription + Medical History (vet consultation); Lab Report Upload (diagnostics) */}
-            {((isVetOrNutritionist && !isDiagnosticsBooking) || isDiagnosticsBooking) && booking.status !== 'cancelled' && (
+            {/* Lab Report Upload (diagnostics bookings only) */}
+            {isDiagnosticsBooking && booking.status !== 'cancelled' && (
               <div className="space-y-2">
-                <div className="flex gap-2">
-                  <button
-                    onClick={async () => {
-                      console.log('[Medical History] Button clicked, booking data:', {
-                        petId: booking?.petId,
-                        pet_id: (booking as any)?.pet_id,
-                        customerId: booking?.customerId,
-                        customer_id: (booking as any)?.customer_id,
-                        petName: booking?.petName,
-                        bookingId: bookingId,
-                      });
-                      
-                      let petIdToUse = booking?.petId || (booking as any)?.pet_id;
-                      
-                      // ✅ FIX: If petId is missing, try to fetch it by customerId and petName
-                      if (!petIdToUse && booking?.customerId && booking?.petName) {
-                        try {
-                          console.log('[Medical History] Attempting to fetch pet by customerId and petName:', {
-                            customerId: booking.customerId,
-                            petName: booking.petName
-                          });
-                          
-                          const petsResponse = await apiClient.get(`/pets/customer/${booking.customerId}`) as any;
-                          console.log('[Medical History] Pets response:', petsResponse);
-                          
-                          if (petsResponse?.pets && Array.isArray(petsResponse.pets)) {
-                            // First try exact name match
-                            let matchingPet = petsResponse.pets.find((p: any) => 
-                              p.name?.toLowerCase().trim() === booking.petName?.toLowerCase().trim()
-                            );
-                            
-                            // ✅ FIX: If no exact match but only one pet exists, use that pet
-                            // This handles cases where the booking has incorrect pet name but customer has only one pet
-                            if (!matchingPet && petsResponse.pets.length === 1) {
-                              matchingPet = petsResponse.pets[0];
-                              console.log('[Medical History] ⚠️ Pet name mismatch, but using single pet as fallback:', {
-                                bookingPetName: booking.petName,
-                                actualPetName: matchingPet.name,
-                                petId: matchingPet.id
-                              });
-                            }
-                            
-                            if (matchingPet?.id) {
-                              petIdToUse = matchingPet.id;
-                              console.log('[Medical History] ✅ Found petId:', { 
-                                petId: petIdToUse, 
-                                bookingPetName: booking.petName,
-                                actualPetName: matchingPet.name
-                              });
-                              
-                              // Update booking state with the found petId
-                              setBooking((prev) => prev ? { ...prev, petId: petIdToUse } : null);
-                            } else {
-                              console.warn('[Medical History] ⚠️ Pet not found by name:', { 
-                                petName: booking.petName, 
-                                availablePets: petsResponse.pets.map((p: any) => ({ id: p.id, name: p.name }))
-                              });
-                              toast.error(`Pet "${booking.petName}" not found in customer's pets. Available pets: ${petsResponse.pets.map((p: any) => p.name).join(', ') || 'none'}`);
-                              return;
-                            }
-                          } else {
-                            console.warn('[Medical History] ⚠️ No pets array in response:', petsResponse);
-                            toast.error('Could not fetch customer pets. Please try again.');
-                            return;
-                          }
-                        } catch (error: any) {
-                          console.error('[Medical History] Error fetching pet by name:', error);
-                          toast.error(`Failed to fetch pet information: ${error.message || 'Unknown error'}`);
-                          return;
-                        }
-                      }
-                      
-                      if (!petIdToUse) {
-                        console.warn('[Medical History] No petId found and cannot fetch it');
-                        toast.error('Pet information not available. Cannot open medical history.');
-                        return;
-                      }
-                      
-                      setShowMedicalHistory(true);
-                    }}
-                    className="flex-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
-                  >
-                    <FileText className="w-4 h-4" />
-                    Medical History
-                  </button>
-                  {/* Consultation Summary: ONLY for vet consultation, NOT for diagnostics lab orders */}
-                  {isVetOrNutritionist && !isDiagnosticsBooking && (
-                    <button
-                      onClick={() => setShowVetSummaryModal(true)}
-                      className="flex-1 py-3 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl font-medium flex items-center justify-center gap-2"
-                    >
-                      <Stethoscope className="w-4 h-4" />
-                      Consultation Summary (Prescription)
-                    </button>
-                  )}
-                </div>
-                {/* Lab/diagnostics: Upload Report so customer can view/download */}
-                {isDiagnosticsBooking && (
-                  <button
-                    onClick={() => setShowReportUploadModal(true)}
-                    className="w-full py-3 bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 rounded-xl font-medium flex items-center justify-center gap-2"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Upload Lab Report
-                  </button>
-                )}
+                <button
+                  onClick={() => setShowReportUploadModal(true)}
+                  className="w-full py-3 bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                >
+                  <Upload className="w-4 h-4" />
+                  Upload Lab Report
+                </button>
               </div>
             )}
           </div>
@@ -2809,9 +2807,18 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           showActions={true}
           prescription={transformPrescriptionData({
             ...selectedPrescriptionForA4,
-            pet_name: booking.petName,
-            pet_species: booking.petType,
-            pet_breed: booking.petBreed,
+            pet_name: selectedPrescriptionForA4.pet_name || booking.petName,
+            pet_species: selectedPrescriptionForA4.pet_species || booking.petType,
+            pet_breed: selectedPrescriptionForA4.pet_breed || booking.petBreed,
+            pet_age_years:
+              selectedPrescriptionForA4.pet_age_years ??
+              (booking as any).pet?.age_years ??
+              undefined,
+            pet_age_months:
+              selectedPrescriptionForA4.pet_age_months ??
+              (booking as any).pet?.age_months ??
+              undefined,
+            petAge: booking.petAge,
             customer_name: booking.customerName,
             customer_phone: booking.customerPhone,
             vendor_name: vendorData?.businessName || vendorData?.business_name,
@@ -2844,6 +2851,44 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             setSelectedPrescriptionForA4(null);
           }}
         />
+      )}
+
+      {/* Customer-uploaded medical record viewer (presigned S3 URL — raw keys break in Capacitor WebView) */}
+      {showMedicalRecordViewer && selectedMedicalRecord?.file_url && (
+        <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-bold text-gray-800 truncate pr-2">
+                {selectedMedicalRecord.title || 'Uploaded Document'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMedicalRecordViewer(false);
+                  setSelectedMedicalRecord(null);
+                }}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 shrink-0"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              {selectedMedicalRecord.file_url.includes('.pdf') ? (
+                <iframe
+                  src={selectedMedicalRecord.file_url}
+                  className="w-full h-full min-h-[500px] rounded-lg"
+                  title="Medical record PDF"
+                />
+              ) : (
+                <img
+                  src={selectedMedicalRecord.file_url}
+                  alt={selectedMedicalRecord.title || 'Medical record'}
+                  className="w-full h-auto rounded-lg"
+                />
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {packageSessionsOverlayId && (
