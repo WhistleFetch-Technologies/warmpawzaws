@@ -137,14 +137,6 @@ export const ADMIN_PORTAL_ROUTE_ONLY_RULES: AdminPortalRouteGateRule[] = [
  */
 export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    permissionId: 'admin.dashboard',
-    section: 'main',
-    sortOrder: 10,
-    description: 'Admin home / dashboard',
-  },
-  {
     id: 'analytics',
     label: 'Analytics & Insights',
     permissionId: 'admin.analytics',

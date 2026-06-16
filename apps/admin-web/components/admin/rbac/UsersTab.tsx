@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Users, Edit, Loader2, Search } from 'lucide-react';
+import { Users, Edit, Trash2, Loader2, Search } from 'lucide-react';
 import { AssignRoleModal } from './AssignRoleModal';
 
 interface AdminUser {
@@ -22,6 +22,7 @@ export function UsersTab() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -38,6 +39,37 @@ export function UsersTab() {
       console.error('Error loading users:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (user: AdminUser) => {
+    const currentAdminId =
+      typeof window !== 'undefined' ? localStorage.getItem('adminId') : null;
+    if (currentAdminId && user.id === currentAdminId) {
+      alert('You cannot delete your own account.');
+      return;
+    }
+    const label = user.name || user.email;
+    if (
+      !confirm(
+        `Delete admin user "${label}"?\n\nThis removes their account and role assignments. This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    try {
+      setDeletingId(user.id);
+      const response = await apiClient.delete<any>(`/admin/rbac/users/${user.id}`);
+      if (response?.success === false) {
+        alert(response.error || 'Failed to delete admin user');
+        return;
+      }
+      await loadUsers();
+    } catch (error: unknown) {
+      console.error('Error deleting admin user:', error);
+      alert('Failed to delete admin user');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -119,13 +151,27 @@ export function UsersTab() {
                   </p>
                 )}
               </div>
-              <button
-                onClick={() => setSelectedUser(user)}
-                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                title="Assign roles"
-              >
-                <Edit className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setSelectedUser(user)}
+                  className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                  title="Assign roles"
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDelete(user)}
+                  disabled={deletingId === user.id}
+                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
+                  title="Delete admin user"
+                >
+                  {deletingId === user.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         ))}

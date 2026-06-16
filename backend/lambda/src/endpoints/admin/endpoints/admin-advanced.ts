@@ -39,7 +39,11 @@ import {
 import { computePolicyDeliveryFeeForOrder } from '../../../utils/customer-delivery-fee-quote';
 import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
 import { normalizeCategoryImageUrlForStorage } from '../../../utils/ecommerce-category-display';
-import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
+import {
+  canManageRbacAdmin,
+  isMasterAdminEmail,
+  MASTER_ADMIN_ID,
+} from '../../../utils/admin-rbac-permissions';
 import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
 import {
   putSettlementCalculateDailyCron,
@@ -1353,6 +1357,62 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('[PUT /admin/rbac/users/:userId/role]', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to assign role', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.delete('/admin/rbac/users/:userId', async (c) => {
+    try {
+      const callerId = c.get('userId') as string | undefined;
+      const emailHint = rbacCallerEmailHint(c);
+      if (!(await canManageRbacAdmin(callerId, emailHint))) {
+        return c.json({ success: false, error: 'RBAC management permission required' }, 403);
+      }
+      const userId = c.req.param('userId');
+      if (!userId || !isValidUUID(userId)) {
+        return c.json({ success: false, error: 'Invalid userId' }, 400);
+      }
+      if (userId === MASTER_ADMIN_ID) {
+        return c.json({ success: false, error: 'The master admin account cannot be deleted' }, 403);
+      }
+
+      let callerAdminId: string | null = null;
+      if (callerId && isValidUUID(callerId)) {
+        const callerRow = await query('SELECT id FROM admins WHERE id = $1::uuid LIMIT 1', [callerId]);
+        if (callerRow.rows?.length) callerAdminId = String(callerRow.rows[0].id);
+      }
+      if (!callerAdminId && emailHint) {
+        const callerRow = await query(
+          'SELECT id FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1',
+          [emailHint]
+        );
+        if (callerRow.rows?.length) callerAdminId = String(callerRow.rows[0].id);
+      }
+      if (callerAdminId && callerAdminId === userId) {
+        return c.json({ success: false, error: 'You cannot delete your own admin account' }, 403);
+      }
+
+      const adminRow = await query('SELECT id, email FROM admins WHERE id = $1::uuid LIMIT 1', [userId]);
+      if (!adminRow.rows?.length) {
+        return c.json({ success: false, error: 'Admin user not found' }, 404);
+      }
+      const targetEmail = String(adminRow.rows[0].email || '');
+      if (isMasterAdminEmail(targetEmail)) {
+        return c.json({ success: false, error: 'The master admin account cannot be deleted' }, 403);
+      }
+
+      await query('DELETE FROM user_roles WHERE user_id = $1::uuid', [userId]);
+      try {
+        await query('UPDATE events SET reviewed_by = NULL WHERE reviewed_by = $1::uuid', [userId]);
+      } catch {
+        // events.reviewed_by may not exist on all environments
+      }
+      await query('DELETE FROM admins WHERE id = $1::uuid', [userId]);
+
+      return c.json({ success: true, message: 'Admin user deleted', userId });
+    } catch (error: unknown) {
+      console.error('[DELETE /admin/rbac/users/:userId]', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to delete admin user', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
