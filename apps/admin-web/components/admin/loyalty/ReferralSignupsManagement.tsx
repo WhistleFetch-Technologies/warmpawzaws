@@ -202,8 +202,8 @@ export function ReferralSignupsManagement() {
         <CardHeader>
           <CardTitle>Program settings</CardTitle>
           <CardDescription>
-            Control referral caps and which loyalty action rules award points. Edit point values under
-            the Action Rules tab.
+            Control referral caps and which loyalty action rules award points. Point amounts are
+            edited under Action Rules (referral_rewards category).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
