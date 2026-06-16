@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Fragment } from 'react';
+import React, { useState, useEffect, useRef, Fragment } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
@@ -17,6 +17,15 @@ import {
   clearNeedsPasswordSetup,
 } from '@/lib/session-utils';
 import { Eye, EyeOff } from 'lucide-react';
+import {
+  CUSTOMER_FORGOT_COOLDOWN_STORAGE_KEY,
+  FORGOT_PASSWORD_RETRY_CONFIG,
+  formatForgotCooldownMessage,
+  persistForgotCooldown,
+  readForgotCooldownRemaining,
+  readRetryAfterSecondsFromError,
+  readRetryAfterSecondsFromSuccess,
+} from '@/lib/forgot-password-cooldown';
 
 const AIChatbotWidget = dynamic(
   () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
@@ -141,6 +150,8 @@ function AuthPageContent() {
   const [forgotInfo, setForgotInfo] = useState<string | null>(null);
   const [forgotSuccessBanner, setForgotSuccessBanner] = useState<string | null>(null);
   const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  const [forgotResendTimer, setForgotResendTimer] = useState(0);
+  const forgotRequestGen = useRef(0);
 
   const openLegal = (t: PlatformPolicyType) => {
     setLegalDialogType(t);
@@ -220,6 +231,13 @@ function AuthPageContent() {
       return () => clearTimeout(timer);
     }
   }, [resendTimer]);
+
+  useEffect(() => {
+    if (forgotResendTimer > 0) {
+      const timer = setTimeout(() => setForgotResendTimer(forgotResendTimer - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [forgotResendTimer]);
 
   // Format phone number with spaces (74493 38923)
   const formatPhoneDisplay = (num: string) => {
@@ -382,6 +400,20 @@ function AuthPageContent() {
     return null;
   }
 
+  function refreshForgotResendFromStorage() {
+    setForgotResendTimer(readForgotCooldownRemaining(CUSTOMER_FORGOT_COOLDOWN_STORAGE_KEY));
+  }
+
+  function applyForgotCooldown(seconds: number) {
+    persistForgotCooldown(CUSTOMER_FORGOT_COOLDOWN_STORAGE_KEY, seconds);
+    setForgotResendTimer(readForgotCooldownRemaining(CUSTOMER_FORGOT_COOLDOWN_STORAGE_KEY));
+  }
+
+  function invalidateForgotInFlightRequest() {
+    forgotRequestGen.current += 1;
+    setLoading(false);
+  }
+
   const openForgotPassword = () => {
     setForgotOpen(true);
     setForgotStep(1);
@@ -392,9 +424,11 @@ function AuthPageContent() {
     setForgotConfirmPassword('');
     setForgotInfo(null);
     setError(null);
+    refreshForgotResendFromStorage();
   };
 
   const closeForgotPassword = () => {
+    invalidateForgotInFlightRequest();
     setForgotOpen(false);
     setForgotStep(1);
     setForgotOtp('');
@@ -411,26 +445,44 @@ function AuthPageContent() {
       setError('Enter the phone number you use to log in');
       return;
     }
+    if (forgotResendTimer > 0) {
+      setError(formatForgotCooldownMessage(forgotResendTimer, 'request'));
+      return;
+    }
+    const gen = ++forgotRequestGen.current;
     setLoading(true);
     setError(null);
     setForgotInfo(null);
     try {
-      const res = await apiClient.post<unknown>('/auth/customer/forgot-password/request', { username: u });
+      const res = await apiClient.post<unknown>(
+        '/auth/customer/forgot-password/request',
+        { username: u },
+        FORGOT_PASSWORD_RETRY_CONFIG
+      );
+      if (gen !== forgotRequestGen.current) return;
       const inner = pickForgotResponseData(res);
       const msg =
         (typeof inner?.message === 'string' && inner.message) ||
         'If an account exists, we sent instructions.';
+      const retrySec =
+        typeof inner?.retryAfterSeconds === 'number'
+          ? Math.ceil(inner.retryAfterSeconds)
+          : readRetryAfterSecondsFromSuccess(res);
+      applyForgotCooldown(retrySec);
       setForgotInfo(msg);
       setForgotStep(2);
     } catch (err: unknown) {
+      if (gen !== forgotRequestGen.current) return;
       const e = err as { statusCode?: number; code?: string; message?: string };
       if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
-        setError('Too many requests. Try again later.');
+        const retrySec = readRetryAfterSecondsFromError(err);
+        applyForgotCooldown(retrySec);
+        setError(`Too many requests. Wait ${retrySec} seconds before trying again.`);
       } else {
         setError(e?.message || 'Something went wrong. Try again.');
       }
     } finally {
-      setLoading(false);
+      if (gen === forgotRequestGen.current) setLoading(false);
     }
   };
 
@@ -440,13 +492,19 @@ function AuthPageContent() {
       setError('Enter the 6-digit code from SMS');
       return;
     }
+    const gen = ++forgotRequestGen.current;
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.post<unknown>('/auth/customer/forgot-password/verify-otp', {
-        username: u,
-        otp: forgotOtp,
-      });
+      const res = await apiClient.post<unknown>(
+        '/auth/customer/forgot-password/verify-otp',
+        {
+          username: u,
+          otp: forgotOtp,
+        },
+        FORGOT_PASSWORD_RETRY_CONFIG
+      );
+      if (gen !== forgotRequestGen.current) return;
       const inner = pickForgotResponseData(res);
       const token = typeof inner?.resetToken === 'string' ? inner.resetToken : '';
       if (!token) {
@@ -456,14 +514,17 @@ function AuthPageContent() {
       setForgotResetToken(token);
       setForgotStep(3);
     } catch (err: unknown) {
+      if (gen !== forgotRequestGen.current) return;
       const e = err as { statusCode?: number; code?: string; message?: string };
       if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
-        setError('Too many requests. Try again later.');
+        const retrySec = readRetryAfterSecondsFromError(err);
+        applyForgotCooldown(retrySec);
+        setError(`Too many requests. Wait ${retrySec} seconds before trying again.`);
       } else {
         setError(e?.message || 'Invalid or expired code');
       }
     } finally {
-      setLoading(false);
+      if (gen === forgotRequestGen.current) setLoading(false);
     }
   };
 
@@ -976,11 +1037,16 @@ function AuthPageContent() {
                         <button
                           type="button"
                           onClick={submitForgotPasswordRequest}
-                          disabled={loading || !forgotUsername.trim()}
+                          disabled={loading || !forgotUsername.trim() || forgotResendTimer > 0}
                           className={`${authPrimaryButtonClass} mt-2`}
                         >
                           {loading ? 'Sending…' : 'Send code'}
                         </button>
+                        {forgotResendTimer > 0 ? (
+                          <p className="text-center text-sm text-gray-500">
+                            {formatForgotCooldownMessage(forgotResendTimer, 'request')}
+                          </p>
+                        ) : null}
                         <button
                           type="button"
                           onClick={closeForgotPassword}
@@ -1016,9 +1082,26 @@ function AuthPageContent() {
                         >
                           {loading ? 'Checking…' : 'Continue'}
                         </button>
+                        <div className="text-center pt-2">
+                          {forgotResendTimer > 0 ? (
+                            <p className="text-sm text-gray-500">
+                              {formatForgotCooldownMessage(forgotResendTimer, 'resend')}
+                            </p>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={submitForgotPasswordRequest}
+                              disabled={loading}
+                              className={`text-sm disabled:opacity-50 disabled:no-underline ${authTextLinkClass}`}
+                            >
+                              Resend code
+                            </button>
+                          )}
+                        </div>
                         <button
                           type="button"
                           onClick={() => {
+                            invalidateForgotInFlightRequest();
                             setForgotStep(1);
                             setForgotOtp('');
                             setError(null);

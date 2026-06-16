@@ -14,13 +14,6 @@
 import * as crypto from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import { query, insert } from '../../../database/rds-connection';
-import { sendSMS } from '../../../utils/sms-service';
-import {
-  buildLoginOtpSmsBody,
-  JIO_DLT_ENTITY_ID,
-  JIO_LOGIN_OTP_SENDER_ID,
-  JIO_LOGIN_OTP_TEMPLATE_ID,
-} from '../../../constants/jio-login-otp-sms';
 import {
   VendorForgotPasswordRequestSchema,
   VendorForgotPasswordVerifyOtpSchema,
@@ -38,6 +31,21 @@ import {
 import { findVendorForForgotPassword } from './vendor-username-lookup';
 import { adminGlobalSignOutCognitoUserByDialablePhone } from '../../../utils/cognito-client';
 import { isUatOtpModeForForgotPassword } from './customer-forgot-password';
+import {
+  insertOtpWithTimeout,
+  sendResetOtpSmsWithTimeout,
+  type OtpDeliveryFailureReason,
+} from './otp-delivery-timeouts';
+import {
+  PASSWORD_RESET_SEND_COOLDOWN_MS,
+  PASSWORD_RESET_SEND_COOLDOWN_SEC,
+  buildRateLimitResponse,
+  rateLimitErrorForCooldown,
+  rateLimitErrorForDailyCap,
+  rateLimitErrorForHourlyCap,
+  readRateLimitRetryAfterSeconds,
+  type ForgotPasswordHandlerResult,
+} from './forgot-password-rate-limit';
 
 export const VENDOR_PASSWORD_RESET_OTP_PURPOSE = 'vendor_password_reset';
 
@@ -119,12 +127,6 @@ async function recordRateEventSafe(rateKey: string, scope: string): Promise<void
   }
 }
 
-function rateErr(): Error {
-  const err = new Error('RATE_LIMIT');
-  (err as any).code = 'RATE_LIMIT';
-  return err;
-}
-
 async function assertVendorForgotPasswordSendRate(params: {
   vendorId: string | null;
   usernameHash: string;
@@ -135,17 +137,19 @@ async function assertVendorForgotPasswordSendRate(params: {
     if (vendorId) {
       const key = `vend:${vendorId}`;
       const h1 = await countRateEvents(key, SCOPE_SEND, '1 hour');
-      if (h1 >= 3) throw rateErr();
+      if (h1 >= 3) throw rateLimitErrorForHourlyCap();
       const d1 = await countRateEvents(key, SCOPE_SEND, '24 hours');
-      if (d1 >= 5) throw rateErr();
+      if (d1 >= 5) throw rateLimitErrorForDailyCap();
       const last = await lastEventTime(key, SCOPE_SEND);
-      if (last && Date.now() - last.getTime() < 60_000) throw rateErr();
+      if (last && Date.now() - last.getTime() < PASSWORD_RESET_SEND_COOLDOWN_MS) {
+        throw rateLimitErrorForCooldown(last);
+      }
       return;
     }
     const h10 = await countRateEvents(usernameHash, SCOPE_SEND_UNRESOLVED, '1 hour');
-    if (h10 >= 10) throw rateErr();
+    if (h10 >= 10) throw rateLimitErrorForHourlyCap();
     const iph = await countRateEvents(ipKey, SCOPE_SEND_UNRESOLVED, '1 hour');
-    if (iph >= 40) throw rateErr();
+    if (iph >= 40) throw rateLimitErrorForHourlyCap();
   } catch (e) {
     if (isMissingAuthRateTableError(e)) {
       console.warn(
@@ -162,10 +166,10 @@ async function assertVendorVerifyRateAllowed(vendorId: string | null, usernameHa
     if (vendorId) {
       const key = `vend:${vendorId}:v`;
       const n = await countRateEvents(key, SCOPE_VERIFY, '1 hour');
-      if (n >= 20) throw rateErr();
+      if (n >= 20) throw rateLimitErrorForHourlyCap();
     }
     const u = await countRateEvents(`${usernameHash}:verify`, SCOPE_VERIFY, '1 hour');
-    if (u >= 30) throw rateErr();
+    if (u >= 30) throw rateLimitErrorForHourlyCap();
   } catch (e) {
     if (isMissingAuthRateTableError(e)) {
       console.warn(
@@ -175,19 +179,6 @@ async function assertVendorVerifyRateAllowed(vendorId: string | null, usernameHa
     }
     throw e;
   }
-}
-
-async function sendSmsForResetOtp(dialable: string, otpCode: string): Promise<boolean> {
-  const message = buildLoginOtpSmsBody(otpCode);
-  const result = await sendSMS({
-    to: dialable,
-    message,
-    type: 'otp',
-    templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
-    entityId: JIO_DLT_ENTITY_ID,
-    senderId: JIO_LOGIN_OTP_SENDER_ID,
-  });
-  return result.success === true;
 }
 
 async function insertVendorPasswordResetOtp(canonicalPhone: string, code: string): Promise<void> {
@@ -200,6 +191,55 @@ async function insertVendorPasswordResetOtp(canonicalPhone: string, code: string
     expires_at: expiresAt,
     is_used: false,
   });
+}
+
+async function deliverVendorPasswordResetOtp(params: {
+  requestId: string;
+  accountId: string;
+  dialable: string;
+  headers: Record<string, string | undefined>;
+}): Promise<void> {
+  const { requestId, accountId, dialable, headers } = params;
+  const deliveryLog: {
+    requestId: string;
+    accountResolved: boolean;
+    otpStored: boolean;
+    smsAccepted: boolean;
+    failureReason?: OtpDeliveryFailureReason;
+  } = {
+    requestId,
+    accountResolved: true,
+    otpStored: false,
+    smsAccepted: false,
+  };
+
+  try {
+    const isUatMode = isUatOtpModeForForgotPassword(headers);
+    const otpCode = isUatMode ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
+    const canon = normalizePhoneForOtp(dialable);
+
+    const insertResult = await insertOtpWithTimeout(() => insertVendorPasswordResetOtp(canon, otpCode));
+    if (!insertResult.ok) {
+      deliveryLog.failureReason = insertResult.reason;
+      console.error('[vendor-forgot-password] OTP store failed', { ...deliveryLog, vendorId: accountId });
+      return;
+    }
+    deliveryLog.otpStored = true;
+
+    if (isUatMode) {
+      console.log(`[vendor-forgot-password] UAT: fixed OTP stored, SMS skipped for vendor ${accountId}`);
+      return;
+    }
+
+    const smsResult = await sendResetOtpSmsWithTimeout(dialable, otpCode);
+    deliveryLog.smsAccepted = smsResult.ok;
+    if (!smsResult.ok) {
+      deliveryLog.failureReason = smsResult.reason;
+      console.error('[vendor-forgot-password] SMS delivery failed', { ...deliveryLog, vendorId: accountId });
+    }
+  } catch (e) {
+    console.error('[vendor-forgot-password] delivery error', { ...deliveryLog, vendorId: accountId, error: e });
+  }
 }
 
 export async function verifyVendorPasswordResetOtp(
@@ -321,7 +361,7 @@ export async function handleVendorForgotPasswordRequest(params: {
   body: unknown;
   requestId: string;
   headers: Record<string, string | undefined>;
-}): Promise<{ status: number; body: Record<string, unknown> }> {
+}): Promise<ForgotPasswordHandlerResult> {
   const { body, requestId, headers } = params;
   const t0 = Date.now();
   const parsed = VendorForgotPasswordRequestSchema.safeParse(body);
@@ -346,22 +386,12 @@ export async function handleVendorForgotPasswordRequest(params: {
       if (!dialable || dialable.replace(/\D/g, '').length < 10) {
         console.warn('[vendor-forgot-password] vendor has no dialable phone; skipping SMS', vendor.id);
       } else {
-        const isUatMode = isUatOtpModeForForgotPassword(headers);
-        const otpCode = isUatMode
-          ? '123456'
-          : Math.floor(100000 + Math.random() * 900000).toString();
-        const canon = normalizePhoneForOtp(dialable);
-        await insertVendorPasswordResetOtp(canon, otpCode);
-        if (isUatMode) {
-          console.log(
-            `[vendor-forgot-password] UAT: fixed OTP ${otpCode} stored, SMS skipped for vendor ${vendor.id}`
-          );
-        } else {
-          const smsOk = await sendSmsForResetOtp(dialable, otpCode);
-          if (!smsOk) {
-            console.error('[vendor-forgot-password] SMS send failed for vendor', vendor.id);
-          }
-        }
+        await deliverVendorPasswordResetOtp({
+          requestId,
+          accountId: String(vendor.id),
+          dialable,
+          headers,
+        });
       }
     }
 
@@ -373,16 +403,29 @@ export async function handleVendorForgotPasswordRequest(params: {
   } catch (e: any) {
     if (e?.code === 'RATE_LIMIT' || e?.message === 'RATE_LIMIT') {
       await sleepUntilMinDuration(t0);
-      return {
-        status: 429,
-        body: envelopeError(429, 'RATE_LIMITED', RATE_LIMIT_MESSAGE, requestId).body,
-      };
+      const retryAfterSeconds = readRateLimitRetryAfterSeconds(e);
+      return buildRateLimitResponse({
+        requestId,
+        retryAfterSeconds,
+        message: RATE_LIMIT_MESSAGE,
+        errorBody: envelopeError(429, 'RATE_LIMITED', RATE_LIMIT_MESSAGE, requestId).body,
+      });
     }
     console.error('[vendor-forgot-password] request error:', e);
+    return {
+      status: 503,
+      body: envelopeError(503, 'SERVICE_UNAVAILABLE', 'Something went wrong. Try again.', requestId).body,
+    };
   }
 
   await sleepUntilMinDuration(t0);
-  return { status: 200, body: envelopeSuccess({ message: GENERIC_SUCCESS_MESSAGE }, requestId) };
+  return {
+    status: 200,
+    body: envelopeSuccess(
+      { message: GENERIC_SUCCESS_MESSAGE, retryAfterSeconds: PASSWORD_RESET_SEND_COOLDOWN_SEC },
+      requestId
+    ),
+  };
 }
 
 async function sleepUntilMinDuration(startMs: number, minMs = 400): Promise<void> {
@@ -451,10 +494,13 @@ export async function handleVendorForgotPasswordVerifyOtp(params: {
   } catch (e: any) {
     if (e?.code === 'RATE_LIMIT' || e?.message === 'RATE_LIMIT') {
       await sleepUntilMinDuration(t0);
-      return {
-        status: 429,
-        body: envelopeError(429, 'RATE_LIMITED', RATE_LIMIT_MESSAGE, requestId).body,
-      };
+      const retryAfterSeconds = readRateLimitRetryAfterSeconds(e);
+      return buildRateLimitResponse({
+        requestId,
+        retryAfterSeconds,
+        message: RATE_LIMIT_MESSAGE,
+        errorBody: envelopeError(429, 'RATE_LIMITED', RATE_LIMIT_MESSAGE, requestId).body,
+      });
     }
     console.error(
       '[vendor-forgot-password] verify error:',

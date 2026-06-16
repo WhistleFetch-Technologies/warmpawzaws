@@ -688,8 +688,9 @@ export class ApiClient {
         (apiError as any).rawResponse = rawResponseText;
         (apiError as any).statusCode = response.status;
         (apiError as any).status = response.status;
-        
-        // Log error details in UAT mode
+        if (typeof errorData?.retryAfterSeconds === 'number') {
+          (apiError as any).retryAfterSeconds = errorData.retryAfterSeconds;
+        }
         if (UAT_MODE && typeof window !== 'undefined') {
           console.error('🌐 [UAT] API Error Details:', {
             url,

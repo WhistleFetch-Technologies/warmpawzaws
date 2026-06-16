@@ -319,6 +319,9 @@ export class ApiClient {
         const rateLimitError = new Error(errorMessage);
         (rateLimitError as any).statusCode = 429;
         (rateLimitError as any).retryAfter = retryAfterSeconds;
+        if (typeof errorData?.retryAfterSeconds === 'number') {
+          (rateLimitError as any).retryAfterSeconds = errorData.retryAfterSeconds;
+        }
         (rateLimitError as any).isRateLimit = true;
         throw rateLimitError;
       }
