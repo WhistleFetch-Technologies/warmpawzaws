@@ -19,8 +19,77 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getReferralProgramSettings } from '../lib/services/referral-program-settings';
 
 export function registerReferralEndpoints(app: Hono) {
+  /**
+   * GET /referrals/validate?code=WARM...
+   * Lightweight referral code validation for invite landing page
+   */
+  app.get('/referrals/validate', async (c) => {
+    try {
+      const raw = c.req.query('code')?.trim();
+      if (!raw) {
+        return c.json({ valid: false, programEnabled: true, error: 'Code is required' }, 400);
+      }
+      const normalizedCode = raw.toUpperCase();
+      const settings = await getReferralProgramSettings();
+      if (!settings.is_enabled) {
+        return c.json({ valid: false, programEnabled: false, error: 'Referral program is temporarily paused' });
+      }
+      const rows = await query(
+        `SELECT id, referral_code FROM referrals WHERE referral_code = $1 LIMIT 1`,
+        [normalizedCode]
+      );
+      if (rows.rows.length === 0) {
+        return c.json({ valid: false, programEnabled: true, error: 'Invalid referral code' });
+      }
+      return c.json({
+        valid: true,
+        programEnabled: true,
+        code: rows.rows[0].referral_code,
+      });
+    } catch (error: unknown) {
+      console.error('Error validating referral code:', error);
+      return c.json({ error: (error as Error).message || 'Validation failed' }, 500);
+    }
+  });
+
+  /**
+   * GET /referrals/referee-status?customerId=uuid
+   * Whether the customer already linked a referral code
+   */
+  app.get('/referrals/referee-status', async (c) => {
+    try {
+      const customerId = c.req.query('customerId')?.trim();
+      if (!customerId || !isValidUUID(customerId)) {
+        return c.json({ error: 'Valid customerId is required' }, 400);
+      }
+      const rows = await query(
+        `SELECT rr.id, rr.status, rr.created_at, r.referral_code
+         FROM referral_redemptions rr
+         INNER JOIN referrals r ON r.id = rr.referral_id
+         WHERE rr.referred_id = $1
+         LIMIT 1`,
+        [customerId]
+      );
+      if (rows.rows.length === 0) {
+        return c.json({ success: true, hasReferral: false });
+      }
+      const row = rows.rows[0];
+      return c.json({
+        success: true,
+        hasReferral: true,
+        status: row.status,
+        referralCode: row.referral_code,
+        linkedAt: row.created_at,
+      });
+    } catch (error: unknown) {
+      console.error('Error fetching referee status:', error);
+      return c.json({ error: (error as Error).message || 'Failed to fetch status' }, 500);
+    }
+  });
+
   /**
    * GET /customer/:customerId/referral
    * Get referral code for customer

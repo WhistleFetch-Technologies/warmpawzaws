@@ -7,6 +7,8 @@ import { apiClient } from '@/lib/api-client';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
 import { validateEmail } from '@/lib/validation';
+import { getResolvedCustomerId, persistCustomerDatabaseId } from '@/lib/customer-id-storage';
+import { toast } from 'sonner';
 
 interface UserProfile {
   firstName: string;
@@ -69,6 +71,11 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [referralCode, setReferralCode] = useState('');
+  const [referralExpanded, setReferralExpanded] = useState(false);
+  const [referralLinked, setReferralLinked] = useState(false);
+  const [referralApplying, setReferralApplying] = useState(false);
+  const [linkedReferralCode, setLinkedReferralCode] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const houseNoInputRef = useRef<HTMLInputElement>(null);
   const latestProfileRef = useRef(profile);
@@ -119,6 +126,61 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
         setUploadingPhoto(false);
         setUploadProgress(0);
       }
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const pending = localStorage.getItem('pendingReferralCode')?.trim().toUpperCase();
+    if (pending) {
+      setReferralCode(pending);
+      setReferralExpanded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const customerId = getResolvedCustomerId();
+    if (!customerId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get<{
+          hasReferral?: boolean;
+          referralCode?: string;
+        }>(`/referrals/referee-status?customerId=${encodeURIComponent(customerId)}`);
+        if (cancelled) return;
+        if (res.hasReferral) {
+          setReferralLinked(true);
+          if (res.referralCode) setLinkedReferralCode(res.referralCode);
+        }
+      } catch {
+        /* ignore — new users may not have id yet */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const applyReferralCode = async (customerId: string) => {
+    const trimmed = referralCode.trim().toUpperCase();
+    if (!trimmed || referralLinked) return;
+    setReferralApplying(true);
+    try {
+      await apiClient.post('/referrals/apply', {
+        customerId,
+        referralCode: trimmed,
+        phone: session.phone,
+      });
+      setReferralLinked(true);
+      setLinkedReferralCode(trimmed);
+      localStorage.removeItem('pendingReferralCode');
+      toast.success('Referral linked — you will earn points after your first booking');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not apply referral code';
+      toast.error(msg);
+    } finally {
+      setReferralApplying(false);
     }
   };
 
@@ -185,6 +247,29 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
         profile: profileBody,
         journeyType: journeyStage, // Save journey type
       });
+
+      let customerId = getResolvedCustomerId();
+      if (!customerId) {
+        try {
+          const unified = await apiClient.get<{ profile?: Record<string, unknown>; customer?: { id?: string } }>(
+            `/customer/profile/unified/${encodeURIComponent(session.phone)}`
+          );
+          const id =
+            unified?.customer?.id ||
+            (unified?.profile?.id as string | undefined) ||
+            (unified?.profile?.customer_id as string | undefined);
+          if (id) {
+            persistCustomerDatabaseId(id);
+            customerId = id;
+          }
+        } catch {
+          /* best effort */
+        }
+      }
+
+      if (customerId && referralCode.trim() && !referralLinked) {
+        await applyReferralCode(customerId);
+      }
 
       console.log('User profile saved successfully');
       setProfile(profileBody);
@@ -448,6 +533,55 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               maxLength={6}
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
             />
+          </div>
+
+          {/* Referral code (optional) */}
+          <div className="mb-6">
+            {referralLinked ? (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                <p className="text-sm font-medium text-green-800">Referral applied</p>
+                <p className="text-xs text-green-700 mt-1">
+                  Code {linkedReferralCode || referralCode} — earn points after your first booking.
+                </p>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setReferralExpanded((v) => !v)}
+                  className="text-sm text-[#FF8C42] font-medium mb-2"
+                >
+                  {referralExpanded ? 'Hide referral code' : 'Have a referral code?'}
+                </button>
+                {referralExpanded && (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={referralCode}
+                      onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                      placeholder="Enter referral code"
+                      className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none uppercase"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!referralCode.trim() || referralApplying}
+                      onClick={async () => {
+                        const customerId = getResolvedCustomerId();
+                        if (customerId) {
+                          await applyReferralCode(customerId);
+                        } else {
+                          toast.info('Save your profile first, or we will apply the code when you continue.');
+                        }
+                      }}
+                      className="shrink-0"
+                    >
+                      {referralApplying ? 'Applying…' : 'Apply'}
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           {/* Info Card */}

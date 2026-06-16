@@ -11,6 +11,7 @@ import { LoyaltySegmentsManagement } from '@/components/admin/loyalty/LoyaltySeg
 import { LoyaltyActionRulesManagement } from '@/components/admin/loyalty/LoyaltyActionRulesManagement';
 import { LoyaltyActionSourcesManagement } from '@/components/admin/loyalty/LoyaltyActionSourcesManagement';
 import { RewardsCatalogManagement } from '@/components/admin/loyalty/RewardsCatalogManagement';
+import { ReferralSignupsManagement } from '@/components/admin/loyalty/ReferralSignupsManagement';
 
 // ============================================================================
 // TYPES
@@ -314,6 +315,10 @@ export default function LoyaltyPage() {
                 <Gift className="w-4 h-4 mr-2" />
                 Rewards Catalog
               </TabsTrigger>
+              <TabsTrigger value="referrals">
+                <Users className="w-4 h-4 mr-2" />
+                Referrals
+              </TabsTrigger>
               <TabsTrigger value="triggers">
                 <Filter className="w-4 h-4 mr-2" />
                 Triggers
@@ -464,6 +469,10 @@ export default function LoyaltyPage() {
 
             <TabsContent value="catalog" className="space-y-6">
               <RewardsCatalogManagement />
+            </TabsContent>
+
+            <TabsContent value="referrals" className="space-y-6">
+              <ReferralSignupsManagement />
             </TabsContent>
 
             <TabsContent value="triggers" className="space-y-6">

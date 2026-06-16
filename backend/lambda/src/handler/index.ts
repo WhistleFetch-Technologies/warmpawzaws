@@ -123,6 +123,7 @@ import { registerPaymentGatewayManagementEndpoints } from '../endpoints/payment-
 
 import { registerCommunityEndpoints } from '../endpoints/community';
 import { registerReferralEndpoints } from '../endpoints/referrals';
+import { registerAdminReferralsEndpoints } from '../endpoints/admin/endpoints/admin-referrals';
 import { registerRewardsEndpoints } from '../endpoints/rewards';
 import { registerAIChatbotEndpoints } from '../endpoints/aiChatbot/ai-chatbot';
 import { registerAIBookingWizardSessionEndpoints } from '../endpoints/aiChatbot/ai-booking-wizard-session';
@@ -754,6 +755,7 @@ registerLoyaltyActionSourcesManagementEndpoints(app);
 registerWalletCheckoutRulesEndpoints(app);
 registerCommunityEndpoints(app);
 registerReferralEndpoints(app);
+registerAdminReferralsEndpoints(app);
 registerRewardsEndpoints(app);
 registerAdminSellersEndpoints(app);
 registerAIChatbotEndpoints(app);

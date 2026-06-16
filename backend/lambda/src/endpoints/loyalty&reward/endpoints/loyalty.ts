@@ -625,7 +625,7 @@ export function registerLoyaltyEndpoints(app: Hono) {
       if (referralResult.success) {
         return c.json({
           success: true,
-          message: 'Referral code applied successfully',
+          message: 'Referral linked — you will earn points after your first booking',
           referredPoints: referralResult.referredPoints,
           referrerPoints: referralResult.referrerPoints,
         });
