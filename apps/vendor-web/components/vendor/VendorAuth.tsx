@@ -14,6 +14,14 @@ import {
   PlatformLegalPolicyDialog,
   type PlatformPolicyType,
 } from '@/components/legal/PlatformLegalPolicyDialog';
+import {
+  VENDOR_FORGOT_COOLDOWN_STORAGE_KEY,
+  formatForgotCooldownMessage,
+  persistForgotCooldown,
+  readForgotCooldownRemaining,
+  readRetryAfterSecondsFromError,
+  readRetryAfterSecondsFromSuccess,
+} from '@/lib/forgot-password-cooldown';
 
 const logoImage = '/logo.png';
 
@@ -73,10 +81,19 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
   const [forgotSuccessBanner, setForgotSuccessBanner] = useState<string | null>(null);
   const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
   const [uatRuntimeForgotHint, setUatRuntimeForgotHint] = useState(false);
+  const [forgotResendTimer, setForgotResendTimer] = useState(0);
+  const forgotRequestGen = useRef(0);
 
   useEffect(() => {
     setUatRuntimeForgotHint(isUatMode());
   }, []);
+
+  useEffect(() => {
+    if (forgotResendTimer > 0) {
+      const timer = setTimeout(() => setForgotResendTimer(forgotResendTimer - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [forgotResendTimer]);
 
   // Referral deep link: open registration with code applied (parity with customer-web /auth ?ref=).
   useEffect(() => {
@@ -183,6 +200,20 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
     return `${num.slice(0, 5)} ${num.slice(5)}`;
   };
 
+  function refreshForgotResendFromStorage() {
+    setForgotResendTimer(readForgotCooldownRemaining(VENDOR_FORGOT_COOLDOWN_STORAGE_KEY));
+  }
+
+  function applyForgotCooldown(seconds: number) {
+    persistForgotCooldown(VENDOR_FORGOT_COOLDOWN_STORAGE_KEY, seconds);
+    setForgotResendTimer(readForgotCooldownRemaining(VENDOR_FORGOT_COOLDOWN_STORAGE_KEY));
+  }
+
+  function invalidateForgotInFlightRequest() {
+    forgotRequestGen.current += 1;
+    setLoading(false);
+  }
+
   const openForgotPassword = () => {
     setForgotOpen(true);
     setForgotStep(1);
@@ -194,9 +225,11 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
     setForgotConfirmPassword('');
     setForgotInfo(null);
     setError('');
+    refreshForgotResendFromStorage();
   };
 
   const closeForgotPassword = () => {
+    invalidateForgotInFlightRequest();
     setForgotOpen(false);
     setForgotStep(1);
     setForgotOtp('');
@@ -213,26 +246,40 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       setError('Enter the phone number or email you use to log in');
       return;
     }
+    if (forgotResendTimer > 0) {
+      setError(formatForgotCooldownMessage(forgotResendTimer, 'request'));
+      return;
+    }
+    const gen = ++forgotRequestGen.current;
     setLoading(true);
     setError('');
     setForgotInfo(null);
     try {
       const res = await apiClient.post<unknown>('/auth/vendor/forgot-password/request', { username: u });
+      if (gen !== forgotRequestGen.current) return;
       const inner = pickForgotResponseData(res);
       const msg =
         (typeof inner?.message === 'string' && inner.message) ||
         'If an account exists, we sent instructions.';
+      const retrySec =
+        typeof inner?.retryAfterSeconds === 'number'
+          ? Math.ceil(inner.retryAfterSeconds)
+          : readRetryAfterSecondsFromSuccess(res);
+      applyForgotCooldown(retrySec);
       setForgotInfo(msg);
       setForgotStep(2);
     } catch (err: unknown) {
-      const e = err as { statusCode?: number; code?: string; message?: string };
-      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
-        setError('Too many requests. Try again later.');
+      if (gen !== forgotRequestGen.current) return;
+      const e = err as { statusCode?: number; code?: string; message?: string; isRateLimit?: boolean };
+      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED' || (e as any)?.isRateLimit) {
+        const retrySec = readRetryAfterSecondsFromError(err);
+        applyForgotCooldown(retrySec);
+        setError(`Too many requests. Wait ${retrySec} seconds before trying again.`);
       } else {
         setError(e?.message || 'Something went wrong. Try again.');
       }
     } finally {
-      setLoading(false);
+      if (gen === forgotRequestGen.current) setLoading(false);
     }
   };
 
@@ -242,6 +289,7 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       setError('Enter the 6-digit code from SMS');
       return;
     }
+    const gen = ++forgotRequestGen.current;
     setLoading(true);
     setError('');
     try {
@@ -249,6 +297,7 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
         username: u,
         otp: forgotOtp,
       });
+      if (gen !== forgotRequestGen.current) return;
       const inner = pickForgotResponseData(res);
       const token = typeof inner?.resetToken === 'string' ? inner.resetToken : '';
       if (!token) {
@@ -258,14 +307,17 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       setForgotResetToken(token);
       setForgotStep(3);
     } catch (err: unknown) {
-      const e = err as { statusCode?: number; code?: string; message?: string };
-      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
-        setError('Too many requests. Try again later.');
+      if (gen !== forgotRequestGen.current) return;
+      const e = err as { statusCode?: number; code?: string; message?: string; isRateLimit?: boolean };
+      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED' || (e as any)?.isRateLimit) {
+        const retrySec = readRetryAfterSecondsFromError(err);
+        applyForgotCooldown(retrySec);
+        setError(`Too many requests. Wait ${retrySec} seconds before trying again.`);
       } else {
         setError(e?.message || 'Invalid or expired code');
       }
     } finally {
-      setLoading(false);
+      if (gen === forgotRequestGen.current) setLoading(false);
     }
   };
 
@@ -1167,11 +1219,16 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
                     <button
                       type="button"
                       onClick={submitForgotPasswordRequest}
-                      disabled={loading || !forgotUsername.trim()}
+                      disabled={loading || !forgotUsername.trim() || forgotResendTimer > 0}
                       className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30"
                     >
                       {loading ? 'Sending…' : 'Send code'}
                     </button>
+                    {forgotResendTimer > 0 ? (
+                      <p className="text-center text-sm text-gray-500">
+                        {formatForgotCooldownMessage(forgotResendTimer, 'request')}
+                      </p>
+                    ) : null}
                     <button
                       type="button"
                       onClick={closeForgotPassword}
@@ -1213,16 +1270,28 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
                     >
                       {loading ? 'Checking…' : 'Continue'}
                     </button>
+                    <div className="text-center pt-1">
+                      {forgotResendTimer > 0 ? (
+                        <p className="text-sm text-gray-500">
+                          {formatForgotCooldownMessage(forgotResendTimer, 'resend')}
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={submitForgotPasswordRequest}
+                          disabled={loading}
+                          className="text-sm text-[#FF8C42] font-medium hover:underline disabled:opacity-50"
+                        >
+                          Resend code
+                        </button>
+                      )}
+                    </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        setForgotStep(1);
-                        setForgotOtp('');
-                        setError('');
-                      }}
+                      onClick={closeForgotPassword}
                       className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-1"
                     >
-                      Back
+                      Entered wrong number?
                     </button>
                   </>
                 )}

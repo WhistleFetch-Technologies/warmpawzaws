@@ -1524,7 +1524,10 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
       'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
     };
     const out = await handleCustomerForgotPasswordRequest({ body, requestId, headers });
-    return c.json(out.body as any, out.status);
+    if (out.headers) {
+      for (const [key, value] of Object.entries(out.headers)) c.header(key, value);
+    }
+    return c.json(out.body as any, out.status as any);
   });
 
   app.post('/auth/customer/forgot-password/verify-otp', async (c) => {
@@ -1535,7 +1538,12 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
       'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
     };
     const out = await handleCustomerForgotPasswordVerifyOtp({ body, requestId, headers });
-    return c.json(out.body as any, out.status);
+    if ((out as any).headers) {
+      for (const [key, value] of Object.entries((out as any).headers as Record<string, string>)) {
+        c.header(key, value);
+      }
+    }
+    return c.json(out.body as any, out.status as any);
   });
 
   app.post('/auth/customer/forgot-password/reset', async (c) => {
@@ -1558,7 +1566,10 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
       'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
     };
     const out = await handleVendorForgotPasswordRequest({ body, requestId, headers });
-    return c.json(out.body as any, out.status);
+    if (out.headers) {
+      for (const [key, value] of Object.entries(out.headers)) c.header(key, value);
+    }
+    return c.json(out.body as any, out.status as any);
   });
 
   app.post('/auth/vendor/forgot-password/verify-otp', async (c) => {
@@ -1569,7 +1580,12 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
       'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
     };
     const out = await handleVendorForgotPasswordVerifyOtp({ body, requestId, headers });
-    return c.json(out.body as any, out.status);
+    if ((out as any).headers) {
+      for (const [key, value] of Object.entries((out as any).headers as Record<string, string>)) {
+        c.header(key, value);
+      }
+    }
+    return c.json(out.body as any, out.status as any);
   });
 
   app.post('/auth/vendor/forgot-password/reset', async (c) => {
