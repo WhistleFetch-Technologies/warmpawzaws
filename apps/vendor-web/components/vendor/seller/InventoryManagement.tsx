@@ -12,6 +12,36 @@ interface InventoryManagementProps {
   sellerId: string;
 }
 
+type InventorySku = {
+  id?: string;
+  sku?: string;
+  stock?: number;
+  option_values?: Record<string, string>;
+};
+
+function productHasVariants(product: { has_variants?: boolean; skus?: InventorySku[] }): boolean {
+  return Boolean(product.has_variants) || (Array.isArray(product.skus) && product.skus.length > 0);
+}
+
+function formatSkuOptionLabel(sku: InventorySku): string {
+  const ov = sku.option_values || {};
+  const parts: string[] = [];
+  if (ov.size) parts.push(`Size: ${ov.size}`);
+  if (ov.color) parts.push(`Color: ${ov.color}`);
+  if (ov.colour) parts.push(`Color: ${ov.colour}`);
+  const opts = parts.length > 0 ? parts.join(' · ') : 'Variant';
+  const code = sku.sku ? ` · ${sku.sku}` : '';
+  return `${opts}${code}`;
+}
+
+function resolveSelectedSkuId(product: { id: string; skus?: InventorySku[] }, selectedMap: Record<string, string>): string {
+  const skus = product.skus || [];
+  const stored = selectedMap[product.id];
+  if (stored && skus.some((s) => String(s.id) === stored)) return stored;
+  const first = skus.find((s) => s.id != null);
+  return first?.id ? String(first.id) : '';
+}
+
 export const InventoryManagement = forwardRef<InventoryManagementHandle, InventoryManagementProps>(
   function InventoryManagement({ sellerId }, ref) {
   const [products, setProducts] = useState<any[]>([]);
@@ -19,12 +49,22 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [updating, setUpdating] = useState<string | null>(null);
+  const [selectedSkuByProduct, setSelectedSkuByProduct] = useState<Record<string, string>>({});
 
   const loadInventory = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiClient.get<{ products?: any[] }>(`/vendor/${sellerId}/products`);
-      setProducts(data?.products || []);
+      const list = data?.products || [];
+      setProducts(list);
+      const defaults: Record<string, string> = {};
+      for (const p of list) {
+        if (productHasVariants(p) && p.skus?.length) {
+          const firstId = p.skus[0]?.id;
+          if (firstId) defaults[p.id] = String(firstId);
+        }
+      }
+      setSelectedSkuByProduct((prev) => ({ ...defaults, ...prev }));
     } catch (error) {
       console.error('Error loading inventory:', error);
       setProducts([]);
@@ -43,10 +83,53 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
     setUpdating(productId);
     try {
       await apiClient.put(`/vendor/${sellerId}/products/${productId}`, { stock: newStock });
-      setProducts(products.map(p => p.id === productId ? { ...p, stock: newStock } : p));
+      setProducts((prev) =>
+        prev.map((p) => (p.id === productId ? { ...p, stock: newStock } : p)),
+      );
     } catch (error) {
       console.error('Error updating stock:', error);
       alert('Failed to update stock');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const updateVariantStock = async (
+    productId: string,
+    skuId: string,
+    newStock: number,
+  ) => {
+    const key = `${productId}:${skuId}`;
+    setUpdating(key);
+    try {
+      const res = await apiClient.patch<{
+        sku?: InventorySku;
+        parent_stock?: number;
+      }>(
+        `/vendor/${sellerId}/products/${productId}/skus/${skuId}/stock`,
+        { stock: newStock },
+      );
+      const parentStock = res.parent_stock;
+      const updatedSku = res.sku;
+      setProducts((prev) =>
+        prev.map((p) => {
+          if (p.id !== productId) return p;
+          const skus = (p.skus || []).map((s: InventorySku) => {
+            if (String(s.id) !== skuId) return s;
+            return updatedSku
+              ? { ...s, ...updatedSku, stock: Number(updatedSku.stock ?? newStock) }
+              : { ...s, stock: newStock };
+          });
+          return {
+            ...p,
+            skus,
+            stock: parentStock != null ? parentStock : p.stock,
+          };
+        }),
+      );
+    } catch (error) {
+      console.error('Error updating variant stock:', error);
+      alert('Failed to update variant stock');
     } finally {
       setUpdating(null);
     }
@@ -75,6 +158,8 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
     outOfStock: products.filter(isOutOfStock).length,
     healthy: products.filter(isHealthy).length
   };
+
+  const anyHasVariants = products.some(productHasVariants);
 
   if (loading) {
     return (
@@ -170,7 +255,9 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
               <th className="text-left p-4 font-semibold text-slate-600 text-sm">SKU</th>
               <th className="text-center p-4 font-semibold text-slate-600 text-sm">Current Stock</th>
               <th className="text-center p-4 font-semibold text-slate-600 text-sm">Status</th>
-              <th className="text-center p-4 font-semibold text-slate-600 text-sm">Quick Update</th>
+              <th className="text-center p-4 font-semibold text-slate-600 text-sm">
+                {anyHasVariants ? 'Variant & stock' : 'Quick Update'}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -181,17 +268,51 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
                 </td>
               </tr>
             ) : (
-              filteredProducts.map(product => (
+              filteredProducts.map((product) => {
+                const hasVariants = productHasVariants(product);
+                const selectedSkuId = hasVariants
+                  ? resolveSelectedSkuId(product, selectedSkuByProduct)
+                  : '';
+                const selectedSku = hasVariants
+                  ? (product.skus || []).find((s: InventorySku) => String(s.id) === selectedSkuId)
+                  : null;
+                const variantStock = Number(selectedSku?.stock ?? 0);
+                const updatingKey = hasVariants
+                  ? `${product.id}:${selectedSkuId}`
+                  : product.id;
+                const isUpdating = updating === updatingKey;
+
+                return (
                 <tr key={product.id} className="hover:bg-slate-50 transition-colors">
                   <td className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center text-xl">
                         {product.emoji || '📦'}
                       </div>
-                      <span className="font-medium text-slate-900">{product.name}</span>
+                      <div>
+                        <span className="font-medium text-slate-900">{product.name}</span>
+                        {hasVariants && (
+                          <p className="text-xs text-slate-500 mt-0.5">Total across variants</p>
+                        )}
+                      </div>
                     </div>
                   </td>
-                  <td className="p-4 font-mono text-sm text-slate-500">{product.sku}</td>
+                  <td className="p-4 font-mono text-sm text-slate-500">
+                    {hasVariants ? (
+                      <div>
+                        <span className="text-xs text-slate-400 block">Variant SKU</span>
+                        <span>{selectedSku?.sku || '—'}</span>
+                        {product.sku && (
+                          <>
+                            <span className="text-xs text-slate-400 block mt-1">Parent</span>
+                            <span className="text-slate-400">{product.sku}</span>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      product.sku
+                    )}
+                  </td>
                   <td className="p-4 text-center">
                     <span className={`text-2xl font-bold ${
                       product.stock === 0 ? 'text-red-600' :
@@ -213,32 +334,88 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
                     </span>
                   </td>
                   <td className="p-4">
-                    <div className="flex items-center justify-center gap-2">
-                      <button
-                        onClick={() => updateStock(product.id, Math.max(0, product.stock - 1))}
-                        disabled={updating === product.id || product.stock === 0}
-                        className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
-                      >
-                        <ArrowDown className="w-4 h-4" />
-                      </button>
-                      <input
-                        type="number"
-                        min="0"
-                        value={product.stock}
-                        onChange={(e) => updateStock(product.id, parseInt(e.target.value) || 0)}
-                        className="w-16 text-center py-1 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                      />
-                      <button
-                        onClick={() => updateStock(product.id, product.stock + 1)}
-                        disabled={updating === product.id}
-                        className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
-                      >
-                        <ArrowUp className="w-4 h-4" />
-                      </button>
-                    </div>
+                    {hasVariants && selectedSkuId ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <span className="text-xs text-slate-500">Variant</span>
+                        <select
+                          value={selectedSkuId}
+                          onChange={(e) =>
+                            setSelectedSkuByProduct((prev) => ({
+                              ...prev,
+                              [product.id]: e.target.value,
+                            }))
+                          }
+                          className="w-full max-w-[220px] px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                        >
+                          {(product.skus || []).map((sku: InventorySku) => (
+                            <option key={String(sku.id)} value={String(sku.id)}>
+                              {formatSkuOptionLabel(sku)}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() =>
+                              updateVariantStock(product.id, selectedSkuId, Math.max(0, variantStock - 1))
+                            }
+                            disabled={isUpdating || variantStock === 0}
+                            className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                          >
+                            <ArrowDown className="w-4 h-4" />
+                          </button>
+                          <input
+                            type="number"
+                            min="0"
+                            value={variantStock}
+                            onChange={(e) =>
+                              updateVariantStock(
+                                product.id,
+                                selectedSkuId,
+                                parseInt(e.target.value, 10) || 0,
+                              )
+                            }
+                            className="w-16 text-center py-1 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                          />
+                          <button
+                            onClick={() =>
+                              updateVariantStock(product.id, selectedSkuId, variantStock + 1)
+                            }
+                            disabled={isUpdating}
+                            className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                          >
+                            <ArrowUp className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => updateStock(product.id, Math.max(0, product.stock - 1))}
+                          disabled={isUpdating || product.stock === 0}
+                          className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                        >
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          value={product.stock}
+                          onChange={(e) => updateStock(product.id, parseInt(e.target.value, 10) || 0)}
+                          className="w-16 text-center py-1 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                        />
+                        <button
+                          onClick={() => updateStock(product.id, product.stock + 1)}
+                          disabled={isUpdating}
+                          className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                        >
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>

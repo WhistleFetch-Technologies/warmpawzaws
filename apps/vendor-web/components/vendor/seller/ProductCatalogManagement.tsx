@@ -124,6 +124,20 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     }
   };
 
+  const openProductEdit = async (product: Product) => {
+    try {
+      const data = await apiClient.get<{ product?: Record<string, unknown> }>(
+        `/vendor/${sellerId}/products/${product.id}`,
+      );
+      setEditingProduct((data?.product as Product) || product);
+    } catch (error) {
+      console.error('Error loading product for edit:', error);
+      toast.error('Could not load full product details');
+      setEditingProduct(product);
+    }
+    setShowAddModal(true);
+  };
+
   const handleDeleteProduct = async (productId: string) => {
     const product = products.find((p) => p.id === productId);
     if (product && isRemovedFromCatalog(product)) {
@@ -345,10 +359,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
               key={product.id}
               product={product}
               categories={categories}
-              onEdit={() => {
-                setEditingProduct(product);
-                setShowAddModal(true);
-              }}
+              onEdit={() => openProductEdit(product)}
               onDelete={() => handleDeleteProduct(product.id)}
               getStatusBadge={getStatusBadge}
             />
@@ -416,10 +427,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
                     <div className="flex justify-end gap-2">
                       {!removed && (
                       <button 
-                        onClick={() => {
-                          setEditingProduct(product);
-                          setShowAddModal(true);
-                        }}
+                        onClick={() => openProductEdit(product)}
                         className="p-2 hover:bg-orange-50 text-slate-600 hover:text-orange-600 rounded-lg transition-colors"
                         title="Edit"
                       >
@@ -554,6 +562,88 @@ function sellingPriceForForm(product: { price?: number; original_price?: number 
   return '';
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isSkuUuid(value: string | undefined): boolean {
+  return Boolean(value && UUID_RE.test(value));
+}
+
+type VariantRow = {
+  id: string;
+  skuRowId?: string;
+  size?: string;
+  color?: string;
+  price: string;
+  mrp: string;
+  stock: string;
+  sku: string;
+  images: string[];
+};
+
+function skuImageUrlsFromApi(raw: unknown): string[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => {
+        if (typeof item === 'string') return item.trim();
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          const o = item as Record<string, unknown>;
+          return String(o.url ?? o.src ?? o.image_url ?? '').trim();
+        }
+        return '';
+      })
+      .filter(Boolean);
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return skuImageUrlsFromApi(parsed);
+    } catch {
+      return [raw.trim()];
+    }
+  }
+  return [];
+}
+
+function variantRowsFromProduct(product: Record<string, unknown> | null | undefined): VariantRow[] {
+  if (!product) return [];
+  const skus = product.skus as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(skus) && skus.length > 0) {
+    return skus.map((s, idx) => {
+      const ov = (s.option_values as Record<string, string>) || {};
+      const rawSkuId = s.id != null ? String(s.id) : '';
+      return {
+        id: isSkuUuid(rawSkuId) ? rawSkuId : `sku-${idx}`,
+        skuRowId: isSkuUuid(rawSkuId) ? rawSkuId : undefined,
+        size: ov.size || '',
+        color: ov.color || ov.colour || '',
+        price: String(s.price ?? ''),
+        mrp: String(s.compare_at_price ?? s.original_price ?? s.price ?? ''),
+        stock: String(s.stock ?? ''),
+        sku: String(s.sku ?? ''),
+        images: skuImageUrlsFromApi(s.images),
+      };
+    });
+  }
+  const meta = product.metadata as Record<string, unknown> | undefined;
+  const legacy = (meta?.variants ?? product.variants) as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(legacy) && legacy.length > 0) {
+    return legacy.map((v, idx) => ({
+      id: `legacy-${idx}`,
+      skuRowId: undefined,
+      size: String(v.size ?? ''),
+      color: String(v.color ?? ''),
+      price: String(v.price ?? ''),
+      mrp: String(v.price ?? ''),
+      stock: String(v.stock ?? ''),
+      sku: String(v.sku ?? ''),
+      images: skuImageUrlsFromApi(v.images),
+    }));
+  }
+  return [];
+}
+
 function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
   const [formData, setFormData] = useState({
     name: product?.name || '',
@@ -572,23 +662,134 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
   });
   const [saving, setSaving] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
-  const [variants, setVariants] = useState<Array<{ id: string; size?: string; color?: string; price: string; stock: string; sku: string }>>(
-    product?.variants?.map((v: any, idx: number) => ({ id: `${idx}`, size: v.size || '', color: v.color || '', price: String(v.price || formData.price || ''), stock: String(v.stock || ''), sku: v.sku || '' })) || []
-  );
-  const [images, setImages] = useState<string[]>(product?.images || []);
+  const [variants, setVariants] = useState<VariantRow[]>(variantRowsFromProduct(product));
+  const [images, setImages] = useState<string[]>(skuImageUrlsFromApi(product?.images));
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [deliveryRegions, setDeliveryRegions] = useState<string[]>(product?.delivery_regions || []);
 
+  useEffect(() => {
+    if (!product?.id) return;
+    setFormData({
+      name: product.name || '',
+      description: product.description || '',
+      category_id: product.category_id || '',
+      price: sellingPriceForForm(product),
+      original_price: product.original_price || product.compare_at_price || product.price || '',
+      stock: product.stock ?? '',
+      hsn_code: product.hsn_code || '',
+      gst_rate:
+        product.gst_rate !== undefined && product.gst_rate !== null
+          ? String(product.gst_rate)
+          : '',
+      emoji: product.emoji || '📦',
+      status: product.status || 'pending',
+    });
+    setVariants(variantRowsFromProduct(product as Record<string, unknown>));
+    setImages(skuImageUrlsFromApi(product.images));
+    setDeliveryRegions(product.delivery_regions || []);
+  }, [product?.id]);
+
+  const totalVariantStock = useMemo(
+    () =>
+      variants.reduce((sum, v) => {
+        const n = parseInt(String(v.stock), 10);
+        return sum + (Number.isFinite(n) ? Math.max(0, n) : 0);
+      }, 0),
+    [variants],
+  );
+  const hasVariantRows = variants.length > 0;
+
   // Variants Management
   const addVariant = () => {
-    setVariants([...variants, { id: Date.now().toString(), size: '', color: '', price: formData.price || '', stock: '', sku: '' }]);
+    setVariants([
+      ...variants,
+      {
+        id: Date.now().toString(),
+        size: '',
+        color: '',
+        price: formData.price || formData.original_price || '',
+        mrp: formData.original_price || formData.price || '',
+        stock: '',
+        sku: '',
+        images: [],
+      },
+    ]);
+  };
+
+  const handleVariantImageUpload = async (variantId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    try {
+      setUploadingImages(true);
+      const uploadedUrls: string[] = [];
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.append('image', file);
+        try {
+          const response = await apiClient.post<{
+            image_url?: string;
+            url?: string;
+            s3_url?: string;
+          }>(
+            `/vendor/${sellerId}/products/images`,
+            fd,
+          );
+          const imageUrl =
+            response.s3_url || response.image_url || response.url;
+          if (imageUrl) {
+            uploadedUrls.push(imageUrl);
+          } else {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result));
+              reader.onerror = () => reject(new Error('Failed to read image file'));
+              reader.readAsDataURL(file);
+            });
+            uploadedUrls.push(dataUrl);
+          }
+        } catch (error) {
+          console.warn('Variant image upload failed; using data URL for save:', error);
+          try {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result));
+              reader.onerror = () => reject(new Error('Failed to read image file'));
+              reader.readAsDataURL(file);
+            });
+            uploadedUrls.push(dataUrl);
+          } catch {
+            toast.error(`Failed to upload ${file.name}`);
+          }
+        }
+      }
+      if (uploadedUrls.length > 0) {
+        setVariants((prev) =>
+          prev.map((v) =>
+            v.id === variantId ? { ...v, images: [...v.images, ...uploadedUrls] } : v,
+          ),
+        );
+      }
+    } finally {
+      setUploadingImages(false);
+      event.target.value = '';
+    }
+  };
+
+  const removeVariantImage = (variantId: string, imageIndex: number) => {
+    setVariants((prev) =>
+      prev.map((v) =>
+        v.id === variantId
+          ? { ...v, images: v.images.filter((_, i) => i !== imageIndex) }
+          : v,
+      ),
+    );
   };
 
   const removeVariant = (id: string) => {
     setVariants(variants.filter(v => v.id !== id));
   };
 
-  const updateVariant = (id: string, field: string, value: string) => {
+  const updateVariant = (id: string, field: keyof VariantRow, value: string) => {
     setVariants(variants.map(v => v.id === id ? { ...v, [field]: value } : v));
   };
 
@@ -715,31 +916,55 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
       }
 
       const stockNum = parseInt(String(formData.stock), 10);
-      if (!Number.isInteger(stockNum) || stockNum < 0) {
-        alert('Stock quantity must be a whole number ≥ 0');
-        setSaving(false);
-        return;
+      if (!hasVariantRows) {
+        if (!Number.isInteger(stockNum) || stockNum < 0) {
+          alert('Stock quantity must be a whole number ≥ 0');
+          setSaving(false);
+          return;
+        }
+      } else {
+        for (const v of variants) {
+          const vs = parseInt(String(v.stock), 10);
+          if (!Number.isInteger(vs) || vs < 0) {
+            alert('Each variant stock must be a whole number ≥ 0');
+            setSaving(false);
+            return;
+          }
+        }
       }
 
-      const payload = {
-        ...formData,
+      const payloadBase = {
+        name: formData.name,
+        description: formData.description,
+        category_id: formData.category_id,
+        emoji: formData.emoji,
+        status: formData.status,
         price: selling,
         original_price: mrp,
-        stock: stockNum,
+        ...(hasVariantRows ? {} : { stock: stockNum }),
         hsn_code: hsn,
         gst_rate: gstNum,
         vendor_id: sellerId,
         images:
           images.length > 0 ? images.map(stripAwsPresignFromProductImageUrl) : [],
-        variants: variants.length > 0 ? variants.map(v => ({
-          size: v.size || null,
-          color: v.color || null,
-          price: parseFloat(v.price) || parseFloat(formData.price),
-          stock: parseInt(v.stock) || 0,
-          sku: v.sku || null,
-        })) : null,
+        skus: hasVariantRows
+          ? variants.map((v) => ({
+              ...(isSkuUuid(v.skuRowId) ? { id: v.skuRowId } : {}),
+              option_values: {
+                ...(v.size?.trim() ? { size: v.size.trim() } : {}),
+                ...(v.color?.trim() ? { color: v.color.trim() } : {}),
+              },
+              price: parseFloat(v.price) || selling,
+              compare_at_price: parseFloat(v.mrp) || mrp,
+              stock: parseInt(v.stock, 10) || 0,
+              sku: v.sku?.trim() || null,
+              images: v.images.map(stripAwsPresignFromProductImageUrl),
+            }))
+          : [],
         delivery_regions: deliveryRegions.length > 0 ? deliveryRegions : null,
       };
+
+      const payload = payloadBase;
 
       if (product) {
         await apiClient.put(`/vendor/${sellerId}/products/${product.id}`, payload);
@@ -870,15 +1095,33 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Stock Quantity *</label>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  value={formData.stock}
-                  onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                />
+                {hasVariantRows ? (
+                  <>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Total stock (auto)
+                    </label>
+                    <div
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 text-slate-900 font-semibold"
+                    >
+                      {totalVariantStock}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Sum of all variant stocks — edit per variant below
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Stock Quantity *</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={formData.stock}
+                      onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                    />
+                  </>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">HSN *</label>
@@ -1020,7 +1263,18 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-600 mb-1">Price (₹)</label>
+                        <label className="block text-xs text-slate-600 mb-1">MRP (₹)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={variant.mrp}
+                          onChange={(e) => updateVariant(variant.id, 'mrp', e.target.value)}
+                          className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500/20 focus:border-orange-500"
+                          placeholder="MRP"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Selling price (₹)</label>
                         <input
                           type="number"
                           step="0.01"
@@ -1047,8 +1301,37 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
                           value={variant.sku}
                           onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
                           className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500/20 focus:border-orange-500"
-                          placeholder="Optional SKU for this variant"
+                          placeholder="Optional — system assigns if empty"
                         />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs text-slate-600 mb-1">Variant images</label>
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {variant.images.map((img, imgIdx) => (
+                            <div key={imgIdx} className="relative h-16 w-16 rounded-lg overflow-hidden border border-slate-200">
+                              <img src={img} alt="" className="h-full w-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => removeVariantImage(variant.id, imgIdx)}
+                                className="absolute top-0 right-0 bg-red-500 text-white rounded-bl p-0.5"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                          <label className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 hover:border-orange-500">
+                            <Upload className="w-4 h-4 text-slate-400" />
+                            <span className="text-[10px] text-slate-500">Add</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              className="hidden"
+                              onChange={(e) => handleVariantImageUpload(variant.id, e)}
+                            />
+                          </label>
+                        </div>
+                        <p className="text-[10px] text-slate-400">Shown to customers when this variant is selected</p>
                       </div>
                     </div>
                   </div>

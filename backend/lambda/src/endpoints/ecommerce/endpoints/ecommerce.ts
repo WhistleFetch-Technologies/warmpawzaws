@@ -24,7 +24,21 @@ import {
   sqlExcludeSuppressedSettlementRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { isValidUUID } from '../../../types/entities';
-import { prepareStorefrontProductRow, prepareStorefrontProductRows } from '../../../utils/s3-media-presign';
+import { prepareStorefrontProductRow, prepareStorefrontProductRows, presignProductSkusForDisplay, presignProductImagesJsonb } from '../../../utils/s3-media-presign';
+import { loadProductSkus } from '../../../utils/product-sku-service';
+import {
+  resolveEcommerceOrderLine,
+  decrementSkuStock,
+} from '../../../utils/product-sku-order';
+import {
+  buildVariationAxes,
+  mapSkusToCustomerVariations,
+  buildGalleryImageUnion,
+  normalizeImagesArray,
+  aggregateParentStock,
+  minSkuPrice,
+  mergeLegacyVariantImagesIntoSkus,
+} from '../../../utils/product-sku-resolve';
 import { computeEcommerceDeliveryFee } from '../../../utils/ecommerce/delivery-fee';
 import {
   isEcommerceCategoryUuid,
@@ -107,6 +121,9 @@ export function registerEcommerceEndpoints(app: Hono) {
   const handleGetPublicProductById = async (c: any, logLabel: string) => {
     try {
       const { productId } = c.req.param();
+      if (!isValidUUID(String(productId))) {
+        return c.json({ error: 'Product not found' }, 404);
+      }
       console.log(`${logLabel} lookup product id=`, productId);
 
       const products = await query(
@@ -121,13 +138,49 @@ export function registerEcommerceEndpoints(app: Hono) {
         return c.json({ error: 'Product not found' }, 404);
       }
 
-      const product = await prepareStorefrontProductRow(
-        products.rows[0] as Record<string, unknown>,
+      const row = products.rows[0] as Record<string, unknown>;
+      const product = await prepareStorefrontProductRow(row);
+
+      let skusRaw = await loadProductSkus(productId);
+      const meta =
+        row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+          ? (row.metadata as Record<string, unknown>)
+          : null;
+      const legacyVariants =
+        meta && Array.isArray(meta.variants) ? (meta.variants as unknown[]) : null;
+      if (skusRaw.length > 0 && legacyVariants) {
+        skusRaw = mergeLegacyVariantImagesIntoSkus(skusRaw, legacyVariants);
+      }
+
+      const skusPresigned = await presignProductSkusForDisplay(
+        skusRaw.map((s) => ({
+          ...s,
+          images: normalizeImagesArray(s.images),
+        })) as Record<string, unknown>[],
       );
+      const variation_axes = buildVariationAxes(skusRaw);
+      const variations = mapSkusToCustomerVariations(skusRaw, variation_axes);
+      const parentImages = normalizeImagesArray(product.images);
+      const galleryImages = buildGalleryImageUnion(parentImages, skusRaw);
+      const galleryPresigned = normalizeImagesArray(
+        await presignProductImagesJsonb(galleryImages.length > 0 ? galleryImages : parentImages),
+      );
+
+      product.images = galleryPresigned;
+      product.has_variants = skusRaw.length > 0;
+      if (skusRaw.length > 0) {
+        const aggStock = aggregateParentStock(skusRaw);
+        const minPrice = minSkuPrice(skusRaw);
+        if (minPrice != null) product.price = minPrice;
+        product.stock = aggStock;
+        product.variations = variations;
+      }
 
       return c.json({
         success: true,
         product,
+        skus: skusPresigned,
+        variation_axes,
       });
     } catch (error: any) {
       console.error(`${logLabel} Error fetching product:`, error);
@@ -409,34 +462,26 @@ export function registerEcommerceEndpoints(app: Hono) {
       let firstVendorId = null;
 
       for (const item of items) {
-        const productId = item.product_id || item.productId;
-        const quantity = item.quantity || 1;
-
-        // Get product details
         try {
-          const products = await query(
-            'SELECT id, name, price, vendor_id FROM products WHERE id = $1',
-            [productId]
-          );
-          if (products.rows.length > 0) {
-            const product = products.rows[0];
-            const itemTotal = parseFloat(product.price) * quantity;
-            subtotal += itemTotal;
-
-            if (!firstVendorId && product.vendor_id) {
-              firstVendorId = product.vendor_id;
-            }
-
-            orderItems.push({
-              product_id: productId,
-              product_name: product.name,
-              quantity: quantity,
-              unit_price: parseFloat(product.price),
-              total: itemTotal,
-            });
+          const resolved = await resolveEcommerceOrderLine(item as Record<string, unknown>);
+          if (!resolved) continue;
+          subtotal += resolved.total;
+          if (!firstVendorId && resolved.vendor_id) {
+            firstVendorId = resolved.vendor_id;
           }
-        } catch (e) {
-          console.error('Error fetching product:', e);
+          orderItems.push({
+            product_id: resolved.product_id,
+            product_sku_id: resolved.product_sku_id,
+            product_name: resolved.product_name,
+            quantity: resolved.quantity,
+            unit_price: resolved.unit_price,
+            total: resolved.total,
+            variant_info: resolved.variant_info,
+            skuRowIdForStock: resolved.skuRowIdForStock,
+          });
+        } catch (lineErr: unknown) {
+          const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
+          return c.json({ error: msg }, 400);
         }
       }
 
@@ -570,11 +615,16 @@ export function registerEcommerceEndpoints(app: Hono) {
         await insert('order_items', {
           order_id: orderId,
           product_id: item.product_id,
+          product_sku_id: item.product_sku_id ?? null,
           name: item.product_name || 'Product',
           quantity: item.quantity,
           unit_price: item.unit_price,
           total_price: item.total,
+          variant_info: item.variant_info ?? null,
         });
+        if (item.skuRowIdForStock) {
+          await decrementSkuStock(item.skuRowIdForStock, item.quantity);
+        }
       }
 
       return c.json({
@@ -822,30 +872,44 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       for (const item of items) {
-        const products = await select('products', { id: item.productId });
-        if (products.length === 0) continue;
+        try {
+          const resolved = await resolveEcommerceOrderLine(item as Record<string, unknown>);
+          if (!resolved) continue;
+          subtotal += resolved.total;
 
-        const product = products[0];
-        const itemTotal = parseFloat(product.price || 0) * (item.quantity || 1);
-        subtotal += itemTotal;
+          const products = await select('products', { id: resolved.product_id });
+          const product = products[0] as {
+            hsn_code?: string;
+            category?: string;
+          };
 
-        orderItems.push({
-          product_id: item.productId,
-          quantity: item.quantity,
-          price: product.price,
-          total: itemTotal,
-          name: product.name || 'Product',
-        });
+          orderItems.push({
+            product_id: resolved.product_id,
+            product_sku_id: resolved.product_sku_id,
+            quantity: resolved.quantity,
+            price: resolved.unit_price,
+            total: resolved.total,
+            name: resolved.product_name,
+            variant_info: resolved.variant_info,
+            skuRowIdForStock: resolved.skuRowIdForStock,
+          });
 
-        // Add to tax calculation items
-        taxCalculationItems.push({
-          id: item.productId,
-          type: 'product' as const,
-          hsnCode: product.hsn_code,
-          amount: parseFloat(product.price || 0),
-          quantity: item.quantity || 1,
-          category: product.category,
-        });
+          taxCalculationItems.push({
+            id: resolved.product_id,
+            type: 'product' as const,
+            hsnCode: product?.hsn_code,
+            amount: resolved.unit_price,
+            quantity: resolved.quantity,
+            category: product?.category,
+          });
+        } catch (lineErr: unknown) {
+          const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
+          return c.json({ error: msg }, 400);
+        }
+      }
+
+      if (orderItems.length === 0) {
+        return c.json({ error: 'No valid products found for this order' }, 400);
       }
 
       // Calculate tax using tax calculation service
@@ -940,10 +1004,16 @@ export function registerEcommerceEndpoints(app: Hono) {
         await insert('order_items', {
           order_id: order[0].id,
           product_id: item.product_id,
+          product_sku_id: item.product_sku_id ?? null,
+          name: item.name,
           quantity: item.quantity,
-          price: item.price,
-          total: item.total,
+          unit_price: item.price,
+          total_price: item.total,
+          variant_info: item.variant_info ?? null,
         });
+        if (item.skuRowIdForStock) {
+          await decrementSkuStock(item.skuRowIdForStock, item.quantity);
+        }
       }
 
       // Clear cart

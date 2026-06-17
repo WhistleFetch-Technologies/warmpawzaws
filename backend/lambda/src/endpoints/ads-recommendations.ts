@@ -400,43 +400,43 @@ app.get('/products/similar', async (c) => {
     const category = c.req.query('category');
     const excludeId = c.req.query('excludeId');
     const vendorId = c.req.query('vendorId');
-    const limit = parseInt(c.req.query('limit') || '4');
+    const limit = parseInt(c.req.query('limit') || '4', 10);
 
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIdx = 1;
-    
+
     let sql = `
-      SELECT 
+      SELECT
         p.id,
-        p.product_name as name,
+        p.name,
         p.description,
-        p.unit_price as price,
+        p.price,
         p.compare_at_price,
-        p.category_name as category,
-        p.image_url,
+        p.category,
+        p.images,
         p.vendor_id,
         v.business_name as vendor_name
       FROM products p
       LEFT JOIN vendors v ON p.vendor_id = v.id
       WHERE p.is_active = true
-        AND p.stock > 0
+        AND COALESCE(p.stock, 0) > 0
     `;
 
     if (category) {
-      sql += ` AND p.category_name = $${paramIdx++}`;
+      sql += ` AND p.category = $${paramIdx++}`;
       params.push(category);
     }
 
     if (excludeId) {
-      sql += ` AND p.id != $${paramIdx++}`;
+      sql += ` AND p.id <> $${paramIdx++}::uuid`;
       params.push(excludeId);
     }
 
     if (vendorId) {
-      sql += ` ORDER BY CASE WHEN p.vendor_id = $${paramIdx++} THEN 0 ELSE 1 END, p.sales_count DESC`;
+      sql += ` ORDER BY CASE WHEN p.vendor_id = $${paramIdx++}::uuid THEN 0 ELSE 1 END, p.sales_count DESC NULLS LAST`;
       params.push(vendorId);
     } else {
-      sql += ` ORDER BY p.sales_count DESC, p.created_at DESC`;
+      sql += ` ORDER BY p.sales_count DESC NULLS LAST, p.created_at DESC`;
     }
 
     sql += ` LIMIT $${paramIdx}`;
@@ -444,22 +444,95 @@ app.get('/products/similar', async (c) => {
 
     const result = await query(sql, params);
 
-    const products = (result.rows || []).map((row: any) => ({
+    const products = (result.rows || []).map((row: Record<string, unknown>) => ({
       id: row.id,
       name: row.name,
       description: row.description,
-      price: row.price ? parseFloat(row.price) : null,
-      compareAtPrice: row.compare_at_price ? parseFloat(row.compare_at_price) : null,
+      price: row.price != null ? parseFloat(String(row.price)) : null,
+      original_price:
+        row.compare_at_price != null ? parseFloat(String(row.compare_at_price)) : null,
+      compareAtPrice:
+        row.compare_at_price != null ? parseFloat(String(row.compare_at_price)) : null,
       category: row.category,
-      imageUrl: row.image_url,
-      vendorId: row.vendor_id,
+      images: row.images,
+      vendor_id: row.vendor_id,
+      vendor_name: row.vendor_name,
       vendorName: row.vendor_name,
     }));
 
     return c.json({ success: true, products });
-  } catch (error: any) {
-    console.error('Error fetching similar products:', error);
-    return c.json({ success: false, error: error.message, products: [] });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error('Error fetching similar products:', msg);
+    return c.json({ success: false, error: msg, products: [] });
+  }
+});
+
+/**
+ * GET /ads-recommendations/products/:productId/similar
+ * Customer PDP alias — resolves category from product id then returns similar products.
+ */
+app.get('/ads-recommendations/products/:productId/similar', async (c) => {
+  try {
+    const productId = c.req.param('productId');
+    const limit = parseInt(c.req.query('limit') || '4', 10);
+    const current = await query(
+      `SELECT id, category, vendor_id FROM products WHERE id = $1::uuid LIMIT 1`,
+      [productId],
+    );
+    if (!current.rows.length) {
+      return c.json({ success: true, products: [] });
+    }
+    const row = current.rows[0] as { category?: string; vendor_id?: string };
+    const params: unknown[] = [];
+    let paramIdx = 1;
+    let sql = `
+      SELECT
+        p.id,
+        p.name,
+        p.price,
+        p.compare_at_price,
+        p.images,
+        p.category,
+        v.business_name as vendor_name
+      FROM products p
+      LEFT JOIN vendors v ON p.vendor_id = v.id
+      WHERE p.is_active = true
+        AND COALESCE(p.stock, 0) > 0
+        AND p.id <> $${paramIdx++}::uuid
+    `;
+    params.push(productId);
+
+    if (row.category) {
+      sql += ` AND p.category = $${paramIdx++}`;
+      params.push(row.category);
+    }
+
+    if (row.vendor_id) {
+      sql += ` ORDER BY CASE WHEN p.vendor_id = $${paramIdx++}::uuid THEN 0 ELSE 1 END, p.sales_count DESC NULLS LAST`;
+      params.push(row.vendor_id);
+    } else {
+      sql += ` ORDER BY p.sales_count DESC NULLS LAST, p.created_at DESC`;
+    }
+    sql += ` LIMIT $${paramIdx}`;
+    params.push(limit);
+
+    const result = await query(sql, params);
+    const products = (result.rows || []).map((r: Record<string, unknown>) => ({
+      id: r.id,
+      name: r.name,
+      price: r.price != null ? parseFloat(String(r.price)) : 0,
+      original_price:
+        r.compare_at_price != null ? parseFloat(String(r.compare_at_price)) : undefined,
+      vendor_name: r.vendor_name,
+      rating: 0,
+    }));
+
+    return c.json({ success: true, products });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error('Error fetching product similar recommendations:', msg);
+    return c.json({ success: false, error: msg, products: [] });
   }
 });
 

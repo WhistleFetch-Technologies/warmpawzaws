@@ -236,6 +236,20 @@ export async function presignMealPlanRowDisplayFields(mp: Record<string, unknown
   return { dietary_requirements, photos, mealImageUrl };
 }
 
+export async function presignProductSkusForDisplay(
+  skus: Record<string, unknown>[],
+): Promise<Record<string, unknown>[]> {
+  return Promise.all(
+    skus.map(async (sku) => {
+      const out = { ...sku };
+      if ('images' in out) {
+        out.images = await presignProductImagesJsonb(out.images);
+      }
+      return out;
+    }),
+  );
+}
+
 export function stripPresignFromProductImagesJsonb(raw: unknown): unknown {
   if (raw == null) return raw;
   let parsed: unknown = raw;
