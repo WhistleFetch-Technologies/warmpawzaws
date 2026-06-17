@@ -145,6 +145,27 @@ export type DiscoveryCategoryKeys = {
   behaviorHubDiscoverySearch: boolean;
 };
 
+/**
+ * Vet hub discovery: catalog / vendor_services.category labels beyond vet-keyword matches.
+ * Narrow allowlist — does not include cross-hub categories (e.g. pet sitter, grooming).
+ */
+export const VET_DISCOVERY_CATEGORY_ALIAS_KEYS: readonly string[] = [
+  'vet care',
+  'veterinary',
+  'veterinarian',
+  'veterinary services',
+  'general',
+  'diagnostics & lab',
+  'diagnostics',
+  'diagnostic',
+];
+
+export function appendVetDiscoveryCategoryAliasKeys(rawCategoryKeys: string[], category?: string): void {
+  if (category && category.toLowerCase() === 'vet') {
+    rawCategoryKeys.push(...VET_DISCOVERY_CATEGORY_ALIAS_KEYS);
+  }
+}
+
 export function resolveDiscoveryCategoryKeys(opts: {
   category?: string;
   roleId?: string;
@@ -155,9 +176,7 @@ export function resolveDiscoveryCategoryKeys(opts: {
   const rawCategoryKeys: string[] = [];
   if (opts.category) rawCategoryKeys.push(String(opts.category));
   if (opts.roleId) rawCategoryKeys.push(String(opts.roleId));
-  if (opts.category && opts.category.toLowerCase() === 'vet') {
-    rawCategoryKeys.push('vet care', 'veterinary', 'veterinarian');
-  }
+  appendVetDiscoveryCategoryAliasKeys(rawCategoryKeys, opts.category);
   const catTextExact: string[] = rawCategoryKeys.filter((k) => !isUuid(k)).map((k) => k.toLowerCase());
   const catTextLike: string[] = catTextExact.map((k) => `%${k}%`);
   const catUUIDs: string[] = rawCategoryKeys.filter((k) => isUuid(k));

@@ -390,6 +390,14 @@ describe('buildDiscoveryVendorExistsSql', () => {
     const keys = resolveDiscoveryCategoryKeys({ category: 'walker', roleId: 'pet_walker' });
     expect(keys.catTextExact).toEqual(expect.arrayContaining(['walker', 'pet_walker']));
   });
+
+  it('resolveDiscoveryCategoryKeys expands vet hub with general and diagnostics catalog labels', () => {
+    const keys = resolveDiscoveryCategoryKeys({ category: 'vet' });
+    expect(keys.catTextExact).toEqual(
+      expect.arrayContaining(['general', 'diagnostics & lab', 'diagnostics', 'veterinary services'])
+    );
+    expect(keys.catTextExact).not.toContain('pet sitter');
+  });
 });
 
 describe('enrichSearchVendorsWithDistance', () => {

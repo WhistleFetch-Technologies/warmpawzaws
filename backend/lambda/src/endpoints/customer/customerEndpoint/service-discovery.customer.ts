@@ -34,6 +34,7 @@ import {
 import { sqlPackagePurchaseActiveForListing } from '../../../utils/package-session-eligibility';
 import { DistanceResolver, haversineKm, formatDistanceKm } from '../../../lib/utils/vendor-customer-distance';
 import {
+  appendVetDiscoveryCategoryAliasKeys,
   buildDiscoveryVendorExistsSql,
   sqlVendorAvailabilityOrNotConfigured,
   sqlVendorDiscoverableStatus,
@@ -2612,9 +2613,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const rawCategoryKeys: string[] = [];
       if (category) rawCategoryKeys.push(String(category));
       if (roleId) rawCategoryKeys.push(String(roleId));
-      if (category && category.toLowerCase() === 'vet') {
-        rawCategoryKeys.push('vet care', 'veterinary', 'veterinarian');
-      }
+      appendVetDiscoveryCategoryAliasKeys(rawCategoryKeys, category);
       const catTextExact: string[] = rawCategoryKeys.filter(k => !isUuid(k)).map(k => k.toLowerCase());
       const catTextLike: string[] = catTextExact.map(k => `%${k}%`);
       const catUUIDs: string[] = rawCategoryKeys.filter(k => isUuid(k));
@@ -6563,9 +6562,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const rawCategoryKeys: string[] = [];
       if (category) rawCategoryKeys.push(String(category));
       if (roleId) rawCategoryKeys.push(String(roleId));
-      if (category && category.toLowerCase() === 'vet') {
-        rawCategoryKeys.push('vet care', 'veterinary', 'veterinarian');
-      }
+      appendVetDiscoveryCategoryAliasKeys(rawCategoryKeys, category);
       const catTextExact: string[] = rawCategoryKeys.filter(k => !isUuid(k)).map(k => k.toLowerCase());
       const catTextLike: string[] = catTextExact.map(k => `%${k}%`);
       const catUUIDs: string[] = rawCategoryKeys.filter(k => isUuid(k));
