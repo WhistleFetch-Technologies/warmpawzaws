@@ -15,6 +15,7 @@ import {
 } from '@/lib/warmpawz-cart-storage';
 import type { WarmpawzCartProductSnapshot } from '@/lib/warmpawz-cart-storage';
 import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
+import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import {
@@ -23,7 +24,12 @@ import {
   resolveProductCompareAtPrice,
   resolveProductSellingPrice,
 } from '@/lib/shop-product-pricing';
-import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
+import {
+  type ClientProductSku,
+  resolveSkuFromSelection,
+  skuImages,
+  cartLineKey,
+} from '@/lib/product-sku-client';
 import {
   ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
   Package, Store, Check, Plus, Minus, Share2, ChevronRight,
@@ -93,6 +99,70 @@ interface RecommendedProduct {
   vendor_name: string;
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function ensureImageUrls(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => {
+        if (typeof item === 'string') return item.trim();
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          const o = item as Record<string, unknown>;
+          return String(o.url ?? o.src ?? o.image_url ?? '').trim();
+        }
+        return '';
+      })
+      .filter(Boolean);
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return ensureImageUrls(parsed);
+    } catch {
+      return [raw.trim()];
+    }
+  }
+  return [];
+}
+
+function displaySpecValue(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function mapRecommendedProduct(row: Record<string, unknown>): RecommendedProduct | null {
+  const id = String(row.id ?? '').trim();
+  if (!id) return null;
+  const priceRaw = row.price ?? row.unit_price;
+  const price = priceRaw != null ? parseFloat(String(priceRaw)) : 0;
+  const originalRaw =
+    row.original_price ?? row.compare_at_price ?? row.compareAtPrice ?? row.mrp;
+  const original_price =
+    originalRaw != null && Number.isFinite(parseFloat(String(originalRaw)))
+      ? parseFloat(String(originalRaw))
+      : undefined;
+  const vendor_name = String(
+    row.vendor_name ?? row.vendorName ?? row.business_name ?? 'Seller',
+  );
+  const rating = Number(row.rating ?? row.review_count) || 0;
+  return {
+    id,
+    name: String(row.name ?? 'Product'),
+    price: Number.isFinite(price) ? price : 0,
+    original_price,
+    rating,
+    vendor_name,
+  };
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -103,6 +173,7 @@ export default function ProductDetailClient() {
   const productId = resolveShopProductIdFromLocation(params.productId as string);
 
   const [product, setProduct] = useState<Product | null>(null);
+  const [productSkus, setProductSkus] = useState<ClientProductSku[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [alsoBought, setAlsoBought] = useState<RecommendedProduct[]>([]);
   const [similarProducts, setSimilarProducts] = useState<RecommendedProduct[]>([]);
@@ -139,22 +210,6 @@ export default function ProductDetailClient() {
     recordProductView();
   }, [productId]);
 
-  useEffect(() => {
-    if (!wishlistProductId || typeof window === 'undefined') return;
-    const sync = () => {
-      const line = readWarmpawzCartLines().find(
-        (item) => String(item.product_id) === String(wishlistProductId)
-      );
-      setIsInCart(!!line);
-      if (line) setQuantity(Math.max(1, line.quantity));
-    };
-    sync();
-    window.addEventListener(CART_UPDATED_EVENT, sync);
-    return () => {
-      window.removeEventListener(CART_UPDATED_EVENT, sync);
-    };
-  }, [wishlistProductId]);
-
   const loadProductData = async () => {
     try {
       setLoading(true);
@@ -186,7 +241,9 @@ export default function ProductDetailClient() {
       const [reviewsRes, alsoBoughtRes, similarRes] = await Promise.all([
         apiClient.get<any>(`/products/${productId}/reviews`).catch(() => ({ reviews: [] })),
         apiClient.get<any>(`/products/${productId}/also-bought`).catch(() => ({ products: [] })),
-        apiClient.get<any>(`/ads-recommendations/products/${productId}/similar`).catch(() => ({ products: [] })),
+        apiClient
+          .get<any>(`/ads-recommendations/products/${productId}/similar?limit=4`)
+          .catch(() => ({ products: [] })),
       ]);
 
       if (productRes?.product) {
@@ -206,14 +263,41 @@ export default function ProductDetailClient() {
         setProduct({
           ...p,
           id: resolvedId,
+          description:
+            typeof p.description === 'string'
+              ? p.description
+              : p.description != null
+                ? displaySpecValue(p.description)
+                : '',
           stock: p.stock_quantity || p.stock || 0,
           price: sellingPrice,
           original_price: listPriceForDiscountDisplay(sellingPrice, compareAt),
           rating,
           review_count: rc,
-          images: p.images || [],
+          images: ensureImageUrls(p.images),
           emoji: p.emoji || '🐾',
+          variations: Array.isArray(p.variations) ? p.variations : [],
+          specifications:
+            p.specifications != null &&
+            typeof p.specifications === 'object' &&
+            !Array.isArray(p.specifications)
+              ? (p.specifications as Record<string, unknown>)
+              : undefined,
         });
+        const skusFromApi = (productRes?.skus ?? []) as ClientProductSku[];
+        setProductSkus(
+          skusFromApi
+            .filter((s) => s.id != null && UUID_RE.test(String(s.id)))
+            .map((s) => ({
+              ...s,
+              id: String(s.id),
+              price: Number(s.price) || sellingPrice,
+              compare_at_price:
+                s.compare_at_price != null ? Number(s.compare_at_price) : null,
+              stock: Number(s.stock) || 0,
+              images: ensureImageUrls(s.images),
+            })),
+        );
       } else {
         console.warn('[shop/product] response missing product wrapper', {
           productId,
@@ -223,8 +307,16 @@ export default function ProductDetailClient() {
       }
 
       setReviews(reviewsRes?.reviews || []);
-      setAlsoBought(alsoBoughtRes?.products || []);
-      setSimilarProducts(similarRes?.products || []);
+      setAlsoBought(
+        (alsoBoughtRes?.products || [])
+          .map((row: Record<string, unknown>) => mapRecommendedProduct(row))
+          .filter(Boolean) as RecommendedProduct[],
+      );
+      setSimilarProducts(
+        (similarRes?.products || [])
+          .map((row: Record<string, unknown>) => mapRecommendedProduct(row))
+          .filter(Boolean) as RecommendedProduct[],
+      );
     } catch (err: any) {
       console.error('Error loading product:', err);
       setError(err.message || 'Failed to load product');
@@ -248,31 +340,82 @@ export default function ProductDetailClient() {
   // ACTIONS
   // ============================================================================
 
+  const matchedSku = useMemo(() => {
+    if (productSkus.length === 0) return null;
+    const full = resolveSkuFromSelection(productSkus, selectedVariations);
+    if (full) return full;
+    return resolveSkuFromSelection(productSkus, selectedVariations, { partial: true });
+  }, [productSkus, selectedVariations]);
+
+  const displayPrice = matchedSku?.price ?? product?.price ?? 0;
+  const displayOriginalPrice =
+    matchedSku?.compare_at_price != null && matchedSku.compare_at_price > 0
+      ? matchedSku.compare_at_price
+      : product?.original_price;
+  const displayStock = matchedSku?.stock ?? product?.stock ?? 0;
+  const displayImages = useMemo(() => {
+    const skuImgs = skuImages(matchedSku);
+    if (skuImgs.length > 0) return skuImgs;
+    return ensureImageUrls(product?.images);
+  }, [matchedSku, product?.images]);
+
+  useEffect(() => {
+    if (displayImages.length > 0 && selectedImage >= displayImages.length) {
+      setSelectedImage(0);
+    }
+  }, [displayImages, selectedImage]);
+
   const productSnapshot = (): WarmpawzCartProductSnapshot | null => {
     if (!product) return null;
     const vendorId = product.vendor_id?.trim();
+    const heroImage = displayImages[0] ?? product.images?.[0];
     return {
       id: product.id,
       name: product.name,
-      price: product.price,
-      original_price: product.original_price,
+      price: displayPrice,
+      original_price: displayOriginalPrice,
       emoji: product.emoji,
-      images: product.images,
+      images: heroImage ? [heroImage] : product.images,
       ...(vendorId ? { vendor_id: vendorId } : {}),
       vendor_name: product.vendor_name,
       ...(product.category_id ? { category_id: product.category_id } : {}),
-      stock: product.stock,
+      stock: displayStock,
     };
   };
 
+  const cartLineId = cartLineKey(
+    String(wishlistProductId || productId),
+    matchedSku?.id,
+  );
+
+  useEffect(() => {
+    if (!wishlistProductId || typeof window === 'undefined') return;
+    const sync = () => {
+      const line = readWarmpawzCartLines().find(
+        (item) => String(item.product_id) === cartLineId,
+      );
+      setIsInCart(!!line);
+      if (line) setQuantity(Math.max(1, line.quantity));
+    };
+    sync();
+    window.addEventListener(CART_UPDATED_EVENT, sync);
+    return () => {
+      window.removeEventListener(CART_UPDATED_EVENT, sync);
+    };
+  }, [wishlistProductId, cartLineId]);
+
   const persistCartQuantity = (qty: number): boolean => {
-    if (!product || product.stock === 0) return false;
+    if (!product || displayStock === 0) return false;
+    if (productSkus.length > 0 && !matchedSku) {
+      alert('Please select all product options');
+      return false;
+    }
     const snap = productSnapshot();
     if (!snap) return false;
-    const lineId = String(wishlistProductId || productId);
     const ok = setLineQuantityInWarmpawzCartStorage({
-      lineId,
+      lineId: cartLineId,
       quantity: qty,
+      product_sku_id: matchedSku?.id,
       product: snap,
       selectedVariations:
         Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
@@ -282,13 +425,17 @@ export default function ProductDetailClient() {
   };
 
   const mergeLineIntoLocalCart = (): boolean => {
-    if (!product || product.stock === 0) return false;
-    const lineId = wishlistProductId || productId;
+    if (!product || displayStock === 0) return false;
+    if (productSkus.length > 0 && !matchedSku) {
+      alert('Please select all product options');
+      return false;
+    }
     const snap = productSnapshot();
     if (!snap) return false;
     const ok = mergeLineIntoWarmpawzCartStorage({
-      lineId: String(lineId),
+      lineId: cartLineId,
       quantity,
+      product_sku_id: matchedSku?.id,
       product: snap,
       selectedVariations:
         Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
@@ -299,17 +446,16 @@ export default function ProductDetailClient() {
 
   const changeQuantity = (delta: number) => {
     if (!product) return;
-    const next = Math.max(1, Math.min(product.stock, quantity + delta));
+    const next = Math.max(1, Math.min(displayStock, quantity + delta));
     setQuantity(next);
-    const lineId = String(wishlistProductId || productId);
     const inCartNow = readWarmpawzCartLines().some(
-      (item) => String(item.product_id) === lineId
+      (item) => String(item.product_id) === cartLineId,
     );
     if (inCartNow) persistCartQuantity(next);
   };
 
   const addToCart = async () => {
-    if (!product || product.stock === 0) return;
+    if (!product || displayStock === 0) return;
 
     setAddingToCart(true);
     try {
@@ -358,11 +504,9 @@ export default function ProductDetailClient() {
   // COMPUTED VALUES
   // ============================================================================
 
-  const discount = product
-    ? getProductDiscountPercent(product.price, product.original_price)
-    : 0;
+  const discount = getProductDiscountPercent(displayPrice, displayOriginalPrice);
 
-  const finalPrice = product ? product.price * quantity : 0;
+  const finalPrice = displayPrice * quantity;
 
   const loadedReviewCount = reviews.length;
   const productReviewCount = product?.review_count ?? 0;
@@ -492,9 +636,9 @@ export default function ProductDetailClient() {
               >
                 <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
               </button>
-              {product.images && product.images.length > 0 ? (
+              {product.images && displayImages.length > 0 ? (
                 <img 
-                  src={product.images[selectedImage]} 
+                  src={displayImages[selectedImage] ?? displayImages[0]} 
                   alt={product.name}
                   className="w-full h-full object-cover"
                 />
@@ -510,7 +654,7 @@ export default function ProductDetailClient() {
               )}
 
               {/* Out of Stock Overlay */}
-              {product.stock === 0 && (
+              {product.stock === 0 && displayStock === 0 && (
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                   <span className="px-6 py-3 bg-white text-slate-900 font-bold rounded-xl text-lg">Out of Stock</span>
                 </div>
@@ -518,9 +662,9 @@ export default function ProductDetailClient() {
             </div>
 
             {/* Thumbnail Gallery */}
-            {product.images && product.images.length > 1 && (
+            {displayImages.length > 1 && (
               <div className="flex gap-3 overflow-x-auto pb-2">
-                {product.images.map((img, index) => (
+                {displayImages.map((img, index) => (
                   <button
                     key={index}
                     onClick={() => setSelectedImage(index)}
@@ -577,12 +721,12 @@ export default function ProductDetailClient() {
 
             {/* Price */}
             <div className="flex items-center gap-4">
-              <span className="text-3xl font-bold text-slate-900">₹{product.price.toLocaleString()}</span>
-              {product.original_price && product.original_price > product.price && (
+              <span className="text-3xl font-bold text-slate-900">₹{displayPrice.toLocaleString()}</span>
+              {displayOriginalPrice && displayOriginalPrice > displayPrice && (
                 <>
-                  <span className="text-lg text-slate-400 line-through">₹{product.original_price.toLocaleString()}</span>
+                  <span className="text-lg text-slate-400 line-through">₹{displayOriginalPrice.toLocaleString()}</span>
                   <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-sm font-semibold rounded-lg">
-                    Save ₹{(product.original_price - product.price).toLocaleString()}
+                    Save ₹{(displayOriginalPrice - displayPrice).toLocaleString()}
                   </span>
                 </>
               )}
@@ -602,13 +746,21 @@ export default function ProductDetailClient() {
                       {variation.name}
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      {variation.options.map((option) => (
+                      {(variation.options || []).map((option) => (
                         <button
                           key={option.value}
-                          onClick={() => setSelectedVariations({
-                            ...selectedVariations,
-                            [variation.type]: option.value
-                          })}
+                          onClick={() => {
+                            const next = {
+                              ...selectedVariations,
+                              [variation.type]: option.value,
+                            };
+                            setSelectedVariations(next);
+                            const partial = resolveSkuFromSelection(productSkus, next, {
+                              partial: true,
+                            });
+                            const imgs = skuImages(partial);
+                            if (imgs.length > 0) setSelectedImage(0);
+                          }}
                           className={`px-4 py-2 rounded-xl border-2 transition-all ${
                             selectedVariations[variation.type] === option.value
                               ? 'border-orange-500 bg-orange-50 text-orange-700'
@@ -642,7 +794,7 @@ export default function ProductDetailClient() {
                   <button
                     onClick={() => changeQuantity(1)}
                     className="p-3 hover:bg-slate-100 transition-colors"
-                    disabled={quantity >= product.stock}
+                    disabled={quantity >= displayStock}
                   >
                     <Plus className="w-5 h-5 text-slate-600" />
                   </button>
@@ -659,9 +811,9 @@ export default function ProductDetailClient() {
             <div className="flex gap-3">
               <button
                 onClick={addToCart}
-                disabled={product.stock === 0 || addingToCart}
+                disabled={displayStock === 0 || addingToCart}
                 className={`flex-1 py-4 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
-                  product.stock === 0
+                  displayStock === 0
                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                     : isInCart
                     ? 'bg-emerald-500 text-white hover:bg-emerald-600'
@@ -684,7 +836,7 @@ export default function ProductDetailClient() {
               </button>
               <button
                 onClick={buyNow}
-                disabled={product.stock === 0}
+                disabled={displayStock === 0}
                 className="flex-1 py-4 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Buy Now • ₹{finalPrice.toLocaleString()}
@@ -758,10 +910,13 @@ export default function ProductDetailClient() {
                   </div>
                 </>
               )}
-              {product.specifications && Object.entries(product.specifications).map(([key, value]) => (
+              {product.specifications &&
+                typeof product.specifications === 'object' &&
+                !Array.isArray(product.specifications) &&
+                Object.entries(product.specifications).map(([key, value]) => (
                 <div key={key} className="flex justify-between py-2 border-b border-slate-100">
                   <span className="text-slate-600">{key}</span>
-                  <span className="font-medium text-slate-900">{value}</span>
+                  <span className="font-medium text-slate-900">{displaySpecValue(value)}</span>
                 </div>
               ))}
             </div>

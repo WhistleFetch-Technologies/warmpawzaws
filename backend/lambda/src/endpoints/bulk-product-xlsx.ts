@@ -653,6 +653,8 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     if (bag.brand) product.brand = bag.brand.trim();
     // Gallery images only — comma/newline URLs; A+ Content stays in images_aplus (not merged here).
     if (bag.images) product.images = bag.images.trim();
+    if (bag.colour) product.colour = bag.colour.trim();
+    if (bag.dimensions_variant) product.size_variant = bag.dimensions_variant.trim();
     if (tagPieces) product.tags = tagPieces;
 
     products.push(product);

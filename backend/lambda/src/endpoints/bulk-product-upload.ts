@@ -33,6 +33,8 @@ import {
   parseProductImageList,
   validateEcommerceProductInput,
 } from '../utils/product-ecommerce-validation';
+import { upsertProductSkuRow } from '../utils/product-sku-service';
+import { normalizeOptionValues } from '../utils/product-sku-resolve';
 
 interface BulkProductRow {
   name: string;
@@ -282,21 +284,31 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           const stockValue =
             Number(product.stock_quantity ?? product.stock ?? product.stockQuantity) || 0;
 
+          const pricingNorm = normalizeEcommerceProductPricing(product as Record<string, unknown>);
+          const parentPrice = pricingNorm.ok
+            ? pricingNorm.pricing.sellingPrice
+            : Number(product.price);
+          const parentMrp = pricingNorm.ok
+            ? pricingNorm.pricing.mrp
+            : product.compare_at_price
+              ? Number(product.compare_at_price)
+              : null;
+
+          const option_values = normalizeOptionValues({
+            size: (product as Record<string, unknown>).size_variant,
+            color: (product as Record<string, unknown>).colour,
+          });
+          const hasVariantAxes = Object.keys(option_values).length > 0;
+
           const productData: Record<string, unknown> = {
             vendor_id: vendorId,
             name: product.name?.trim(),
             description: product.description?.trim() || null,
             category_id: resolvedCategory.id,
             category: resolvedCategory.name,
-            price: (() => {
-              const norm = normalizeEcommerceProductPricing(product as Record<string, unknown>);
-              return norm.ok ? norm.pricing.sellingPrice : Number(product.price);
-            })(),
-            compare_at_price: (() => {
-              const norm = normalizeEcommerceProductPricing(product as Record<string, unknown>);
-              return norm.ok ? norm.pricing.mrp : product.compare_at_price ? Number(product.compare_at_price) : null;
-            })(),
-            stock: stockValue,
+            price: parentPrice,
+            compare_at_price: parentMrp,
+            stock: hasVariantAxes ? 0 : stockValue,
             hsn_code: product.hsn_code?.trim() || null,
             gst_rate: product.gst_rate ? Number(product.gst_rate) : null,
             weight: product.weight ? Number(product.weight) : null,
@@ -313,6 +325,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             updated_at: new Date().toISOString(),
           };
 
+          let savedProductId: string | null = existingProduct?.id ?? null;
+
           if (existingProduct) {
             // Update existing product — preserve system SKU; backfill if legacy row has none
             const updatePayload = { ...productData };
@@ -320,17 +334,38 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
               updatePayload.sku = generateVendorProductSku(vendorId, String(rowNum));
             }
             await update('products', { id: existingProduct.id }, updatePayload);
+            savedProductId = existingProduct.id;
             results.updated++;
           } else {
             // Create new product — not visible until admin approves
-            await insert('products', {
+            const inserted = await insert('products', {
               ...productData,
               sku: generateVendorProductSku(vendorId, String(rowNum)),
               is_active: false,
               status: 'pending',
               created_at: new Date().toISOString(),
             });
+            savedProductId = String(inserted[0]?.id ?? '');
             results.created++;
+          }
+
+          if (savedProductId && hasVariantAxes) {
+            await upsertProductSkuRow(
+              vendorId,
+              savedProductId,
+              {
+                option_values,
+                price: parentPrice,
+                compare_at_price: parentMrp,
+                stock: stockValue,
+                images,
+                barcode: (product as Record<string, unknown>).barcode
+                  ? String((product as Record<string, unknown>).barcode).trim()
+                  : null,
+                sort_order: rowNum,
+              },
+              { price: parentPrice, compare_at_price: parentMrp },
+            );
           }
         } catch (error: any) {
           results.failed++;

@@ -552,6 +552,7 @@ const JSONB_COLUMN_NAMES = new Set([
   'insurance_info',
   'tax_breakdown',
   'variant_info',
+  'option_values',
   'specializations',
 ]);
 

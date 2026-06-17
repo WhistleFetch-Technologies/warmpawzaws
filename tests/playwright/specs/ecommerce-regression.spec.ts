@@ -111,6 +111,62 @@ test.describe('Schema Validation - Products API', () => {
 });
 
 // ===========================================================================
+// SECTION 1b: PRODUCT SKUS API SCHEMA VALIDATION
+// ===========================================================================
+
+test.describe('Schema Validation - Product SKUs API', () => {
+  test('GET /ecommerce/products/:id should include skus and variation_axes for variant products', async ({ request }) => {
+    const listResponse = await request.get(`${API_BASE}/ecommerce/products?limit=50`);
+    if (!listResponse.ok()) return;
+
+    const listData = await listResponse.json();
+    const products = listData.products || [];
+    if (!products.length) return;
+
+    for (const p of products) {
+      const detailRes = await request.get(`${API_BASE}/ecommerce/products/${p.id}`);
+      if (!detailRes.ok()) continue;
+      const detail = await detailRes.json();
+      if (!detail.skus?.length && !detail.product?.has_variants) continue;
+
+      expect(Array.isArray(detail.skus)).toBeTruthy();
+      expect(Array.isArray(detail.variation_axes)).toBeTruthy();
+      if (detail.skus.length > 0) {
+        const sku = detail.skus[0];
+        expect(sku).toHaveProperty('id');
+        expect(sku).toHaveProperty('option_values');
+        expect(sku).toHaveProperty('price');
+        expect(sku).toHaveProperty('stock');
+      }
+      return;
+    }
+  });
+
+  test('POST /ecommerce/orders should accept product_sku_id in line items', async ({ request }) => {
+    const response = await request.post(`${API_BASE}/ecommerce/orders`, {
+      data: {
+        customer_phone: '9999999999',
+        items: [
+          {
+            product_id: TEST_IDS.productId,
+            product_sku_id: '00000000-0000-0000-0000-000000000099',
+            quantity: 1,
+          },
+        ],
+        shipping_address: {
+          name: 'Test',
+          line1: '123 Test St',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          pincode: '400001',
+        },
+      },
+    });
+    expect([400, 404, 500]).toContain(response.status());
+  });
+});
+
+// ===========================================================================
 // SECTION 2: WISHLIST API SCHEMA VALIDATION
 // ===========================================================================
 

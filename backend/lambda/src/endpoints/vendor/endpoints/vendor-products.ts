@@ -34,6 +34,20 @@ import {
   generateVendorProductSku,
   validateEcommerceProductInput,
 } from '../../../utils/product-ecommerce-validation';
+import {
+  loadProductSkus,
+  loadProductSkusForProducts,
+  syncProductSkus,
+  updateProductSkuStock,
+  type SkuInput,
+} from '../../../utils/product-sku-service';
+import {
+  metadataVariantsToSkus,
+  normalizeImagesArray,
+  mergeLegacyVariantImagesIntoSkus,
+  aggregateParentStock,
+} from '../../../utils/product-sku-resolve';
+import { presignProductSkusForDisplay } from '../../../utils/s3-media-presign';
 
 // PHASE 1.3: S3 client for product image uploads
 const s3Client = new S3Client({
@@ -193,6 +207,108 @@ function normalizeApprovalStatus(raw: unknown): 'pending' | 'active' | 'rejected
     return 'pending';
   }
   return 'pending';
+}
+
+function parseSkuInputsFromBody(body: Record<string, unknown>, parentPrice?: number): SkuInput[] | null {
+  if (body.skus !== undefined && body.skus !== null) {
+    if (!Array.isArray(body.skus)) return null;
+    if (body.skus.length === 0) return [];
+    return (body.skus as Record<string, unknown>[]).map((row, idx) => ({
+      id:
+        row.id != null && isValidUUID(String(row.id).trim())
+          ? String(row.id).trim()
+          : undefined,
+      option_values: (row.option_values as Record<string, unknown>) ?? {
+        size: row.size,
+        color: row.color ?? row.colour,
+      },
+      price: row.price != null ? Number(row.price) : undefined,
+      compare_at_price:
+        row.compare_at_price != null
+          ? Number(row.compare_at_price)
+          : row.original_price != null
+            ? Number(row.original_price)
+            : row.mrp != null
+              ? Number(row.mrp)
+              : null,
+      stock: row.stock != null ? Number(row.stock) : 0,
+      barcode: row.barcode ? String(row.barcode) : null,
+      images: row.images,
+      sku: row.sku ? String(row.sku) : null,
+      is_active: row.is_active !== false,
+      sort_order: row.sort_order != null ? Number(row.sort_order) : idx,
+    }));
+  }
+  if (body.variants !== undefined && body.variants !== null && Array.isArray(body.variants)) {
+    const legacy = metadataVariantsToSkus(body.variants as unknown[], parentPrice);
+    return legacy.map((row, idx) => ({
+      option_values: row.option_values,
+      price: row.price,
+      compare_at_price: row.compare_at_price,
+      stock: row.stock,
+      sku: row.sku,
+      images: row.images,
+      sort_order: idx,
+    }));
+  }
+  return null;
+}
+
+/** True when PUT body only updates parent stock (inventory legacy quick-update). */
+function isStockOnlyProductUpdate(body: Record<string, unknown>): boolean {
+  const keys = Object.keys(body).filter((k) => body[k] !== undefined);
+  if (keys.length === 0) return false;
+  const allowed = new Set(['stock', 'stock_quantity']);
+  return keys.every((k) => allowed.has(k));
+}
+
+async function enrichProductRowWithSkus(
+  row: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const productOut = await presignProductRowForDisplay(row);
+  const productId = String(productOut.id ?? '');
+  if (!productId) return productOut;
+
+  let skus = await loadProductSkus(productId);
+  const meta =
+    productOut.metadata && typeof productOut.metadata === 'object'
+      ? (productOut.metadata as Record<string, unknown>)
+      : null;
+  const legacyVariants =
+    meta && Array.isArray(meta.variants) ? (meta.variants as unknown[]) : null;
+
+  if (skus.length === 0 && legacyVariants) {
+    const legacy = metadataVariantsToSkus(
+      legacyVariants,
+      Number(productOut.price) || undefined,
+    );
+    // Display-only fallback — no synthetic id (would break PUT sync if sent as sku id).
+    skus = legacy.map((s, idx) => ({
+      sku: s.sku ?? undefined,
+      option_values: s.option_values,
+      price: s.price,
+      compare_at_price: s.compare_at_price,
+      stock: s.stock,
+      images: s.images,
+      is_active: true,
+      sort_order: idx,
+    }));
+  } else if (skus.length > 0 && legacyVariants) {
+    skus = mergeLegacyVariantImagesIntoSkus(skus, legacyVariants);
+  }
+
+  const skusPresigned = await presignProductSkusForDisplay(
+    skus.map((s) => ({
+      ...s,
+      images: normalizeImagesArray(s.images),
+    })) as Record<string, unknown>[],
+  );
+  productOut.skus = skusPresigned;
+  productOut.has_variants = skus.length > 0;
+  if (skus.length > 0) {
+    productOut.stock = aggregateParentStock(skus);
+  }
+  return productOut;
 }
 
 const AWS_REGION_EFFECTIVE = process.env.AWS_REGION || 'ap-south-1';
@@ -453,8 +569,36 @@ class GetVendorProductsHandler extends BaseHandler {
       }
 
       const rows = products.rows || [];
+      const skuMap = await loadProductSkusForProducts(
+        rows.map((r: Record<string, unknown>) => String(r.id ?? '')).filter(Boolean),
+      );
       const productsOut = await Promise.all(
-        rows.map((row: Record<string, unknown>) => presignProductRowForDisplay(row)),
+        rows.map(async (row: Record<string, unknown>) => {
+          const base = await presignProductRowForDisplay(row);
+          const pid = String(base.id ?? '');
+          let skus = skuMap.get(pid) ?? [];
+          const meta =
+            base.metadata && typeof base.metadata === 'object'
+              ? (base.metadata as Record<string, unknown>)
+              : null;
+          const legacyVariants =
+            meta && Array.isArray(meta.variants) ? (meta.variants as unknown[]) : null;
+          if (skus.length > 0 && legacyVariants) {
+            skus = mergeLegacyVariantImagesIntoSkus(skus, legacyVariants);
+          }
+          const skusPresigned = await presignProductSkusForDisplay(
+            skus.map((s) => ({
+              ...s,
+              images: normalizeImagesArray(s.images),
+            })) as Record<string, unknown>[],
+          );
+          base.skus = skusPresigned;
+          base.has_variants = skus.length > 0;
+          if (skus.length > 0) {
+            base.stock = aggregateParentStock(skus);
+          }
+          return base;
+        }),
       );
 
       return this.success({
@@ -579,15 +723,13 @@ class CreateVendorProductHandler extends BaseHandler {
       }
 
       const hasExtraPayload =
-        (body.variants !== undefined && body.variants !== null) ||
         body.images !== undefined ||
         (body.delivery_regions !== undefined && body.delivery_regions !== null);
 
-      // PHASE 1.3: variants / images / delivery_regions — use metadata when migrated, else first-class columns
+      // images / delivery_regions in metadata when column exists
       if (hasExtraPayload) {
         if (hasMetadataCol) {
           productData.metadata = {
-            ...(body.variants != null && { variants: body.variants }),
             ...(imagesNorm !== undefined && { images: imagesNorm }),
             ...(deliveryNorm !== undefined && { delivery_regions: deliveryNorm }),
           };
@@ -600,19 +742,12 @@ class CreateVendorProductHandler extends BaseHandler {
             productData.images = imagesNorm;
           }
           const specPatch: Record<string, unknown> = {};
-          if (body.variants !== undefined && body.variants !== null) {
-            specPatch.variants = body.variants;
-          }
           if (deliveryNorm !== undefined) {
             specPatch.delivery_regions = deliveryNorm;
           }
           if (Object.keys(specPatch).length > 0) {
             if (cols.has('specifications')) {
               productData.specifications = specPatch;
-            } else {
-              console.warn(
-                '[VendorProducts] products.metadata column missing; variants/delivery_regions not stored (run db/migrations/034_add_metadata_columns.sql or add products.specifications)',
-              );
             }
           }
         }
@@ -620,7 +755,15 @@ class CreateVendorProductHandler extends BaseHandler {
 
       // Create product
       const newProduct = await insert('products', productData);
-      const productOut = await presignProductRowForDisplay(newProduct[0] as Record<string, unknown>);
+      const newProductId = String(newProduct[0]?.id ?? '');
+      const skuInputs = parseSkuInputsFromBody(body as Record<string, unknown>, normalized.sellingPrice);
+      if (newProductId && skuInputs && skuInputs.length > 0) {
+        await syncProductSkus(resolvedVendorId, newProductId, skuInputs, {
+          price: normalized.sellingPrice,
+          compare_at_price: normalized.mrp,
+        });
+      }
+      const productOut = await enrichProductRowWithSkus(newProduct[0] as Record<string, unknown>);
 
       return this.success({
         product: productOut,
@@ -692,7 +835,7 @@ class GetVendorProductHandler extends BaseHandler {
         return this.error('Product not found', 404);
       }
 
-      const product = await presignProductRowForDisplay(products.rows[0] as Record<string, unknown>);
+      const product = await enrichProductRowWithSkus(products.rows[0] as Record<string, unknown>);
 
       return this.success({
         product,
@@ -735,6 +878,8 @@ class UpdateVendorProductHandler extends BaseHandler {
 
       const prevRow = existingProducts[0] as Record<string, unknown>;
       const prevStatus = String(prevRow.status || '').trim().toLowerCase();
+      const existingSkus = await loadProductSkus(productId);
+      const hasSkuRows = existingSkus.length > 0;
 
       const cols = await getProductsColumnSet();
       const hasMetadataCol = cols.has('metadata');
@@ -794,12 +939,19 @@ class UpdateVendorProductHandler extends BaseHandler {
           return this.error(pricingErr, 400);
         }
       }
-      // ✅ FIX: Use stock column (stock_quantity was renamed to stock in migration 013)
-      if (body.stock !== undefined) {
+      // Stock: simple products update parent row; variant products use SKU PATCH or skus[] sync
+      const stockTouched = body.stock !== undefined || body.stock_quantity !== undefined;
+      if (stockTouched && hasSkuRows) {
+        if (isStockOnlyProductUpdate(body as Record<string, unknown>)) {
+          return this.error(
+            'Use PATCH /vendor/:vendorId/products/:productId/skus/:skuId/stock for variant products',
+            400,
+          );
+        }
+      } else if (body.stock !== undefined) {
         updateData.stock = parseInt(body.stock, 10);
-      }
-      if (body.stock_quantity !== undefined) {
-        updateData.stock = parseInt(body.stock_quantity, 10); // ✅ FIX: Map stock_quantity to stock
+      } else if (body.stock_quantity !== undefined) {
+        updateData.stock = parseInt(body.stock_quantity, 10);
       }
       // SKU is system-assigned; vendors cannot change it. Backfill legacy rows with null SKU on save.
       const prevSku = prevRow.sku != null ? String(prevRow.sku).trim() : '';
@@ -850,21 +1002,17 @@ class UpdateVendorProductHandler extends BaseHandler {
           body.delivery_regions === null ? null : normalizeDeliveryRegions(body.delivery_regions);
       }
 
-      // PHASE 1.3: variants / images / delivery_regions
-      if (body.variants !== undefined || body.images !== undefined || body.delivery_regions !== undefined) {
+      // delivery_regions in metadata (variants now live in product_skus)
+      if (body.delivery_regions !== undefined || body.images !== undefined) {
         if (hasMetadataCol) {
           const existingMetaRows = await query('SELECT metadata FROM products WHERE id = $1', [productId]);
           const existingMetadata = existingMetaRows.rows[0]?.metadata || {};
           updateData.metadata = {
             ...existingMetadata,
-            ...(body.variants !== undefined && { variants: body.variants }),
             ...(body.images !== undefined && { images: normalizedImages }),
             ...(body.delivery_regions !== undefined && { delivery_regions: normalizedDelivery }),
           };
-        } else if (
-          (body.variants !== undefined || body.delivery_regions !== undefined) &&
-          cols.has('specifications')
-        ) {
+        } else if (body.delivery_regions !== undefined && cols.has('specifications')) {
           const specRes = await query('SELECT specifications FROM products WHERE id = $1', [productId]);
           let base: Record<string, unknown> = {};
           const raw = specRes.rows[0]?.specifications;
@@ -880,13 +1028,8 @@ class UpdateVendorProductHandler extends BaseHandler {
               /* keep base */
             }
           }
-          if (body.variants !== undefined) base.variants = body.variants;
           if (body.delivery_regions !== undefined) base.delivery_regions = normalizedDelivery;
           updateData.specifications = base;
-        } else if (body.variants !== undefined || body.delivery_regions !== undefined) {
-          console.warn(
-            '[VendorProducts] products.metadata column missing; variants/delivery_regions not stored (run db/migrations/034_add_metadata_columns.sql or add products.specifications)',
-          );
         }
       }
 
@@ -899,7 +1042,19 @@ class UpdateVendorProductHandler extends BaseHandler {
         return this.error('Failed to update product', 500);
       }
 
-      const productOut = await presignProductRowForDisplay(updated[0] as Record<string, unknown>);
+      const skuInputs = parseSkuInputsFromBody(
+        body as Record<string, unknown>,
+        Number(updated[0]?.price) || undefined,
+      );
+      if (skuInputs !== null) {
+        await syncProductSkus(resolvedVendorId, productId, skuInputs, {
+          price: Number(updated[0]?.price) || 0,
+          compare_at_price:
+            updated[0]?.compare_at_price != null ? Number(updated[0].compare_at_price) : null,
+        });
+      }
+
+      const productOut = await enrichProductRowWithSkus(updated[0] as Record<string, unknown>);
 
       return this.success({
         product: productOut,
@@ -908,6 +1063,74 @@ class UpdateVendorProductHandler extends BaseHandler {
     } catch (error: any) {
       console.error('Error updating product:', error);
       return this.error(error.message || 'Failed to update product', 500);
+    }
+  }
+}
+
+// ============================================================================
+// PATCH /vendor/:vendorId/products/:productId/skus/:skuId/stock - Update SKU stock
+// ============================================================================
+
+class PatchVendorProductSkuStockHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      const vendorId = context.event.pathParameters?.vendorId;
+      const productId = context.event.pathParameters?.productId;
+      const skuId = context.event.pathParameters?.skuId;
+      const body = this.parseBody(context.event);
+
+      if (!vendorId || !productId || !skuId) {
+        return this.error('Vendor ID, Product ID, and SKU ID are required', 400);
+      }
+
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor || !vendor.id) {
+        return this.error('Vendor not found', 404);
+      }
+      const resolvedVendorId = vendor.id;
+
+      const existingProducts = await select('products', {
+        id: productId,
+        vendor_id: resolvedVendorId,
+      });
+      if (existingProducts.length === 0) {
+        return this.error('Product not found or access denied', 404);
+      }
+
+      if (body.stock === undefined && body.stock_quantity === undefined) {
+        return this.error('stock is required', 400);
+      }
+
+      const stockRaw = body.stock !== undefined ? body.stock : body.stock_quantity;
+      const { sku, parent_stock } = await updateProductSkuStock(
+        resolvedVendorId,
+        productId,
+        skuId,
+        Number(stockRaw),
+      );
+
+      const skuPresigned = await presignProductSkusForDisplay([
+        {
+          ...sku,
+          images: normalizeImagesArray(sku.images),
+        } as Record<string, unknown>,
+      ]);
+
+      return this.success({
+        sku: skuPresigned[0],
+        parent_stock,
+        message: 'SKU stock updated successfully',
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('not found') || msg.includes('access denied')) {
+        return this.error(msg, 404);
+      }
+      if (msg.includes('Invalid') || msg.includes('non-negative')) {
+        return this.error(msg, 400);
+      }
+      console.error('Error updating SKU stock:', error);
+      return this.error(msg || 'Failed to update SKU stock', 500);
     }
   }
 }
@@ -987,137 +1210,22 @@ export function registerVendorProductsEndpoints(app: Hono) {
   const createProductHandler = new CreateVendorProductHandler();
   const getProductHandler = new GetVendorProductHandler();
   const updateProductHandler = new UpdateVendorProductHandler();
+  const patchSkuStockHandler = new PatchVendorProductSkuStockHandler();
   const deleteProductHandler = new DeleteVendorProductHandler();
 
   app.get('/vendor/:vendorId/products', async (c) => {
     try {
-      const paramVendorId = c.req.param('vendorId');
-      
-      // Handle test IDs or invalid UUIDs gracefully
-      if (!paramVendorId || paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
-        return c.json({
-          products: [],
-          total: 0,
-          count: 0,
-        }, 200);
+      const response = await getProductsHandler.handle({
+        event: {
+          pathParameters: c.req.param(),
+          queryStringParameters: c.req.query(),
+        } as any,
+      } as HandlerContext);
+      const body = JSON.parse(response.body);
+      if (body.products && body.count === undefined) {
+        body.count = body.products.length;
       }
-
-      // ✅ FIX: Resolve vendor ID (handles vendor_identity auto-create)
-      const vendor = await resolveVendorById(paramVendorId);
-      if (!vendor || !vendor.id) {
-        console.error(`[VendorProducts] Vendor not found for ID: ${paramVendorId}`);
-        return c.json({ error: 'Vendor not found' }, 404);
-      }
-      
-      const vendorId = vendor.id;
-      console.log(`[VendorProducts] Resolved vendorId ${paramVendorId} to ${vendorId}`);
-
-      const cols = await getProductsColumnSet();
-      const { metadata: metadataSelect, status: statusSelect, originalPrice: originalPriceSelect } =
-        productsOptionalSelectExprs(cols);
-
-      // Get query parameters
-      const search = c.req.query('search') || '';
-      const category = c.req.query('category') || '';
-      const status = c.req.query('status') || '';
-      const limit = parseInt(c.req.query('limit') || '50', 10);
-      const offset = parseInt(c.req.query('offset') || '0', 10);
-
-      // ✅ FIX: Use stock column (stock_quantity was renamed to stock in migration 013)
-      // No need to check - migration 013 renamed stock_quantity to stock
-
-      // Build query - use stock column (stock_quantity was renamed to stock in migration 013)
-      // Use explicit column selection to avoid issues with p.* and missing columns
-      let productQuery = `
-        SELECT 
-          p.id,
-          p.vendor_id,
-          p.category_id,
-          p.name,
-          p.description,
-          p.sku,
-          p.price,
-          ${originalPriceSelect},
-          COALESCE(p.stock, 0) as stock,
-          ${statusSelect},
-          p.is_active,
-          p.created_at,
-          p.updated_at,
-          p.images,
-          p.tags,
-          ${metadataSelect},
-          p.hsn_code,
-          p.gst_rate,
-          p.category,
-          ec.name as category_name
-        FROM products p
-        LEFT JOIN ecommerce_categories ec ON p.category_id = ec.id
-        WHERE p.vendor_id = $1
-      `;
-
-      const params: any[] = [vendorId];
-      let paramIndex = 2;
-
-      if (search) {
-        productQuery += ` AND (p.name ILIKE $${paramIndex} OR p.description ILIKE $${paramIndex})`;
-        params.push(`%${search}%`);
-        paramIndex++;
-      }
-
-      if (category) {
-        productQuery += ` AND (p.category_id::text = $${paramIndex} OR p.category = $${paramIndex})`;
-        params.push(category);
-        paramIndex++;
-      }
-
-      if (status === 'active') {
-        productQuery += ` AND p.is_active = true`;
-      } else if (status === 'inactive') {
-        productQuery += ` AND p.is_active = false`;
-      }
-
-      productQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit, offset);
-
-      let products;
-      let total = 0;
-      
-      try {
-        products = await query(productQuery, params);
-
-        // Get total count
-        let countQuery = `SELECT COUNT(*) as total FROM products p WHERE p.vendor_id = $1`;
-        const countParams: any[] = [vendorId]; // Use resolved vendorId from above
-        const countResult = await query(countQuery, countParams);
-        total = parseInt(countResult.rows?.[0]?.total || '0', 10);
-      } catch (dbError: any) {
-        console.error('Database error in vendor products:', dbError);
-        // Handle table/column not existing errors
-        if (dbError.message?.includes('relation') || 
-            dbError.message?.includes('column') ||
-            dbError.code === '42P01' || 
-            dbError.code === '42703') {
-          return c.json({
-            products: [],
-            total: 0,
-            count: 0,
-          }, 200);
-        }
-        throw dbError;
-      }
-
-      const rawRows = products?.rows || [];
-      const productsOut = await Promise.all(
-        rawRows.map((row: Record<string, unknown>) => presignProductRowForDisplay(row)),
-      );
-
-      return c.json({
-        products: productsOut,
-        count: productsOut.length,
-        total,
-        limit,
-        offset,
-      }, 200);
+      return c.json(body, response.statusCode as 200 | 400 | 404 | 500);
     } catch (error: any) {
       console.error('Error in vendor products endpoint:', error);
       return c.json({ error: error.message || 'Internal Server Error' }, 500);
@@ -1167,6 +1275,22 @@ export function registerVendorProductsEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error updating product:', error);
       return c.json({ error: error.message || 'Failed to update product' }, 500);
+    }
+  });
+
+  app.patch('/vendor/:vendorId/products/:productId/skus/:skuId/stock', async (c) => {
+    try {
+      const body = await c.req.json();
+      const response = await patchSkuStockHandler.handle({
+        event: {
+          pathParameters: c.req.param(),
+          body: JSON.stringify(body),
+        } as any,
+      } as HandlerContext);
+      return c.json(JSON.parse(response.body), response.statusCode as 200 | 400 | 404 | 500);
+    } catch (error: any) {
+      console.error('Error updating SKU stock:', error);
+      return c.json({ error: error.message || 'Failed to update SKU stock' }, 500);
     }
   });
 
