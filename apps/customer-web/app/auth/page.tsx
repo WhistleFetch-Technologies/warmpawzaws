@@ -18,9 +18,11 @@ import {
 } from '@/lib/session-utils';
 import { Eye, EyeOff } from 'lucide-react';
 import {
-  CUSTOMER_FORGOT_COOLDOWN_STORAGE_KEY,
   FORGOT_PASSWORD_RETRY_CONFIG,
+  LOGIN_OTP_RETRY_CONFIG,
   formatForgotCooldownMessage,
+  formatResetRecentlyMessage,
+  forgotCooldownStorageKey,
   persistForgotCooldown,
   readForgotCooldownRemaining,
   readRetryAfterSecondsFromError,
@@ -239,6 +241,12 @@ function AuthPageContent() {
     }
   }, [forgotResendTimer]);
 
+  useEffect(() => {
+    if (!forgotOpen) return;
+    const key = forgotCooldownStorageKey(forgotUsername.trim() || loginUsername.trim());
+    setForgotResendTimer(readForgotCooldownRemaining(key));
+  }, [forgotOpen, forgotUsername, loginUsername]);
+
   // Format phone number with spaces (74493 38923)
   const formatPhoneDisplay = (num: string) => {
     if (num.length <= 5) return num;
@@ -271,17 +279,26 @@ function AuthPageContent() {
     try {
       setLoading(true);
       setError(null);
-      await apiClient.post('/auth/otp/send', {
-        phone: `${countryCode}${phone}`,
-        role: 'customer',
-      });
+      await apiClient.post(
+        '/auth/otp/send',
+        {
+          phone: `${countryCode}${phone}`,
+          role: 'customer',
+        },
+        LOGIN_OTP_RETRY_CONFIG
+      );
       setOtpSent(true);
       setResendTimer(60);
       if (referralCode?.trim()) {
         localStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to send OTP');
+      const code = err?.responseData?.error?.code || err?.code;
+      if (code === 'OTP_DELIVERY_FAILED' || err?.statusCode === 503) {
+        setError('Could not send SMS. Try again in a minute.');
+      } else {
+        setError(err.message || 'Failed to send OTP');
+      }
     } finally {
       setLoading(false);
     }
@@ -400,13 +417,18 @@ function AuthPageContent() {
     return null;
   }
 
-  function refreshForgotResendFromStorage() {
-    setForgotResendTimer(readForgotCooldownRemaining(CUSTOMER_FORGOT_COOLDOWN_STORAGE_KEY));
+  function forgotCooldownKey(username?: string) {
+    return forgotCooldownStorageKey((username ?? forgotUsername).trim() || loginUsername.trim());
   }
 
-  function applyForgotCooldown(seconds: number) {
-    persistForgotCooldown(CUSTOMER_FORGOT_COOLDOWN_STORAGE_KEY, seconds);
-    setForgotResendTimer(readForgotCooldownRemaining(CUSTOMER_FORGOT_COOLDOWN_STORAGE_KEY));
+  function refreshForgotResendFromStorage() {
+    setForgotResendTimer(readForgotCooldownRemaining(forgotCooldownKey()));
+  }
+
+  function applyForgotCooldown(seconds: number, username?: string) {
+    const key = forgotCooldownKey(username);
+    persistForgotCooldown(key, seconds);
+    setForgotResendTimer(readForgotCooldownRemaining(key));
   }
 
   function invalidateForgotInFlightRequest() {
@@ -468,16 +490,28 @@ function AuthPageContent() {
         typeof inner?.retryAfterSeconds === 'number'
           ? Math.ceil(inner.retryAfterSeconds)
           : readRetryAfterSecondsFromSuccess(res);
-      applyForgotCooldown(retrySec);
+      applyForgotCooldown(retrySec, u);
       setForgotInfo(msg);
       setForgotStep(2);
     } catch (err: unknown) {
       if (gen !== forgotRequestGen.current) return;
-      const e = err as { statusCode?: number; code?: string; message?: string };
-      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
+      const e = err as {
+        statusCode?: number;
+        code?: string;
+        message?: string;
+        responseData?: { error?: { code?: string } };
+      };
+      const errCode = e?.code || e?.responseData?.error?.code;
+      if (errCode === 'RESET_RECENTLY') {
         const retrySec = readRetryAfterSecondsFromError(err);
-        applyForgotCooldown(retrySec);
+        setError(formatResetRecentlyMessage(retrySec));
+      } else if (e?.statusCode === 429 || errCode === 'RATE_LIMITED') {
+        const retrySec = readRetryAfterSecondsFromError(err);
+        applyForgotCooldown(retrySec, u);
         setError(`Too many requests. Wait ${retrySec} seconds before trying again.`);
+      } else if (errCode === 'OTP_DELIVERY_FAILED' || e?.statusCode === 503) {
+        applyForgotCooldown(60, u);
+        setError('Could not send SMS. Try again in a minute.');
       } else {
         setError(e?.message || 'Something went wrong. Try again.');
       }
@@ -515,10 +549,19 @@ function AuthPageContent() {
       setForgotStep(3);
     } catch (err: unknown) {
       if (gen !== forgotRequestGen.current) return;
-      const e = err as { statusCode?: number; code?: string; message?: string };
-      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
+      const e = err as {
+        statusCode?: number;
+        code?: string;
+        message?: string;
+        responseData?: { error?: { code?: string } };
+      };
+      const errCode = e?.code || e?.responseData?.error?.code;
+      if (errCode === 'RESET_RECENTLY') {
         const retrySec = readRetryAfterSecondsFromError(err);
-        applyForgotCooldown(retrySec);
+        setError(formatResetRecentlyMessage(retrySec));
+      } else if (e?.statusCode === 429 || errCode === 'RATE_LIMITED') {
+        const retrySec = readRetryAfterSecondsFromError(err);
+        applyForgotCooldown(retrySec, u);
         setError(`Too many requests. Wait ${retrySec} seconds before trying again.`);
       } else {
         setError(e?.message || 'Invalid or expired code');

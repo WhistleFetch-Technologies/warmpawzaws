@@ -493,8 +493,29 @@ app.use(
   })
 );
 
-// Rate limiting for sensitive endpoints
-app.use('/auth/*', rateLimitAuth());
+// OTP-heavy auth routes: higher per-IP ceiling (separate from blanket /auth/* limit).
+const otpAuthRateLimit = slidingWindowRateLimit({
+  windowMs: 60_000,
+  maxRequests: 20,
+  keyPrefix: 'otp-auth',
+});
+app.use('/auth/otp/send', otpAuthRateLimit);
+app.use('/auth/send-otp', otpAuthRateLimit);
+app.use('/auth/customer/forgot-password/request', otpAuthRateLimit);
+app.use('/auth/vendor/forgot-password/request', otpAuthRateLimit);
+
+const authRateLimitMiddleware = rateLimitAuth();
+const OTP_AUTH_PATHS = new Set([
+  '/auth/otp/send',
+  '/auth/send-otp',
+  '/auth/customer/forgot-password/request',
+  '/auth/vendor/forgot-password/request',
+]);
+app.use('/auth/*', async (c, next) => {
+  const path = new URL(c.req.url).pathname;
+  if (OTP_AUTH_PATHS.has(path)) return next();
+  return authRateLimitMiddleware(c, next);
+});
 app.use('/otp/*', slidingWindowRateLimit({ windowMs: 60000, maxRequests: 5, keyPrefix: 'otp' }));
 app.use('/bookings/generate-otp', slidingWindowRateLimit({ windowMs: 60000, maxRequests: 5, keyPrefix: 'booking-otp' }));
 app.use('/payments/*', rateLimit({ windowMs: 60000, maxRequests: 30, keyPrefix: 'payments' }));
