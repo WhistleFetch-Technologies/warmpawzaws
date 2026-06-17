@@ -25,6 +25,7 @@ export type WarmpawzCartLine = {
   product_id: string;
   product: WarmpawzCartProductSnapshot;
   quantity: number;
+  product_sku_id?: string;
   selected_variations?: Record<string, string>;
 };
 
@@ -60,6 +61,7 @@ export function setLineQuantityInWarmpawzCartStorage(params: {
   lineId: string;
   quantity: number;
   product: WarmpawzCartProductSnapshot;
+  product_sku_id?: string;
   selectedVariations?: Record<string, string>;
 }): boolean {
   if (typeof window === 'undefined' || !params.lineId) return false;
@@ -75,6 +77,9 @@ export function setLineQuantityInWarmpawzCartStorage(params: {
     } else if (existingIndex >= 0) {
       cart[existingIndex].quantity = qty;
       cart[existingIndex].product = params.product;
+      if (params.product_sku_id) {
+        cart[existingIndex].product_sku_id = params.product_sku_id;
+      }
       if (params.selectedVariations && Object.keys(params.selectedVariations).length > 0) {
         cart[existingIndex].selected_variations = params.selectedVariations;
       }
@@ -83,6 +88,7 @@ export function setLineQuantityInWarmpawzCartStorage(params: {
         product_id: params.lineId,
         product: params.product,
         quantity: qty,
+        product_sku_id: params.product_sku_id,
         selected_variations:
           params.selectedVariations && Object.keys(params.selectedVariations).length > 0
             ? params.selectedVariations
@@ -103,6 +109,7 @@ export function mergeLineIntoWarmpawzCartStorage(params: {
   lineId: string;
   quantity: number;
   product: WarmpawzCartProductSnapshot;
+  product_sku_id?: string;
   selectedVariations?: Record<string, string>;
 }): boolean {
   if (typeof window === 'undefined' || !params.lineId) return false;
@@ -116,11 +123,15 @@ export function mergeLineIntoWarmpawzCartStorage(params: {
 
     if (existingIndex >= 0) {
       cart[existingIndex].quantity += params.quantity;
+      if (params.product_sku_id) {
+        cart[existingIndex].product_sku_id = params.product_sku_id;
+      }
     } else {
       cart.push({
         product_id: params.lineId,
         product: params.product,
         quantity: params.quantity,
+        product_sku_id: params.product_sku_id,
         selected_variations:
           params.selectedVariations && Object.keys(params.selectedVariations).length > 0
             ? params.selectedVariations

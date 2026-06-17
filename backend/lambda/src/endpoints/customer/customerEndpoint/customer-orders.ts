@@ -19,6 +19,10 @@ import { query, insert } from '../../../database/rds-connection';
 import { buildStructuredTracking } from '../../../utils/logistics/shipment-tracking';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import {
+  resolveEcommerceOrderLine,
+  decrementSkuStock,
+} from '../../../utils/product-sku-order';
 
 /** Maps checkout address shapes to NOT NULL `orders.shipping_*`; full object also in `metadata.address_snapshot`. */
 function shippingColumnsFromAddress(
@@ -161,65 +165,48 @@ class CreateCustomerOrderHandler extends BaseHandler {
         }
       }
 
-      const uniqueIds = [...new Set(productIds.map(String))];
-
-      let productsRes;
-      try {
-        productsRes = await query(
-          `SELECT id, name, price, vendor_id FROM products WHERE id = ANY($1::uuid[])`,
-          [uniqueIds]
-        );
-      } catch (e) {
-        console.error('Error loading products for order:', e);
-        return this.error('Failed to load products for this order', 500);
-      }
-
-      if (productsRes.rows.length !== uniqueIds.length) {
-        return this.error('One or more products were not found', 400);
-      }
-
-      const productById = new Map<
-        string,
-        { id: string; name: string; price: unknown; vendor_id: string | null }
-      >(productsRes.rows.map((r: { id: string; name: string; price: unknown; vendor_id: string | null }) => [String(r.id), r]));
-
       type LineRow = {
         product_id: string;
+        product_sku_id: string | null;
         product_name: string;
         quantity: number;
         unit_price: number;
         total_price: number;
         db_unit_price: number;
+        variant_info: Record<string, unknown> | null;
+        skuRowIdForStock: string | null;
       };
       const orderItems: LineRow[] = [];
       let firstVendorId: string | null = null;
 
       for (const item of items) {
-        const productId = String(item.product_id || item.productId);
-        const row = productById.get(productId);
-        if (!row) {
-          return this.error(`Unknown product: ${productId}`, 400);
+        try {
+          const resolved = await resolveEcommerceOrderLine(item as Record<string, unknown>);
+          if (!resolved) {
+            return this.error('Each item must include a valid product id (UUID)', 400);
+          }
+          if (!firstVendorId && resolved.vendor_id) {
+            firstVendorId = resolved.vendor_id;
+          }
+          orderItems.push({
+            product_id: resolved.product_id,
+            product_sku_id: resolved.product_sku_id,
+            product_name: resolved.product_name,
+            quantity: resolved.quantity,
+            unit_price: resolved.unit_price,
+            total_price: resolved.total,
+            db_unit_price: resolved.unit_price,
+            variant_info: resolved.variant_info,
+            skuRowIdForStock: resolved.skuRowIdForStock,
+          });
+        } catch (lineErr: unknown) {
+          const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
+          return this.error(msg, 400);
         }
-        const quantity = Math.max(1, parseInt(String(item.quantity ?? 1), 10) || 1);
-        const dbUnit = parseFloat(String(row.price ?? 0)) || 0;
-        const clientRaw = item.price ?? item.unit_price ?? item.unitPrice;
-        const clientUnit =
-          clientRaw !== undefined && clientRaw !== null
-            ? parseFloat(String(clientRaw))
-            : NaN;
-        const unit_price = Number.isFinite(clientUnit) ? clientUnit : dbUnit;
-        const total_price = unit_price * quantity;
-        if (!firstVendorId && row.vendor_id) {
-          firstVendorId = row.vendor_id;
-        }
-        orderItems.push({
-          product_id: productId,
-          product_name: row.name || 'Product',
-          quantity,
-          unit_price,
-          total_price,
-          db_unit_price: dbUnit,
-        });
+      }
+
+      if (orderItems.length === 0) {
+        return this.error('No valid products found for this order', 400);
       }
 
       const calculatedSubtotal = orderItems.reduce((s, l) => s + l.total_price, 0);
@@ -297,11 +284,16 @@ class CreateCustomerOrderHandler extends BaseHandler {
           await insert('order_items', {
             order_id: orderId,
             product_id: line.product_id,
+            product_sku_id: line.product_sku_id ?? null,
             name: line.product_name,
             quantity: line.quantity,
             unit_price: line.unit_price,
             total_price: line.total_price,
+            variant_info: line.variant_info ?? null,
           });
+          if (line.skuRowIdForStock) {
+            await decrementSkuStock(line.skuRowIdForStock, line.quantity);
+          }
         }
       } catch (e: any) {
         console.error('Error creating order:', e);

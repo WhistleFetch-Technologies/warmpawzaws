@@ -212,13 +212,20 @@ export function AddProductModal({
         gst_rate: gstNum,
         is_active: formData.is_active,
         images: images.map(stripAwsPresignFromProductImageUrl),
-        variants: variants.length > 0 ? variants.map(v => ({
-          size: v.size || null,
-          color: v.color || null,
-          price: parseFloat(v.price) || parseFloat(formData.price),
-          stock: parseInt(v.stock) || 0,
-          sku: v.sku || null,
-        })) : null,
+        skus:
+          variants.length > 0
+            ? variants.map((v) => ({
+                option_values: {
+                  ...(v.size ? { size: v.size } : {}),
+                  ...(v.color ? { color: v.color } : {}),
+                },
+                price: parseFloat(v.price) || selling,
+                compare_at_price: mrp,
+                stock: parseInt(v.stock, 10) || 0,
+                sku: v.sku || null,
+                images: [],
+              }))
+            : undefined,
         delivery_regions: deliveryRegions.length > 0 ? deliveryRegions : null,
       };
 

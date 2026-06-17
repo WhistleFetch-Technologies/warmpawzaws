@@ -665,6 +665,7 @@ registerVendorBankAccountEndpoints(app);
 registerDeliveryTrackingEndpoints(app);
 registerDeliveryOtpEndpoints(app); // Delivery OTP verification for pharmacy and meal orders
 registerMedicalRecordsEndpoints(app);
+registerAdsRecommendationEndpoints(app); // Before ecommerce — /products/similar must register before /products/:productId
 registerEcommerceEndpoints(app);
 registerAnalyticsEndpoints(app);
 registerProductAnalyticsEndpoints(app);
@@ -693,7 +694,6 @@ registerPackageBookingEndpoints(app);
 registerWalkerGPSEndpoints(app);
 registerPromotionEndpoints(app);
 registerVendorPromotionsEndpoints(app);
-registerAdsRecommendationEndpoints(app);
 registerEventEndpoints(app);
 registerHealthEndpoints(app);
 registerDonationEndpoints(app);

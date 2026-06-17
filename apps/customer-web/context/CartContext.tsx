@@ -72,6 +72,7 @@ function lineToCartItem(line: WarmpawzCartLine): CartItem {
     categoryId,
     category: categoryId,
     selectedVariations: line.selected_variations,
+    productSkuId: line.product_sku_id,
     warmpawzLine: line,
   };
 }
@@ -100,6 +101,8 @@ function cartItemsToLines(items: CartItem[]): WarmpawzCartLine[] {
       product_id: item.id,
       quantity: item.quantity,
       product: snap as WarmpawzCartProductSnapshot,
+      product_sku_id: item.productSkuId as string | undefined,
+      selected_variations: item.selectedVariations,
     };
   });
 }

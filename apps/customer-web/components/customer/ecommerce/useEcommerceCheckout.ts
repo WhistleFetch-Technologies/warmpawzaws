@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { parseCartLineKey } from '@/lib/product-sku-client';
 import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
@@ -87,12 +88,22 @@ export function buildEcommerceOrderPayload(
   return {
     customerId,
     customerPhone: phone,
-    items: cart.map((item) => ({
-      productId: item.id,
-      quantity: item.quantity,
-      unitPrice: item.price,
-      vendorId: item.vendorId || '',
-    })),
+    items: cart.map((item) => {
+      const parsed = parseCartLineKey(item.id);
+      const productId = parsed.productId;
+      const productSkuId =
+        item.warmpawzLine?.product_sku_id ?? parsed.productSkuId ?? undefined;
+      return {
+        product_id: productId,
+        productId: productId,
+        product_sku_id: productSkuId,
+        quantity: item.quantity,
+        unitPrice: item.price,
+        vendorId: item.vendorId || '',
+        selected_variations: item.selectedVariations,
+        selectedVariations: item.selectedVariations,
+      };
+    }),
     shippingAddress: normalizeShippingAddress(shippingAddress),
     paymentMethod: 'online' as const,
     subtotal: pricing.lineSubtotal,
