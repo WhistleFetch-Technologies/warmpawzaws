@@ -10,10 +10,12 @@ import {
   HOME_CRITICAL_GET_RETRY,
   HOME_CRITICAL_TIMEOUT_MS,
   parsePetsFromApiResponse,
-  persistPetsToLocalStorage,
-  readCachedPetsFromStorage,
   readCachedProfileName,
 } from '@/components/customer/home/hooks/useHomePageData';
+import {
+  readCachedPetsForPhone,
+  writeCachedPetsForPhone,
+} from '@/lib/customer-pets-cache';
 import type { Pet } from '@/components/customer/homepage/constants/interface';
 import {
   readHomeSessionCache,
@@ -86,14 +88,22 @@ export function readCachedCustomerProfile(): Record<string, unknown> | null {
 }
 
 export function readCachedCustomerPets(): Pet[] {
-  return readCachedPetsFromStorage();
+  const phone =
+    typeof window !== 'undefined'
+      ? localStorage.getItem('customerPhone') ||
+        localStorage.getItem('customer_phone') ||
+        localStorage.getItem('phone')
+      : null;
+  return readCachedPetsForPhone(phone);
 }
 
 function persistProfileToLocalStorage(profile: Record<string, unknown>, phone: string): void {
   if (typeof window === 'undefined') return;
   try {
     const existing = readCachedCustomerProfile() ?? {};
-    const merged = { ...existing, ...profile, phone };
+    const { pets: _profilePets, ...profileWithoutPets } = profile;
+    const { pets: _existingPets, ...existingWithoutPets } = existing;
+    const merged = { ...existingWithoutPets, ...profileWithoutPets, phone };
     localStorage.setItem('customerData', JSON.stringify(merged));
     persistCustomerDatabaseId(merged);
   } catch {
@@ -119,27 +129,19 @@ async function fetchProfileAndPets(phone: string): Promise<{
   ]);
 
   let profile: Record<string, unknown> | null = readCachedCustomerProfile();
-  let pets: Pet[] = readCachedCustomerPets();
+  let pets: Pet[] = readCachedPetsForPhone(phone);
 
   if (profileResult.status === 'fulfilled') {
     const profileResp = profileResult.value as Record<string, unknown>;
     if (profileResp && (profileResp.success || profileResp.profile)) {
       profile = (profileResp.profile || profileResp) as Record<string, unknown>;
       persistProfileToLocalStorage(profile, phone);
-      const profilePets = profile.pets;
-      if (Array.isArray(profilePets) && profilePets.length > 0) {
-        pets = profilePets as Pet[];
-        persistPetsToLocalStorage(pets);
-      }
     }
   }
 
   if (petsResult.status === 'fulfilled') {
-    const parsed = parsePetsFromApiResponse(petsResult.value);
-    if (parsed.length > 0) {
-      pets = parsed;
-      persistPetsToLocalStorage(pets);
-    }
+    pets = parsePetsFromApiResponse(petsResult.value);
+    writeCachedPetsForPhone(phone, pets);
   }
 
   return { profile, pets };
@@ -154,7 +156,7 @@ function scheduleUnifiedProfileEnrichment(phone: string): void {
     .then((resp) => {
       const unified = resp?.profile;
       if (!unified) return;
-      const cachedPets = readCachedCustomerPets();
+      const cachedPets = readCachedPetsForPhone(phone);
       const merged: Record<string, unknown> = { ...unified, phone };
       if (cachedPets.length > 0) {
         merged.pets = cachedPets;
