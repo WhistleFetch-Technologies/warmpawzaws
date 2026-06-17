@@ -569,7 +569,9 @@ export function EnhancedAddPetModal({
 
       toast.success(`${petData.name} ${editPet ? 'updated' : 'added'} successfully!`);
       onSuccess();
-      onClose();
+      if (isModal) {
+        onClose();
+      }
     } catch (error: unknown) {
       console.error('Error saving pet:', error);
       toast.error(addPetErrorMessage(error));
