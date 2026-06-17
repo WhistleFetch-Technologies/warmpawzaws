@@ -8,6 +8,7 @@ import {
   getReferralProgramSettings,
   type ReferralProgramSettings,
 } from '../../../lib/services/referral-program-settings';
+import { customerDisplayNameSql } from '../../../lib/sql/customer-display-name';
 
 export function registerAdminReferralsEndpoints(app: Hono) {
   /**
@@ -146,9 +147,9 @@ export function registerAdminReferralsEndpoints(app: Hono) {
            r.referral_code,
            r.referrer_id,
            rr.referred_id,
-           TRIM(COALESCE(ref.first_name, '') || ' ' || COALESCE(ref.last_name, '')) AS referrer_name,
+           ${customerDisplayNameSql('ref', 'referrer_name')},
            ref.phone AS referrer_phone,
-           TRIM(COALESCE(ree.first_name, '') || ' ' || COALESCE(ree.last_name, '')) AS referee_name,
+           ${customerDisplayNameSql('ree', 'referee_name')},
            ree.phone AS referee_phone
          FROM referral_redemptions rr
          INNER JOIN referrals r ON r.id = rr.referral_id
