@@ -19,7 +19,7 @@ export function ShopSearchBar({ searchTerm, onSearchChange, onOpenFilters }: Sho
           placeholder="Search food, toys, accessories…"
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="w-full pl-10 pr-3 py-2.5 text-sm rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/25 focus:border-[#FF8C42] transition-colors"
+          className="w-full pl-10 pr-3 py-2.5 text-[16px] rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/25 focus:border-[#FF8C42] transition-colors"
         />
       </div>
       <button
