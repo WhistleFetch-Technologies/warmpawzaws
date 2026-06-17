@@ -187,9 +187,67 @@ function bookingLabReportsActionVisible(booking: any): boolean {
   );
 }
 
-function countPrescriptionDocuments(prescription: Prescription | null, medicalRecords: any[]): number {
-  const docRecords = medicalRecords.filter((r) => r.record_type !== 'diagnostic_report');
-  return docRecords.length + (prescription ? 1 : 0);
+function normalizeBookingStatus(booking: Record<string, any> | null | undefined): string {
+  if (!booking) return '';
+  if (
+    isPaymentHoldExpired({
+      status: booking.status,
+      paymentHoldExpiresAt: booking.paymentHoldExpiresAt,
+      createdAt: booking.createdAt || booking.created_at,
+    })
+  ) {
+    return 'cancelled';
+  }
+  return String(booking.status || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s/g, '_')
+    .replace(/-/g, '_');
+}
+
+/** Clinical bookings: show entry on any status except cancelled-with-no-documents. */
+function customerPrescriptionsDocumentsEntryVisible(
+  booking: Record<string, any> | undefined,
+  documentCount: number,
+): boolean {
+  if (!booking || !showPrescriptionAndMedicalRecords(booking.serviceType, booking.serviceCategory, booking)) {
+    return false;
+  }
+  const status = normalizeBookingStatus(booking);
+  if (status === 'cancelled' || status === 'no_show') {
+    return documentCount > 0;
+  }
+  return true;
+}
+
+function customerPrescriptionsAllowUpload(booking: Record<string, any> | undefined): boolean {
+  const status = normalizeBookingStatus(booking);
+  return status === 'completed';
+}
+
+function countPrescriptionDocuments(prescriptionRows: any[], medicalRecords: any[]): number {
+  const seen = new Set<string>();
+  let count = 0;
+
+  for (const record of medicalRecords) {
+    if (record?.record_type === 'diagnostic_report') continue;
+    const id = record?.id ? String(record.id) : '';
+    if (id) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+    }
+    count += 1;
+  }
+
+  for (const row of prescriptionRows) {
+    if (!row?.id) continue;
+    const id = String(row.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    count += 1;
+  }
+
+  return count;
 }
 
 function BookingDetailPaymentHoldBanner({
@@ -238,6 +296,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [showRateModal, setShowRateModal] = useState(false);
   const [prescription, setPrescription] = useState<Prescription | null>(null);
+  const [prescriptionRows, setPrescriptionRows] = useState<any[]>([]);
   const [loadingPrescription, setLoadingPrescription] = useState(false);
   const [medicalRecords, setMedicalRecords] = useState<any[]>([]);
   const [loadingMedicalRecords, setLoadingMedicalRecords] = useState(false);
@@ -497,12 +556,20 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       try {
         // ✅ FIX: Use correct endpoint path (plural "prescriptions")
         const result = await apiClient.get(`/prescriptions/booking/${bookingId}`) as any;
-        setPrescription(result.prescription || result.prescriptions?.[0] || null);
+        const rows = Array.isArray(result.prescriptions)
+          ? result.prescriptions
+          : result.prescription
+            ? [result.prescription]
+            : [];
+        setPrescriptionRows(rows);
+        setPrescription(rows[0] || null);
       } catch {
+        setPrescriptionRows([]);
         setPrescription(null);
         console.log('ℹ️  [PRESCRIPTION] No prescription found');
       }
     } catch (error) {
+      setPrescriptionRows([]);
       setPrescription(null);
       console.error('❌ [PRESCRIPTION] Error:', error);
     } finally {
@@ -701,6 +768,18 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       return '';
     }
   };
+
+  const prescriptionDocumentCount = countPrescriptionDocuments(prescriptionRows, medicalRecords);
+  const prescriptionsDocsLoading = loadingPrescription || loadingMedicalRecords;
+  const bookingStatusNormalized = normalizeBookingStatus(booking);
+  const showPrescriptionsDocumentsButton =
+    !!booking &&
+    customerPrescriptionsDocumentsEntryVisible(booking, prescriptionDocumentCount) &&
+    !(
+      (bookingStatusNormalized === 'cancelled' || bookingStatusNormalized === 'no_show') &&
+      prescriptionsDocsLoading
+    );
+  const prescriptionsAllowCustomerUpload = customerPrescriptionsAllowUpload(booking);
 
   return (
     <div
@@ -1355,18 +1434,18 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
-              {/* Prescriptions & documents — vet, diagnostics, nutritionist */}
-              {showPrescriptionAndMedicalRecords(booking.serviceType, booking.serviceCategory, booking) && (
+              {/* Prescriptions & documents — vet, diagnostics, nutritionist; all statuses (view-only rules in modal) */}
+              {showPrescriptionsDocumentsButton && (
                 <Button
                   onClick={() => setShowPrescriptionHistory(true)}
                   className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
-                  disabled={loadingPrescription || loadingMedicalRecords}
+                  disabled={prescriptionsDocsLoading}
                 >
                   <FileText className="w-5 h-5" />
                   Prescriptions &amp; documents
-                  {countPrescriptionDocuments(prescription, medicalRecords) > 0 && (
+                  {prescriptionDocumentCount > 0 && (
                     <span className="ml-auto bg-indigo-700 px-2 py-0.5 rounded-full text-xs">
-                      {countPrescriptionDocuments(prescription, medicalRecords)}
+                      {prescriptionDocumentCount}
                     </span>
                   )}
                 </Button>
@@ -1496,6 +1575,8 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           bookingId={bookingId}
           petId={petId}
           customerPhone={phone}
+          bookingStatus={booking?.status}
+          allowCustomerUpload={prescriptionsAllowCustomerUpload}
           onClose={() => {
             setShowPrescriptionHistory(false);
             loadPrescription(bookingId); // Reload prescriptions
