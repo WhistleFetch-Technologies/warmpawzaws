@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CustomerApp } from '@/components/customer/CustomerApp';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
+import { readCachedPetsForPhone, stripPetsFromCustomerRecord } from '@/lib/customer-pets-cache';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
 import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
 import {
@@ -49,14 +50,16 @@ export default function HomePage() {
     const customerData = storedCustomer ? (() => { try { return JSON.parse(storedCustomer); } catch { return null; } })() : null;
 
     if (storedPhone && storedToken) {
+      const cachedPets = readCachedPetsForPhone(storedPhone);
+      const customerBase = customerData && typeof customerData === 'object' ? customerData : null;
       // Optimistic load: show app immediately with cached session so we don't block on API (slow from home / high RTT to ap-south-1).
       const cachedSession: CustomerSession = {
         phone: storedPhone,
         sessionToken: storedToken,
         verified: true,
-        customer: customerData ?? undefined,
+        customer: customerBase ? { ...customerBase, pets: cachedPets } : undefined,
         hasCompletedOnboarding: onboardingFlagsDone,
-        hasPets: !!(customerData?.pets?.length),
+        hasPets: cachedPets.length > 0,
         isNewUser: !onboardingFlagsDone,
       };
       setSession(cachedSession);
@@ -67,18 +70,21 @@ export default function HomePage() {
       void ensureCustomerProfileAndPets(storedPhone).refreshPromise.then((result) => {
         const data = result.profile;
         if (!data) return;
-        localStorage.setItem('customerData', JSON.stringify(data));
+        localStorage.setItem(
+          'customerData',
+          JSON.stringify({ ...stripPetsFromCustomerRecord(data), phone: storedPhone })
+        );
         persistCustomerDatabaseId(data);
         const onboardingStatus = data.onboarding_status || data.onboardingStatus;
         const effectiveOnboarded = readOnboardingCompleted();
-        const pets = result.pets.length > 0 ? result.pets : data.pets;
+        const pets = result.pets;
         setSession({
           phone: storedPhone,
           sessionToken: storedToken,
           verified: true,
           customer: { ...data, pets },
           hasCompletedOnboarding: effectiveOnboarded,
-          hasPets: !!(Array.isArray(pets) && pets.length),
+          hasPets: pets.length > 0,
           isNewUser:
             !effectiveOnboarded &&
             (onboardingStatus === 'INIT' || onboardingStatus === 'PHONE_VERIFIED'),

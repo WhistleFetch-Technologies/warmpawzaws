@@ -2,8 +2,11 @@ import {
   computeRemainingCooldownSec,
   rateLimitError,
   rateLimitErrorForCooldown,
+  rateLimitErrorForResetRecently,
   readRateLimitRetryAfterSeconds,
+  rolling24hRetrySeconds,
   buildRateLimitResponse,
+  RESET_RECENTLY_ERROR_CODE,
 } from '../forgot-password-rate-limit';
 
 describe('forgot-password-rate-limit', () => {
@@ -38,5 +41,12 @@ describe('forgot-password-rate-limit', () => {
     expect(out.status).toBe(429);
     expect(out.headers?.['Retry-After']).toBe('42');
     expect(out.body.retryAfterSeconds).toBe(42);
+  });
+
+  it('rateLimitErrorForResetRecently uses rolling 24h retry and RESET_RECENTLY code', () => {
+    const lastReset = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const err = rateLimitErrorForResetRecently(lastReset);
+    expect((err as any).code).toBe(RESET_RECENTLY_ERROR_CODE);
+    expect(readRateLimitRetryAfterSeconds(err)).toBe(rolling24hRetrySeconds(lastReset));
   });
 });

@@ -261,6 +261,7 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
       }
 
       // Only skip SMS when UAT_MODE is explicitly 'true'. Use Jio-approved Login OTP template.
+      let smsAccepted = isUATMode;
       if (!isUATMode) {
         const message = buildLoginOtpSmsBody(otpCode);
         console.log(`[AUTH] Sending OTP SMS to ${normalizedPhone} (templateId=${JIO_LOGIN_OTP_TEMPLATE_ID})`);
@@ -278,7 +279,8 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
           if (err?.Code) console.warn('[AUTH] SNS Code:', err.Code);
           return false;
         });
-        if (smsResult) {
+        smsAccepted = smsResult === true;
+        if (smsAccepted) {
           console.log('[AUTH] SMS accepted by SNS (delivery depends on carrier / DLT)');
           console.log('[AUTH][send-otp][SMS-DEBUG]', {
             requestId: context.requestId,
@@ -296,6 +298,16 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
         }
       } else {
         console.log(`[AUTH] UAT_MODE=true: SMS skipped for ${phone} (dev OTPs: 123456 or ${UAT_DEV_PASSWORD_BYPASS})`);
+      }
+
+      if (!smsAccepted) {
+        return this.error(
+          'Could not send SMS. Try again shortly.',
+          503,
+          'OTP_DELIVERY_FAILED',
+          undefined,
+          context.requestId
+        );
       }
 
       const handlerDuration = Date.now() - handlerStartTime;
