@@ -20,6 +20,7 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getReferralProgramSettings } from '../lib/services/referral-program-settings';
+import { customerDisplayNameSql } from '../lib/sql/customer-display-name';
 
 export function registerReferralEndpoints(app: Hono) {
   /**
@@ -310,7 +311,7 @@ export function registerReferralEndpoints(app: Hono) {
              r.referral_code,
              rr.referred_id,
              rr.created_at,
-             c.first_name || ' ' || c.last_name AS referee_name,
+             ${customerDisplayNameSql('c', 'referee_name')},
              c.phone AS referee_phone,
              CASE 
                WHEN EXISTS(SELECT 1 FROM bookings WHERE customer_id = rr.referred_id) THEN 'completed'
@@ -335,7 +336,7 @@ export function registerReferralEndpoints(app: Hono) {
              r.referral_code,
              r.referred_id,
              r.created_at,
-             c.first_name || ' ' || c.last_name AS referee_name,
+             ${customerDisplayNameSql('c', 'referee_name')},
              c.phone AS referee_phone,
              CASE 
                WHEN EXISTS(SELECT 1 FROM bookings WHERE customer_id = r.referred_id) THEN 'completed'
