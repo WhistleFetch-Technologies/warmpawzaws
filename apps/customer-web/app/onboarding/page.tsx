@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { CustomerOnboarding } from '@/components/customer/CustomerOnboarding';
 import { readProfileCompleted } from '@/lib/customer-flow-guards';
 import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
+import { clearCachedPetsForPhone } from '@/lib/customer-pets-cache';
+import { resetHomeBootstrapForPhone } from '@/lib/customer-home-bootstrap';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -27,7 +29,11 @@ export default function OnboardingPage() {
 
   return (
     <CustomerOnboarding
-      onNoPetComplete={() => {}}
+      onNoPetComplete={() => {
+        clearCachedPetsForPhone();
+        const phone = localStorage.getItem('customerPhone');
+        resetHomeBootstrapForPhone(phone);
+      }}
       onBack={() => router.replace('/profile')}
     />
   );

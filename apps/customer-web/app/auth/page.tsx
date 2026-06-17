@@ -12,6 +12,12 @@ import {
   type PlatformPolicyType,
 } from '@/components/legal/PlatformLegalPolicyDialog';
 import {
+  clearCachedPetsForPhone,
+  writeCachedPetsForPhone,
+  stripPetsFromCustomerRecord,
+} from '@/lib/customer-pets-cache';
+import { parsePetsFromApiResponse } from '@/components/customer/home/hooks/useHomePageData';
+import {
   getStoredCustomerJwtForSession,
   setNeedsPasswordSetupAfterOtp,
   clearNeedsPasswordSetup,
@@ -339,6 +345,7 @@ function AuthPageContent() {
         .replace(/\D/g, '')
         .slice(-10);
       if (digits.length >= 10) {
+        clearCachedPetsForPhone();
         localStorage.setItem('customerPhone', digits);
         localStorage.setItem('customer_phone', digits);
         localStorage.setItem('phone', digits);
@@ -379,8 +386,14 @@ function AuthPageContent() {
             `/customer/profile/unified/${encodeURIComponent(phoneKey)}`
           );
           if (profileResponse?.profile) {
-            localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
-            localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
+            localStorage.setItem(
+              'customerData',
+              JSON.stringify(stripPetsFromCustomerRecord(profileResponse.profile))
+            );
+            localStorage.setItem(
+              'customerProfile',
+              JSON.stringify(stripPetsFromCustomerRecord(profileResponse.profile))
+            );
             persistCustomerDatabaseId(profileResponse.profile);
             const tenDigits = (localStorage.getItem('customerPhone') || digits)
               .replace(/\D/g, '')
@@ -648,6 +661,7 @@ function AuthPageContent() {
       if (isVerified) {
         console.log('✅ [Auth] OTP verified successfully - proceeding with token storage and navigation');
         const shortPhone = phone.replace(/\D/g, '').slice(-10);
+        clearCachedPetsForPhone();
         localStorage.setItem('customerPhone', shortPhone);
         localStorage.setItem('customer_phone', shortPhone);
         localStorage.setItem('phone', shortPhone);
@@ -729,17 +743,17 @@ function AuthPageContent() {
               hasBookings,
             });
 
-            localStorage.setItem('customerData', JSON.stringify(profile));
-            localStorage.setItem('customerProfile', JSON.stringify(profile));
+            localStorage.setItem('customerData', JSON.stringify(stripPetsFromCustomerRecord(profile)));
+            localStorage.setItem('customerProfile', JSON.stringify(stripPetsFromCustomerRecord(profile)));
             persistCustomerDatabaseId(profile);
 
             try {
-              const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
-              if (petsResponse?.pets && Array.isArray(petsResponse.pets) && petsResponse.pets.length > 0) {
-                localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
-              }
+              const petsResponse = await apiClient.get<any>(`/customer/pets/${shortPhone}`);
+              const pets = parsePetsFromApiResponse(petsResponse);
+              writeCachedPetsForPhone(shortPhone, pets);
             } catch (petError) {
               console.warn('⚠️ [Auth] Pets fetch:', petError);
+              writeCachedPetsForPhone(shortPhone, []);
             }
 
             const backendFullyOnboarded =
