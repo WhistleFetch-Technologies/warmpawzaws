@@ -18,6 +18,10 @@ interface PrescriptionHistoryModalProps {
   bookingId: string;
   petId: string;
   customerPhone: string;
+  /** Raw booking status — controls upload vs view-only UX */
+  bookingStatus?: string;
+  /** When false, customer can view/share but not upload new documents */
+  allowCustomerUpload?: boolean;
   onClose: () => void;
   onUploadSuccess?: () => void;
   onOrderMedicine?: (prescriptionId: string, bookingId: string, medications?: any[]) => void; // ✅ FIX: Add pharmacy ordering callback
@@ -136,6 +140,8 @@ export function PrescriptionHistoryModal({
   bookingId,
   petId,
   customerPhone,
+  bookingStatus,
+  allowCustomerUpload = true,
   onClose,
   onUploadSuccess,
   onOrderMedicine, // ✅ FIX: Add pharmacy ordering callback
@@ -601,6 +607,18 @@ export function PrescriptionHistoryModal({
     return dateB - dateA;
   });
 
+  const statusNorm = String(bookingStatus || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s/g, '_')
+    .replace(/-/g, '_');
+  const isCancelledBooking = statusNorm === 'cancelled' || statusNorm === 'no_show';
+  const readOnlyHint = isCancelledBooking
+    ? 'This booking was cancelled. You can view documents that were already saved.'
+    : !allowCustomerUpload
+      ? 'View only for now. Your provider will add prescriptions after the visit; you can upload your own files once the booking is completed.'
+      : null;
+
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
@@ -609,13 +627,15 @@ export function PrescriptionHistoryModal({
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
             <h2 className="font-bold text-gray-800">Prescriptions &amp; documents</h2>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowUploadModal(true)}
-                className="px-3 py-1.5 bg-blue-500 text-white rounded-lg text-sm flex items-center gap-1 hover:bg-blue-600"
-              >
-                <Upload className="w-4 h-4" />
-                Upload
-              </button>
+              {allowCustomerUpload && (
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="px-3 py-1.5 bg-blue-500 text-white rounded-lg text-sm flex items-center gap-1 hover:bg-blue-600"
+                >
+                  <Upload className="w-4 h-4" />
+                  Upload
+                </button>
+              )}
               <button
                 onClick={onClose}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
@@ -624,6 +644,12 @@ export function PrescriptionHistoryModal({
               </button>
             </div>
           </div>
+
+          {readOnlyHint ? (
+            <div className="mx-6 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              {readOnlyHint}
+            </div>
+          ) : null}
 
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
@@ -635,7 +661,9 @@ export function PrescriptionHistoryModal({
               <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-600 mb-2">No prescriptions or documents yet</p>
               <p className="text-sm text-gray-500">
-                Upload a photo or PDF, or wait for your vet to publish a prescription
+                {allowCustomerUpload
+                  ? 'Upload a photo or PDF, or wait for your vet to publish a prescription'
+                  : 'Documents will appear here after your provider publishes them.'}
               </p>
             </div>
           ) : (
@@ -715,7 +743,7 @@ export function PrescriptionHistoryModal({
       </div>
 
       {/* Upload Modal — scrollable sheet above bottom nav + home indicator (see CustomerScreenWrapper / search pb patterns) */}
-      {showUploadModal && (
+      {allowCustomerUpload && showUploadModal && (
         <div
           className="fixed inset-0 z-[65] flex items-end justify-center sm:items-center isolate pointer-events-none"
           role="dialog"
