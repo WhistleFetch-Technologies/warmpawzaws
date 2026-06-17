@@ -101,6 +101,8 @@ export function stripPetsFromCustomerRecord<T extends Record<string, unknown>>(r
   const { pets: _pets, ...rest } = record;
   return rest;
 }
+/** Backward-compatible read using customerPhone from localStorage. */
+export function readCachedPetsFromStorage(): Pet[] {
   if (typeof window === 'undefined') return [];
   const phone =
     localStorage.getItem('customerPhone') ||
