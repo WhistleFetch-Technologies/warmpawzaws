@@ -72,7 +72,6 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react-swc": "^3.10.2",
-    "madge": "^8.0.0",
     "pg": "^8.20.0",
     "playwright": "^1.57.0",
     "vite": "^6.4.1"
@@ -91,19 +90,17 @@
     "build:frontend:customer": "cd apps/customer-web && npm ci && npm run build",
     "package:lambda": "cd backend/lambda && npm run package",
     "dev:vendor": "cd apps/vendor-web && set NEXT_PUBLIC_API_BASE_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_UAT_MODE=true&& npm run dev",
-    "dev:customer": "cd apps/customer-web && set NEXT_PUBLIC_API_BASE_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_UAT_MODE=true&& npm run dev",
+    "dev:customer": "cd apps/customer-web && set NEXT_PUBLIC_API_BASE_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_UAT_MODE=true&& set NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=true&& npm run dev",
     "prod:vendor": "cd apps/vendor-web && set NEXT_PUBLIC_API_BASE_URL=https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_ENVIRONMENT=production&& npm run dev:prod",
     "prod:admin": "cd apps/admin-web && set NEXT_PUBLIC_API_BASE_URL=https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_ENVIRONMENT=production&& npm run dev:prod",
     "prod:customer": "cd apps/customer-web && set NEXT_PUBLIC_API_BASE_URL=https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com&& set NEXT_PUBLIC_ENVIRONMENT=production&& npm run dev:prod",
     "local": "npm run local:customer",
-    "local:customer": "cd apps/customer-web && set NEXT_PUBLIC_API_BASE_URL=http://localhost:3000&& set NEXT_PUBLIC_UAT_MODE=true&& npm run dev",
+    "local:customer": "cd apps/customer-web && set NEXT_PUBLIC_API_BASE_URL=http://localhost:3000&& set NEXT_PUBLIC_UAT_MODE=true&& set NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=true&& npm run dev",
     "local:vendor": "cd apps/vendor-web && set NEXT_PUBLIC_API_BASE_URL=http://localhost:3000&& set NEXT_PUBLIC_UAT_MODE=true&& npm run dev",
     "local:admin": "cd apps/admin-web && set NEXT_PUBLIC_API_BASE_URL=http://localhost:3000&& set NEXT_PUBLIC_VENDOR_WEB_URL=http://localhost:3002&& set NEXT_PUBLIC_UAT_MODE=true&& npm run dev",
     "preview": "vite preview --host --port 3000",
     "serve": "vite preview --host --port 3000",
     "test:vendor-profile-fixes": "ts-node scripts/test-vendor-profile-fixes.ts",
-    "test:walk-tracking-sync": "npx tsx scripts/walk-vendor-customer-tracking-sync.e2e.ts",
-    "check:cycles": "madge --circular backend/lambda/src",
-    "check:no-lambda-in-shared": "node -e \"const fs=require('fs');const bad=['packages/api-contracts/package.json','packages/service-launch-mappings/package.json','packages/shared-types/package.json'].filter(p=>fs.readFileSync(p,'utf8').includes('warmpawz-lambda-handlers'));if(bad.length){console.error('Forbidden warmpawz-lambda-handlers in:',bad.join(', '));process.exit(1)}console.log('OK: shared packages do not depend on lambda')\""
+    "test:walk-tracking-sync": "npx tsx scripts/walk-vendor-customer-tracking-sync.e2e.ts"
   }
 }

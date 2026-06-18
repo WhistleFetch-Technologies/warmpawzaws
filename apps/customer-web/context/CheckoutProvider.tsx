@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -36,6 +37,9 @@ import {
   persistCheckoutOrderResponse,
   type StoredCheckoutOrderResponse,
 } from '@/lib/ecommerce/checkout-order-storage';
+import { navigateToCheckoutSuccessPage } from '@/lib/navigation/navigation-coordinator';
+import { requestLeave } from '@/lib/navigation/leave-guard';
+import { createCustomerNavigation } from '@/lib/navigation/navigation-service';
 import { computeCartMrpTotal } from '@/lib/ecommerce/cart-product-helpers';
 
 export type CheckoutStep = 'payment' | 'review';
@@ -118,6 +122,7 @@ type CheckoutProviderProps = {
 export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const nav = useMemo(() => createCustomerNavigation(router), [router]);
   const { cart, clearCart } = useCart();
   const { placeOrder: placeEcommerceOrder } = useEcommerceCheckout();
 
@@ -132,6 +137,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
   const [coupon, setCoupon] = useState<CheckoutCoupon | null>(null);
   const [orderResponse, setOrderResponse] = useState<StoredCheckoutOrderResponse | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const placingRef = useRef(false);
 
   const primaryVendorId = useMemo(() => {
     const id = cart.find((i) => i.vendorId && i.vendorId !== 'default')?.vendorId;
@@ -162,9 +168,14 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
   );
 
   const syncStepToUrl = useCallback(
-    (next: CheckoutStep) => {
+    (next: CheckoutStep, historyMode: 'push' | 'replace' = 'replace') => {
       setStepState(next);
-      router.replace(`/checkout?step=${next}`, { scroll: false });
+      const href = `/checkout?step=${next}`;
+      if (historyMode === 'push') {
+        router.push(href, { scroll: false });
+        return;
+      }
+      router.replace(href, { scroll: false });
     },
     [router]
   );
@@ -257,17 +268,21 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
   const goNext = useCallback(() => {
     if (step === 'payment') {
       persistCheckoutOptions();
-      syncStepToUrl('review');
+      // Push so hardware/swipe/browser back from review returns to payment (not /cart).
+      syncStepToUrl('review', 'push');
     }
   }, [step, persistCheckoutOptions, syncStepToUrl]);
 
   const goBack = useCallback(() => {
-    if (step === 'review') {
-      syncStepToUrl('payment');
-      return;
-    }
-    router.replace('/cart');
-  }, [step, syncStepToUrl, router]);
+    void (async () => {
+      if (!(await requestLeave())) return;
+      if (step === 'review') {
+        syncStepToUrl('payment');
+        return;
+      }
+      nav.goToCart({ replace: true });
+    })();
+  }, [step, syncStepToUrl, nav]);
 
   const selectAddress = useCallback((addr: DeliveryAddress) => {
     if (addr.id) {
@@ -322,18 +337,20 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
   }, []);
 
   const placeOrder = useCallback(async () => {
+    if (placingRef.current || isPlacingOrder) return;
     if (!address) {
       toast.error('Please add a delivery address on the cart page');
-      router.push('/cart');
+      nav.goToCart();
       return;
     }
     if (cart.length === 0) {
       toast.error('Your cart is empty');
-      router.push('/cart');
+      nav.goToCart();
       return;
     }
 
     persistCheckoutOptions();
+    placingRef.current = true;
 
     try {
       await placeEcommerceOrder({
@@ -356,12 +373,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
           setOrderResponse(stored);
           persistCheckoutOrderResponse(stored);
           toast.success('Order placed successfully!');
-          // Hard navigation avoids empty-cart flash on /checkout?step=review after clearCart
-          if (typeof window !== 'undefined') {
-            window.location.replace('/checkout/success');
-          } else {
-            router.replace('/checkout/success');
-          }
+          navigateToCheckoutSuccessPage();
         },
       });
     } catch (err: unknown) {
@@ -369,6 +381,8 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       if (message !== 'Payment cancelled') {
         toast.error(message);
       }
+    } finally {
+      placingRef.current = false;
     }
   }, [
     address,
@@ -379,8 +393,10 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
     placeEcommerceOrder,
     pricing,
     router,
+    nav,
     shippingMethod,
     syncStepToUrl,
+    isPlacingOrder,
   ]);
 
   const value = useMemo<CheckoutContextValue>(

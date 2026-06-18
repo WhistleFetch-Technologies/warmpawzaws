@@ -12,6 +12,7 @@ import { GlobalClientErrorReporting } from '@/components/GlobalClientErrorReport
 import { PushSessionRegistrar } from '@/components/PushSessionRegistrar';
 import { CapacitorVendorDeepLinkListener } from '@/components/CapacitorVendorDeepLinkListener';
 import { VendorSharePathBootstrap } from '@/components/VendorSharePathBootstrap';
+import { NavigationBackBridge } from '@/components/navigation/NavigationBackBridge';
 
 // Lazy load DevTools - only imported in development mode
 const ReactQueryDevtools = lazy(() =>
@@ -43,6 +44,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <PushSessionRegistrar />
         <CapacitorVendorDeepLinkListener />
         <VendorSharePathBootstrap />
+        <NavigationBackBridge />
         <CartProvider>
           <SearchContextProvider>
             <ScrollToTop />
@@ -63,4 +65,3 @@ export function Providers({ children }: { children: React.ReactNode }) {
     </QueryClientProvider>
   );
 }
-

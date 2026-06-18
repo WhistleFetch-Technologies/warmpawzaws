@@ -1,14 +1,14 @@
 'use client';
 
 import { Loader2, MapPin, Package, Truck } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useCheckout } from '@/context/CheckoutProvider';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { CheckoutPriceBreakdown } from './CheckoutPriceBreakdown';
 import { getShippingOptionLabel } from '@/lib/ecommerce/checkout-shipping-options';
 
 export function CheckoutReviewStep() {
-  const router = useRouter();
+  const nav = useCustomerNavigation();
   const {
     cart,
     pricing,
@@ -36,7 +36,7 @@ export function CheckoutReviewStep() {
           </div>
           <button
             type="button"
-            onClick={() => router.push('/cart')}
+            onClick={() => nav.goToCart()}
             className="text-sm font-medium text-[#FF8C42]"
           >
             Change

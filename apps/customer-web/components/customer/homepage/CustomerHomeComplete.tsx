@@ -2,6 +2,10 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { buildWhatsNewAnnouncements, navigateWhatsNewFromFullPage } from '@/lib/whats-new-announcements';
+import {
+  navigateToArticleFromHome,
+  navigateToArticlesList,
+} from '@/lib/articles-back-nav';
 import { WhatsNewAnnouncementList } from '@/components/customer/whats-new/WhatsNewAnnouncementList';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -2244,7 +2248,7 @@ export function CustomerHomeComplete({
                 setShowAIChat(true);
                 return;
               }
-              navigateWhatsNewFromFullPage(router, a, 'row');
+              navigateWhatsNewFromFullPage(router, a, 'row', { articlesListBack: '/' });
             }}
             onWhatsNewSosPress={(a) => {
               if (a.comingSoon && a.announcementType === 'emergency') return;
@@ -2252,10 +2256,10 @@ export function CustomerHomeComplete({
             }}
             adoptionStats={adoptionStats}
             petCareArticles={articles}
-            onPetCareArticlesSeeAll={() => handleNavigation('articles')}
+            onPetCareArticlesSeeAll={() => navigateToArticlesList(router, '/')}
             onPetCareArticleClick={(article) => {
               if (article.slug) {
-                router.push(`/articles?slug=${encodeURIComponent(article.slug)}`);
+                navigateToArticleFromHome(router, article.slug);
               } else if (article.url) {
                 window.open(article.url, '_blank');
               } else {
@@ -2916,7 +2920,7 @@ export function CustomerHomeComplete({
                   setShowAIChat(true);
                   return;
                 }
-                navigateWhatsNewFromFullPage(router, a, 'row');
+                navigateWhatsNewFromFullPage(router, a, 'row', { articlesListBack: '/' });
               }}
               onSosPress={(a) => {
                 if (a.comingSoon && a.announcementType === 'emergency') return;
@@ -3045,7 +3049,7 @@ export function CustomerHomeComplete({
               </div>
               <button
                 type="button"
-                onClick={() => handleNavigation('articles')}
+                onClick={() => navigateToArticlesList(router, '/')}
                 className="text-xs text-teal-600 font-medium flex items-center gap-1"
               >
                 Read more <ChevronRight className="w-4 h-4" />
@@ -3058,7 +3062,7 @@ export function CustomerHomeComplete({
                   onClick={() => {
                     // ✅ FIX: Navigate to content page by slug
                     if (article.slug) {
-                      router.push(`/articles?slug=${encodeURIComponent(article.slug)}`);
+                      navigateToArticleFromHome(router, article.slug);
                     } else if (article.url) {
                       window.open(article.url, '_blank');
                     } else {

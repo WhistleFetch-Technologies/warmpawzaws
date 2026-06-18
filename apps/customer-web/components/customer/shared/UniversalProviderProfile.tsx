@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Star, Clock, MapPin, Phone, Video, Home, Building2,
   Shield, Award, GraduationCap, Heart, Share2, Check, X, Calendar,
@@ -113,6 +113,15 @@ interface UniversalProviderProfileProps {
   /** When user returns from address book after selecting an address */
   initialSelectedAddress?: any;
   onConsumeInitialAddress?: () => void;
+  /** Restore booking form after returning from shell payment screen */
+  initialShowBookingForm?: boolean;
+  initialSelectedDate?: string;
+  initialSelectedTime?: string;
+  initialSelectedPetId?: string;
+  initialSelectedServiceIds?: string[];
+  initialSelectedAddressId?: string;
+  /** Hardware / shell back: close booking form or address modal before parent step back */
+  onInternalBackReady?: (handleBack: () => void) => void;
 }
 
 // ============================================================================
@@ -189,17 +198,26 @@ export function UniversalProviderProfile({
   onProceedToPayment,
   initialSelectedAddress,
   onConsumeInitialAddress,
+  initialShowBookingForm,
+  initialSelectedDate,
+  initialSelectedTime,
+  initialSelectedPetId,
+  initialSelectedServiceIds,
+  initialSelectedAddressId,
+  onInternalBackReady,
 }: UniversalProviderProfileProps) {
   const [activeTab, setActiveTab] = useState<'services' | 'about' | 'reviews'>('services');
-  const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
+  const [selectedServices, setSelectedServices] = useState<Set<string>>(
+    () => new Set(initialSelectedServiceIds ?? []),
+  );
   const [isFavorite, setIsFavorite] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(false);
   
   // Booking form state
-  const [showBookingForm, setShowBookingForm] = useState(false);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
+  const [showBookingForm, setShowBookingForm] = useState(initialShowBookingForm ?? false);
+  const [selectedDate, setSelectedDate] = useState(initialSelectedDate ?? '');
+  const [selectedTime, setSelectedTime] = useState(initialSelectedTime ?? '');
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [pets, setPets] = useState<Pet[]>([]);
@@ -215,6 +233,22 @@ export function UniversalProviderProfile({
   const showFacilitiesAmenitiesOnAbout =
     shouldShowVendorAmenities(serviceStyle) &&
     !(category === 'vet' && serviceStyle === 'at_home');
+
+  const handleInternalBack = useCallback(() => {
+    if (showAddAddressModal) {
+      setShowAddAddressModal(false);
+      return;
+    }
+    if (showBookingForm) {
+      setShowBookingForm(false);
+      return;
+    }
+    onBack();
+  }, [showAddAddressModal, showBookingForm, onBack]);
+
+  useEffect(() => {
+    onInternalBackReady?.(handleInternalBack);
+  }, [handleInternalBack, onInternalBackReady]);
 
   // When returning from address book with a selected address, pre-select it
   useEffect(() => {
@@ -303,9 +337,15 @@ export function UniversalProviderProfile({
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse?.pets) {
         setPets(petsResponse.pets);
-        // Auto-select first pet
         if (petsResponse.pets.length > 0) {
-          setSelectedPet(petsResponse.pets[0]);
+          if (initialSelectedPetId) {
+            const match = petsResponse.pets.find(
+              (p: Pet) => String(p.id) === String(initialSelectedPetId),
+            );
+            setSelectedPet(match ?? petsResponse.pets[0]);
+          } else {
+            setSelectedPet(petsResponse.pets[0]);
+          }
         }
       }
 
@@ -316,8 +356,11 @@ export function UniversalProviderProfile({
           if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
             const normalized = addressResponse.addresses.map((a: any) => normalizeAddress(a));
             setAddresses(normalized);
+            const pickById = initialSelectedAddressId
+              ? normalized.find((a: Address) => String(a.id) === String(initialSelectedAddressId))
+              : undefined;
             const defaultRaw = addressResponse.addresses.find((a: any) => a.isDefault ?? a.is_default);
-            const toSelect = defaultRaw || addressResponse.addresses[0];
+            const toSelect = pickById ?? (defaultRaw || addressResponse.addresses[0]);
             if (toSelect) setSelectedAddress(normalizeAddress(toSelect));
           }
         } catch (e) {
@@ -428,7 +471,7 @@ export function UniversalProviderProfile({
   };
 
   // Calculate total for selected services
-  const selectedServicesList = provider.services.filter(s => selectedServices.has(s.id));
+  const selectedServicesList = servicesMatchingSelection(provider.services, selectedServices);
   const totalAmount = selectedServicesList.reduce((sum, s) => sum + s.price, 0);
   const totalDuration = selectedServicesList.reduce((sum, s) => sum + s.duration, 0);
 
@@ -446,6 +489,10 @@ export function UniversalProviderProfile({
   // Proceed to payment
   const handleProceedToPayment = () => {
     // Validate
+    if (selectedServices.size === 0) {
+      toast.error('Please select at least one service');
+      return;
+    }
     if (!selectedPet) {
       toast.error('Please select a pet');
       return;
@@ -517,7 +564,7 @@ export function UniversalProviderProfile({
           <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 cw-header-safe-top cw-header-safe-x pointer-events-none">
             <button
               type="button"
-              onClick={showBookingForm ? () => setShowBookingForm(false) : onBack}
+              onClick={handleInternalBack}
               className="pointer-events-auto flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur transition-colors hover:bg-white/30"
               aria-label="Go back"
             >
@@ -993,7 +1040,13 @@ export function UniversalProviderProfile({
             <Button
               className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-md"
               onClick={handleProceedToPayment}
-              disabled={!selectedPet || !selectedDate || !selectedTime || (serviceStyle === 'at_home' && !selectedAddress)}
+              disabled={
+                selectedServices.size === 0 ||
+                !selectedPet ||
+                !selectedDate ||
+                !selectedTime ||
+                (serviceStyle === 'at_home' && !selectedAddress)
+              }
             >
               Proceed to Payment • {formatPriceWithSymbol(totalAmount)}
             </Button>

@@ -1,0 +1,29 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.com.warmpawz.app",
+        "paths": [
+          "/shop",
+          "/shop/*",
+          "/cart",
+          "/checkout",
+          "/orders",
+          "/orders/*",
+          "/bookings",
+          "/bookings/*",
+          "/my-packages",
+          "/my-packages/*",
+          "/packages/*",
+          "/track/*",
+          "/tracking/*",
+          "/wishlist",
+          "/promotions",
+          "/auth",
+          "/auth/*"
+        ]
+      }
+    ]
+  }
+}

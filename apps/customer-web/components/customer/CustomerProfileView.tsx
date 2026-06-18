@@ -651,15 +651,8 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
           </>
         ) : (
           <div className="px-5 pb-6 pt-2">
-            <div className="mb-5 flex items-center justify-between gap-3">
+            <div className="mb-5">
               <h2 className="text-xl font-bold text-gray-900">Edit Profile</h2>
-              <button
-                type="button"
-                onClick={cancelEdit}
-                className="min-h-[44px] px-3 py-2 text-sm font-medium text-gray-600"
-              >
-                Cancel
-              </button>
             </div>
 
             <div className="mb-6 flex justify-center sm:hidden">
@@ -711,13 +704,23 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
 
       {editMode && (
         <div className="fixed bottom-0 left-0 right-0 z-20 mx-auto w-full max-w-customer border-t border-gray-200 bg-white px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <Button
-            onClick={handleSave}
-            disabled={saving}
-            className="h-12 w-full rounded-xl bg-[#FF8C42] text-white hover:bg-[#FF7A2E] disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </Button>
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              onClick={cancelEdit}
+              disabled={saving}
+              className="h-12 flex-1 rounded-xl border-2 border-[#FF8C42] bg-white text-base font-bold text-[#FF8C42] shadow-sm hover:bg-orange-50 active:scale-[0.98] disabled:opacity-50"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="h-12 flex-1 rounded-xl bg-[#FF8C42] text-base font-bold text-white shadow-[0_4px_14px_rgba(255,140,66,0.35)] hover:bg-[#FF7A2E] active:scale-[0.98] disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
         </div>
       )}
     </div>

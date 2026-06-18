@@ -26,6 +26,29 @@ export function getSupportPhoneLabel(): string {
 /** sessionStorage key: set before navigating to Help & Support */
 export const SUPPORT_INITIAL_TAB_KEY = 'warmpawz_support_initial_tab';
 
+/** When set, SupportHelpCenter opens the contact ticket form on mount (Report an Issue). */
+export const SUPPORT_OPEN_CONTACT_FORM_KEY = 'warmpawz_support_open_contact_form';
+
+export function rememberSupportOpenContactForm(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(SUPPORT_OPEN_CONTACT_FORM_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+}
+
+export function consumeSupportOpenContactForm(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const v = sessionStorage.getItem(SUPPORT_OPEN_CONTACT_FORM_KEY);
+    sessionStorage.removeItem(SUPPORT_OPEN_CONTACT_FORM_KEY);
+    return v === '1';
+  } catch {
+    return false;
+  }
+}
+
 /** sessionStorage key: booking context when opening Help from a booking */
 export const SUPPORT_BOOKING_CONTEXT_KEY = 'warmpawz_support_booking_context';
 

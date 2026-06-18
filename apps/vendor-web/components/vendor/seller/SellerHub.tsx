@@ -9,6 +9,7 @@ import {
   BarChart3,
   Settings,
   Tag,
+  Image as ImageIcon,
   FileText,
   IndianRupee,
   Menu,
@@ -24,6 +25,7 @@ import { SellerOrderManagement } from './SellerOrderManagement';
 import { GSTInvoicing } from './GSTInvoicing';
 import { CommissionCalculator } from './CommissionCalculator';
 import { PromotionsManagement } from './PromotionsManagement';
+import { BannerManagement } from './BannerManagement';
 import { SellerAnalytics } from './SellerAnalytics';
 import { SellerSettings, type SellerSettingsHandle } from './SellerSettings';
 
@@ -35,6 +37,7 @@ export type SellerHubTab =
   | 'invoices'
   | 'commission'
   | 'promotions'
+  | 'banners'
   | 'analytics'
   | 'settings';
 
@@ -56,6 +59,7 @@ export const SELLER_HUB_NAVIGATION: {
   { id: 'invoices', label: 'GST Invoices', icon: FileText, description: 'Tax invoices' },
   { id: 'commission', label: 'Commission', icon: IndianRupee, description: 'Earnings & fees' },
   { id: 'promotions', label: 'Promotions', icon: Tag, description: 'Offers & discounts' },
+  { id: 'banners', label: 'Banners', icon: ImageIcon, description: 'Marketing assets' },
   { id: 'analytics', label: 'Analytics', icon: BarChart3, description: 'Performance data' },
   {
     id: 'settings',
@@ -254,6 +258,7 @@ export function SellerHubMainPanels({
       {activeTab === 'invoices' && <GSTInvoicing sellerId={sellerId} sellerData={vendorData} />}
       {activeTab === 'commission' && <CommissionCalculator sellerId={sellerId} />}
       {activeTab === 'promotions' && <PromotionsManagement sellerId={sellerId} />}
+      {activeTab === 'banners' && <BannerManagement sellerId={sellerId} />}
       {activeTab === 'analytics' && <SellerAnalytics sellerId={sellerId} />}
       {activeTab === 'settings' && (
         <SellerSettings

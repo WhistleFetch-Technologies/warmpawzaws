@@ -7,6 +7,7 @@ import {
   WARMPAWZ_HOME_RESUME_SCREENS,
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
 } from './go-back-or-replace';
+import { navigateCustomerDeepLink } from './navigation/deep-link-navigation';
 import { resolveFeaturedVendorDestination } from './promotion-navigation';
 
 const CUSTOMER_FULL_ROUTES = new Set([
@@ -88,6 +89,17 @@ export function navigateFromPushPayload(data: Record<string, string | undefined>
 
   if (isSafeInternalPath(pathOnly) && CUSTOMER_FULL_ROUTES.has(pathOnly)) {
     window.location.assign(path);
+    return;
+  }
+
+  if (
+    isSafeInternalPath(pathOnly) &&
+    (pathOnly.startsWith('/shop') ||
+      pathOnly.startsWith('/orders') ||
+      pathOnly.startsWith('/track') ||
+      pathOnly.startsWith('/packages'))
+  ) {
+    navigateCustomerDeepLink(path);
     return;
   }
 

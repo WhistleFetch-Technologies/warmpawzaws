@@ -5,8 +5,9 @@ import { useParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { resolveShopProductIdFromLocation } from '@/lib/resolve-shop-product-id';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
+import { useDeepLinkBackStack } from '@/lib/navigation/use-deep-link-back-stack';
 import {
   mergeLineIntoWarmpawzCartStorage,
   setLineQuantityInWarmpawzCartStorage,
@@ -170,6 +171,8 @@ function mapRecommendedProduct(row: Record<string, unknown>): RecommendedProduct
 export default function ProductDetailClient() {
   const params = useParams();
   const router = useRouter();
+  const nav = useCustomerNavigation();
+  useDeepLinkBackStack();
   const productId = resolveShopProductIdFromLocation(params.productId as string);
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -254,8 +257,7 @@ export default function ProductDetailClient() {
           resolvedProductId: resolvedId,
           rowKeys: p && typeof p === 'object' ? Object.keys(p) : [],
         });
-        const compareAt = resolveProductCompareAtPrice(p as Record<string, unknown>);
-        const sellingPrice = resolveProductSellingPrice(p as Record<string, unknown>, compareAt);
+        const compareOrOriginal = p.original_price ?? p.compare_at_price;
         const rc = Number(p.review_count ?? 0) || 0;
         const rawRating = p.rating != null ? Number(p.rating) : NaN;
         const rating =
@@ -270,8 +272,11 @@ export default function ProductDetailClient() {
                 ? displaySpecValue(p.description)
                 : '',
           stock: p.stock_quantity || p.stock || 0,
-          price: sellingPrice,
-          original_price: listPriceForDiscountDisplay(sellingPrice, compareAt),
+          price: parseFloat(p.price) || 0,
+          original_price:
+            compareOrOriginal != null && String(compareOrOriginal) !== ''
+              ? parseFloat(String(compareOrOriginal))
+              : undefined,
           rating,
           review_count: rc,
           images: ensureImageUrls(p.images),
@@ -339,6 +344,7 @@ export default function ProductDetailClient() {
   // ============================================================================
   // ACTIONS
   // ============================================================================
+
 
   const matchedSku = useMemo(() => {
     if (productSkus.length === 0) return null;
@@ -459,15 +465,14 @@ export default function ProductDetailClient() {
 
     setAddingToCart(true);
     try {
-      if (isInCart) persistCartQuantity(quantity);
-      else mergeLineIntoLocalCart();
+      mergeLineIntoLocalCart();
     } finally {
       setAddingToCart(false);
     }
   };
 
   const buyNow = () => {
-    if (!persistCartQuantity(quantity)) return;
+    if (!mergeLineIntoLocalCart()) return;
     router.push('/cart?buynow=1');
   };
 
@@ -785,14 +790,14 @@ export default function ProductDetailClient() {
               <div className="flex items-center gap-4">
                 <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden">
                   <button
-                    onClick={() => changeQuantity(-1)}
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
                     className="p-3 hover:bg-slate-100 transition-colors"
                   >
                     <Minus className="w-5 h-5 text-slate-600" />
                   </button>
                   <span className="w-14 text-center font-semibold text-slate-900">{quantity}</span>
                   <button
-                    onClick={() => changeQuantity(1)}
+                    onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
                     className="p-3 hover:bg-slate-100 transition-colors"
                     disabled={quantity >= displayStock}
                   >
@@ -1027,7 +1032,9 @@ export default function ProductDetailClient() {
 
 function RecommendedProductCard({ product }: { product: RecommendedProduct }) {
   const router = useRouter();
-  const discount = getProductDiscountPercent(product.price, product.original_price);
+  const discount = product.original_price && product.original_price > product.price
+    ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
+    : 0;
 
   return (
     <button

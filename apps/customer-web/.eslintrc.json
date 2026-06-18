@@ -1,0 +1,21 @@
+{
+  "extends": "next/core-web-vitals",
+  "overrides": [
+    {
+      "files": ["components/**/*.tsx", "app/**/*.tsx"],
+      "excludedFiles": [
+        "components/customer/wrappers/CustomerHomeWrapper.tsx",
+        "lib/navigation/**"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "warn",
+          {
+            "selector": "CallExpression[callee.name='setPreviousScreen']",
+            "message": "Use shellNav.navigateToScreen / handleBack — setPreviousScreen is removed from the shell router."
+          }
+        ]
+      }
+    }
+  ]
+}

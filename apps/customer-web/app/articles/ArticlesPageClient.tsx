@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
+import {
+  handleArticlesListBack,
+  navigateToArticleFromList,
+} from '@/lib/articles-back-nav';
 import ArticleDetailClient from './[slug]/ArticleDetailClient';
 import {
   ArrowLeft,
@@ -94,7 +98,7 @@ export default function ArticlesPageClient() {
   const goToArticle = (a: CustomerArticleListItem) => {
     const ref = (a.slug || a.id || '').toString();
     if (!ref) return;
-    router.push(`/articles?slug=${encodeURIComponent(ref)}`);
+    navigateToArticleFromList(router, ref);
   };
 
   if (detailSlug) {
@@ -107,9 +111,9 @@ export default function ArticlesPageClient() {
         <div className="mx-auto flex max-w-customer items-center gap-3 py-3">
           <button
             type="button"
-            onClick={() => router.push('/')}
+            onClick={() => handleArticlesListBack(router)}
             className="flex h-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-teal-50 touch-manipulation"
-            aria-label="Back to home"
+            aria-label="Back"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>

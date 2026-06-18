@@ -10,7 +10,7 @@ import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { BOARDING_SERVICE_LABELS, normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
 import {
   minPriceForVendor,
-  buildBoardingBookPlanPayload,
+  navigateBoardingPlanBooking,
 } from '@/lib/boarding-vendor-booking-utils';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
@@ -50,7 +50,7 @@ export function BoardingVendorListView({
         );
         return;
       }
-      onNavigate('boarding-booking', buildBoardingBookPlanPayload(v, plan) as Record<string, unknown>);
+      navigateBoardingPlanBooking(onNavigate, v, plan);
     },
     [onNavigate, router, serviceSlug]
   );
