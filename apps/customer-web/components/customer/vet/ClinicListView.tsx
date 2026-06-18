@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
@@ -230,7 +231,7 @@ export function ClinicListView({
       try {
         const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
         const res = (await apiClient.get(
-          `/customer/vendor/${clinicId}/services?serviceStyle=at_center${phoneParam}`
+          `/customer/vendor/${clinicId}/services?serviceStyle=at_center&category=${HUB_DISCOVERY_VET.servicesApiCategory}${phoneParam}`
         ).catch(() => apiClient.get(`/vendor/${clinicId}/services`))) as any;
         let services: any[] = [];
         const servicesData = res;

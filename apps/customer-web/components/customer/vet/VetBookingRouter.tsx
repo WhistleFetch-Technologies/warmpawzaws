@@ -21,6 +21,7 @@ import {
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
@@ -507,7 +508,10 @@ export function VetBookingRouter({
       const vid = vendorId || doctorId;
       // Prefer customer endpoint so only published services with vendor price show (CRUD reflects immediately)
       // ✅ FIX: Include serviceStyle parameter to filter services correctly
-      const serviceStyleParam = serviceStyle ? `?serviceStyle=${encodeURIComponent(serviceStyle)}` : '';
+      const vendorServicesParams = new URLSearchParams();
+      if (serviceStyle) vendorServicesParams.set('serviceStyle', serviceStyle);
+      vendorServicesParams.set('category', HUB_DISCOVERY_VET.servicesApiCategory);
+      const serviceStyleParam = `?${vendorServicesParams.toString()}`;
       let servicesResponse: any = null;
       const endpoints = [
         `/customer/vendor/${vid}/services${serviceStyleParam}`,

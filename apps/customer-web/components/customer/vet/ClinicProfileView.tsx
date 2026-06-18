@@ -13,6 +13,7 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
+import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 
@@ -96,7 +97,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       // ✅ FIX: Include serviceStyle=at_center for clinic profile (clinics offer at_center services)
       const [vendorResponse, servicesResponse, facilityResponse] = await Promise.all([
         apiClient.get(`/customer/vendor/${clinicId}`),
-        apiClient.get(`/customer/vendor/${clinicId}/services?serviceStyle=at_center`).catch(() => apiClient.get(`/vendor/${clinicId}/services`)),
+        apiClient.get(`/customer/vendor/${clinicId}/services?serviceStyle=at_center&category=${HUB_DISCOVERY_VET.servicesApiCategory}`).catch(() => apiClient.get(`/vendor/${clinicId}/services`)),
         apiClient.get(`/customer/facility/${clinicId}`).catch(() => null),
       ]);
       

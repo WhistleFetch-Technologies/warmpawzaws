@@ -465,7 +465,11 @@ export function UniversalBookingRouter({
       const vid = vendorId || doctorId;
       // Prefer customer endpoint so only published services with vendor price show (CRUD reflects immediately)
       // ✅ FIX: Include serviceStyle parameter to filter services correctly
-      const serviceStyleParam = serviceStyle ? `?serviceStyle=${encodeURIComponent(serviceStyle)}` : '';
+      const vendorServicesParams = new URLSearchParams();
+      if (serviceStyle) vendorServicesParams.set('serviceStyle', serviceStyle);
+      const hubCategory = getRoleConfig(roleId)?.category;
+      if (hubCategory) vendorServicesParams.set('category', hubCategory);
+      const serviceStyleParam = vendorServicesParams.toString() ? `?${vendorServicesParams.toString()}` : '';
       let servicesResponse: any = null;
       const endpoints = [
         `/customer/vendor/${vid}/services${serviceStyleParam}`,

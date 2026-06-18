@@ -40,6 +40,8 @@ import {
   sqlVendorDiscoverableStatus,
   sqlVendorOnlineForCustomerDiscovery,
   sqlVendorServiceDiscoverable,
+  sqlVendorServicesHubCategoryFilter,
+  vendorServicesHubCategoryBindParams,
   TRAINING_HUB_ROLE_SQL_IN_LIST,
   BEHAVIOR_HUB_ROLE_SQL_IN_LIST,
   catTextRequestsBehaviorHub,
@@ -4708,11 +4710,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           catLower === 'sitter' ||
           catLower === 'sitter_solo' ||
           catLower === 'pet_sitting';
-        const walkerBookingCategoryRequest =
-          catLower === 'walker' ||
-          catLower === 'walking' ||
-          catLower === 'dog_walker' ||
-          catLower === 'pet_walker';
         const boardingBookingCategoryRequest =
           catLower === 'boarding' || catLower === 'pet_boarding';
         /** Training tile: empty `vs.category` may list any training-hub role. */
@@ -4725,9 +4722,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           catLower === 'behaviorist' || catLower === 'behaviourist';
         const trainingBookingCategoryRequest =
           trainingOnlyBookingCategoryRequest || behaviorBookingCategoryRequest;
-        queryParams.push(category);
-        const catParam = queryParams.length;
-        if (sittingBookingCategoryRequest) {
+
+        const hubBind = vendorServicesHubCategoryBindParams(category);
+        if (hubBind) {
+          queryParams.push(hubBind.exact, hubBind.like);
+          const exactP = queryParams.length - 1;
+          const likeP = queryParams.length;
+          const hubSql = sqlVendorServicesHubCategoryFilter(category, 'vs', exactP, likeP);
+          if (hubSql) servicesQuery += hubSql;
+        } else if (sittingBookingCategoryRequest) {
+          queryParams.push(category);
+          const catParam = queryParams.length;
           /** Align with discover-services: catalog-only legacy `boarding` at_home counts as sitting; never all at_home rows for sitters. */
           servicesQuery += ` AND (
             (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
@@ -4766,30 +4771,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               AND COALESCE(vs.is_custom_service, false) = true
             )
           )`;
-        } else if (walkerBookingCategoryRequest) {
-          servicesQuery += ` AND (
-            (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
-            OR (
-              LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%walker%'
-              AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%vet%'
-            )
-            OR (
-              vs.service_style = 'at_home'
-              AND (
-                LOWER(COALESCE(vs.service_name, '')) LIKE '%dog%walk%'
-                OR LOWER(COALESCE(vs.service_name, '')) LIKE '%pet%walk%'
-                OR (
-                  LOWER(COALESCE(vs.service_name, '')) LIKE '%walk%'
-                  AND LOWER(COALESCE(vs.service_name, '')) NOT LIKE '%walk-in%'
-                )
-              )
-              AND (
-                TRIM(COALESCE(vs.category, '')) = ''
-                OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other', 'general']::text[])
-              )
-            )
-          )`;
         } else if (boardingBookingCategoryRequest) {
+          queryParams.push(category);
+          const catParam = queryParams.length;
           let boardingCatIdOr = '';
           const hasVsCatColBooking = await columnExists('vendor_services', 'category_id');
           if (hasVsCatColBooking) {
@@ -4821,6 +4805,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${boardingCatIdOr}
           )`;
         } else if (trainingBookingCategoryRequest) {
+          queryParams.push(category);
+          const catParam = queryParams.length;
           const emptyCatRoleSqlList = behaviorBookingCategoryRequest
             ? BEHAVIOR_HUB_ROLE_SQL_IN_LIST
             : TRAINING_HUB_ROLE_SQL_IN_LIST;
@@ -4851,6 +4837,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${trainingLabeledServicesForBehaviorOnly}
           )`;
         } else {
+          queryParams.push(category);
+          const catParam = queryParams.length;
           servicesQuery += ` AND (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')`;
         }
       }

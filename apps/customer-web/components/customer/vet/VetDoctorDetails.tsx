@@ -10,6 +10,7 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
+import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 
 interface VetDoctorDetailsProps {
   phone: string;
@@ -53,7 +54,7 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
       // ✅ CRITICAL: Load vendor profile and services from real API - NO MOCK DATA, NO FALLBACKS
       const [vendorResponse, servicesResponse] = await Promise.all([
         apiClient.get(`/customer/vendor/${doctorId}`),
-        apiClient.get(`/customer/vendor/${doctorId}/services`).catch(() => apiClient.get(`/vendor/${doctorId}/services`))
+        apiClient.get(`/customer/vendor/${doctorId}/services?category=${HUB_DISCOVERY_VET.servicesApiCategory}`).catch(() => apiClient.get(`/vendor/${doctorId}/services`))
       ]);
       
       const vendorData = (vendorResponse as any)?.vendor || vendorResponse as any;
