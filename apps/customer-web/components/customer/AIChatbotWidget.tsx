@@ -945,7 +945,7 @@ export function AIChatbotWidget({
         setMessages(prev => [...prev, botMessage]);
       } else if (mode === 'booking') {
         lastBookingQueryRef.current = messageText;
-        const inferred = inferCategoryFromBookingMessage(messageText);
+        const inferred = inferBookingCategoryFromMessage(messageText);
         if (inferred) {
           setWizardCategory(normalizeWizardCategory(inferred));
         }
