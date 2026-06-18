@@ -444,8 +444,11 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
     // OTP VERIFICATION LOGIC
     // ============================================================================
     // Check if UAT mode is enabled - ONLY check UAT_MODE env variable.
-    // Production never accepts fixed bypass OTPs; only UAT may use 123456 / UAT_DEV_PASSWORD_BYPASS.
+    // Production never accepts global fixed bypass OTPs; UAT may use 123456 / UAT_DEV_PASSWORD_BYPASS.
+    // Optional per-phone prod support: TEST_USER_PHONE + TEST_USER_OTP env vars (one number only).
     const isUATMode = process.env.UAT_MODE === 'true';
+    const testUserPhone = process.env.TEST_USER_PHONE || '';
+    const testUserOtp = process.env.TEST_USER_OTP || '';
 
     try {
       let isValid = false;
@@ -458,10 +461,50 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           ? '0' + phoneDigits
           : phoneDigits;
 
+      const normalizedTestPhone = testUserPhone ? normalizePhoneForOtp(testUserPhone) : '';
+      const isTestUser = !isUATMode &&
+        testUserPhone &&
+        testUserOtp &&
+        normalizedPhone === normalizedTestPhone &&
+        otp === testUserOtp;
+
+      const markOtpUsedNonBlocking = (otpPhone: string, label: string) => {
+        Promise.race([
+          (async () => {
+            try {
+              const records = await select('otp_tokens', {
+                phone: otpPhone,
+                is_used: false,
+              });
+              if (records.length > 0) {
+                await query(
+                  'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
+                  [records[0].id]
+                );
+                console.log(`[AUTH] ${label}: Marked existing OTP as used`);
+              }
+            } catch (e) {
+              console.warn(`[AUTH] ${label}: Could not mark existing OTP as used:`, e);
+            }
+          })(),
+          new Promise((resolve) => setTimeout(resolve, 2000)),
+        ]).catch((e) => {
+          console.warn(`[AUTH] ${label}: OTP cleanup timeout or error:`, e);
+        });
+      };
+
+      // ============================================================================
+      // TEST USER BYPASS (PRODUCTION): one phone + one OTP from env vars only
+      // ============================================================================
+      if (isTestUser) {
+        isValid = true;
+        console.log(`[AUTH] Test user bypass: OTP accepted for phone ${phone} (normalized: ${normalizedPhone})`);
+        markOtpUsedNonBlocking(normalizedPhone, 'Test user bypass');
+      }
       // ============================================================================
       // UAT MODE: Allow fixed OTP 123456 for any phone number in UAT mode
       // ============================================================================
-      if (isUATMode && (otp === '123456' || otp === UAT_DEV_PASSWORD_BYPASS)) {
+      else if (isUATMode && (otp === '123456' || otp === UAT_DEV_PASSWORD_BYPASS)) {
         isValid = true;
         console.log(`[AUTH] UAT Mode: Fixed OTP accepted for ${phone} (123456 or UAT bypass)`);
         Promise.race([

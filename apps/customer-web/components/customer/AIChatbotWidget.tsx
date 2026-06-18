@@ -26,16 +26,21 @@ import { toast } from 'sonner';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import {
   appendHintStepsToMessage,
-  buildBookingAssistButtonActions,
+  buildBookingAssistActionsFromResponse,
   bookingThankYouBotContent,
   clearPersistedAiChatSession,
+  inferBookingAssistIntent,
+  inferBookingCategoryFromMessage,
   inferVisitStyleFromText,
   isBookingWizardPickPrompt,
   isWhitelistedAction,
   loadPersistedAiChatSession,
   normalizeActionKey,
+  parseCategoryFromBookingUrl,
+  resolveAiChatNavTarget,
   savePersistedAiChatSession,
   visitStyleChangeMessage,
+  type BookingAssistIntent,
 } from '@/lib/ai-chatbot-booking-ui';
 
 interface AIChatbotWidgetProps {
@@ -151,23 +156,9 @@ function getClientGeoForBooking(): Promise<{ lat: number; lng: number } | undefi
 }
 
 /** Match backend inferBookingCategoryFromText — fixes API URLs that wrongly use category=vet for "grooming" etc. */
-function inferCategoryFromBookingMessage(msg: string): string | null {
-  const m = msg.toLowerCase().trim();
-  if (!m) return null;
-  if (/\b(grooming|groom|groomer|bath|trim|haircut)\b/.test(m)) return 'grooming';
-  if (/\b(walk|walker|walking)\b/.test(m)) return 'walker';
-  if (/\b(train|trainer|training|behavior|behaviourist)\b/.test(m)) return 'training';
-  if (/\b(board|boarding|kennel|daycare)\b/.test(m)) return 'boarding';
-  if (/\b(vet|veterinar|veterinary|doctor|clinic)\b/.test(m)) return 'vet';
-  if (/\b(pharmacy|medicine|medication)\b/.test(m)) return 'pharmacy';
-  if (/\b(cafe|café)\b/.test(m)) return 'cafe';
-  if (/\b(resort|holiday)\b/.test(m)) return 'resort';
-  return null;
-}
-
 function alignBookingSearchPath(path: string, userMessage: string): string {
   if (!path.startsWith('/search')) return path;
-  const cat = inferCategoryFromBookingMessage(userMessage);
+  const cat = inferBookingCategoryFromMessage(userMessage);
   if (!cat) return path;
   try {
     const qIdx = path.indexOf('?');
@@ -222,19 +213,31 @@ export function AIChatbotWidget({
 }: AIChatbotWidgetProps) {
   const router = useRouter();
   const lastBookingUrlRef = useRef<string | null>(null);
+  const lastBookingCategoryRef = useRef<string | null>(null);
+  const lastBookingIntentRef = useRef<BookingAssistIntent>('discover');
   /** Prevents double close when touch fires pointerdown + click on the backdrop. */
   const backdropCloseDoneRef = useRef(false);
   const showMobileBackdrop = presentation === 'dock' || presentation === 'modal';
 
   const goTo = useCallback(
-    (dest: string) => {
+    (dest: string, data?: Record<string, unknown>) => {
       const d = (dest || '').trim();
       if (!d) return;
-      if (d.startsWith('/')) {
-        if (onNavigate) onNavigate(d);
-        else router.push(d);
+      const target = resolveAiChatNavTarget(d);
+      if (target.kind === 'spa') {
+        const navData = data ?? target.data;
+        if (onNavigate) {
+          onNavigate(target.screen, navData);
+        } else {
+          router.push('/');
+        }
+        return;
+      }
+      if (target.path.startsWith('/')) {
+        if (onNavigate) onNavigate(target.path, data);
+        else router.push(target.path);
       } else if (onNavigate) {
-        onNavigate(d);
+        onNavigate(target.path, data);
       }
     },
     [onNavigate, router]
@@ -312,6 +315,8 @@ export function AIChatbotWidget({
     setBookedVendorName(null);
     selectedVendorNameRef.current = null;
     lastBookingUrlRef.current = null;
+    lastBookingCategoryRef.current = null;
+    lastBookingIntentRef.current = 'discover';
     lastBookingQueryRef.current = '';
   }, [customerId, customerPhone]);
 
@@ -992,29 +997,57 @@ export function AIChatbotWidget({
               ? response.bookingUrl
               : '/search';
           bookingPath = alignBookingSearchPath(bookingPath, messageText);
-          lastBookingUrlRef.current = bookingPath;
 
           const stepLabels = Array.isArray(response.nextSteps)
             ? response.nextSteps.filter((s: unknown) => typeof s === 'string' && String(s).trim())
             : [];
 
           const suggestedProviders = mapSuggestedProvidersFromApi(response.suggestedProviders);
-          const bookingActions = buildBookingAssistButtonActions(
-            Boolean(suggestedProviders && suggestedProviders.length > 0)
-          );
+          const hasProviders = Boolean(suggestedProviders && suggestedProviders.length > 0);
+          const category =
+            inferBookingCategoryFromMessage(messageText) ||
+            parseCategoryFromBookingUrl(bookingPath) ||
+            null;
+
+          const apiIntent = response.assistIntent as BookingAssistIntent | undefined;
+          let intent: BookingAssistIntent =
+            apiIntent === 'trouble' || apiIntent === 'discover' || apiIntent === 'resume'
+              ? apiIntent
+              : inferBookingAssistIntent(messageText, {
+                  forceResume: hasProviders || Boolean(bookingSessionId),
+                });
+          if (hasProviders && intent !== 'trouble') {
+            intent = 'resume';
+          }
+          lastBookingIntentRef.current = intent;
+          lastBookingCategoryRef.current = category;
+
+          if (intent === 'trouble') {
+            lastBookingUrlRef.current = category ? `/search?category=${category}` : null;
+          } else {
+            lastBookingUrlRef.current = bookingPath;
+          }
+
+          const { actions: bookingActions, hintSteps } = buildBookingAssistActionsFromResponse({
+            intent,
+            hasProviders,
+            category,
+            stepLabels,
+          });
 
           const botMessage: Message = {
             id: `bot-${Date.now()}`,
             type: 'bot',
             content: appendHintStepsToMessage(
               response.response || "I'd be happy to help you book a service!",
-              stepLabels
+              hintSteps,
+              bookingActions
             ),
             timestamp: new Date().toISOString(),
             intent: 'booking',
             suggestedActions: bookingActions,
             suggestedProviders,
-            bookingUrl: bookingPath,
+            bookingUrl: lastBookingUrlRef.current || bookingPath,
           };
 
           setMessages((prev) => [...prev, botMessage]);
@@ -1164,7 +1197,32 @@ export function AIChatbotWidget({
       return;
     }
 
+    const category = lastBookingCategoryRef.current;
+    const intent = lastBookingIntentRef.current;
     const url = lastBookingUrlRef.current;
+
+    if (intent === 'trouble' && !url && !category) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `bot-${Date.now()}`,
+          type: 'bot',
+          content:
+            'Which service are you trying to book — **vet**, **grooming**, **training**, or **boarding**? Tell me and I can guide you to the right place.',
+          timestamp: new Date().toISOString(),
+          intent: 'booking',
+        },
+      ]);
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
+    if (category && (!url || url.startsWith('/search'))) {
+      goTo(category);
+      closeWidget();
+      return;
+    }
+
     if (url) {
       goTo(url);
       closeWidget();
@@ -1188,7 +1246,7 @@ export function AIChatbotWidget({
       return;
     }
 
-    if (key === 'go to booking' || key === 'continue to booking') {
+    if (key === 'go to booking' || key === 'continue to booking' || key === 'try again') {
       if (mode === 'symptoms') {
         setMode('booking');
       }
@@ -1196,14 +1254,19 @@ export function AIChatbotWidget({
       return;
     }
 
-    if (key === 'browse bookings') {
-      goTo('/bookings');
+    if (key === 'browse bookings' || key === 'view my bookings') {
+      goTo('my-bookings');
       closeWidget();
       return;
     }
 
     if (key === 'browse services') {
-      goTo(lastBookingUrlRef.current || '/search');
+      const category = lastBookingCategoryRef.current;
+      if (category) {
+        goTo(category);
+      } else {
+        goTo(lastBookingUrlRef.current || '/search');
+      }
       closeWidget();
       return;
     }

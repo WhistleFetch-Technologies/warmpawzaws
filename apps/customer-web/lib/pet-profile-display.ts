@@ -1,4 +1,8 @@
 import { flatMapFromVaccinationEntries } from './vaccine-label-mapping';
+import {
+  getEarliestUpcomingDue,
+  normalizePetSpecies,
+} from './pet-vaccination-schedule';
 
 export interface PetDisplayInput {
   type?: string;
@@ -325,6 +329,22 @@ export function formatVaccinationSummary(pet: PetDisplayInput): string {
 }
 
 export function deriveNextDueDate(pet: PetDisplayInput): string {
+  const dob = pet.dateOfBirth;
+  if (dob) {
+    const records = (pet.vaccinationEntries ?? []).map((entry) => ({
+      vaccineKey: entry.key,
+      name: entry.name,
+      lastDate: entry.date,
+      nextDueDate: entry.nextDue,
+    }));
+    const earliest = getEarliestUpcomingDue(
+      dob,
+      normalizePetSpecies(pet.type),
+      records
+    );
+    if (earliest) return formatDisplayDate(earliest);
+  }
+
   const lastCheckup = pet.healthRecords?.lastCheckup;
   const vaccinationDates = (
     pet.vaccinationEntries?.map((e) => e.nextDue || e.date) ?? [

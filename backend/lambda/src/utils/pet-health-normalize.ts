@@ -31,7 +31,7 @@ function vaccineDateFromEntry(rec: Record<string, unknown>): string {
 }
 
 function vaccineLabelFromEntry(rec: Record<string, unknown>): string {
-  return String(rec.key ?? rec.name ?? rec.vaccine ?? rec.type ?? rec.payloadName ?? '');
+  return String(rec.key ?? rec.vaccineKey ?? rec.name ?? rec.vaccine ?? rec.type ?? rec.payloadName ?? '');
 }
 
 /** Flatten wizard / legacy vaccination arrays into { rabies, distemper, parvovirus, other }. */

@@ -11,6 +11,19 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { addPetErrorMessage, resolveCustomerIdForPetMutation } from '@/lib/pet-create-helpers';
 import { flushPendingListItem } from '@/lib/pet-form-helpers';
+import {
+  type VaccinationScheduleItem,
+  computeNextDueDate,
+  findRecordForScheduleItem,
+  formatAgeWithWeeks,
+  getAdultSchedule,
+  getEarliestUpcomingDue,
+  getJuvenileSchedule,
+  getRowStatus,
+  getScheduledDueDate,
+  statusBadgeClass,
+  statusBadgeLabel,
+} from '@/lib/pet-vaccination-schedule';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -110,112 +123,6 @@ const CAT_BREEDS = [
   'American Shorthair', 'Birman', 'Himalayan', 'Indie/Mixed', 'Other'
 ];
 
-type PetSpecies = 'Dog' | 'Cat';
-
-interface VaccinationTemplate {
-  key: string;
-  displayName: string;
-  /** Sent as `name` / `type` on POST /pets — stable for analytics & backend. */
-  payloadName: string;
-  description: string;
-  intervalDays: number;
-}
-
-const VACCINATION_TEMPLATES: Record<PetSpecies, VaccinationTemplate[]> = {
-  Dog: [
-    {
-      key: 'dog:rabies',
-      displayName: 'Rabies Vaccine',
-      payloadName: 'Rabies Vaccine',
-      description:
-        'Protects dogs from the deadly rabies virus, prevents transmission to humans, and is usually given once yearly or as advised by the vet.',
-      intervalDays: 365,
-    },
-    {
-      key: 'dog:dhpp',
-      displayName: 'DHPP Vaccine',
-      payloadName: 'DHPP Vaccine',
-      description:
-        'Protects against Distemper, Hepatitis, Parvovirus, and Parainfluenza, helping prevent severe contagious diseases, with booster doses generally recommended yearly or every 3 years.',
-      intervalDays: 365,
-    },
-    {
-      key: 'dog:bordetella',
-      displayName: 'Bordetella (Kennel Cough) Vaccine',
-      payloadName: 'Bordetella (Kennel Cough) Vaccine',
-      description:
-        'Helps protect dogs from highly contagious kennel cough infections common in boarding, grooming, and daycare environments, usually taken annually or every 6–12 months for high-risk dogs.',
-      intervalDays: 180,
-    },
-    {
-      key: 'dog:leptospirosis',
-      displayName: 'Leptospirosis Vaccine',
-      payloadName: 'Leptospirosis Vaccine',
-      description:
-        'Protects against bacterial infections spread through contaminated water or urine that can affect both pets and humans, commonly administered once yearly.',
-      intervalDays: 365,
-    },
-    {
-      key: 'dog:canine-influenza',
-      displayName: 'Canine Influenza Vaccine',
-      payloadName: 'Canine Influenza Vaccine',
-      description:
-        'Helps prevent dog flu infections that spread easily in social environments, reducing severity of respiratory illness, with annual booster recommendations.',
-      intervalDays: 365,
-    },
-    {
-      key: 'dog:lyme',
-      displayName: 'Lyme Disease Vaccine',
-      payloadName: 'Lyme Disease Vaccine',
-      description:
-        'Protects dogs from Lyme disease caused by tick bites, helping reduce joint, kidney, and fever-related complications, typically recommended yearly in tick-prone areas.',
-      intervalDays: 365,
-    },
-  ],
-  Cat: [
-    {
-      key: 'cat:rabies',
-      displayName: 'Rabies Vaccine',
-      payloadName: 'Rabies Vaccine',
-      description:
-        'Protects cats from the deadly rabies virus, prevents transmission to humans, and is usually given once yearly or as advised by the vet.',
-      intervalDays: 365,
-    },
-    {
-      key: 'cat:fvrcp',
-      displayName: 'FVRCP Vaccine',
-      payloadName: 'FVRCP Vaccine',
-      description:
-        'Protects against common feline respiratory and viral diseases like rhinotracheitis, calicivirus, and panleukopenia, typically taken annually or every 3 years after boosters.',
-      intervalDays: 365,
-    },
-    {
-      key: 'cat:felv',
-      displayName: 'FeLV Vaccine',
-      payloadName: 'FeLV Vaccine',
-      description:
-        'Helps protect cats from feline leukemia virus that weakens the immune system, especially important for outdoor or multi-cat households, with yearly booster doses recommended.',
-      intervalDays: 365,
-    },
-    {
-      key: 'cat:fiv',
-      displayName: 'FIV Vaccine',
-      payloadName: 'FIV Vaccine',
-      description:
-        'Helps reduce the risk of feline immunodeficiency virus infection that affects immunity, mainly recommended for high-risk outdoor cats, with boosters as advised by veterinarians.',
-      intervalDays: 365,
-    },
-    {
-      key: 'cat:bordetella',
-      displayName: 'Bordetella Vaccine',
-      payloadName: 'Bordetella Vaccine',
-      description:
-        'Protects cats from Bordetella respiratory infections commonly spread in boarding or grooming environments, generally recommended annually for social or frequently traveling cats.',
-      intervalDays: 365,
-    },
-  ],
-};
-
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -294,29 +201,6 @@ export function EnhancedAddPetModal({
     }));
   }, [petData.type]);
 
-  // Calculate age from date of birth
-  const calculateAge = (dob: string): string => {
-    if (!dob) return '';
-    const birthDate = new Date(dob);
-    const today = new Date();
-    const years = today.getFullYear() - birthDate.getFullYear();
-    const months = today.getMonth() - birthDate.getMonth();
-    
-    if (years < 1) {
-      const totalMonths = years * 12 + months;
-      return `${Math.max(1, totalMonths)} month${totalMonths !== 1 ? 's' : ''}`;
-    }
-    return `${years} year${years !== 1 ? 's' : ''}`;
-  };
-
-  // Calculate next due date for vaccination
-  const calculateNextDueDate = (lastDate: string, intervalDays: number): string => {
-    if (!lastDate) return '';
-    const date = new Date(lastDate);
-    date.setDate(date.getDate() + intervalDays);
-    return date.toISOString().split('T')[0];
-  };
-
   // Photo upload handler
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -372,22 +256,19 @@ export function EnhancedAddPetModal({
   };
 
   // Add vaccination record (replaces same vaccineKey if present)
-  const addVaccination = (
-    vaccineKey: string,
-    payloadName: string,
-    lastDate: string,
-    intervalDays: number = 365
-  ) => {
+  const addVaccinationFromSchedule = (item: VaccinationScheduleItem, lastDate: string) => {
+    const nextDueDate =
+      computeNextDueDate(item, petData.dateOfBirth, lastDate) || '';
     const newVax: VaccinationRecord = {
       id: `vax_${Date.now()}`,
-      vaccineKey,
-      name: payloadName,
+      vaccineKey: item.key,
+      name: item.payloadName,
       lastDate,
-      nextDueDate: calculateNextDueDate(lastDate, intervalDays),
+      nextDueDate,
     };
     setPetData((prev) => ({
       ...prev,
-      vaccinations: [...prev.vaccinations.filter((v) => v.vaccineKey !== vaccineKey), newVax],
+      vaccinations: [...prev.vaccinations.filter((v) => v.vaccineKey !== item.key), newVax],
     }));
   };
 
@@ -399,17 +280,108 @@ export function EnhancedAddPetModal({
     }));
   };
 
-  const confirmVaccinationDate = (
-    tmpl: VaccinationTemplate,
-    dateValue: string
-  ) => {
+  const confirmVaccinationDate = (item: VaccinationScheduleItem, dateValue: string) => {
     if (!dateValue) return;
-    addVaccination(tmpl.key, tmpl.payloadName, dateValue, tmpl.intervalDays);
+    addVaccinationFromSchedule(item, dateValue);
     setPendingVaxDates((prev) => {
       const next = { ...prev };
-      delete next[tmpl.key];
+      delete next[item.key];
       return next;
     });
+  };
+
+  const renderVaccinationScheduleCard = (item: VaccinationScheduleItem) => {
+    const record = findRecordForScheduleItem(item, petData.vaccinations);
+    const isAdded = Boolean(record?.lastDate);
+    const rowStatus = getRowStatus(item, petData.dateOfBirth, record);
+    const scheduledDue = petData.dateOfBirth
+      ? getScheduledDueDate(petData.dateOfBirth, item.minWeeks)
+      : '';
+    const dateInputId = `vax-date-${item.key}`;
+
+    if (rowStatus === 'not_applicable') return null;
+
+    return (
+      <div
+        key={item.key}
+        className={`p-4 rounded-xl border-2 transition ${
+          isAdded ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'
+        }`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
+          <h4 className="font-semibold text-gray-900 text-base">{item.displayName}</h4>
+          <span
+            className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${statusBadgeClass(rowStatus)}`}
+          >
+            {statusBadgeLabel(rowStatus)}
+          </span>
+        </div>
+        {item.scheduleKind === 'juvenile' && (
+          <p className="text-xs font-medium text-gray-500 mb-1">Age: {item.ageLabel}</p>
+        )}
+        <p className="text-sm text-gray-600 leading-relaxed mb-3">{item.description}</p>
+        {!isAdded && scheduledDue && (
+          <p className="text-xs text-orange-600 font-medium mb-3">
+            Scheduled due: {scheduledDue}
+          </p>
+        )}
+
+        {!isAdded && (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
+            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+              <label htmlFor={dateInputId} className="text-sm font-medium text-gray-700 shrink-0">
+                Date last given
+              </label>
+              <div className="warmpawz-date-field-wrap">
+                <input
+                  id={dateInputId}
+                  type="date"
+                  max={new Date().toISOString().split('T')[0]}
+                  value={pendingVaxDates[item.key] ?? ''}
+                  onChange={(e) => {
+                    setPendingVaxDates((prev) => ({
+                      ...prev,
+                      [item.key]: e.target.value,
+                    }));
+                  }}
+                  className="w-full sm:max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-white"
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={!pendingVaxDates[item.key]}
+              onClick={() => confirmVaccinationDate(item, pendingVaxDates[item.key])}
+              className="shrink-0 px-4 py-2 rounded-lg text-sm font-medium bg-orange-500 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-300"
+            >
+              Add record
+            </button>
+          </div>
+        )}
+
+        {isAdded && record && (
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-700">
+            <span>
+              <span className="text-gray-500">Last given:</span>{' '}
+              <span className="font-medium text-gray-900">{record.lastDate}</span>
+            </span>
+            {record.nextDueDate && (
+              <span className="text-orange-600 font-medium">
+                Next due: {record.nextDueDate}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => removeVaccination(record.id)}
+              className="text-red-500 hover:text-red-600 p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-red-300"
+              aria-label={`Remove ${item.displayName}`}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
+    );
   };
 
   // Validate current step
@@ -536,6 +508,8 @@ export function EnhancedAddPetModal({
           lastDate: v.lastDate,
           nextDue: v.nextDueDate,
           nextDueDate: v.nextDueDate,
+          vaccineKey: v.vaccineKey,
+          key: v.vaccineKey,
         })),
         behaviorNotes: petData.specialNeeds || petData.temperament || undefined,
         specialNeeds: petData.specialNeeds || undefined,
@@ -847,7 +821,7 @@ export function EnhancedAddPetModal({
                 />
                 {petData.dateOfBirth && (
                   <p className="text-sm text-green-600 mt-1">
-                    Age: {calculateAge(petData.dateOfBirth)}
+                    Age: {formatAgeWithWeeks(petData.dateOfBirth)}
                   </p>
                 )}
               </div>
@@ -1190,80 +1164,28 @@ export function EnhancedAddPetModal({
                   Add each vaccine your pet has received. Pick a <span className="font-medium text-gray-800">date last given</span>{' '}
                   so we can estimate the next due date and send reminders.
                 </p>
+                {petData.dateOfBirth && (
+                  <p className="text-sm text-orange-600 font-medium mt-2">
+                    {petData.type === 'Dog' ? 'Puppy' : 'Kitten'} age: {formatAgeWithWeeks(petData.dateOfBirth)}
+                  </p>
+                )}
               </div>
 
               <div>
-                <span className="block text-sm font-medium text-gray-700 mb-3">Vaccines for {petData.type}s</span>
+                <span className="block text-sm font-medium text-gray-700 mb-3">
+                  {petData.type === 'Dog' ? 'Puppy' : 'Kitten'} vaccination schedule
+                </span>
                 <div className="space-y-3">
-                  {VACCINATION_TEMPLATES[petData.type].map((tmpl) => {
-                    const isAdded = petData.vaccinations.some((v) => v.vaccineKey === tmpl.key);
-                    const record = petData.vaccinations.find((v) => v.vaccineKey === tmpl.key);
-                    const dateInputId = `vax-date-${tmpl.key}`;
-                    return (
-                      <div
-                        key={tmpl.key}
-                        className={`p-4 rounded-xl border-2 transition ${
-                          isAdded ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'
-                        }`}
-                      >
-                        <h4 className="font-semibold text-gray-900 text-base mb-1">{tmpl.displayName}</h4>
-                        <p className="text-sm text-gray-600 leading-relaxed mb-3">{tmpl.description}</p>
+                  {getJuvenileSchedule(petData.type).map((item) => renderVaccinationScheduleCard(item))}
+                </div>
+              </div>
 
-                        {!isAdded && (
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
-                            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-                              <label htmlFor={dateInputId} className="text-sm font-medium text-gray-700 shrink-0">
-                                Date last given
-                              </label>
-                              <div className="warmpawz-date-field-wrap">
-                                <input
-                                  id={dateInputId}
-                                  type="date"
-                                  max={new Date().toISOString().split('T')[0]}
-                                  value={pendingVaxDates[tmpl.key] ?? ''}
-                                  onChange={(e) => {
-                                    setPendingVaxDates((prev) => ({
-                                      ...prev,
-                                      [tmpl.key]: e.target.value,
-                                    }));
-                                  }}
-                                  className="w-full sm:max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-white"
-                                />
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              disabled={!pendingVaxDates[tmpl.key]}
-                              onClick={() => confirmVaccinationDate(tmpl, pendingVaxDates[tmpl.key])}
-                              className="shrink-0 px-4 py-2 rounded-lg text-sm font-medium bg-orange-500 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-300"
-                            >
-                              Add record
-                            </button>
-                          </div>
-                        )}
-
-                        {isAdded && record && (
-                          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-700">
-                            <span>
-                              <span className="text-gray-500">Last given:</span>{' '}
-                              <span className="font-medium text-gray-900">{record.lastDate}</span>
-                            </span>
-                            <span className="text-orange-600 font-medium">
-                              Next due: {record.nextDueDate}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => removeVaccination(record.id)}
-                              className="text-red-500 hover:text-red-600 p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-red-300"
-                              aria-label={`Remove ${tmpl.displayName}`}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+              <div>
+                <span className="block text-sm font-medium text-gray-700 mb-3">
+                  Annual vaccines for {petData.type}s
+                </span>
+                <div className="space-y-3">
+                  {getAdultSchedule(petData.type).map((item) => renderVaccinationScheduleCard(item))}
                 </div>
               </div>
 
@@ -1425,7 +1347,7 @@ export function EnhancedAddPetModal({
                     <h4 className="text-xl font-bold text-gray-900">{petData.name || 'Unnamed Pet'}</h4>
                     <p className="text-gray-600">{petData.breed} • {petData.gender}</p>
                     <p className="text-sm text-gray-500">
-                      {calculateAge(petData.dateOfBirth)} old • {petData.weight}kg
+                      {formatAgeWithWeeks(petData.dateOfBirth)} old • {petData.weight}kg
                     </p>
                   </div>
                 </div>
@@ -1473,14 +1395,42 @@ export function EnhancedAddPetModal({
               )}
               
               {/* Upcoming Vaccinations */}
-              {petData.vaccinations.length > 0 && (
+              {petData.dateOfBirth && (
                 <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-                  <p className="text-sm font-medium text-blue-800 mb-2">📅 Upcoming Vaccinations</p>
-                  {petData.vaccinations.slice(0, 3).map((vax) => (
-                    <p key={vax.id} className="text-sm text-blue-700">
-                      <span className="font-medium">{vax.name}:</span> Due {vax.nextDueDate}
-                    </p>
-                  ))}
+                  <p className="text-sm font-medium text-blue-800 mb-2">Upcoming vaccinations</p>
+                  {(() => {
+                    const nextDue = getEarliestUpcomingDue(
+                      petData.dateOfBirth,
+                      petData.type,
+                      petData.vaccinations
+                    );
+                    if (!nextDue) {
+                      return (
+                        <p className="text-sm text-blue-700">
+                          {petData.vaccinations.length > 0
+                            ? 'No upcoming doses scheduled in the next window.'
+                            : 'Add vaccination dates to track upcoming doses.'}
+                        </p>
+                      );
+                    }
+                    return (
+                      <p className="text-sm text-blue-700">
+                        <span className="font-medium">Next due:</span> {nextDue}
+                      </p>
+                    );
+                  })()}
+                  {petData.vaccinations.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {petData.vaccinations
+                        .filter((v) => v.nextDueDate)
+                        .slice(0, 3)
+                        .map((vax) => (
+                          <p key={vax.id} className="text-sm text-blue-700">
+                            <span className="font-medium">{vax.name}:</span> {vax.nextDueDate}
+                          </p>
+                        ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

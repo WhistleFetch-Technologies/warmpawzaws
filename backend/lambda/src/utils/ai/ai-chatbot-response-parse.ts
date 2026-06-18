@@ -209,6 +209,7 @@ export type ParsedBookingAssistFields = {
   serviceType: string;
   nextSteps: string[];
   bookingUrl: string;
+  assistIntent?: 'trouble' | 'discover';
 };
 
 export function parseBookingAssistBedrockCompletion(completion: string): ParsedBookingAssistFields {
@@ -230,6 +231,9 @@ export function parseBookingAssistBedrockCompletion(completion: string): ParsedB
     const serviceType = BOOKING_SERVICE_TYPES.has(st) ? st : 'other';
     let bookingUrl = typeof p.bookingUrl === 'string' ? p.bookingUrl.trim().slice(0, 512) : '/book';
     if (!bookingUrl.startsWith('/')) bookingUrl = '/book';
+    const rawIntent = String(p.assistIntent ?? '').toLowerCase().trim();
+    const assistIntent: 'trouble' | 'discover' | undefined =
+      rawIntent === 'trouble' || rawIntent === 'discover' ? rawIntent : undefined;
     return {
       response:
         typeof p.response === 'string'
@@ -239,6 +243,7 @@ export function parseBookingAssistBedrockCompletion(completion: string): ParsedB
       serviceType,
       nextSteps: sanitizeStringArray(p.nextSteps, 12, 120),
       bookingUrl,
+      assistIntent,
     };
   } catch {
     return fallback();
