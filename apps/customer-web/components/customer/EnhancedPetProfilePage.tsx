@@ -13,6 +13,12 @@ import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { EnhancedAddPetModal } from './EnhancedAddPetModal';
+import { extractVaccinationEntriesFromApi } from '@/lib/pet-profile-display';
+import {
+  getScheduleVaccinationAlerts,
+  normalizePetSpecies,
+  type ScheduleVaccinationRecord,
+} from '@/lib/pet-vaccination-schedule';
 
 // ============================================================================
 // TYPES
@@ -20,6 +26,7 @@ import { EnhancedAddPetModal } from './EnhancedAddPetModal';
 
 interface VaccinationRecord {
   id: string;
+  vaccineKey?: string;
   name: string;
   lastDate: string;
   nextDueDate: string;
@@ -68,6 +75,61 @@ interface EnhancedPetProfilePageProps {
   onAddPet: () => void;
 }
 
+function normalizePetFromApi(raw: Record<string, unknown>): Pet {
+  const healthRecords = (raw.healthRecords || raw.medical_history || {}) as Record<string, unknown>;
+  const entries = extractVaccinationEntriesFromApi(raw);
+  const vaccinations: VaccinationRecord[] = entries.map((entry, index) => ({
+    id: `vax_${index}_${entry.key || entry.name}`,
+    vaccineKey: entry.key,
+    name: entry.name,
+    lastDate: entry.date,
+    nextDueDate: entry.nextDue || '',
+  }));
+
+  return {
+    id: String(raw.id ?? ''),
+    name: String(raw.name ?? ''),
+    type: (raw.type as Pet['type']) || 'Dog',
+    breed: String(raw.breed ?? ''),
+    dateOfBirth: (raw.dateOfBirth as string) || (healthRecords.dob as string) || undefined,
+    age: raw.age as Pet['age'],
+    gender: (raw.gender as Pet['gender']) || 'Male',
+    weight: String(raw.weight ?? ''),
+    color: raw.color as string | undefined,
+    photo: (raw.photo as string) || undefined,
+    microchipId: (raw.microchipId as string) || undefined,
+    size: raw.size as string | undefined,
+    coatType: raw.coatType as string | undefined,
+    isSpayedNeutered: raw.isSpayedNeutered as boolean | undefined,
+    allergies: raw.allergies as string[] | undefined,
+    currentMedications: raw.currentMedications as string[] | undefined,
+    chronicConditions: raw.chronicConditions as string[] | undefined,
+    vaccinations,
+    activityLevel: raw.activityLevel as string | undefined,
+    temperament: raw.temperament as string | undefined,
+    isGoodWithKids: raw.isGoodWithKids as boolean | undefined,
+    isGoodWithOtherPets: raw.isGoodWithOtherPets as boolean | undefined,
+    specialNeeds: raw.specialNeeds as string | undefined,
+    hasInsurance: raw.hasInsurance as boolean | undefined,
+    insuranceProvider: raw.insuranceProvider as string | undefined,
+    insurancePolicyNumber: raw.insurancePolicyNumber as string | undefined,
+    emergencyVetName: raw.emergencyVetName as string | undefined,
+    emergencyVetPhone: raw.emergencyVetPhone as string | undefined,
+    createdAt: raw.createdAt as string | undefined,
+    updatedAt: raw.updatedAt as string | undefined,
+  };
+}
+
+function petScheduleRecords(pet: Pet): ScheduleVaccinationRecord[] {
+  return (pet.vaccinations ?? []).map((vax) => ({
+    id: vax.id,
+    vaccineKey: vax.vaccineKey,
+    name: vax.name,
+    lastDate: vax.lastDate,
+    nextDueDate: vax.nextDueDate,
+  }));
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -97,11 +159,11 @@ export function EnhancedPetProfilePage({
       
       let petsData: Pet[] = [];
       if (Array.isArray(response)) {
-        petsData = response;
+        petsData = response.map((pet) => normalizePetFromApi(pet as Record<string, unknown>));
       } else if (Array.isArray(response?.pets)) {
-        petsData = response.pets;
+        petsData = response.pets.map((pet: Record<string, unknown>) => normalizePetFromApi(pet));
       } else if (response?.pets?.pets && Array.isArray(response.pets.pets)) {
-        petsData = response.pets.pets;
+        petsData = response.pets.pets.map((pet: Record<string, unknown>) => normalizePetFromApi(pet));
       }
       
       setPets(petsData);
@@ -138,23 +200,35 @@ export function EnhancedPetProfilePage({
   };
 
   const getUpcomingVaccinations = (pet: Pet): VaccinationRecord[] => {
-    if (!pet.vaccinations) return [];
-    
-    const today = new Date();
-    const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-    
-    return pet.vaccinations.filter(v => {
-      const dueDate = new Date(v.nextDueDate);
-      return dueDate <= thirtyDaysFromNow && dueDate >= today;
-    }).sort((a, b) => new Date(a.nextDueDate).getTime() - new Date(b.nextDueDate).getTime());
+    if (!pet.dateOfBirth) return [];
+    const { upcoming } = getScheduleVaccinationAlerts(
+      pet.dateOfBirth,
+      normalizePetSpecies(pet.type),
+      petScheduleRecords(pet)
+    );
+    return upcoming.map((alert) => ({
+      id: alert.vaccineKey,
+      vaccineKey: alert.vaccineKey,
+      name: alert.name,
+      lastDate: alert.lastDate || '',
+      nextDueDate: alert.nextDueDate,
+    }));
   };
 
   const getOverdueVaccinations = (pet: Pet): VaccinationRecord[] => {
-    if (!pet.vaccinations) return [];
-    
-    const today = new Date();
-    return pet.vaccinations.filter(v => new Date(v.nextDueDate) < today)
-      .sort((a, b) => new Date(a.nextDueDate).getTime() - new Date(b.nextDueDate).getTime());
+    if (!pet.dateOfBirth) return [];
+    const { overdue } = getScheduleVaccinationAlerts(
+      pet.dateOfBirth,
+      normalizePetSpecies(pet.type),
+      petScheduleRecords(pet)
+    );
+    return overdue.map((alert) => ({
+      id: alert.vaccineKey,
+      vaccineKey: alert.vaccineKey,
+      name: alert.name,
+      lastDate: alert.lastDate || '',
+      nextDueDate: alert.nextDueDate,
+    }));
   };
 
   const handleDeletePet = async (petId: string) => {

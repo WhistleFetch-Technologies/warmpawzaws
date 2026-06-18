@@ -27,7 +27,7 @@ function vaccineDateFromEntry(rec: Record<string, unknown>): string {
 }
 
 function vaccineLabelFromEntry(rec: Record<string, unknown>): string {
-  return String(rec.key ?? rec.name ?? rec.vaccine ?? rec.type ?? rec.payloadName ?? '');
+  return String(rec.key ?? rec.vaccineKey ?? rec.name ?? rec.vaccine ?? rec.type ?? rec.payloadName ?? '');
 }
 
 /** Flatten Add Pet wizard array or legacy API arrays into dashboard slots. */
