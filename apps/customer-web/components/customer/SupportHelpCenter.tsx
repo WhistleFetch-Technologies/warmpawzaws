@@ -641,7 +641,7 @@ export function SupportHelpCenter({
           serviceSubtitle="We're here to help"
           serviceIcon={HelpCircle}
           iconColor="text-white"
-          headerTrailingImage="/images/home/support/support.png"
+          headerTrailingImage="/images/home/support/support.webp"
           headerTrailingImageAlt="Warmpawz support mascot"
           clipHeaderTrailingImage
           headerTrailingImageClassName="pointer-events-none absolute bottom-0 right-0 top-[2.25rem] z-[5] flex w-[42%] max-w-[168px] items-end justify-end sm:top-10"
