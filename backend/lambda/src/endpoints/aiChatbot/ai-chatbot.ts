@@ -60,6 +60,15 @@ const BOOKING_SEARCH_CATEGORY_SET = new Set([
   'resort',
 ]);
 
+function inferBookingAssistIntentFromText(message: string): 'trouble' | 'discover' {
+  const m = String(message || '').toLowerCase().trim();
+  const troublePattern =
+    /\b(unable|can't|cannot|failed|error|stuck|not working|doesn't work|won't|problem|issue|help me book)\b/;
+  const bookingPattern = /\b(book|booking|payment|checkout|slot|appointment)\b/;
+  if (troublePattern.test(m) && bookingPattern.test(m)) return 'trouble';
+  return 'discover';
+}
+
 function normalizeServiceTypeToCategory(serviceType: string): string {
   const s = String(serviceType || '')
     .toLowerCase()
@@ -1239,16 +1248,19 @@ RULES:
 - Keep "response" concise; the app may append provider lists separately.
 
 TASK:
-1. Understand the user's booking request
-2. Identify the service type they need
-3. Suggest appropriate services
-4. Guide them to the booking flow
+1. Understand the user's booking request OR booking problem (e.g. unable to book, payment failed)
+2. Identify the service type they need (if mentioned)
+3. Suggest appropriate services when they want a new booking
+4. Guide them to the booking flow OR troubleshooting (view bookings, contact support)
+
+If the user describes a **booking problem** (not a new booking request), use a troubleshooting tone, set **"assistIntent": "trouble"**, and do **not** put their error message into bookingUrl.
 
 OUTPUT FORMAT (JSON only):
 {
   "response": "Your helpful booking guidance...",
   "suggestedServices": ["service1", "service2"],
   "serviceType": "vet" | "grooming" | "training" | "boarding" | "other",
+  "assistIntent": "trouble" | "discover",
   "nextSteps": ["step1", "step2"],
   "bookingUrl": "/book?service=..."
 }`;
@@ -1323,15 +1335,39 @@ OUTPUT FORMAT (JSON only):
       }
 
       const st = String(assistance.serviceType || '').toLowerCase();
+      const inferredIntent = inferBookingAssistIntentFromText(String(bookingQuery));
+      const modelIntent = String((assistance as { assistIntent?: string }).assistIntent || '')
+        .toLowerCase()
+        .trim();
+      const assistIntent: 'trouble' | 'discover' =
+        modelIntent === 'trouble' || modelIntent === 'discover' ? modelIntent : inferredIntent;
+
       const normalizedUrl = normalizeCustomerBookingUrl(
         effectiveCat || (BOOKING_SEARCH_CATEGORY_SET.has(st) ? st : '') || '',
-        bookingQuery
+        assistIntent === 'trouble' ? '' : String(bookingQuery)
       );
-      if (!assistance.bookingUrl || assistance.bookingUrl === '/book' || !String(assistance.bookingUrl).startsWith('/')) {
+      if (
+        !assistance.bookingUrl ||
+        assistance.bookingUrl === '/book' ||
+        !String(assistance.bookingUrl).startsWith('/')
+      ) {
+        assistance.bookingUrl = normalizedUrl;
+      } else if (assistIntent === 'trouble') {
         assistance.bookingUrl = normalizedUrl;
       }
+
       if (!assistance.nextSteps?.length) {
-        assistance.nextSteps = ['Continue to booking', 'Browse Services'];
+        assistance.nextSteps =
+          assistIntent === 'trouble'
+            ? ['View my bookings', 'Contact support']
+            : ['Continue to booking', 'Browse Services'];
+      } else if (assistIntent === 'trouble') {
+        assistance.nextSteps = assistance.nextSteps.filter(
+          (step) => !/^check available services$/i.test(String(step).trim())
+        );
+        if (assistance.nextSteps.length === 0) {
+          assistance.nextSteps = ['View my bookings', 'Contact support'];
+        }
       }
 
       let suggestedProviders: Array<{
@@ -1375,6 +1411,7 @@ OUTPUT FORMAT (JSON only):
       return c.json({
         success: true,
         ...assistance,
+        assistIntent,
         catalogServices,
         suggestedProviders,
       });
