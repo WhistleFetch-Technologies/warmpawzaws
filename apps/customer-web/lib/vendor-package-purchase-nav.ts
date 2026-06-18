@@ -170,3 +170,71 @@ export function serviceTypeCategoryFromRoleId(roleId: string | undefined): strin
   if (r.includes('nutrition')) return 'nutrition';
   return 'walking';
 }
+
+const SKIP_PKG_AUTO_REDIRECT_PREFIX = 'wp:skip-pkg-auto:';
+
+/** Session key — skip booking-router package auto-redirect after user backs from purchase-package. */
+export function packageAutoRedirectSkipKey(vendorId: string, serviceId: string): string {
+  return `${SKIP_PKG_AUTO_REDIRECT_PREFIX}${String(vendorId).trim()}:${String(serviceId).trim()}`;
+}
+
+export function markSkipPackageAutoRedirect(vendorId: string, serviceId: string): void {
+  if (typeof sessionStorage === 'undefined') return;
+  const vid = String(vendorId || '').trim();
+  const sid = String(serviceId || '').trim();
+  if (!vid || !sid) return;
+  sessionStorage.setItem(packageAutoRedirectSkipKey(vid, sid), '1');
+}
+
+export function shouldSkipPackageAutoRedirect(vendorId: string, serviceId: string): boolean {
+  if (typeof sessionStorage === 'undefined') return false;
+  const vid = String(vendorId || '').trim();
+  const sid = String(serviceId || '').trim();
+  if (!vid || !sid) return false;
+  return sessionStorage.getItem(packageAutoRedirectSkipKey(vid, sid)) === '1';
+}
+
+export function clearSkipPackageAutoRedirect(vendorId: string, serviceId: string): void {
+  if (typeof sessionStorage === 'undefined') return;
+  const vid = String(vendorId || '').trim();
+  const sid = String(serviceId || '').trim();
+  if (!vid || !sid) return;
+  sessionStorage.removeItem(packageAutoRedirectSkipKey(vid, sid));
+}
+
+/** Booking wizards that only transit to purchase-package — must not remain under package on back. */
+export const PACKAGE_PURCHASE_TRANSIT_SCREENS = new Set([
+  'walker-booking',
+  'vet-booking',
+  'grooming-booking',
+  'training-booking',
+  'boarding-booking',
+  'nutritionist-booking',
+  'pet-sitter-booking',
+]);
+
+export function isPackagePurchaseTransitScreen(screen: string | undefined | null): boolean {
+  return PACKAGE_PURCHASE_TRANSIT_SCREENS.has(String(screen || '').trim());
+}
+
+/** Drop package-purchase overlay fields; keep vendor profile context for back to provider profile. */
+export function stripPackagePurchaseOverlayFields(
+  data: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (data == null || typeof data !== 'object' || Array.isArray(data)) return null;
+  const {
+    vendorServiceId: _vsid,
+    vendor_service_id: _vsidSnake,
+    serviceId: _serviceId,
+    serviceName: _serviceName,
+    totalSessions: _ts,
+    sessionsPerDay: _spd,
+    sessions_per_day: _spdSnake,
+    sessionIntervalDays: _sid,
+    session_interval_days: _sidSnake,
+    packageType: _pt,
+    packageDetails: _pd,
+    ...rest
+  } = data;
+  return Object.keys(rest).length > 0 ? rest : null;
+}

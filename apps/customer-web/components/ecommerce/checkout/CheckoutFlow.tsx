@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCheckout } from '@/context/CheckoutProvider';
@@ -11,19 +11,48 @@ import { CheckoutOrderSummary } from './CheckoutOrderSummary';
 import { CheckoutPaymentStep } from './CheckoutPaymentStep';
 import { CheckoutReviewStep } from './CheckoutReviewStep';
 import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
+import { registerCheckoutUrlBackHandler } from '@/lib/navigation/back-handler-registry';
+import { navigateToCheckoutSuccessPage } from '@/lib/navigation/navigation-coordinator';
+import { registerLeaveGuard } from '@/lib/navigation/leave-guard';
 
 export function CheckoutFlow() {
-  const router = useRouter();
   const { step, goBack, cart, isPlacingOrder } = useCheckout();
 
-  // Payment succeeded but cart was cleared before route change — send to success/orders
+  useEffect(() => {
+    return registerCheckoutUrlBackHandler(goBack);
+  }, [goBack]);
+
+  useEffect(() => {
+    const removePlacing = registerLeaveGuard({
+      id: 'checkout-placing-order',
+      canLeave: () => !isPlacingOrder,
+      confirmLeave: () => {
+        toast.error('Please wait — your order is being placed.');
+        return false;
+      },
+    });
+    const removePayment = registerLeaveGuard({
+      id: 'checkout-payment-step',
+      canLeave: () => step !== 'payment' || isPlacingOrder,
+      confirmLeave: () =>
+        window.confirm(
+          'Leave payment? You will return to your cart. Your delivery address and items are saved.',
+        ),
+    });
+    return () => {
+      removePlacing();
+      removePayment();
+    };
+  }, [step, isPlacingOrder]);
+
+  // Payment succeeded but cart was cleared before route change — send to success page
   useEffect(() => {
     if (cart.length > 0 || isPlacingOrder) return;
     const stored = readCheckoutOrderResponse();
     if (stored?.orderId) {
-      router.replace('/checkout/success');
+      navigateToCheckoutSuccessPage();
     }
-  }, [cart.length, isPlacingOrder, router]);
+  }, [cart.length, isPlacingOrder]);
 
   if (cart.length === 0) {
     const pendingOrder = typeof window !== 'undefined' ? readCheckoutOrderResponse() : null;

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
+import { handleArticleDetailBack } from '@/lib/articles-back-nav';
 import { ArrowLeft, BookOpen, Clock, Loader2, AlertCircle } from 'lucide-react';
 
 interface ArticleDetail {
@@ -85,9 +86,9 @@ export default function ArticleDetailClient({ slug }: { slug: string }) {
         <div className="mx-auto flex max-w-customer items-center gap-3 py-3">
           <button
             type="button"
-            onClick={() => router.replace('/articles')}
+            onClick={() => handleArticleDetailBack(router)}
             className="p-2 rounded-full hover:bg-teal-50 text-slate-600"
-            aria-label="Back to articles"
+            aria-label="Back"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -112,7 +113,7 @@ export default function ArticleDetailClient({ slug }: { slug: string }) {
             <p className="text-slate-600 text-sm">{error || 'Not found'}</p>
             <button
               type="button"
-              onClick={() => router.replace('/articles')}
+              onClick={() => handleArticleDetailBack(router)}
               className="mt-4 text-sm font-semibold text-teal-600"
             >
               All articles

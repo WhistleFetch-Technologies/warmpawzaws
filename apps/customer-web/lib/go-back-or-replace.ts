@@ -62,6 +62,31 @@ export const WARMPAWZ_EXPAND_SHOP_ORDER_ID_KEY = 'warmpawz_expand_shop_order_id'
 /** After full-screen My Bookings (from account sidebar), reopen sheet on this tab. */
 export const WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY = 'warmpawz_account_sidebar_active_view';
 
+const ACCOUNT_SIDEBAR_RESTORABLE_VIEWS = new Set(['bookings', 'addresses', 'help']);
+
+/** Persist sidebar sub-view before opening a full-screen account child (e.g. Help & Support). */
+export function rememberAccountSidebarActiveView(view: string): void {
+  if (typeof window === 'undefined' || !ACCOUNT_SIDEBAR_RESTORABLE_VIEWS.has(view)) return;
+  try {
+    sessionStorage.setItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY, view);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Read once on sidebar mount — returns null when nothing stored or invalid. */
+export function consumeAccountSidebarActiveView(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const v = sessionStorage.getItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
+    if (!v || !ACCOUNT_SIDEBAR_RESTORABLE_VIEWS.has(v)) return null;
+    sessionStorage.removeItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
+    return v;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Valid `setCurrentScreen` targets when resuming `/` after leaving for `/shop`, `/promotions`, etc.
  * Keep in sync with `CustomerHomeWrapper` ScreenType usage.

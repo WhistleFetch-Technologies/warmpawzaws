@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { BottomNavigation } from '@/components/customer/bottomNavigation/BottomNavigation';
 import { ShopCatalogSection } from '@/components/shop/ShopCatalogSection';
@@ -64,6 +65,7 @@ const SHOP_PAGE_SHELL =
 
 export default function ShopPage() {
   const router = useRouter();
+  const nav = useCustomerNavigation();
   const { accountSidebar, handleTabbedBottomNav, openAccountMenu } = useCustomerAccountSidebarHost();
 
   const [products, setProducts] = useState<ShopProduct[]>([]);
@@ -260,7 +262,7 @@ export default function ShopPage() {
 
   const openAddressPicker = async () => {
     if (!customerPhone) {
-      router.push('/auth');
+      nav.goToAuth();
       return;
     }
     setShowAddressPicker(true);

@@ -4,6 +4,8 @@ globs: apps/customer-web/**/*
 alwaysApply: false
 ---
 
+> **AI agents:** Follow this rule for all customer-web navigation/back changes unless the user explicitly requests an exception. See also `team-development-bible.mdc` §1b and `CUSTOMER_NAV_AUDIT.md` §11.
+
 # Customer navigation (Capacitor + Next.js)
 
 Prod mobile: **Capacitor WebView** loading `https://customer.warmpawz.com` — not React Native.
@@ -54,6 +56,8 @@ goToHome(); // shellNav.resetTo('home')
 - **Android:** `App.backButton` → `runBackHandlers()` (`hardware-back.ts`)
 - **iOS:** edge swipe → `popstate` → `initIosShellHistoryBridge()` + stack depth sync in wrapper
 - **URL routes:** `NavigationBackBridge` priority 50 → `goBackOrReplace`
+- **URL /checkout:** `registerCheckoutUrlBackHandler` (105) — not generic `goBackOrReplace`
+- **URL /checkout/success:** `registerCheckoutSuccessBackHandler` → shop
 
 ## New service checklist
 

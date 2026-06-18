@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { apiClient, supportCrmApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
-import { SUPPORT_INITIAL_TAB_KEY, clearSupportBookingContext, clearSupportMealOrderContext, resolveSupportContactContext, type SupportBookingContext, type SupportMealOrderContext } from '@/lib/support-contact';
+import { SUPPORT_INITIAL_TAB_KEY, clearSupportBookingContext, clearSupportMealOrderContext, consumeSupportOpenContactForm, resolveSupportContactContext, type SupportBookingContext, type SupportMealOrderContext } from '@/lib/support-contact';
 import {
   DEFAULT_LINKED_SUPPORT_CATEGORY,
   GENERAL_SUPPORT_TICKET_CATEGORIES,
@@ -61,6 +61,8 @@ interface SupportHelpCenterProps {
   phone?: string;
   onBack: () => void;
   onCloseToHome?: () => void;
+  /** Expose step-aware back for shell header / hardware back. */
+  onInternalBackReady?: (handleBack: () => void) => void;
   initialTab?: 'faq' | 'contact' | 'tickets';
   /** When set, contact form creates a booking-linked ticket for refunds. */
   bookingContext?: SupportBookingContext | null;
@@ -74,6 +76,7 @@ export function SupportHelpCenter({
   phone,
   onBack,
   onCloseToHome,
+  onInternalBackReady,
   initialTab,
   bookingContext,
   mealOrderContext,
@@ -158,6 +161,13 @@ export function SupportHelpCenter({
       /* ignore */
     }
   }, [initialTab]);
+
+  useEffect(() => {
+    if (consumeSupportOpenContactForm()) {
+      setActiveTab('contact');
+      setShowContactForm(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (linked.kind === 'booking' && activeBooking?.bookingId) {
@@ -588,6 +598,39 @@ export function SupportHelpCenter({
 
   const openTickets = tickets.filter((t) => isOpenTicketStatus(t.status)).length;
 
+  /** AI chat → ticket detail → contact form → shell exit */
+  const handleInternalBack = useCallback(() => {
+    if (showAIChat) {
+      setShowAIChat(false);
+      return;
+    }
+    if (activeTab === 'tickets' && selectedTicketId) {
+      setSelectedTicketId(null);
+      setTicketDetail(null);
+      setReplyText('');
+      setReplyAttachments([]);
+      void loadTickets();
+      return;
+    }
+    if (showContactForm && !isLinkedTicket) {
+      setShowContactForm(false);
+      return;
+    }
+    onBack();
+  }, [
+    showAIChat,
+    activeTab,
+    selectedTicketId,
+    showContactForm,
+    isLinkedTicket,
+    onBack,
+    loadTickets,
+  ]);
+
+  useEffect(() => {
+    onInternalBackReady?.(handleInternalBack);
+  }, [handleInternalBack, onInternalBackReady]);
+
   return (
     <div className="flex flex-col h-full min-h-0 w-full bg-gray-50 max-w-customer mx-auto">
       {/* Single sticky chrome: header + tabs share one stack so tab offset never uses a magic pixel height. */}
@@ -609,7 +652,7 @@ export function SupportHelpCenter({
             { value: phone ? String(openTickets) : '—', label: 'Open' },
           ]}
           onCloseToHome={onCloseToHome}
-          onBack={onBack}
+          onBack={handleInternalBack}
           showBackButton={Boolean(onBack)}
         />
 

@@ -1,5 +1,6 @@
 import {
   afterUrlCheckoutSuccess,
+  navigateToCheckoutSuccessPage,
   shouldSkipProductNavigation,
   navigateWithPolicy,
 } from '../navigation-coordinator';
@@ -53,6 +54,17 @@ describe('navigation Phase 3', () => {
       const nav = createCustomerNavigation(router);
       nav.goToProduct('dup');
       expect(router.push).not.toHaveBeenCalled();
+    });
+
+    it('navigateToCheckoutSuccessPage replaces location', () => {
+      const replace = jest.fn();
+      Object.defineProperty(window, 'location', {
+        value: { replace },
+        writable: true,
+        configurable: true,
+      });
+      navigateToCheckoutSuccessPage();
+      expect(replace).toHaveBeenCalledWith('/checkout/success');
     });
 
     it('afterCheckoutSuccess delegates to coordinator', () => {

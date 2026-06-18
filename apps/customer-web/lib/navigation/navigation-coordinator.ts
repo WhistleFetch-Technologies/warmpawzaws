@@ -42,3 +42,9 @@ export function afterUrlCheckoutSuccess(router: CoordinatorRouter, orderId: stri
   }
   router.replace('/orders');
 }
+
+/** Hard replace after Razorpay — avoids empty-cart flash on /checkout before success UI loads. */
+export function navigateToCheckoutSuccessPage(): void {
+  if (typeof window === 'undefined') return;
+  window.location.replace('/checkout/success');
+}

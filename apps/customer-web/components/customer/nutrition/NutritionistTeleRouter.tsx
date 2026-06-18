@@ -17,6 +17,7 @@ import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
 import { InstantTeleQueue } from '../InstantTele/InstantTeleQueue';
 import {
   saveTeleWizardSnapshot,
+  bookingFormFieldsFromProceed,
   type TeleWizardSnapshot,
 } from '@/lib/navigation/wizard-session-state';
 
@@ -380,6 +381,8 @@ export function NutritionistTeleRouter({
     selectedDate: restoredSnapshot?.selectedDate,
     selectedTime: restoredSnapshot?.selectedTime,
     selectedPetId: restoredSnapshot?.selectedPetId,
+    selectedServiceIds: restoredSnapshot?.selectedServiceIds,
+    selectedAddressId: restoredSnapshot?.selectedAddressId,
   }));
   const [selectedProblem, setSelectedProblem] = useState<{ id: string; name: string } | null>(null);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
@@ -452,9 +455,7 @@ export function NutritionistTeleRouter({
       step: 'provider-profile',
       selectedProvider: (selectedProvider as Record<string, unknown> | null) ?? null,
       showBookingForm: true,
-      selectedDate: bookingData?.bookingDate,
-      selectedTime: bookingData?.bookingTime,
-      selectedPetId: bookingData?.petId,
+      ...bookingFormFieldsFromProceed(bookingData),
     });
     onNavigate('payment', {
       ...bookingData,
@@ -542,6 +543,8 @@ export function NutritionistTeleRouter({
           initialSelectedDate={bookingFormRestore.selectedDate}
           initialSelectedTime={bookingFormRestore.selectedTime}
           initialSelectedPetId={bookingFormRestore.selectedPetId}
+          initialSelectedServiceIds={bookingFormRestore.selectedServiceIds}
+          initialSelectedAddressId={bookingFormRestore.selectedAddressId}
         />
       );
 

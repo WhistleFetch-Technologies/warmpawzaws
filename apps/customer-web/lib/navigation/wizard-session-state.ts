@@ -13,6 +13,10 @@ export type TeleWizardSnapshot = {
   selectedDate?: string;
   selectedTime?: string;
   selectedPetId?: string;
+  /** Service row ids from UniversalProviderProfile — restored after payment back */
+  selectedServiceIds?: string[];
+  /** Home visit address id */
+  selectedAddressId?: string;
   selectedInstantVendorId?: string;
   selectedServiceId?: string;
   selectedPet?: Record<string, unknown> | null;
@@ -25,7 +29,40 @@ export type HomeVisitWizardSnapshot = {
   selectedDate?: string;
   selectedTime?: string;
   selectedPetId?: string;
+  selectedServiceIds?: string[];
+  selectedAddressId?: string;
 };
+
+/** Fields to persist when leaving provider profile for shell payment */
+export function bookingFormFieldsFromProceed(bookingData: {
+  bookingDate?: string;
+  bookingTime?: string;
+  petId?: string;
+  serviceId?: string;
+  services?: Array<{ id?: string; serviceId?: string; service_id?: string }>;
+  address?: { id?: string };
+}): Pick<
+  TeleWizardSnapshot,
+  'selectedDate' | 'selectedTime' | 'selectedPetId' | 'selectedServiceIds' | 'selectedAddressId'
+> {
+  const services = bookingData?.services;
+  let selectedServiceIds: string[] = [];
+  if (Array.isArray(services) && services.length > 0) {
+    selectedServiceIds = services
+      .map((s) => String(s.id || s.serviceId || s.service_id || ''))
+      .filter(Boolean);
+  } else if (bookingData?.serviceId) {
+    selectedServiceIds = [String(bookingData.serviceId)];
+  }
+  const addressId = bookingData?.address?.id;
+  return {
+    selectedDate: bookingData?.bookingDate,
+    selectedTime: bookingData?.bookingTime,
+    selectedPetId: bookingData?.petId,
+    selectedServiceIds,
+    selectedAddressId: addressId ? String(addressId) : undefined,
+  };
+}
 
 function writeSnapshot(key: string, snapshot: unknown): void {
   if (typeof window === 'undefined') return;

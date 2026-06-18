@@ -1,6 +1,7 @@
 import {
   coordinateUrlBack,
   afterUrlCheckoutSuccess,
+  navigateToCheckoutSuccessPage,
   navigateWithPolicy,
   shouldSkipProductNavigation,
   type CoordinatorRouter,
@@ -35,12 +36,19 @@ export function createCustomerNavigation(router: CoordinatorRouter) {
       router.push(productPath(id));
     },
 
-    goToCart() {
+    goToCart(opts?: { replace?: boolean }) {
+      if (opts?.replace) {
+        router.replace(CUSTOMER_ROUTES.cart.path);
+        return;
+      }
       router.push(CUSTOMER_ROUTES.cart.path);
     },
 
-    goToCheckout() {
-      router.push(CUSTOMER_ROUTES.checkout.path);
+    goToCheckout(opts?: { step?: 'payment' | 'review' }) {
+      const path = opts?.step
+        ? `${CUSTOMER_ROUTES.checkout.path}?step=${opts.step}`
+        : CUSTOMER_ROUTES.checkout.path;
+      router.push(path);
     },
 
     goToBookings() {
@@ -55,7 +63,12 @@ export function createCustomerNavigation(router: CoordinatorRouter) {
       router.replace(CUSTOMER_ROUTES.auth.path);
     },
 
-    /** Payment success — replace so Back cannot return to checkout/cart. */
+    /** Celebration screen after payment — hard replace clears checkout from history. */
+    goToCheckoutSuccess() {
+      navigateToCheckoutSuccessPage();
+    },
+
+    /** Post-success navigation to tracking/orders — Back cannot return to checkout. */
     afterCheckoutSuccess(orderId: string | null | undefined) {
       afterUrlCheckoutSuccess(router, orderId);
     },

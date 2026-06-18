@@ -14,6 +14,9 @@ import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
+  isPackagePurchaseTransitScreen,
+  markSkipPackageAutoRedirect,
+  stripPackagePurchaseOverlayFields,
 } from '@/lib/vendor-package-purchase-nav';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
@@ -40,11 +43,16 @@ import {
   consumeOpenAccountMenuAfterNav,
   rememberMyPackagesBackFromAccountMenu,
   rememberPromotionsBackSpaScreen,
+  rememberAccountSidebarActiveView,
   rememberShopBackToSpaScreen,
   clearShopBackIntent,
   clearWishlistOpenedFromShopMark,
 } from '@/lib/go-back-or-replace';
-import { useShellNavigationStack } from '@/lib/navigation/shell-stack';
+import {
+  navigateToArticleFromHome,
+  navigateToArticlesList,
+} from '@/lib/articles-back-nav';
+import { useShellNavigationStack, popShellEntry } from '@/lib/navigation/shell-stack';
 import {
   resolveAccountHubRootBack,
   resolveWalletHubChildBack,
@@ -57,11 +65,23 @@ import {
   createCustomerNavigation,
 } from '@/lib/navigation/navigation-service';
 import { routeKey } from '@/lib/navigation/route-registry';
+import {
+  clearBoardingProfileContext,
+  peekBoardingProfileContext,
+  rememberBoardingProfileContext,
+  vendorIdFromRouteKey,
+} from '@/lib/boarding-profile-nav';
+import {
+  clearProviderProfileContext,
+  peekProviderProfileContext,
+  rememberProviderProfileContext,
+} from '@/lib/provider-profile-nav';
 import { syncIosShellStackDepth } from '@/lib/navigation/ios-shell-history';
 import {
   BACK_HANDLER_PRIORITY,
   registerBackHandler,
 } from '@/lib/navigation/back-handler-registry';
+import { registerLeaveGuard, requestLeave } from '@/lib/navigation/leave-guard';
 import {
   consumeHomeVisitWizardSnapshot,
   consumeTeleWizardSnapshot,
@@ -558,10 +578,12 @@ export function CustomerHomeWrapper({
   const vetBookingInternalBackRef = useRef<(() => void) | null>(null);
   const nutritionistBookingInternalBackRef = useRef<(() => void) | null>(null);
   const packageBookingInternalBackRef = useRef<(() => void) | null>(null);
+  const supportHelpInternalBackRef = useRef<(() => void) | null>(null);
   const teleInternalBackRef = useRef<(() => void) | null>(null);
   const homeVisitInternalBackRef = useRef<(() => void) | null>(null);
   const walkerBookingInternalBackRef = useRef<(() => void) | null>(null);
   const boardingBookingInternalBackRef = useRef<(() => void) | null>(null);
+  const diagnosticsBookingInternalBackRef = useRef<(() => void) | null>(null);
   const handleMyBookingsBackRef = useRef<() => void>(() => {});
   const handleCustomerProfileBackRef = useRef<() => void>(() => {});
   const handleAccountHubBackRef = useRef<() => void>(() => {});
@@ -677,6 +699,58 @@ export function CustomerHomeWrapper({
     [shellNav],
   );
 
+  const openEmbeddedPetBoardingProfile = useCallback(
+    (vendorId: string, slug: string | null) => {
+      const bid = String(vendorId || '').trim();
+      if (!bid) return;
+      const normalizedSlug = normalizeBoardingServiceSlug(slug);
+      setProblemFlowBoardingVendorId(null);
+      setProblemFlowBoardingSlug(null);
+      setEmbeddedBoardingProfileVendorId(bid);
+      setEmbeddedBoardingProfileSlug(normalizedSlug);
+      rememberBoardingProfileContext(bid, normalizedSlug);
+      navigateToScreen('pet-boarding-profile', routeKey.vendor(bid));
+    },
+    [navigateToScreen],
+  );
+
+  const openProblemFlowPetBoardingProfile = useCallback(
+    (vendorId: string, slug: string | null = 'all') => {
+      const bid = String(vendorId || '').trim();
+      if (!bid) return;
+      const normalizedSlug = normalizeBoardingServiceSlug(slug);
+      setEmbeddedBoardingProfileVendorId(null);
+      setEmbeddedBoardingProfileSlug(null);
+      setProblemFlowBoardingVendorId(bid);
+      setProblemFlowBoardingSlug(normalizedSlug);
+      rememberBoardingProfileContext(bid, normalizedSlug);
+      navigateToScreen('pet-boarding-profile', routeKey.vendor(bid));
+    },
+    [navigateToScreen],
+  );
+
+  const openPetSitterProviderProfile = useCallback(
+    (vendorId: string) => {
+      const bid = String(vendorId || '').trim();
+      if (!bid) return;
+      setPetSitterProfileVendorId(bid);
+      rememberProviderProfileContext('pet-sitter', bid);
+      navigateToScreen('pet-sitter-provider-profile', routeKey.vendor(bid));
+    },
+    [navigateToScreen],
+  );
+
+  const openBehavioristProviderProfile = useCallback(
+    (vendorId: string) => {
+      const bid = String(vendorId || '').trim();
+      if (!bid) return;
+      setBehavioristProfileVendorId(bid);
+      rememberProviderProfileContext('behaviorist', bid);
+      navigateToScreen('behaviorist-provider-profile', routeKey.vendor(bid));
+    },
+    [navigateToScreen],
+  );
+
   /** Push onto shell stack (preserves wallet parent for rewards/referrals/help). */
   const pushShellScreen = useCallback(
     (screen: ScreenType, key?: string) => {
@@ -700,6 +774,53 @@ export function CustomerHomeWrapper({
     },
     [shellNav],
   );
+
+  /**
+   * Open Service Packages checkout. From booking wizards (walker-booking, etc.) replace the
+   * transit screen so back returns to provider profile — not an extra wizard step.
+   */
+  const openPurchasePackageScreen = useCallback(
+    (
+      payload: Record<string, unknown> | null,
+      options?: { mergeWalkerData?: boolean; alsoMergeVetData?: boolean },
+    ) => {
+      const vsid = String(
+        payload?.vendorServiceId ?? (payload as { vendor_service_id?: string })?.vendor_service_id ?? '',
+      ).trim();
+      const key = vsid ? routeKey.packagePurchase(vsid) : undefined;
+
+      if (options?.mergeWalkerData) {
+        setWalkerServiceData((prev: Record<string, unknown> | null) => {
+          const merged = { ...(prev || {}), ...(payload || {}) };
+          return Object.keys(merged).length ? merged : null;
+        });
+      } else if (payload) {
+        setWalkerServiceData(payload);
+      }
+
+      if (options?.alsoMergeVetData && payload) {
+        setVetServiceData((prev: Record<string, unknown> | null) => ({ ...(prev || {}), ...payload }));
+      }
+
+      if (isPackagePurchaseTransitScreen(currentScreen)) {
+        replaceShellScreen('purchase-package', key);
+      } else {
+        pushShellScreen('purchase-package', key);
+      }
+    },
+    [currentScreen, pushShellScreen, replaceShellScreen],
+  );
+
+  /** Hub/vendor-card boarding booking — preserve preselected plan (skip in-router service step). */
+  const openBoardingBookingScreen = useCallback((data?: unknown) => {
+    setVetServiceData(
+      mergeBannerNavigationPayload(null, {
+        ...(data && typeof data === 'object' && !Array.isArray(data) ? data : {}),
+        serviceType: 'boarding',
+      }),
+    );
+    navigateToScreen('boarding-booking');
+  }, [navigateToScreen]);
 
   /** After `/shop` or `/promotions` back: restore embedded screen (same URL `/` as home). */
   useEffect(() => {
@@ -729,15 +850,150 @@ export function CustomerHomeWrapper({
     }
   }, [pathname]);
 
-  /** Clear embedded boarding profile only when leaving that context — not when opening `boarding-booking` from profile (back must restore profile). */
+  /** Clear embedded boarding profile only when leaving that context — not when opening child flows (back must restore profile). */
+  const PET_BOARDING_PROFILE_CHILD_SCREENS = useMemo(
+    () =>
+      new Set<ScreenType>([
+        'boarding-booking',
+        'pet-sitter-booking',
+        'purchase-package',
+        'package-booking',
+      ]),
+    [],
+  );
+
   useEffect(() => {
     if (currentScreen === 'pet-boarding-profile') return;
-    if (currentScreen === 'boarding-booking' || currentScreen === 'pet-sitter-booking') return;
+    if (PET_BOARDING_PROFILE_CHILD_SCREENS.has(currentScreen)) return;
     if (embeddedBoardingProfileVendorId || embeddedBoardingProfileSlug) {
       setEmbeddedBoardingProfileVendorId(null);
       setEmbeddedBoardingProfileSlug(null);
+      clearBoardingProfileContext();
     }
-  }, [currentScreen, embeddedBoardingProfileVendorId, embeddedBoardingProfileSlug]);
+  }, [
+    currentScreen,
+    embeddedBoardingProfileVendorId,
+    embeddedBoardingProfileSlug,
+    PET_BOARDING_PROFILE_CHILD_SCREENS,
+  ]);
+
+  const resolvedBoardingProfileVendorId = useMemo((): string | null => {
+    if (embeddedBoardingProfileVendorId) return embeddedBoardingProfileVendorId;
+    if (problemFlowBoardingVendorId) return problemFlowBoardingVendorId;
+    if (petBoardingVendorId) return petBoardingVendorId;
+    if (currentScreen !== 'pet-boarding-profile') return null;
+    const top = history[history.length - 1];
+    const fromKey = vendorIdFromRouteKey(top?.key);
+    if (fromKey) return fromKey;
+    return peekBoardingProfileContext()?.vendorId ?? null;
+  }, [
+    embeddedBoardingProfileVendorId,
+    problemFlowBoardingVendorId,
+    petBoardingVendorId,
+    currentScreen,
+    history,
+  ]);
+
+  const resolvedBoardingProfileSlug = useMemo(() => {
+    return normalizeBoardingServiceSlug(
+      problemFlowBoardingSlug ??
+        embeddedBoardingProfileSlug ??
+        petBoardingServiceSlug ??
+        peekBoardingProfileContext()?.slug ??
+        null,
+    );
+  }, [
+    problemFlowBoardingSlug,
+    embeddedBoardingProfileSlug,
+    petBoardingServiceSlug,
+  ]);
+
+  useEffect(() => {
+    if (currentScreen !== 'pet-boarding-profile') return;
+    if (embeddedBoardingProfileVendorId || problemFlowBoardingVendorId || petBoardingVendorId) {
+      return;
+    }
+    const top = history[history.length - 1];
+    const vid =
+      vendorIdFromRouteKey(top?.key) ?? peekBoardingProfileContext()?.vendorId ?? null;
+    if (!vid) return;
+    setEmbeddedBoardingProfileVendorId(vid);
+    const slug = peekBoardingProfileContext()?.slug;
+    if (slug != null) {
+      setEmbeddedBoardingProfileSlug(normalizeBoardingServiceSlug(slug));
+    }
+  }, [currentScreen, embeddedBoardingProfileVendorId, problemFlowBoardingVendorId, petBoardingVendorId, history]);
+
+  /** Child flows opened from home-service provider profiles — keep profile vendor id for back. */
+  const PROVIDER_PROFILE_CHILD_SCREENS = useMemo(
+    () =>
+      new Set<ScreenType>([
+        'pet-sitter-booking',
+        'boarding-booking',
+        'purchase-package',
+        'package-booking',
+        'universal-home-booking',
+        'walker-booking',
+        'create-booking',
+      ]),
+    [],
+  );
+
+  useEffect(() => {
+    if (currentScreen === 'pet-sitter-provider-profile') return;
+    if (PROVIDER_PROFILE_CHILD_SCREENS.has(currentScreen)) return;
+    if (petSitterProfileVendorId) {
+      setPetSitterProfileVendorId(null);
+      clearProviderProfileContext('pet-sitter');
+    }
+  }, [currentScreen, petSitterProfileVendorId, PROVIDER_PROFILE_CHILD_SCREENS]);
+
+  useEffect(() => {
+    if (currentScreen === 'behaviorist-provider-profile') return;
+    if (PROVIDER_PROFILE_CHILD_SCREENS.has(currentScreen)) return;
+    if (behavioristProfileVendorId) {
+      setBehavioristProfileVendorId(null);
+      clearProviderProfileContext('behaviorist');
+    }
+  }, [currentScreen, behavioristProfileVendorId, PROVIDER_PROFILE_CHILD_SCREENS]);
+
+  const resolvedPetSitterProfileVendorId = useMemo((): string | null => {
+    if (petSitterProfileVendorId) return petSitterProfileVendorId;
+    if (currentScreen !== 'pet-sitter-provider-profile') return null;
+    const top = history[history.length - 1];
+    const fromKey = vendorIdFromRouteKey(top?.key);
+    if (fromKey) return fromKey;
+    return peekProviderProfileContext('pet-sitter')?.vendorId ?? null;
+  }, [petSitterProfileVendorId, currentScreen, history]);
+
+  const resolvedBehavioristProfileVendorId = useMemo((): string | null => {
+    if (behavioristProfileVendorId) return behavioristProfileVendorId;
+    if (currentScreen !== 'behaviorist-provider-profile') return null;
+    const top = history[history.length - 1];
+    const fromKey = vendorIdFromRouteKey(top?.key);
+    if (fromKey) return fromKey;
+    return peekProviderProfileContext('behaviorist')?.vendorId ?? null;
+  }, [behavioristProfileVendorId, currentScreen, history]);
+
+  useEffect(() => {
+    if (currentScreen !== 'pet-sitter-provider-profile') return;
+    if (petSitterProfileVendorId) return;
+    const top = history[history.length - 1];
+    const vid =
+      vendorIdFromRouteKey(top?.key) ?? peekProviderProfileContext('pet-sitter')?.vendorId ?? null;
+    if (!vid) return;
+    setPetSitterProfileVendorId(vid);
+  }, [currentScreen, petSitterProfileVendorId, history]);
+
+  useEffect(() => {
+    if (currentScreen !== 'behaviorist-provider-profile') return;
+    if (behavioristProfileVendorId) return;
+    const top = history[history.length - 1];
+    const vid =
+      vendorIdFromRouteKey(top?.key) ?? peekProviderProfileContext('behaviorist')?.vendorId ?? null;
+    if (!vid) return;
+    setBehavioristProfileVendorId(vid);
+  }, [currentScreen, behavioristProfileVendorId, history]);
 
   // ✅ FIX: Listen for orderMedicineFromPrescription event (fallback when onOrderMedicine not passed)
   useEffect(() => {
@@ -1055,16 +1311,14 @@ export function CustomerHomeWrapper({
       .replace(/[\s-]+/g, '_');
     const boardingLikeScreens = new Set(['boarding', 'pet_boarding', 'petboarding']);
     if (vid && boardingLikeScreens.has(serviceKey)) {
-      setProblemFlowBoardingVendorId(null);
-      setProblemFlowBoardingSlug(null);
-      setEmbeddedBoardingProfileVendorId(vid);
-      setEmbeddedBoardingProfileSlug(normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? null)));
-      navigateToScreen('pet-boarding-profile');
+      openEmbeddedPetBoardingProfile(
+        vid,
+        normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? null)),
+      );
       return;
     }
     if (vid && (service === 'behaviorist' || service === 'behaviourist' || serviceKey === 'behaviorist')) {
-      setBehavioristProfileVendorId(vid);
-      setCurrentScreen('behaviorist-provider-profile');
+      openBehavioristProviderProfile(vid);
       return;
     }
     if (
@@ -1075,9 +1329,7 @@ export function CustomerHomeWrapper({
         serviceKey === 'sitter' ||
         serviceKey === 'pet_sitter')
     ) {
-      setPetSitterProfileVendorId(vid);
-      setPetSitterProfileReturnScreen('home');
-      setCurrentScreen('pet-sitter-provider-profile');
+      openPetSitterProviderProfile(vid);
       return;
     }
     if (
@@ -1211,11 +1463,7 @@ export function CustomerHomeWrapper({
       if (vid) (payload as any).vendorId = vid;
       if (vsid) (payload as any).vendorServiceId = vsid;
       if (vsid && vid) {
-        setWalkerServiceData(Object.keys(payload).length ? payload : null);
-        replaceShellScreen(
-          'purchase-package',
-          vsid ? routeKey.packagePurchase(vsid) : undefined,
-        );
+        openPurchasePackageScreen(Object.keys(payload).length ? payload : null);
       } else if (vid) {
         setWalkerServiceData(Object.keys(payload).length ? payload : { vendorId: vid, vendorName: (data as any)?.vendorName });
         navigateToScreen('package-booking');
@@ -1236,7 +1484,7 @@ export function CustomerHomeWrapper({
       router.push('/promotions');
     }
     else if (service === 'whats-new') router.push('/whats-new');
-    else if (service === 'articles' || service === 'customer-articles') router.push('/articles');
+    else if (service === 'articles' || service === 'customer-articles') navigateToArticlesList(router, '/');
     else if (service === 'wishlist') {
       if (!isCustomerEcommerceEnabled()) {
         toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
@@ -1489,11 +1737,9 @@ export function CustomerHomeWrapper({
       if (vid) (payload as any).vendorId = vid;
       if (vsid) (payload as any).vendorServiceId = vsid;
       if (vsid && vid) {
-        setWalkerServiceData(Object.keys(payload).length ? payload : null);
-        replaceShellScreen(
-          'purchase-package',
-          vsid ? routeKey.packagePurchase(vsid) : undefined,
-        );
+        openPurchasePackageScreen(Object.keys(payload).length ? payload : null, {
+          alsoMergeVetData: true,
+        });
       } else if (vid) {
         setWalkerServiceData(Object.keys(payload).length ? payload : { vendorId: vid, vendorName: data?.vendorName });
         setVetServiceData((prev: any) => ({ ...prev, ...data }));
@@ -1569,8 +1815,7 @@ export function CustomerHomeWrapper({
 
     if (looksBehavioralFlow) {
       setReturnToProblemGridFromStyleHub(true);
-      setBehavioristProfileVendorId(String(vendorId));
-      navigateToScreen('behaviorist-provider-profile');
+      openBehavioristProviderProfile(String(vendorId));
       return;
     }
 
@@ -1630,9 +1875,7 @@ export function CustomerHomeWrapper({
     }
 
     if (anySlugMatches(boardingRoles) || boardingRoles.has(role)) {
-      setProblemFlowBoardingVendorId(vendorId);
-      setProblemFlowBoardingSlug('all');
-      navigateToScreen('pet-boarding-profile');
+      openProblemFlowPetBoardingProfile(vendorId, 'all');
       return;
     }
 
@@ -1647,8 +1890,7 @@ export function CustomerHomeWrapper({
     ]);
     if (anySlugMatches(behavioristRoles) || behavioristRoles.has(role)) {
       setReturnToProblemGridFromStyleHub(true);
-      setBehavioristProfileVendorId(String(vendorId));
-      navigateToScreen('behaviorist-provider-profile');
+      openBehavioristProviderProfile(String(vendorId));
       return;
     }
 
@@ -1660,14 +1902,7 @@ export function CustomerHomeWrapper({
   const handleWalkerNavigate = (screen: string, data?: any) => {
     if (screen === 'purchase-package') {
       const normalized = normalizeWalkerServiceDataForPackagePurchase(data ?? null);
-      setWalkerServiceData(normalized);
-      const vsid = String(
-        normalized?.vendorServiceId ?? (normalized as any)?.vendor_service_id ?? '',
-      ).trim();
-      replaceShellScreen(
-        'purchase-package',
-        vsid ? routeKey.packagePurchase(vsid) : undefined,
-      );
+      openPurchasePackageScreen(normalized);
       return;
     }
     setWalkerServiceData(data);
@@ -1782,8 +2017,18 @@ export function CustomerHomeWrapper({
     profileFromAccountMenuRef.current = false;
     bookingsFromAccountMenuRef.current = false;
     accountHubFromMenuRef.current = false;
-    handleBack();
+    goToHome();
     setUserSidebarOpen(true);
+  };
+
+  const returnToAccountMenuBookings = () => {
+    if (!bookingsFromAccountMenuRef.current) {
+      setSelectedBookingId(null);
+      return;
+    }
+    setSelectedBookingId(null);
+    rememberAccountSidebarActiveView('bookings');
+    backToAccountMenu();
   };
 
   const openAccountHubFromMenu = (screen: ScreenType) => {
@@ -1878,6 +2123,9 @@ export function CustomerHomeWrapper({
     if (currentScreen !== 'purchase-package' && currentScreen !== 'package-booking') {
       packageBookingInternalBackRef.current = null;
     }
+    if (currentScreen !== 'support_help') {
+      supportHelpInternalBackRef.current = null;
+    }
     if (currentScreen !== 'vet-tele-consultation') {
       teleInternalBackRef.current = null;
     }
@@ -1889,6 +2137,9 @@ export function CustomerHomeWrapper({
     }
     if (currentScreen !== 'boarding-booking' && currentScreen !== 'pet-sitter-booking') {
       boardingBookingInternalBackRef.current = null;
+    }
+    if (currentScreen !== 'diagnostics-booking') {
+      diagnosticsBookingInternalBackRef.current = null;
     }
   }, [currentScreen]);
 
@@ -1919,6 +2170,10 @@ export function CustomerHomeWrapper({
         packageBookingInternalBackRef.current();
         return true;
       }
+      if (screen === 'support_help' && supportHelpInternalBackRef.current) {
+        supportHelpInternalBackRef.current();
+        return true;
+      }
       if (screen === 'vet-tele-consultation' && teleInternalBackRef.current) {
         teleInternalBackRef.current();
         return true;
@@ -1938,9 +2193,23 @@ export function CustomerHomeWrapper({
         boardingBookingInternalBackRef.current();
         return true;
       }
+      if (screen === 'diagnostics-booking' && diagnosticsBookingInternalBackRef.current) {
+        diagnosticsBookingInternalBackRef.current();
+        return true;
+      }
       return false;
     }, BACK_HANDLER_PRIORITY.shellWizardStep);
   }, [pathname]);
+
+  useEffect(() => {
+    if (pathname !== '/' || currentScreen !== 'payment') return;
+    return registerLeaveGuard({
+      id: 'shell-booking-payment',
+      canLeave: () => false,
+      confirmLeave: () =>
+        window.confirm('Leave payment? Your selected slot may be released.'),
+    });
+  }, [pathname, currentScreen]);
 
   useEffect(() => {
     return registerBackHandler(() => {
@@ -1960,6 +2229,14 @@ export function CustomerHomeWrapper({
         return true;
       }
       if (pathname !== '/') return false;
+      if (currentScreenForBackRef.current === 'payment') {
+        void (async () => {
+          if (await requestLeave()) {
+            handleShellAccountBackRef.current();
+          }
+        })();
+        return true;
+      }
       if (canPop) {
         handleShellAccountBackRef.current();
         return true;
@@ -1982,7 +2259,7 @@ export function CustomerHomeWrapper({
     handleBack();
   };
 
-  /** Package flows: stack pop returns to browse surface (replaceTop keeps caller beneath overlay). */
+  /** Package flows: pop returns to provider profile; strip package overlay so profile can render. */
   const handleBackFromPackageBooking = () => {
     if (shouldBannerReturnHome(vetServiceData, walkerServiceData)) {
       bannerReturnHomeRef.current = false;
@@ -1990,13 +2267,39 @@ export function CustomerHomeWrapper({
       handleBack();
       return;
     }
-    setWalkerServiceData(null);
-    handleBack();
+    const pkgVid = String(
+      walkerServiceData?.vendorId ?? vetServiceData?.vendorId ?? '',
+    ).trim();
+    const pkgSid = String(
+      walkerServiceData?.vendorServiceId ??
+        (walkerServiceData as { vendor_service_id?: string } | null)?.vendor_service_id ??
+        vetServiceData?.serviceId ??
+        '',
+    ).trim();
+    if (pkgVid && pkgSid) {
+      markSkipPackageAutoRedirect(pkgVid, pkgSid);
+    }
+    setWalkerServiceData((prev: Record<string, unknown> | null) =>
+      stripPackagePurchaseOverlayFields(prev),
+    );
+    setVetServiceData((prev: Record<string, unknown> | null) =>
+      stripPackagePurchaseOverlayFields(prev),
+    );
+
+    setHistory((prev) => {
+      if (prev.length <= 1) return prev;
+      const belowTop = prev[prev.length - 2]?.screen;
+      if (isPackagePurchaseTransitScreen(belowTop)) {
+        return prev.slice(0, -2);
+      }
+      return popShellEntry(prev);
+    });
   };
 
   const handleMyBookingsBack = () => {
     if (bookingsFromAccountMenuRef.current) {
       bookingsFromAccountMenuRef.current = false;
+      rememberAccountSidebarActiveView('bookings');
       backToAccountMenu();
       return;
     }
@@ -2042,6 +2345,9 @@ export function CustomerHomeWrapper({
     setSidebarOpen(false);
     setUserSidebarOpen(false);
     bookingsFromAccountMenuRef.current = fromAccountMenu;
+    if (fromAccountMenu) {
+      rememberAccountSidebarActiveView('bookings');
+    }
     navigateToScreen('my-bookings');
   };
 
@@ -2309,7 +2615,7 @@ export function CustomerHomeWrapper({
             } else if (screen === 'article-detail' && data?.article) {
               const a = data.article as { id?: string; slug?: string };
               const ref = (a.slug || a.id || '').toString();
-              if (ref) router.push(`/articles?slug=${encodeURIComponent(ref)}`);
+              if (ref) navigateToArticleFromHome(router, ref);
             } else {
               handleNavigateToService(screen, data);
             }
@@ -2517,12 +2823,7 @@ export function CustomerHomeWrapper({
               serviceStyle: 'at_home',
             });
             if (pkgNav) {
-              setWalkerServiceData((prev: any) => ({
-                ...(prev || {}),
-                ...pkgNav,
-                walker: prev?.walker ?? walkerServiceData?.walker,
-              }));
-              navigateToScreen('purchase-package');
+              openPurchasePackageScreen(pkgNav as Record<string, unknown>, { mergeWalkerData: true });
               return;
             }
           }
@@ -2543,8 +2844,8 @@ export function CustomerHomeWrapper({
       />
     );
   }
-  if (currentScreen === 'behaviorist-provider-profile' && behavioristProfileVendorId) {
-    const vid = behavioristProfileVendorId;
+  if (currentScreen === 'behaviorist-provider-profile' && resolvedBehavioristProfileVendorId) {
+    const vid = resolvedBehavioristProfileVendorId;
     return (
       <HomeServiceProviderProfile
         phone={phone}
@@ -2553,6 +2854,7 @@ export function CustomerHomeWrapper({
         config={SERVICE_CONFIGS.behaviourist}
         onBack={() => {
           setBehavioristProfileVendorId(null);
+          clearProviderProfileContext('behaviorist');
           if (returnToProblemGridFromStyleHub) {
             setReturnToProblemGridFromStyleHub(false);
             navigateToScreen('problem_grid_flow');
@@ -2560,10 +2862,29 @@ export function CustomerHomeWrapper({
           }
           handleBack();
         }}
-        onSelectService={() => {
-          setBehavioristProfileVendorId(null);
+        onSelectService={(service, rawRow) => {
+          if (rawRow && isVendorServicePackageRow(rawRow)) {
+            const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+              vendorId: vid,
+              serviceRow: rawRow,
+              serviceTypeCategory: 'behaviorist',
+              serviceStyle: 'at_home',
+            });
+            if (pkgNav) {
+              handleNavigateToService('purchase-package', pkgNav);
+              return;
+            }
+          }
           setSelectedHomeServiceType('behaviourist');
           setSelectedVendorId(vid);
+          setVetServiceData({
+            vendorId: vid,
+            serviceType: 'behaviourist',
+            serviceId: service.id,
+            serviceName: service.name,
+            price: service.price,
+            duration: service.duration,
+          });
           navigateToScreen('universal-home-booking');
         }}
         onNavigate={(screen) => {
@@ -2576,8 +2897,8 @@ export function CustomerHomeWrapper({
       />
     );
   }
-  if (currentScreen === 'pet-sitter-provider-profile' && petSitterProfileVendorId) {
-    const vid = petSitterProfileVendorId;
+  if (currentScreen === 'pet-sitter-provider-profile' && resolvedPetSitterProfileVendorId) {
+    const vid = resolvedPetSitterProfileVendorId;
     return (
       <HomeServiceProviderProfile
         phone={phone}
@@ -2586,13 +2907,30 @@ export function CustomerHomeWrapper({
         config={SERVICE_CONFIGS.sitter}
         onBack={() => {
           setPetSitterProfileVendorId(null);
+          clearProviderProfileContext('pet-sitter');
           handleBack();
         }}
-        onSelectService={() => {
-          setPetSitterProfileVendorId(null);
+        onSelectService={(service, rawRow) => {
+          if (rawRow && isVendorServicePackageRow(rawRow)) {
+            const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+              vendorId: vid,
+              serviceRow: rawRow,
+              serviceTypeCategory: 'sitting',
+              serviceStyle: 'at_home',
+            });
+            if (pkgNav) {
+              handleNavigateToService('purchase-package', pkgNav);
+              return;
+            }
+          }
           setVetServiceData({
             vendorId: vid,
             serviceType: 'sitting',
+            serviceId: service.id,
+            serviceName: service.name,
+            price: service.price,
+            duration: service.duration,
+            serviceStyle: 'at_home',
           });
           navigateToScreen('pet-sitter-booking');
         }}
@@ -2738,6 +3076,10 @@ export function CustomerHomeWrapper({
           handleBack();
         }}
         onNavigate={(screen, data) => {
+          if (screen === 'purchase-package') {
+            handleNavigateToService(screen, data);
+            return;
+          }
           if (screen === 'boarding-booking') {
             setVetServiceData({
               vendorId: data?.vendorId as string | undefined,
@@ -2756,26 +3098,21 @@ export function CustomerHomeWrapper({
               toast.error('Profile unavailable — missing vendor id.');
               return;
             }
-            setProblemFlowBoardingVendorId(null);
-            setProblemFlowBoardingSlug(null);
-            setEmbeddedBoardingProfileVendorId(bid);
-            setEmbeddedBoardingProfileSlug(
+            openEmbeddedPetBoardingProfile(
+              bid,
               data?.serviceSlug != null && String(data.serviceSlug) !== ''
                 ? normalizeBoardingServiceSlug(String(data.serviceSlug))
-                : slug
+                : slug,
             );
-            navigateToScreen('pet-boarding-profile');
           }
         }}
       />
     );
   }
 
-  if (currentScreen === 'pet-boarding-profile' && (petBoardingVendorId || problemFlowBoardingVendorId || embeddedBoardingProfileVendorId)) {
-    const effectiveVendorId = (embeddedBoardingProfileVendorId || problemFlowBoardingVendorId || petBoardingVendorId) as string;
-    const slug = normalizeBoardingServiceSlug(
-      problemFlowBoardingSlug ?? embeddedBoardingProfileSlug ?? petBoardingServiceSlug ?? null
-    );
+  if (currentScreen === 'pet-boarding-profile' && resolvedBoardingProfileVendorId) {
+    const effectiveVendorId = resolvedBoardingProfileVendorId;
+    const slug = resolvedBoardingProfileSlug;
     return (
       <BoardingVendorProfileView
         phone={phone}
@@ -2787,12 +3124,14 @@ export function CustomerHomeWrapper({
           if (problemFlowBoardingVendorId) {
             setProblemFlowBoardingVendorId(null);
             setProblemFlowBoardingSlug(null);
+            clearBoardingProfileContext();
             navigateToScreen('problem_grid_flow');
             return;
           }
           if (embeddedBoardingProfileVendorId) {
             setEmbeddedBoardingProfileVendorId(null);
             setEmbeddedBoardingProfileSlug(null);
+            clearBoardingProfileContext();
             handleBack();
             return;
           }
@@ -2800,6 +3139,10 @@ export function CustomerHomeWrapper({
           }, vetServiceData);
         }}
         onNavigate={(screen, data) => {
+          if (screen === 'purchase-package') {
+            handleNavigateToService(screen, data);
+            return;
+          }
           if (screen === 'boarding-booking') {
             setVetServiceData(
               mergeBannerNavigationPayload(vetServiceData, {
@@ -3167,11 +3510,9 @@ export function CustomerHomeWrapper({
               : {};
           if (vid) (payload as any).vendorId = vid;
           if (vsid) (payload as any).vendorServiceId = vsid;
-          setWalkerServiceData(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null);
-          replaceShellScreen(
-            'purchase-package',
-            vsid ? routeKey.packagePurchase(vsid) : undefined,
-          );
+          openPurchasePackageScreen(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null, {
+            mergeWalkerData: true,
+          });
         } else if (screen === 'grooming-vendor-profile' && data?.vendorId) {
           const style = String(data.serviceStyle || 'at_center').toLowerCase();
           if (style === 'at_home' || style === 'home') {
@@ -3237,11 +3578,9 @@ export function CustomerHomeWrapper({
               : {};
           if (vid) (payload as any).vendorId = vid;
           if (vsid) (payload as any).vendorServiceId = vsid;
-          setWalkerServiceData(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null);
-          replaceShellScreen(
-            'purchase-package',
-            vsid ? routeKey.packagePurchase(vsid) : undefined,
-          );
+          openPurchasePackageScreen(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null, {
+            mergeWalkerData: true,
+          });
         } else {
           if (process.env.NODE_ENV === 'development') {
             console.warn('🟡 [CustomerHomeWrapper] Unhandled training navigation:', screen, data);
@@ -3283,9 +3622,10 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'boarding') {
     return renderScreenWithLayout('boarding',
       <BoardingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
-        if (screen === 'boarding-booking') {
-          setVetServiceData({ vendorId: data?.vendorId, serviceType: 'boarding', facility: data?.facility });
-          navigateToScreen('boarding-booking');
+        if (screen === 'purchase-package') {
+          handleNavigateToService(screen, data);
+        } else if (screen === 'boarding-booking') {
+          openBoardingBookingScreen(data);
         } else if (screen === 'create-booking') {
           setSelectedVendorId(data?.vendorId);
           setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
@@ -3314,13 +3654,10 @@ export function CustomerHomeWrapper({
             toast.error('Profile unavailable — missing vendor id.');
             return;
           }
-          setProblemFlowBoardingVendorId(null);
-          setProblemFlowBoardingSlug(null);
-          setEmbeddedBoardingProfileVendorId(bid);
-          setEmbeddedBoardingProfileSlug(
-            normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? 'all'))
+          openEmbeddedPetBoardingProfile(
+            bid,
+            normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? 'all')),
           );
-          navigateToScreen('pet-boarding-profile');
         } else {
           navigateToScreen(screen as ScreenType);
         }
@@ -3332,9 +3669,10 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'boarding_facility') {
     return renderScreenWithLayout('boarding_facility',
       <BoardingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
-        if (screen === 'boarding-booking') {
-          setVetServiceData({ vendorId: data?.vendorId, serviceType: 'boarding', facility: data?.facility });
-          navigateToScreen('boarding-booking');
+        if (screen === 'purchase-package') {
+          handleNavigateToService(screen, data);
+        } else if (screen === 'boarding-booking') {
+          openBoardingBookingScreen(data);
         } else if (screen === 'create-booking') {
           setSelectedVendorId(data?.vendorId);
           setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
@@ -3356,13 +3694,10 @@ export function CustomerHomeWrapper({
             toast.error('Profile unavailable — missing vendor id.');
             return;
           }
-          setProblemFlowBoardingVendorId(null);
-          setProblemFlowBoardingSlug(null);
-          setEmbeddedBoardingProfileVendorId(bid);
-          setEmbeddedBoardingProfileSlug(
-            normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? 'all'))
+          openEmbeddedPetBoardingProfile(
+            bid,
+            normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? 'all')),
           );
-          navigateToScreen('pet-boarding-profile');
         } else if (screen) {
           navigateToScreen(screen as ScreenType);
         } else {
@@ -3379,8 +3714,7 @@ export function CustomerHomeWrapper({
         onBack={handlePetSitterHubBack}
         onNavigate={(screen, data) => {
           if (screen === 'pet-sitter-provider-profile' && data?.vendorId) {
-            setPetSitterProfileVendorId(String(data.vendorId));
-            navigateToScreen('pet-sitter-provider-profile', routeKey.vendor(String(data.vendorId)));
+            openPetSitterProviderProfile(String(data.vendorId));
           } else if (screen === 'pet-sitter-booking') {
             setVetServiceData({
               vendorId: data?.vendorId,
@@ -3429,8 +3763,7 @@ export function CustomerHomeWrapper({
           }}
           onNavigate={(screen, data) => {
             if (screen === 'pet-sitter-provider-profile' && data?.vendorId) {
-              setPetSitterProfileVendorId(String(data.vendorId));
-              navigateToScreen('pet-sitter-provider-profile', routeKey.vendor(String(data.vendorId)));
+              openPetSitterProviderProfile(String(data.vendorId));
             } else if (screen === 'pet-sitter-booking') {
               setVetServiceData({
                 vendorId: data?.vendorId,
@@ -3986,6 +4319,7 @@ export function CustomerHomeWrapper({
     customerPhone={phone} 
     packageHint={diagnosticsPackageHint ?? undefined}
     onBack={() => { setSelectedVendorId(undefined); setDiagnosticsPackageHint(null); handleBack(); }} 
+    onInternalBackReady={(fn) => { diagnosticsBookingInternalBackRef.current = fn; }}
     onSuccess={(bookingId) => { setDiagnosticsPackageHint(null); handleViewBooking(bookingId); }} 
     onCancel={() => { setSelectedVendorId(undefined); setDiagnosticsPackageHint(null); handleBack(); }} 
   />;
@@ -4154,7 +4488,8 @@ export function CustomerHomeWrapper({
           phone={phone} 
           onBack={handleMyBookingsBack}
           onCloseToHome={handleBack}
-          initialBookingId={selectedBookingId || undefined} 
+          initialBookingId={selectedBookingId || undefined}
+          onCloseInitialBookingDetail={returnToAccountMenuBookings}
           onReorderMedicine={handleReorderMedicine}
           onNavigate={(screen, data) => { 
             if (data?.bookingId) setSelectedBookingId(data.bookingId); 
@@ -4618,6 +4953,7 @@ export function CustomerHomeWrapper({
         <SupportHelpCenter
           phone={phone}
           onBack={backFromWalletHubChild}
+          onInternalBackReady={(fn) => { supportHelpInternalBackRef.current = fn; }}
           onChatbotNavigate={handleSupportHelpChatbotNavigate}
           initialTab={supportCtx.kind ? 'contact' : undefined}
           bookingContext={supportCtx.booking}
@@ -5019,11 +5355,7 @@ export function CustomerHomeWrapper({
           : {};
       if (vid) (payload as any).vendorId = vid;
       if (vsid) (payload as any).vendorServiceId = vsid;
-      setWalkerServiceData(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null);
-      replaceShellScreen(
-        'purchase-package',
-        vsid ? routeKey.packagePurchase(vsid) : undefined,
-      );
+      openPurchasePackageScreen(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null);
       return;
     }
 
@@ -5149,7 +5481,7 @@ export function CustomerHomeWrapper({
           } else if (pathname === '/services/all') {
             navigateToScreen('problem_grid');
           } else {
-            goToHome();
+            handleBack();
           }
           setSelectedProblem(null);
           setProblemGridSpecialization(undefined);

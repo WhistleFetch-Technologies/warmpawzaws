@@ -31,7 +31,7 @@ import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useBoardingVendorDiscovery } from '@/hooks/useBoardingVendorDiscovery';
 import {
-  buildBoardingBookPlanPayload,
+  navigateBoardingPlanBooking,
   minPriceForVendor,
 } from '@/lib/boarding-vendor-booking-utils';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
@@ -314,7 +314,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         );
         return;
       }
-      onNavigate('boarding-booking', buildBoardingBookPlanPayload(v, plan) as Record<string, unknown>);
+      navigateBoardingPlanBooking(onNavigate, v, plan);
     },
     [onNavigate, router]
   );

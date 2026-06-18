@@ -96,10 +96,22 @@ export function buildWhatsNewAnnouncements(dynamicFromApi: any[]): WhatsNewAnnou
   return hasArticles ? base : [...base, customerArticlesRow];
 }
 
+import { rememberArticlesListBack } from '@/lib/articles-back-nav';
+
 type AppRouter = { push: (href: string) => void };
 
+export type WhatsNewNavOptions = {
+  /** Back target for `/articles` when opened from this What's New surface. */
+  articlesListBack?: '/' | '/whats-new';
+};
+
 /** Full-page /whats-new navigation (Next routes + home for SPA-only flows). */
-export function navigateWhatsNewFromFullPage(router: AppRouter, announcement: WhatsNewAnnouncement, source: 'row' | 'sos'): void {
+export function navigateWhatsNewFromFullPage(
+  router: AppRouter,
+  announcement: WhatsNewAnnouncement,
+  source: 'row' | 'sos',
+  options?: WhatsNewNavOptions
+): void {
   if (
     announcement.comingSoon &&
     (announcement.announcementType === 'emergency' || announcement.announcementType === 'premium')
@@ -113,6 +125,7 @@ export function navigateWhatsNewFromFullPage(router: AppRouter, announcement: Wh
 
   const type = announcement.announcementType || '';
   if (type === 'articles' || announcement.ctaLink === 'articles') {
+    rememberArticlesListBack(options?.articlesListBack ?? '/whats-new');
     router.push('/articles');
     return;
   }

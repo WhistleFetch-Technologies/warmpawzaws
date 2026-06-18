@@ -24,6 +24,7 @@ import { InstantTeleQueue } from '../InstantTele/InstantTeleQueue';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import {
   saveTeleWizardSnapshot,
+  bookingFormFieldsFromProceed,
   type TeleWizardSnapshot,
 } from '@/lib/navigation/wizard-session-state';
 
@@ -827,6 +828,8 @@ export function TeleConsultationRouter({
     selectedDate: restoredSnapshot?.selectedDate,
     selectedTime: restoredSnapshot?.selectedTime,
     selectedPetId: restoredSnapshot?.selectedPetId,
+    selectedServiceIds: restoredSnapshot?.selectedServiceIds,
+    selectedAddressId: restoredSnapshot?.selectedAddressId,
   }));
   const [selectedService, setSelectedService] = useState<PlatformService | null>(null);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
@@ -1126,9 +1129,7 @@ export function TeleConsultationRouter({
       step: 'provider-profile',
       selectedProvider: (selectedProvider as Record<string, unknown> | null) ?? null,
       showBookingForm: true,
-      selectedDate: bookingData?.bookingDate,
-      selectedTime: bookingData?.bookingTime,
-      selectedPetId: bookingData?.petId,
+      ...bookingFormFieldsFromProceed(bookingData),
     });
     onNavigate('payment', {
       ...bookingData,
@@ -1280,6 +1281,8 @@ export function TeleConsultationRouter({
           initialSelectedDate={bookingFormRestore.selectedDate}
           initialSelectedTime={bookingFormRestore.selectedTime}
           initialSelectedPetId={bookingFormRestore.selectedPetId}
+          initialSelectedServiceIds={bookingFormRestore.selectedServiceIds}
+          initialSelectedAddressId={bookingFormRestore.selectedAddressId}
         />
       );
 

@@ -118,6 +118,8 @@ interface UniversalProviderProfileProps {
   initialSelectedDate?: string;
   initialSelectedTime?: string;
   initialSelectedPetId?: string;
+  initialSelectedServiceIds?: string[];
+  initialSelectedAddressId?: string;
   /** Hardware / shell back: close booking form or address modal before parent step back */
   onInternalBackReady?: (handleBack: () => void) => void;
 }
@@ -200,10 +202,14 @@ export function UniversalProviderProfile({
   initialSelectedDate,
   initialSelectedTime,
   initialSelectedPetId,
+  initialSelectedServiceIds,
+  initialSelectedAddressId,
   onInternalBackReady,
 }: UniversalProviderProfileProps) {
   const [activeTab, setActiveTab] = useState<'services' | 'about' | 'reviews'>('services');
-  const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
+  const [selectedServices, setSelectedServices] = useState<Set<string>>(
+    () => new Set(initialSelectedServiceIds ?? []),
+  );
   const [isFavorite, setIsFavorite] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(false);
@@ -350,8 +356,11 @@ export function UniversalProviderProfile({
           if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
             const normalized = addressResponse.addresses.map((a: any) => normalizeAddress(a));
             setAddresses(normalized);
+            const pickById = initialSelectedAddressId
+              ? normalized.find((a: Address) => String(a.id) === String(initialSelectedAddressId))
+              : undefined;
             const defaultRaw = addressResponse.addresses.find((a: any) => a.isDefault ?? a.is_default);
-            const toSelect = defaultRaw || addressResponse.addresses[0];
+            const toSelect = pickById ?? (defaultRaw || addressResponse.addresses[0]);
             if (toSelect) setSelectedAddress(normalizeAddress(toSelect));
           }
         } catch (e) {
@@ -462,7 +471,7 @@ export function UniversalProviderProfile({
   };
 
   // Calculate total for selected services
-  const selectedServicesList = provider.services.filter(s => selectedServices.has(s.id));
+  const selectedServicesList = servicesMatchingSelection(provider.services, selectedServices);
   const totalAmount = selectedServicesList.reduce((sum, s) => sum + s.price, 0);
   const totalDuration = selectedServicesList.reduce((sum, s) => sum + s.duration, 0);
 
@@ -480,6 +489,10 @@ export function UniversalProviderProfile({
   // Proceed to payment
   const handleProceedToPayment = () => {
     // Validate
+    if (selectedServices.size === 0) {
+      toast.error('Please select at least one service');
+      return;
+    }
     if (!selectedPet) {
       toast.error('Please select a pet');
       return;
@@ -1027,7 +1040,13 @@ export function UniversalProviderProfile({
             <Button
               className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-md"
               onClick={handleProceedToPayment}
-              disabled={!selectedPet || !selectedDate || !selectedTime || (serviceStyle === 'at_home' && !selectedAddress)}
+              disabled={
+                selectedServices.size === 0 ||
+                !selectedPet ||
+                !selectedDate ||
+                !selectedTime ||
+                (serviceStyle === 'at_home' && !selectedAddress)
+              }
             >
               Proceed to Payment • {formatPriceWithSymbol(totalAmount)}
             </Button>

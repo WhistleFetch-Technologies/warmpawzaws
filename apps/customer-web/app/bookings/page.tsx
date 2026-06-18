@@ -2,11 +2,13 @@
 
 import { MyBookings } from '@/components/customer/booking/MyBookings';
 import { goBackOrReplace } from '@/lib/go-back-or-replace';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 function BookingsPageInner() {
   const router = useRouter();
+  const nav = useCustomerNavigation();
   const searchParams = useSearchParams();
   const reviewBookingId = searchParams.get('reviewBookingId');
   const [phone, setPhone] = useState<string | null>(null);
@@ -20,9 +22,9 @@ function BookingsPageInner() {
 
   useEffect(() => {
     if (sessionChecked && !phone) {
-      router.replace('/auth');
+      nav.goToAuth();
     }
-  }, [sessionChecked, phone, router]);
+  }, [sessionChecked, phone, nav]);
 
   if (!sessionChecked) {
     return (

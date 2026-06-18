@@ -2,6 +2,8 @@ import { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.share
 
 import { toast } from 'sonner';
 
+import { rememberArticleDetailBack } from '@/lib/articles-back-nav';
+
 import { apiClient } from '@/lib/api-client';
 
 import { customerPathToScreen } from '@/lib/promotion-navigation';
@@ -69,6 +71,7 @@ export function navigateBannerLink(
 
   const articlePath = parseArticleSlugFromBannerPath(dest);
   if (articlePath) {
+    rememberArticleDetailBack('/');
     router.push(articlePath);
     return true;
   }

@@ -141,6 +141,8 @@ interface MyBookingsProps {
   /** Left X: full exit to home (shell reset). When set with onBack, header matches profile-style X + Back. */
   onCloseToHome?: () => void;
   initialBookingId?: string; // To open a specific booking
+  /** When set, closing the detail modal (opened via initialBookingId) runs this instead of showing the list. */
+  onCloseInitialBookingDetail?: () => void;
   /** From live tracking etc.: `/bookings?reviewBookingId=` opens rate modal when list loads */
   reviewBookingIdFromUrl?: string | null;
   onReorderMedicine?: (medications: any[]) => void;
@@ -174,6 +176,7 @@ export function MyBookings({
   onBack,
   onCloseToHome,
   initialBookingId,
+  onCloseInitialBookingDetail,
   reviewBookingIdFromUrl,
   onReorderMedicine,
   onNavigate,
@@ -230,6 +233,7 @@ export function MyBookings({
   // ✅ FIX: Add state for review modal
   const [showReviewModal, setShowReviewModal] = useState<{ bookingId: string; vendorId: string; serviceName: string } | null>(null);
   const reviewFromUrlHandledRef = useRef<string | null>(null);
+  const openedFromInitialBookingRef = useRef(false);
 
   // ✅ FIX: User profile data for consistent header
   const [userName, setUserName] = useState('User');
@@ -264,6 +268,7 @@ export function MyBookings({
     if (initialBookingId && bookings.length > 0) {
       const booking = bookings.find(b => b.bookingId === initialBookingId);
       if (booking) {
+        openedFromInitialBookingRef.current = true;
         setSelectedBooking(booking);
       }
     }
@@ -715,7 +720,14 @@ export function MyBookings({
         bookingId={selectedBooking.bookingId}
         petId={selectedBooking.petId}
         phone={phone}
-        onClose={() => setSelectedBooking(null)}
+        onClose={() => {
+          if (openedFromInitialBookingRef.current && onCloseInitialBookingDetail) {
+            openedFromInitialBookingRef.current = false;
+            onCloseInitialBookingDetail();
+            return;
+          }
+          setSelectedBooking(null);
+        }}
         onReorderMedicine={onReorderMedicine}
         onNavigate={onNavigate}
       />

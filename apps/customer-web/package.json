@@ -14,6 +14,7 @@
     "start": "next start -p 3001",
     "lint": "next lint",
     "test": "jest",
+    "test:navigation": "jest lib/navigation/__tests__/",
     "test:coverage": "jest --coverage",
     "cap:sync": "npx cap sync",
     "cap:sync:ios": "npx cap sync ios",

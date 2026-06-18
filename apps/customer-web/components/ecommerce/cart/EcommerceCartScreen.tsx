@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import {
   ArrowLeft,
   MapPin,
@@ -56,7 +56,7 @@ function resolveCustomerPhone(): string {
 }
 
 export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenProps) {
-  const router = useRouter();
+  const nav = useCustomerNavigation();
   const { cart, itemCount, updateQuantity, removeFromCart, addToCart } = useCart();
   const phone = phoneProp || resolveCustomerPhone();
 
@@ -237,7 +237,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       deliverySpeed: 'standard',
       sellerPromotion: sellerPromotionPricing,
     });
-    router.push('/checkout?step=payment');
+    nav.goToCheckout({ step: 'payment' });
   };
 
   const handleAddAddressSuccess = async (newAddress: CheckoutAddress) => {
@@ -259,7 +259,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               variant="ghost"
               size="icon"
               className="rounded-full"
-              onClick={() => router.replace('/shop')}
+              onClick={() => nav.goToShop({ replace: true })}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -275,7 +275,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             Browse the shop and add products for your pet.
           </p>
           <Button
-            onClick={() => router.replace('/shop')}
+            onClick={() => nav.goToShop({ replace: true })}
             className="bg-[#FF8C42] hover:bg-[#FF7A29] text-white rounded-xl px-8"
           >
             Continue shopping
@@ -293,7 +293,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             variant="ghost"
             size="icon"
             className="rounded-full shrink-0"
-            onClick={() => router.replace('/shop')}
+            onClick={() => nav.goToShop({ replace: true })}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>

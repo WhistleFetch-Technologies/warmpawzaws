@@ -964,6 +964,11 @@ class VerifyPaymentHandler extends BaseHandler {
         const bookingId = payment.booking_id;
         const pharmacyOrderId = payment.pharmacy_order_id;
         const ecommerceOrderId = payment.order_id;
+        // orders.payment_method is customer-facing ('online'); payments row stores gateway ('razorpay').
+        const resolvedPaymentMethod =
+          payment.payment_method && String(payment.payment_method) !== 'razorpay'
+            ? String(payment.payment_method)
+            : 'online';
 
         // Update payment status
         await client.query(

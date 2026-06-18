@@ -28,6 +28,8 @@ import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
+  shouldSkipPackageAutoRedirect,
+  clearSkipPackageAutoRedirect,
 } from '@/lib/vendor-package-purchase-nav';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
@@ -831,6 +833,10 @@ export function BoardingBookingRouter({
   useEffect(() => {
     if (packageRedirectRef.current) return;
     if (!vendorId || !serviceId || vendorServices.length === 0) return;
+    if (shouldSkipPackageAutoRedirect(String(vendorId), String(serviceId))) {
+      packageRedirectRef.current = true;
+      return;
+    }
     const row = vendorServices.find(
       (vs: any) =>
         String(vs?.id) === String(serviceId) || String(vs?.serviceId || vs?.service_id) === String(serviceId)
@@ -1403,6 +1409,9 @@ export function BoardingBookingRouter({
 
   const handleBack = useCallback(() => {
     if (step === 'confirmation') {
+      if (vendorId && serviceId) {
+        clearSkipPackageAutoRedirect(String(vendorId), String(serviceId));
+      }
       onBack();
       return;
     }
@@ -1410,6 +1419,9 @@ export function BoardingBookingRouter({
       beganWithPreselectedVendorServiceRef.current &&
       (step === 'datetime' || step === 'service')
     ) {
+      if (vendorId && serviceId) {
+        clearSkipPackageAutoRedirect(String(vendorId), String(serviceId));
+      }
       onBack();
       return;
     }
@@ -1417,12 +1429,15 @@ export function BoardingBookingRouter({
     const currentIdx = steps.indexOf(step);
 
     if (currentIdx <= 0) {
+      if (vendorId && serviceId) {
+        clearSkipPackageAutoRedirect(String(vendorId), String(serviceId));
+      }
       onBack();
       return;
     }
 
     setStep(steps[currentIdx - 1]);
-  }, [step, isPetSitting, onBack]);
+  }, [step, isPetSitting, onBack, vendorId, serviceId]);
 
   useEffect(() => {
     onInternalBackReady?.(handleBack);

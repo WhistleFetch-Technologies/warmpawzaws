@@ -7,7 +7,7 @@ alwaysApply: true
 
 This rule is the **authoritative guide** for Cursor agents helping team members work on personal feature branches. Follow it unless the user explicitly overrides a specific step.
 
-**Related rules:** `branch-health.mdc` (personal dev branch + feature branches), `deployment.mdc` (deploy scripts), `git-cli.mdc` (git CLI).
+**Related rules:** `branch-health.mdc` (personal dev branch + feature branches), `deployment.mdc` (deploy scripts), `git-cli.mdc` (git CLI), `customer-navigation.mdc` (customer-web nav stack).
 
 ---
 
@@ -25,6 +25,27 @@ This rule is the **authoritative guide** for Cursor agents helping team members 
 | Prod reference | `prodscripts/PRODUCTION_CONFIG.md` | Prod S3, CloudFront, API URLs |
 
 **Region:** `ap-south-1` for all AWS resources.
+
+### 1b. Customer navigation — mandatory for AI agents
+
+When assisting on **apps/customer-web** (fixes, features, new services, refactors touching nav/back/screens):
+
+1. **Read first:** `.cursor/rules/customer-navigation.mdc` and `apps/customer-web/CUSTOMER_NAV_AUDIT.md` (§11). Before editing `CustomerHomeWrapper` or checkout, read both fully.
+2. **Use the stack** — do not introduce ad-hoc navigation:
+   - URL routes → `useCustomerNavigation()` / `createCustomerNavigation()` (`goToCart`, `goToCheckout`, `goToShop`, `goToBookings`, etc.)
+   - Shell on `/` → `navigateToScreen`, `handleBack`, `routeKey`, `shell-route-policies`
+   - `/checkout` → `CheckoutProvider.goBack` + `registerCheckoutUrlBackHandler` (priority 105)
+   - `/checkout/success` → `registerCheckoutSuccessBackHandler` → shop (never back to checkout)
+   - Leaving unsaved state → `requestLeave()` / `registerLeaveGuard`
+   - New shell screen → `routeKey` + policy + `CustomerHomeWrapper` branch
+3. **Do not** add raw `router.push` / `router.replace` to `/cart`, `/checkout`, `/shop`, `/orders`, or `/bookings` unless the **user explicitly requests an exception**.
+4. **Exceptions** (user must say so): external OAuth/Razorpay redirect, documented infinite-loop break (`// nav-exception: <reason>` in code). Explain briefly when used.
+5. **Do not change** Razorpay payment open timing.
+6. **After non-trivial nav changes:** run `cd apps/customer-web && npm run test:navigation` and report results.
+
+Legacy files may still contain raw `router.push` — do not mass-migrate unless asked. Apply stack to **code you add or change**.
+
+**Related rule:** `customer-navigation.mdc` (auto-loads on `apps/customer-web/**` edits).
 
 ---
 

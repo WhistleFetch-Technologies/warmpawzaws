@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Check,
@@ -23,6 +23,8 @@ import {
 import { getShippingOptionLabel } from '@/lib/ecommerce/checkout-shipping-options';
 import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
 import { navigateToProfileShopOrders } from '@/lib/go-back-or-replace';
+import { registerCheckoutSuccessBackHandler } from '@/lib/navigation/back-handler-registry';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { toast } from 'sonner';
 
 const TIMELINE_STEPS = [
@@ -42,15 +44,25 @@ function statusIndex(status: string | undefined): number {
 }
 
 export function EcommerceOrderSuccessScreen() {
+  const nav = useCustomerNavigation();
   const router = useRouter();
   const [order, setOrder] = useState<StoredCheckoutOrderResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [timelineStatus, setTimelineStatus] = useState<string>('confirmed');
 
+  const leaveSuccessToShop = useCallback(() => {
+    clearCheckoutOrderResponse();
+    nav.goToShop({ replace: true });
+  }, [nav]);
+
+  useEffect(() => {
+    return registerCheckoutSuccessBackHandler(leaveSuccessToShop);
+  }, [leaveSuccessToShop]);
+
   useEffect(() => {
     const stored = readCheckoutOrderResponse();
     if (!stored?.orderId) {
-      router.replace('/shop');
+      nav.goToShop({ replace: true });
       return;
     }
     setOrder(stored);
@@ -78,7 +90,7 @@ export function EcommerceOrderSuccessScreen() {
       .catch(() => {
         /* use stored snapshot */
       });
-  }, [router]);
+  }, [nav]);
 
   const copyOrderId = async () => {
     if (!order?.orderId) return;
@@ -192,7 +204,10 @@ export function EcommerceOrderSuccessScreen() {
 
         <div className="flex flex-col gap-2">
           <Button
-            onClick={() => goToProfileOrders(true)}
+            onClick={() => {
+              clearCheckoutOrderResponse();
+              nav.afterCheckoutSuccess(order.orderId);
+            }}
             className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A29] text-white font-semibold rounded-xl"
           >
             <Package className="w-4 h-4 mr-2" />
@@ -207,10 +222,7 @@ export function EcommerceOrderSuccessScreen() {
           </Button>
           <Button
             variant="outline"
-            onClick={() => {
-              clearCheckoutOrderResponse();
-              router.replace('/shop');
-            }}
+            onClick={leaveSuccessToShop}
             className="w-full h-11 rounded-xl"
           >
             <ShoppingBag className="w-4 h-4 mr-2" />
@@ -220,7 +232,7 @@ export function EcommerceOrderSuccessScreen() {
             variant="ghost"
             onClick={() => {
               clearCheckoutOrderResponse();
-              router.replace('/');
+              nav.goToHome();
             }}
             className="w-full h-11 rounded-xl text-slate-600"
           >

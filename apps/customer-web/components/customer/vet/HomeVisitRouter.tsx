@@ -13,6 +13,7 @@ import { UniversalServiceProviderList } from '../shared/UniversalServiceProvider
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
 import {
   saveHomeVisitWizardSnapshot,
+  bookingFormFieldsFromProceed,
   type HomeVisitWizardSnapshot,
 } from '@/lib/navigation/wizard-session-state';
 
@@ -96,6 +97,8 @@ export function HomeVisitRouter({
     selectedDate: restoredSnapshot?.selectedDate,
     selectedTime: restoredSnapshot?.selectedTime,
     selectedPetId: restoredSnapshot?.selectedPetId,
+    selectedServiceIds: restoredSnapshot?.selectedServiceIds,
+    selectedAddressId: restoredSnapshot?.selectedAddressId,
   }));
 
   useEffect(() => {
@@ -116,9 +119,7 @@ export function HomeVisitRouter({
       step: 'provider-profile',
       selectedProvider: (selectedProvider as Record<string, unknown> | null) ?? null,
       showBookingForm: true,
-      selectedDate: bookingData?.bookingDate,
-      selectedTime: bookingData?.bookingTime,
-      selectedPetId: bookingData?.petId,
+      ...bookingFormFieldsFromProceed(bookingData),
     });
     onNavigate('payment', {
       ...bookingData,
@@ -199,6 +200,8 @@ export function HomeVisitRouter({
           initialSelectedDate={bookingFormRestore.selectedDate}
           initialSelectedTime={bookingFormRestore.selectedTime}
           initialSelectedPetId={bookingFormRestore.selectedPetId}
+          initialSelectedServiceIds={bookingFormRestore.selectedServiceIds}
+          initialSelectedAddressId={bookingFormRestore.selectedAddressId}
         />
       );
 

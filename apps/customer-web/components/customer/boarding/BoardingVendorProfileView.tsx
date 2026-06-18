@@ -37,6 +37,10 @@ import {
 import { AmenitiesSection } from '../shared/AmenitiesSection';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 
 export interface BoardingVendorProfileViewProps {
   phone: string;
@@ -55,6 +59,8 @@ interface MappedBoardingService {
   price: number;
   duration?: number;
   serviceStyle?: string;
+  /** Original API row — package detection + purchase-package payload. */
+  rawRow: Record<string, unknown>;
 }
 
 interface VendorInfo {
@@ -120,6 +126,7 @@ export function BoardingVendorProfileView({
         price: parseFloat(String(s?.price || '0')) || 0,
         duration: s?.duration || s?.duration_minutes,
         serviceStyle: s?.serviceStyle || s?.service_style,
+        rawRow: (s && typeof s === 'object' ? s : {}) as Record<string, unknown>,
       });
     }
     return mapped;
@@ -280,6 +287,20 @@ export function BoardingVendorProfileView({
   const handleBook = () => {
     if (!selectedOffer?.rowId) {
       return;
+    }
+    const rawRow = selectedOffer.rawRow;
+    if (isVendorServicePackageRow(rawRow)) {
+      const nav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: String(vendor?.id || vendorId),
+        vendorName: vendor?.name,
+        serviceRow: rawRow,
+        serviceTypeCategory: 'boarding',
+        serviceStyle: selectedOffer.serviceStyle || 'at_center',
+      });
+      if (nav) {
+        onNavigate('purchase-package', nav);
+        return;
+      }
     }
     onNavigate('boarding-booking', {
       vendorId: vendor?.id || vendorId,

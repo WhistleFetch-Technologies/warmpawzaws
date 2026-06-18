@@ -25,8 +25,11 @@ import {
   inferCityStateFromCommaAddress,
   mergeStreetAddressLineOnly,
 } from '@/lib/profile-address-format';
-import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
-import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
+import { SUPPORT_INITIAL_TAB_KEY, rememberSupportOpenContactForm } from '@/lib/support-contact';
+import {
+  consumeAccountSidebarActiveView,
+  rememberAccountSidebarActiveView,
+} from '@/lib/go-back-or-replace';
 import { invalidateCustomerLocationCache } from '@/lib/customer-location';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 const CUSTOMER_SUPPORT_EMAIL = 'support@warmpawz.com';
@@ -36,6 +39,17 @@ function setSupportInitialTab(tab: 'faq' | 'contact' | 'tickets') {
     sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, tab);
   } catch {
     /* ignore */
+  }
+}
+
+function prepareSupportHelpFromSidebar(
+  tab: 'faq' | 'contact' | 'tickets',
+  opts?: { openContactForm?: boolean },
+) {
+  rememberAccountSidebarActiveView('help');
+  setSupportInitialTab(tab);
+  if (opts?.openContactForm) {
+    rememberSupportOpenContactForm();
   }
 }
 
@@ -556,10 +570,9 @@ export function UserAccountSidebar({
     loadProfile();
     loadBookings();
     try {
-      const v = sessionStorage.getItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
-      if (v === 'bookings' || v === 'addresses') {
-        setActiveView(v);
-        sessionStorage.removeItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
+      const restored = consumeAccountSidebarActiveView();
+      if (restored === 'bookings' || restored === 'addresses' || restored === 'help') {
+        setActiveView(restored);
       }
     } catch {
       /* ignore */
@@ -2147,7 +2160,7 @@ export function UserAccountSidebar({
                 <button
                   type="button"
                   onClick={() => {
-                    setSupportInitialTab('faq');
+                    prepareSupportHelpFromSidebar('faq');
                     onNavigate?.('support_help');
                   }}
                   className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
@@ -2165,7 +2178,7 @@ export function UserAccountSidebar({
                 <button
                   type="button"
                   onClick={() => {
-                    setSupportInitialTab('contact');
+                    prepareSupportHelpFromSidebar('contact');
                     onNavigate?.('support_help');
                   }}
                   className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
@@ -2202,7 +2215,7 @@ export function UserAccountSidebar({
                 <button
                   type="button"
                   onClick={() => {
-                    setSupportInitialTab('contact');
+                    prepareSupportHelpFromSidebar('contact', { openContactForm: true });
                     onNavigate?.('support_help');
                   }}
                   className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"

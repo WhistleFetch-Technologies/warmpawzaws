@@ -17,3 +17,4 @@ export * from './hardware-back';
 export { useDeepLinkBackStack } from './use-deep-link-back-stack';
 export * from './ios-shell-history';
 export * from './wizard-back';
+export * from './leave-guard';

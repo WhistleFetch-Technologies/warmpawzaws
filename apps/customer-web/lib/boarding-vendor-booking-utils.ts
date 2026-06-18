@@ -3,6 +3,10 @@ import {
   boardingSlugMatchesText,
 } from '@/lib/boarding-service-types';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 
 export function minPriceForVendor(v: BoardingListVendor): number | null {
   if (!v.planRows.length) return null;
@@ -47,6 +51,44 @@ export function buildFacilityPayload(v: BoardingListVendor): {
     photos: v.photo ? [v.photo] : [],
     amenities: Array.isArray(raw.amenities) ? (raw.amenities as string[]) : [],
   };
+}
+
+export function boardingPlanRowForPackageCheck(plan: BoardingPlanRow): Record<string, unknown> {
+  return {
+    id: plan.rowId,
+    vendorServiceId: plan.vendorServiceId ?? plan.rowId,
+    serviceId: plan.serviceId,
+    name: plan.name,
+    price: plan.price,
+    duration: plan.duration,
+    serviceStyle: plan.serviceStyle,
+    isPackage: plan.isPackage,
+    packageDetails: plan.packageDetails,
+    metadata: plan.metadata,
+  };
+}
+
+/** Package plans → purchase-package (stack preserves caller); others → boarding-booking wizard. */
+export function navigateBoardingPlanBooking(
+  onNavigate: (screen: string, data?: Record<string, unknown>) => void,
+  vendor: BoardingListVendor,
+  plan: BoardingPlanRow,
+): void {
+  const rawRow = boardingPlanRowForPackageCheck(plan);
+  if (isVendorServicePackageRow(rawRow)) {
+    const nav = buildWalkerServiceDataForVendorPackagePurchase({
+      vendorId: vendor.id,
+      vendorName: vendor.name,
+      serviceRow: rawRow,
+      serviceTypeCategory: 'boarding',
+      serviceStyle: plan.serviceStyle || 'at_center',
+    });
+    if (nav) {
+      onNavigate('purchase-package', nav);
+      return;
+    }
+  }
+  onNavigate('boarding-booking', buildBoardingBookPlanPayload(vendor, plan) as Record<string, unknown>);
 }
 
 export function buildBoardingBookPlanPayload(

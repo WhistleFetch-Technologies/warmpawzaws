@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
@@ -35,6 +35,8 @@ interface DiagnosticsBookingFlowProps {
   onSuccess?: (bookingId: string) => void;
   onCancel?: () => void;
   onBack?: () => void;
+  /** Expose wizard back (payment step → form step) to parent hardware-back handler. */
+  onInternalBackReady?: (handleBack: () => void) => void;
 }
 
 interface DiagnosticTest {
@@ -52,7 +54,7 @@ interface DiagnosticTest {
   home_collection_fee?: number;
 }
 
-export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, onSuccess, onCancel, onBack }: DiagnosticsBookingFlowProps) {
+export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, onSuccess, onCancel, onBack, onInternalBackReady }: DiagnosticsBookingFlowProps) {
   const [tests, setTests] = useState<DiagnosticTest[]>([]);
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,6 +81,25 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
   const [pendingBookingPayload, setPendingBookingPayload] = useState<Record<string, unknown> | null>(null);
   const pendingPayloadRef = useRef<Record<string, unknown> | null>(null);
   const packageHintAppliedRef = useRef(false);
+
+  const goBackFromPaymentStep = useCallback(() => {
+    setStep('form');
+    setError(null);
+    setPendingBookingPayload(null);
+    pendingPayloadRef.current = null;
+  }, []);
+
+  const handleHeaderBack = useCallback(() => {
+    if (step === 'payment') {
+      goBackFromPaymentStep();
+      return;
+    }
+    onBack?.();
+  }, [step, goBackFromPaymentStep, onBack]);
+
+  useEffect(() => {
+    onInternalBackReady?.(handleHeaderBack);
+  }, [handleHeaderBack, onInternalBackReady]);
 
   useEffect(() => {
     packageHintAppliedRef.current = false;
@@ -513,7 +534,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
             serviceIcon={TestTube}
             iconColor="text-white"
             stats={dashboardStats}
-            onBack={onBack}
+            onBack={handleHeaderBack}
             showBackButton={true}
             headerColor="bg-[#FF8C42]"
           />
@@ -540,7 +561,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
             serviceIcon={TestTube}
             iconColor="text-white"
             stats={dashboardStats}
-            onBack={onBack}
+            onBack={handleHeaderBack}
             showBackButton={true}
             headerColor="bg-[#FF8C42]"
           />
@@ -572,7 +593,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => { setStep('form'); setError(null); setPendingBookingPayload(null); pendingPayloadRef.current = null; }}
+              onClick={goBackFromPaymentStep}
               className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
             >
               {error ? 'Change date & time' : 'Back'}
@@ -611,7 +632,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
           serviceIcon={TestTube}
           iconColor="text-white"
           stats={dashboardStats}
-          onBack={onBack}
+          onBack={handleHeaderBack}
           showBackButton={true}
           headerColor="bg-[#FF8C42]"
         />

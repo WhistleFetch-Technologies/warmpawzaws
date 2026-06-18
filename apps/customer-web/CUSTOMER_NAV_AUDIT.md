@@ -182,3 +182,40 @@ npm run build && npm run cap:sync && npm run cap:open:android
 
 - **Android:** `App.backButton` → `NavigationBackBridge` → shell pop / URL back
 - **iOS:** No hardware back; edge swipe uses WebView history — Phase 2 must QA shell on `/`
+
+---
+
+## 11. AI agent rules (Cursor / automation)
+
+**Default:** All AI-assisted changes in customer-web that touch navigation, back, or screen flow MUST use `lib/navigation/`. This does not police human-only edits.
+
+### Before editing
+
+- Read `.cursor/rules/customer-navigation.mdc`
+- Read §7 (special-case backs) if touching `CustomerHomeWrapper`
+- For checkout: read `back-handler-registry.ts` priorities (checkout = 105)
+
+### Must use
+
+| Context | API |
+|---------|-----|
+| Shell `/` | `navigateToScreen`, `handleBack`, `routeKey` |
+| URL routes | `useCustomerNavigation()` |
+| Checkout steps | `CheckoutProvider.goBack` + registered handlers |
+| Leave guard | `requestLeave()` |
+
+### Must not (unless user explicitly overrides)
+
+- `router.push('/cart|checkout|shop|orders|bookings')` in new/changed code
+- `onBack={() => setCurrentScreen('x')}` in shell
+- Checkout back via `goBackOrReplace`
+- Changing Razorpay open timing
+
+### Allowed exceptions (document in code)
+
+- `// nav-exception: <reason>` — external redirect, loop break, etc.
+- User message: "do not use navigation stack here because ..."
+
+### Verify (agents)
+
+`cd apps/customer-web && npm run test:navigation` — expect 74+ tests pass after nav changes.
