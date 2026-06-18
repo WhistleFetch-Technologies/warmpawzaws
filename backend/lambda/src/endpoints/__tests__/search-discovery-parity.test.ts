@@ -32,6 +32,8 @@ import {
 import {
   buildDiscoveryVendorExistsSql,
   resolveDiscoveryCategoryKeys,
+  sqlVendorServicesHubCategoryFilter,
+  vendorServicesHubCategoryBindParams,
 } from '../../lib/discovery-vendor-query';
 import type { DiscoveryRuleSet } from '../../lib/rule-engine';
 
@@ -397,6 +399,31 @@ describe('buildDiscoveryVendorExistsSql', () => {
       expect.arrayContaining(['general', 'diagnostics & lab', 'diagnostics', 'veterinary services'])
     );
     expect(keys.catTextExact).not.toContain('pet sitter');
+  });
+
+  it('resolveDiscoveryCategoryKeys expands walker hub with walking & exercise labels', () => {
+    const keys = resolveDiscoveryCategoryKeys({ category: 'walker' });
+    expect(keys.catTextExact).toEqual(
+      expect.arrayContaining(['walking & exercise', 'dog walker', 'pet walker'])
+    );
+  });
+
+  it('vendorServicesHubCategoryBindParams aligns vet booking with discover-services keys', () => {
+    const bind = vendorServicesHubCategoryBindParams('vet');
+    expect(bind?.exact).toEqual(
+      expect.arrayContaining(['general', 'diagnostics & lab', 'veterinary services'])
+    );
+    const walkerBind = vendorServicesHubCategoryBindParams('walking');
+    expect(walkerBind?.exact).toEqual(expect.arrayContaining(['walking & exercise']));
+  });
+
+  it('sqlVendorServicesHubCategoryFilter builds parameterized vet and walker SQL', () => {
+    const vetSql = sqlVendorServicesHubCategoryFilter('vet', 'vs', 2, 3);
+    expect(vetSql).toContain('ANY($2::text[])');
+    expect(vetSql).toContain('vet_clinic');
+    const walkSql = sqlVendorServicesHubCategoryFilter('walker', 'vs', 2, 3);
+    expect(walkSql).toContain('dog%walk%');
+    expect(sqlVendorServicesHubCategoryFilter('grooming', 'vs', 2, 3)).toBeNull();
   });
 });
 

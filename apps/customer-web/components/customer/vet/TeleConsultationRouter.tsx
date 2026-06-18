@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { toast } from 'sonner';
 
@@ -983,7 +984,7 @@ export function TeleConsultationRouter({
     setVendorTeleServices([]);
     try {
       const response = await apiClient.get<any>(
-        `/customer/vendor/${vendorId}/services?serviceStyle=tele`
+        `/customer/vendor/${vendorId}/services?serviceStyle=tele&category=${HUB_DISCOVERY_VET.servicesApiCategory}`
       );
       let list = Array.isArray(response?.services)
         ? mergeCustomerVendorServicesPayload(response)

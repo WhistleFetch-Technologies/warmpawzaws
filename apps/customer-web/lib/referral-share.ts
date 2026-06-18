@@ -28,3 +28,42 @@ export function buildReferralShareBody(code: string): string {
   const { text, url } = buildReferralShareMessage(code);
   return `${text}\n${url}`;
 }
+
+const DEFAULT_ANDROID_STORE =
+  'https://play.google.com/store/apps/details?id=com.warmpawz.app';
+const DEFAULT_IOS_STORE = 'https://apps.apple.com/app/warmpawz';
+
+export function getCustomerAndroidStoreUrl(): string {
+  return process.env.NEXT_PUBLIC_CUSTOMER_ANDROID_STORE_URL?.trim() || DEFAULT_ANDROID_STORE;
+}
+
+export function getCustomerIosStoreUrl(): string {
+  return process.env.NEXT_PUBLIC_CUSTOMER_IOS_STORE_URL?.trim() || DEFAULT_IOS_STORE;
+}
+
+export type MobileDeviceKind = 'ios' | 'android' | 'desktop';
+
+export function detectMobileDeviceKind(): MobileDeviceKind {
+  if (typeof navigator === 'undefined') return 'desktop';
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/i.test(ua)) return 'ios';
+  if (/Android/i.test(ua)) return 'android';
+  return 'desktop';
+}
+
+/** Android intent URL: open installed app or fall back to Play Store. */
+export function buildAndroidInviteIntentUrl(code: string): string {
+  const normalized = code.trim().toUpperCase();
+  const fallback = encodeURIComponent(getCustomerAndroidStoreUrl());
+  return (
+    `intent://customer.warmpawz.com/invite/${normalized}` +
+    `#Intent;scheme=https;package=com.warmpawz.app;` +
+    `S.browser_fallback_url=${fallback};end`
+  );
+}
+
+export function isCapacitorNativeApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  const cap = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+  return cap?.isNativePlatform?.() === true;
+}

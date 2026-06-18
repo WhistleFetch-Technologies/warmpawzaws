@@ -4,6 +4,7 @@
  */
 import { storeCognitoTokens, storeUserInfo } from '@/lib/cognito-auth';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
+import { clearCachedPetsForPhone } from '@/lib/customer-pets-cache';
 
 export type CustomerPortalSessionEnvelope = {
   success: boolean;
@@ -63,6 +64,7 @@ export function applyCustomerPortalSessionFromEnvelope(envelope: CustomerPortalS
   });
 
   const shortPhone = String(data.user.phone).replace(/\D/g, '').slice(-10);
+  clearCachedPetsForPhone();
   localStorage.setItem('customerPhone', shortPhone);
   localStorage.setItem('customer_phone', shortPhone);
   localStorage.setItem('phone', shortPhone);

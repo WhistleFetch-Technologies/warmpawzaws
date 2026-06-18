@@ -5,6 +5,7 @@
 
 import { ensureCustomerIdStorageReconciledOnce } from './customer-id-storage';
 import { getCognitoTokens, clearCognitoTokens } from './cognito-auth';
+import { clearCachedPetsForPhone } from './customer-pets-cache';
 
 /** After OTP, customer must set password before treating login as complete (first-time / legacy OTP-only). */
 export const SESSION_KEY_NEEDS_PASSWORD_SETUP = 'warmpawz_needs_password_setup';
@@ -89,6 +90,8 @@ export function clearCustomerSession(): void {
   localStorage.removeItem('customerData');
   localStorage.removeItem('customerProfile');
   localStorage.removeItem('customerPets');
+  localStorage.removeItem('customerPetsOwnerPhone');
+  clearCachedPetsForPhone();
   localStorage.removeItem('customerOnboardingComplete');
   localStorage.removeItem('onboarding_completed');
   localStorage.removeItem('profile_completed');

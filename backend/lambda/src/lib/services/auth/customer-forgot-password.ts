@@ -29,12 +29,17 @@ import {
   type OtpDeliveryFailureReason,
 } from './otp-delivery-timeouts';
 import {
+  PASSWORD_RESET_ROLLING_WINDOW_MS,
   PASSWORD_RESET_SEND_COOLDOWN_MS,
   PASSWORD_RESET_SEND_COOLDOWN_SEC,
+  PASSWORD_RESET_SEND_HOURLY_CAP,
+  RESET_RECENTLY_ERROR_CODE,
   buildRateLimitResponse,
   rateLimitErrorForCooldown,
-  rateLimitErrorForDailyCap,
-  rateLimitErrorForHourlyCap,
+  rateLimitErrorForResetRecently,
+  rateLimitErrorForSendHourlyCap,
+  rateLimitErrorForUnresolvedHourlyCap,
+  rateLimitErrorForVerifyHourlyCap,
   readRateLimitRetryAfterSeconds,
   type ForgotPasswordHandlerResult,
 } from './forgot-password-rate-limit';
@@ -43,7 +48,17 @@ export const CUSTOMER_PASSWORD_RESET_OTP_PURPOSE = 'customer_password_reset';
 
 const GENERIC_SUCCESS_MESSAGE = 'If an account exists, we sent instructions.';
 const RATE_LIMIT_MESSAGE = 'Too many requests. Try again later.';
+const RESET_RECENTLY_MESSAGE = 'Password reset already completed recently. Try again later.';
+const OTP_DELIVERY_FAILED_MESSAGE = 'Could not send SMS. Try again in a minute.';
 const RESET_TOKEN_TTL_SEC = 12 * 60; // 12 minutes
+
+export type PasswordResetDeliveryResult = {
+  otpStored: boolean;
+  smsAccepted: boolean;
+  uatSkipped: boolean;
+  messageId?: string;
+  failureReason?: OtpDeliveryFailureReason;
+};
 
 const SCOPE_SEND = 'customer_password_reset_send';
 const SCOPE_SEND_UNRESOLVED = 'customer_password_reset_send_unresolved';
@@ -153,6 +168,19 @@ async function recordRateEventSafe(rateKey: string, scope: string): Promise<void
   }
 }
 
+async function readCustomerLastPasswordResetAt(customerId: string): Promise<Date | null> {
+  try {
+    const res = await query(
+      `SELECT last_password_reset_at FROM customers WHERE id = $1::uuid LIMIT 1`,
+      [customerId]
+    );
+    const t = (res as any).rows?.[0]?.last_password_reset_at;
+    return t ? new Date(t) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Primary: per-customer OTP send caps. Unresolved: per username-hash + IP (no account enumeration). */
 async function assertForgotPasswordSendRate(params: {
   customerId: string | null;
@@ -162,21 +190,34 @@ async function assertForgotPasswordSendRate(params: {
   try {
     const { customerId, usernameHash, ipKey } = params;
     if (customerId) {
+      const lastReset = await readCustomerLastPasswordResetAt(customerId);
+      if (
+        lastReset &&
+        Date.now() - lastReset.getTime() < PASSWORD_RESET_ROLLING_WINDOW_MS
+      ) {
+        throw rateLimitErrorForResetRecently(lastReset);
+      }
+
       const key = `cust:${customerId}`;
       const h1 = await countRateEvents(key, SCOPE_SEND, '1 hour');
-      if (h1 >= 3) throw rateLimitErrorForHourlyCap();
-      const d1 = await countRateEvents(key, SCOPE_SEND, '24 hours');
-      if (d1 >= 5) throw rateLimitErrorForDailyCap();
+      if (h1 >= PASSWORD_RESET_SEND_HOURLY_CAP) throw rateLimitErrorForSendHourlyCap();
       const last = await lastEventTime(key, SCOPE_SEND);
       if (last && Date.now() - last.getTime() < PASSWORD_RESET_SEND_COOLDOWN_MS) {
         throw rateLimitErrorForCooldown(last);
       }
       return;
     }
+    const lastUnresolved = await lastEventTime(usernameHash, SCOPE_SEND_UNRESOLVED);
+    if (
+      lastUnresolved &&
+      Date.now() - lastUnresolved.getTime() < PASSWORD_RESET_SEND_COOLDOWN_MS
+    ) {
+      throw rateLimitErrorForCooldown(lastUnresolved);
+    }
     const h10 = await countRateEvents(usernameHash, SCOPE_SEND_UNRESOLVED, '1 hour');
-    if (h10 >= 10) throw rateLimitErrorForHourlyCap();
+    if (h10 >= 10) throw rateLimitErrorForUnresolvedHourlyCap();
     const iph = await countRateEvents(ipKey, SCOPE_SEND_UNRESOLVED, '1 hour');
-    if (iph >= 40) throw rateLimitErrorForHourlyCap();
+    if (iph >= 40) throw rateLimitErrorForUnresolvedHourlyCap();
   } catch (e) {
     if (isMissingAuthRateTableError(e)) {
       console.warn(
@@ -193,10 +234,10 @@ async function assertVerifyRateAllowed(customerId: string | null, usernameHash: 
     if (customerId) {
       const key = `cust:${customerId}:v`;
       const n = await countRateEvents(key, SCOPE_VERIFY, '1 hour');
-      if (n >= 20) throw rateLimitErrorForHourlyCap();
+      if (n >= 20) throw rateLimitErrorForVerifyHourlyCap();
     }
     const u = await countRateEvents(`${usernameHash}:verify`, SCOPE_VERIFY, '1 hour');
-    if (u >= 30) throw rateLimitErrorForHourlyCap();
+    if (u >= 30) throw rateLimitErrorForVerifyHourlyCap();
   } catch (e) {
     if (isMissingAuthRateTableError(e)) {
       console.warn(
@@ -225,19 +266,17 @@ async function deliverPasswordResetOtp(params: {
   accountId: string;
   dialable: string;
   headers: Record<string, string | undefined>;
-}): Promise<void> {
+}): Promise<PasswordResetDeliveryResult> {
   const { requestId, accountId, dialable, headers } = params;
-  const deliveryLog: {
+  const deliveryLog: PasswordResetDeliveryResult & {
     requestId: string;
     accountResolved: boolean;
-    otpStored: boolean;
-    smsAccepted: boolean;
-    failureReason?: OtpDeliveryFailureReason;
   } = {
     requestId,
     accountResolved: true,
     otpStored: false,
     smsAccepted: false,
+    uatSkipped: false,
   };
 
   try {
@@ -249,25 +288,36 @@ async function deliverPasswordResetOtp(params: {
     if (!insertResult.ok) {
       deliveryLog.failureReason = insertResult.reason;
       console.error('[forgot-password] OTP store failed', { ...deliveryLog, customerId: accountId });
-      return;
+      return deliveryLog;
     }
     deliveryLog.otpStored = true;
 
     if (isUatMode) {
+      deliveryLog.uatSkipped = true;
       console.log(
         `[forgot-password] UAT_MODE: fixed OTP stored, SMS skipped for customer ${accountId}`
       );
-      return;
+      return deliveryLog;
     }
 
     const smsResult = await sendResetOtpSmsWithTimeout(dialable, otpCode);
     deliveryLog.smsAccepted = smsResult.ok;
-    if (!smsResult.ok) {
+    if (smsResult.ok) {
+      deliveryLog.messageId = smsResult.messageId;
+      console.log('[forgot-password][SMS-DEBUG]', {
+        requestId,
+        customerId: accountId,
+        smsAccepted: true,
+        messageId: smsResult.messageId,
+      });
+    } else {
       deliveryLog.failureReason = smsResult.reason;
       console.error('[forgot-password] SMS delivery failed', { ...deliveryLog, customerId: accountId });
     }
+    return deliveryLog;
   } catch (e) {
     console.error('[forgot-password] delivery error', { ...deliveryLog, customerId: accountId, error: e });
+    return deliveryLog;
   }
 }
 
@@ -417,34 +467,61 @@ export async function handleCustomerForgotPasswordRequest(params: {
       ipKey,
     });
 
+    let deliveryOk = false;
+    let deliveryFailed = false;
+
     if (customer?.id) {
       const dialable = dialablePhoneForCustomerAuth(customer.phone);
       if (!dialable || dialable.replace(/\D/g, '').length < 10) {
         console.warn('[forgot-password] customer has no dialable phone; skipping SMS', customer.id);
       } else {
-        await deliverPasswordResetOtp({
+        const result = await deliverPasswordResetOtp({
           requestId,
           accountId: String(customer.id),
           dialable,
           headers,
         });
+        const isUat = isUatOtpModeForForgotPassword(headers);
+        if (isUat && result.otpStored) {
+          deliveryOk = true;
+        } else if (result.otpStored && result.smsAccepted) {
+          deliveryOk = true;
+        } else if (!isUat) {
+          deliveryFailed = true;
+        }
       }
     }
 
-    await recordRateEventSafe(uhash, SCOPE_SEND_UNRESOLVED);
-    await recordRateEventSafe(ipKey, SCOPE_SEND_UNRESOLVED);
-    if (customer?.id) {
+    if (deliveryFailed) {
+      await sleepUntilMinDuration(t0);
+      return {
+        status: 503,
+        body: envelopeError(503, 'OTP_DELIVERY_FAILED', OTP_DELIVERY_FAILED_MESSAGE, requestId).body,
+      };
+    }
+
+    if (!customer?.id || deliveryOk) {
+      await recordRateEventSafe(uhash, SCOPE_SEND_UNRESOLVED);
+      await recordRateEventSafe(ipKey, SCOPE_SEND_UNRESOLVED);
+    }
+    if (customer?.id && deliveryOk) {
       await recordRateEventSafe(`cust:${customer.id}`, SCOPE_SEND);
     }
   } catch (e: any) {
     if (e?.code === 'RATE_LIMIT' || e?.message === 'RATE_LIMIT') {
       await sleepUntilMinDuration(t0);
       const retryAfterSeconds = readRateLimitRetryAfterSeconds(e);
+      const isResetRecently = e?.code === RESET_RECENTLY_ERROR_CODE;
       return buildRateLimitResponse({
         requestId,
         retryAfterSeconds,
-        message: RATE_LIMIT_MESSAGE,
-        errorBody: envelopeError(429, 'RATE_LIMITED', RATE_LIMIT_MESSAGE, requestId).body,
+        message: isResetRecently ? RESET_RECENTLY_MESSAGE : RATE_LIMIT_MESSAGE,
+        errorBody: envelopeError(
+          429,
+          isResetRecently ? RESET_RECENTLY_ERROR_CODE : 'RATE_LIMITED',
+          isResetRecently ? RESET_RECENTLY_MESSAGE : RATE_LIMIT_MESSAGE,
+          requestId
+        ).body,
       });
     }
     console.error('[forgot-password] request error:', e);
@@ -599,6 +676,14 @@ export async function handleCustomerForgotPasswordReset(params: {
 
   const hash = await hashCustomerPasswordBcrypt(newPassword);
   await updateCustomerPasswordHashWithAuthVersionBump(hash, tok.customerId);
+
+  try {
+    await query(`UPDATE customers SET last_password_reset_at = NOW() WHERE id = $1::uuid`, [
+      tok.customerId,
+    ]);
+  } catch (e) {
+    console.warn('[forgot-password] last_password_reset_at update failed (password still updated):', e);
+  }
 
   const phoneRow = await query(`SELECT phone FROM customers WHERE id = $1::uuid LIMIT 1`, [tok.customerId]);
   const dbPhone = (phoneRow as any).rows?.[0]?.phone;

@@ -166,6 +166,108 @@ export function appendVetDiscoveryCategoryAliasKeys(rawCategoryKeys: string[], c
   }
 }
 
+/** Walker hub: catalog labels beyond literal "walker" (e.g. Walking & Exercise). */
+export const WALKER_DISCOVERY_CATEGORY_ALIAS_KEYS: readonly string[] = [
+  'walking & exercise',
+  'walking',
+  'walker',
+  'dog walker',
+  'pet walker',
+  'dog_walker',
+  'pet_walker',
+];
+
+export function appendWalkerDiscoveryCategoryAliasKeys(rawCategoryKeys: string[], category?: string): void {
+  const c = String(category || '')
+    .toLowerCase()
+    .trim()
+    .replace(/-/g, '_');
+  if (['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c)) {
+    rawCategoryKeys.push(...WALKER_DISCOVERY_CATEGORY_ALIAS_KEYS);
+  }
+}
+
+export function isVetHubCategoryRequest(categoryRaw: string): boolean {
+  const c = String(categoryRaw).toLowerCase().trim().replace(/-/g, '_');
+  return c === 'vet' || c === 'veterinary' || c === 'veterinarian' || c === 'vet_clinic';
+}
+
+export function isWalkerHubCategoryRequest(categoryRaw: string): boolean {
+  const c = String(categoryRaw).toLowerCase().trim().replace(/-/g, '_');
+  return ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c);
+}
+
+/** Bind params for hub category filter on GET /customer/vendor/:id/services */
+export function vendorServicesHubCategoryBindParams(categoryRaw: string): {
+  exact: string[];
+  like: string[];
+} | null {
+  if (isVetHubCategoryRequest(categoryRaw)) {
+    const keys = resolveDiscoveryCategoryKeys({ category: 'vet' });
+    return { exact: keys.catTextExact, like: keys.catTextLike };
+  }
+  if (isWalkerHubCategoryRequest(categoryRaw)) {
+    const keys = resolveDiscoveryCategoryKeys({ category: 'walker' });
+    return { exact: keys.catTextExact, like: keys.catTextLike };
+  }
+  return null;
+}
+
+/**
+ * SQL fragment for vet / walker hub filters on vendor_services (booking API).
+ * Caller must push exact + like arrays to queryParams at exactParamIndex and likeParamIndex.
+ */
+export function sqlVendorServicesHubCategoryFilter(
+  categoryRaw: string,
+  vsAlias = 'vs',
+  exactParamIndex: number,
+  likeParamIndex: number
+): string | null {
+  if (isVetHubCategoryRequest(categoryRaw)) {
+    return `
+      AND (
+        LOWER(COALESCE(${vsAlias}.category,'')) = ANY($${exactParamIndex}::text[])
+        OR LOWER(COALESCE(${vsAlias}.category,'')) LIKE ANY($${likeParamIndex}::text[])
+        OR (
+          TRIM(COALESCE(${vsAlias}.category, '')) = ''
+          AND EXISTS (
+            SELECT 1 FROM vendors v_hub
+            LEFT JOIN roles r_hub ON v_hub.role_id = r_hub.id
+            WHERE v_hub.id = ${vsAlias}.vendor_id
+              AND LOWER(TRIM(COALESCE(r_hub.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')
+          )
+        )
+      )`;
+  }
+  if (isWalkerHubCategoryRequest(categoryRaw)) {
+    return `
+      AND (
+        LOWER(COALESCE(${vsAlias}.category, '')) = ANY($${exactParamIndex}::text[])
+        OR LOWER(COALESCE(${vsAlias}.category, '')) LIKE ANY($${likeParamIndex}::text[])
+        OR (
+          LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) LIKE '%walker%'
+          AND LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) NOT LIKE '%vet%'
+        )
+        OR (
+          ${vsAlias}.service_style = 'at_home'
+          AND (
+            LOWER(COALESCE(${vsAlias}.service_name, '')) LIKE '%dog%walk%'
+            OR LOWER(COALESCE(${vsAlias}.service_name, '')) LIKE '%pet%walk%'
+            OR (
+              LOWER(COALESCE(${vsAlias}.service_name, '')) LIKE '%walk%'
+              AND LOWER(COALESCE(${vsAlias}.service_name, '')) NOT LIKE '%walk-in%'
+            )
+          )
+          AND (
+            TRIM(COALESCE(${vsAlias}.category, '')) = ''
+            OR LOWER(COALESCE(${vsAlias}.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other', 'general']::text[])
+          )
+        )
+      )`;
+  }
+  return null;
+}
+
 export function resolveDiscoveryCategoryKeys(opts: {
   category?: string;
   roleId?: string;
@@ -177,6 +279,7 @@ export function resolveDiscoveryCategoryKeys(opts: {
   if (opts.category) rawCategoryKeys.push(String(opts.category));
   if (opts.roleId) rawCategoryKeys.push(String(opts.roleId));
   appendVetDiscoveryCategoryAliasKeys(rawCategoryKeys, opts.category);
+  appendWalkerDiscoveryCategoryAliasKeys(rawCategoryKeys, opts.category);
   const catTextExact: string[] = rawCategoryKeys.filter((k) => !isUuid(k)).map((k) => k.toLowerCase());
   const catTextLike: string[] = catTextExact.map((k) => `%${k}%`);
   const catUUIDs: string[] = rawCategoryKeys.filter((k) => isUuid(k));
