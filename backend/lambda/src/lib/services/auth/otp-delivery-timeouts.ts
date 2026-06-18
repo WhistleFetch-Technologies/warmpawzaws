@@ -15,7 +15,9 @@ export type OtpDeliveryFailureReason =
 
 export type OtpInsertResult = { ok: true } | { ok: false; reason: OtpDeliveryFailureReason };
 
-export type OtpSmsResult = { ok: true } | { ok: false; reason: OtpDeliveryFailureReason };
+export type OtpSmsResult =
+  | { ok: true; messageId?: string }
+  | { ok: false; reason: OtpDeliveryFailureReason };
 
 export function smsSendTimeoutMs(): number {
   return Math.min(
@@ -67,7 +69,7 @@ export async function sendResetOtpSmsWithTimeout(
         )
       ),
     ]);
-    if (result.success === true) return { ok: true };
+    if (result.success === true) return { ok: true, messageId: result.messageId };
     return { ok: false, reason: 'provider_rejected' };
   } catch (e: any) {
     if (e?.reason === 'sms_timeout' || e?.message === 'sms_timeout') {

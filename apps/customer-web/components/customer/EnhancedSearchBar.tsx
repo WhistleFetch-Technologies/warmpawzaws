@@ -585,7 +585,7 @@ export function EnhancedSearchBar({
             placeholder={placeholder}
             className={`w-full bg-white border border-gray-200 rounded-full shadow-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
               compact
-                ? 'h-12 py-0 pl-10 pr-10 text-sm'
+                ? 'h-12 py-0 pl-10 pr-10 text-[16px]'
                 : 'py-3 pl-12 pr-12'
             }`}
           />

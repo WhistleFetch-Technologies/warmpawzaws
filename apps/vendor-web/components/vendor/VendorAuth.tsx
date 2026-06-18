@@ -15,8 +15,10 @@ import {
   type PlatformPolicyType,
 } from '@/components/legal/PlatformLegalPolicyDialog';
 import {
-  VENDOR_FORGOT_COOLDOWN_STORAGE_KEY,
+  FORGOT_PASSWORD_RETRY_CONFIG,
   formatForgotCooldownMessage,
+  formatResetRecentlyMessage,
+  forgotCooldownStorageKey,
   persistForgotCooldown,
   readForgotCooldownRemaining,
   readRetryAfterSecondsFromError,
@@ -94,6 +96,11 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       return () => clearTimeout(timer);
     }
   }, [forgotResendTimer]);
+
+  useEffect(() => {
+    if (!forgotOpen) return;
+    setForgotResendTimer(readForgotCooldownRemaining(forgotCooldownKey()));
+  }, [forgotOpen, forgotUsername]);
 
   // Referral deep link: open registration with code applied (parity with customer-web /auth ?ref=).
   useEffect(() => {
@@ -200,13 +207,18 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
     return `${num.slice(0, 5)} ${num.slice(5)}`;
   };
 
-  function refreshForgotResendFromStorage() {
-    setForgotResendTimer(readForgotCooldownRemaining(VENDOR_FORGOT_COOLDOWN_STORAGE_KEY));
+  function forgotCooldownKey(username?: string) {
+    return forgotCooldownStorageKey((username ?? forgotUsername).trim());
   }
 
-  function applyForgotCooldown(seconds: number) {
-    persistForgotCooldown(VENDOR_FORGOT_COOLDOWN_STORAGE_KEY, seconds);
-    setForgotResendTimer(readForgotCooldownRemaining(VENDOR_FORGOT_COOLDOWN_STORAGE_KEY));
+  function refreshForgotResendFromStorage() {
+    setForgotResendTimer(readForgotCooldownRemaining(forgotCooldownKey()));
+  }
+
+  function applyForgotCooldown(seconds: number, username?: string) {
+    const key = forgotCooldownKey(username);
+    persistForgotCooldown(key, seconds);
+    setForgotResendTimer(readForgotCooldownRemaining(key));
   }
 
   function invalidateForgotInFlightRequest() {
@@ -255,7 +267,11 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
     setError('');
     setForgotInfo(null);
     try {
-      const res = await apiClient.post<unknown>('/auth/vendor/forgot-password/request', { username: u });
+      const res = await apiClient.post<unknown>(
+        '/auth/vendor/forgot-password/request',
+        { username: u },
+        FORGOT_PASSWORD_RETRY_CONFIG
+      );
       if (gen !== forgotRequestGen.current) return;
       const inner = pickForgotResponseData(res);
       const msg =
@@ -265,16 +281,29 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
         typeof inner?.retryAfterSeconds === 'number'
           ? Math.ceil(inner.retryAfterSeconds)
           : readRetryAfterSecondsFromSuccess(res);
-      applyForgotCooldown(retrySec);
+      applyForgotCooldown(retrySec, u);
       setForgotInfo(msg);
       setForgotStep(2);
     } catch (err: unknown) {
       if (gen !== forgotRequestGen.current) return;
-      const e = err as { statusCode?: number; code?: string; message?: string; isRateLimit?: boolean };
-      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED' || (e as any)?.isRateLimit) {
+      const e = err as {
+        statusCode?: number;
+        code?: string;
+        message?: string;
+        isRateLimit?: boolean;
+        responseData?: { error?: { code?: string } };
+      };
+      const errCode = e?.code || e?.responseData?.error?.code;
+      if (errCode === 'RESET_RECENTLY') {
         const retrySec = readRetryAfterSecondsFromError(err);
-        applyForgotCooldown(retrySec);
+        setError(formatResetRecentlyMessage(retrySec));
+      } else if (e?.statusCode === 429 || errCode === 'RATE_LIMITED' || e?.isRateLimit) {
+        const retrySec = readRetryAfterSecondsFromError(err);
+        applyForgotCooldown(retrySec, u);
         setError(`Too many requests. Wait ${retrySec} seconds before trying again.`);
+      } else if (errCode === 'OTP_DELIVERY_FAILED' || e?.statusCode === 503) {
+        applyForgotCooldown(60, u);
+        setError('Could not send SMS. Try again in a minute.');
       } else {
         setError(e?.message || 'Something went wrong. Try again.');
       }
@@ -293,10 +322,14 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
     setLoading(true);
     setError('');
     try {
-      const res = await apiClient.post<unknown>('/auth/vendor/forgot-password/verify-otp', {
-        username: u,
-        otp: forgotOtp,
-      });
+      const res = await apiClient.post<unknown>(
+        '/auth/vendor/forgot-password/verify-otp',
+        {
+          username: u,
+          otp: forgotOtp,
+        },
+        FORGOT_PASSWORD_RETRY_CONFIG
+      );
       if (gen !== forgotRequestGen.current) return;
       const inner = pickForgotResponseData(res);
       const token = typeof inner?.resetToken === 'string' ? inner.resetToken : '';
@@ -308,10 +341,20 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       setForgotStep(3);
     } catch (err: unknown) {
       if (gen !== forgotRequestGen.current) return;
-      const e = err as { statusCode?: number; code?: string; message?: string; isRateLimit?: boolean };
-      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED' || (e as any)?.isRateLimit) {
+      const e = err as {
+        statusCode?: number;
+        code?: string;
+        message?: string;
+        isRateLimit?: boolean;
+        responseData?: { error?: { code?: string } };
+      };
+      const errCode = e?.code || e?.responseData?.error?.code;
+      if (errCode === 'RESET_RECENTLY') {
         const retrySec = readRetryAfterSecondsFromError(err);
-        applyForgotCooldown(retrySec);
+        setError(formatResetRecentlyMessage(retrySec));
+      } else if (e?.statusCode === 429 || errCode === 'RATE_LIMITED' || e?.isRateLimit) {
+        const retrySec = readRetryAfterSecondsFromError(err);
+        applyForgotCooldown(retrySec, u);
         setError(`Too many requests. Wait ${retrySec} seconds before trying again.`);
       } else {
         setError(e?.message || 'Invalid or expired code');

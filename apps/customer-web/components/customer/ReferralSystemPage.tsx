@@ -299,31 +299,33 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
               <GiftIcon className="w-12 h-12 mx-auto mb-3" />
               <h2 className="text-xl font-bold mb-2">Your Referral Code</h2>
               <p className="text-sm text-white/90 mb-4">Share this permanent code with friends</p>
-              <div className="flex items-center gap-2 mb-4">
-                <input
-                  type="text"
-                  readOnly
-                  value={stats?.referral_code || 'REF123'}
-                  className="flex-1 text-center text-xl font-bold tracking-wider bg-white/15 text-white border border-white/30 rounded-xl px-4 py-3 cursor-default select-all"
-                  aria-label="Your referral code"
-                />
+              <input
+                type="text"
+                readOnly
+                value={stats?.referral_code || 'REF123'}
+                className="w-full text-center text-lg sm:text-xl font-bold tracking-wider bg-white/15 text-white border border-white/30 rounded-xl px-4 py-3 cursor-default select-all mb-3"
+                aria-label="Your referral code"
+              />
+              <div className="flex w-full gap-2">
                 <Button
+                  type="button"
                   variant="ghost"
-                  size="icon"
                   onClick={copyReferralCode}
-                  className="text-white hover:bg-white/20 shrink-0"
+                  className="flex-1 min-h-11 text-white bg-white/15 hover:bg-white/25 border border-white/30 rounded-xl gap-2"
                   aria-label="Copy referral code"
                 >
-                  {copied ? <CheckCircle2 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                  {copied ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <Copy className="w-5 h-5 shrink-0" />}
+                  <span className="font-semibold">{copied ? 'Copied' : 'Copy'}</span>
                 </Button>
                 <Button
+                  type="button"
                   variant="ghost"
-                  size="icon"
                   onClick={shareReferral}
-                  className="text-white hover:bg-white/20 shrink-0"
+                  className="flex-1 min-h-11 text-white bg-white/15 hover:bg-white/25 border border-white/30 rounded-xl gap-2"
                   aria-label="Share referral link"
                 >
-                  <Share2 className="w-5 h-5" />
+                  <Share2 className="w-5 h-5 shrink-0" />
+                  <span className="font-semibold">Share</span>
                 </Button>
               </div>
             </div>

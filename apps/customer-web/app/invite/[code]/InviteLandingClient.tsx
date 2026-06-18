@@ -3,21 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { apiClient } from '@/lib/api-client';
-import { buildReferralInviteUrl } from '@/lib/referral-share';
-
-const DEFAULT_ANDROID_STORE =
-  'https://play.google.com/store/apps/details?id=com.warmpawz.app';
-const DEFAULT_IOS_STORE = 'https://apps.apple.com/app/warmpawz';
-
-type DeviceKind = 'ios' | 'android' | 'desktop';
-
-function detectDevice(): DeviceKind {
-  if (typeof navigator === 'undefined') return 'desktop';
-  const ua = navigator.userAgent;
-  if (/iPad|iPhone|iPod/i.test(ua)) return 'ios';
-  if (/Android/i.test(ua)) return 'android';
-  return 'desktop';
-}
+import {
+  buildReferralInviteUrl,
+  buildAndroidInviteIntentUrl,
+  detectMobileDeviceKind,
+  getCustomerAndroidStoreUrl,
+  getCustomerIosStoreUrl,
+  isCapacitorNativeApp,
+} from '@/lib/referral-share';
 
 function normalizeInviteCode(value?: string | null): string {
   const trimmed = (value || '').trim().toUpperCase();
@@ -39,13 +32,14 @@ export function InviteLandingClient({ code: codeProp }: InviteLandingClientProps
   const [validating, setValidating] = useState(true);
   const [valid, setValid] = useState<boolean | null>(null);
   const [programEnabled, setProgramEnabled] = useState(true);
-  const device = useMemo(() => detectDevice(), []);
+  const [redirectingToStore, setRedirectingToStore] = useState(false);
+  const device = useMemo(() => detectMobileDeviceKind(), []);
 
-  const androidStore =
-    process.env.NEXT_PUBLIC_CUSTOMER_ANDROID_STORE_URL?.trim() || DEFAULT_ANDROID_STORE;
-  const iosStore =
-    process.env.NEXT_PUBLIC_CUSTOMER_IOS_STORE_URL?.trim() || DEFAULT_IOS_STORE;
+  const androidStore = getCustomerAndroidStoreUrl();
+  const iosStore = getCustomerIosStoreUrl();
   const inviteUrl = code ? buildReferralInviteUrl(code) : '';
+  const storeUrl = device === 'ios' ? iosStore : androidStore;
+  const authUrl = `/auth?ref=${encodeURIComponent(code)}`;
 
   useEffect(() => {
     if (!code) {
@@ -74,8 +68,32 @@ export function InviteLandingClient({ code: codeProp }: InviteLandingClientProps
     };
   }, [code]);
 
-  const storeUrl = device === 'ios' ? iosStore : androidStore;
-  const authUrl = `/auth?ref=${encodeURIComponent(code)}`;
+  /** Mobile browser: try native app, then Play/App Store (Instagram-style funnel). */
+  useEffect(() => {
+    if (validating || device === 'desktop' || isCapacitorNativeApp() || !code) return;
+
+    let cancelled = false;
+    let storeTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const goToStore = () => {
+      if (cancelled || document.visibilityState === 'hidden') return;
+      setRedirectingToStore(true);
+      window.location.href = storeUrl;
+    };
+
+    if (device === 'android') {
+      window.location.href = buildAndroidInviteIntentUrl(code);
+      storeTimer = setTimeout(goToStore, 2200);
+    } else if (device === 'ios') {
+      // Universal link attempt (works when app + AASA configured); otherwise fall back to App Store.
+      storeTimer = setTimeout(goToStore, 1800);
+    }
+
+    return () => {
+      cancelled = true;
+      if (storeTimer) clearTimeout(storeTimer);
+    };
+  }, [validating, device, code, storeUrl]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#FF9A56] via-[#FF8C42] to-[#E86820] flex flex-col items-center px-6 py-10">
@@ -86,7 +104,12 @@ export function InviteLandingClient({ code: codeProp }: InviteLandingClientProps
           Join Warmpawz for trusted pet care services near you.
         </p>
 
-        {validating ? (
+        {redirectingToStore && device !== 'desktop' ? (
+          <div className="py-6">
+            <div className="animate-spin rounded-full h-10 w-10 border-4 border-[#FF8C42] border-t-transparent mx-auto mb-3" />
+            <p className="text-sm text-gray-600">Opening the Warmpawz app…</p>
+          </div>
+        ) : validating ? (
           <div className="py-8">
             <div className="animate-spin rounded-full h-10 w-10 border-4 border-[#FF8C42] border-t-transparent mx-auto" />
           </div>
@@ -129,8 +152,14 @@ export function InviteLandingClient({ code: codeProp }: InviteLandingClientProps
               </Link>
             </div>
 
+            {device !== 'desktop' && (
+              <p className="text-xs text-gray-500 mt-4 leading-relaxed">
+                Don&apos;t have the app yet? Use the store button above — your referral code is saved in the link.
+              </p>
+            )}
+
             {inviteUrl && (
-              <p className="text-xs text-gray-400 mt-6 break-all">{inviteUrl}</p>
+              <p className="text-xs text-gray-400 mt-4 break-all">{inviteUrl}</p>
             )}
           </>
         )}

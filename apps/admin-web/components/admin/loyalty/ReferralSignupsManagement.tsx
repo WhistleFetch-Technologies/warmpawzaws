@@ -76,36 +76,80 @@ export function ReferralSignupsManagement() {
   const [signups, setSignups] = useState<ReferralSignupRow[]>([]);
   const [stats, setStats] = useState<ReferralStats | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [loading, setLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [signupsLoading, setSignupsLoading] = useState(true);
+  const [signupsError, setSignupsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [settingsRes, statsRes, signupsRes, rulesRes] = await Promise.all([
-        apiClient.get<{ settings: ReferralProgramSettings }>('/admin/referral-program-settings'),
-        apiClient.get<{ stats: ReferralStats }>('/admin/referrals/stats'),
-        apiClient.get<{ signups: ReferralSignupRow[] }>(
-          `/admin/referrals/signups${statusFilter !== 'all' ? `?status=${encodeURIComponent(statusFilter)}` : ''}`
-        ),
-        apiClient.get<{ rules?: LoyaltyActionRule[] }>('/admin/loyalty-action-rules?actionCategory=referral_rewards'),
-      ]);
-      if (settingsRes.settings) setSettings(settingsRes.settings);
-      if (statsRes.stats) setStats(statsRes.stats);
-      setSignups(signupsRes.signups || []);
-      setActionRules(
-        (rulesRes.rules || []).filter((r) => r.is_active !== false)
+  const loadCoreData = useCallback(async () => {
+    setPageLoading(true);
+    const [settingsRes, statsRes, rulesRes] = await Promise.allSettled([
+      apiClient.get<{ settings: ReferralProgramSettings }>('/admin/referral-program-settings'),
+      apiClient.get<{ stats: ReferralStats }>('/admin/referrals/stats'),
+      apiClient.get<{ rules?: LoyaltyActionRule[] }>(
+        '/admin/loyalty-action-rules?actionCategory=referral_rewards'
+      ),
+    ]);
+
+    if (settingsRes.status === 'fulfilled' && settingsRes.value.settings) {
+      setSettings(settingsRes.value.settings);
+    } else if (settingsRes.status === 'rejected') {
+      toast.error(
+        settingsRes.reason instanceof Error
+          ? settingsRes.reason.message
+          : 'Failed to load program settings'
       );
+    }
+
+    if (statsRes.status === 'fulfilled' && statsRes.value.stats) {
+      setStats(statsRes.value.stats);
+    } else if (statsRes.status === 'rejected') {
+      toast.error(
+        statsRes.reason instanceof Error
+          ? statsRes.reason.message
+          : 'Failed to load referral stats'
+      );
+    }
+
+    if (rulesRes.status === 'fulfilled') {
+      setActionRules(
+        (rulesRes.value.rules || []).filter((r) => r.is_active !== false)
+      );
+    } else if (rulesRes.status === 'rejected') {
+      toast.error(
+        rulesRes.reason instanceof Error
+          ? rulesRes.reason.message
+          : 'Failed to load action rules'
+      );
+    }
+
+    setPageLoading(false);
+  }, []);
+
+  const loadSignups = useCallback(async () => {
+    setSignupsLoading(true);
+    setSignupsError(null);
+    try {
+      const signupsRes = await apiClient.get<{ signups: ReferralSignupRow[] }>(
+        `/admin/referrals/signups${statusFilter !== 'all' ? `?status=${encodeURIComponent(statusFilter)}` : ''}`
+      );
+      setSignups(signupsRes.signups || []);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load referral data');
+      const msg = err instanceof Error ? err.message : 'Failed to load referral signups';
+      setSignupsError(msg);
+      toast.error(msg);
     } finally {
-      setLoading(false);
+      setSignupsLoading(false);
     }
   }, [statusFilter]);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    void loadCoreData();
+  }, [loadCoreData]);
+
+  useEffect(() => {
+    void loadSignups();
+  }, [loadSignups]);
 
   const saveSettings = async () => {
     setSaving(true);
@@ -299,12 +343,12 @@ export function ReferralSignupsManagement() {
         </CardContent>
       </Card>
 
-      {stats && (
+      {(!pageLoading || stats) && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {(['pending', 'qualified', 'rewarded', 'rejected', 'total'] as const).map((key) => (
             <Card key={key}>
               <CardContent className="pt-4 text-center">
-                <p className="text-2xl font-bold">{stats[key]}</p>
+                <p className="text-2xl font-bold">{stats?.[key] ?? 0}</p>
                 <p className="text-xs text-muted-foreground capitalize">{key}</p>
               </CardContent>
             </Card>
@@ -341,8 +385,10 @@ export function ReferralSignupsManagement() {
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {signupsLoading ? (
             <p className="text-center text-muted-foreground py-8">Loading…</p>
+          ) : signupsError ? (
+            <p className="text-center text-destructive py-8">{signupsError}</p>
           ) : signups.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">No referral signups yet</p>
           ) : (

@@ -11,6 +11,7 @@ import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { CustomerBookingMessagesModalProvider } from './messaging/CustomerBookingMessagesModalProvider';
 import { resetHomeBootstrapForPhone } from '@/lib/customer-home-bootstrap';
+import { clearCachedPetsForPhone } from '@/lib/customer-pets-cache';
 
 interface CustomerSession {
   phone: string;
@@ -85,7 +86,7 @@ export function CustomerApp({
         localStorage.removeItem('authToken');
         localStorage.removeItem('customerData');
         localStorage.removeItem('customerProfile');
-        localStorage.removeItem('customerPets');
+        clearCachedPetsForPhone();
         localStorage.removeItem('customerOnboardingComplete');
         localStorage.removeItem('onboarding_completed');
         localStorage.removeItem('profile_completed');
