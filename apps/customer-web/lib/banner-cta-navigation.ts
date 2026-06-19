@@ -69,10 +69,10 @@ export function navigateBannerLink(
   const dest = String(url ?? '').trim();
   if (!dest) return false;
 
-  const articlePath = parseArticleSlugFromBannerPath(dest);
-  if (articlePath) {
+  const articleSlug = parseArticleSlugFromCtaLink(dest);
+  if (articleSlug) {
     rememberArticleDetailBack('/');
-    router.push(articlePath);
+    router.push(buildArticleBannerPath(articleSlug));
     return true;
   }
 

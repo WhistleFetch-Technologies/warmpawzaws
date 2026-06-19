@@ -316,6 +316,28 @@ async function resolveAccountNumberForBankSave(vendorId: string, submitted: stri
   return clean;
 }
 
+const BANK_IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+const BANK_ACCOUNT_MIN_LEN = 9;
+const BANK_ACCOUNT_MAX_LEN = 18;
+
+function validateBankDetailsPayload(accountNumber: string, ifscCode: string): string | null {
+  const ifsc = String(ifscCode || '').toUpperCase().trim();
+  if (!BANK_IFSC_REGEX.test(ifsc)) {
+    return 'Invalid IFSC code format';
+  }
+
+  const cleanAcct = String(accountNumber || '').replace(/\s/g, '');
+  const looksMasked = /^\*{3,}\d{1,4}$/.test(cleanAcct) || /^[•…]{3,}\d{1,4}$/.test(cleanAcct);
+  if (looksMasked) {
+    return 'Account number cannot be a masked value; enter the full account number';
+  }
+  if (!/^\d+$/.test(cleanAcct) || cleanAcct.length < BANK_ACCOUNT_MIN_LEN || cleanAcct.length > BANK_ACCOUNT_MAX_LEN) {
+    return 'Account number must be 9–18 digits';
+  }
+
+  return null;
+}
+
 /**
  * Write bank fields to the same tables GET /vendor/:id/bank-details reads from:
  * it prefers `vendor_bank_accounts`, then falls back to `vendor_bank_details`.
@@ -1898,10 +1920,15 @@ export function registerSettlementEndpoints(app: Hono) {
         return c.json({ error: 'account_number, ifsc_code, and account_holder_name are required' }, 400);
       }
 
+      const validationError = validateBankDetailsPayload(String(accountNumber), String(ifscCode));
+      if (validationError) {
+        return c.json({ error: validationError }, 400);
+      }
+
       const bankDetails = await persistVendorBankDetailsForVendor(
         vendorId,
         String(accountNumber),
-        String(ifscCode),
+        String(ifscCode).toUpperCase().trim(),
         String(accountHolderName),
         bankName as string | null | undefined
       );
@@ -1936,10 +1963,15 @@ export function registerSettlementEndpoints(app: Hono) {
         return c.json({ error: 'accountNumber, ifscCode, and accountHolderName are required' }, 400);
       }
 
+      const validationError = validateBankDetailsPayload(String(accountNumber), String(ifscCode));
+      if (validationError) {
+        return c.json({ error: validationError }, 400);
+      }
+
       const bankDetails = await persistVendorBankDetailsForVendor(
         vendorId,
         String(accountNumber),
-        String(ifscCode),
+        String(ifscCode).toUpperCase().trim(),
         String(accountHolderName),
         bankName as string | null | undefined
       );

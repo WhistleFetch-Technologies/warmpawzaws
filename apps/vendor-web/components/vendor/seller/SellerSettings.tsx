@@ -10,13 +10,25 @@ import {
   MapPin,
   Phone,
   Mail,
-  Building,
   Eye,
   EyeOff,
   Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { isValidGSTIN, type GSTVerificationData } from '@/lib/gstin';
+import {
+  formatAccountNumber,
+  formatIFSC,
+  formatUPI,
+  isMaskedAccountNumber,
+  isValidAccountNumber,
+  isValidIFSC,
+  isValidUPI,
+  looksLikeIndianPhone,
+  accountNumberSuffix,
+} from '@/lib/bank-payment';
+import { GSTVerification } from '@/components/vendor/kyc/GSTVerification';
 import {
   EnhancedAddressAutocomplete,
   type AddressComponents,
@@ -43,13 +55,16 @@ export type SellerSettingsFormData = {
   upi_id: string;
 };
 
-function mapVendorToFormData(
-  v: Record<string, unknown> | null | undefined,
-  bank?: Record<string, unknown> | null,
-  upi?: Record<string, unknown> | null
-): SellerSettingsFormData {
-  const bankDetails = bank ?? {};
-  const upiData = upi ?? {};
+const EMPTY_PAYMENT_FIELDS = {
+  bank_name: '',
+  account_number: '',
+  ifsc_code: '',
+  upi_id: '',
+};
+
+function mapProfileFieldsFromVendor(
+  v: Record<string, unknown> | null | undefined
+): Omit<SellerSettingsFormData, 'bank_name' | 'account_number' | 'ifsc_code' | 'upi_id'> {
   return {
     business_name: String(v?.business_name || v?.businessName || ''),
     contact_name: String(
@@ -64,14 +79,109 @@ function mapVendorToFormData(
     pincode: String(v?.pincode || ''),
     latitude: v?.latitude != null ? Number(v.latitude) : undefined,
     longitude: v?.longitude != null ? Number(v.longitude) : undefined,
-    bank_name: String(bankDetails.bank_name || bankDetails.bankName || v?.bank_name || ''),
-    account_number: String(
-      bankDetails.account_number || bankDetails.accountNumber || v?.account_number || ''
-    ),
-    ifsc_code: String(bankDetails.ifsc_code || bankDetails.ifscCode || v?.ifsc_code || ''),
-    upi_id: String(
-      upiData.upi_id || upiData.upiId || v?.upi_id || v?.upiId || ''
-    ),
+  };
+}
+
+function mapPaymentFieldsFromApi(
+  bank: Record<string, unknown> | null | undefined,
+  vendor: Record<string, unknown> | null | undefined,
+  upi: Record<string, unknown> | null | undefined
+): {
+  bank_name: string;
+  account_number: string;
+  ifsc_code: string;
+  upi_id: string;
+  hasStoredBankAccount: boolean;
+  storedAccountSuffix: string;
+} {
+  const bankDetails = bank ?? null;
+  let hasStoredBankAccount = false;
+  let storedAccountSuffix = '';
+
+  let bank_name = '';
+  let ifsc_code = '';
+  let account_number = '';
+
+  if (bankDetails) {
+    bank_name = String(bankDetails.bank_name || bankDetails.bankName || '').trim();
+    ifsc_code = formatIFSC(String(bankDetails.ifsc_code || bankDetails.ifscCode || ''));
+    const rawAccount = String(bankDetails.account_number || bankDetails.accountNumber || '').trim();
+    if (rawAccount && isMaskedAccountNumber(rawAccount)) {
+      hasStoredBankAccount = true;
+      storedAccountSuffix = accountNumberSuffix(rawAccount);
+      account_number = '';
+    } else if (rawAccount && isValidAccountNumber(rawAccount)) {
+      account_number = rawAccount;
+    }
+  }
+
+  const upiFromApi =
+    upi?.upi_id != null && String(upi.upi_id).trim() !== ''
+      ? String(upi.upi_id).trim()
+      : upi?.upiId != null && String(upi.upiId).trim() !== ''
+        ? String(upi.upiId).trim()
+        : '';
+  const upiFromVendor =
+    vendor?.upi_id != null && String(vendor.upi_id).trim() !== ''
+      ? String(vendor.upi_id).trim()
+      : vendor?.upiId != null && String(vendor.upiId).trim() !== ''
+        ? String(vendor.upiId).trim()
+        : '';
+
+  return {
+    bank_name,
+    account_number,
+    ifsc_code,
+    upi_id: upiFromApi || upiFromVendor,
+    hasStoredBankAccount,
+    storedAccountSuffix,
+  };
+}
+
+function normalizeGstStatus(status: string | undefined): GSTVerificationData['status'] {
+  const s = String(status || '').toLowerCase();
+  if (s === 'active') return 'Active';
+  if (s === 'cancelled') return 'Cancelled';
+  if (s === 'suspended') return 'Suspended';
+  return 'unknown';
+}
+
+function deriveGstVerificationFromLoad(
+  vendor: Record<string, unknown>,
+  kycData: Record<string, unknown> | null | undefined
+): { gstVerified: boolean; initialVerifiedData: GSTVerificationData | null } {
+  const loadedGstin = String(vendor?.gst_number || vendor?.gstin || '').trim().toUpperCase();
+  if (!loadedGstin) {
+    return { gstVerified: false, initialVerifiedData: null };
+  }
+
+  const kycGstin = String(kycData?.gstin || '').trim().toUpperCase();
+  const kycVerified = kycData?.gstin_verified === true;
+  const vendorVerified = vendor?.gstin_verified === true;
+
+  const verified =
+    (kycVerified && kycGstin === loadedGstin) ||
+    (vendorVerified && loadedGstin.length > 0);
+
+  if (!verified) {
+    return { gstVerified: false, initialVerifiedData: null };
+  }
+
+  const status = normalizeGstStatus(
+    String(kycData?.gstin_status || vendor?.gstin_status || 'Active')
+  );
+
+  return {
+    gstVerified: true,
+    initialVerifiedData: {
+      verified: true,
+      gstin: loadedGstin,
+      legalName: String(kycData?.gstin_legal_name || vendor?.business_name || ''),
+      tradeName: kycData?.gstin_trade_name ? String(kycData.gstin_trade_name) : undefined,
+      status,
+      stateCode: loadedGstin.substring(0, 2),
+      stateName: '',
+    },
   };
 }
 
@@ -91,10 +201,15 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
   const [activeTab, setActiveTab] = useState('profile');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState<SellerSettingsFormData>(() =>
-    mapVendorToFormData(sellerData)
-  );
+  const [formData, setFormData] = useState<SellerSettingsFormData>(() => ({
+    ...mapProfileFieldsFromVendor(sellerData),
+    ...EMPTY_PAYMENT_FIELDS,
+  }));
   const [showAccountNumber, setShowAccountNumber] = useState(false);
+  const [gstVerified, setGstVerified] = useState(false);
+  const [initialVerifiedData, setInitialVerifiedData] = useState<GSTVerificationData | null>(null);
+  const [hasStoredBankAccount, setHasStoredBankAccount] = useState(false);
+  const [storedAccountSuffix, setStoredAccountSuffix] = useState('');
 
   const tabs = [
     { id: 'profile', label: 'Business Profile', icon: Store },
@@ -110,22 +225,33 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
     }
     try {
       setLoading(true);
-      const [profileRes, bankRes, upiRes] = await Promise.all([
+      const [profileRes, bankRes, upiRes, kycRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${sellerId}/profile`).catch(() => null),
         apiClient.get<any>(`/vendor/${sellerId}/bank-details`).catch(() => null),
         apiClient.get<any>(`/vendor/${sellerId}/upi`).catch(() => null),
+        apiClient.get<any>(`/kyc/status/${sellerId}`).catch(() => null),
       ]);
 
       const vendor = profileRes?.success ? profileRes.vendor : sellerData;
       const bankDetails = bankRes?.success ? bankRes.bankDetails : null;
       const upi = upiRes?.success ? upiRes.upi : null;
+      const kycData = kycRes?.success ? kycRes.data : null;
 
       if (vendor) {
-        const mapped = mapVendorToFormData(vendor, bankDetails, upi);
-        // #region agent log
-        fetch('http://127.0.0.1:7507/ingest/bc4efe81-37d4-4685-8941-a5e34dbd571c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7935b4'},body:JSON.stringify({sessionId:'7935b4',location:'SellerSettings.tsx:loadSettings',message:'profile loaded',data:{profileSuccess:!!profileRes?.success,rawGstNumber:vendor?.gst_number??null,rawGstin:vendor?.gstin??null,mappedGstinLen:mapped.gstin.length},timestamp:Date.now(),hypothesisId:'C-D'})}).catch(()=>{});
-        // #endregion
+        const payment = mapPaymentFieldsFromApi(bankDetails, vendor as Record<string, unknown>, upi);
+        const mapped = {
+          ...mapProfileFieldsFromVendor(vendor as Record<string, unknown>),
+          bank_name: payment.bank_name,
+          account_number: payment.account_number,
+          ifsc_code: payment.ifsc_code,
+          upi_id: payment.upi_id,
+        };
+        const gstState = deriveGstVerificationFromLoad(vendor as Record<string, unknown>, kycData);
         setFormData(mapped);
+        setGstVerified(gstState.gstVerified);
+        setInitialVerifiedData(gstState.initialVerifiedData);
+        setHasStoredBankAccount(payment.hasStoredBankAccount);
+        setStoredAccountSuffix(payment.storedAccountSuffix);
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -161,6 +287,9 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
           latitude: data.latitude,
           longitude: data.longitude,
           upi_id: data.upi_id,
+          upiId: data.upi_id,
+          bank_name: data.bank_name,
+          ifsc_code: data.ifsc_code,
         })
       );
     } catch {
@@ -168,16 +297,70 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
     }
   }, []);
 
+  const handleIFSCLookup = useCallback(async (ifsc: string) => {
+    if (!isValidIFSC(ifsc)) return;
+    try {
+      const response = await fetch(`https://ifsc.razorpay.com/${ifsc.toUpperCase()}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data.BANK) {
+        setFormData((prev) => ({
+          ...prev,
+          bank_name: prev.bank_name.trim() ? prev.bank_name : String(data.BANK),
+        }));
+      }
+    } catch {
+      // non-fatal — user can enter bank name manually
+    }
+  }, []);
+
   const handleSave = useCallback(async () => {
     if (!sellerId || saving) return;
+
+    const gst = formData.gstin.trim();
+    if (gst) {
+      if (!isValidGSTIN(gst)) {
+        toast.error('Please enter a valid 15-character GSTIN');
+        return;
+      }
+      if (!gstVerified) {
+        toast.error('Please verify your GSTIN before saving');
+        return;
+      }
+    }
+
+    const ifsc = formData.ifsc_code.trim().toUpperCase();
+    const acct = formData.account_number.trim();
+    const upi = formatUPI(formData.upi_id);
+
+    if (acct.length > 0) {
+      if (!ifsc) {
+        toast.error('Please enter IFSC code for the bank account');
+        return;
+      }
+      if (looksLikeIndianPhone(ifsc)) {
+        toast.error('IFSC code cannot be a phone number');
+        return;
+      }
+      if (!isValidIFSC(ifsc)) {
+        toast.error('Please enter a valid 11-character IFSC code (e.g., SBIN0001234)');
+        return;
+      }
+      if (!isValidAccountNumber(acct)) {
+        toast.error('Please enter a valid account number (9–18 digits)');
+        return;
+      }
+    }
+
+    if (upi && !isValidUPI(upi)) {
+      toast.error('Please enter a valid UPI ID (e.g., yourname@upi)');
+      return;
+    }
 
     setSaving(true);
     onSavingChange?.(true);
     try {
       const gstPayload = formData.gstin.trim() || undefined;
-      // #region agent log
-      fetch('http://127.0.0.1:7507/ingest/bc4efe81-37d4-4685-8941-a5e34dbd571c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7935b4'},body:JSON.stringify({sessionId:'7935b4',location:'SellerSettings.tsx:handleSave:pre',message:'save payload gst',data:{formGstinLen:formData.gstin.length,gstPayloadSent:!!gstPayload,gstPayloadLen:gstPayload?.length??0},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       const profileRes = await apiClient.put<any>(`/vendor/${sellerId}/profile`, {
         businessName: formData.business_name,
         ownerName: formData.contact_name,
@@ -192,10 +375,7 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
         ...(formData.latitude != null && { latitude: formData.latitude }),
         ...(formData.longitude != null && { longitude: formData.longitude }),
       });
-      // #region agent log
       const respGst = profileRes?.vendor?.gst_number ?? profileRes?.vendor?.gstin ?? null;
-      fetch('http://127.0.0.1:7507/ingest/bc4efe81-37d4-4685-8941-a5e34dbd571c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7935b4'},body:JSON.stringify({sessionId:'7935b4',location:'SellerSettings.tsx:handleSave:post',message:'save response gst',data:{success:profileRes?.success??null,respGstNumber:profileRes?.vendor?.gst_number??null,respGstin:profileRes?.vendor?.gstin??null,changedFields:profileRes?.changedFields??null},timestamp:Date.now(),hypothesisId:'B',runId:'post-fix'})}).catch(()=>{});
-      // #endregion
 
       if (gstPayload && !respGst) {
         toast.warning(
@@ -207,29 +387,19 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
         throw new Error(profileRes.error || 'Failed to save profile');
       }
 
-      const hasBankFields =
-        formData.account_number.trim() &&
-        formData.ifsc_code.trim() &&
-        !formData.account_number.startsWith('****');
-
-      if (hasBankFields) {
+      if (acct.length > 0) {
         const accountHolderName =
           formData.contact_name.trim() || formData.business_name.trim() || 'Account Holder';
         await apiClient.put(`/vendor/${sellerId}/bank-details`, {
-          account_number: formData.account_number,
-          ifsc_code: formData.ifsc_code,
-          bank_name: formData.bank_name,
+          account_number: acct,
+          ifsc_code: ifsc,
+          bank_name: formData.bank_name.trim() || undefined,
           account_holder_name: accountHolderName,
         });
       }
 
-      if (formData.upi_id.trim() && formData.upi_id.includes('@')) {
-        try {
-          await apiClient.post(`/vendor/${sellerId}/upi`, { upi_id: formData.upi_id.trim() });
-        } catch (upiError: any) {
-          const msg = upiError?.message || 'Failed to save UPI ID';
-          toast.error(msg);
-        }
+      if (upi) {
+        await apiClient.post(`/vendor/${sellerId}/upi`, { upi_id: upi });
       }
 
       syncLocalStorage(formData);
@@ -243,7 +413,7 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
       setSaving(false);
       onSavingChange?.(false);
     }
-  }, [sellerId, formData, saving, onSavingChange, syncLocalStorage, loadSettings]);
+  }, [sellerId, formData, saving, gstVerified, onSavingChange, syncLocalStorage, loadSettings, handleIFSCLookup]);
 
   useImperativeHandle(
     ref,
@@ -341,16 +511,24 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                <Building className="w-4 h-4 inline mr-2" />
-                GSTIN
-              </label>
-              <input
+            <div className="md:col-span-2">
+              <GSTVerification
+                vendorId={sellerId}
                 value={formData.gstin}
-                onChange={(e) => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })}
-                placeholder="e.g., 27ABCDE1234F1ZK"
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono uppercase"
+                onChange={(val) => {
+                  setFormData((prev) => ({ ...prev, gstin: val }));
+                  setGstVerified(false);
+                }}
+                onVerified={(data) => {
+                  setFormData((prev) => ({ ...prev, gstin: data.gstin }));
+                  setGstVerified(true);
+                }}
+                initialVerifiedData={initialVerifiedData}
+                label="GSTIN"
+                helpText="GST will be verified automatically"
+                required={false}
+                conditional={true}
+                autoVerify={true}
               />
             </div>
           </div>
@@ -448,6 +626,8 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
                   value={formData.bank_name}
                   onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
                   placeholder="e.g., State Bank of India"
+                  autoComplete="off"
+                  name="vendor-bank-name"
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                 />
               </div>
@@ -455,20 +635,67 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
                 <label className="block text-sm font-medium text-slate-700 mb-2">IFSC Code</label>
                 <input
                   value={formData.ifsc_code}
-                  onChange={(e) => setFormData({ ...formData, ifsc_code: e.target.value.toUpperCase() })}
+                  onChange={(e) => {
+                    const formatted = formatIFSC(e.target.value);
+                    setFormData({ ...formData, ifsc_code: formatted });
+                    if (formatted.length === 11 && isValidIFSC(formatted)) {
+                      void handleIFSCLookup(formatted);
+                    }
+                  }}
                   placeholder="e.g., SBIN0001234"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono uppercase"
+                  maxLength={11}
+                  autoComplete="off"
+                  name="vendor-ifsc"
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono uppercase ${
+                    formData.ifsc_code &&
+                    (looksLikeIndianPhone(formData.ifsc_code) ||
+                      (!isValidIFSC(formData.ifsc_code) && formData.ifsc_code.length >= 11))
+                      ? 'border-red-300'
+                      : 'border-slate-200'
+                  }`}
                 />
+                {formData.ifsc_code && looksLikeIndianPhone(formData.ifsc_code) && (
+                  <p className="mt-1 text-sm text-red-600">IFSC cannot be a phone number</p>
+                )}
+                {formData.ifsc_code &&
+                  formData.ifsc_code.length >= 11 &&
+                  !looksLikeIndianPhone(formData.ifsc_code) &&
+                  !isValidIFSC(formData.ifsc_code) && (
+                    <p className="mt-1 text-sm text-red-600">
+                      Invalid IFSC format (e.g., SBIN0001234)
+                    </p>
+                  )}
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-2">Account Number</label>
+                {hasStoredBankAccount && storedAccountSuffix && (
+                  <p className="mb-2 text-sm text-slate-500">
+                    Account on file ending in {storedAccountSuffix}. Enter full number to update.
+                  </p>
+                )}
                 <div className="relative">
                   <input
                     type={showAccountNumber ? 'text' : 'password'}
                     value={formData.account_number}
-                    onChange={(e) => setFormData({ ...formData, account_number: e.target.value })}
-                    placeholder="Enter your account number"
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        account_number: formatAccountNumber(e.target.value),
+                      })
+                    }
+                    placeholder={
+                      hasStoredBankAccount
+                        ? 'Enter full account number to update'
+                        : 'Enter your account number'
+                    }
+                    autoComplete="off"
+                    name="vendor-account-number"
+                    inputMode="numeric"
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono ${
+                      formData.account_number && !isValidAccountNumber(formData.account_number)
+                        ? 'border-red-300'
+                        : 'border-slate-200'
+                    }`}
                   />
                   <button
                     type="button"
@@ -482,6 +709,11 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
                     )}
                   </button>
                 </div>
+                {formData.account_number && !isValidAccountNumber(formData.account_number) && (
+                  <p className="mt-1 text-sm text-red-600">
+                    Account number must be 9–18 digits
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -492,10 +724,21 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
               <label className="block text-sm font-medium text-slate-700 mb-2">UPI ID</label>
               <input
                 value={formData.upi_id}
-                onChange={(e) => setFormData({ ...formData, upi_id: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, upi_id: formatUPI(e.target.value) })}
                 placeholder="e.g., yourname@upi"
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                autoComplete="off"
+                name="vendor-upi-id"
+                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 ${
+                  formData.upi_id && !isValidUPI(formData.upi_id)
+                    ? 'border-red-300'
+                    : 'border-slate-200'
+                }`}
               />
+              {formData.upi_id && !isValidUPI(formData.upi_id) && (
+                <p className="mt-1 text-sm text-red-600">
+                  Enter a valid UPI ID (e.g., yourname@upi)
+                </p>
+              )}
             </div>
           </div>
         </div>

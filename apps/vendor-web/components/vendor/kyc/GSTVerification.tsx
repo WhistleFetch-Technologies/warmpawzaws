@@ -3,6 +3,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, AlertCircle, Loader2, RefreshCw, Building2, MapPin } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  formatGSTIN,
+  isValidGSTIN,
+  type GSTVerificationData,
+} from '@/lib/gstin';
+
+export type { GSTVerificationData };
 
 interface GSTVerificationProps {
   vendorId: string;
@@ -16,19 +23,8 @@ interface GSTVerificationProps {
   conditional?: boolean; // If true, field is optional based on turnover
   className?: string;
   autoVerify?: boolean; // Verify on blur
-}
-
-interface GSTVerificationData {
-  verified: boolean;
-  gstin: string;
-  legalName: string;
-  tradeName?: string;
-  status: 'Active' | 'Cancelled' | 'Suspended' | 'unknown';
-  stateCode: string;
-  stateName: string;
-  registrationDate?: string;
-  businessType?: string;
-  address?: string;
+  /** Pre-filled verified state when loading an already-verified GSTIN from profile/KYC */
+  initialVerifiedData?: GSTVerificationData | null;
 }
 
 type VerificationStatus = 'idle' | 'verifying' | 'verified' | 'failed' | 'error';
@@ -45,25 +41,13 @@ export function GSTVerification({
   conditional = true,
   className = '',
   autoVerify = true,
+  initialVerifiedData = null,
 }: GSTVerificationProps) {
   const [gstin, setGstin] = useState(value.toUpperCase());
   const [status, setStatus] = useState<VerificationStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [verifiedData, setVerifiedData] = useState<GSTVerificationData | null>(null);
   const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
-
-  // GSTIN validation regex
-  const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-
-  // Validate GSTIN format
-  const isValidGSTIN = (gst: string): boolean => {
-    return gstinRegex.test(gst);
-  };
-
-  // Format GSTIN input (uppercase)
-  const formatGSTIN = (value: string): string => {
-    return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15);
-  };
 
   // Verify GST
   const verifyGST = useCallback(async (gst: string) => {
@@ -201,6 +185,15 @@ export function GSTVerification({
       setGstin(value.toUpperCase());
     }
   }, [value]);
+
+  // Apply pre-filled verified state from profile/KYC load (once per load, not on user edits)
+  useEffect(() => {
+    if (!initialVerifiedData?.verified || !initialVerifiedData.gstin) return;
+    setGstin(initialVerifiedData.gstin);
+    setVerifiedData(initialVerifiedData);
+    setStatus('verified');
+    setError(null);
+  }, [initialVerifiedData]);
 
   // Get status icon
   const getStatusIcon = () => {
