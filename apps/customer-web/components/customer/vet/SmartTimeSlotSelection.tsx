@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 interface SmartTimeSlotSelectionProps {
@@ -76,10 +77,8 @@ export function SmartTimeSlotSelection({
       const data = await apiClient.get<{ slots?: Array<{ time: string; available?: boolean; booked?: boolean }> }>(
         `/customer/vendor/${vendorId}/available-slots?${params}`
       );
-      const slots = data?.slots ?? [];
-      const available = Array.isArray(slots)
-        ? slots.filter((s) => s && (s.available !== false)).map((s) => (typeof s === 'string' ? s : s.time))
-        : [];
+      const { slots } = normalizeAvailableSlotsResponse(data, date);
+      const available = slots.filter((s) => s.available).map((s) => s.time);
       setAvailableSlots(available);
     } catch (error) {
       console.error('Error loading available slots:', error);

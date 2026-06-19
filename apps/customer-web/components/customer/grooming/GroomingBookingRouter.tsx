@@ -4,6 +4,10 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, Scissors, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildDefaultSlotsWithPastGuard,
+  normalizeAvailableSlotsResponse,
+} from '@/lib/available-slots-response';
 import { runInlineAddressDetect, inlineAddressCoordsPayload } from '@/lib/run-inline-address-detect';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
@@ -422,38 +426,22 @@ export function GroomingBookingRouter({
       const totalDuration = calculateTotalDuration();
       const serviceIds = Array.from(selectedServiceIds).join(',');
       
-      const response = await apiClient.get(
+      const raw = await apiClient.get(
         `/customer/vendor/${vendorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}&totalDuration=${totalDuration}&serviceIds=${serviceIds}`
-      ) as any;
+      );
 
-      let slots: TimeSlot[] = [];
-      if (response.success && response.slots) {
-        slots = response.slots;
+      const { success, slots } = normalizeAvailableSlotsResponse(raw, date);
+
+      if (success && slots.length > 0) {
+        setTimeSlots(slots);
+      } else if (!success) {
+        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
       } else {
-        // Fallback to default slots if API fails
-        slots = [
-          '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-          '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-        ].map(time => ({ time, available: true }));
+        setTimeSlots([]);
       }
-      
-      // ✅ ENHANCED: Apply scheduling policy and operating hours validation
-      const validatedSlots = slots.map(slot => ({
-        ...slot,
-        available: slot.available && 
-                   validateSlotAgainstPolicy(slot, date) &&
-                   validateSlotAgainstOperatingHours(slot, date)
-      }));
-      
-      setTimeSlots(validatedSlots);
     } catch (error) {
       console.error('Error loading time slots:', error);
-      // Fallback to default slots on error
-      const defaultSlots: TimeSlot[] = [
-        '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-        '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-      ].map(time => ({ time, available: true }));
-      setTimeSlots(defaultSlots);
+      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
     } finally {
       setLoadingSlots(false);
     }

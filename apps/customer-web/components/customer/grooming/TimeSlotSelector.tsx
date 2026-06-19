@@ -4,6 +4,11 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildDefaultSlotsWithPastGuard,
+  normalizeAvailableSlotsResponse,
+  type NormalizedTimeSlot,
+} from '@/lib/available-slots-response';
 
 interface TimeSlotSelectorProps {
   vendorId: string;
@@ -13,17 +18,17 @@ interface TimeSlotSelectorProps {
   onSelect: (date: string, time: string) => void;
 }
 
-export function TimeSlotSelector({ 
-  vendorId, 
-  serviceDuration = 60, 
-  serviceStyle = 'at_center', 
-  onBack, 
-  onSelect 
+export function TimeSlotSelector({
+  vendorId,
+  serviceDuration = 60,
+  serviceStyle = 'at_center',
+  onBack,
+  onSelect,
 }: TimeSlotSelectorProps) {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(new Date());
-  const [slots, setSlots] = useState<string[]>([]);
+  const [slots, setSlots] = useState<NormalizedTimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [vendorOffline, setVendorOffline] = useState(false);
 
@@ -57,7 +62,6 @@ export function TimeSlotSelector({
       setLoadingSlots(true);
       setVendorOffline(false);
 
-      // Customer available-slots: advanced schedule only (vendor_availability_v2), dynamic payload
       const params = new URLSearchParams({
         date,
         serviceStyle: serviceStyle || 'at_center',
@@ -65,31 +69,36 @@ export function TimeSlotSelector({
       });
       const response = await apiClient.get<{
         success?: boolean;
-        slots?: Array<{ time: string; available?: boolean; booked?: boolean; slotDuration?: number; bufferMinutes?: number; serviceStyles?: string[] } | string>;
-        availabilityMeta?: Record<string, unknown>;
+        slots?: Array<{ time: string; available?: boolean; booked?: boolean } | string>;
         message?: string;
         isOnline?: boolean;
         vendorOnline?: boolean;
       }>(`/customer/vendor/${vendorId}/available-slots?${params}`);
 
       const explicitOffline =
-        response?.isOnline === false ||
-        response?.vendorOnline === false;
+        response?.isOnline === false || response?.vendorOnline === false;
 
-      if (!response?.success || !response.slots?.length) {
+      const { success, slots: normalized, message } = normalizeAvailableSlotsResponse(response, date);
+
+      if (!success) {
         setVendorOffline(explicitOffline);
-        setSlots([]);
+        setSlots(buildDefaultSlotsWithPastGuard(date));
         return;
       }
 
-      // Normalize: slots are objects { time, available, ... } or legacy strings
-      const normalizedSlots = (response.slots || []).map((s) =>
-        typeof s === 'string' ? s.split(' - ')[0]?.trim() || s : (s as { time: string }).time || ''
-      ).filter(Boolean);
-      setSlots(normalizedSlots);
+      if (normalized.length === 0) {
+        setVendorOffline(explicitOffline);
+        setSlots([]);
+        if (message && process.env.NODE_ENV === 'development') {
+          console.warn('[TimeSlotSelector] available-slots:', message);
+        }
+        return;
+      }
+
+      setSlots(normalized);
     } catch (error) {
       console.error('Error loading slots:', error);
-      setSlots([]);
+      setSlots(buildDefaultSlotsWithPastGuard(date));
     } finally {
       setLoadingSlots(false);
     }
@@ -145,7 +154,6 @@ export function TimeSlotSelector({
 
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
-      {/* Header */}
       <div className="sticky top-0 z-10 bg-white border-b px-0 py-4 flex items-center gap-3">
         <button
           onClick={onBack}
@@ -159,9 +167,7 @@ export function TimeSlotSelector({
         </div>
       </div>
 
-      {/* Content */}
       <div className="px-0 py-0 space-y-6">
-        {/* Week Navigation */}
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <button
@@ -181,7 +187,6 @@ export function TimeSlotSelector({
             </button>
           </div>
 
-          {/* Date Picker */}
           <div className="grid grid-cols-7 gap-3">
             {weekDates.map((date) => {
               const dateStr = formatDate(date);
@@ -199,9 +204,11 @@ export function TimeSlotSelector({
                   }`}
                 >
                   <div className="text-xs text-gray-600 mb-0">{getDayName(date)}</div>
-                  <div className={`text-lg font-semibold ${
-                    isSelected ? 'text-primary' : 'text-gray-900'
-                  }`}>
+                  <div
+                    className={`text-lg font-semibold ${
+                      isSelected ? 'text-primary' : 'text-gray-900'
+                    }`}
+                  >
                     {date.getDate()}
                   </div>
                   {isTodayDate && (
@@ -213,11 +220,10 @@ export function TimeSlotSelector({
           </div>
         </div>
 
-        {/* Time Slots */}
         <div className="bg-white rounded-2xl p-0 shadow-sm">
           <h3 className="font-bold text-gray-900 mb-1">Available Time Slots</h3>
           <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
-          
+
           {vendorOffline ? (
             <div className="text-center py-8">
               <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-0" />
@@ -236,19 +242,25 @@ export function TimeSlotSelector({
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-3">
-              {slots.map((time) => {
-                const isSelected = selectedTime === time;
+              {slots.map((slot) => {
+                const isSelected = selectedTime === slot.time;
                 return (
                   <button
-                    key={time}
-                    onClick={() => setSelectedTime(time)}
+                    key={slot.time}
+                    type="button"
+                    disabled={!slot.available}
+                    onClick={() => {
+                      if (slot.available) setSelectedTime(slot.time);
+                    }}
                     className={`p-0 rounded-xl border-2 transition-all text-sm font-medium ${
                       isSelected
                         ? 'border-primary bg-orange-50 text-primary'
-                        : 'border-gray-200 hover:border-primary text-gray-900'
+                        : slot.available
+                          ? 'border-gray-200 hover:border-primary text-gray-900'
+                          : 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed opacity-50'
                     }`}
                   >
-                    {formatTime(time)}
+                    {formatTime(slot.time)}
                   </button>
                 );
               })}
@@ -256,7 +268,6 @@ export function TimeSlotSelector({
           )}
         </div>
 
-        {/* Continue Button */}
         <button
           onClick={handleContinue}
           disabled={!selectedDate || !selectedTime}
@@ -268,4 +279,3 @@ export function TimeSlotSelector({
     </div>
   );
 }
-

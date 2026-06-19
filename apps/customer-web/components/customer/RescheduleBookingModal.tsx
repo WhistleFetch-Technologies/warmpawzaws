@@ -10,6 +10,10 @@ import { apiClient } from '@/lib/api-client';
 import { pickBookingApiMessage } from '@/lib/booking-response-message';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { toast } from 'sonner';
+import {
+  applyPastSlotGuard,
+  normalizeAvailableSlotsResponse,
+} from '@/lib/available-slots-response';
 
 interface RescheduleBookingModalProps {
   bookingId: string;
@@ -57,19 +61,15 @@ export function RescheduleBookingModal({
       });
 
       const response = await apiClient.get(`/bookings/available-slots?${params.toString()}`);
-      const slots = (response as any).slots || [];
-      
-      setAvailableSlots(slots.map((slot: any) => ({
-        time: slot.time || slot,
-        available: slot.available !== false,
-      })));
+      const rawSlots = (response as any).slots || [];
+      const { slots } = normalizeAvailableSlotsResponse({ success: true, slots: rawSlots }, date);
+      setAvailableSlots(slots);
     } catch (error) {
       console.error('Error loading slots:', error);
-      // Fallback to default slots
-      const defaultSlots = [
-        '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'
-      ].map(time => ({ time, available: true }));
-      setAvailableSlots(defaultSlots);
+      const fallback = [
+        '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00',
+      ].map((time) => ({ time, available: true }));
+      setAvailableSlots(applyPastSlotGuard(fallback, date));
       toast.error('Failed to load available slots, showing default times');
     } finally {
       setLoadingSlots(false);

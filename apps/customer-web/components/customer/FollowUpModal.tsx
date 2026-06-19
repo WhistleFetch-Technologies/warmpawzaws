@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 import { Button } from '@/components/ui/button';
 import { 
   X, 
@@ -265,10 +266,14 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
     if (!selectedBooking) return;
 
     try {
-      const data = await apiClient.get<{ slots?: any[] }>(
+      const data = await apiClient.get<{ slots?: unknown[] }>(
         `/vendor/${selectedBooking.vendorId}/slots/${date}?serviceStyle=at_center`
       );
-      setAvailableSlots(data.slots || []);
+      const { slots } = normalizeAvailableSlotsResponse(
+        { success: true, slots: data.slots || [] },
+        date
+      );
+      setAvailableSlots(slots);
     } catch (error) {
       console.error('❌ Error loading slots:', error);
     }

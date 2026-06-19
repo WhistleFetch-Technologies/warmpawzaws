@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { formatLocalDateYYYYMMDD, parseYYYYMMDDToLocalDate } from '@/lib/local-calendar-date';
-import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
+import { normalizeAvailableSlotsResponse, buildDefaultSlotsWithPastGuard } from '@/lib/available-slots-response';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
@@ -327,7 +327,7 @@ export function TrainingBookingRouter({
 
       if (seq !== slotFetchSeq.current) return;
 
-      const { success, slots: normalized, message } = normalizeAvailableSlotsResponse(raw);
+      const { success, slots: normalized, message } = normalizeAvailableSlotsResponse(raw, date);
 
       if (success && normalized.length > 0) {
         setTimeSlots(normalized);
@@ -335,15 +335,10 @@ export function TrainingBookingRouter({
       }
 
       if (!success) {
-        const defaultSlots: TimeSlot[] = [
-          '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-          '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
-        ].map((time) => ({ time, available: true }));
-        setTimeSlots(defaultSlots);
+        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
         return;
       }
 
-      // success but no slot rows (or unparsed) — UI shows "No slots available"; optional API hint in dev
       setTimeSlots([]);
       if (message && process.env.NODE_ENV === 'development') {
         console.warn('[TrainingBooking] available-slots:', message);
@@ -351,11 +346,7 @@ export function TrainingBookingRouter({
     } catch (error) {
       if (seq !== slotFetchSeq.current) return;
       console.error('Error loading time slots:', error);
-      const defaultSlots: TimeSlot[] = [
-        '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-        '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
-      ].map((time) => ({ time, available: true }));
-      setTimeSlots(defaultSlots);
+      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
     } finally {
       if (seq === slotFetchSeq.current) {
         setLoadingSlots(false);

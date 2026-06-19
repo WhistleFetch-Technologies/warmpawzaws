@@ -9,6 +9,10 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { runInlineAddressDetect, inlineAddressCoordsPayload } from '@/lib/run-inline-address-detect';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { toast } from 'sonner';
+import {
+  buildDefaultSlotsWithPastGuard,
+  normalizeAvailableSlotsResponse,
+} from '@/lib/available-slots-response';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 
 interface RelocationBookingRouterProps {
@@ -207,28 +211,22 @@ export function RelocationBookingRouter({
     
     try {
       setLoadingSlots(true);
-      const response = await apiClient.get(
+      const raw = await apiClient.get(
         `/customer/vendor/${effectiveVendorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}`
-      ) as any;
+      );
 
-      if (response.success && response.slots) {
-        setTimeSlots(response.slots);
+      const { success, slots } = normalizeAvailableSlotsResponse(raw, date);
+
+      if (success && slots.length > 0) {
+        setTimeSlots(slots);
+      } else if (!success) {
+        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
       } else {
-        // Fallback to default slots if API fails
-        const defaultSlots: TimeSlot[] = [
-          '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-          '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-        ].map(time => ({ time, available: true }));
-        setTimeSlots(defaultSlots);
+        setTimeSlots([]);
       }
     } catch (error) {
       console.error('Error loading time slots:', error);
-      // Fallback to default slots on error
-      const defaultSlots: TimeSlot[] = [
-        '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-        '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-      ].map(time => ({ time, available: true }));
-      setTimeSlots(defaultSlots);
+      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
     } finally {
       setLoadingSlots(false);
     }

@@ -12,6 +12,7 @@ import {
 } from '@/lib/razorpay/build-standard-checkout-options';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 import { X, Camera, Upload, MapPin, Plus, ArrowLeft } from 'lucide-react';
 import { EnhancedAddPetModal } from './EnhancedAddPetModal';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
@@ -468,8 +469,8 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
       const response = await apiClient.get<any>(
         `/customer/vendor/${service.vendor_id}/available-slots?${params}`
       );
-      const slots = response?.slots ?? [];
-      setTimeSlots(Array.isArray(slots) ? slots : []);
+      const { slots } = normalizeAvailableSlotsResponse(response, selectedDate);
+      setTimeSlots(slots);
 
       // For home services, also load available staff with commute time
       if (service?.service_style === 'at_home' && selectedDate && selectedTime) {

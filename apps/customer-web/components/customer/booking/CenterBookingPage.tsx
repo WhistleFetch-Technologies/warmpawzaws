@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Clock, MapPin, User, Check } from 'lucide-react';
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
+import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 import { CalendarSlotPicker } from './CalendarSlotPicker';
 
 interface CenterBookingPageProps {
@@ -69,11 +70,8 @@ export function CenterBookingPage({
       const response = await apiClient.get<{ slots: Array<{ time: string; available?: boolean }> }>(
         `/customer/vendor/${vendorId}/available-slots?${params}`
       );
-      const slots = response?.slots ?? [];
-      const list = Array.isArray(slots)
-        ? slots.map((s) => (typeof s === 'object' && s?.time ? s : { time: String(s), available: true }))
-        : [];
-      setAvailableSlots(list);
+      const { slots } = normalizeAvailableSlotsResponse(response, selectedDate);
+      setAvailableSlots(slots);
     } catch (err) {
       console.error('Error fetching available slots:', err);
       setAvailableSlots([]);

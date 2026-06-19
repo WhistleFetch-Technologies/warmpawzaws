@@ -25,6 +25,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import {
+  applyPastSlotGuard,
+  normalizeAvailableSlotsResponse,
+} from '@/lib/available-slots-response';
 import { toast } from 'sonner';
 import { FeaturedVendorSpotlights } from '../shared/FeaturedVendorSpotlights';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
@@ -545,28 +549,28 @@ export function HomeServiceRouter({
 
     try {
       setLoadingSlots(true);
-      const response = await apiClient.get<any>(
+      const raw = await apiClient.get<any>(
         `/customer/vendor/${selectedProvider.vendorId}/available-slots?date=${date}&serviceStyle=at_home`
       );
 
-      if (response.success && response.slots) {
-        setTimeSlots(response.slots);
+      const { success, slots } = normalizeAvailableSlotsResponse(raw, date);
+
+      if (success && slots.length > 0) {
+        setTimeSlots(slots);
       } else {
-        // Default fallback slots
-        const defaultSlots = [
+        const homeDefault = [
           '08:00', '09:00', '10:00', '11:00',
-          '14:00', '15:00', '16:00', '17:00', '18:00'
-        ].map(time => ({ time, available: true }));
-        setTimeSlots(defaultSlots);
+          '14:00', '15:00', '16:00', '17:00', '18:00',
+        ].map((time) => ({ time, available: true }));
+        setTimeSlots(applyPastSlotGuard(homeDefault, date));
       }
     } catch (error) {
       console.error('Error loading slots:', error);
-      // Default fallback
-      const defaultSlots = [
+      const homeDefault = [
         '08:00', '09:00', '10:00', '11:00',
-        '14:00', '15:00', '16:00', '17:00', '18:00'
-      ].map(time => ({ time, available: true }));
-      setTimeSlots(defaultSlots);
+        '14:00', '15:00', '16:00', '17:00', '18:00',
+      ].map((time) => ({ time, available: true }));
+      setTimeSlots(applyPastSlotGuard(homeDefault, date));
     } finally {
       setLoadingSlots(false);
     }
