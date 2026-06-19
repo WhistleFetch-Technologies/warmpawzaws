@@ -42,6 +42,10 @@ import {
   visitStyleChangeMessage,
   type BookingAssistIntent,
 } from '@/lib/ai-chatbot-booking-ui';
+import {
+  normalizeAvailableSlotsResponse,
+  type NormalizedTimeSlot,
+} from '@/lib/available-slots-response';
 
 interface AIChatbotWidgetProps {
   customerId?: string;
@@ -120,9 +124,8 @@ function addCalendarDays(isoDate: string, days: number): string {
   return `${y}-${m}-${d}`;
 }
 
-function countOpenSlots(slots: unknown): number {
-  if (!Array.isArray(slots)) return 0;
-  return slots.filter((x: any) => x?.available !== false).length;
+function countOpenSlotsFromNormalized(slots: NormalizedTimeSlot[]): number {
+  return slots.filter((s) => s.available).length;
 }
 
 interface Message {
@@ -757,8 +760,8 @@ export function AIChatbotWidget({
         const res: any = await apiClient.get(
           `/customer/vendor/${encodeURIComponent(vendorId)}/available-slots?${q.toString()}`
         );
-        const slots = Array.isArray(res?.slots) ? res.slots : [];
-        return countOpenSlots(slots);
+        const { slots } = normalizeAvailableSlotsResponse(res, dateStr);
+        return countOpenSlotsFromNormalized(slots);
       };
 
       try {
@@ -828,8 +831,8 @@ export function AIChatbotWidget({
         const res: any = await apiClient.get(
           `/customer/vendor/${encodeURIComponent(vendorId)}/available-slots?${q.toString()}`
         );
-        const slots = Array.isArray(res?.slots) ? res.slots : [];
-        return { res, slots, open: countOpenSlots(slots) };
+        const { slots: normalized } = normalizeAvailableSlotsResponse(res, dateStr);
+        return { res, slots: normalized, open: countOpenSlotsFromNormalized(normalized) };
       };
 
       try {

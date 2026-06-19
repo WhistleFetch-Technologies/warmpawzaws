@@ -15,7 +15,7 @@ import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { NutritionistBookingRouterProps, Pet, TimeSlot } from './constants/interface';
 import { defaultServiceTypeOptions } from './constants';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
-import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
+import { normalizeAvailableSlotsResponse, buildDefaultSlotsWithPastGuard } from '@/lib/available-slots-response';
 import { SERVICE_DESC_VIEW_MORE_MIN_LEN } from '@/lib/service-description-preview';
 import { cn } from '@/components/ui/utils';
 
@@ -215,7 +215,7 @@ export function NutritionistBookingRouter({
 
       if (seq !== slotFetchSeq.current) return;
 
-      const { success, slots: normalized, message } = normalizeAvailableSlotsResponse(raw);
+      const { success, slots: normalized, message } = normalizeAvailableSlotsResponse(raw, date);
 
       if (success && normalized.length > 0) {
         setTimeSlots(normalized);
@@ -223,11 +223,7 @@ export function NutritionistBookingRouter({
       }
 
       if (!success) {
-        const defaultSlots: TimeSlot[] = [
-          '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-          '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
-        ].map((time) => ({ time, available: true }));
-        setTimeSlots(defaultSlots);
+        setTimeSlots(buildDefaultSlotsWithPastGuard(date));
         return;
       }
 
@@ -238,11 +234,7 @@ export function NutritionistBookingRouter({
     } catch (error) {
       if (seq !== slotFetchSeq.current) return;
       console.error('Error loading time slots:', error);
-      const defaultSlots: TimeSlot[] = [
-        '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-        '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
-      ].map((time) => ({ time, available: true }));
-      setTimeSlots(defaultSlots);
+      setTimeSlots(buildDefaultSlotsWithPastGuard(date));
     } finally {
       if (seq === slotFetchSeq.current) {
         setLoadingSlots(false);
