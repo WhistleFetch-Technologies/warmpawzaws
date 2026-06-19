@@ -220,6 +220,14 @@ $jobs = @(
     Schedule    = 'cron(30 2 * * ? *)'
     Description = "$Stage`: daily delivery log retention"
     TargetId    = 'DeliveryLogRetention'
+  },
+  @{
+    RuleName    = "warmpawz-$Stage-vaccination-reminders-daily"
+    DestName    = "warmpawz-$Stage-vaccination-reminders-cron"
+    Endpoint    = "$BaseUrl/reminders/vaccinations/process"
+    Schedule    = 'cron(30 2 * * ? *)'
+    Description = "$Stage`: POST /reminders/vaccinations/process (~08:00 IST)"
+    TargetId    = 'VaccinationRemindersDaily'
   }
 )
 

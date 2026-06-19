@@ -107,6 +107,7 @@ export const WARMPAWZ_HOME_RESUME_SCREENS = new Set<string>([
   'support_help',
   'services',
   'integrated-services',
+  'vet',
 ]);
 
 /** @deprecated Use string; kept for call sites that passed a narrow union. */
