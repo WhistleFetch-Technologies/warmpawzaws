@@ -123,6 +123,84 @@ const CAT_BREEDS = [
   'American Shorthair', 'Birman', 'Himalayan', 'Indie/Mixed', 'Other'
 ];
 
+function createEmptyPetData(): PetData {
+  return {
+    id: `pet_${Date.now()}`,
+    name: '',
+    type: 'Dog',
+    breed: '',
+    dateOfBirth: '',
+    gender: 'Male',
+    weight: '',
+    color: '',
+    photo: '',
+    microchipId: '',
+    registrationNumber: '',
+    size: 'Medium',
+    coatType: '',
+    eyeColor: '',
+    distinguishingMarks: '',
+    isSpayedNeutered: false,
+    bloodType: '',
+    allergies: [],
+    currentMedications: [],
+    chronicConditions: [],
+    dietaryRestrictions: '',
+    vaccinations: [],
+    temperament: '',
+    activityLevel: 'Medium',
+    isGoodWithKids: undefined,
+    isGoodWithOtherPets: undefined,
+    specialNeeds: '',
+    hasInsurance: false,
+    insuranceProvider: '',
+    insurancePolicyNumber: '',
+    emergencyVetName: '',
+    emergencyVetPhone: '',
+  };
+}
+
+function petDataFromEdit(editPet: PetData): PetData {
+  return {
+    id: editPet.id,
+    name: editPet.name || '',
+    type: editPet.type || 'Dog',
+    breed: editPet.breed || '',
+    dateOfBirth: editPet.dateOfBirth || '',
+    gender: editPet.gender || 'Male',
+    weight: editPet.weight || '',
+    color: editPet.color || '',
+    photo: editPet.photo || '',
+    microchipId: editPet.microchipId || '',
+    registrationNumber: editPet.registrationNumber || '',
+    size: editPet.size || 'Medium',
+    coatType: editPet.coatType || '',
+    eyeColor: editPet.eyeColor || '',
+    distinguishingMarks: editPet.distinguishingMarks || '',
+    isSpayedNeutered: editPet.isSpayedNeutered || false,
+    bloodType: editPet.bloodType || '',
+    allergies: editPet.allergies || [],
+    currentMedications: editPet.currentMedications || [],
+    chronicConditions: editPet.chronicConditions || [],
+    dietaryRestrictions: editPet.dietaryRestrictions || '',
+    vaccinations: editPet.vaccinations || [],
+    temperament: editPet.temperament || '',
+    activityLevel: editPet.activityLevel || 'Medium',
+    isGoodWithKids: editPet.isGoodWithKids,
+    isGoodWithOtherPets: editPet.isGoodWithOtherPets,
+    specialNeeds: editPet.specialNeeds || '',
+    hasInsurance: editPet.hasInsurance || false,
+    insuranceProvider: editPet.insuranceProvider || '',
+    insurancePolicyNumber: editPet.insurancePolicyNumber || '',
+    emergencyVetName: editPet.emergencyVetName || '',
+    emergencyVetPhone: editPet.emergencyVetPhone || '',
+  };
+}
+
+function buildInitialPetData(editPet?: PetData): PetData {
+  return editPet ? petDataFromEdit(editPet) : createEmptyPetData();
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -147,40 +225,7 @@ export function EnhancedAddPetModal({
   const [pendingVaxDates, setPendingVaxDates] = useState<Record<string, string>>({});
   
   // Pet data state
-  const [petData, setPetData] = useState<PetData>({
-    id: editPet?.id || `pet_${Date.now()}`,
-    name: editPet?.name || '',
-    type: editPet?.type || 'Dog',
-    breed: editPet?.breed || '',
-    dateOfBirth: editPet?.dateOfBirth || '',
-    gender: editPet?.gender || 'Male',
-    weight: editPet?.weight || '',
-    color: editPet?.color || '',
-    photo: editPet?.photo || '',
-    microchipId: editPet?.microchipId || '',
-    registrationNumber: editPet?.registrationNumber || '',
-    size: editPet?.size || 'Medium',
-    coatType: editPet?.coatType || '',
-    eyeColor: editPet?.eyeColor || '',
-    distinguishingMarks: editPet?.distinguishingMarks || '',
-    isSpayedNeutered: editPet?.isSpayedNeutered || false,
-    bloodType: editPet?.bloodType || '',
-    allergies: editPet?.allergies || [],
-    currentMedications: editPet?.currentMedications || [],
-    chronicConditions: editPet?.chronicConditions || [],
-    dietaryRestrictions: editPet?.dietaryRestrictions || '',
-    vaccinations: editPet?.vaccinations || [],
-    temperament: editPet?.temperament || '',
-    activityLevel: editPet?.activityLevel || 'Medium',
-    isGoodWithKids: editPet?.isGoodWithKids,
-    isGoodWithOtherPets: editPet?.isGoodWithOtherPets,
-    specialNeeds: editPet?.specialNeeds || '',
-    hasInsurance: editPet?.hasInsurance || false,
-    insuranceProvider: editPet?.insuranceProvider || '',
-    insurancePolicyNumber: editPet?.insurancePolicyNumber || '',
-    emergencyVetName: editPet?.emergencyVetName || '',
-    emergencyVetPhone: editPet?.emergencyVetPhone || '',
-  });
+  const [petData, setPetData] = useState<PetData>(() => buildInitialPetData(editPet));
   
   const [photoPreview, setPhotoPreview] = useState<string>(editPet?.photo || '');
   const [newAllergy, setNewAllergy] = useState('');
@@ -189,6 +234,42 @@ export function EnhancedAddPetModal({
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const prevPetTypeRef = useRef(petData.type);
+
+  /** Modal stays mounted while hidden — reset wizard when opening/closing (or when edit target changes). */
+  useEffect(() => {
+    if (!isOpen) {
+      if (!editPet) {
+        const data = createEmptyPetData();
+        setPetData(data);
+        setPhotoPreview('');
+        prevPetTypeRef.current = data.type;
+        setStep('photo');
+        setLoading(false);
+        setUploadingPhoto(false);
+        setUploadProgress(0);
+        setPendingVaxDates({});
+        setNewAllergy('');
+        setNewMedication('');
+        setNewCondition('');
+        setValidationErrors({});
+      }
+      return;
+    }
+
+    const data = editPet ? petDataFromEdit(editPet) : createEmptyPetData();
+    setPetData(data);
+    setPhotoPreview(editPet?.photo || '');
+    prevPetTypeRef.current = data.type;
+    setStep('photo');
+    setLoading(false);
+    setUploadingPhoto(false);
+    setUploadProgress(0);
+    setPendingVaxDates({});
+    setNewAllergy('');
+    setNewMedication('');
+    setNewCondition('');
+    setValidationErrors({});
+  }, [isOpen, editPet]);
   useEffect(() => {
     if (prevPetTypeRef.current === petData.type) return;
     prevPetTypeRef.current = petData.type;
