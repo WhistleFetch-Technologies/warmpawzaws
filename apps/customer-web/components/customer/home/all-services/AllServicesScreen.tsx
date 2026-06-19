@@ -1,8 +1,7 @@
 'use client';
 
 import React, { memo, useCallback, type ReactNode } from 'react';
-import { ArrowLeft, PawPrint, Search, Sparkles } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { ArrowLeft, PawPrint, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { AllServicesFeaturedBanner } from './AllServicesFeaturedBanner';
 import { AllServicesTrustBar } from './AllServicesTrustBar';
@@ -51,7 +50,6 @@ function AllServicesScreenComponent({
   onNavigate,
   topSlot,
 }: AllServicesScreenProps) {
-  const router = useRouter();
   const {
     primaryServices,
     secondaryServices,
@@ -131,14 +129,6 @@ function AllServicesScreenComponent({
                 <p className="truncate text-sm text-white/85">Choose a service for your pet</p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => router.push('/search')}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-md transition-all hover:bg-white/30 active:scale-95"
-              aria-label="Open search"
-            >
-              <Search className="h-5 w-5 text-white" />
-            </button>
           </div>
         </div>
       </div>

@@ -28,12 +28,11 @@ interface Pet {
 interface CustomerPetsPageProps {
   phone: string;
   onBack: () => void;
-  /** @deprecated Pet rows navigate to `/pets/[id]` via the router. */
   onNavigate?: (screen: string, data?: any) => void;
   onAddPet: () => void;
 }
 
-export function CustomerPetsPage({ phone, onBack, onAddPet }: CustomerPetsPageProps) {
+export function CustomerPetsPage({ phone, onBack, onAddPet, onNavigate }: CustomerPetsPageProps) {
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
   const [loading, setLoading] = useState(true);
@@ -157,7 +156,13 @@ export function CustomerPetsPage({ phone, onBack, onAddPet }: CustomerPetsPagePr
           <ul className="w-full space-y-3" role="list">
             {pets.map((pet) => (
               <li key={pet.id} className="w-full">
-                <PetCard pet={pet} onOpen={() => router.push(`/pets/${pet.id}`)} />
+                <PetCard pet={pet} onOpen={() => {
+                  if (onNavigate) {
+                    onNavigate('pet-details', { petId: pet.id });
+                  } else {
+                    router.push(`/pets/${pet.id}`);
+                  }
+                }} />
               </li>
             ))}
           </ul>

@@ -52,6 +52,7 @@ export function ChatInterfaceFromNotification({
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Shrink the overlay to the visual viewport so the input stays above the keyboard.
@@ -247,10 +248,16 @@ export function ChatInterfaceFromNotification({
         <div className="p-4 border-t border-gray-200">
           <div className="flex items-center gap-2">
             <input
+              ref={inputRef}
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+              onFocus={() => {
+                setTimeout(() => {
+                  inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }, 350);
+              }}
               placeholder="Type a message..."
               className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               style={{ fontSize: '16px' }}
