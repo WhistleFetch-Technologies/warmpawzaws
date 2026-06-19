@@ -16,6 +16,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { useVisualViewport } from '@/hooks/useVisualViewport';
 import { X, Send, Video, Loader2, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -45,11 +46,33 @@ export function ChatInterfaceFromNotification({
   onClose,
   onStartVideoCall,
 }: ChatInterfaceFromNotificationProps) {
+  useVisualViewport();
+  const overlayRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Shrink the overlay to the visual viewport so the input stays above the keyboard.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+
+    function updateOverlay() {
+      const el = overlayRef.current;
+      if (!el) return;
+      el.style.height = `${vv.height}px`;
+    }
+
+    updateOverlay();
+    vv.addEventListener('resize', updateOverlay);
+    vv.addEventListener('scroll', updateOverlay);
+    return () => {
+      vv.removeEventListener('resize', updateOverlay);
+      vv.removeEventListener('scroll', updateOverlay);
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -80,6 +103,12 @@ export function ChatInterfaceFromNotification({
           message: m.message || m.content,
           timestamp: m.created_at || m.timestamp,
         })));
+        const hasUnread = response.messages.some(
+          (m: any) => (m.sender_type === 'vendor' || m.sender_type === 'staff') && !m.is_read
+        );
+        if (hasUnread) {
+          apiClient.post(`/chat/conversations/${bookingId}/read`, {}).catch(() => {});
+        }
       }
     } catch (error: any) {
       console.error('Error loading messages:', error);
@@ -132,8 +161,8 @@ export function ChatInterfaceFromNotification({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-customer h-[600px] flex flex-col shadow-2xl">
+    <div ref={overlayRef} className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-customer flex flex-col shadow-2xl" style={{ height: 'min(600px, calc(var(--vvh, 100dvh) - 2rem))' }}>
         {/* Header */}
         <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white p-4 rounded-t-2xl flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -224,6 +253,7 @@ export function ChatInterfaceFromNotification({
               onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
               placeholder="Type a message..."
               className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+              style={{ fontSize: '16px' }}
               disabled={sending}
             />
             <Button

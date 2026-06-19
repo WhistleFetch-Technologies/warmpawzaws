@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useVisualViewport } from '@/hooks/useVisualViewport';
 import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, User, Phone, Calendar, MessageSquare, Headphones, CalendarPlus, Video } from 'lucide-react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
@@ -126,10 +127,36 @@ export function CommunicationHub({
   const [status, setStatus] = useState('active');
   const [isWithin7Days, setIsWithin7Days] = useState(true);
   
+  useVisualViewport();
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
+
+  // Contract the full-screen overlay to the visual viewport so the input bar
+  // stays visible when the virtual keyboard opens.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+
+    function updateOuter() {
+      const el = outerRef.current;
+      if (!el) return;
+      el.style.height = `${vv.height}px`;
+      el.style.top = `${vv.offsetTop}px`;
+      el.style.bottom = 'auto';
+    }
+
+    updateOuter();
+    vv.addEventListener('resize', updateOuter);
+    vv.addEventListener('scroll', updateOuter);
+    return () => {
+      vv.removeEventListener('resize', updateOuter);
+      vv.removeEventListener('scroll', updateOuter);
+    };
+  }, []);
 
   // Check if chat is active
   const chatActive = isChatActive(status) && (isBookingActive(status) || isWithin7Days);
@@ -258,7 +285,7 @@ export function CommunicationHub({
   // Mark all provider-side messages read when customer views chat (one bulk call + refresh).
   const lastBulkReadMsRef = useRef(0);
   useEffect(() => {
-    if (!chatActive || !bookingId) return;
+    if (!bookingId) return;
     const hasUnreadFromOthers = messages.some((m) => {
       const st = String(m.sender_type || '').toLowerCase();
       const read = m.is_read ?? (m as { isRead?: boolean }).isRead;
@@ -284,7 +311,7 @@ export function CommunicationHub({
     return () => {
       cancelled = true;
     };
-  }, [messages, bookingId, chatActive, loadConversation, onBookingChatMarkedRead]);
+  }, [messages, bookingId, loadConversation, onBookingChatMarkedRead]);
 
   // ============================================================================
   // ACTIONS
@@ -464,7 +491,7 @@ export function CommunicationHub({
   // ============================================================================
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 sm:items-center sm:p-4 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
+    <div ref={outerRef} className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 sm:items-center sm:p-4 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
       <div className="flex h-[min(92dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] max-h-[92dvh] w-full max-w-customer flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:h-[85vh] sm:max-h-[85vh] sm:max-w-2xl sm:rounded-2xl min-h-0">
         
         {/* Sticky header + status banners */}
@@ -753,7 +780,7 @@ export function CommunicationHub({
                   onKeyDown={handleKeyPress}
                   placeholder="Type a message..."
                   rows={1}
-                  className="w-full px-4 py-3 bg-gray-100 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-[#FF8C42] max-h-32"
+                  className="w-full px-4 py-3 bg-gray-100 rounded-2xl resize-none text-[16px] focus:outline-none focus:ring-2 focus:ring-[#FF8C42] max-h-32"
                   style={{ minHeight: '48px' }}
                 />
               </div>

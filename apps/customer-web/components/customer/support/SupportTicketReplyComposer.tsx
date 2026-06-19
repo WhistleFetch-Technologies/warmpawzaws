@@ -90,6 +90,7 @@ export function SupportTicketReplyComposer({
             }}
             disabled={sending}
             className="w-full min-h-[44px] max-h-[120px] resize-none rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/30 focus:border-[#FF8C42]/40 disabled:opacity-60"
+            style={{ fontSize: '16px' }}
           />
           <p className="mt-1 px-1 text-[10px] text-gray-400">
             Images or PDF, max 3 files (10MB each)

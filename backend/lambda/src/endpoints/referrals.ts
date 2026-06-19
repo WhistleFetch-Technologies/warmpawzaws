@@ -169,14 +169,7 @@ export function registerReferralEndpoints(app: Hono) {
          FROM loyalty_transactions lt
          WHERE lt.customer_id = $1
          AND lt.transaction_type = 'earned'
-         AND (
-           (lt.reference_type = 'referral' AND EXISTS (
-             SELECT 1 FROM referrals r WHERE r.id = lt.reference_id::uuid AND r.referrer_id = $1))
-           OR (lt.reference_type = 'customer_referral' AND EXISTS (
-             SELECT 1 FROM referral_redemptions rr
-             INNER JOIN referrals r ON r.id = rr.referral_id
-             WHERE rr.id = lt.reference_id::uuid AND r.referrer_id = $1))
-         )`,
+         AND lt.reference_type IN ('customer_referral', 'referral')`,
         [customerId]
       );
 
@@ -1039,23 +1032,7 @@ export function registerReferralEndpoints(app: Hono) {
          FROM loyalty_transactions lt
          WHERE lt.customer_id = $1
          AND lt.transaction_type = 'earned'
-         AND (
-           (lt.reference_type = 'customer_referral' AND EXISTS (
-             SELECT 1 FROM referral_redemptions rr
-             INNER JOIN referrals r ON r.id = rr.referral_id
-             WHERE rr.id = lt.reference_id::uuid AND r.referrer_id = $1
-             AND EXISTS (SELECT 1 FROM bookings WHERE customer_id = rr.referred_id)
-           ))
-           OR (lt.reference_type = 'referral' AND EXISTS (
-             SELECT 1 FROM referrals r
-             WHERE r.id = lt.reference_id::uuid AND r.referrer_id = $1
-             AND EXISTS (
-               SELECT 1 FROM referral_redemptions rr
-               WHERE rr.referral_id = r.id
-               AND EXISTS (SELECT 1 FROM bookings WHERE customer_id = rr.referred_id)
-             )
-           ))
-         )`,
+         AND lt.reference_type IN ('customer_referral', 'referral')`,
         [customerId]
       );
 

@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useVisualViewport } from '@/hooks/useVisualViewport';
 import { useRouter } from 'next/navigation';
 import { X, Send, Bot, User, AlertCircle, Headphones, Stethoscope, CalendarClock, MessageCircle } from 'lucide-react';
 import { aiChatbotApi, apiClient, supportCrmApi } from '@/lib/api-client';
@@ -212,6 +213,8 @@ export function AIChatbotWidget({
   presentation = 'dock',
 }: AIChatbotWidgetProps) {
   const router = useRouter();
+  useVisualViewport();
+  const panelRef = useRef<HTMLDivElement>(null);
   const lastBookingUrlRef = useRef<string | null>(null);
   const lastBookingCategoryRef = useRef<string | null>(null);
   const lastBookingIntentRef = useRef<BookingAssistIntent>('discover');
@@ -1318,6 +1321,29 @@ export function AIChatbotWidget({
     }
   };
 
+  // Keep the floating panel above the virtual keyboard on mobile.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const basePx = presentation === 'modal' ? 16 : 104; // 1rem vs 6.5rem
+
+    function updatePanel() {
+      const el = panelRef.current;
+      if (!el) return;
+      const kbHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      el.style.bottom = `${Math.max(basePx, kbHeight + basePx)}px`;
+      el.style.maxHeight = `${vv.height - basePx - 16}px`;
+    }
+
+    updatePanel();
+    vv.addEventListener('resize', updatePanel);
+    vv.addEventListener('scroll', updatePanel);
+    return () => {
+      vv.removeEventListener('resize', updatePanel);
+      vv.removeEventListener('scroll', updatePanel);
+    };
+  }, [presentation]);
+
   if (!isOpen) {
     return null;
   }
@@ -1353,7 +1379,7 @@ export function AIChatbotWidget({
           }}
         />
       )}
-      <div className={panelShell}>
+      <div ref={panelRef} className={panelShell}>
       {/* Header — match home FAB / Help gradient */}
       <div className="flex flex-col gap-2 p-4 border-b border-gray-200 shrink-0 rounded-t-lg bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white">
         <div className="flex items-start justify-between gap-2">
@@ -1897,6 +1923,7 @@ export function AIChatbotWidget({
                     : 'Type your message...'
               }
               className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/40"
+              style={{ fontSize: '16px' }}
               disabled={sending}
             />
             <button

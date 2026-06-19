@@ -123,7 +123,7 @@ export function SupportTicketMessages({
     <div
       className={cn(
         'space-y-4 overflow-y-auto pr-0.5',
-        fillAvailable ? 'min-h-0 flex-1 overscroll-contain' : 'max-h-[min(58vh,520px)]',
+        fillAvailable ? 'min-h-0 flex-1 overscroll-contain' : 'max-h-[min(58dvh,520px)]',
         className
       )}
     >
