@@ -19,6 +19,7 @@ import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 
 // ============================================================================
 // TYPES
@@ -694,17 +695,7 @@ export function UniversalServiceProviderList({
           roleIcon: p.roleIcon || null,
           roleImage: p.roleImage || null,
           // ✅ FIX: Map nextAvailable object to nextAvailableSlot string for display
-          nextAvailableSlot: (() => {
-            if (typeof p.nextAvailableSlot === 'string') return p.nextAvailableSlot;
-            if (p.nextAvailableSlot && typeof p.nextAvailableSlot === 'object') {
-              return p.nextAvailableSlot.formattedDisplay || p.nextAvailableSlot.display || undefined;
-            }
-            if (typeof p.nextAvailability === 'string') return p.nextAvailability;
-            if (p.nextAvailable && typeof p.nextAvailable === 'object') {
-              return p.nextAvailable.display || p.nextAvailable.formattedDisplay || undefined;
-            }
-            return undefined;
-          })(),
+          nextAvailableSlot: resolveNextAvailableLabel(p),
         }));
 
         // Set providers from primary endpoint

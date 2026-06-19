@@ -16,6 +16,7 @@ import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 
 interface VendorDiscoveryByProblemProps {
   roleId: string;
@@ -523,6 +524,7 @@ function VendorCard({
   getServiceStyleLabel,
   labels
 }: VendorCardProps) {
+  const nextLabel = resolveNextAvailableLabel(vendor);
   return (
     <div
       className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-all overflow-hidden"
@@ -565,14 +567,13 @@ function VendorCard({
         </div>
 
         {/* Next Available Slot */}
-        {vendor.nextAvailable && (
+        {nextLabel && (
           <div className="flex items-center gap-2 mb-3 p-2 bg-green-50 rounded-lg border border-green-100">
             <Calendar className="w-4 h-4 text-green-600" />
             <div className="flex-1">
               <p className="text-xs text-green-900">
-                Next Available: <span className="font-medium">{vendor.nextAvailable.date}</span>
+                Next Available: <span className="font-medium">{nextLabel}</span>
               </p>
-              <p className="text-xs text-green-600">{vendor.nextAvailable.time}</p>
             </div>
           </div>
         )}

@@ -21,7 +21,7 @@ import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-
 import { minPriceForVendor, priceForCard } from '@/lib/boarding-vendor-booking-utils';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
-import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 
 export interface BoardingVendorExpandableCardProps {
   v: BoardingListVendor;
@@ -78,15 +78,7 @@ export function BoardingVendorExpandableCard({
   const roleLabel = String(
     raw.roleDisplayName || raw.roleName || raw.vendorType || ''
   ).trim();
-  const nextSlot = (() => {
-    if (typeof raw.nextAvailableSlot === 'string') return raw.nextAvailableSlot;
-    if (raw.nextAvailableSlot?.formattedDisplay) return raw.nextAvailableSlot.formattedDisplay;
-    if (raw.nextAvailableSlot?.display) return raw.nextAvailableSlot.display;
-    if (typeof raw.nextAvailability === 'string') return raw.nextAvailability;
-    if (typeof raw.nextAvailable === 'string') return raw.nextAvailable;
-    if (raw.nextAvailable?.display) return raw.nextAvailable.display;
-    return null;
-  })();
+  const nextSlot = resolveNextAvailableLabel(raw);
 
   return (
     <Card className="bg-white rounded-xl border border-gray-100 shadow-sm">

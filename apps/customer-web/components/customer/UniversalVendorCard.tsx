@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { trackClick } from '@/lib/analytics';
 import { StarRating } from '@/components/customer/shared/StarRating';
 import { resolveVendorRatingForCard } from '@/lib/resolve-vendor-rating';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 
 // ✅ FIX: Add promotion type for vendor discounts display
 interface VendorPromotion {
@@ -167,15 +168,7 @@ export function UniversalVendorCard({
   };
 
   // ✅ ENRICHED: Format next availability display
-  const getNextAvailability = () => {
-    if (vendor.nextAvailableSlot?.formattedDisplay) {
-      return vendor.nextAvailableSlot.formattedDisplay;
-    }
-    if (vendor.nextAvailability) {
-      return vendor.nextAvailability;
-    }
-    return null;
-  };
+  const getNextAvailability = () => resolveNextAvailableLabel(vendor);
 
   // Format distance display (integer km, whole metres under 1 km)
   const getDistanceDisplay = () => {

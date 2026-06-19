@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/api-client';
 import {
   buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
+  formatIstDateYYYYMMDD,
   type NormalizedTimeSlot,
 } from '@/lib/available-slots-response';
 
@@ -46,9 +47,7 @@ export function TimeSlotSelector({
   const weekDates = getDatesForWeek();
 
   useEffect(() => {
-    const today = new Date();
-    const todayStr = formatDate(today);
-    setSelectedDate(todayStr);
+    setSelectedDate(formatIstDateYYYYMMDD());
   }, []);
 
   useEffect(() => {

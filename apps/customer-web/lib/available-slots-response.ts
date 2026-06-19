@@ -119,3 +119,128 @@ export function normalizeAvailableSlotsResponse(
   const message = typeof r.message === 'string' ? r.message : undefined;
   return { success, slots, message };
 }
+
+export type NextAvailableSlot = {
+  date: string;
+  time: string;
+  display: string;
+};
+
+/** IST calendar date for slot chips — use instead of browser-local when applying past guard. */
+export { ymdInIst as formatIstDateYYYYMMDD };
+
+export function isSlotPastInIst(
+  dateYmd: string,
+  slotHhmm: string,
+  options?: SlotGuardOptions
+): boolean {
+  const now = options?.now ?? new Date();
+  if (dateYmd !== ymdInIst(now)) return false;
+  const minNoticeMinutes = options?.minNoticeMinutes ?? DEFAULT_MIN_NOTICE_MINUTES;
+  const slotMinutes = minutesFromHhmm(slotHhmm);
+  const currentMinutes = minutesFromHhmm(hmInIst(now));
+  return slotMinutes + minNoticeMinutes <= currentMinutes;
+}
+
+function addDaysToYmd(ymd: string, deltaDays: number): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const base = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  base.setUTCDate(base.getUTCDate() + deltaDays);
+  return `${base.getUTCFullYear()}-${String(base.getUTCMonth() + 1).padStart(2, '0')}-${String(base.getUTCDate()).padStart(2, '0')}`;
+}
+
+function parse12hTimeToHhmm(s: string): string | null {
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(s.trim());
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = m[2];
+  const ap = m[3].toUpperCase();
+  if (ap === 'PM' && h !== 12) h += 12;
+  if (ap === 'AM' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${min}`;
+}
+
+function parseNextAvailableRaw(raw: unknown): NextAvailableSlot | null {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    const display = raw.trim();
+    return display ? { date: '', time: '', display } : null;
+  }
+  if (typeof raw === 'object') {
+    const o = raw as Record<string, unknown>;
+    const display =
+      (typeof o.display === 'string' && o.display) ||
+      (typeof o.formattedDisplay === 'string' && o.formattedDisplay) ||
+      '';
+    const date = typeof o.date === 'string' ? o.date.trim().slice(0, 10) : '';
+    const time =
+      typeof o.time === 'string'
+        ? o.time.trim().slice(0, 5)
+        : typeof o.start_time === 'string'
+          ? o.start_time.trim().slice(0, 5)
+          : '';
+    if (display || (date && time)) {
+      return { date, time, display: display || `${date} ${time}`.trim() };
+    }
+  }
+  return null;
+}
+
+function inferDateYmdFromDisplay(display: string, todayYmd: string): string | null {
+  const d = display.trim();
+  if (/^Today\b/i.test(d)) return todayYmd;
+  if (/^Tomorrow\b/i.test(d)) return addDaysToYmd(todayYmd, 1);
+  return null;
+}
+
+/** Drops past next-available badges (defense-in-depth vs discovery API). */
+export function sanitizeNextAvailable(
+  raw: unknown,
+  options?: SlotGuardOptions
+): NextAvailableSlot | undefined {
+  const parsed = parseNextAvailableRaw(raw);
+  if (!parsed) return undefined;
+
+  const now = options?.now ?? new Date();
+  const todayYmd = ymdInIst(now);
+
+  if (parsed.date && parsed.time && isSlotPastInIst(parsed.date, parsed.time, options)) {
+    return undefined;
+  }
+
+  if (parsed.display) {
+    const inferredDate = inferDateYmdFromDisplay(parsed.display, todayYmd);
+    const timeMatch = parsed.display.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
+    if (inferredDate && timeMatch) {
+      const hhmm = parse12hTimeToHhmm(timeMatch[1]);
+      if (hhmm && isSlotPastInIst(inferredDate, hhmm, options)) {
+        return undefined;
+      }
+    }
+  }
+
+  return parsed;
+}
+
+export function nextAvailableSlotLabel(
+  raw: unknown,
+  options?: SlotGuardOptions
+): string | undefined {
+  return sanitizeNextAvailable(raw, options)?.display;
+}
+
+/** Resolve label from common discovery payload field names. */
+export function resolveNextAvailableLabel(
+  source: {
+    nextAvailable?: unknown;
+    nextAvailableSlot?: unknown;
+    nextAvailability?: unknown;
+  },
+  options?: SlotGuardOptions
+): string | undefined {
+  for (const raw of [source.nextAvailable, source.nextAvailableSlot, source.nextAvailability]) {
+    const label = nextAvailableSlotLabel(raw, options);
+    if (label) return label;
+  }
+  return undefined;
+}

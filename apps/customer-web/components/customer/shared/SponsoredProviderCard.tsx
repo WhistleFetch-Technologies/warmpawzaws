@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 
 interface SponsoredProvider {
   id: string;
@@ -313,7 +314,13 @@ export function TopProvidersSection({
       if (serviceStyle) params.append('serviceStyle', serviceStyle);
 
       const res = await apiClient.get<any>(`/providers/top?${params.toString()}`);
-      setProviders(res?.providers || []);
+      const raw = res?.providers || [];
+      setProviders(
+        raw.map((p: Record<string, unknown>) => ({
+          ...p,
+          nextAvailableSlot: resolveNextAvailableLabel(p) ?? p.nextAvailableSlot,
+        }))
+      );
     } catch (error) {
       console.error('Error loading top providers:', error);
       setProviders([]);

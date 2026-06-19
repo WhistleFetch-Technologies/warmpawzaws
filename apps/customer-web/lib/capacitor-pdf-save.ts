@@ -117,8 +117,8 @@ async function tryFilesystemAndShare(
 
   try {
     const [{ Filesystem, Directory }, { Share }] = await Promise.all([
-      import('@capacitor/filesystem'),
-      import('@capacitor/share'),
+      import(/* webpackIgnore: true */ '@capacitor/filesystem'),
+      import(/* webpackIgnore: true */ '@capacitor/share'),
     ]);
 
     const base64 = await blobToBase64(blob);
