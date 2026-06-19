@@ -964,6 +964,21 @@ export function registerVendorProfileEndpoints(app: Hono) {
         updates[dbKey] = value;
       }
 
+      if (
+        updates.gst_number !== undefined &&
+        updates.gst_number !== null &&
+        String(updates.gst_number).trim() !== ''
+      ) {
+        const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+        const normalizedGst = String(updates.gst_number).toUpperCase().trim();
+        if (!gstRegex.test(normalizedGst)) {
+          return c.json({
+            error: 'Invalid GSTIN format. Please enter a valid 15-character GSTIN.',
+          }, 400);
+        }
+        updates.gst_number = normalizedGst;
+      }
+
       // Get existing vendor (same resolver - supports vendor_identity + auto-create)
       const vendor = await resolveVendorById(vendorId);
       if (!vendor) {
@@ -1011,12 +1026,6 @@ export function registerVendorProfileEndpoints(app: Hono) {
           updateData[key] = value;
         }
       }
-
-      // #region agent log
-      if (updates.gst_number !== undefined || rawUpdates.gstNumber !== undefined || rawUpdates.gstin !== undefined) {
-        console.log(JSON.stringify({ sessionId: '7935b4', location: 'vendorProfile.vendor.ts:profileUpdate', message: 'gst update path', data: { receivedGstNumber: rawUpdates.gstNumber ?? null, receivedGstin: rawUpdates.gstin ?? null, updatesGstNumber: updates.gst_number ?? null, inUpdateData: updateData.gst_number ?? null, inSafeColumns: safeColumns.includes('gst_number'), columnExists: existingColumns.has('gst_number') }, hypothesisId: 'B', timestamp: Date.now() }));
-      }
-      // #endregion
 
       await appendVendorGeocodeToProfileUpdate({
         vendor,

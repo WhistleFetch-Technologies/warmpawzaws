@@ -49,12 +49,33 @@ export function parseArticleSlugFromBannerPath(path: unknown): string | null {
   }
 }
 
+function decodeArticleSlugSegment(segment: string): string | null {
+  const s = String(segment ?? '').trim();
+  if (!s) return null;
+  try {
+    return decodeURIComponent(s) || null;
+  } catch {
+    return s;
+  }
+}
+
+/** Parse slug from `/articles?slug=` or legacy path-style `/articles/{slug}`. */
+function extractArticleSlugFromUrl(raw: string): string | null {
+  const fromQuery = parseArticleSlugFromBannerPath(raw);
+  if (fromQuery) return fromQuery;
+
+  const pathOnly = raw.split('?')[0].split('#')[0].trim();
+  const segments = pathOnly.replace(/^\/+/, '').split('/').filter(Boolean);
+  if (segments.length === 2 && segments[0].toLowerCase() === 'articles') {
+    return decodeArticleSlugSegment(segments[1]);
+  }
+  return null;
+}
+
 export function parseArticleSlugFromCtaLink(ctaLink: unknown): string | null {
   const raw = String(ctaLink ?? '').trim();
   if (!raw) return null;
-  const fromPath = parseArticleSlugFromBannerPath(raw);
-  if (fromPath) return fromPath;
-  return null;
+  return extractArticleSlugFromUrl(raw);
 }
 
 export function isInAppCategoryBannerTargetMetadata(metadata: unknown): boolean {
