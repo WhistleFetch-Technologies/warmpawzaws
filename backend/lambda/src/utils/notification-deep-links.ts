@@ -60,5 +60,9 @@ export function resolveNotificationDeepLink(params: {
     return isVendor ? '/dashboard' : '/';
   }
 
+  if (eventType.includes('vaccination')) {
+    return isVendor ? '/dashboard' : '/vet';
+  }
+
   return isVendor ? '/dashboard' : '/';
 }

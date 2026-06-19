@@ -49,10 +49,15 @@ export function navigateFromPushPayload(data: Record<string, string | undefined>
 
   const payload = normalizePushData(data);
   const deepLink = (payload.deep_link || payload.deepLink || '').trim();
-  const type = (payload.type || '').toLowerCase();
+  const type = (payload.type || payload.eventType || '').toLowerCase();
   const bookingId = payload.booking_id || payload.bookingId;
 
   console.log('[push-navigation] customer tap navigate', { type, deepLink, bookingId });
+
+  if (type.includes('vaccination') && !deepLink) {
+    openSpaScreen('vet');
+    return;
+  }
 
   if (bookingId && (type.includes('video') || deepLink.includes('video'))) {
     window.location.assign(`/video?bookingId=${encodeURIComponent(bookingId)}`);

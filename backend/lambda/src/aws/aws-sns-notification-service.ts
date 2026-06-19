@@ -11,7 +11,7 @@
  */
 
 import { SNSClient, PublishCommand, CreatePlatformEndpointCommand } from '@aws-sdk/client-sns';
-import { query, insert } from '../database/rds-connection';
+import { query, insert, update } from '../database/rds-connection';
 import { NOTIFICATION_TEMPLATES, NotificationEvent, NotificationRecipient, PushNotificationPayload } from './constatns/interface';
 import { dispatchNotification } from '../utils/notification-dispatch';
 
