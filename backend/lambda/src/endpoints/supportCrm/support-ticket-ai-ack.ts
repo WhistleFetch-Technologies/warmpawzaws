@@ -15,6 +15,27 @@ import { assignSupportTicket, getSupportRoutingSettings } from './support-ticket
 const FALLBACK_ACK =
   "We've received your request and will assign it to the appropriate support specialist shortly.";
 
+/** Dedupe concurrent ack work within one Lambda instance (create + ticket GET/poll). */
+const aiAckInflight = new Map<string, Promise<void>>();
+
+function isUniqueViolation(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  return code === '23505';
+}
+
+function runAiAckOnce(ticketId: string): Promise<void> {
+  const inflight = aiAckInflight.get(ticketId);
+  if (inflight) return inflight;
+
+  const task = processSupportTicketAiAck(ticketId).finally(() => {
+    if (aiAckInflight.get(ticketId) === task) {
+      aiAckInflight.delete(ticketId);
+    }
+  });
+  aiAckInflight.set(ticketId, task);
+  return task;
+}
+
 const AI_ACK_SYSTEM_PROMPT = `You write a brief support ticket acknowledgement for Warmpawz (pet services platform).
 Output ONLY the acknowledgement message text. No JSON. No markdown headers.
 Rules:
@@ -244,15 +265,26 @@ export async function processSupportTicketAiAck(ticketId: string): Promise<void>
 
     const latencyMs = Date.now() - started;
 
-    await insert('support_ticket_responses', {
-      ticket_id: ticketId,
-      responder_id: null,
-      responder_type: 'system_ai',
-      responder_name: 'Warmpawz Support',
-      message,
-      is_internal: false,
-      created_at: new Date().toISOString(),
-    });
+    try {
+      await insert('support_ticket_responses', {
+        ticket_id: ticketId,
+        responder_id: null,
+        responder_type: 'system_ai',
+        responder_name: 'Warmpawz Support',
+        message,
+        is_internal: false,
+        created_at: new Date().toISOString(),
+      });
+    } catch (insertErr) {
+      if (isUniqueViolation(insertErr) || (await hasExistingAiAck(ticketId))) {
+        const tickets = await select('support_tickets', { id: ticketId });
+        if (tickets.length) {
+          await repairStuckUnassignedAck(tickets[0] as Record<string, unknown>);
+        }
+        return;
+      }
+      throw insertErr;
+    }
 
     const now = new Date().toISOString();
     const nextStatus = isUnassigned(ticket) ? 'awaiting_assignment' : 'ai_acknowledged';
@@ -324,7 +356,7 @@ export async function processSupportTicketAiAck(ticketId: string): Promise<void>
  */
 export function scheduleSupportTicketAiAck(ticketId: string): void {
   if (!ticketId) return;
-  void processSupportTicketAiAck(ticketId).catch((err) => {
+  void runAiAckOnce(ticketId).catch((err) => {
     console.error('[support-ai-ack] background task failed:', ticketId, err);
   });
 }
@@ -342,7 +374,9 @@ export async function retryPostAckAssignment(ticketId: string): Promise<void> {
     await repairStuckUnassignedAck(ticket);
     return;
   }
-  if (status === 'open' && !(await hasExistingAiAck(ticketId))) {
-    await processSupportTicketAiAck(ticketId);
+  // Do not re-run AI ack on ticket GET while status is still `open` — create already
+  // schedules ack; polling was racing concurrent Bedrock calls and posting duplicate auto-replies.
+  if (status === 'open' && ticket.ai_ack_failed === true && !(await hasExistingAiAck(ticketId))) {
+    scheduleSupportTicketAiAck(ticketId);
   }
 }
