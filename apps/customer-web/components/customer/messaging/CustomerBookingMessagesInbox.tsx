@@ -559,7 +559,10 @@ export function CustomerBookingMessagesInbox({
             otherUserName={active.title}
             userType="customer"
             onClose={onThreadClosedRefresh}
-            onBookingChatMarkedRead={bumpMessagesInboxVersion}
+            onBookingChatMarkedRead={() => {
+              bumpMessagesInboxVersion();
+              void refreshInbox();
+            }}
           />
         </div>
       </div>

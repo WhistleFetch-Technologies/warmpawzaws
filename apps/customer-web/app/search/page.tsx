@@ -507,7 +507,7 @@ function SearchContent() {
               value={query}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
               placeholder="Services, vendors…"
-              className="h-11 w-full rounded-2xl border border-gray-200 bg-white py-2 pl-10 pr-12 text-[15px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/25"
+              className="h-11 w-full rounded-2xl border border-gray-200 bg-white py-2 pl-10 pr-12 text-[16px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/25"
             />
             <Button
               type="submit"

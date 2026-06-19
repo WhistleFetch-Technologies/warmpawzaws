@@ -411,12 +411,13 @@ export function registerChatEndpoints(app: Hono) {
   app.post("/chat/conversations/:conversationId/read", async (c) => {
     try {
       const { conversationId } = c.req.param();
+      const resolvedId = await resolveChatBookingId(conversationId);
 
       await query(`
         UPDATE chat_messages 
         SET is_read = true, read_at = NOW()
         WHERE booking_id = $1 AND is_read = false AND sender_type != 'customer'
-      `, [conversationId]).catch(() => {});
+      `, [resolvedId]).catch(() => {});
 
       return c.json({ success: true });
     } catch (error: any) {
