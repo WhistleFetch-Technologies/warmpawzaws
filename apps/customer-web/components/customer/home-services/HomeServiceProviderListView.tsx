@@ -31,6 +31,7 @@ import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 
 interface ServiceConfig {
   roleId: string;
@@ -227,7 +228,7 @@ export function HomeServiceProviderListView({
             reviewCount: Number(p.totalReviews ?? p.reviewCount ?? 0),
             specializations: Array.isArray(p.specializations) ? p.specializations : [],
             amenities: Array.isArray(p.amenities) ? p.amenities : [],
-            nextAvailableSlot: p.nextAvailability ?? p.nextAvailableSlot?.formattedDisplay ?? p.nextAvailableSlot ?? 'Today',
+            nextAvailableSlot: resolveNextAvailableLabel(p) ?? undefined,
             consultationFee: Number(p.consultationFee ?? p.price ?? 0),
             price: Number(p.price ?? p.consultationFee ?? 199),
             isVerified: Boolean(p.isVerified),
@@ -274,7 +275,7 @@ export function HomeServiceProviderListView({
             reviewCount: Number(service.vendorReviewCount ?? service.review_count ?? 0) || 0,
             specializations: service.specializations || [],
             amenities: service.amenities || [],
-            nextAvailableSlot: 'Today',
+            nextAvailableSlot: resolveNextAvailableLabel(service) ?? undefined,
             consultationFee: service.price || 0,
             price: service.price || 199,
             isVerified: Boolean(service.vendorVerified),

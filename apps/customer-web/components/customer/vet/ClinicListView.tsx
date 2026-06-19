@@ -34,6 +34,7 @@ import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 
 interface ClinicListViewProps {
   phone: string;
@@ -163,17 +164,7 @@ function mapByStyleProvider(p: any): ClinicProvider | null {
   if (!id) return null;
   const rawServices = Array.isArray(p.services) ? p.services : [];
   const services = rawServices.map((s: any, i: number) => mapApiServiceToRow(s, id, i));
-  const nextSlot = (() => {
-    if (typeof p.nextAvailableSlot === 'string') return p.nextAvailableSlot;
-    if (p.nextAvailableSlot && typeof p.nextAvailableSlot === 'object') {
-      return p.nextAvailableSlot.formattedDisplay || p.nextAvailableSlot.display;
-    }
-    if (typeof p.nextAvailability === 'string') return p.nextAvailability;
-    if (p.nextAvailable && typeof p.nextAvailable === 'object') {
-      return p.nextAvailable.display || p.nextAvailable.formattedDisplay;
-    }
-    return undefined;
-  })();
+  const nextSlot = resolveNextAvailableLabel(p);
   const address =
     p.address ||
     p.vendorLocation?.address ||
@@ -281,21 +272,7 @@ export function ClinicListView({
     clinicsOnly.forEach((service: any) => {
       const vendorId = String(service.vendorId || service.id || '');
       if (!vendorId) return;
-      const nextSlot = (() => {
-        if (service.nextAvailability && typeof service.nextAvailability === 'string')
-          return service.nextAvailability;
-        if (
-          service.nextAvailableSlot &&
-          typeof service.nextAvailableSlot === 'object' &&
-          service.nextAvailableSlot.formattedDisplay
-        )
-          return service.nextAvailableSlot.formattedDisplay;
-        if (typeof service.nextAvailableSlot === 'string') return service.nextAvailableSlot;
-        if (service.nextAvailable && typeof service.nextAvailable === 'object')
-          return service.nextAvailable.display || service.nextAvailable.formattedDisplay;
-        if (typeof service.nextAvailable === 'string') return service.nextAvailable;
-        return undefined;
-      })();
+      const nextSlot = resolveNextAvailableLabel(service);
       const actualTiming = (() => {
         if (service.operatingHours && typeof service.operatingHours === 'object') {
           const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];

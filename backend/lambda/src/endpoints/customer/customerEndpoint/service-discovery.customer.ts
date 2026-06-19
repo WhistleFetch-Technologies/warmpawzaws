@@ -55,6 +55,14 @@ import {
   vendorGalleryDrivesListingPhoto,
   getVendorListingPhotoUrl,
 } from '../../../utils/vendor-listing-photo';
+import {
+  addDaysToYmd,
+  dayOfWeekFromYmd,
+  DEFAULT_MIN_NOTICE_MINUTES,
+  formatNextAvailableDisplay,
+  isSlotPastInIst,
+  ymdInIst,
+} from '../../../utils/ist-scheduling';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
@@ -1235,11 +1243,8 @@ async function getNextAvailableSlot(
   serviceStyleFilter?: string[]
 ): Promise<{ date: string; time: string; display: string } | null> {
   try {
-    // ✅ FIX: Use server's current time (server should be configured in IST)
-    // Database stores times in IST, so we use server time directly
     const now = new Date();
-    const currentDayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-    const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const todayYmd = ymdInIst(now);
     const SLOT_DURATION = 30; // minutes - atomic slot size
 
     // Build query to get availability WINDOWS (start + end time) for slot generation
@@ -1318,10 +1323,8 @@ async function getNextAvailableSlot(
     } catch (_) { /* use original vendorId */ }
 
     for (let dayOffset = 0; dayOffset <= 13; dayOffset++) {
-      const checkDate = new Date(now);
-      checkDate.setDate(checkDate.getDate() + dayOffset);
-      const checkDayOfWeek = checkDate.getDay();
-      const dateStr = checkDate.toISOString().split('T')[0];
+      const dateStr = addDaysToYmd(todayYmd, dayOffset);
+      const checkDayOfWeek = dayOfWeekFromYmd(dateStr);
 
       // Find availability windows for this day of week
       const dayWindows = va2.rows.filter((r: any) => Number(r.day_of_week) === checkDayOfWeek);
@@ -1357,8 +1360,8 @@ async function getNextAvailableSlot(
         while (currentMinutes + SLOT_DURATION <= winEnd) {
           const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, '0')}:${String(currentMinutes % 60).padStart(2, '0')}`;
 
-          // Skip if past (for today)
-          if (dayOffset === 0 && timeStr <= currentHHMM) {
+          // Skip if past (for today) — IST + min notice buffer
+          if (isSlotPastInIst(dateStr, timeStr, DEFAULT_MIN_NOTICE_MINUTES, now)) {
             currentMinutes += SLOT_DURATION;
             continue;
           }
@@ -1369,23 +1372,7 @@ async function getNextAvailableSlot(
             continue;
           }
 
-          // Found a truly available slot!
-          const formatted = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-
-          let display: string;
-          if (dayOffset === 0) {
-            display = `Today ${formatted}`;
-          } else if (dayOffset === 1) {
-            display = `Tomorrow ${formatted}`;
-          } else if (dayOffset <= 6) {
-            display = `${checkDate.toLocaleDateString('en-US', { weekday: 'short' })} ${formatted}`;
-          } else {
-            display = `${checkDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${formatted}`;
-          }
-
-
-
-          console.log('display_______________________________>', display, dateStr, timeStr);
+          const display = formatNextAvailableDisplay(dateStr, timeStr, todayYmd);
 
           return {
             date: dateStr,
@@ -5182,33 +5169,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           let nextAvailable: { date: string; time: string; display: string } | null = null;
           try {
             const styleArray = serviceStyle === 'at_center' ? ['at_center', 'at_vendor'] : serviceStyle === 'tele' ? ['tele', 'online', 'video_consultation'] : [serviceStyle].filter(Boolean);
-
             if (styleArray.length > 0) {
-              const today = new Date();
-              const dayOfWeek = today.getDay();
-              const va2 = await query(
-                `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
-                 FROM vendor_availability_v2
-                 WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                   AND (is_available IS NULL OR is_available = true)
-                   AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))
-                 ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
-                [vendor.id, vendor.phone || '', styleArray]
-              );
-              if (va2.rows?.length > 0) {
-                const s = va2.rows[0];
-                let daysToAdd = s.day_of_week - dayOfWeek;
-                if (daysToAdd < 0) daysToAdd += 7;
-                const targetDate = new Date(today);
-                targetDate.setDate(targetDate.getDate() + daysToAdd);
-                const timeStr = (s.start_time || '09:00').toString().substring(0, 5);
-                const formatted = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-                nextAvailable = {
-                  date: targetDate.toISOString().split('T')[0],
-                  time: timeStr,
-                  display: daysToAdd === 0 ? `Today ${formatted}` : daysToAdd === 1 ? `Tomorrow ${formatted}` : `${targetDate.toLocaleDateString('en-US', { weekday: 'short' })} ${formatted}`,
-                };
-              }
+              nextAvailable = await getNextAvailableSlot(vendor.id, vendor.phone || '', styleArray);
             }
           } catch (_) { }
 
@@ -5562,30 +5524,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
         let nextAvailable: { date: string; time: string; display: string } | null = null;
         try {
-          const today = new Date();
-          const dayOfWeek = today.getDay();
-          const va2 = await query(
-            `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
-             FROM vendor_availability_v2
-             WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-               AND (is_available IS NULL OR is_available = true)
-             ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
-            [vendorId, row.phone || '']
-          );
-          if (va2.rows?.length > 0) {
-            const s = va2.rows[0];
-            let daysToAdd = s.day_of_week - dayOfWeek;
-            if (daysToAdd < 0) daysToAdd += 7;
-            const targetDate = new Date(today);
-            targetDate.setDate(targetDate.getDate() + daysToAdd);
-            const timeStr = (s.start_time || '09:00').toString().substring(0, 5);
-            const formatted = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-            nextAvailable = {
-              date: targetDate.toISOString().split('T')[0],
-              time: timeStr,
-              display: daysToAdd === 0 ? `Today ${formatted}` : daysToAdd === 1 ? `Tomorrow ${formatted}` : `${targetDate.toLocaleDateString('en-US', { weekday: 'short' })} ${formatted}`,
-            };
-          }
+          nextAvailable = await getNextAvailableSlot(vendorId, row.phone || '');
         } catch (_) { }
         let distanceKm: number | null =
           row.distance_km != null ? parseFloat(row.distance_km) : null;

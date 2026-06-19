@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { NutritionistBookingRouter } from './NutritionistBookingRouter';
 import { DietConsultationVendorsProps, Vendor } from './constants/interface';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 
 
 
@@ -264,15 +265,18 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
                             </div>
                           )}
 
-                          {
-                            vendor.nextAvailable && (
-                              <div className="text-xs text-slate-500 ">
-                                <span className="font-semibold text-slate-900 ">
-                                  {vendor.nextAvailable.display}
-                                </span>
-                              </div>
-                            )
-                          }
+                          {(() => {
+                            const nextLabel = resolveNextAvailableLabel({
+                              nextAvailable: vendor.nextAvailable,
+                            });
+                            return (
+                              nextLabel && (
+                                <div className="text-xs text-slate-500 ">
+                                  <span className="font-semibold text-slate-900 ">{nextLabel}</span>
+                                </div>
+                              )
+                            );
+                          })()}
                           {(vendor.priceMin || vendor.priceMax) && (
                             <div className="text-xs text-slate-500">
                               <span className="font-semibold text-slate-900">

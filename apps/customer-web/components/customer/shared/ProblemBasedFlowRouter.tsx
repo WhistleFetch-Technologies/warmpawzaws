@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { UniversalServiceProviderList } from './UniversalServiceProviderList';
 import { UniversalProviderProfile } from './UniversalProviderProfile';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 
 // ============================================================================
 // TYPES
@@ -459,44 +460,8 @@ export function ProblemBasedFlowRouter({
             let providers = response.providers || response.vendors || [];
             
             const isAvailable = providers.length > 0;
-            // Phase 2: earliest slot from first provider's nextAvailable/nextAvailableSlot/nextAvailability
-            let earliestSlot: string | undefined;
             const first = providers[0];
-            if (first) {
-              let slot: string | undefined;
-              // Priority 1: nextAvailable (API returns this field name)
-              if (first.nextAvailable && typeof first.nextAvailable === 'object') {
-                slot = first.nextAvailable.display || first.nextAvailable.formattedDisplay || 
-                  (first.nextAvailable.date && first.nextAvailable.time 
-                    ? `${first.nextAvailable.date} ${first.nextAvailable.time}` 
-                    : undefined);
-              } else if (typeof first.nextAvailable === 'string') {
-                slot = first.nextAvailable;
-              }
-              // Fallback: Handle nextAvailableSlot
-              if (!slot) {
-                if (typeof first.nextAvailableSlot === 'string') {
-                  slot = first.nextAvailableSlot;
-                } else if (first.nextAvailableSlot && typeof first.nextAvailableSlot === 'object') {
-                  slot = first.nextAvailableSlot.formattedDisplay || first.nextAvailableSlot.display || 
-                    (first.nextAvailableSlot.date && first.nextAvailableSlot.time 
-                      ? `${first.nextAvailableSlot.date} ${first.nextAvailableSlot.time}` 
-                      : undefined);
-                }
-              }
-              // Fallback to nextAvailability
-              if (!slot) {
-                if (typeof first.nextAvailability === 'string') {
-                  slot = first.nextAvailability;
-                } else if (first.nextAvailability && typeof first.nextAvailability === 'object') {
-                  slot = first.nextAvailability.formattedDisplay || first.nextAvailability.display || 
-                    (first.nextAvailability.date && first.nextAvailability.time 
-                      ? `${first.nextAvailability.date} ${first.nextAvailability.time}` 
-                      : undefined);
-                }
-              }
-              if (slot) earliestSlot = slot;
-            }
+            const earliestSlot = first ? resolveNextAvailableLabel(first) : undefined;
             console.log(`[ServiceStyle] ${style.style}: ${providers.length} providers found, available: ${isAvailable}, earliestSlot: ${earliestSlot || 'n/a'}`);
             return {
               ...style,
