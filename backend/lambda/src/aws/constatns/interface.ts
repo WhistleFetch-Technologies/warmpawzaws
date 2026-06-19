@@ -98,6 +98,7 @@ export type NotificationEventType =
     | 'subscription_reminder'
     | 'prescription_uploaded'
     | 'report_uploaded'
+    | 'vaccination_reminder_1day'
     //settleemts
     | 'settlement_created'
     | 'settlement_processed'
@@ -399,6 +400,11 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEventType, {
     report_uploaded: {
         title: '📊 Report Available',
         body: 'Diagnostic report for {petName} is now available. View in Medical Records.',
+    },
+    vaccination_reminder_1day: {
+        title: '💉 Vaccination Due Tomorrow',
+        body: "{petName}'s {vaccineName} is due tomorrow. Book a vet appointment on Warmpawz.",
+        sound: 'high_priority',
     },
     //settleemts
 
