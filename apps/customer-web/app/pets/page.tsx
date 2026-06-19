@@ -12,6 +12,7 @@ import { writeCheckoutPetSelectionForPayment } from '@/lib/checkout-pet-selectio
 import { breedsForSpecies } from '@/lib/pet-breeds';
 import { addPetErrorMessage, resolveCustomerIdForPetMutation } from '@/lib/pet-create-helpers';
 import { toast } from 'sonner';
+import { CustomerPetDetails } from '@/components/customer/CustomerPetDetails';
 
 function PetsPageContent() {
   const router = useRouter();
@@ -20,6 +21,7 @@ function PetsPageContent() {
   const [pets, setPets] = useState<PetUi[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [newPet, setNewPet] = useState<Partial<PetUi>>(() => ({
     species: 'dog',
     gender: 'male',
@@ -194,6 +196,18 @@ function PetsPageContent() {
 
   return (
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
+      {selectedPetId ? (
+        <CustomerPetDetails
+          phone={typeof window !== 'undefined' ? localStorage.getItem('customerPhone') || '' : ''}
+          petId={selectedPetId}
+          onBack={() => setSelectedPetId(null)}
+          onDelete={() => {
+            setSelectedPetId(null);
+            void loadPets();
+          }}
+        />
+      ) : (
+        <>
       {header}
 
       {loading ? (
@@ -255,7 +269,7 @@ function PetsPageContent() {
                         goBackOrHome(router);
                         return;
                       }
-                      router.push(`/pets/${pet.id}`);
+                      setSelectedPetId(pet.id);
                     }}
                     className="flex w-full items-center gap-4 rounded-2xl border border-gray-100/80 bg-white p-4 text-left shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-[transform,box-shadow] active:scale-[0.99] active:shadow-[0_1px_6px_rgba(0,0,0,0.05)]"
                   >
@@ -412,6 +426,8 @@ function PetsPageContent() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

@@ -131,6 +131,7 @@ export function CommunicationHub({
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputAreaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const outerRef = useRef<HTMLDivElement>(null);
@@ -775,9 +776,15 @@ export function CommunicationHub({
               {/* Message Input */}
               <div className="flex-1 relative">
                 <textarea
+                  ref={inputAreaRef}
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyDown={handleKeyPress}
+                  onFocus={() => {
+                    setTimeout(() => {
+                      inputAreaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 350);
+                  }}
                   placeholder="Type a message..."
                   rows={1}
                   className="w-full px-4 py-3 bg-gray-100 rounded-2xl resize-none text-[16px] focus:outline-none focus:ring-2 focus:ring-[#FF8C42] max-h-32"

@@ -324,6 +324,7 @@ export function AIChatbotWidget({
   }, [customerId, customerPhone]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const lastBookingQueryRef = useRef('');
   const selectedVendorNameRef = useRef<string | null>(null);
   const [bookingSessionId, setBookingSessionId] = useState<string | null>(null);
@@ -1906,6 +1907,7 @@ export function AIChatbotWidget({
         <div className="p-4 border-t border-gray-200">
           <div className="flex gap-2">
             <input
+              ref={inputRef}
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
@@ -1914,6 +1916,11 @@ export function AIChatbotWidget({
                   e.preventDefault();
                   sendMessage();
                 }
+              }}
+              onFocus={() => {
+                setTimeout(() => {
+                  inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }, 350);
               }}
               placeholder={
                 mode === 'symptoms'

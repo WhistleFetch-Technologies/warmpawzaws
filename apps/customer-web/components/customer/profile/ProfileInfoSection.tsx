@@ -1,6 +1,6 @@
 'use client';
 
-import { Edit2, type LucideIcon } from 'lucide-react';
+import { type LucideIcon } from 'lucide-react';
 
 export interface ProfileInfoRow {
   label: string;
@@ -12,32 +12,21 @@ interface ProfileInfoSectionProps {
   title: string;
   titleIcon: LucideIcon;
   rows: ProfileInfoRow[];
-  onEdit: () => void;
+  onEdit?: () => void;
 }
 
 export function ProfileInfoSection({
   title,
   titleIcon: TitleIcon,
   rows,
-  onEdit,
 }: ProfileInfoSectionProps) {
   return (
     <div className="rounded-2xl border border-stone-200/90 bg-white p-4 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50">
-            <TitleIcon className="h-[18px] w-[18px] text-[#FF8C42]" strokeWidth={2} />
-          </span>
-          <h3 className="truncate text-[15px] font-bold text-gray-900">{title}</h3>
-        </div>
-        <button
-          type="button"
-          onClick={onEdit}
-          className="inline-flex min-h-[44px] shrink-0 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-[#FF8C42] active:opacity-80"
-        >
-          <Edit2 className="h-4 w-4" strokeWidth={2} />
-          Edit
-        </button>
+      <div className="mb-3 flex items-center gap-2">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50">
+          <TitleIcon className="h-[18px] w-[18px] text-[#FF8C42]" strokeWidth={2} />
+        </span>
+        <h3 className="truncate text-[15px] font-bold text-gray-900">{title}</h3>
       </div>
       <div className="divide-y divide-stone-100">
         {rows.map(({ label, value, icon: Icon }) => (

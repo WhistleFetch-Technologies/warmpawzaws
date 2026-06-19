@@ -613,7 +613,6 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
                 <ProfileInfoSection
                   title="Personal Information"
                   titleIcon={User}
-                  onEdit={() => enterEditMode()}
                   rows={[
                     { label: 'First Name', value: profile.firstName, icon: User },
                     { label: 'Last Name', value: profile.lastName, icon: User },
@@ -625,7 +624,6 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
                 <ProfileInfoSection
                   title="Address Information"
                   titleIcon={MapPin}
-                  onEdit={() => enterEditMode(true)}
                   rows={[
                     { label: 'Address', value: profile.address, icon: MapPin },
                     { label: 'House No / Flat No', value: profile.houseNo, icon: Home },
