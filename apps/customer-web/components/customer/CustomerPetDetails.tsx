@@ -490,8 +490,15 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
       if (error instanceof ApiError && error.statusCode === 400) {
         const data = ((error as any).responseData ?? (error as any).response) as {
           activeBookingsCount?: number;
+          pendingMealOrdersCount?: number;
+          activeMealSubscriptionsCount?: number;
           error?: string;
         } | null;
+        const apiMessage = data?.error?.trim();
+        if (apiMessage) {
+          alert(apiMessage);
+          return;
+        }
         const count = data?.activeBookingsCount;
         if (count != null && count > 0) {
           alert(

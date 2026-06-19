@@ -28,6 +28,11 @@ import {
   sanitizeVaccinationMap,
 } from '../utils/pet-health-normalize';
 import { findCustomerByPhone } from '../utils/customer-phone-lookup';
+import {
+  buildPetMealDeleteBlockMessage,
+  getPetMealDeleteBlockers,
+  unlinkPetFromMealHistory,
+} from '../utils/pet-delete-guards';
 import { omitMissingPetsColumns } from '../utils/pets-table-schema';
 import {
   petPayloadHasVaccinations,
@@ -476,11 +481,29 @@ export function registerPetEndpoints(app: Hono) {
     try {
       const { petId } = c.req.param();
 
+      const pets = await select('pets', { id: petId });
+      if (pets.length === 0) {
+        return c.json({ error: 'Pet not found' }, 404);
+      }
+      const petName = String(pets[0]?.name || '');
+
+      const mealBlockers = await getPetMealDeleteBlockers(petId);
+      const mealBlockMessage = buildPetMealDeleteBlockMessage(petName, mealBlockers);
+      if (mealBlockMessage) {
+        return c.json({
+          success: false,
+          error: mealBlockMessage,
+          pendingMealOrdersCount: mealBlockers.pendingMealOrdersCount,
+          activeMealSubscriptionsCount: mealBlockers.activeMealSubscriptionsCount,
+        }, 400);
+      }
+
       // Unlink booking history from this pet (preserves rows; avoids bookings_pet_id_fkey on DELETE)
       await query(
         'UPDATE bookings SET pet_id = NULL, updated_at = NOW() WHERE pet_id = $1',
         [petId]
       );
+      await unlinkPetFromMealHistory(petId);
 
       await query('DELETE FROM pets WHERE id = $1', [petId]);
 
@@ -659,8 +682,19 @@ export function registerPetEndpoints(app: Hono) {
       if (activeCount > 0) {
         return c.json({ 
           success: false,
-          error: 'Cannot delete pet with active bookings',
+          error: `Cannot delete ${pets[0]?.name || 'pet'}'s profile. This pet has ${activeCount} active booking(s). Complete or cancel them before deleting.`,
           activeBookingsCount: activeCount
+        }, 400);
+      }
+
+      const mealBlockers = await getPetMealDeleteBlockers(petId);
+      const mealBlockMessage = buildPetMealDeleteBlockMessage(String(pets[0]?.name || ''), mealBlockers);
+      if (mealBlockMessage) {
+        return c.json({
+          success: false,
+          error: mealBlockMessage,
+          pendingMealOrdersCount: mealBlockers.pendingMealOrdersCount,
+          activeMealSubscriptionsCount: mealBlockers.activeMealSubscriptionsCount,
         }, 400);
       }
 
@@ -669,6 +703,7 @@ export function registerPetEndpoints(app: Hono) {
         'UPDATE bookings SET pet_id = NULL, updated_at = NOW() WHERE pet_id = $1 AND customer_id = $2',
         [petId, customer.id]
       );
+      await unlinkPetFromMealHistory(petId, String(customer.id));
 
       await query('DELETE FROM pets WHERE id = $1 AND customer_id = $2', [petId, customer.id]);
 

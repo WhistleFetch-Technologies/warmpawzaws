@@ -141,9 +141,14 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
       setDeleting(true);
       await petsApi.delete(petId);
       router.push('/pets');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error deleting pet:', err);
-      setError(err.message || 'Failed to delete');
+      const apiErr = err as { message?: string; responseData?: { error?: string } };
+      const msg =
+        apiErr?.responseData?.error?.trim() ||
+        (err instanceof Error ? err.message : '') ||
+        'Failed to delete pet profile.';
+      setError(msg);
       setDeleteConfirm(false);
     } finally {
       setDeleting(false);
