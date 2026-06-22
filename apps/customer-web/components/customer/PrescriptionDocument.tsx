@@ -1,19 +1,17 @@
 'use client';
 
-import React, { useRef, forwardRef } from 'react';
-import { 
-  Printer, 
-  Download, 
-  Share2, 
-  X, 
-  Phone, 
-  Mail, 
+import React, { useRef, useState, useEffect, forwardRef } from 'react';
+import {
+  ArrowLeft,
+  Printer,
+  Download,
+  Share2,
+  Phone,
+  Mail,
   MapPin,
-  Calendar,
-  User,
   FileText,
   Pill,
-  Clock
+  Clock,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -121,6 +119,17 @@ interface PrescriptionDocumentProps {
   onDownload?: () => void;
   onOrderMedicine?: () => void;
   showActions?: boolean;
+  /** Shown in the sticky header (e.g. "Prescription · 22 Jun 2026"). */
+  headerTitle?: string;
+  /** Secondary line under the title (e.g. clinic name). */
+  headerSubtitle?: string;
+}
+
+function formatDiagnosisLabel(diagnosis?: string): string | null {
+  const text = diagnosis?.trim();
+  if (!text) return null;
+  if (/^no$/i.test(text)) return null;
+  return text;
 }
 
 // The printable prescription document
@@ -294,12 +303,14 @@ const PrintablePrescription = forwardRef<HTMLDivElement, { prescription: Prescri
         </div>
 
         {/* Diagnosis */}
-        {diagnosis && (
+        {formatDiagnosisLabel(diagnosis) ? (
           <div className="mb-4">
             <h3 className="text-sm font-semibold text-gray-500 uppercase mb-1">Diagnosis</h3>
-            <p className="text-gray-900 bg-yellow-50 p-2 rounded border border-yellow-200">{diagnosis}</p>
+            <p className="text-gray-900 bg-yellow-50 p-2 rounded border border-yellow-200">
+              {formatDiagnosisLabel(diagnosis)}
+            </p>
           </div>
-        )}
+        ) : null}
 
         {/* Medications Table */}
         <div className="mb-4">
@@ -323,7 +334,7 @@ const PrintablePrescription = forwardRef<HTMLDivElement, { prescription: Prescri
                 {medications.map((med, index) => (
                   <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="border border-gray-300 px-2 sm:px-3 py-2 text-center text-gray-600">{index + 1}</td>
-                    <td className="border border-gray-300 px-2 sm:px-3 py-2 font-medium text-gray-900">{med.name}</td>
+                    <td className="border border-gray-300 px-2 sm:px-3 py-2 font-medium text-gray-900">{med.name?.trim() || 'Medicine'}</td>
                     <td className="border border-gray-300 px-2 sm:px-3 py-2 text-gray-700">{med.dosage || '-'}</td>
                     <td className="border border-gray-300 px-2 sm:px-3 py-2 text-gray-700">{med.frequency || '-'}</td>
                     <td className="border border-gray-300 px-2 sm:px-3 py-2 text-gray-700">{med.duration || '-'}</td>
@@ -394,9 +405,24 @@ export default function PrescriptionDocument({
   onShare,
   onDownload,
   onOrderMedicine,
-  showActions = true
+  showActions = true,
+  headerTitle,
+  headerSubtitle,
 }: PrescriptionDocumentProps) {
   const printRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [menuOpen]);
 
   const handlePrint = () => {
     const printContent = printRef.current;
@@ -544,6 +570,14 @@ export default function PrescriptionDocument({
     }
   };
 
+  const handleShareAction = async () => {
+    if (onShare) {
+      onShare();
+      return;
+    }
+    await handleShare();
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -559,53 +593,82 @@ export default function PrescriptionDocument({
         className="bg-gray-100 w-full h-full sm:h-auto sm:max-w-4xl sm:max-h-[95vh] sm:rounded-xl overflow-hidden flex flex-col min-h-0"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Action Bar */}
+        {/* Sticky header — back, title, overflow menu, primary download */}
         {showActions && (
-          <div className="bg-white border-b px-3 py-2 sm:px-4 sm:py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between shrink-0 safe-area-top">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-800 flex items-center gap-2 min-w-0">
-              <FileText size={20} className="text-blue-600 shrink-0" />
-              <span className="truncate">Prescription Document</span>
-            </h2>
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0 [-webkit-overflow-scrolling:touch]">
-              <button
-                onClick={handlePrint}
-                className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-xs sm:text-sm whitespace-nowrap shrink-0"
-              >
-                <Printer size={16} />
-                Print
-              </button>
-              <button
-                onClick={handleDownload}
-                className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-xs sm:text-sm whitespace-nowrap shrink-0"
-              >
-                <Download size={16} />
-                Download
-              </button>
-              <button
-                onClick={handleShare}
-                className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-xs sm:text-sm whitespace-nowrap shrink-0"
-              >
-                <Share2 size={16} />
-                Share
-              </button>
-              {onOrderMedicine && (
+          <div className="bg-white border-b shrink-0 cw-header-safe-top cw-header-safe-x">
+            <div className="flex items-center gap-1 py-2 sm:py-3 min-w-0">
+              {onClose ? (
                 <button
-                  onClick={onOrderMedicine}
-                  className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition text-xs sm:text-sm whitespace-nowrap shrink-0"
-                >
-                  <Pill size={16} />
-                  Order
-                </button>
-              )}
-              {onClose && (
-                <button
+                  type="button"
                   onClick={onClose}
-                  className="p-1.5 hover:bg-gray-100 rounded-full transition shrink-0 ml-auto sm:ml-0"
-                  aria-label="Close"
+                  className="p-2 rounded-full hover:bg-gray-100 transition shrink-0"
+                  aria-label="Back to list"
                 >
-                  <X size={20} className="text-gray-500" />
+                  <ArrowLeft size={20} className="text-gray-700" />
                 </button>
-              )}
+              ) : null}
+              <div className="flex-1 min-w-0 px-1">
+                <h2 className="text-base sm:text-lg font-semibold text-gray-900 truncate">
+                  {headerTitle || 'Prescription'}
+                </h2>
+                {headerSubtitle ? (
+                  <p className="text-xs text-gray-500 truncate">{headerSubtitle}</p>
+                ) : null}
+              </div>
+              <div className="relative shrink-0" ref={menuRef}>
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((open) => !open)}
+                  className="p-2 rounded-full hover:bg-gray-100 transition"
+                  aria-label="Print"
+                  aria-expanded={menuOpen}
+                >
+                  <Printer size={20} className="text-gray-700" />
+                </button>
+                {menuOpen ? (
+                  <div className="absolute right-0 top-full mt-1 w-40 rounded-xl border border-gray-200 bg-white py-1 shadow-lg z-20">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        handlePrint();
+                      }}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-gray-800 hover:bg-gray-50"
+                    >
+                      <Printer size={16} className="text-gray-500" />
+                      Print
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className={`grid gap-2 pb-3 sm:pb-4 ${onOrderMedicine ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <button
+                type="button"
+                onClick={() => void handleDownload()}
+                className="flex flex-col sm:flex-row items-center justify-center gap-1 rounded-xl bg-green-600 py-2.5 px-2 text-xs sm:text-sm font-medium text-white hover:bg-green-700 transition min-w-0"
+              >
+                <Download size={18} className="shrink-0" />
+                <span className="truncate">Download</span>
+              </button>
+              {onOrderMedicine ? (
+                <button
+                  type="button"
+                  onClick={onOrderMedicine}
+                  className="flex flex-col sm:flex-row items-center justify-center gap-1 rounded-xl bg-orange-500 py-2.5 px-2 text-xs sm:text-sm font-medium text-white hover:bg-orange-600 transition min-w-0"
+                >
+                  <Pill size={18} className="shrink-0" />
+                  <span className="truncate">Order</span>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void handleShareAction()}
+                className="flex flex-col sm:flex-row items-center justify-center gap-1 rounded-xl bg-blue-600 py-2.5 px-2 text-xs sm:text-sm font-medium text-white hover:bg-blue-700 transition min-w-0"
+              >
+                <Share2 size={18} className="shrink-0" />
+                <span className="truncate">Share</span>
+              </button>
             </div>
           </div>
         )}
