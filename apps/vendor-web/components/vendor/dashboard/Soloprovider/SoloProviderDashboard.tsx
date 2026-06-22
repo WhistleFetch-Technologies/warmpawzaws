@@ -14,7 +14,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { clearVendorSession } from '@/lib/session-utils';
+import { signOutVendor } from '@/lib/session-utils';
 import { getVendorAllowedServiceStyles, hasVendorRole } from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
 import { vendorNavigate } from '@/lib/vendor-route-nav';
@@ -171,7 +171,7 @@ export function SoloProviderDashboard({
       } catch (e) {
         // Ignore logout API errors
       }
-      clearVendorSession();
+      await signOutVendor();
       window.location.replace('/auth');
     }
   };

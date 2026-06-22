@@ -251,7 +251,7 @@ function buildAndroidPushConfig() {
   };
 }
 
-function buildApnsPushConfig() {
+function buildApnsPushConfig(data?: Record<string, string>) {
   return {
     headers: {
       'apns-priority': '10',
@@ -262,6 +262,7 @@ function buildApnsPushConfig() {
         badge: 1,
         'interruption-level': 'active',
       },
+      ...(data || {}),
     },
   };
 }
@@ -275,7 +276,7 @@ function buildFcmMessage(payload: PushNotificationPayload, target: 'token' | 'to
     },
     data: payload.data,
     android: buildAndroidPushConfig(),
-    apns: buildApnsPushConfig(),
+    apns: buildApnsPushConfig(payload.data),
   };
 
   if (target === 'token') {
@@ -287,6 +288,15 @@ function buildFcmMessage(payload: PushNotificationPayload, target: 'token' | 'to
   }
 
   return base;
+}
+
+/** Exported for tests — same shape used by dispatchNotification → Firebase multicast. */
+export function buildUnifiedPushMessage(
+  payload: PushNotificationPayload,
+  target: 'token' | 'tokens' | 'topic',
+  address: string | string[]
+): Record<string, unknown> {
+  return buildFcmMessage(payload, target, address);
 }
 
 /**

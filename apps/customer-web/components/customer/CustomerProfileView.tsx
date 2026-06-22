@@ -30,7 +30,7 @@ import {
 } from '@/lib/normalize-customer-profile-api';
 import { formatMemberSinceLabel } from '@/lib/format-member-since';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
-import { clearCustomerSession } from '@/lib/session-utils';
+import { clearCustomerSession, signOutCustomer } from '@/lib/session-utils';
 import { ProfileAccountHero } from '@/components/customer/profile/ProfileAccountHero';
 import { ProfileStatCards, type ProfileStatCounts } from '@/components/customer/profile/ProfileStatCards';
 import { ProfileQuickActions } from '@/components/customer/profile/ProfileQuickActions';
@@ -319,8 +319,8 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
     }
   };
 
-  const handleLogout = () => {
-    clearCustomerSession();
+  const handleLogout = async () => {
+    await signOutCustomer();
     router.replace('/auth');
   };
 

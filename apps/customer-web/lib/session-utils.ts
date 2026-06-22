@@ -117,6 +117,21 @@ export function clearCustomerSession(): void {
 }
 
 /**
+ * Sign out: unregister push device, then clear session.
+ * Call from explicit logout handlers (not stale-session cleanup on page load).
+ */
+export async function signOutCustomer(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const { getResolvedCustomerId } = await import('./customer-id-storage');
+  const userId = getResolvedCustomerId();
+  if (userId) {
+    const { teardownPushNotifications } = await import('./push-bootstrap');
+    await teardownPushNotifications({ userId, userType: 'customer' });
+  }
+  clearCustomerSession();
+}
+
+/**
  * Check if token is expired
  */
 export function isTokenExpired(token: string | null): boolean {

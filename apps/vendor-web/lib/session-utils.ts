@@ -88,6 +88,21 @@ export function clearVendorSession(): void {
 }
 
 /**
+ * Sign out: unregister push device, then clear session.
+ * Call from explicit logout handlers (not stale-session cleanup on page load).
+ */
+export async function signOutVendor(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const raw = localStorage.getItem('vendorId')?.trim() || '';
+  const userId = /^[0-9a-f-]{36}$/i.test(raw) ? raw : null;
+  if (userId) {
+    const { teardownPushNotifications } = await import('./push-bootstrap');
+    await teardownPushNotifications({ userId, userType: 'vendor' });
+  }
+  clearVendorSession();
+}
+
+/**
  * Check if current session is a stale temp_vendor_ session (e.g. leftover from a previous visit).
  * When true, we should clear and show login so the user gets the actual auth prompt.
  * Do NOT treat as stale when we have a valid token (fresh login after OTP).

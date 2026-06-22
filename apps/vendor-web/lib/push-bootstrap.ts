@@ -70,6 +70,13 @@ async function attachCapacitorPushTapListeners(PushNotifications: {
     }
   });
 
+  if (isCapacitorIos()) {
+    await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      console.log('[push-bootstrap] pushNotificationReceived (iOS foreground)');
+      void showIosForegroundPushToast(notification);
+    });
+  }
+
   console.log('[push-bootstrap] push tap listener attached');
 }
 
@@ -122,6 +129,32 @@ function getCachedFcmToken(): string | null {
 
 function capacitorPlatform(): string {
   return ((window as any).Capacitor?.getPlatform?.() as string) ?? 'android';
+}
+
+function isCapacitorIos(): boolean {
+  return isCapacitor() && capacitorPlatform() === 'ios';
+}
+
+function extractPushNotificationContent(notification: unknown): { title: string; body: string } {
+  const n = notification as {
+    title?: string;
+    body?: string;
+    data?: Record<string, unknown>;
+  };
+  const title = (n?.title || n?.data?.title || 'Warmpawz') as string;
+  const body = (n?.body || n?.data?.body || '') as string;
+  return { title: String(title), body: String(body) };
+}
+
+async function showIosForegroundPushToast(notification: unknown): Promise<void> {
+  if (!isCapacitorIos()) return;
+  const { title, body } = extractPushNotificationContent(notification);
+  try {
+    const { toast } = await import('sonner');
+    toast(title, body ? { description: body } : undefined);
+  } catch (err) {
+    console.warn('[push-bootstrap] iOS foreground toast failed:', err);
+  }
 }
 
 function clearLocalPushRegistrationMarkers(): void {
@@ -789,6 +822,13 @@ export async function bootstrapPushNotifications(
   })();
 
   return registerInFlight;
+}
+
+/** Re-run registration after vendor login — same pipeline as PushSessionRegistrar. */
+export async function retryPushRegistration(opts: PushBootstrapOptions): Promise<void> {
+  if (typeof window === 'undefined' || !opts.userId?.trim()) return;
+  await ensureCapacitorPushRegistrationPipeline(opts);
+  await bootstrapPushNotifications({ ...opts, requestPermissionIfNeeded: false });
 }
 
 /**
