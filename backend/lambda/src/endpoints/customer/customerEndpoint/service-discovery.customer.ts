@@ -4392,12 +4392,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             let isPastSlot = false;
             if (isToday) {
               const currentISTMinutesFromMidnight = nowIST.getHours() * 60 + nowIST.getMinutes();
-              // Slot is past if its IST time + buffer is before current IST time
-              isPastSlot = (currentMinutes + minNoticeMinutes) <= currentISTMinutesFromMidnight;
+              // Slot is unavailable if it starts before now + min notice (IST)
+              isPastSlot = currentMinutes < currentISTMinutesFromMidnight + minNoticeMinutes;
               if (isPastSlot) {
-                console.log(`[SLOTS]     ${timeStr} is in the past (slot=${currentMinutes}min + notice=${minNoticeMinutes}min <= currentIST=${currentISTMinutesFromMidnight}min) - will mark as unavailable`);
+                console.log(`[SLOTS]     ${timeStr} is in the past (slot=${currentMinutes}min < currentIST=${currentISTMinutesFromMidnight}min + notice=${minNoticeMinutes}min) - will mark as unavailable`);
               } else {
-                console.log(`[SLOTS]     ✅ ${timeStr} is NOT in the past (slot=${currentMinutes}min + notice=${minNoticeMinutes}min > currentIST=${currentISTMinutesFromMidnight}min)`);
+                console.log(`[SLOTS]     ✅ ${timeStr} is NOT in the past (slot=${currentMinutes}min >= currentIST=${currentISTMinutesFromMidnight}min + notice=${minNoticeMinutes}min)`);
               }
             } else {
               console.log(`[SLOTS]     ✅ ${timeStr} is for future date (not today), skipping past check`);
