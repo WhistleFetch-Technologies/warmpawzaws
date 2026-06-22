@@ -213,7 +213,7 @@ export async function downloadFromUrl(options: {
   openedInBrowser: boolean;
 }> {
   const resolvedUrl = resolveApiUrl(options.url);
-  const fallbackFileName = options.fileName ?? filenameFromUrl(resolvedUrl, 'download');
+  const fallbackFileName = options.fileName ?? filenameFromUrl(resolvedUrl, 'file.bin');
   const headers = options.headers ?? {};
 
   const response = await fetchFileResponse(resolvedUrl, headers);
@@ -274,7 +274,7 @@ export async function downloadFromApi(options: {
     });
   }
 
-  const fallbackFileName = options.fileName ?? filenameFromUrl(url, 'download');
+  const fallbackFileName = options.fileName ?? filenameFromUrl(url, 'file.bin');
   const { blob, filename, isHtml } = await blobFromDownloadResponse(response, fallbackFileName);
 
   return downloadBlob({
