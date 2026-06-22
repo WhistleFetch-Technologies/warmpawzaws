@@ -36,7 +36,9 @@ function printPrescriptionFromHtml(htmlBody: string, title: string): boolean {
     }
     return false;
   }
-  const styles = `@page{size:A4;margin:10mm;}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#1a1a1a;}`;
+  const styles =
+    '@page{size:A4;margin:10mm;}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#1a1a1a;}' +
+    'body>div{width:210mm!important;min-height:297mm;padding:15mm!important;box-sizing:border-box;}';
   doc.open();
   doc.write(
     `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${title}</title><style>${styles}</style></head><body>${htmlBody}</body></html>`
@@ -148,13 +150,10 @@ const PrintablePrescription = forwardRef<HTMLDivElement, { prescription: Prescri
     };
 
     return (
-      <div 
+      <div
         ref={ref}
-        className="bg-white"
+        className="prescription-doc-root bg-white box-border w-full max-w-full p-4 sm:p-[15mm] sm:max-w-[210mm] sm:min-h-[297mm]"
         style={{
-          width: '210mm',
-          minHeight: '297mm',
-          padding: '15mm',
           fontFamily: 'Arial, sans-serif',
           fontSize: '11pt',
           lineHeight: '1.4',
@@ -163,9 +162,9 @@ const PrintablePrescription = forwardRef<HTMLDivElement, { prescription: Prescri
       >
         {/* Header - Clinic/Doctor Info */}
         <div className="border-b-2 border-blue-600 pb-4 mb-4">
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
-              <h1 className="text-2xl font-bold text-blue-800 mb-1">
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-blue-800 mb-1 break-words">
                 {doctor.businessName || doctor.name}
               </h1>
               {doctor.businessName && doctor.name && (
@@ -178,7 +177,7 @@ const PrintablePrescription = forwardRef<HTMLDivElement, { prescription: Prescri
                 <p className="text-sm text-gray-600">{doctor.specialization}</p>
               )}
             </div>
-            <div className="text-right text-sm text-gray-600">
+            <div className="text-left sm:text-right text-sm text-gray-600 shrink-0">
               {doctor.licenseNumber && (
                 <p><span className="font-medium">Vet License:</span> {doctor.licenseNumber}</p>
               )}
@@ -222,8 +221,8 @@ const PrintablePrescription = forwardRef<HTMLDivElement, { prescription: Prescri
         </div>
 
         {/* Patient & Date Info */}
-        <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="bg-gray-50 rounded-lg p-3 sm:p-4 mb-4 border border-gray-200">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Left - Pet/Patient Info */}
             <div>
               <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Patient Details</h3>
@@ -308,30 +307,32 @@ const PrintablePrescription = forwardRef<HTMLDivElement, { prescription: Prescri
             <Pill size={16} className="text-blue-600" />
             Medications
           </h3>
-          <table className="w-full border-collapse border border-gray-300 text-sm">
-            <thead>
-              <tr className="bg-blue-50">
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">#</th>
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Medicine Name</th>
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Dosage</th>
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Frequency</th>
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Duration</th>
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Instructions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {medications.map((med, index) => (
-                <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td className="border border-gray-300 px-3 py-2 text-center text-gray-600">{index + 1}</td>
-                  <td className="border border-gray-300 px-3 py-2 font-medium text-gray-900">{med.name}</td>
-                  <td className="border border-gray-300 px-3 py-2 text-gray-700">{med.dosage || '-'}</td>
-                  <td className="border border-gray-300 px-3 py-2 text-gray-700">{med.frequency || '-'}</td>
-                  <td className="border border-gray-300 px-3 py-2 text-gray-700">{med.duration || '-'}</td>
-                  <td className="border border-gray-300 px-3 py-2 text-gray-700 text-xs">{med.instructions || '-'}</td>
+          <div className="overflow-x-auto -mx-1 px-1">
+            <table className="w-full min-w-[520px] border-collapse border border-gray-300 text-sm">
+              <thead>
+                <tr className="bg-blue-50">
+                  <th className="border border-gray-300 px-2 sm:px-3 py-2 text-left font-semibold text-gray-700">#</th>
+                  <th className="border border-gray-300 px-2 sm:px-3 py-2 text-left font-semibold text-gray-700">Medicine Name</th>
+                  <th className="border border-gray-300 px-2 sm:px-3 py-2 text-left font-semibold text-gray-700">Dosage</th>
+                  <th className="border border-gray-300 px-2 sm:px-3 py-2 text-left font-semibold text-gray-700">Frequency</th>
+                  <th className="border border-gray-300 px-2 sm:px-3 py-2 text-left font-semibold text-gray-700">Duration</th>
+                  <th className="border border-gray-300 px-2 sm:px-3 py-2 text-left font-semibold text-gray-700">Instructions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {medications.map((med, index) => (
+                  <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="border border-gray-300 px-2 sm:px-3 py-2 text-center text-gray-600">{index + 1}</td>
+                    <td className="border border-gray-300 px-2 sm:px-3 py-2 font-medium text-gray-900">{med.name}</td>
+                    <td className="border border-gray-300 px-2 sm:px-3 py-2 text-gray-700">{med.dosage || '-'}</td>
+                    <td className="border border-gray-300 px-2 sm:px-3 py-2 text-gray-700">{med.frequency || '-'}</td>
+                    <td className="border border-gray-300 px-2 sm:px-3 py-2 text-gray-700">{med.duration || '-'}</td>
+                    <td className="border border-gray-300 px-2 sm:px-3 py-2 text-gray-700 text-xs">{med.instructions || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* General Instructions */}
@@ -357,7 +358,7 @@ const PrintablePrescription = forwardRef<HTMLDivElement, { prescription: Prescri
 
         {/* Footer */}
         <div className="mt-8 pt-4 border-t border-gray-300">
-          <div className="flex justify-between items-end">
+          <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-end">
             <div className="text-xs text-gray-500">
               <p>This is a computer-generated prescription.</p>
               <p>Generated on: {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
@@ -376,6 +377,15 @@ const PrintablePrescription = forwardRef<HTMLDivElement, { prescription: Prescri
 );
 
 PrintablePrescription.displayName = 'PrintablePrescription';
+
+/** Off-screen A4 clone so PDF export stays print-quality on narrow screens. */
+function clonePrescriptionForCapture(source: HTMLElement): HTMLElement {
+  const clone = source.cloneNode(true) as HTMLElement;
+  clone.style.cssText =
+    'position:fixed;left:-9999px;top:0;width:210mm;min-height:297mm;padding:15mm;box-sizing:border-box;background:#fff;';
+  document.body.appendChild(clone);
+  return clone;
+}
 
 // Main component with actions
 export default function PrescriptionDocument({
@@ -453,11 +463,17 @@ export default function PrescriptionDocument({
         return;
       }
 
-      const canvas = await html2canvas(printRef.current, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
+      const captureNode = clonePrescriptionForCapture(printRef.current);
+      let canvas;
+      try {
+        canvas = await html2canvas(captureNode, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+        });
+      } finally {
+        captureNode.remove();
+      }
 
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
@@ -533,41 +549,41 @@ export default function PrescriptionDocument({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/60 z-[80] flex items-stretch sm:items-center justify-center sm:p-4"
       onClick={onClose}
     >
       <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
+        initial={{ scale: 0.98, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-gray-100 rounded-xl max-w-4xl w-full max-h-[95vh] overflow-hidden flex flex-col"
+        exit={{ scale: 0.98, opacity: 0 }}
+        className="bg-gray-100 w-full h-full sm:h-auto sm:max-w-4xl sm:max-h-[95vh] sm:rounded-xl overflow-hidden flex flex-col min-h-0"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Action Bar */}
         {showActions && (
-          <div className="bg-white border-b px-4 py-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-              <FileText size={20} className="text-blue-600" />
-              Prescription Document
+          <div className="bg-white border-b px-3 py-2 sm:px-4 sm:py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between shrink-0 safe-area-top">
+            <h2 className="text-base sm:text-lg font-semibold text-gray-800 flex items-center gap-2 min-w-0">
+              <FileText size={20} className="text-blue-600 shrink-0" />
+              <span className="truncate">Prescription Document</span>
             </h2>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0 [-webkit-overflow-scrolling:touch]">
               <button
                 onClick={handlePrint}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
+                className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-xs sm:text-sm whitespace-nowrap shrink-0"
               >
                 <Printer size={16} />
                 Print
               </button>
               <button
                 onClick={handleDownload}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm"
+                className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-xs sm:text-sm whitespace-nowrap shrink-0"
               >
                 <Download size={16} />
                 Download
               </button>
               <button
                 onClick={handleShare}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm"
+                className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-xs sm:text-sm whitespace-nowrap shrink-0"
               >
                 <Share2 size={16} />
                 Share
@@ -575,7 +591,7 @@ export default function PrescriptionDocument({
               {onOrderMedicine && (
                 <button
                   onClick={onOrderMedicine}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition text-sm"
+                  className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition text-xs sm:text-sm whitespace-nowrap shrink-0"
                 >
                   <Pill size={16} />
                   Order
@@ -584,7 +600,8 @@ export default function PrescriptionDocument({
               {onClose && (
                 <button
                   onClick={onClose}
-                  className="p-1.5 hover:bg-gray-100 rounded-full transition"
+                  className="p-1.5 hover:bg-gray-100 rounded-full transition shrink-0 ml-auto sm:ml-0"
+                  aria-label="Close"
                 >
                   <X size={20} className="text-gray-500" />
                 </button>
@@ -594,8 +611,8 @@ export default function PrescriptionDocument({
         )}
 
         {/* Scrollable Document View */}
-        <div className="flex-1 overflow-auto p-4 flex justify-center">
-          <div className="shadow-xl rounded-lg overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain p-2 sm:p-4 [-webkit-overflow-scrolling:touch]">
+          <div className="w-full max-w-full mx-auto shadow-xl rounded-lg">
             <PrintablePrescription ref={printRef} prescription={prescription} />
           </div>
         </div>
