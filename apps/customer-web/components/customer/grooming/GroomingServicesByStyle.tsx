@@ -24,6 +24,7 @@ import { shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -58,6 +59,7 @@ interface Provider {
   distance?: number | null;
   isVerified?: boolean;
   isIndividualProvider?: boolean;
+  nextAvailableSlot?: string;
   services: {
     id: string;
     serviceId: string;
@@ -227,7 +229,14 @@ export function GroomingServicesByStyle({
           amenities: Array.isArray(p.amenities) ? p.amenities : 
                     (p.vendorAmenities ? (Array.isArray(p.vendorAmenities) ? p.vendorAmenities : [p.vendorAmenities]) : 
                     (p.vendor?.amenities ? (Array.isArray(p.vendor.amenities) ? p.vendor.amenities : [p.vendor.amenities]) : 
-                    (p.facility?.amenities ? (Array.isArray(p.facility.amenities) ? p.facility.amenities : [p.facility.amenities]) : [])))
+                    (p.facility?.amenities ? (Array.isArray(p.facility.amenities) ? p.facility.amenities : [p.facility.amenities]) : []))),
+          nextAvailableSlot: (() => {
+            const label = resolveNextAvailableLabel(p);
+            if (!label) return undefined;
+            // Only show real slot labels, not the generic fallback text
+            if (label === 'Tap to view availability') return undefined;
+            return label;
+          })(),
         }));
         
         // Filter to specific vendor if vendorId is provided (vendor profile mode)
@@ -1322,6 +1331,12 @@ export function GroomingServicesByStyle({
                           <div className="flex items-start gap-1 text-gray-500 text-xs mt-1 max-w-[240px]">
                             <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
                             <span className="line-clamp-1">{providerAddress}</span>
+                          </div>
+                        )}
+                        {provider.nextAvailableSlot && (
+                          <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
+                            <Clock className="w-3 h-3" />
+                            <span>Next: {provider.nextAvailableSlot}</span>
                           </div>
                         )}
                         {/* ✅ NEW: Amenities display */}
