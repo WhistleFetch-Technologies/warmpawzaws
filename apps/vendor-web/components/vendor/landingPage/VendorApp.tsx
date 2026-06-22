@@ -15,7 +15,8 @@ import {
   fetchVendorNeedsPasswordSetup,
   WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT,
 } from '../VendorSetPasswordGate';
-import { bootstrapPushNotifications, teardownPushNotifications } from '@/lib/push-bootstrap';
+import { bootstrapPushNotifications } from '@/lib/push-bootstrap';
+import { signOutVendor } from '@/lib/session-utils';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
 import { VendorAppProps, VendorSession, VendorStatus } from './constants/interface';
@@ -996,15 +997,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   };
 
   const handleLogout = async () => {
-    const vendorId = resolveVendorId();
-    if (vendorId) {
-      await teardownPushNotifications({ userId: vendorId, userType: 'vendor' });
-    }
-    localStorage.removeItem('vendorPhone');
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('vendorData');
-    localStorage.removeItem('vendorRole');
-    localStorage.removeItem('vendorApplicationStatus');
+    await signOutVendor();
     router.push('/auth');
   };
 

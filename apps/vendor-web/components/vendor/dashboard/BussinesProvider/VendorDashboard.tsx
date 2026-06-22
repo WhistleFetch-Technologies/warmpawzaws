@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { clearVendorSession } from '@/lib/session-utils';
+import { signOutVendor } from '@/lib/session-utils';
 import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
 // Removed unused import: ModuleDisabledMessage, ModuleMessages
 import { CapabilityGate } from '../../CapabilityGate';
@@ -238,7 +238,7 @@ export function VendorDashboard({
       } catch (e) {
         // Ignore logout API errors
       }
-      clearVendorSession();
+      await signOutVendor();
       window.location.replace('/auth');
     }
   };

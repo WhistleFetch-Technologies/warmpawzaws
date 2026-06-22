@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { storeSession } from '@/lib/session-manager';
+import { scheduleVendorPushRegistrationAfterLogin } from '@/lib/vendor-session-from-api';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { ChatWidget } from '@/components/customer/ChatWidget';
 import {
@@ -785,6 +786,11 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
       sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true'); // ✅ FIX: Added for better detection
       sessionStorage.setItem('_warmpawz_vendor_login_at', String(Date.now()));
       console.log('✅ [Vendor Session] sessionStorage flags set after login');
+
+      const resolvedVendorId = String(user.id || profile.id || '').trim();
+      if (resolvedVendorId) {
+        scheduleVendorPushRegistrationAfterLogin(resolvedVendorId);
+      }
       
       // ✅ FIX: Use onboarding_status from verify-otp response directly (no separate API call needed)
       // The verify-otp endpoint already returns the correct onboarding_status

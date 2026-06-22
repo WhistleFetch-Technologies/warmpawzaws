@@ -79,6 +79,25 @@ export function applyVendorPortalSessionFromVerifyPayload(input: VendorVerifySes
   sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true');
   sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
   sessionStorage.setItem('_warmpawz_vendor_login_at', String(Date.now()));
+
+  scheduleVendorPushRegistrationAfterLogin(input.vendorId);
+}
+
+export function scheduleVendorPushRegistrationAfterLogin(vendorId: string): void {
+  if (typeof window === 'undefined') return;
+  const trimmed = vendorId?.trim();
+  if (!/^[0-9a-f-]{36}$/i.test(trimmed)) return;
+  queueMicrotask(() => {
+    void Promise.all([import('./push-bootstrap'), import('./api-client')]).then(
+      ([{ retryPushRegistration }, { apiClient }]) =>
+        retryPushRegistration({
+          userId: trimmed,
+          userType: 'vendor',
+          vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+          apiClient,
+        })
+    );
+  });
 }
 
 /** Derive dial country code from E.164-style phone when possible. */
