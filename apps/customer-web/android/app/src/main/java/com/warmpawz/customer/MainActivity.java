@@ -108,17 +108,20 @@ public class MainActivity extends BridgeActivity {
           WindowInsetsCompat.Type.systemBars()
               | WindowInsetsCompat.Type.displayCutout()
       ).top;
+      int imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
+      int navBottom = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+      int bottomInset = Math.max(imeBottom, navBottom);
       if (v instanceof ViewGroup) {
         ViewGroup vg = (ViewGroup) v;
         for (int i = 0; i < vg.getChildCount(); i++) {
           View child = vg.getChildAt(i);
           child.setPadding(
               child.getPaddingLeft(), topInset,
-              child.getPaddingRight(), child.getPaddingBottom()
+              child.getPaddingRight(), bottomInset
           );
         }
       } else {
-        v.setPadding(v.getPaddingLeft(), topInset, v.getPaddingRight(), v.getPaddingBottom());
+        v.setPadding(v.getPaddingLeft(), topInset, v.getPaddingRight(), bottomInset);
       }
       return WindowInsetsCompat.CONSUMED;
     });

@@ -1,6 +1,7 @@
 'use client';
 
-import { MapPin, UtensilsCrossed } from 'lucide-react';
+import { MapPin, UtensilsCrossed, Clock } from 'lucide-react';
+import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StarRating } from '@/components/customer/shared/StarRating';
@@ -28,6 +29,7 @@ export type NutritionVendorCardModel = {
   profile_photo_url?: string;
   acceptingMealOrders?: boolean;
   kitchenClosedMessage?: string | null;
+  nextAvailableSlot?: string;
 };
 
 function displayName(v: NutritionVendorCardModel): string {
@@ -68,6 +70,12 @@ export function nutritionVendorFromDiscoveryRow(
   const reviewCount =
     rcRaw != null && Number.isFinite(Number(rcRaw)) ? Math.round(Number(rcRaw)) : undefined;
 
+  const rawNextAvailable = resolveNextAvailableLabel(row as { nextAvailable?: unknown; nextAvailableSlot?: unknown; nextAvailability?: unknown });
+  const nextAvailableSlot =
+    rawNextAvailable && rawNextAvailable !== 'Tap to view availability'
+      ? rawNextAvailable
+      : undefined;
+
   return {
     id: vendorId || undefined,
     vendorId: vendorId || undefined,
@@ -91,6 +99,7 @@ export function nutritionVendorFromDiscoveryRow(
       (row.logoUrl as string | undefined) ??
       (row.vendor_photo as string | undefined),
     profile_photo_url: row.profile_photo_url as string | undefined,
+    nextAvailableSlot,
   };
 }
 
@@ -179,6 +188,12 @@ export function NutritionVendorDetailsCard({
           ) : null}
           {vendor.city ? (
             <p className="mt-0.5 text-xs text-slate-500">{vendor.city}</p>
+          ) : null}
+          {vendor.nextAvailableSlot ? (
+            <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
+              <Clock className="h-3 w-3" />
+              <span>Next: {vendor.nextAvailableSlot}</span>
+            </div>
           ) : null}
 
           {(showViewMealPlans || showBookConsultation) && (
