@@ -15,6 +15,7 @@ import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDash
 import { apiClient } from '@/lib/api-client';
 import { handleMyPackagesPageBack } from '@/lib/go-back-or-replace';
 import { useCustomerAccountSidebarHost, CustomerAccountSidebarShell } from '@/lib/customer-account-sidebar-host';
+import { CustomerBookingMessagesModalProvider } from '@/components/customer/messaging/CustomerBookingMessagesModalProvider';
 
 /**
  * Viewport-bound column so `flex-1 min-h-0 overflow-y-auto` gets a real height and scrolls.
@@ -76,7 +77,8 @@ function MyPackagesPageInner() {
 
   if (!phone) {
     return (
-      <CustomerAccountSidebarShell
+      <CustomerBookingMessagesModalProvider phone="">
+        <CustomerAccountSidebarShell
         sidebarOpen={isAccountMenuOpen}
         accountSidebar={accountSidebar}
         bottomNav={
@@ -103,10 +105,12 @@ function MyPackagesPageInner() {
           </div>
         </div>
       </CustomerAccountSidebarShell>
+      </CustomerBookingMessagesModalProvider>
     );
   }
 
   return (
+    <CustomerBookingMessagesModalProvider phone={phone}>
     <CustomerAccountSidebarShell
       sidebarOpen={isAccountMenuOpen}
       accountSidebar={accountSidebar}
@@ -136,6 +140,7 @@ function MyPackagesPageInner() {
         </div>
       </div>
     </CustomerAccountSidebarShell>
+    </CustomerBookingMessagesModalProvider>
   );
 }
 
