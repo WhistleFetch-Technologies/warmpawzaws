@@ -812,7 +812,7 @@ export function NutritionistBookingRouter({
                           <div className="flex-1 text-left">
                             <h3 className="font-semibold text-gray-900">{service.name}</h3>
                             {descTrim ? (
-                              <div onClick={(e) => e.stopPropagation()}>
+                              <div>
                                 <p
                                   className={cn(
                                     'text-sm leading-5 text-gray-500 break-words whitespace-pre-line',
