@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { PaymentSourcesDisplay } from './PaymentSourcesDisplay';
 import type { PaymentSource } from '@/lib/payment-display-utils';
 import { normalizePaymentSources } from '@/lib/payment-display-utils';
+import { downloadFromApi, getDownloadMessage } from '@/lib/download-file';
 
 interface BookingConfirmationPageProps {
   bookingId: string;
@@ -165,32 +166,20 @@ export function BookingConfirmationPage({
       const endpoint = type === 'booking'
         ? `/bookings/${bookingId}/receipt`
         : `/customer/orders/${orderId || bookingId}/receipt`;
-      
-      // Use fetch directly for blob response
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
-      const response = await fetch(`${apiBaseUrl}${endpoint}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+
+      const { saveResult } = await downloadFromApi({
+        path: endpoint,
+        fileName: `${type === 'booking' ? 'booking' : 'order'}_${bookingId}.pdf`,
+        title: 'Receipt',
+        shareDialogTitle: 'Save receipt',
+        previewHtmlInBrowser: false,
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to download receipt');
+
+      if (saveResult === 'failed') {
+        toast.error(getDownloadMessage(saveResult, 'receipt'));
+      } else {
+        toast.success(getDownloadMessage(saveResult, 'receipt'));
       }
-      
-      const blob = await response.blob();
-      
-      // Create download link
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `${type === 'booking' ? 'booking' : 'order'}_${bookingId}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      
-      toast.success('Receipt downloaded!');
     } catch (error) {
       console.error('Error downloading receipt:', error);
       toast.error('Failed to download receipt');

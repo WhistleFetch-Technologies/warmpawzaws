@@ -8,7 +8,10 @@ import {
   markSupportThreadSeenInBrowser,
   supportTicketDetailIndicatesUnreadForCustomer,
 } from '@/lib/customer-message-unread';
-import { useCustomerBookingMessagesModal } from './CustomerBookingMessagesModalProvider';
+import {
+  useCustomerBookingMessagesModal,
+  type BookingChatThreadTarget,
+} from './CustomerBookingMessagesModalProvider';
 import { toast } from 'sonner';
 import { CommunicationHub } from '@/components/communication/CommunicationHub';
 import {
@@ -260,6 +263,7 @@ export function CustomerBookingMessagesInbox({
   onBack,
   variant = 'page',
   onClose,
+  initialBookingThread = null,
 }: {
   phone: string;
   /** Full-page stack (back arrow in orange header). */
@@ -267,6 +271,8 @@ export function CustomerBookingMessagesInbox({
   variant?: 'page' | 'modal';
   /** Modal shell: dimmed backdrop, title row with close. */
   onClose?: () => void;
+  /** When set, opens CommunicationHub on this booking thread (e.g. package parent booking). */
+  initialBookingThread?: BookingChatThreadTarget | null;
 }) {
   const [rows, setRows] = useState<InboxMergedRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -281,6 +287,16 @@ export function CustomerBookingMessagesInbox({
   const isModal = variant === 'modal';
 
   const { bumpMessagesInboxVersion } = useCustomerBookingMessagesModal();
+
+  useEffect(() => {
+    const bid = String(initialBookingThread?.bookingId || '').trim();
+    if (!bid) return;
+    setActive({
+      mode: 'booking',
+      bookingId: bid,
+      title: initialBookingThread?.title?.trim() || 'Provider',
+    });
+  }, [initialBookingThread?.bookingId, initialBookingThread?.title]);
 
   useEffect(() => {
     if (!isModal) return;

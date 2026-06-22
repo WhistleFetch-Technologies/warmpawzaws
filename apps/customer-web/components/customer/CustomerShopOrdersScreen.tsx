@@ -3,6 +3,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient, ordersApi } from '@/lib/api-client';
+import {
+  downloadOrderInvoice,
+  getOrderInvoiceDownloadMessage,
+} from '@/lib/order-invoice-download';
+import { toast } from 'sonner';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
   goBackOrHome,
@@ -283,34 +288,15 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
 
   const downloadInvoice = async (orderId: string) => {
     try {
-      await apiClient.post<any>(`/orders/${orderId}/invoice/generate`, {});
-      const result = await apiClient.get<any>(`/orders/${orderId}/invoice`);
-
-      if (result?.invoice?.download_url) {
-        window.open(result.invoice.download_url, '_blank');
-      } else if (result?.invoice?.pdf_data) {
-        const byteCharacters = atob(result.invoice.pdf_data);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'application/pdf' });
-
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `invoice-${orderId}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
+      const { saveResult } = await downloadOrderInvoice(orderId);
+      if (saveResult === 'failed') {
+        toast.error(getOrderInvoiceDownloadMessage(saveResult));
       } else {
-        alert('Invoice is being generated. Please try again in a moment.');
+        toast.success(getOrderInvoiceDownloadMessage(saveResult));
       }
     } catch (err: any) {
       console.error('Error downloading invoice:', err);
-      alert('Failed to download invoice: ' + (err.message || 'Unknown error'));
+      toast.error(err.message || 'Failed to download invoice');
     }
   };
 

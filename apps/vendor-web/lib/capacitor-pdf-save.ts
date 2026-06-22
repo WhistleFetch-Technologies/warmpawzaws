@@ -4,29 +4,70 @@ import { Capacitor } from '@capacitor/core';
 
 export type SaveGeneratedPdfResult = 'shared' | 'downloaded' | 'failed';
 
+type CapacitorWindow = Window & {
+  Capacitor?: {
+    isNativePlatform?: () => boolean;
+    getPlatform?: () => string;
+  };
+};
+
+/** True in Capacitor app WebView (incl. remote server.url) or phone browser. */
+export function shouldUseMobileSavePipeline(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  if (Capacitor.isNativePlatform()) return true;
+
+  const cap = (window as CapacitorWindow).Capacitor;
+  if (cap?.isNativePlatform?.()) return true;
+
+  const platform = cap?.getPlatform?.() ?? Capacitor.getPlatform();
+  if (platform === 'ios' || platform === 'android') return true;
+
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+}
+
+function isAndroidContext(): boolean {
+  const platform = Capacitor.getPlatform();
+  if (platform === 'android') return true;
+  return /Android/i.test(navigator.userAgent);
+}
+
+function isIosContext(): boolean {
+  const platform = Capacitor.getPlatform();
+  if (platform === 'ios') return true;
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
 export async function saveGeneratedPdfBlob(options: {
   blob: Blob;
   fileName: string;
   title?: string;
   shareText?: string;
+  shareDialogTitle?: string;
 }): Promise<SaveGeneratedPdfResult> {
-  const { blob, fileName, title, shareText } = options;
-  const mimeType = blob.type || 'application/pdf';
+  const { blob, fileName, title, shareText, shareDialogTitle } = options;
+  const mimeType = blob.type || 'application/octet-stream';
   const file = new File([blob], fileName, { type: mimeType });
-  const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
+  const useMobilePipeline = shouldUseMobileSavePipeline();
   const platform = Capacitor.getPlatform();
 
-  if (isNative) {
-    console.log('[Native Save] Started', { platform });
+  if (useMobilePipeline) {
+    console.log('[Native Save] Started', { platform, mobilePipeline: true });
   }
 
   try {
-    if (!isNative) {
+    if (!useMobilePipeline) {
       triggerAnchorDownload(blob, fileName);
       return 'downloaded';
     }
 
-    const viaPlugins = await tryFilesystemAndShare(blob, fileName, title, shareText);
+    const viaPlugins = await tryFilesystemAndShare(
+      blob,
+      fileName,
+      title,
+      shareText,
+      shareDialogTitle
+    );
     if (viaPlugins === 'shared') {
       console.log('[Native Save] Success via Filesystem+Share');
       return 'shared';
@@ -38,14 +79,12 @@ export async function saveGeneratedPdfBlob(options: {
       return 'shared';
     }
 
-    if (platform === 'android') {
-      const viaAndroidOpen = tryAndroidOpenPdf(blob);
+    if (isAndroidContext()) {
+      const viaAndroidOpen = tryAndroidOpenBlob(blob);
       if (viaAndroidOpen === 'downloaded') {
-        console.log('[Native Save] Opened PDF in WebView (use menu to save)');
+        console.log('[Native Save] Opened file in WebView (use menu to save)');
         return 'downloaded';
       }
-      console.log('[Native Save] Failed — install app update for Share plugin, or use Print');
-      return 'failed';
     }
 
     console.log('[Native Save] Failed');
@@ -77,14 +116,16 @@ async function tryWebShareWithFile(
     return 'skipped';
   }
 
-  const isAndroid = Capacitor.getPlatform() === 'android';
   const nav = navigator as Navigator & {
     canShare?: (data: { files?: File[] }) => boolean;
   };
 
-  // Android WebView often reports canShare=false even when share({ files }) works.
+  const isAndroid = isAndroidContext();
+  const isIos = isIosContext();
+
   if (
     !isAndroid &&
+    !isIos &&
     (typeof nav.canShare !== 'function' || !nav.canShare({ files: [file] }))
   ) {
     return 'skipped';
@@ -110,9 +151,10 @@ async function tryFilesystemAndShare(
   blob: Blob,
   fileName: string,
   title?: string,
-  shareText?: string
+  shareText?: string,
+  shareDialogTitle?: string
 ): Promise<'shared' | 'skipped'> {
-  if (!Capacitor.isNativePlatform()) {
+  if (!shouldUseMobileSavePipeline()) {
     return 'skipped';
   }
 
@@ -125,20 +167,19 @@ async function tryFilesystemAndShare(
     const base64 = await blobToBase64(blob);
     const safeName = fileName.replace(/[^\w.-]+/g, '_');
     const path = `warmpawz/${Date.now()}-${safeName}`;
-    const isAndroid = Capacitor.getPlatform() === 'android';
 
     const written = await Filesystem.writeFile({
       path,
       data: base64,
-      directory: isAndroid ? Directory.Documents : Directory.Cache,
+      directory: isAndroidContext() ? Directory.Documents : Directory.Cache,
       recursive: true,
     });
 
     await Share.share({
       title: title ?? fileName,
-      text: shareText ?? 'Save the PDF to Drive, Files, or another app.',
+      text: shareText ?? 'Save to Drive, Files, or another app.',
       url: written.uri,
-      dialogTitle: 'Save prescription PDF',
+      dialogTitle: shareDialogTitle ?? 'Save file',
     });
 
     return 'shared';
@@ -148,9 +189,8 @@ async function tryFilesystemAndShare(
   }
 }
 
-/** Android WebView lacks file Web Share; open blob so user can save from the PDF viewer menu. */
-function tryAndroidOpenPdf(blob: Blob): 'downloaded' | 'skipped' {
-  if (Capacitor.getPlatform() !== 'android') {
+function tryAndroidOpenBlob(blob: Blob): 'downloaded' | 'skipped' {
+  if (!isAndroidContext()) {
     return 'skipped';
   }
 

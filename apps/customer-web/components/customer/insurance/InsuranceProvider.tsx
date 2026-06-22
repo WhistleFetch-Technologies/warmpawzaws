@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
+import { downloadBlob, getDownloadMessage } from '@/lib/download-file';
 
 interface InsuranceProviderProps {
   phone?: string;
@@ -245,8 +246,7 @@ export function InsuranceProvider(props: InsuranceProviderProps) {
     }
   };
 
-  const downloadPolicy = () => {
-    // Generate policy document
+  const downloadPolicy = async () => {
     const policyDoc = `
 INSURANCE POLICY DOCUMENT
 
@@ -270,13 +270,17 @@ This is a digital policy document. Please keep this for your records.
     `;
     
     const blob = new Blob([policyDoc], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `policy-${policyData?.policyNumber}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Policy document downloaded!');
+    const { saveResult } = await downloadBlob({
+      blob,
+      fileName: `policy-${policyData?.policyNumber}.txt`,
+      title: 'Insurance policy',
+      previewHtmlInBrowser: false,
+    });
+    if (saveResult === 'failed') {
+      toast.error(getDownloadMessage(saveResult, 'policy document'));
+    } else {
+      toast.success(getDownloadMessage(saveResult, 'policy document'));
+    }
   };
 
   if (loading && !provider) {
