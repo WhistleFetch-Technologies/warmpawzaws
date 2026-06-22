@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { downloadFromUrl, getDownloadMessage } from '@/lib/download-file';
 
 interface MedicalRecordsPageProps {
   phone?: string;
@@ -226,13 +227,25 @@ export function MedicalRecordsPage(props: MedicalRecordsPageProps) {
                               variant="outline"
                               size="sm"
                               className="w-full sm:w-auto"
-                              onClick={() => {
+                              onClick={async () => {
                                 const url = record.document_url;
-                                if (url) {
-                                  window.open(url, '_blank');
-                                  toast.success('Opening report...');
-                                } else {
+                                if (!url) {
                                   toast.error('Report link not available');
+                                  return;
+                                }
+                                try {
+                                  const { saveResult } = await downloadFromUrl({
+                                    url,
+                                    title: record.title || 'Medical report',
+                                    previewHtmlInBrowser: false,
+                                  });
+                                  if (saveResult === 'failed') {
+                                    toast.error(getDownloadMessage(saveResult, 'report'));
+                                  } else {
+                                    toast.success(getDownloadMessage(saveResult, 'report'));
+                                  }
+                                } catch {
+                                  toast.error('Failed to download report');
                                 }
                               }}
                             >

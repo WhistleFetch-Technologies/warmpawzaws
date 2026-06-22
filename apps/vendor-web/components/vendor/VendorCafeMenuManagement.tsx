@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { ArrowLeft, Coffee, Upload, Plus, Edit2, Trash2, Grid, Table, Download, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { downloadBlob } from '@/lib/download-file';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/components/ui/utils';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
@@ -256,15 +257,12 @@ Cappuccino,Beverages,Classic Italian coffee with steamed milk,120,Yes,No,"dairy"
 Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,"none",10`;
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'menu-template.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-    toast.success('Template downloaded');
+    void downloadBlob({
+      blob,
+      fileName: 'menu-template.csv',
+      title: 'Menu template',
+      previewHtmlInBrowser: false,
+    }).then(() => toast.success('Template downloaded'));
   };
 
   const filteredMenuItems = selectedCategory

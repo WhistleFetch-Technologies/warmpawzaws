@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, MapPin, Package, Download, FileText, ChevronRight, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
-import { downloadBookingInvoice } from '@/lib/booking-invoice-download';
+import { downloadBookingInvoice, getBookingInvoiceDownloadMessage } from '@/lib/booking-invoice-download';
 import { toast } from 'sonner';
 import { BookingDetailModal } from './BookingDetailModal';
 
@@ -125,12 +125,12 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
 
   const handleDownloadInvoice = async (booking: Booking) => {
     try {
-      const { openedInBrowser } = await downloadBookingInvoice(booking.id);
-      toast.success(
-        openedInBrowser
-          ? 'Invoice opened in your browser'
-          : 'Invoice downloaded — open the HTML file in your browser'
-      );
+      const { saveResult } = await downloadBookingInvoice(booking.id);
+      if (saveResult === 'failed') {
+        toast.error(getBookingInvoiceDownloadMessage(saveResult));
+      } else {
+        toast.success(getBookingInvoiceDownloadMessage(saveResult));
+      }
     } catch (error: any) {
       console.error('Error downloading invoice:', error);
       toast.error('Failed to download invoice. Please try again later.');

@@ -6,6 +6,7 @@ import {
   Phone, Home, Share2, Download, ArrowRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { downloadBlob } from '@/lib/download-file';
 
 interface BookingConfirmationProps {
   bookingId: string;
@@ -67,8 +68,7 @@ export function BookingConfirmation({
     }
   };
 
-  const handleDownload = () => {
-    // Generate a simple text receipt
+  const handleDownload = async () => {
     const receipt = `
 ═══════════════════════════════════════
          WARMPAWZ BOOKING RECEIPT
@@ -100,12 +100,12 @@ Thank you for choosing Warmpawz! 🐾
     `;
     
     const blob = new Blob([receipt], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `warmpawz-booking-${bookingId}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await downloadBlob({
+      blob,
+      fileName: `warmpawz-booking-${bookingId}.txt`,
+      title: 'Booking receipt',
+      previewHtmlInBrowser: false,
+    });
   };
 
   return (

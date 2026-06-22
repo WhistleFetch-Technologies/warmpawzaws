@@ -15,9 +15,8 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Capacitor } from '@capacitor/core';
 import { apiClient } from '@/lib/api-client';
-import { saveGeneratedPdfBlob } from '@/lib/capacitor-pdf-save';
+import { downloadBlob, getDownloadMessage } from '@/lib/download-file';
 import { getCustomerWebOrigin } from '@/lib/customer-web-url';
 
 /** Print without a popup — works on many mobile WebViews where window.open is blocked. */
@@ -472,27 +471,23 @@ export default function PrescriptionDocument({
       const fileName = `Prescription_${safePet}_${prescription.prescriptionDate}.pdf`;
       const blob = pdf.output('blob');
 
-      const result = await saveGeneratedPdfBlob({
+      const { saveResult } = await downloadBlob({
         blob,
         fileName,
         title: `Prescription — ${prescription.pet.name}`,
         shareText: 'Save the PDF to Drive, Files, or another app.',
+        shareDialogTitle: 'Save prescription PDF',
+        previewHtmlInBrowser: false,
       });
 
-      if (result === 'shared') {
-        toast.success('Choose Drive, Files, or another app in the share sheet to save the PDF.');
-      } else if (result === 'downloaded') {
-        if (Capacitor.getPlatform() === 'android') {
-          toast.success('PDF opened — use the menu (⋮) to save or share the file.');
-        } else {
-          toast.success('PDF downloaded.');
-        }
-      } else {
+      if (saveResult === 'failed') {
         toast.message('PDF export failed on this device. Opening print instead…');
         handlePrint();
         onDownload?.();
         return;
       }
+
+      toast.success(getDownloadMessage(saveResult, 'PDF'));
 
       onDownload?.();
     } catch (err) {

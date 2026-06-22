@@ -25,6 +25,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { downloadFromUrl } from '@/lib/download-file';
 
 interface PendingReport {
   id: string;
@@ -327,10 +328,12 @@ export function VetReportReview({
             <Button
               variant="outline"
               onClick={() => {
-                const link = document.createElement('a');
-                link.href = selectedReport.reportUrl;
-                link.download = `${selectedReport.testName}.pdf`;
-                link.click();
+                void downloadFromUrl({
+                  url: selectedReport.reportUrl,
+                  fileName: `${selectedReport.testName}.pdf`,
+                  title: selectedReport.testName,
+                  previewHtmlInBrowser: false,
+                });
               }}
             >
               <Download className="w-4 h-4" />
