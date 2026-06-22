@@ -60,7 +60,7 @@ export function applyPastSlotGuard(
 
   return slots.map((slot) => {
     const slotMinutes = minutesFromHhmm(slot.time);
-    const isPast = slotMinutes + minNoticeMinutes <= currentMinutes;
+    const isPast = slotMinutes < currentMinutes + minNoticeMinutes;
     if (isPast) {
       return { ...slot, available: false, isPast: true };
     }
@@ -139,7 +139,7 @@ export function isSlotPastInIst(
   const minNoticeMinutes = options?.minNoticeMinutes ?? DEFAULT_MIN_NOTICE_MINUTES;
   const slotMinutes = minutesFromHhmm(slotHhmm);
   const currentMinutes = minutesFromHhmm(hmInIst(now));
-  return slotMinutes + minNoticeMinutes <= currentMinutes;
+  return slotMinutes < currentMinutes + minNoticeMinutes;
 }
 
 function addDaysToYmd(ymd: string, deltaDays: number): string {

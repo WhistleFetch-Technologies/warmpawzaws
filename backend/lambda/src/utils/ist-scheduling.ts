@@ -58,7 +58,7 @@ export function isSlotPastInIst(
   if (dateYmd !== ymdInIst(now)) return false;
   const slotMinutes = minutesFromHhmm(slotHhmm);
   const currentMinutes = minutesFromHhmm(hmInIst(now));
-  return slotMinutes + minNoticeMinutes <= currentMinutes;
+  return slotMinutes < currentMinutes + minNoticeMinutes;
 }
 
 export function formatNextAvailableDisplay(
