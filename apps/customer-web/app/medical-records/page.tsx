@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { downloadFromUrl, getDownloadMessage } from '@/lib/download-file';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 // ============================================================================
@@ -239,8 +240,19 @@ export default function MedicalRecordsPage() {
   // ============================================================================
 
   const handleDownload = async (attachment: Attachment) => {
-    // In production, this would download from the actual URL
-    window.open(attachment.url, '_blank');
+    try {
+      const { saveResult } = await downloadFromUrl({
+        url: attachment.url,
+        fileName: attachment.name,
+        title: attachment.name,
+        previewHtmlInBrowser: false,
+      });
+      if (saveResult === 'failed') {
+        alert(getDownloadMessage(saveResult, 'file'));
+      }
+    } catch {
+      alert('Failed to download file');
+    }
   };
 
   const handleShare = async (record: MedicalRecord) => {

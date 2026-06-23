@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { downloadFromApi } from '@/lib/download-file';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 import { Button } from '@/components/ui/button';
@@ -532,11 +533,17 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                           {/* File attachment display */}
                           {msg.fileId && (
                             <div className="mb-2">
-                              <a
-                                href={`${getApiBaseUrl()}/chat/file/${encodeURIComponent(msg.fileId)}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={`flex items-center gap-2 p-2 rounded-lg ${
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void downloadFromApi({
+                                    path: `/chat/file/${encodeURIComponent(msg.fileId!)}`,
+                                    fileName: msg.fileName || 'file',
+                                    title: msg.fileName || 'Chat file',
+                                    previewHtmlInBrowser: false,
+                                  });
+                                }}
+                                className={`flex items-center gap-2 p-2 rounded-lg w-full text-left ${
                                   isCustomer ? 'bg-white/20' : 'bg-gray-200'
                                 }`}
                               >
@@ -550,7 +557,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                                   )}
                                 </div>
                                 <Download className="w-4 h-4" />
-                              </a>
+                              </button>
                             </div>
                           )}
                           

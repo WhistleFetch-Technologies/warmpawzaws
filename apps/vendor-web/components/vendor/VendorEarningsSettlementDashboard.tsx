@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { downloadBlob } from '@/lib/download-file';
 import { resolveLedgerVendorId } from '@/lib/vendor-ledger-id';
 import { vendorNavigate, vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 import {
@@ -549,13 +550,12 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   const handleDownloadStatement = async (settlementId: string) => {
     try {
       const response = await apiClient.get<any>(`/vendor/settlements/${settlementId}/statement`);
-      const blob = new Blob([JSON.stringify(response, null, 2)], { type: 'application/json' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `settlement-${settlementId}.json`;
-      a.click();
-      window.URL.revokeObjectURL(url);
+      await downloadBlob({
+        blob: new Blob([JSON.stringify(response, null, 2)], { type: 'application/json' }),
+        fileName: `settlement-${settlementId}.json`,
+        title: 'Settlement statement',
+        previewHtmlInBrowser: false,
+      });
     } catch (error) {
       console.error('Failed to download statement:', error);
     }

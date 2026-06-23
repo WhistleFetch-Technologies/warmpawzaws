@@ -14,6 +14,7 @@ import {
   ChevronLeft, RefreshCw, Download, TrendingDown
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { downloadBlob } from '@/lib/download-file';
 
 interface EarningsData {
   totalBookings: number;
@@ -96,14 +97,12 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
 
     // Create and download file
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `earnings_${activePeriod}_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    void downloadBlob({
+      blob,
+      fileName: `earnings_${activePeriod}_${new Date().toISOString().split('T')[0]}.csv`,
+      title: 'Earnings report',
+      previewHtmlInBrowser: false,
+    });
   };
 
   return (

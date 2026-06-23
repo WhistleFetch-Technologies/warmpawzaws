@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { downloadFromUrl, getDownloadMessage } from '@/lib/download-file';
 
 interface DiagnosticsReportViewerProps {
   bookingId: string;
@@ -243,12 +244,22 @@ export function DiagnosticsReportViewer({
 
   const handleDownloadReport = async (report: Report) => {
     try {
-      if (report.reportUrl) {
-        // Open report URL in new tab for download
-        window.open(report.reportUrl, '_blank');
-        toast.success('Downloading report...');
-      } else {
+      if (!report.reportUrl) {
         toast.error('Report not available yet');
+        return;
+      }
+
+      const { saveResult } = await downloadFromUrl({
+        url: report.reportUrl,
+        title: report.testName || 'Diagnostic report',
+        shareDialogTitle: 'Save report',
+        previewHtmlInBrowser: false,
+      });
+
+      if (saveResult === 'failed') {
+        toast.error(getDownloadMessage(saveResult, 'report'));
+      } else {
+        toast.success(getDownloadMessage(saveResult, 'report'));
       }
     } catch (error) {
       toast.error('Failed to download report');

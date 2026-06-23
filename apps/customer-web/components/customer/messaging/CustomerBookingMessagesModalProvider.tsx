@@ -11,8 +11,15 @@ import {
 import { createPortal } from 'react-dom';
 import { CustomerBookingMessagesInbox } from './CustomerBookingMessagesInbox';
 
+export type BookingChatThreadTarget = {
+  bookingId: string;
+  title: string;
+};
+
 type CustomerBookingMessagesModalContextValue = {
   openMessages: () => void;
+  /** Open booking chat (CommunicationHub) on the package parent booking or any booking thread. */
+  openBookingChat: (bookingId: string, vendorName?: string) => void;
   closeMessages: () => void;
   /** Incremented when the messages modal closes so the home header badge can refetch. */
   messagesInboxVersion: number;
@@ -39,24 +46,49 @@ export function CustomerBookingMessagesModalProvider({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [bookingThreadTarget, setBookingThreadTarget] = useState<BookingChatThreadTarget | null>(null);
   const [messagesInboxVersion, setMessagesInboxVersion] = useState(0);
-  const openMessages = useCallback(() => setOpen(true), []);
+  const openMessages = useCallback(() => {
+    setBookingThreadTarget(null);
+    setOpen(true);
+  }, []);
+  const openBookingChat = useCallback((bookingId: string, vendorName?: string) => {
+    const bid = String(bookingId || '').trim();
+    if (!bid) return;
+    setBookingThreadTarget({
+      bookingId: bid,
+      title: String(vendorName || '').trim() || 'Provider',
+    });
+    setOpen(true);
+  }, []);
   const bumpMessagesInboxVersion = useCallback(() => {
     setMessagesInboxVersion((v) => v + 1);
   }, []);
   const closeMessages = useCallback(() => {
     setOpen(false);
+    setBookingThreadTarget(null);
     bumpMessagesInboxVersion();
   }, [bumpMessagesInboxVersion]);
   const value = useMemo(
-    () => ({ openMessages, closeMessages, messagesInboxVersion, bumpMessagesInboxVersion }),
-    [openMessages, closeMessages, messagesInboxVersion, bumpMessagesInboxVersion]
+    () => ({
+      openMessages,
+      openBookingChat,
+      closeMessages,
+      messagesInboxVersion,
+      bumpMessagesInboxVersion,
+    }),
+    [openMessages, openBookingChat, closeMessages, messagesInboxVersion, bumpMessagesInboxVersion]
   );
 
   const modal =
     typeof document !== 'undefined' && open
       ? createPortal(
-          <CustomerBookingMessagesInbox variant="modal" phone={phone} onClose={closeMessages} />,
+          <CustomerBookingMessagesInbox
+            variant="modal"
+            phone={phone}
+            onClose={closeMessages}
+            initialBookingThread={bookingThreadTarget}
+          />,
           document.body
         )
       : null;

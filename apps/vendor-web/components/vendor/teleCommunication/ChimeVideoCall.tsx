@@ -32,6 +32,7 @@ import {
   Paperclip, FileText, SwitchCamera,
 } from 'lucide-react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { downloadFromUrl } from '@/lib/download-file';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
@@ -2139,14 +2140,20 @@ export function ChimeVideoCall({
                             <div className="flex flex-col">
                               <span className="text-sm">{msg.fileName || msg.message}</span>
                               {msg.fileUrl && (
-                                <a
-                                  href={msg.fileUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-xs underline opacity-90"
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void downloadFromUrl({
+                                      url: msg.fileUrl!,
+                                      fileName: msg.fileName || 'file',
+                                      title: msg.fileName || 'Chat file',
+                                      previewHtmlInBrowser: false,
+                                    });
+                                  }}
+                                  className="text-xs underline opacity-90 text-left"
                                 >
                                   Download
-                                </a>
+                                </button>
                               )}
                             </div>
                           </div>

@@ -61,6 +61,7 @@ export function clearVendorSession(): void {
   localStorage.removeItem('vendorCountryCode');
   
   // Clear Cognito tokens
+  localStorage.removeItem('vendorCognitoTokens');
   localStorage.removeItem('vendorTokenExpiry');
   localStorage.removeItem('vendorRefreshTokenExpiry');
   localStorage.removeItem('cognitoAccessToken');
@@ -85,6 +86,21 @@ export function clearVendorSession(): void {
   } catch (e) {
     // Ignore errors
   }
+}
+
+/**
+ * Sign out: unregister push device, then clear session.
+ * Call from explicit logout handlers (not stale-session cleanup on page load).
+ */
+export async function signOutVendor(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const raw = localStorage.getItem('vendorId')?.trim() || '';
+  const userId = /^[0-9a-f-]{36}$/i.test(raw) ? raw : null;
+  if (userId) {
+    const { teardownPushNotifications } = await import('./push-bootstrap');
+    await teardownPushNotifications({ userId, userType: 'vendor' });
+  }
+  clearVendorSession();
 }
 
 /**

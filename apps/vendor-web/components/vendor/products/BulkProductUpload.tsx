@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle, X, Loader2 } from 'lucide-react';
 import { apiClient as vendorApiClient } from '@/lib/api-client';
+import { downloadBlob } from '@/lib/download-file';
 
 import { countBulkRowImages, countTitledBulkProducts, MAX_BULK_PRODUCT_ROWS } from '@/lib/bulk-product-limits';
 
@@ -142,13 +143,15 @@ export function BulkProductUpload({
     ];
     const csv = headers.join(',') + '\n' + sample.join(',');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'product_upload_template_simple.csv';
-    a.click();
-    window.URL.revokeObjectURL(url);
-    setTemplateOkMessage('Downloaded simple CSV. Required: name, category, mrp, stock_quantity, hsn_code, gst_rate, images. Optional: selling_price (defaults to MRP).');
+    void downloadBlob({
+      blob,
+      fileName: 'product_upload_template_simple.csv',
+      title: 'Product upload template',
+      previewHtmlInBrowser: false,
+    });
+    setTemplateOkMessage(
+      'Downloaded simple CSV. Required: name, category, mrp, stock_quantity, hsn_code, gst_rate, images. Optional: selling_price (defaults to MRP).',
+    );
   };
 
   const handleDownloadTemplate = async () => {
@@ -169,12 +172,12 @@ export function BulkProductUpload({
           'Server did not return a valid Excel file (corrupt or an error page). Try again, or use the simple CSV below.'
         );
       }
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'product_upload_template.xlsx';
-      a.click();
-      window.URL.revokeObjectURL(url);
+      await downloadBlob({
+        blob,
+        fileName: 'product_upload_template.xlsx',
+        title: 'Product upload template',
+        previewHtmlInBrowser: false,
+      });
       setTemplateOkMessage(
         'Saved product_upload_template.xlsx. Open in Excel, or in Google Drive: upload the file → right-click → Open with → Google Sheets.'
       );

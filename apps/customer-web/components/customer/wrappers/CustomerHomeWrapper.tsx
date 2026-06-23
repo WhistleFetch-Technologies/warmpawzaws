@@ -1339,7 +1339,6 @@ export function CustomerHomeWrapper({
         serviceKey === 'nutritionist' ||
         serviceKey === 'pet_nutritionist')
     ) {
-      setPreviousScreen('home');
       setVetServiceData({
         vendorId: vid,
         vendorName: data?.vendorName,
@@ -4087,7 +4086,7 @@ export function CustomerHomeWrapper({
       >
         <ExpertNutritionistsList
           phone={phone}
-          onBack={() => setCurrentScreen('nutritionist')}
+          onBack={handleBack}
           onNavigate={(screen, data) => {
             if (screen === 'nutrition-meal-plans') {
               if (!isCustomerMealPlansEnabled()) {
@@ -4105,10 +4104,8 @@ export function CustomerHomeWrapper({
               } else {
                 setMealPlanVendorFocus(null);
               }
-              setPreviousScreen('expert-nutritionists');
               setCurrentScreen('nutrition-meal-plans');
             } else if (screen === 'nutritionist-booking') {
-              setPreviousScreen('expert-nutritionists');
               setSelectedVendorId(data?.vendorId);
               setVetServiceData({
                 vendorId: data?.vendorId,
@@ -4117,9 +4114,8 @@ export function CustomerHomeWrapper({
                 nutritionist: data?.nutritionist,
                 serviceId: data?.serviceId,
               });
-              setCurrentScreen('nutritionist-booking');
+              navigateToScreen('nutritionist-booking');
             } else if (screen === 'create-booking') {
-              setPreviousScreen('expert-nutritionists');
               setSelectedVendorId(data?.vendorId);
               setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'pet_nutritionist' });
               setCurrentScreen('create-booking');

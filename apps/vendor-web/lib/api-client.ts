@@ -263,7 +263,20 @@ export class ApiClient {
       const isVendorForgotPasswordFlow =
         path.includes('/auth/vendor/forgot-password/verify-otp') ||
         path.includes('/auth/vendor/forgot-password/reset');
-      if (response.status === 401 && !isVendorForgotPasswordFlow) {
+      // Login / OTP / forgot-request return 401 for bad credentials — must not reload /auth (hides the error).
+      const isVendorUnauthenticatedAuthEndpoint =
+        path.includes('/auth/vendor/login') ||
+        path.includes('/auth/send-otp') ||
+        path.includes('/auth/verify-otp') ||
+        path.includes('/auth/otp/send') ||
+        path.includes('/auth/vendor/forgot-password/request');
+      const hadBearerAuth = !!(token && String(token).length > 0);
+      if (
+        response.status === 401 &&
+        hadBearerAuth &&
+        !isVendorForgotPasswordFlow &&
+        !isVendorUnauthenticatedAuthEndpoint
+      ) {
         if (typeof window !== 'undefined') {
           const loginAt = Number(sessionStorage.getItem('_warmpawz_vendor_login_at') || 0);
           const inGrace = loginAt > 0 && Date.now() - loginAt < VENDOR_POST_LOGIN_401_GRACE_MS;

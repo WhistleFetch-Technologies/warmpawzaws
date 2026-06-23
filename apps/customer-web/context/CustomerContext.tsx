@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
-import { getStoredCustomerJwtForSession } from '@/lib/session-utils';
+import { getStoredCustomerJwtForSession, signOutCustomer } from '@/lib/session-utils';
 
 interface CustomerSession {
   phone: string;
@@ -111,23 +111,12 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    setSessionState(null);
-    setJourneyStage(null);
-    setCurrentScreen('auth');
-    setPetData([]);
-    
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('customerPhone');
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('customerData');
-      localStorage.removeItem('customerId');
-      localStorage.removeItem('customer_id');
-      localStorage.removeItem('warmpawz_customer_id');
-      localStorage.removeItem('customerOnboardingComplete');
-      localStorage.removeItem('onboarding_completed');
-      localStorage.removeItem('profile_completed');
-      localStorage.removeItem('customerJourneyStage');
-    }
+    void signOutCustomer().finally(() => {
+      setSessionState(null);
+      setJourneyStage(null);
+      setCurrentScreen('auth');
+      setPetData([]);
+    });
   };
 
   // Save journey stage when it changes

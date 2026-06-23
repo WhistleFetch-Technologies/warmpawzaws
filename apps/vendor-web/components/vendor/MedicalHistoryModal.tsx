@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { downloadFromUrl } from '@/lib/download-file';
 import { X, FileText, Pill, Calendar, Download, AlertCircle, Stethoscope, Clipboard, Activity } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 // Uses apiClient (API Gateway)
@@ -286,15 +287,20 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
 
                       {/* Actions */}
                       {record.url ? (
-                        <a 
-                          href={record.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void downloadFromUrl({
+                              url: record.url!,
+                              title: record.title || 'Medical report',
+                              previewHtmlInBrowser: false,
+                            });
+                          }}
                           className="inline-flex items-center text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
                         >
                           <Download className="w-3.5 h-3.5 mr-2" />
                           Download Report / PDF
-                        </a>
+                        </button>
                       ) : (
                         <div className="inline-flex items-center text-xs text-gray-400 italic bg-gray-50 px-3 py-1.5 rounded">
                           Text Record Only

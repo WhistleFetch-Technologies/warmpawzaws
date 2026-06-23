@@ -11,6 +11,10 @@ const NOW_22_IST = new Date('2026-06-19T16:30:00.000Z');
 const TODAY_YMD = '2026-06-19';
 const TOMORROW_YMD = '2026-06-20';
 
+/** 2026-06-22 11:25 IST = 2026-06-22T05:55:00.000Z */
+const NOW_1125_IST = new Date('2026-06-22T05:55:00.000Z');
+const TODAY_0622 = '2026-06-22';
+
 describe('applyPastSlotGuard', () => {
   it('marks past slot unavailable on today at 22:00 IST', () => {
     const slots: NormalizedTimeSlot[] = [{ time: '15:00', available: true }];
@@ -58,6 +62,20 @@ describe('applyPastSlotGuard', () => {
     expect(out[0].available).toBe(false);
     expect(out[0].isPast).toBe(true);
     expect(out[1].available).toBe(true);
+  });
+
+  it('marks slot that already started at 11:25 IST (regression)', () => {
+    const slots: NormalizedTimeSlot[] = [{ time: '11:00', available: true }];
+    const out = applyPastSlotGuard(slots, TODAY_0622, { now: NOW_1125_IST });
+    expect(out[0].available).toBe(false);
+    expect(out[0].isPast).toBe(true);
+  });
+
+  it('keeps next valid slot at 11:25 IST (regression)', () => {
+    const slots: NormalizedTimeSlot[] = [{ time: '12:00', available: true }];
+    const out = applyPastSlotGuard(slots, TODAY_0622, { now: NOW_1125_IST });
+    expect(out[0].available).toBe(true);
+    expect(out[0].isPast).toBeUndefined();
   });
 });
 
@@ -107,6 +125,17 @@ describe('resolveNextAvailableLabel', () => {
           nextAvailable: { date: '2026-06-19', time: '13:30', display: 'Today 1:30 PM' },
         },
         { now: NOW_1835_IST }
+      )
+    ).toBeUndefined();
+  });
+
+  it('filters 11:00 AM badge at 11:25 IST (regression)', () => {
+    expect(
+      resolveNextAvailableLabel(
+        {
+          nextAvailable: { date: '2026-06-22', time: '11:00', display: 'Today 11:00 AM' },
+        },
+        { now: NOW_1125_IST }
       )
     ).toBeUndefined();
   });

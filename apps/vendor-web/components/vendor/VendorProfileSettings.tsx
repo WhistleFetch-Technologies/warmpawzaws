@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
-import { clearVendorSession } from '@/lib/session-utils';
+import { signOutVendor } from '@/lib/session-utils';
 import { useRouter } from 'next/navigation';
 
 interface VendorProfileSettingsProps {
@@ -91,17 +91,12 @@ export function VendorProfileSettings({ vendorId, vendorData, onBack }: VendorPr
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (confirm('Are you sure you want to logout?')) {
-      // Clear all session data
-      clearVendorSession();
-      
-      // Clear session storage
+      await signOutVendor();
       if (typeof window !== 'undefined') {
         sessionStorage.clear();
       }
-      
-      // Redirect to auth page
       router.push('/auth');
       toast.success('Logged out successfully');
     }

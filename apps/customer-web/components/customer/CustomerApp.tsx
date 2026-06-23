@@ -4,14 +4,13 @@ import { useState, useEffect } from 'react';
 import {
   bootstrapPushNotifications,
   ensureCapacitorPushRegistrationPipeline,
-  teardownPushNotifications,
 } from '@/lib/push-bootstrap';
+import { signOutCustomer } from '@/lib/session-utils';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { CustomerBookingMessagesModalProvider } from './messaging/CustomerBookingMessagesModalProvider';
 import { resetHomeBootstrapForPhone } from '@/lib/customer-home-bootstrap';
-import { clearCachedPetsForPhone } from '@/lib/customer-pets-cache';
 
 interface CustomerSession {
   phone: string;
@@ -74,28 +73,7 @@ export function CustomerApp({
   const handleLogoutNavigate = async (screen: string) => {
     if (screen === 'logout') {
       if (typeof window !== 'undefined') {
-        const userId =
-          session.customerId ||
-          localStorage.getItem('customerId') ||
-          '';
-        if (userId) {
-          await teardownPushNotifications({ userId, userType: 'customer' });
-        }
-        localStorage.removeItem('customerPhone');
-        localStorage.removeItem('customerId');
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('customerData');
-        localStorage.removeItem('customerProfile');
-        clearCachedPetsForPhone();
-        localStorage.removeItem('customerOnboardingComplete');
-        localStorage.removeItem('onboarding_completed');
-        localStorage.removeItem('profile_completed');
-        localStorage.removeItem('customerJourneyStage');
-        localStorage.removeItem('cognitoAccessToken');
-        localStorage.removeItem('cognitoIdToken');
-        localStorage.removeItem('cognitoRefreshToken');
-        localStorage.removeItem('cognitoTokenExpiry');
-        localStorage.removeItem('cognitoUserInfo');
+        await signOutCustomer();
         resetHomeBootstrapForPhone(null);
         window.location.href = '/auth';
       }

@@ -58,6 +58,7 @@ import {
 import {
   findVendorForPasswordLogin,
   mergeVendorIdentityOnboarding,
+  resolveVendorForPasswordLogin,
 } from '../../lib/services/auth/vendor-username-lookup';
 import {
   handleCustomerForgotPasswordRequest,
@@ -1421,11 +1422,31 @@ class VendorPasswordLoginHandler extends BaseHandlerEnhanced {
       isUatRelaxedAuthContext(hdrsVendor) && passTrimVendor === bypassSecretVendor;
 
     try {
-      const vendor = await findVendorForPasswordLogin(username);
-      if (!vendor) {
+      const resolution = uatVendorPasswordBypass
+        ? {
+            kind: 'matched' as const,
+            vendor: await findVendorForPasswordLogin(username),
+          }
+        : await resolveVendorForPasswordLogin(username, password, hasMeaningfulStoredPassword);
+
+      if (resolution.kind === 'no_active_vendor') {
         return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
       }
 
+      if (resolution.kind === 'password_on_inactive_only') {
+        const activeLabel = resolution.activeBusinessName?.trim() || 'your active vendor account';
+        const inactiveLabel = resolution.inactiveBusinessName?.trim();
+        const detail = inactiveLabel
+          ? `That password belongs to an inactive vendor profile (“${inactiveLabel}”). Sign in to ${activeLabel} using Forgot password to set a new password.`
+          : `That password belongs to an inactive vendor profile. Use Forgot password to set a password for ${activeLabel}.`;
+        return this.error(detail, 403, 'PASSWORD_ON_INACTIVE_VENDOR', undefined, context.requestId);
+      }
+
+      if (resolution.kind === 'not_found' || !resolution.vendor) {
+        return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+      }
+
+      const vendor = resolution.vendor;
       const userData = await mergeVendorIdentityOnboarding(vendor);
 
       if (userData.is_active === false && (userData.status === 'suspended' || userData.status === 'inactive')) {
@@ -1448,12 +1469,10 @@ class VendorPasswordLoginHandler extends BaseHandlerEnhanced {
         );
       }
 
-      if (!uatVendorPasswordBypass) {
-        const valid = await verifyCustomerPassword(password, userData.password_hash);
-        if (!valid) {
+      if (uatVendorPasswordBypass) {
+        if (!vendor) {
           return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
         }
-      } else {
         console.log(`[AUTH] UAT Mode: password bypass (${UAT_DEV_PASSWORD_BYPASS}) for vendor ${username}`);
       }
 

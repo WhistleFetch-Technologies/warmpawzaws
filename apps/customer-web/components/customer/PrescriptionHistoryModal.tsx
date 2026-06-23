@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Upload, FileText, Calendar, Image, File, Download, Eye, Share2, ShoppingCart, Radio, Printer } from 'lucide-react';
+import { X, Upload, FileText, Calendar, Image, File, Download, Share2, ArrowLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
@@ -44,9 +44,6 @@ interface Prescription {
   status?: string;
   instructions?: string;
 }
-
-/** Set to true to re-enable the header "Order" control (UX / business toggle). */
-const PHARMACY_ORDER_BUTTON_ENABLED = false;
 
 function isUserShareCancel(err: unknown): boolean {
   if (!err) return false;
@@ -134,6 +131,57 @@ function normalizePrescriptionRow(row: Record<string, any>): Prescription {
     ...row,
     recordType: mapRecordType(row),
   };
+}
+
+function countMedications(p: Prescription): number {
+  const meds = p.content_data?.medications;
+  if (Array.isArray(meds) && meds.length > 0) return meds.length;
+  if (p.medication_name?.trim()) return 1;
+  return 0;
+}
+
+function hasStructuredPrescriptionData(p: Prescription): boolean {
+  return (
+    countMedications(p) > 0 ||
+    Boolean(formatDiagnosisForDisplay(p.diagnosis || p.content_data?.diagnosis))
+  );
+}
+
+function formatDiagnosisForDisplay(diagnosis?: string): string | null {
+  const text = diagnosis?.trim();
+  if (!text || /^no$/i.test(text)) return null;
+  return text;
+}
+
+function getPrescriptionListTitle(p: Prescription, formatDate: (d: string) => string): string {
+  const date = formatDate(p.prescription_date || p.record_date || p.created_at);
+  if (isCustomerUpload(p)) {
+    const custom = p.title?.trim();
+    if (custom && custom.length > 2 && !/^no$/i.test(custom)) {
+      return custom;
+    }
+    return `Uploaded document · ${date}`;
+  }
+  return `Prescription · ${date}`;
+}
+
+function getPrescriptionListSubtitle(p: Prescription): string {
+  const parts: string[] = [];
+  const vendor = p.staff_name || p.vendor_name;
+  if (vendor) parts.push(vendor);
+  const medCount = countMedications(p);
+  if (medCount > 0) {
+    parts.push(`${medCount} medicine${medCount > 1 ? 's' : ''}`);
+  } else if (p.file_url?.toLowerCase().includes('.pdf')) {
+    parts.push('PDF file');
+  } else if (p.file_url) {
+    parts.push('Image file');
+  }
+  const diagnosis = formatDiagnosisForDisplay(p.diagnosis || p.content_data?.diagnosis);
+  if (diagnosis) {
+    parts.push(diagnosis.length > 36 ? `${diagnosis.slice(0, 36)}…` : diagnosis);
+  }
+  return parts.join(' · ') || 'Tap to open';
 }
 
 export function PrescriptionHistoryModal({
@@ -430,62 +478,53 @@ export function PrescriptionHistoryModal({
   };
 
   const handleViewPrescription = async (prescription: Prescription) => {
+    setSelectedPrescription(prescription);
+
+    const openStructuredDocument =
+      isVendorPrescription(prescription) &&
+      (hasStructuredPrescriptionData(prescription) || !prescription.file_url);
+
+    if (openStructuredDocument) {
+      await openA4Document(prescription);
+      return;
+    }
+
+    setShowViewer(true);
+    setLoadingPrescriptionView(true);
+
     try {
-      setSelectedPrescription(prescription);
-      setShowViewer(true);
-      setLoadingPrescriptionView(true);
-      
-      // ✅ FIX: Always fetch from view endpoint to get fresh signed URL for S3 files
-      // This ensures images/files are properly accessible
-      try {
-        const result = await apiClient.get(`/medical-records/booking/${bookingId}/view/${prescription.id}`) as any;
-        
-        // ✅ FIX: Handle both camelCase (contentData) and snake_case (content_data) responses
-        // The API returns contentData (camelCase) but we store as content_data (snake_case)
-        let contentData = result.contentData || result.content_data || prescription.content_data;
-        
-        // ✅ FIX: If contentData has medications array, ensure it's properly formatted
-        if (contentData && typeof contentData === 'string') {
-          try {
-            contentData = JSON.parse(contentData);
-          } catch (e) {
-            // Keep as string if not valid JSON
-          }
+      const result = await apiClient.get(`/medical-records/booking/${bookingId}/view/${prescription.id}`) as any;
+
+      let contentData = result.contentData || result.content_data || prescription.content_data;
+
+      if (contentData && typeof contentData === 'string') {
+        try {
+          contentData = JSON.parse(contentData);
+        } catch {
+          /* keep string */
         }
-        
-        // ✅ FIX: Also check record object for nested content_data
-        if (result.record) {
-          const recordContentData = result.record.content_data || result.record.contentData;
-          if (recordContentData && !contentData) {
-            contentData = typeof recordContentData === 'string' 
-              ? JSON.parse(recordContentData) 
-              : recordContentData;
-          }
-        }
-        
-        // Build updated prescription with all available data
-        const updatedPrescription: Prescription = {
-          ...prescription,
-          file_url: result.fileUrl || result.record?.file_url || prescription.file_url,
-          content_data: contentData,
-          // ✅ FIX: Also map medication fields from prescriptions table
-          diagnosis: contentData?.diagnosis || result.record?.diagnosis || prescription.diagnosis,
-          medication_name: contentData?.medications?.[0]?.name || result.record?.medication_name || prescription.medication_name,
-          instructions: contentData?.notes || result.record?.instructions || prescription.instructions,
-        };
-        
-        setSelectedPrescription(updatedPrescription);
-        console.log('✅ Loaded prescription:', updatedPrescription);
-      } catch (fetchError) {
-        console.warn('Could not fetch prescription details, using cached data:', fetchError);
-        // Continue with existing prescription data
-      } finally {
-        setLoadingPrescriptionView(false);
       }
-    } catch (error) {
-      console.error('Error viewing prescription:', error);
-      toast.error('Failed to load prescription');
-      setShowViewer(false);
+
+      if (result.record) {
+        const recordContentData = result.record.content_data || result.record.contentData;
+        if (recordContentData && !contentData) {
+          contentData =
+            typeof recordContentData === 'string' ? JSON.parse(recordContentData) : recordContentData;
+        }
+      }
+
+      setSelectedPrescription({
+        ...prescription,
+        file_url: result.fileUrl || result.record?.file_url || prescription.file_url,
+        content_data: contentData,
+        diagnosis: contentData?.diagnosis || result.record?.diagnosis || prescription.diagnosis,
+        medication_name:
+          contentData?.medications?.[0]?.name || result.record?.medication_name || prescription.medication_name,
+        instructions: contentData?.notes || result.record?.instructions || prescription.instructions,
+      });
+    } catch (fetchError) {
+      console.warn('Could not fetch prescription details, using cached data:', fetchError);
+    } finally {
       setLoadingPrescriptionView(false);
     }
   };
@@ -564,42 +603,6 @@ export function PrescriptionHistoryModal({
     toast.error('Could not share. Try copying from the screen or use another device.');
   };
 
-  /** Kept for when PHARMACY_ORDER_BUTTON_ENABLED is true; do not remove. */
-  const openPharmacyOrderFromViewer = async () => {
-    if (!selectedPrescription) return;
-    try {
-      let medications: any[] = [];
-      if (selectedPrescription.content_data?.medications) {
-        medications = Array.isArray(selectedPrescription.content_data.medications)
-          ? selectedPrescription.content_data.medications
-          : [];
-      }
-      if (onOrderMedicine) {
-        onOrderMedicine(selectedPrescription.id, bookingId, medications);
-        setShowViewer(false);
-        onClose();
-        toast.success('Opening pharmacy order...');
-      } else {
-        window.dispatchEvent(
-          new CustomEvent('orderMedicineFromPrescription', {
-            detail: {
-              prescriptionId: selectedPrescription.id,
-              bookingId,
-              medications,
-              fileUrl: selectedPrescription.file_url,
-            },
-          })
-        );
-        setShowViewer(false);
-        onClose();
-        toast.success('Opening pharmacy order...');
-      }
-    } catch (error: unknown) {
-      console.error('Error ordering medicine:', error);
-      toast.error('Failed to open pharmacy order. Please try again.');
-    }
-  };
-
   // Sort prescriptions by date (latest first)
   const sortedPrescriptions = [...prescriptions].sort((a, b) => {
     const dateA = new Date(getPrescriptionDate(a)).getTime();
@@ -622,29 +625,38 @@ export function PrescriptionHistoryModal({
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-        <div className="bg-white w-full max-w-customer rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto">
+        <div className="bg-white w-full max-w-customer rounded-t-[32px] sm:rounded-[32px] max-h-[min(92dvh,90vh)] flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
-            <h2 className="font-bold text-gray-800">Prescriptions &amp; documents</h2>
-            <div className="flex items-center gap-2">
-              {allowCustomerUpload && (
-                <button
-                  onClick={() => setShowUploadModal(true)}
-                  className="px-3 py-1.5 bg-blue-500 text-white rounded-lg text-sm flex items-center gap-1 hover:bg-blue-600"
-                >
-                  <Upload className="w-4 h-4" />
-                  Upload
-                </button>
-              )}
-              <button
-                onClick={onClose}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4 flex items-center gap-3 rounded-t-[32px] z-10 shrink-0 cw-header-safe-top cw-header-safe-x">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5 text-gray-600" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-bold text-gray-800 truncate">Prescriptions</h2>
+              <p className="text-xs text-gray-500">
+                {loading
+                  ? 'Loading…'
+                  : `${sortedPrescriptions.length} document${sortedPrescriptions.length === 1 ? '' : 's'}`}
+              </p>
             </div>
+            {allowCustomerUpload ? (
+              <button
+                type="button"
+                onClick={() => setShowUploadModal(true)}
+                className="px-3 py-1.5 bg-blue-500 text-white rounded-lg text-sm flex items-center gap-1 hover:bg-blue-600 shrink-0"
+              >
+                <Upload className="w-4 h-4" />
+                <span className="sr-only sm:not-sr-only sm:inline">Upload</span>
+              </button>
+            ) : null}
           </div>
 
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
           {readOnlyHint ? (
             <div className="mx-6 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               {readOnlyHint}
@@ -667,78 +679,53 @@ export function PrescriptionHistoryModal({
               </p>
             </div>
           ) : (
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-3">
               {sortedPrescriptions.map((prescription) => (
-                <div
+                <button
                   key={prescription.id}
-                  className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow"
+                  type="button"
+                  onClick={() => void handleViewPrescription(prescription)}
+                  className="w-full text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-orange-200 hover:shadow-sm transition-all active:scale-[0.99]"
                 >
-                  <div className="flex items-start justify-between">
-                    <div 
-                      className="flex-1 cursor-pointer"
-                      onClick={() => handleViewPrescription(prescription)}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        {prescription.file_url ? (
-                          prescription.file_url.includes('.pdf') ? (
-                            <File className="w-5 h-5 text-red-500" />
-                          ) : (
-                            <Image className="w-5 h-5 text-blue-500" />
-                          )
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="shrink-0 w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center">
+                      {prescription.file_url ? (
+                        prescription.file_url.includes('.pdf') ? (
+                          <File className="w-5 h-5 text-red-500" />
                         ) : (
-                          <FileText className="w-5 h-5 text-green-500" />
-                        )}
-                        <h3 className="font-semibold text-gray-800">
-                          {prescription.diagnosis || prescription.title || prescription.medication_name || 'Prescription'}
-                        </h3>
-                        {isVendorPrescription(prescription) && (
-                          <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
-                            From vet
-                          </span>
-                        )}
-                        {isCustomerUpload(prescription) && (
-                          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-medium rounded-full">
-                            Your upload
-                          </span>
-                        )}
-                      </div>
-                      {prescription.description && (
-                        <p className="text-sm text-gray-600 mb-2">{prescription.description}</p>
+                          <Image className="w-5 h-5 text-blue-500" />
+                        )
+                      ) : (
+                        <FileText className="w-5 h-5 text-green-600" />
                       )}
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {formatDate(getPrescriptionDate(prescription))}
-                        </div>
-                        {(prescription.staff_name || prescription.vendor_name) && (
-                          <span>By {prescription.staff_name || prescription.vendor_name}</span>
-                        )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5 min-w-0">
+                        <p className="font-semibold text-gray-900 truncate">
+                          {getPrescriptionListTitle(prescription, formatDate)}
+                        </p>
+                        {isVendorPrescription(prescription) ? (
+                          <span className="shrink-0 px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-medium rounded-full">
+                            Vet
+                          </span>
+                        ) : null}
+                        {isCustomerUpload(prescription) ? (
+                          <span className="shrink-0 px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-medium rounded-full">
+                            Yours
+                          </span>
+                        ) : null}
                       </div>
+                      <p className="text-sm text-gray-500 truncate">
+                        {getPrescriptionListSubtitle(prescription)}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleViewPrescription(prescription)}
-                        className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                        title="View"
-                      >
-                        <Eye className="w-4 h-4 text-gray-600" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void shareSelectedPrescription(prescription);
-                        }}
-                        className="p-2 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
-                        title="Share"
-                      >
-                        <Share2 className="w-4 h-4 text-blue-600" />
-                      </button>
-                    </div>
+                    <ChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
+          </div>
         </div>
       </div>
 
@@ -850,96 +837,40 @@ export function PrescriptionHistoryModal({
         </div>
       )}
 
-      {/* Viewer Modal */}
+      {/* File viewer — uploads and PDF/image-only documents */}
       {showViewer && selectedPrescription && (
-        <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="font-bold text-gray-800">{selectedPrescription.title}</h3>
-              <div className="flex items-center gap-2">
-                {/* A4 document — vendor prescriptions only */}
-                {isVendorPrescription(selectedPrescription) && (
-                  <button
-                    onClick={() => {
-                      setShowViewer(false);
-                      void openA4Document(selectedPrescription);
-                    }}
-                    className="p-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-lg transition-colors"
-                    title="View Full Prescription (A4)"
-                  >
-                    <Printer className="w-4 h-4" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => shareSelectedPrescription(selectedPrescription)}
-                  className="p-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
-                  title="Share"
-                >
-                  <Share2 className="w-4 h-4" />
-                </button>
-                {/* Broadcast / pharmacy — vendor prescriptions only */}
-                {isVendorPrescription(selectedPrescription) && selectedPrescription.file_url && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        if (onOrderMedicine) {
-                          onOrderMedicine(selectedPrescription.id, bookingId, []);
-                          toast.success('Broadcasting prescription to pharmacies...');
-                        } else {
-                          window.dispatchEvent(new CustomEvent('broadcastPrescription', {
-                            detail: {
-                              prescriptionId: selectedPrescription.id,
-                              bookingId,
-                              fileUrl: selectedPrescription.file_url,
-                            }
-                          }));
-                          toast.success('Broadcasting prescription to pharmacies...');
-                        }
-                      } catch (error: any) {
-                        console.error('Error broadcasting prescription:', error);
-                        toast.error('Failed to broadcast prescription. Please try again.');
-                      }
-                    }}
-                    className="p-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors flex items-center gap-1.5"
-                    title="Broadcast Prescription to Pharmacies"
-                  >
-                    <Radio className="w-4 h-4" />
-                    <span className="text-xs font-medium">Broadcast</span>
-                  </button>
-                )}
-
-                {isVendorPrescription(selectedPrescription) &&
-                  (selectedPrescription.content_data || selectedPrescription.file_url) && (
-                  <button
-                    type="button"
-                    disabled={!PHARMACY_ORDER_BUTTON_ENABLED}
-                    onClick={() => {
-                      if (PHARMACY_ORDER_BUTTON_ENABLED) void openPharmacyOrderFromViewer();
-                    }}
-                    className="p-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-100"
-                    title={
-                      PHARMACY_ORDER_BUTTON_ENABLED
-                        ? 'Order Medicine from Pharmacy'
-                        : 'Pharmacy order coming soon'
-                    }
-                  >
-                    <ShoppingCart className="w-4 h-4" />
-                    <span className="text-xs font-medium">Order</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setShowViewer(false);
-                    setSelectedPrescription(null);
-                  }}
-                  className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200"
-                >
-                  <X className="w-5 h-5 text-gray-600" />
-                </button>
+        <div className="fixed inset-0 z-[75] flex flex-col bg-white sm:bg-black/60 sm:items-center sm:justify-center sm:p-4">
+          <div className="bg-white w-full h-full sm:h-auto sm:max-w-4xl sm:max-h-[95vh] sm:rounded-xl overflow-hidden flex flex-col min-h-0">
+            <div className="flex items-center gap-2 border-b px-3 py-3 sm:px-4 shrink-0 cw-header-safe-top cw-header-safe-x">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowViewer(false);
+                  setSelectedPrescription(null);
+                }}
+                className="p-2 rounded-full hover:bg-gray-100 shrink-0"
+                aria-label="Back to list"
+              >
+                <ArrowLeft className="w-5 h-5 text-gray-700" />
+              </button>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-gray-900 truncate">
+                  {getPrescriptionListTitle(selectedPrescription, formatDate)}
+                </h3>
+                <p className="text-xs text-gray-500 truncate">
+                  {getPrescriptionListSubtitle(selectedPrescription)}
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => void shareSelectedPrescription(selectedPrescription)}
+                className="p-2 rounded-full hover:bg-gray-100 shrink-0"
+                aria-label="Share"
+              >
+                <Share2 className="w-5 h-5 text-gray-600" />
+              </button>
             </div>
-            <div className="flex-1 overflow-auto p-4">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain p-3 sm:p-4 [-webkit-overflow-scrolling:touch]">
               {loadingPrescriptionView ? (
                 <div className="flex flex-col items-center justify-center py-20">
                   <div className="w-12 h-12 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mb-4"></div>
@@ -1005,17 +936,21 @@ export function PrescriptionHistoryModal({
                 )
               ) : selectedPrescription.content_data || selectedPrescription.diagnosis || selectedPrescription.medication_name ? (
                 <div className="space-y-4">
-                  {/* Diagnosis section */}
-                  {(selectedPrescription.content_data?.diagnosis || selectedPrescription.diagnosis) && (
+                  {formatDiagnosisForDisplay(
+                    selectedPrescription.content_data?.diagnosis || selectedPrescription.diagnosis
+                  ) ? (
                     <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
                       <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
                         <FileText className="w-4 h-4" />
                         Diagnosis
                       </h4>
-                      <p className="text-blue-800">{selectedPrescription.content_data?.diagnosis || selectedPrescription.diagnosis}</p>
+                      <p className="text-blue-800">
+                        {formatDiagnosisForDisplay(
+                          selectedPrescription.content_data?.diagnosis || selectedPrescription.diagnosis
+                        )}
+                      </p>
                     </div>
-                  )}
-                  
+                  ) : null}
                   {/* Medications section - handle both array format and single medication */}
                   {(selectedPrescription.content_data?.medications || selectedPrescription.medication_name) && (
                     <div>
@@ -1027,8 +962,8 @@ export function PrescriptionHistoryModal({
                         {Array.isArray(selectedPrescription.content_data?.medications) ? (
                           selectedPrescription.content_data.medications.map((med: any, idx: number) => (
                             <div key={idx} className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
-                              <p className="font-semibold text-gray-900 text-lg">{med.name}</p>
-                              <div className="grid grid-cols-3 gap-3 mt-3 text-sm">
+                              <p className="font-semibold text-gray-900 text-lg">{med.name?.trim() || 'Medicine'}</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mt-3 text-sm">
                                 <div className="bg-gray-50 p-2 rounded-lg">
                                   <p className="text-gray-500 text-xs">Dosage</p>
                                   <p className="font-medium text-gray-800">{med.dosage || '-'}</p>
@@ -1100,9 +1035,20 @@ export function PrescriptionHistoryModal({
         </div>
       )}
 
-      {/* A4 Prescription Document Modal */}
+      {loadingPrescriptionView && !showViewer && !showA4Document ? (
+        <div className="fixed inset-0 z-[74] flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-2xl px-8 py-6 shadow-xl flex flex-col items-center gap-3">
+            <div className="w-10 h-10 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-gray-600">Opening prescription…</p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Full prescription document — vet structured Rx */}
       {showA4Document && selectedPrescription && selectedPrescription.recordType === 'prescription' && (
         <PrescriptionDocument
+          headerTitle={getPrescriptionListTitle(selectedPrescription, formatDate)}
+          headerSubtitle={selectedPrescription.staff_name || selectedPrescription.vendor_name || undefined}
           prescription={transformPrescriptionData({
             ...selectedPrescription,
             ...(a4PrescriptionDetails || {}),
@@ -1121,14 +1067,19 @@ export function PrescriptionHistoryModal({
             setShowA4Document(false);
             setA4PrescriptionDetails(null);
           }}
-          onOrderMedicine={() => {
-            if (onOrderMedicine) {
-              const medications = selectedPrescription.content_data?.medications || [];
-              onOrderMedicine(selectedPrescription.id, bookingId, medications);
-              setShowA4Document(false);
-              onClose();
-            }
+          onShare={() => {
+            if (selectedPrescription) void shareSelectedPrescription(selectedPrescription);
           }}
+          onOrderMedicine={
+            onOrderMedicine
+              ? () => {
+                  const medications = selectedPrescription.content_data?.medications || [];
+                  onOrderMedicine(selectedPrescription.id, bookingId, medications);
+                  setShowA4Document(false);
+                  onClose();
+                }
+              : undefined
+          }
         />
       )}
     </>
