@@ -45,6 +45,15 @@ export type BulkProductGroup = {
     brand?: string | null;
     tags?: string | null;
     barcode?: string | null;
+    key_features?: string | null;
+    length_cm?: string | number | null;
+    breadth_cm?: string | number | null;
+    height_cm?: string | number | null;
+    pet_type?: string | null;
+    pet_type_other?: string | null;
+    manufacturing_details?: string | null;
+    delivery_regions?: unknown;
+    product_specifications?: string | null;
   };
   variants: BulkVariantRow[];
   rowNums: number[];
@@ -123,6 +132,52 @@ export function rowHasVariantAxes(row: Record<string, unknown>): boolean {
   return Object.keys(parseBulkRowOptionValues(row)).length > 0;
 }
 
+/** Product-level fields from first bulk row for persist / vendorExtrasFromBulkRow. */
+function parentFieldsFromBulkRow(row: BulkVariantRow): BulkProductGroup['parent'] {
+  const trimStr = (v: unknown): string | null => {
+    if (v == null) return null;
+    const s = String(v).trim();
+    return s || null;
+  };
+  const dimVal = (v: unknown): string | number | null => {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    const s = String(v).trim();
+    return s || null;
+  };
+  return {
+    description: trimStr(row.description),
+    price: Number(row.price) || 0,
+    compare_at_price: row.compare_at_price != null ? Number(row.compare_at_price) : null,
+    hsn_code: trimStr(row.hsn_code),
+    gst_rate: row.gst_rate != null ? Number(row.gst_rate) : null,
+    weight: row.weight != null ? Number(row.weight) : null,
+    dimensions: trimStr(row.dimensions),
+    material: trimStr(row.material),
+    brand: trimStr(row.brand),
+    tags: trimStr(row.tags),
+    barcode: trimStr(row.barcode),
+    key_features: trimStr(row.key_features),
+    length_cm: dimVal(row.length_cm),
+    breadth_cm: dimVal(row.breadth_cm),
+    height_cm: dimVal(row.height_cm),
+    pet_type: trimStr(row.pet_type),
+    pet_type_other: trimStr(row.pet_type_other),
+    manufacturing_details: trimStr(row.manufacturing_details),
+    delivery_regions: row.delivery_regions ?? null,
+    product_specifications: trimStr(row.product_specifications),
+  };
+}
+
+/** Merged row for vendorExtrasFromBulkRow — parent + first variant (full validated row). */
+export function bulkGroupExtrasSource(group: BulkProductGroup): Record<string, unknown> {
+  const first = group.variants[0];
+  return {
+    ...group.parent,
+    ...(first ?? {}),
+  } as Record<string, unknown>;
+}
+
 export function groupBulkRows(rows: BulkVariantRow[]): BulkProductGroup[] {
   const map = new Map<string, BulkProductGroup>();
 
@@ -141,20 +196,7 @@ export function groupBulkRows(rows: BulkVariantRow[]): BulkProductGroup[] {
         groupKey,
         name,
         category,
-        parent: {
-          description: row.description != null ? String(row.description).trim() : null,
-          price: Number(row.price) || 0,
-          compare_at_price:
-            row.compare_at_price != null ? Number(row.compare_at_price) : null,
-          hsn_code: row.hsn_code != null ? String(row.hsn_code).trim() : null,
-          gst_rate: row.gst_rate != null ? Number(row.gst_rate) : null,
-          weight: row.weight != null ? Number(row.weight) : null,
-          dimensions: row.dimensions != null ? String(row.dimensions).trim() : null,
-          material: row.material != null ? String(row.material).trim() : null,
-          brand: row.brand != null ? String(row.brand).trim() : null,
-          tags: row.tags != null ? String(row.tags).trim() : null,
-          barcode: row.barcode != null ? String(row.barcode).trim() : null,
-        },
+        parent: parentFieldsFromBulkRow(row),
         variants: [],
         rowNums: [],
       };

@@ -96,7 +96,6 @@ export function ShopCartSheet({
                   </div>
                   <div className="flex-1">
                     <h4 className="font-medium text-slate-900 line-clamp-2">{item.product.name}</h4>
-                    <p className="text-sm text-slate-500">{item.product.vendor_name}</p>
                     <div className="flex items-center justify-between mt-2">
                       <p className="font-bold text-[#FF8C42]">₹{item.product.price}</p>
                       <div className="flex items-center gap-2">

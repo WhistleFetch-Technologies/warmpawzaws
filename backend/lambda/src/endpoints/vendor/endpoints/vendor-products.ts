@@ -48,7 +48,7 @@ import {
   aggregateParentStock,
 } from '../../../utils/product-sku-resolve';
 import { presignProductSkusForDisplay } from '../../../utils/s3-media-presign';
-import { flattenProductForApiResponse } from '../../../utils/product-storefront-normalize';
+import { flattenProductForApiResponse, parseSpecificationsObject } from '../../../utils/product-storefront-normalize';
 import {
   applyVendorProductExtrasToPayload,
   buildMetadataWithDeliveryRegions,
@@ -86,6 +86,12 @@ function productsOptionalSelectExprs(cols: Set<string>) {
     originalPrice: cols.has('compare_at_price')
       ? 'p.compare_at_price AS original_price'
       : 'NULL::numeric AS original_price',
+    brand: cols.has('brand') ? 'p.brand' : 'NULL::text AS brand',
+    weight: cols.has('weight') ? 'p.weight' : 'NULL::numeric AS weight',
+    specifications: cols.has('specifications')
+      ? 'p.specifications'
+      : "'{}'::jsonb AS specifications",
+    barcode: cols.has('barcode') ? 'p.barcode' : 'NULL::text AS barcode',
   };
 }
 
@@ -270,7 +276,17 @@ function isStockOnlyProductUpdate(body: Record<string, unknown>): boolean {
 async function enrichProductRowWithSkus(
   row: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const productOut = await presignProductRowForDisplay(row);
+  const normalizedRow: Record<string, unknown> = { ...row };
+  if (typeof normalizedRow.metadata === 'string') {
+    try {
+      normalizedRow.metadata = JSON.parse(normalizedRow.metadata);
+    } catch {
+      normalizedRow.metadata = {};
+    }
+  }
+  normalizedRow.specifications = parseSpecificationsObject(normalizedRow.specifications);
+
+  const productOut = await presignProductRowForDisplay(normalizedRow);
   const productId = String(productOut.id ?? '');
   if (!productId) return productOut;
 
@@ -466,8 +482,15 @@ class GetVendorProductsHandler extends BaseHandler {
       }
 
       const cols = await getProductsColumnSet();
-      const { metadata: metadataSelect, status: statusSelect, originalPrice: originalPriceSelect } =
-        productsOptionalSelectExprs(cols);
+      const {
+        metadata: metadataSelect,
+        status: statusSelect,
+        originalPrice: originalPriceSelect,
+        brand: brandSelect,
+        weight: weightSelect,
+        specifications: specificationsSelect,
+        barcode: barcodeSelect,
+      } = productsOptionalSelectExprs(cols);
 
       // Build query - use stock column (stock_quantity was renamed to stock in migration 013)
       // Use explicit column selection to avoid issues with p.* and missing columns
@@ -489,6 +512,10 @@ class GetVendorProductsHandler extends BaseHandler {
           p.images,
           p.tags,
           ${metadataSelect},
+          ${brandSelect},
+          ${weightSelect},
+          ${specificationsSelect},
+          ${barcodeSelect},
           p.hsn_code,
           p.gst_rate,
           p.category,
@@ -824,8 +851,15 @@ class GetVendorProductHandler extends BaseHandler {
       const resolvedVendorId = vendor.id;
 
       const cols = await getProductsColumnSet();
-      const { metadata: metadataSelect, status: statusSelect, originalPrice: originalPriceSelect } =
-        productsOptionalSelectExprs(cols);
+      const {
+        metadata: metadataSelect,
+        status: statusSelect,
+        originalPrice: originalPriceSelect,
+        brand: brandSelect,
+        weight: weightSelect,
+        specifications: specificationsSelect,
+        barcode: barcodeSelect,
+      } = productsOptionalSelectExprs(cols);
 
       // ✅ FIX: Use explicit column selection to avoid stock_quantity column error
       const products = await query(
@@ -846,6 +880,10 @@ class GetVendorProductHandler extends BaseHandler {
                 p.images,
                 p.tags,
                 ${metadataSelect},
+                ${brandSelect},
+                ${weightSelect},
+                ${specificationsSelect},
+                ${barcodeSelect},
                 p.hsn_code,
                 p.gst_rate,
                 p.category,

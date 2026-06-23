@@ -6,6 +6,7 @@ import {
   normalizeProductGroupKey,
   slugifyVariantKey,
   aggregateGroupStock,
+  bulkGroupExtrasSource,
 } from '../bulk-product-variant-builder';
 
 describe('bulk-product-variant-builder', () => {
@@ -149,5 +150,39 @@ describe('bulk-product-variant-builder', () => {
       { name: 'X', category: 'C', price: 10, stock_quantity: 7, size_variant: 'S', rowNum: 2 },
     ] as any);
     expect(aggregateGroupStock(groups[0])).toBe(12);
+  });
+
+  it('groupBulkRows parent carries canonical product-level fields from first row', () => {
+    const groups = groupBulkRows([
+      {
+        name: 'Dog Dress',
+        category: 'Pet Accessories',
+        price: 799,
+        compare_at_price: 1598,
+        stock_quantity: 10,
+        brand: '15 FURRIES',
+        key_features: 'Design: Smiling Flower',
+        weight: 0.15,
+        length_cm: '35',
+        breadth_cm: '25',
+        height_cm: '1',
+        pet_type: 'Dog',
+        manufacturing_details: 'Made in India',
+        delivery_regions: ['Mumbai', 'Pune'],
+        product_specifications: 'Material:Cotton',
+        rowNum: 1,
+      },
+    ] as any);
+    expect(groups).toHaveLength(1);
+    const p = groups[0].parent;
+    expect(p.brand).toBe('15 FURRIES');
+    expect(p.key_features).toBe('Design: Smiling Flower');
+    expect(p.pet_type).toBe('Dog');
+    expect(p.length_cm).toBe('35');
+    expect(p.delivery_regions).toEqual(['Mumbai', 'Pune']);
+    expect(p.product_specifications).toBe('Material:Cotton');
+    const extras = bulkGroupExtrasSource(groups[0]);
+    expect(extras.key_features).toBe('Design: Smiling Flower');
+    expect(extras.delivery_regions).toEqual(['Mumbai', 'Pune']);
   });
 });

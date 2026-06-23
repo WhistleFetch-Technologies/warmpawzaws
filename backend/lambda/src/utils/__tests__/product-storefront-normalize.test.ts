@@ -2,6 +2,7 @@ import {
   buildStorefrontDimensions,
   extractDeliveryRegionsFromRow,
   flattenProductForApiResponse,
+  sanitizeStorefrontProductForCustomer,
 } from '../product-storefront-normalize';
 
 describe('product-storefront-normalize', () => {
@@ -52,5 +53,33 @@ describe('product-storefront-normalize', () => {
       weight: 0.5,
     });
     expect(out.key_features).toBe('Crunchy');
+  });
+
+  it('sanitizeStorefrontProductForCustomer strips seller and internal fields', () => {
+    const raw = flattenProductForApiResponse({
+      id: 'p1',
+      vendor_name: 'Secret Seller',
+      vendor_city: 'Mumbai',
+      barcode: '123',
+      hsn_code: '6205',
+      gst_rate: 18,
+      weight: 1,
+      specifications: {
+        length_cm: 10,
+        key_features: 'Soft',
+        Material: 'Cotton',
+      },
+      metadata: { delivery_regions: ['Pune'] },
+    });
+    const out = sanitizeStorefrontProductForCustomer(raw);
+    expect(out.vendor_name).toBeUndefined();
+    expect(out.vendor_city).toBeUndefined();
+    expect(out.barcode).toBeUndefined();
+    expect(out.hsn_code).toBeUndefined();
+    expect(out.metadata).toBeUndefined();
+    expect(out.key_features).toBe('Soft');
+    expect(out.dimensions).toBeDefined();
+    expect(out.specifications).toEqual({ Material: 'Cotton' });
+    expect(out.delivery_regions).toEqual(['Pune']);
   });
 });

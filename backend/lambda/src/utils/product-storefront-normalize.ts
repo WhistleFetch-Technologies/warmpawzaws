@@ -5,10 +5,11 @@
 import {
   normalizeDeliveryRegionsList,
   parseOptionalPositiveNumber,
+  RESERVED_SPEC_KEYS,
   type StorefrontDimensions,
 } from '@warmpawz/shared-types';
 
-function parseSpecificationsObject(raw: unknown): Record<string, unknown> {
+export function parseSpecificationsObject(raw: unknown): Record<string, unknown> {
   if (raw == null) return {};
   if (typeof raw === 'object' && !Array.isArray(raw)) {
     return { ...(raw as Record<string, unknown>) };
@@ -99,6 +100,43 @@ export function flattenProductForApiResponse(
   if (specs.manufacturing_details != null && !out.manufacturing_details) {
     out.manufacturing_details = specs.manufacturing_details;
   }
+
+  return out;
+}
+
+/** Custom vendor spec keys only — excludes internal reserved keys. */
+export function customerSpecificationsFromRow(
+  specs: Record<string, unknown>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(specs)) {
+    const normKey = k.toLowerCase().replace(/\s+/g, '_');
+    if (RESERVED_SPEC_KEYS.has(normKey)) continue;
+    if (v == null || String(v).trim() === '') continue;
+    out[k] = String(v);
+  }
+  return out;
+}
+
+/** Strip seller identity and internal fields from public storefront product JSON. */
+export function sanitizeStorefrontProductForCustomer(
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...row };
+
+  delete out.vendor_name;
+  delete out.vendor_city;
+  delete out.business_name;
+  delete out.barcode;
+  delete out.hsn_code;
+  delete out.gst_rate;
+  delete out.sku;
+  delete out.cost_price;
+  delete out.metadata;
+  delete out.pet_type_other;
+
+  const specs = parseSpecificationsObject(out.specifications);
+  out.specifications = customerSpecificationsFromRow(specs);
 
   return out;
 }

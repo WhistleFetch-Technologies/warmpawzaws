@@ -5,7 +5,7 @@
 
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { flattenProductForApiResponse } from './product-storefront-normalize';
+import { flattenProductForApiResponse, sanitizeStorefrontProductForCustomer } from './product-storefront-normalize';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 
@@ -115,7 +115,8 @@ export async function prepareStorefrontProductRow(
   if ('images' in out) {
     out.images = normalizeProductImagesField(out.images);
   }
-  return presignProductRowForDisplay(out);
+  const presigned = await presignProductRowForDisplay(out);
+  return sanitizeStorefrontProductForCustomer(presigned);
 }
 
 export async function prepareStorefrontProductRows(
