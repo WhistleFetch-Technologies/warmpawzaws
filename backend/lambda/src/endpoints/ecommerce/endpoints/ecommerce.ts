@@ -30,6 +30,7 @@ import {
   resolveEcommerceOrderLine,
   decrementSkuStock,
 } from '../../../utils/product-sku-order';
+import { assertProductDeliverableToCity } from '../../../utils/product-delivery-regions';
 import {
   buildVariationAxes,
   mapSkusToCustomerVariations,
@@ -38,6 +39,9 @@ import {
   aggregateParentStock,
   minSkuPrice,
   mergeLegacyVariantImagesIntoSkus,
+  getDefaultProductSku,
+  hasVariableSkuPricing,
+  normalizeOptionValues,
 } from '../../../utils/product-sku-resolve';
 import { computeEcommerceDeliveryFee } from '../../../utils/ecommerce/delivery-fee';
 import {
@@ -170,10 +174,29 @@ export function registerEcommerceEndpoints(app: Hono) {
       product.has_variants = skusRaw.length > 0;
       if (skusRaw.length > 0) {
         const aggStock = aggregateParentStock(skusRaw);
+        const defaultSku = getDefaultProductSku(skusRaw);
         const minPrice = minSkuPrice(skusRaw);
-        if (minPrice != null) product.price = minPrice;
+        const defaultPrice = defaultSku ? Number(defaultSku.price) : NaN;
+        if (Number.isFinite(defaultPrice) && defaultPrice > 0) {
+          product.price = defaultPrice;
+        } else if (minPrice != null) {
+          product.price = minPrice;
+        }
         product.stock = aggStock;
         product.variations = variations;
+        if (defaultSku?.id) {
+          product.default_sku_id = String(defaultSku.id);
+          product.default_option_values = normalizeOptionValues(
+            defaultSku.option_values as Record<string, unknown>,
+          );
+        }
+        const minP = minPrice ?? defaultPrice;
+        const defP = Number.isFinite(defaultPrice) && defaultPrice > 0 ? defaultPrice : minP;
+        product.price_from =
+          hasVariableSkuPricing(skusRaw) &&
+          minP != null &&
+          defP != null &&
+          Number(minP).toFixed(2) !== Number(defP).toFixed(2);
       }
 
       return c.json({
@@ -461,10 +484,19 @@ export function registerEcommerceEndpoints(app: Hono) {
       const orderItems = [];
       let firstVendorId = null;
 
+      const customerCity = String(
+        shippingAddress.city ?? shippingAddress.City ?? '',
+      ).trim();
+
       for (const item of items) {
         try {
           const resolved = await resolveEcommerceOrderLine(item as Record<string, unknown>);
           if (!resolved) continue;
+          await assertProductDeliverableToCity(
+            resolved.product_id,
+            resolved.product_name,
+            customerCity,
+          );
           subtotal += resolved.total;
           if (!firstVendorId && resolved.vendor_id) {
             firstVendorId = resolved.vendor_id;
@@ -871,10 +903,19 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
+      const customerCity = String(
+        shippingAddress?.city ?? shippingAddress?.City ?? customerLocation?.city ?? '',
+      ).trim();
+
       for (const item of items) {
         try {
           const resolved = await resolveEcommerceOrderLine(item as Record<string, unknown>);
           if (!resolved) continue;
+          await assertProductDeliverableToCity(
+            resolved.product_id,
+            resolved.product_name,
+            customerCity,
+          );
           subtotal += resolved.total;
 
           const products = await select('products', { id: resolved.product_id });

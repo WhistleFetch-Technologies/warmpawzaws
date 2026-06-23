@@ -1,3 +1,18 @@
+/** Indian Rupee sign — use \\u20B9 so source files stay valid under any editor encoding. */
+const INR = '\u20B9';
+
+/** Safely format a numeric price for display (never returns NaN). */
+export function formatPrice(price: number | string | null | undefined): string {
+  const n = typeof price === 'number' ? price : parseFloat(String(price ?? 0));
+  if (Number.isNaN(n) || n < 0) return '0';
+  return n.toLocaleString('en-IN');
+}
+
+/** Price with INR prefix, safe against NaN and encoding mojibake. */
+export function formatPriceWithSymbol(price: number | string | null | undefined): string {
+  return `${INR}${formatPrice(price)}`;
+}
+
 /**
  * Format operating hours object into a readable string
  * Handles both string and object formats

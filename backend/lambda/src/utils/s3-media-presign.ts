@@ -5,6 +5,7 @@
 
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { flattenProductForApiResponse } from './product-storefront-normalize';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 
@@ -109,7 +110,8 @@ export function normalizeProductImagesField(raw: unknown): string[] {
 export async function prepareStorefrontProductRow(
   row: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const out: Record<string, unknown> = { ...row };
+  const normalized = flattenProductForApiResponse(row);
+  const out: Record<string, unknown> = { ...normalized };
   if ('images' in out) {
     out.images = normalizeProductImagesField(out.images);
   }

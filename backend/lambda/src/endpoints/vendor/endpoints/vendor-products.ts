@@ -48,6 +48,11 @@ import {
   aggregateParentStock,
 } from '../../../utils/product-sku-resolve';
 import { presignProductSkusForDisplay } from '../../../utils/s3-media-presign';
+import { flattenProductForApiResponse } from '../../../utils/product-storefront-normalize';
+import {
+  applyVendorProductExtrasToPayload,
+  buildMetadataWithDeliveryRegions,
+} from '../../../utils/product-vendor-persist';
 
 // PHASE 1.3: S3 client for product image uploads
 const s3Client = new S3Client({
@@ -234,7 +239,7 @@ function parseSkuInputsFromBody(body: Record<string, unknown>, parentPrice?: num
       stock: row.stock != null ? Number(row.stock) : 0,
       barcode: row.barcode ? String(row.barcode) : null,
       images: row.images,
-      sku: row.sku ? String(row.sku) : null,
+      sku: null,
       is_active: row.is_active !== false,
       sort_order: row.sort_order != null ? Number(row.sort_order) : idx,
     }));
@@ -246,7 +251,7 @@ function parseSkuInputsFromBody(body: Record<string, unknown>, parentPrice?: num
       price: row.price,
       compare_at_price: row.compare_at_price,
       stock: row.stock,
-      sku: row.sku,
+      sku: null,
       images: row.images,
       sort_order: idx,
     }));
@@ -308,7 +313,7 @@ async function enrichProductRowWithSkus(
   if (skus.length > 0) {
     productOut.stock = aggregateParentStock(skus);
   }
-  return productOut;
+  return flattenProductForApiResponse(productOut);
 }
 
 const AWS_REGION_EFFECTIVE = process.env.AWS_REGION || 'ap-south-1';
@@ -753,6 +758,26 @@ class CreateVendorProductHandler extends BaseHandler {
         }
       }
 
+      const variantAxesMeta =
+        body.metadata &&
+        typeof body.metadata === 'object' &&
+        !Array.isArray(body.metadata) &&
+        (body.metadata as Record<string, unknown>).variant_axes;
+      if (hasMetadataCol && variantAxesMeta) {
+        productData.metadata = {
+          ...((productData.metadata as Record<string, unknown> | undefined) ?? {}),
+          variant_axes: variantAxesMeta,
+        };
+      }
+
+      applyVendorProductExtrasToPayload(
+        productData,
+        body as Record<string, unknown>,
+        cols,
+        null,
+        (productData.metadata as Record<string, unknown> | undefined) ?? null,
+      );
+
       // Create product
       const newProduct = await insert('products', productData);
       const newProductId = String(newProduct[0]?.id ?? '');
@@ -969,6 +994,36 @@ class UpdateVendorProductHandler extends BaseHandler {
       }
       if (body.hsn_code !== undefined) updateData.hsn_code = body.hsn_code;
       if (body.gst_rate !== undefined) updateData.gst_rate = body.gst_rate ? parseFloat(body.gst_rate) : null;
+
+      let existingSpecs: Record<string, unknown> | null = null;
+      const rawSpecs = prevRow.specifications;
+      if (rawSpecs && typeof rawSpecs === 'object' && !Array.isArray(rawSpecs)) {
+        existingSpecs = { ...(rawSpecs as Record<string, unknown>) };
+      } else if (typeof rawSpecs === 'string' && rawSpecs.trim()) {
+        try {
+          const parsed = JSON.parse(rawSpecs);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            existingSpecs = parsed as Record<string, unknown>;
+          }
+        } catch {
+          existingSpecs = null;
+        }
+      }
+
+      const existingMetaForExtras =
+        prevRow.metadata && typeof prevRow.metadata === 'object' && !Array.isArray(prevRow.metadata)
+          ? (prevRow.metadata as Record<string, unknown>)
+          : null;
+
+      applyVendorProductExtrasToPayload(
+        updateData,
+        body as Record<string, unknown>,
+        cols,
+        existingSpecs,
+        existingMetaForExtras,
+        { partial: true },
+      );
+
       let normalizedImages: unknown | undefined;
       if (body.images !== undefined) {
         normalizedImages =
@@ -1031,6 +1086,20 @@ class UpdateVendorProductHandler extends BaseHandler {
           if (body.delivery_regions !== undefined) base.delivery_regions = normalizedDelivery;
           updateData.specifications = base;
         }
+      }
+
+      const variantAxesMeta =
+        body.metadata &&
+        typeof body.metadata === 'object' &&
+        !Array.isArray(body.metadata) &&
+        (body.metadata as Record<string, unknown>).variant_axes;
+      if (hasMetadataCol && variantAxesMeta) {
+        const existingMetaRows = await query('SELECT metadata FROM products WHERE id = $1', [productId]);
+        const existingMetadata = existingMetaRows.rows[0]?.metadata || {};
+        updateData.metadata = {
+          ...(updateData.metadata ?? existingMetadata),
+          variant_axes: variantAxesMeta,
+        };
       }
 
       updateData.updated_at = new Date().toISOString();

@@ -9,6 +9,9 @@ import {
   metadataVariantsToSkus,
   buildGalleryImageUnion,
   mergeLegacyVariantImagesIntoSkus,
+  getDefaultProductSku,
+  hasVariableSkuPricing,
+  sortSkusByDefaultOrder,
   type ProductSkuRow,
 } from '../product-sku-resolve';
 
@@ -74,6 +77,41 @@ describe('product-sku-resolve', () => {
     expect(minSkuPrice(skus)).toBe(100);
   });
 
+  it('getDefaultProductSku picks lowest sort_order active SKU', () => {
+    const ordered: ProductSkuRow[] = [
+      { ...skus[1], sort_order: 1 },
+      { ...skus[0], sort_order: 0 },
+    ];
+    expect(getDefaultProductSku(ordered)?.id).toBe('1');
+  });
+
+  it('getDefaultProductSku skips inactive SKUs', () => {
+    const withInactive: ProductSkuRow[] = [
+      { ...skus[0], sort_order: 0, is_active: false },
+      { ...skus[1], sort_order: 1, is_active: true },
+    ];
+    expect(getDefaultProductSku(withInactive)?.id).toBe('2');
+  });
+
+  it('hasVariableSkuPricing detects multiple prices', () => {
+    expect(hasVariableSkuPricing(skus)).toBe(true);
+    expect(
+      hasVariableSkuPricing([
+        { ...skus[0], price: 100 },
+        { ...skus[1], price: 100 },
+      ]),
+    ).toBe(false);
+  });
+
+  it('sortSkusByDefaultOrder orders by sort_order', () => {
+    const shuffled = [
+      { ...skus[2], sort_order: 2 },
+      { ...skus[0], sort_order: 0 },
+      { ...skus[1], sort_order: 1 },
+    ];
+    expect(sortSkusByDefaultOrder(shuffled).map((s) => s.id)).toEqual(['1', '2', '3']);
+  });
+
   it('optionValuesMatch requires all axes when requireAllAxes true', () => {
     expect(optionValuesMatch({ size: 'S', color: 'Red' }, { size: 'S' }, true)).toBe(false);
     expect(optionValuesMatch({ size: 'S', color: 'Red' }, { size: 'S', color: 'Red' }, true)).toBe(true);
@@ -97,10 +135,40 @@ describe('product-sku-resolve', () => {
     expect(gallery).toContain('https://example.com/blue.jpg');
   });
 
-  it('mapSkusToCustomerVariations produces options', () => {
+  it('mapSkusToCustomerVariations produces options with per-option price', () => {
     const variations = mapSkusToCustomerVariations(skus);
     expect(variations.length).toBeGreaterThan(0);
     expect(variations[0].options.length).toBeGreaterThan(0);
+    const sizeAxis = variations.find((v) => v.type === 'size');
+    const mOption = sizeAxis?.options.find((o) => o.value === 'M');
+    expect(mOption?.price).toBe(110);
+    expect(sizeAxis?.option_key).toBe('size');
+  });
+
+  it('buildVariationAxes and mapSkus expose option_key for custom pack axis', () => {
+    const packSkus: ProductSkuRow[] = [
+      {
+        id: '1',
+        option_values: { pack: '1X100' },
+        price: 450,
+        stock: 5,
+        is_active: true,
+        sort_order: 0,
+      },
+      {
+        id: '2',
+        option_values: { pack: '2X100' },
+        price: 800,
+        stock: 3,
+        is_active: true,
+        sort_order: 1,
+      },
+    ];
+    const axes = buildVariationAxes(packSkus);
+    expect(axes[0].key).toBe('pack');
+    const variations = mapSkusToCustomerVariations(packSkus);
+    expect(variations[0].option_key).toBe('pack');
+    expect(variations[0].name).toBe('Pack');
   });
 
   it('mergeLegacyVariantImagesIntoSkus fills empty sku images from metadata.variants', () => {

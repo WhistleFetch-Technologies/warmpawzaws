@@ -39,6 +39,65 @@ interface UploadResult {
   errors: Array<{ row: number; error: string }>;
 }
 
+interface ProductGroupPreview {
+  name: string;
+  category: string;
+  variants: Array<{
+    rowNum: number;
+    label: string;
+    stock: number;
+    price: number;
+    isDefault: boolean;
+  }>;
+}
+
+function bulkVariantLabel(row: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (row.size_variant) parts.push(`Size: ${row.size_variant}`);
+  if (row.colour) parts.push(`Color: ${row.colour}`);
+  if (row.variant_attr_1 && row.variant_value_1) {
+    parts.push(`${row.variant_attr_1}: ${row.variant_value_1}`);
+  }
+  if (row.variant_attr_2 && row.variant_value_2) {
+    parts.push(`${row.variant_attr_2}: ${row.variant_value_2}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : 'Single variant';
+}
+
+function isDefaultBulkRow(raw: unknown): boolean {
+  if (raw === true || raw === 1) return true;
+  const s = String(raw ?? '').trim().toLowerCase();
+  return s === 'yes' || s === 'y' || s === 'true' || s === '1' || s === 'default';
+}
+
+function groupValidProductsForPreview(rows: any[]): ProductGroupPreview[] {
+  const map = new Map<string, ProductGroupPreview>();
+  for (const row of rows) {
+    const name = String(row.name ?? '').trim();
+    const category = String(row.category ?? '').trim();
+    if (!name) continue;
+    const key = `${name.toLowerCase()}::${category.toLowerCase()}`;
+    const variantPrice =
+      row.variant_sp != null && String(row.variant_sp).trim()
+        ? Number(row.variant_sp)
+        : Number(row.price) || 0;
+    const variant = {
+      rowNum: Number(row.rowNum) || 0,
+      label: bulkVariantLabel(row),
+      stock: Number(row.stock_quantity) || 0,
+      price: variantPrice,
+      isDefault: isDefaultBulkRow(row.is_default),
+    };
+    const existing = map.get(key);
+    if (existing) {
+      existing.variants.push(variant);
+    } else {
+      map.set(key, { name, category, variants: [variant] });
+    }
+  }
+  return [...map.values()];
+}
+
 export function BulkProductUpload({
   isOpen,
   onClose,
@@ -62,6 +121,7 @@ export function BulkProductUpload({
   const [parsedProducts, setParsedProducts] = useState<any[]>([]);
   /** Only rows that passed server-side validation — what we actually upload. */
   const [validProducts, setValidProducts] = useState<any[]>([]);
+  const [productGroups, setProductGroups] = useState<ProductGroupPreview[]>([]);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
 
@@ -77,9 +137,9 @@ export function BulkProductUpload({
     setTemplateOkMessage('');
     // Compulsory headers carry `*` so the parser still maps them after
     // normalization (`*` is stripped). Order matches the XLSX template.
-    const headers = ['name*', 'description', 'category*', 'mrp*', 'selling_price', 'stock_quantity*', 'hsn_code*', 'gst_rate*', 'weight', 'dimensions', 'material', 'brand', 'tags', 'images*', 'is_active'];
+    const headers = ['name*', 'description', 'key_features', 'brand', 'category*', 'product_specifications', 'weight', 'length_cm', 'breadth_cm', 'height_cm', 'barcode', 'stock_quantity*', 'hsn_code*', 'gst_rate*', 'mrp*', 'selling_price', 'pet_type', 'pet_type_other', 'manufacturing_details', 'delivery_regions', 'images*', 'variant_attr_1', 'variant_value_1', 'is_default'];
     const sample = [
-      '"Smiling Sunflower Dog Dress"', '"Bright, happy, full of joy."', '"Pet Accessories"', '1598', '799', '100', '62052000', '5', '0.15', '"35x25x1"', '"Cotton Rayon Blend"', '"15 FURRIES"', '"dog,dress"', '"https://example.com/your-product-image-1000x1000.jpg"', 'false'
+      '"Smiling Sunflower Dog Dress"', '"Bright, happy, full of joy."', '"Design: Smiling Flower"', '"15 FURRIES"', '"Pet Accessories"', '"Material:Cotton"', '0.15', '35', '25', '1', '', '100', '62052000', '5', '1598', '799', 'Dog', '', '"Made in India"', '"Mumbai, Pune"', '"https://example.com/your-product-image-1000x1000.jpg"', '', '', ''
     ];
     const csv = headers.join(',') + '\n' + sample.join(',');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -89,7 +149,9 @@ export function BulkProductUpload({
       title: 'Product upload template',
       previewHtmlInBrowser: false,
     });
-    setTemplateOkMessage('Downloaded simple CSV. Required: name, category, mrp, stock_quantity, hsn_code, gst_rate, images. Optional: selling_price (defaults to MRP). Legacy column compare_at_price also accepted as MRP.');
+    setTemplateOkMessage(
+      'Downloaded simple CSV. Required: name, category, mrp, stock_quantity, hsn_code, gst_rate, images. Optional: selling_price (defaults to MRP).',
+    );
   };
 
   const handleDownloadTemplate = async () => {
@@ -195,7 +257,9 @@ export function BulkProductUpload({
       );
 
       setValidation(validationResult.validation || null);
-      setValidProducts(validationResult.validProducts || []);
+      const nextValid = validationResult.validProducts || [];
+      setValidProducts(nextValid);
+      setProductGroups(groupValidProductsForPreview(nextValid));
       setStep('preview');
     } catch (err: any) {
       console.error('Error processing file:', err);
@@ -235,6 +299,7 @@ export function BulkProductUpload({
     setStep('upload');
     setParsedProducts([]);
     setValidProducts([]);
+    setProductGroups([]);
     setValidation(null);
     setUploadResult(null);
     setError('');
@@ -424,10 +489,46 @@ export function BulkProductUpload({
                 </div>
               )}
 
-              {/* Preview Table */}
+              {/* Grouped preview — same Title + Category = one product */}
               <div className="border rounded-xl overflow-hidden">
                 <div className="bg-gray-50 px-4 py-3 font-semibold text-gray-700">
-                  Products Preview (first 10)
+                  Product groups ({productGroups.length} product{productGroups.length === 1 ? '' : 's'},{' '}
+                  {validProducts.length} variant row{validProducts.length === 1 ? '' : 's'})
+                </div>
+                <div className="max-h-64 overflow-y-auto divide-y">
+                  {productGroups.slice(0, 15).map((group, gi) => (
+                    <div key={gi} className="px-4 py-3">
+                      <p className="font-medium text-gray-900">{group.name}</p>
+                      <p className="text-xs text-gray-500 mb-2">{group.category || 'Uncategorized'}</p>
+                      <ul className="space-y-1 text-sm text-gray-700">
+                        {group.variants.map((v) => (
+                          <li key={v.rowNum} className="flex flex-wrap items-center gap-2">
+                            <span className="text-gray-400">Row {v.rowNum}</span>
+                            <span>{v.label}</span>
+                            <span className="text-gray-500">· stock {v.stock}</span>
+                            <span className="text-gray-500">· ₹{v.price}</span>
+                            {v.isDefault ? (
+                              <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">
+                                default
+                              </span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+                {productGroups.length > 15 && (
+                  <div className="px-4 py-2 text-sm text-gray-500 bg-gray-50">
+                    ...and {productGroups.length - 15} more product groups
+                  </div>
+                )}
+              </div>
+
+              {/* Flat row preview (first 10) */}
+              <div className="border rounded-xl overflow-hidden">
+                <div className="bg-gray-50 px-4 py-3 font-semibold text-gray-700">
+                  Rows preview (first 10)
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -438,19 +539,21 @@ export function BulkProductUpload({
                         <th className="px-3 py-2 text-left">Category</th>
                         <th className="px-3 py-2 text-right">Price</th>
                         <th className="px-3 py-2 text-right">Stock</th>
+                        <th className="px-3 py-2 text-left">Variant</th>
                         <th className="px-3 py-2 text-left">Images</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {parsedProducts.slice(0, 10).map((product, i) => {
+                      {validProducts.slice(0, 10).map((product, i) => {
                         const imageCount = countBulkRowImages(product.images ?? product.image_urls);
                         return (
                         <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-3 py-2 text-gray-500">{i + 1}</td>
+                          <td className="px-3 py-2 text-gray-500">{product.rowNum ?? i + 1}</td>
                           <td className="px-3 py-2 font-medium">{product.name}</td>
                           <td className="px-3 py-2 text-gray-600">{product.category || '-'}</td>
                           <td className="px-3 py-2 text-right">₹{product.price}</td>
                           <td className="px-3 py-2 text-right">{product.stock_quantity}</td>
+                          <td className="px-3 py-2 text-gray-600 text-xs">{bulkVariantLabel(product)}</td>
                           <td className="px-3 py-2 text-gray-600">
                             {imageCount > 0 ? `${imageCount} image${imageCount === 1 ? '' : 's'}` : '—'}
                           </td>
@@ -459,9 +562,9 @@ export function BulkProductUpload({
                     </tbody>
                   </table>
                 </div>
-                {parsedProducts.length > 10 && (
+                {validProducts.length > 10 && (
                   <div className="px-4 py-2 text-sm text-gray-500 bg-gray-50">
-                    ...and {parsedProducts.length - 10} more products
+                    ...and {validProducts.length - 10} more rows
                   </div>
                 )}
               </div>
@@ -486,7 +589,8 @@ export function BulkProductUpload({
                   ) : (
                     <>
                       <Upload className="w-5 h-5" />
-                      Upload {validation.validRows} Products
+                      Upload {validation.validRows} row{validation.validRows === 1 ? '' : 's'} (
+                      {productGroups.length} product{productGroups.length === 1 ? '' : 's'})
                     </>
                   )}
                 </button>

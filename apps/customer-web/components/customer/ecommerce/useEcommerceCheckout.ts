@@ -21,6 +21,11 @@ import {
 } from '@/lib/ecommerce/ecommerce-razorpay-payload';
 import { extractHttpErrorMessage } from '@/lib/api-client';
 import type { CartItem } from '@/lib/tax-system/taxCalculatorUtils';
+import {
+  deliveryBlockMessage,
+  deliveryRegionsFromCartItem,
+  findUndeliverableCartItems,
+} from '@/lib/ecommerce/product-delivery-guard';
 
 export type CheckoutAddress = {
   id?: string;
@@ -148,6 +153,21 @@ export function useEcommerceCheckout() {
       clearCart?: () => void;
     }) => {
       onProcessingChange?.(true);
+      const undeliverable = findUndeliverableCartItems(
+        cart as Parameters<typeof findUndeliverableCartItems>[0],
+        shippingAddress.city,
+      );
+      if (undeliverable.length > 0) {
+        const first = undeliverable[0];
+        onProcessingChange?.(false);
+        throw new Error(
+          deliveryBlockMessage(
+            first.name,
+            shippingAddress.city ?? '',
+            deliveryRegionsFromCartItem(first),
+          ),
+        );
+      }
       const orderData = buildEcommerceOrderPayload(phone, cart, pricing, shippingAddress);
 
       try {

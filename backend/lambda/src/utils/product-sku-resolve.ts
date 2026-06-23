@@ -16,6 +16,7 @@ export type ProductSkuRow = {
 };
 
 export type VariationAxis = {
+  key: string;
   name: string;
   type: 'color' | 'size' | 'weight' | 'other';
   values: string[];
@@ -23,6 +24,7 @@ export type VariationAxis = {
 
 export type CustomerVariationOption = {
   value: string;
+  price?: number;
   price_modifier?: number;
   stock?: number;
   image?: string;
@@ -30,6 +32,7 @@ export type CustomerVariationOption = {
 
 export type CustomerVariation = {
   id: string;
+  option_key: string;
   name: string;
   type: 'color' | 'size' | 'weight' | 'other';
   options: CustomerVariationOption[];
@@ -40,6 +43,7 @@ const AXIS_LABELS: Record<string, { name: string; type: VariationAxis['type'] }>
   color: { name: 'Color', type: 'color' },
   colour: { name: 'Color', type: 'color' },
   weight: { name: 'Weight', type: 'weight' },
+  pack: { name: 'Pack', type: 'other' },
 };
 
 function axisMeta(key: string): { name: string; type: VariationAxis['type'] } {
@@ -54,7 +58,8 @@ export function normalizeOptionValues(
   if (!raw || typeof raw !== 'object') return {};
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(raw)) {
-    const key = String(k).trim().toLowerCase();
+    const rawKey = String(k).trim().toLowerCase();
+    const key = rawKey === 'colour' ? 'color' : rawKey;
     const val = String(v ?? '').trim();
     if (key && val) out[key] = val;
   }
@@ -119,6 +124,7 @@ export function buildVariationAxes(skus: ProductSkuRow[]): VariationAxis[] {
     .map((key) => {
       const meta = axisMeta(key);
       return {
+        key,
         name: meta.name,
         type: meta.type,
         values: [...valueSets[key]].sort(),
@@ -140,34 +146,73 @@ export function minSkuPrice(skus: ProductSkuRow[]): number | null {
   return prices.length ? Math.min(...prices) : null;
 }
 
+/** Active SKUs ordered by sort_order ASC (stable default-variant selection). */
+export function sortSkusByDefaultOrder(skus: ProductSkuRow[]): ProductSkuRow[] {
+  return [...skus]
+    .filter((s) => s.is_active !== false)
+    .sort((a, b) => {
+      const ao = Number(a.sort_order);
+      const bo = Number(b.sort_order);
+      const aOrd = Number.isFinite(ao) ? ao : 0;
+      const bOrd = Number.isFinite(bo) ? bo : 0;
+      if (aOrd !== bOrd) return aOrd - bOrd;
+      return 0;
+    });
+}
+
+/** Default sellable SKU: lowest sort_order among active rows (Phase 1 — no is_default column). */
+export function getDefaultProductSku(skus: ProductSkuRow[]): ProductSkuRow | null {
+  const ordered = sortSkusByDefaultOrder(skus);
+  return ordered[0] ?? null;
+}
+
+/** True when active SKUs have more than one distinct selling price. */
+export function hasVariableSkuPricing(skus: ProductSkuRow[]): boolean {
+  const prices = sortSkusByDefaultOrder(skus)
+    .map((s) => Number(s.price))
+    .filter((p) => Number.isFinite(p) && p > 0);
+  if (prices.length <= 1) return false;
+  const unique = new Set(prices.map((p) => p.toFixed(2)));
+  return unique.size > 1;
+}
+
 export function mapSkusToCustomerVariations(
   skus: ProductSkuRow[],
   axes?: VariationAxis[],
 ): CustomerVariation[] {
   const variationAxes = axes ?? buildVariationAxes(skus);
   const active = skus.filter((s) => s.is_active !== false);
+  const defaultSku = getDefaultProductSku(active);
+  const refPrice = defaultSku ? Number(defaultSku.price) : 0;
 
   return variationAxes.map((axis, idx) => {
-    const key = Object.keys(
-      normalizeOptionValues(active[0]?.option_values as Record<string, string>),
-    ).find((k) => axisMeta(k).name === axis.name) ?? axis.name.toLowerCase();
+    const key = axis.key;
 
     const options: CustomerVariationOption[] = axis.values.map((value) => {
       const matching = active.filter((s) => {
         const ov = normalizeOptionValues(s.option_values as Record<string, string>);
-        return ov[key] === value || ov[axis.name.toLowerCase()] === value;
+        return ov[key] === value;
       });
       const sku = matching[0];
       const imgs = normalizeImagesArray(sku?.images);
+      const optPrice = sku ? Number(sku.price) : NaN;
+      const price = Number.isFinite(optPrice) && optPrice > 0 ? optPrice : undefined;
+      const price_modifier =
+        price != null && refPrice > 0 && price > refPrice
+          ? Math.round(price - refPrice)
+          : undefined;
       return {
         value,
         stock: matching.reduce((sum, s) => sum + (Number(s.stock) || 0), 0),
         image: imgs[0] ?? undefined,
+        price,
+        price_modifier,
       };
     });
 
     return {
       id: `axis-${idx}`,
+      option_key: key,
       name: axis.name,
       type: axis.type,
       options,

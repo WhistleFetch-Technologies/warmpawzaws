@@ -13,6 +13,7 @@ export interface ShopProduct {
   vendor_id: string;
   vendor_name: string;
   is_active: boolean;
+  delivery_regions?: string[];
 }
 
 export interface ShopCategory {

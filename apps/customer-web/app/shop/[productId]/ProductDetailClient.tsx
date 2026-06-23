@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
@@ -8,6 +8,7 @@ import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { resolveShopProductIdFromLocation } from '@/lib/resolve-shop-product-id';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { useDeepLinkBackStack } from '@/lib/navigation/use-deep-link-back-stack';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 import {
   mergeLineIntoWarmpawzCartStorage,
   setLineQuantityInWarmpawzCartStorage,
@@ -28,9 +29,27 @@ import {
 import {
   type ClientProductSku,
   resolveSkuFromSelection,
+  resolveSkuPriceForSelection,
   skuImages,
   cartLineKey,
+  getDefaultProductSku,
+  optionValuesToSelectedVariations,
+  parseClientSkuPrice,
+  variationSelectionKey,
 } from '@/lib/product-sku-client';
+import {
+  readCheckoutAddressId,
+} from '@/lib/ecommerce/checkout-address-storage';
+import {
+  loadCustomerDeliveryAddresses,
+  pickDefaultDeliveryAddress,
+} from '@/lib/ecommerce/load-customer-addresses';
+import {
+  deliveryBlockMessage,
+  deliveryRegionsLabel,
+  isProductDeliverableToCity,
+  normalizeDeliveryRegionsList,
+} from '@/lib/ecommerce/product-delivery-guard';
 import {
   ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
   Package, Store, Check, Plus, Minus, Share2, ChevronRight,
@@ -62,13 +81,15 @@ interface Product {
   variations?: ProductVariation[];
   specifications?: Record<string, string>;
   is_active: boolean;
+  delivery_regions?: string[];
 }
 
 interface ProductVariation {
   id: string;
   name: string;
   type: 'color' | 'size' | 'weight' | 'other';
-  options: { value: string; price_modifier?: number; stock?: number; image?: string }[];
+  option_key?: string;
+  options: { value: string; price?: number; price_modifier?: number; stock?: number; image?: string }[];
 }
 
 interface Review {
@@ -190,6 +211,9 @@ export default function ProductDetailClient() {
   const [showReviews, setShowReviews] = useState(false);
   const [isInCart, setIsInCart] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [customerCity, setCustomerCity] = useState<string | null>(null);
+  const userTouchedVariationsRef = useRef(false);
+  const defaultVariationsAppliedRef = useRef(false);
 
   const wishlistProductId = useMemo(() => {
     if (product) {
@@ -198,6 +222,55 @@ export default function ProductDetailClient() {
     }
     return (productId || '').trim();
   }, [product, productId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCity() {
+      if (typeof window === 'undefined') return;
+      const phone =
+        localStorage.getItem('customerPhone') ||
+        localStorage.getItem('customer_phone') ||
+        '';
+      if (!phone) return;
+      try {
+        const list = await loadCustomerDeliveryAddresses(phone);
+        const storedId = readCheckoutAddressId();
+        let picked = storedId ? list.find((a) => a.id === storedId) : null;
+        if (!picked) picked = pickDefaultDeliveryAddress(list);
+        if (!cancelled && picked?.city) {
+          setCustomerCity(String(picked.city).trim());
+        }
+      } catch {
+        /* ignore address load errors on PDP */
+      }
+    }
+    void loadCity();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const deliveryRegions = useMemo(
+    () => normalizeDeliveryRegionsList(product?.delivery_regions),
+    [product?.delivery_regions],
+  );
+
+  const canDeliverToCustomer = useMemo(
+    () => isProductDeliverableToCity(deliveryRegions, customerCity),
+    [deliveryRegions, customerCity],
+  );
+
+  const deliveryMessage = useMemo(() => {
+    if (deliveryRegions.length === 0) return deliveryRegionsLabel([]);
+    if (customerCity && !canDeliverToCustomer) {
+      return deliveryBlockMessage(
+        product?.name ?? 'This product',
+        customerCity,
+        deliveryRegions,
+      );
+    }
+    return deliveryRegionsLabel(deliveryRegions);
+  }, [deliveryRegions, customerCity, canDeliverToCustomer, product?.name]);
 
   // ============================================================================
   // DATA LOADING
@@ -262,6 +335,7 @@ export default function ProductDetailClient() {
         const rawRating = p.rating != null ? Number(p.rating) : NaN;
         const rating =
           rc > 0 && Number.isFinite(rawRating) && rawRating > 0 ? rawRating : 0;
+        const parsedProductPrice = parseFloat(String(p.price ?? '')) || 0;
         setProduct({
           ...p,
           id: resolvedId,
@@ -272,7 +346,7 @@ export default function ProductDetailClient() {
                 ? displaySpecValue(p.description)
                 : '',
           stock: p.stock_quantity || p.stock || 0,
-          price: parseFloat(p.price) || 0,
+          price: parsedProductPrice,
           original_price:
             compareOrOriginal != null && String(compareOrOriginal) !== ''
               ? parseFloat(String(compareOrOriginal))
@@ -288,21 +362,43 @@ export default function ProductDetailClient() {
             !Array.isArray(p.specifications)
               ? (p.specifications as Record<string, unknown>)
               : undefined,
+          default_option_values: p.default_option_values,
         });
-        const skusFromApi = (productRes?.skus ?? []) as ClientProductSku[];
+        const skusFromApi = (
+          (productRes?.skus ??
+            p.skus ??
+            []) as ClientProductSku[]
+        );
+        const variationList = Array.isArray(p.variations) ? p.variations : [];
         setProductSkus(
           skusFromApi
             .filter((s) => s.id != null && UUID_RE.test(String(s.id)))
             .map((s) => ({
               ...s,
               id: String(s.id),
-              price: Number(s.price) || sellingPrice,
+              price: parseClientSkuPrice(s.price, parsedProductPrice),
               compare_at_price:
-                s.compare_at_price != null ? Number(s.compare_at_price) : null,
+                s.compare_at_price != null ? parseClientSkuPrice(s.compare_at_price) : null,
               stock: Number(s.stock) || 0,
               images: ensureImageUrls(s.images),
+              sort_order:
+                s.sort_order != null && Number.isFinite(Number(s.sort_order))
+                  ? Number(s.sort_order)
+                  : undefined,
             })),
         );
+        defaultVariationsAppliedRef.current = false;
+        if (!userTouchedVariationsRef.current) {
+          const fromProduct = p.default_option_values as Record<string, unknown> | undefined;
+          const defaultOv =
+            fromProduct && typeof fromProduct === 'object'
+              ? optionValuesToSelectedVariations(fromProduct, variationList)
+              : null;
+          if (defaultOv && Object.keys(defaultOv).length > 0) {
+            setSelectedVariations(defaultOv);
+            defaultVariationsAppliedRef.current = true;
+          }
+        }
       } else {
         console.warn('[shop/product] response missing product wrapper', {
           productId,
@@ -353,17 +449,44 @@ export default function ProductDetailClient() {
     return resolveSkuFromSelection(productSkus, selectedVariations, { partial: true });
   }, [productSkus, selectedVariations]);
 
-  const displayPrice = matchedSku?.price ?? product?.price ?? 0;
-  const displayOriginalPrice =
-    matchedSku?.compare_at_price != null && matchedSku.compare_at_price > 0
-      ? matchedSku.compare_at_price
-      : product?.original_price;
+  const displayPrice = useMemo(() => {
+    if (productSkus.length > 0) {
+      return resolveSkuPriceForSelection(
+        productSkus,
+        selectedVariations,
+        product?.price ?? 0,
+      );
+    }
+    return product?.price ?? 0;
+  }, [productSkus, selectedVariations, product?.price]);
+
+  const displayOriginalPrice = useMemo(() => {
+    if (matchedSku?.compare_at_price != null && matchedSku.compare_at_price > 0) {
+      return matchedSku.compare_at_price;
+    }
+    return product?.original_price;
+  }, [matchedSku, product?.original_price]);
   const displayStock = matchedSku?.stock ?? product?.stock ?? 0;
   const displayImages = useMemo(() => {
     const skuImgs = skuImages(matchedSku);
     if (skuImgs.length > 0) return skuImgs;
     return ensureImageUrls(product?.images);
   }, [matchedSku, product?.images]);
+
+  useEffect(() => {
+    if (userTouchedVariationsRef.current || defaultVariationsAppliedRef.current) return;
+    if (productSkus.length === 0) return;
+    const defaultSku = getDefaultProductSku(productSkus);
+    if (!defaultSku?.option_values) return;
+    const next = optionValuesToSelectedVariations(
+      defaultSku.option_values as Record<string, unknown>,
+      product?.variations,
+    );
+    if (Object.keys(next).length > 0) {
+      setSelectedVariations(next);
+      defaultVariationsAppliedRef.current = true;
+    }
+  }, [productSkus, product?.variations]);
 
   useEffect(() => {
     if (displayImages.length > 0 && selectedImage >= displayImages.length) {
@@ -386,7 +509,22 @@ export default function ProductDetailClient() {
       vendor_name: product.vendor_name,
       ...(product.category_id ? { category_id: product.category_id } : {}),
       stock: displayStock,
+      ...(deliveryRegions.length > 0 ? { delivery_regions: deliveryRegions } : {}),
     };
+  };
+
+  const assertCanAddToCart = (): boolean => {
+    if (customerCity && !canDeliverToCustomer) {
+      alert(
+        deliveryBlockMessage(
+          product?.name ?? 'This product',
+          customerCity,
+          deliveryRegions,
+        ),
+      );
+      return false;
+    }
+    return true;
   };
 
   const cartLineId = cartLineKey(
@@ -412,6 +550,7 @@ export default function ProductDetailClient() {
 
   const persistCartQuantity = (qty: number): boolean => {
     if (!product || displayStock === 0) return false;
+    if (!assertCanAddToCart()) return false;
     if (productSkus.length > 0 && !matchedSku) {
       alert('Please select all product options');
       return false;
@@ -432,6 +571,7 @@ export default function ProductDetailClient() {
 
   const mergeLineIntoLocalCart = (): boolean => {
     if (!product || displayStock === 0) return false;
+    if (!assertCanAddToCart()) return false;
     if (productSkus.length > 0 && !matchedSku) {
       alert('Please select all product options');
       return false;
@@ -745,19 +885,43 @@ export default function ProductDetailClient() {
             {/* Product Variations */}
             {product.variations && product.variations.length > 0 && (
               <div className="space-y-4">
-                {product.variations.map((variation) => (
+                {product.variations.map((variation) => {
+                  const selKey = variationSelectionKey(variation);
+                  return (
                   <div key={variation.id}>
                     <label className="block text-sm font-medium text-slate-700 mb-2">
                       {variation.name}
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      {(variation.options || []).map((option) => (
+                      {(variation.options || []).map((option) => {
+                        const previewSelection = {
+                          ...selectedVariations,
+                          [selKey]: option.value,
+                        };
+                        const optionPrice =
+                          productSkus.length > 0
+                            ? resolveSkuPriceForSelection(
+                                productSkus,
+                                previewSelection,
+                                product?.price ?? 0,
+                              )
+                            : option.price;
+                        const basePrice =
+                          productSkus.length > 0
+                            ? resolveSkuPriceForSelection(
+                                productSkus,
+                                {},
+                                product?.price ?? 0,
+                              )
+                            : product?.price ?? 0;
+                        return (
                         <button
                           key={option.value}
                           onClick={() => {
+                            userTouchedVariationsRef.current = true;
                             const next = {
                               ...selectedVariations,
-                              [variation.type]: option.value,
+                              [selKey]: option.value,
                             };
                             setSelectedVariations(next);
                             const partial = resolveSkuFromSelection(productSkus, next, {
@@ -767,20 +931,30 @@ export default function ProductDetailClient() {
                             if (imgs.length > 0) setSelectedImage(0);
                           }}
                           className={`px-4 py-2 rounded-xl border-2 transition-all ${
-                            selectedVariations[variation.type] === option.value
+                            selectedVariations[selKey] === option.value
                               ? 'border-orange-500 bg-orange-50 text-orange-700'
                               : 'border-slate-200 hover:border-orange-300'
                           }`}
                         >
                           {option.value}
-                          {option.price_modifier && option.price_modifier > 0 && (
-                            <span className="ml-1 text-xs text-slate-500">+₹{option.price_modifier}</span>
-                          )}
+                          {optionPrice != null &&
+                          optionPrice > 0 &&
+                          optionPrice !== basePrice ? (
+                            <span className="ml-1 text-xs text-slate-500">
+                              ₹{optionPrice.toLocaleString()}
+                            </span>
+                          ) : option.price_modifier && option.price_modifier > 0 ? (
+                            <span className="ml-1 text-xs text-slate-500">
+                              +₹{option.price_modifier}
+                            </span>
+                          ) : null}
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -812,11 +986,42 @@ export default function ProductDetailClient() {
               </div>
             </div>
 
+            {(deliveryRegions.length > 0 || customerCity) && (
+              <div
+                className={`rounded-xl p-3 flex items-start gap-2 ${
+                  customerCity && !canDeliverToCustomer
+                    ? 'bg-red-50 border border-red-200'
+                    : 'bg-emerald-50 border border-emerald-200'
+                }`}
+              >
+                <Truck
+                  className={`w-5 h-5 shrink-0 mt-0.5 ${
+                    customerCity && !canDeliverToCustomer
+                      ? 'text-red-600'
+                      : 'text-emerald-600'
+                  }`}
+                />
+                <p
+                  className={`text-sm ${
+                    customerCity && !canDeliverToCustomer
+                      ? 'text-red-800 font-medium'
+                      : 'text-emerald-800'
+                  }`}
+                >
+                  {deliveryMessage}
+                </p>
+              </div>
+            )}
+
             {/* Action Buttons */}
             <div className="flex gap-3">
               <button
                 onClick={addToCart}
-                disabled={displayStock === 0 || addingToCart}
+                disabled={
+                  displayStock === 0 ||
+                  addingToCart ||
+                  (Boolean(customerCity) && !canDeliverToCustomer)
+                }
                 className={`flex-1 py-4 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
                   displayStock === 0
                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
@@ -841,7 +1046,10 @@ export default function ProductDetailClient() {
               </button>
               <button
                 onClick={buyNow}
-                disabled={displayStock === 0}
+                disabled={
+                  displayStock === 0 ||
+                  (Boolean(customerCity) && !canDeliverToCustomer)
+                }
                 className="flex-1 py-4 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Buy Now • ₹{finalPrice.toLocaleString()}

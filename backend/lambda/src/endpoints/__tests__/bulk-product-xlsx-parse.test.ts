@@ -30,19 +30,29 @@ describe('parseBulkProductXlsxBuffer', () => {
 
     expect(products).toHaveLength(1);
     expect(getBulkProductTitle(products[0])).toBe('Smiling Sunflower Dog Dress');
+    expect(products[0].key_features).toBeTruthy();
+    expect(products[0].delivery_regions).toEqual(['Mumbai', 'Pune']);
     const demoImages = String(products[0].images ?? '');
     expect(parseProductImageList(demoImages)).toHaveLength(2);
     expect(demoImages).toContain('example.com/your-product-image-2.jpg');
   });
 
-  it('maps A+ Content separately from gallery images', () => {
-    expect(BULK_HEADER_FIELD_MAP.acontent).toBe('images_aplus');
+  it('maps gallery image column', () => {
     expect(BULK_HEADER_FIELD_MAP.image1000x1000px).toBe('images');
   });
 
-  it('template has 45 columns without Vendor Product Id', () => {
-    expect(BULK_TEMPLATE_COLUMN_HEADERS).toHaveLength(45);
-    expect(BULK_TEMPLATE_COLUMN_HEADERS).not.toContain('Vendor Product Id');
+  it('template has 28 unified columns', () => {
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toHaveLength(28);
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Delivery Regions');
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Variant Attribute 1');
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Is Default');
+  });
+
+  it('maps variant attribute columns for bulk upload', () => {
+    expect(BULK_HEADER_FIELD_MAP.variantattribute1).toBe('variant_attr_1');
+    expect(BULK_HEADER_FIELD_MAP.variantvalue1).toBe('variant_value_1');
+    expect(BULK_HEADER_FIELD_MAP.isdefault).toBe('is_default');
+    expect(BULK_HEADER_FIELD_MAP.variantsp).toBe('variant_sp');
   });
 
   it('maps Barcode (EAN) to barcode, not sku', () => {
