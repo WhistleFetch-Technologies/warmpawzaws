@@ -7,6 +7,7 @@ import {
   variantsFromProduct,
   presetVariantAxes,
   deliveryRegionsFromProduct,
+  sellingPriceForForm,
   type VariantRow,
   type ProductFormState,
 } from '../vendor-product-form';
@@ -240,5 +241,10 @@ describe('vendor-product-form', () => {
         metadata: { delivery_regions: ['Mumbai'] },
       }),
     ).toEqual(['Mumbai']);
+  });
+
+  it('sellingPriceForForm returns price when SP equals MRP', () => {
+    expect(sellingPriceForForm({ price: 799, original_price: 799 })).toBe('799');
+    expect(sellingPriceForForm({ price: 450, compare_at_price: 500 })).toBe('450');
   });
 });

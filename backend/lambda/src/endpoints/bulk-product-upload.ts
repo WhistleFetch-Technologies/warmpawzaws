@@ -41,6 +41,7 @@ import {
   rowHasVariantAxes,
   aggregateGroupStock,
   pickGroupParentImages,
+  bulkGroupExtrasSource,
   type BulkVariantRow,
 } from '../utils/bulk-product-variant-builder';
 import {
@@ -401,7 +402,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
 
           applyVendorProductExtrasToPayload(
             productData,
-            vendorExtrasFromBulkRow(group.parent as Record<string, unknown>),
+            vendorExtrasFromBulkRow(bulkGroupExtrasSource(group)),
             productCols,
           );
 

@@ -52,7 +52,7 @@ import {
 } from '@/lib/ecommerce/product-delivery-guard';
 import {
   ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
-  Package, Store, Check, Plus, Minus, Share2, ChevronRight,
+  Package, Check, Plus, Minus, Share2, ChevronRight,
   Clock, ThumbsUp, User, AlertCircle, RefreshCcw
 } from 'lucide-react';
 
@@ -82,6 +82,9 @@ interface Product {
   specifications?: Record<string, string>;
   is_active: boolean;
   delivery_regions?: string[];
+  key_features?: string;
+  pet_type?: string;
+  manufacturing_details?: string;
 }
 
 interface ProductVariation {
@@ -826,12 +829,6 @@ export default function ProductDetailClient() {
 
           {/* Product Details */}
           <div className="space-y-6">
-            {/* Vendor */}
-            <div className="flex items-center gap-2">
-              <Store className="w-4 h-4 text-orange-500" />
-              <span className="text-sm font-medium text-orange-600">{product.vendor_name}</span>
-            </div>
-
             {/* Title */}
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{product.name}</h1>
 
@@ -877,10 +874,7 @@ export default function ProductDetailClient() {
               )}
             </div>
 
-            <SellerProductPromotions
-              vendorId={product.vendor_id}
-              vendorName={product.vendor_name}
-            />
+            <SellerProductPromotions vendorId={product.vendor_id} />
 
             {/* Product Variations */}
             {product.variations && product.variations.length > 0 && (
@@ -1103,6 +1097,28 @@ export default function ProductDetailClient() {
                   <span className="font-medium text-slate-900">{product.brand}</span>
                 </div>
               )}
+              {product.key_features && (
+                <div className="py-2 border-b border-slate-100">
+                  <span className="text-slate-600 block mb-1">Key Features</span>
+                  <span className="font-medium text-slate-900 whitespace-pre-line">
+                    {displaySpecValue(product.key_features)}
+                  </span>
+                </div>
+              )}
+              {product.pet_type && (
+                <div className="flex justify-between py-2 border-b border-slate-100">
+                  <span className="text-slate-600">Pet Type</span>
+                  <span className="font-medium text-slate-900 capitalize">{product.pet_type}</span>
+                </div>
+              )}
+              {product.manufacturing_details && (
+                <div className="py-2 border-b border-slate-100">
+                  <span className="text-slate-600 block mb-1">Manufacturing Details</span>
+                  <span className="font-medium text-slate-900 whitespace-pre-line">
+                    {displaySpecValue(product.manufacturing_details)}
+                  </span>
+                </div>
+              )}
               {product.material && (
                 <div className="flex justify-between py-2 border-b border-slate-100">
                   <span className="text-slate-600">Material</span>
@@ -1258,7 +1274,6 @@ function RecommendedProductCard({ product }: { product: RecommendedProduct }) {
         )}
       </div>
       <h3 className="font-medium text-slate-900 text-sm line-clamp-2 mb-1">{product.name}</h3>
-      <p className="text-xs text-orange-600 mb-2">{product.vendor_name}</p>
       <div className="flex items-center gap-2">
         <span className="font-bold text-slate-900">₹{product.price}</span>
         {product.original_price && product.original_price > product.price && (

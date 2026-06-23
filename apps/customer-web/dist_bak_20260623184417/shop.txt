@@ -1,0 +1,46 @@
+2:I[19107,[],"ClientPageRoot"]
+3:I[36627,["4524","static/chunks/radix-ui-c63916aef74fcf4c.js","691","static/chunks/691-813b6a0a85ed26f9.js","266","static/chunks/266-d55ddf16c5bae813.js","1144","static/chunks/1144-f1fd02fee03181cb.js","1511","static/chunks/1511-52b1ad0cc8704a92.js","3060","static/chunks/3060-7a1eb4ae71bfe705.js","2951","static/chunks/2951-d278675595bcf951.js","6583","static/chunks/6583-a35dadcfc167e40b.js","5832","static/chunks/5832-bcf33c37c361a933.js","7170","static/chunks/7170-75290878bd7ae38a.js","1668","static/chunks/1668-47b7b01b85c90218.js","5772","static/chunks/5772-a4106e2b5e560b6d.js","3021","static/chunks/app/shop/page-844fbc31d27844da.js"],"default",1]
+4:I[4707,[],""]
+5:I[36423,[],""]
+8:I[45325,["691","static/chunks/691-813b6a0a85ed26f9.js","266","static/chunks/266-d55ddf16c5bae813.js","1511","static/chunks/1511-52b1ad0cc8704a92.js","2394","static/chunks/2394-8e805fcf753f6142.js","2719","static/chunks/2719-c5f7898b084c97c2.js","3185","static/chunks/app/layout-61bdcc8aa633c1a4.js"],"Providers"]
+6:T446,
+              (function() {
+                try {
+                  var path = location.pathname.replace(/\/+$/, '') || '/';
+                  var qs = new URLSearchParams(location.search);
+                  if (qs.get('vendorId') || qs.get('vendor_id')) return;
+                  var vendorMatch = path.match(/^\/vendor\/([^/]+)$/);
+                  if (vendorMatch && vendorMatch[1] !== 'placeholder' && vendorMatch[1] !== '_') {
+                    qs.set('vendorId', decodeURIComponent(vendorMatch[1]));
+                    location.replace('/vendor/placeholder?' + qs.toString());
+                    return;
+                  }
+                  var boardingMatch = path.match(/^\/pet-boarding\/vendor\/([^/]+)$/);
+                  if (boardingMatch && boardingMatch[1] !== 'placeholder' && boardingMatch[1] !== '_') {
+                    qs.set('vendorId', decodeURIComponent(boardingMatch[1]));
+                    location.replace('/pet-boarding/vendor/placeholder?' + qs.toString());
+                  }
+                } catch (e) { /* ignore */ }
+              })();
+            7:T415,
+              (function() {
+                var hasReloaded = sessionStorage.getItem('chunkErrorReloaded');
+                function handleChunkError(e) {
+                  var msg = e.message || '';
+                  if ((msg.includes('ChunkLoadError') || msg.includes('Loading chunk') || msg.includes('Failed to fetch dynamically imported module')) && !hasReloaded) {
+                    sessionStorage.setItem('chunkErrorReloaded', 'true');
+                    window.location.reload();
+                  }
+                }
+                window.addEventListener('error', handleChunkError);
+                window.addEventListener('unhandledrejection', function(e) {
+                  var msg = e.reason?.message || String(e.reason || '');
+                  if ((msg.includes('ChunkLoadError') || msg.includes('Loading chunk')) && !hasReloaded) {
+                    sessionStorage.setItem('chunkErrorReloaded', 'true');
+                    window.location.reload();
+                  }
+                });
+              })();
+            0:["MtkFnJXQpMuEgFIgpaSqZ",[[["",{"children":["shop",{"children":["__PAGE__",{}]}]},"$undefined","$undefined",true],["",{"children":["shop",{"children":["__PAGE__",{},[["$L1",["$","$L2",null,{"props":{"params":{},"searchParams":{}},"Component":"$3"}],null],null],null]},[null,["$","$L4",null,{"parallelRouterKey":"children","segmentPath":["children","shop","children"],"error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L5",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","notFoundStyles":"$undefined"}]],null]},[[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/c7c58d9d3353e973.css","precedence":"next","crossOrigin":"$undefined"}]],["$","html",null,{"lang":"en","children":[["$","head",null,{"children":[["$","link",null,{"rel":"stylesheet","href":"https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&display=swap","media":"print","id":"baloo-font-link"}],["$","link",null,{"rel":"preconnect","href":"https://fonts.googleapis.com"}],["$","link",null,{"rel":"preconnect","href":"https://fonts.gstatic.com","crossOrigin":"anonymous"}],["$","link",null,{"rel":"stylesheet","href":"https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap","media":"print","id":"material-symbols-link"}],["$","script",null,{"dangerouslySetInnerHTML":{"__html":"\n              (function() {\n                function setMediaToAll() {\n                  const balooLink = document.getElementById('baloo-font-link');\n                  const materialLink = document.getElementById('material-symbols-link');\n                  if (balooLink) balooLink.media = 'all';\n                  if (materialLink) materialLink.media = 'all';\n                }\n                if (document.readyState === 'loading') {\n                  document.addEventListener('DOMContentLoaded', setMediaToAll);\n                } else {\n                  setMediaToAll();\n                }\n              })();\n            "}}]]}],["$","body",null,{"children":[["$","script",null,{"dangerouslySetInnerHTML":{"__html":"\n                window.__NEXT_PUBLIC_API_BASE_URL__ = \"https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com\";\n              "}}],["$","script",null,{"dangerouslySetInnerHTML":{"__html":"\n                window.__WARMPAWZ_RUNTIME_CONFIG__ = {\n                  apiBaseUrl: \"https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com\",\n                  environment: \"development\",\n                  uatMode: true,\n                  customerMealPlansEnabled: true\n                };\n              "}}],["$","script",null,{"src":"/runtime-config.js"}],["$","script",null,{"dangerouslySetInnerHTML":{"__html":"$6"}}],["$","script",null,{"dangerouslySetInnerHTML":{"__html":"$7"}}],["$","$L8",null,{"children":["$","$L4",null,{"parallelRouterKey":"children","segmentPath":["children"],"error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L5",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":["$","div",null,{"className":"min-h-screen flex items-center justify-center bg-gray-50","children":["$","div",null,{"className":"text-center","children":[["$","h1",null,{"className":"text-6xl font-bold text-gray-900 mb-4","children":"404"}],["$","h2",null,{"className":"text-2xl font-semibold text-gray-700 mb-4","children":"Page Not Found"}],["$","p",null,{"className":"text-gray-600 mb-8","children":"The page you're looking for doesn't exist."}],["$","a",null,{"href":"/","className":"inline-block px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors","children":"Go Home"}]]}]}],"notFoundStyles":[]}]}]]}]]}]],null],null],["$L9",null]]]]
+9:[["$","meta","0",{"name":"viewport","content":"width=device-width, initial-scale=1, viewport-fit=cover"}],["$","meta","1",{"name":"theme-color","content":"#FF8C42"}],["$","meta","2",{"charSet":"utf-8"}],["$","title","3",{"children":"Warmpawz - Pet Care Services"}],["$","meta","4",{"name":"description","content":"Find and book pet care services near you"}],["$","meta","5",{"name":"apple-mobile-web-app-capable","content":"yes"}],["$","meta","6",{"name":"apple-mobile-web-app-title","content":"Warmpawz"}],["$","meta","7",{"name":"apple-mobile-web-app-status-bar-style","content":"default"}]]
+1:null

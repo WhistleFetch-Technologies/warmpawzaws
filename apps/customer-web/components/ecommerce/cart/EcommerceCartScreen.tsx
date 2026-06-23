@@ -404,9 +404,6 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                       <h3 className="font-medium text-slate-900 line-clamp-2 text-sm leading-snug">
                         {item.name}
                       </h3>
-                      {item.vendorName && (
-                        <p className="text-xs text-slate-500 mt-0.5">{item.vendorName}</p>
-                      )}
                       {variantLabel && (
                         <p className="text-xs text-slate-500 mt-0.5">{variantLabel}</p>
                       )}

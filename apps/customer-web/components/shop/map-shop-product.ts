@@ -31,7 +31,7 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
     description: String(p.description ?? ''),
     category_id: String(p.category_id ?? ''),
     vendor_id: String(p.vendor_id ?? ''),
-    vendor_name: String(p.vendor_name ?? 'Warmpawz Store'),
+    vendor_name: '',
     is_active: p.is_active !== false,
   };
 }

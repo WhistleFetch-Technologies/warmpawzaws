@@ -309,10 +309,10 @@ export function sellingPriceForForm(product: {
   original_price?: number;
   compare_at_price?: number;
 } | null | undefined): string {
-  if (!product?.price) return '';
-  const mrp = product.original_price ?? product.compare_at_price;
-  if (mrp && product.price < mrp) return String(product.price);
-  return '';
+  if (product?.price == null) return '';
+  const priceNum = Number(product.price);
+  if (!Number.isFinite(priceNum) || priceNum <= 0) return '';
+  return String(priceNum);
 }
 
 function inferAxesFromOptionKeys(keys: string[]): VariantAxisConfig[] {
