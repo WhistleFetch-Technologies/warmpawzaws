@@ -3,8 +3,9 @@
  */
 import { query, select } from '../../../database/rds-connection';
 import { normalizePhoneForOtp } from './customer-username-lookup';
+import { verifyCustomerPassword } from './customer-password-crypto';
 
-function isVendorRowDeleted(record: any): boolean {
+export function isVendorRowDeleted(record: any): boolean {
   if (!record || record.is_deleted === undefined || record.is_deleted === null) return false;
   if (record.is_deleted === true) return true;
   if (record.is_deleted === 't') return true;
@@ -85,6 +86,90 @@ export async function findVendorForPasswordLogin(rawUsername: string): Promise<a
   }
 
   return null;
+}
+
+export type VendorPasswordLoginResolution =
+  | { kind: 'matched'; vendor: any }
+  | { kind: 'not_found' }
+  | { kind: 'password_on_inactive_only'; activeBusinessName?: string | null; inactiveBusinessName?: string | null }
+  | { kind: 'no_active_vendor' };
+
+function dedupeVendorsById(rows: any[]): any[] {
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (const row of rows) {
+    const id = row?.id != null ? String(row.id) : '';
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(row);
+  }
+  return out;
+}
+
+/** Collect vendor rows for a dialable username (exact phone, then last-10). */
+export async function collectVendorRowsForPasswordUsername(rawUsername: string): Promise<any[]> {
+  const key = String(rawUsername || '').trim();
+  if (!key) return [];
+
+  const normalizedKey = normalizePhoneForOtp(key);
+  const collected: any[] = [];
+
+  try {
+    const rExact = await query(
+      `SELECT * FROM vendors WHERE phone = $1 OR phone = $2 LIMIT 25`,
+      [key, normalizedKey]
+    );
+    collected.push(...((rExact as any).rows || []));
+  } catch {
+    /* fall through */
+  }
+
+  const digits = key.replace(/\D/g, '');
+  if (digits.length >= 10) {
+    collected.push(...(await selectVendorsByLast10Digits(digits.slice(-10))));
+  }
+
+  return dedupeVendorsById(collected);
+}
+
+/**
+ * When one phone maps to multiple vendor rows, pick the row whose stored password matches.
+ * Surfaces when the password belongs only to a soft-deleted/inactive profile.
+ */
+export async function resolveVendorForPasswordLogin(
+  rawUsername: string,
+  plainPassword: string,
+  hasMeaningfulPassword: (hash: unknown) => boolean
+): Promise<VendorPasswordLoginResolution> {
+  const rows = await collectVendorRowsForPasswordUsername(rawUsername);
+  if (rows.length === 0) return { kind: 'not_found' };
+
+  const active = rows.filter((r) => !isVendorRowDeleted(r));
+  if (active.length === 0) return { kind: 'no_active_vendor' };
+
+  const pass = String(plainPassword ?? '');
+  let inactiveMatch: any | null = null;
+
+  for (const row of rows) {
+    if (!hasMeaningfulPassword(row.password_hash)) continue;
+    const ok = await verifyCustomerPassword(pass, row.password_hash);
+    if (!ok) continue;
+    if (!isVendorRowDeleted(row)) {
+      return { kind: 'matched', vendor: row };
+    }
+    if (!inactiveMatch) inactiveMatch = row;
+  }
+
+  if (inactiveMatch) {
+    const primaryActive = active[0];
+    return {
+      kind: 'password_on_inactive_only',
+      activeBusinessName: primaryActive?.business_name ?? null,
+      inactiveBusinessName: inactiveMatch?.business_name ?? null,
+    };
+  }
+
+  return { kind: 'not_found' };
 }
 
 /**

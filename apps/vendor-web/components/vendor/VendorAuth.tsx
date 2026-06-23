@@ -8,7 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { storeSession } from '@/lib/session-manager';
-import { scheduleVendorPushRegistrationAfterLogin } from '@/lib/vendor-session-from-api';
+import { clearVendorSession } from '@/lib/session-utils';
+import {
+  scheduleVendorPushRegistrationAfterLogin,
+  unwrapVerifyOtpResponseBody,
+} from '@/lib/vendor-session-from-api';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { ChatWidget } from '@/components/customer/ChatWidget';
 import {
@@ -405,112 +409,116 @@ export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorA
         return;
       }
 
+      const password = formData.password.trim();
+      if (!password) {
+        setError('Please enter your password');
+        setLoading(false);
+        return;
+      }
+
       const usernamePhone = `${loginCountryCode}${digits.slice(-10)}`;
+
+      // Drop stale tokens so profile calls after login use the fresh session.
+      clearVendorSession();
 
       const loginRaw = await apiClient.post<any>('/auth/vendor/login', {
         username: usernamePhone,
-        password: formData.password,
+        password,
         role: 'vendor',
       });
 
-      let payload = loginRaw as Record<string, unknown>;
-      const inner = payload?.data as Record<string, unknown> | undefined;
-      if (inner?.data && typeof inner.data === 'object') {
-        payload = inner.data as Record<string, unknown>;
-      } else if (inner && 'token' in inner) {
-        payload = inner as Record<string, unknown>;
-      }
-
-      const tokens = (payload.token || {}) as Record<string, string>;
-      const accessToken =
-        tokens.access_token ||
-        (payload.access_token as string | undefined);
-      const idToken = tokens.id_token || (payload.id_token as string | undefined);
-      const refreshToken = tokens.refresh_token || (payload.refresh_token as string | undefined);
-      const expiresInRaw = tokens.expires_in ?? (payload as { expires_in?: number }).expires_in;
-      const expiresIn =
-        typeof expiresInRaw === 'number' && Number.isFinite(expiresInRaw) ? expiresInRaw : 86400;
-      const user = (payload.user || {}) as Record<string, unknown>;
-      const profile = (payload.profile || {}) as Record<string, unknown>;
-
-      if (!accessToken) {
+      const unwrapped = unwrapVerifyOtpResponseBody(loginRaw);
+      if (!unwrapped) {
         throw new Error('Authentication failed: No access token received');
       }
 
-      const dialablePhone =
-        typeof user.phone === 'string' && user.phone
-          ? user.phone
-          : usernamePhone;
+      const { accessToken, user, profile, vendorId, onboardingStatus, phone: dialablePhone } =
+        unwrapped;
 
-      if (idToken) {
-        try {
-          const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
-          storeCognitoTokens({
-            accessToken,
-            idToken,
-            refreshToken: refreshToken || '',
-            expiresIn,
+      const tokens = ((loginRaw as any)?.data?.data?.token ||
+        (loginRaw as any)?.data?.token ||
+        (loginRaw as any)?.token ||
+        {}) as Record<string, string>;
+      const idToken = tokens.id_token || tokens.idToken || accessToken;
+      const refreshToken = tokens.refresh_token || tokens.refreshToken || '';
+      const expiresInRaw = tokens.expires_in ?? tokens.expiresIn;
+      const expiresIn =
+        typeof expiresInRaw === 'number' && Number.isFinite(expiresInRaw) ? expiresInRaw : 86400;
+
+      try {
+        const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
+        storeCognitoTokens({
+          accessToken,
+          idToken,
+          refreshToken,
+          expiresIn,
+        });
+        if (user.id) {
+          storeUserInfo({
+            userId: String(user.id),
+            phone: dialablePhone,
+            username: String(user.phone || dialablePhone),
           });
-          if (user.id) {
-            storeUserInfo({
-              userId: String(user.id),
-              phone: dialablePhone,
-              username: String(user.phone || dialablePhone),
-            });
-          }
-        } catch (e) {
-          console.warn('[VendorAuth] storeCognitoTokens skipped:', e);
         }
+      } catch (storeErr) {
+        console.warn('[VendorAuth] storeCognitoTokens skipped:', storeErr);
       }
 
       storeSession({
         phone: dialablePhone,
-        accessToken,
+        accessToken: idToken || accessToken,
         user,
         profile,
-        vendorId: (profile.id as string) || (user.id as string),
+        vendorId,
       });
 
-      localStorage.setItem(
-        'vendorApplicationStatus',
-        String(profile.onboarding_status || 'INIT')
-      );
+      localStorage.setItem('vendorAuthToken', idToken || accessToken);
+      localStorage.setItem('vendorApplicationStatus', onboardingStatus);
       localStorage.setItem('vendorCountryCode', loginCountryCode);
 
       sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
       sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true');
       sessionStorage.setItem('_warmpawz_vendor_login_at', String(Date.now()));
 
-      const vendorData = (await apiClient.get('/vendor/profile')) as any;
+      if (vendorId) {
+        scheduleVendorPushRegistrationAfterLogin(vendorId);
+      }
 
-      if (vendorData && vendorData.vendor) {
-        if (vendorData.vendor.status === 'pending') {
+      try {
+        const vendorData = (await apiClient.get('/vendor/profile')) as any;
+        if (vendorData?.vendor?.status === 'pending') {
           setPendingApproval(true);
           setLoading(false);
           return;
         }
-        if (vendorData.vendor.status === 'rejected') {
+        if (vendorData?.vendor?.status === 'rejected') {
           setError('Your vendor account has been rejected. Please contact support.');
           setLoading(false);
           return;
         }
+      } catch (profileErr) {
+        console.warn('[VendorAuth] Optional profile fetch after password login failed:', profileErr);
       }
 
       onAuthSuccess({
         phone: dialablePhone,
-        accessToken,
+        accessToken: idToken || accessToken,
         user,
         profile,
-        vendorId: (profile.id as string) || (user.id as string),
-        onboardingStatus: profile.onboarding_status || 'INIT',
-        state: payload.state || 'existing',
+        vendorId,
+        onboardingStatus,
+        state: ((loginRaw as any)?.data?.data?.state ||
+          (loginRaw as any)?.data?.state ||
+          'existing') as string,
       });
     } catch (err: any) {
       const errCode = err?.originalError?.error?.code;
       const hint =
         errCode === 'PASSWORD_NOT_SET'
           ? ' No password on file yet. Use “New vendor? Register here” and sign in with OTP once, complete onboarding, then set your password when prompted.'
-          : '';
+          : errCode === 'PASSWORD_ON_INACTIVE_VENDOR'
+            ? ''
+            : '';
       setError((err.message || 'Failed to sign in') + hint);
       console.error('Sign in error:', err);
     } finally {

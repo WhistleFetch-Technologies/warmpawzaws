@@ -61,6 +61,7 @@ export function clearVendorSession(): void {
   localStorage.removeItem('vendorCountryCode');
   
   // Clear Cognito tokens
+  localStorage.removeItem('vendorCognitoTokens');
   localStorage.removeItem('vendorTokenExpiry');
   localStorage.removeItem('vendorRefreshTokenExpiry');
   localStorage.removeItem('cognitoAccessToken');
