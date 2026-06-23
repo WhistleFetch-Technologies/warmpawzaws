@@ -664,7 +664,7 @@ export function UniversalProviderProfile({
                       )}
                     </span>
                     {service.description?.trim() && (
-                      <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                      <div className="mt-1">
                         <ServiceDescriptionInline
                           description={service.description}
                           title={service.name}
