@@ -41,6 +41,11 @@ import {
 import type { CheckoutAddress } from '@/components/customer/ecommerce/useEcommerceCheckout';
 import { ApiError } from '@/lib/error-handling';
 import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
+import {
+  deliveryBlockMessage,
+  deliveryRegionsFromCartItem,
+  findUndeliverableCartItems,
+} from '@/lib/ecommerce/product-delivery-guard';
 
 type EcommerceCartScreenProps = {
   phone: string;
@@ -104,6 +109,11 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   }, [cart, itemCount, sellerPromotionPricing]);
 
   const mrpTotal = useMemo(() => computeCartMrpTotal(cart), [cart]);
+  const undeliverableItems = useMemo(
+    () => findUndeliverableCartItems(cart, selectedAddress?.city),
+    [cart, selectedAddress?.city],
+  );
+  const hasUndeliverable = undeliverableItems.length > 0;
   const primaryVendorId = useMemo(
     () => cart.find((i) => i.vendorId && i.vendorId !== 'default')?.vendorId,
     [cart]
@@ -229,6 +239,17 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     if (!selectedAddress?.id) {
       toast.error('Please add a delivery address before checkout');
       setShowAddressPicker(true);
+      return;
+    }
+    if (hasUndeliverable) {
+      const first = undeliverableItems[0];
+      toast.error(
+        deliveryBlockMessage(
+          first.name,
+          selectedAddress.city ?? '',
+          deliveryRegionsFromCartItem(first),
+        ),
+      );
       return;
     }
     persistPricingOptionsForCheckout({
@@ -357,10 +378,15 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                 const variantLabel = formatSelectedVariations(item.selectedVariations);
                 const showMrp =
                   item.originalPrice != null && item.originalPrice > item.price;
+                const undeliverable =
+                  Boolean(selectedAddress?.city) &&
+                  undeliverableItems.some((u) => u.id === item.id);
                 return (
                   <article
                     key={item.id}
-                    className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm flex gap-3"
+                    className={`rounded-2xl border bg-white p-3 shadow-sm flex gap-3 ${
+                      undeliverable ? 'border-red-200 bg-red-50/40' : 'border-slate-100'
+                    }`}
                   >
                     <div className="w-20 h-20 shrink-0 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden">
                       {item.image && item.image.startsWith('http') ? (
@@ -383,6 +409,15 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                       )}
                       {variantLabel && (
                         <p className="text-xs text-slate-500 mt-0.5">{variantLabel}</p>
+                      )}
+                      {undeliverable && selectedAddress?.city && (
+                        <p className="text-xs text-red-600 mt-1 font-medium">
+                          {deliveryBlockMessage(
+                            item.name,
+                            selectedAddress.city,
+                            deliveryRegionsFromCartItem(item),
+                          )}
+                        </p>
                       )}
                       <div className="flex items-center gap-2 mt-1">
                         <span className="font-bold text-[#FF8C42]">₹{item.price}</span>
@@ -472,10 +507,12 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               <CheckoutPriceBreakdown cart={cart} pricing={pricing} />
               <Button
                 onClick={handleProceedCheckout}
-                disabled={!selectedAddress?.id}
+                disabled={!selectedAddress?.id || hasUndeliverable}
                 className="w-full mt-4 h-12 bg-[#FF8C42] hover:bg-[#FF7A29] text-white font-semibold rounded-xl disabled:opacity-60"
               >
-                Proceed to checkout
+                {hasUndeliverable
+                  ? 'Remove undeliverable items'
+                  : 'Proceed to checkout'}
               </Button>
             </div>
           </aside>
@@ -489,10 +526,14 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
         </div>
         <Button
           onClick={handleProceedCheckout}
-          disabled={!selectedAddress?.id}
+          disabled={!selectedAddress?.id || hasUndeliverable}
           className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A29] text-white font-semibold rounded-xl disabled:opacity-60"
         >
-          {selectedAddress?.id ? 'Proceed to checkout' : 'Add address to checkout'}
+          {!selectedAddress?.id
+            ? 'Add address to checkout'
+            : hasUndeliverable
+              ? 'Remove undeliverable items'
+              : 'Proceed to checkout'}
         </Button>
       </div>
 

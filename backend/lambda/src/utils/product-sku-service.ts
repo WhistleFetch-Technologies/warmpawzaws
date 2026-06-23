@@ -8,6 +8,7 @@ import {
   normalizeImagesArray,
   aggregateParentStock,
   minSkuPrice,
+  getDefaultProductSku,
   type ProductSkuRow,
 } from './product-sku-resolve';
 import { generateVendorProductSku } from './product-ecommerce-validation';
@@ -148,23 +149,30 @@ export async function syncProductSkus(
     const stock = Math.max(0, Math.floor(Number(input.stock) || 0));
     let imagesNorm = normalizeImagesArray(input.images);
     const targetId = await resolveSyncTargetSkuId(input, existingIds, productId, option_values);
+    const prevSku = targetId ? existing.find((s) => String(s.id) === targetId) : undefined;
 
     if (imagesNorm.length > 0) {
       imagesNorm = await processProductImagesForS3Storage(vendorId, imagesNorm);
       imagesNorm = stripPresignFromProductImagesJsonb(imagesNorm) as string[];
-    } else if (targetId) {
-      const prevSku = existing.find((s) => String(s.id) === targetId);
-      if (prevSku) {
-        imagesNorm = normalizeImagesArray(prevSku.images);
-      }
+    } else if (prevSku) {
+      imagesNorm = normalizeImagesArray(prevSku.images);
     }
 
-    const skuCode = await assignUniqueSkuCode(
-      vendorId,
-      input.sku,
-      `${productId.slice(0, 8)}-s${i}`,
-      targetId ?? undefined,
-    );
+    const sortOrder =
+      input.sort_order != null && Number.isFinite(Number(input.sort_order))
+        ? Math.max(0, Math.floor(Number(input.sort_order)))
+        : i;
+    let skuCode: string;
+    if (targetId && prevSku?.sku && !input.sku?.trim()) {
+      skuCode = String(prevSku.sku);
+    } else {
+      skuCode = await assignUniqueSkuCode(
+        vendorId,
+        input.sku,
+        `${productId.slice(0, 8)}-s${sortOrder}`,
+        targetId ?? undefined,
+      );
+    }
 
     if (targetId) {
       keptIds.add(targetId);
@@ -180,7 +188,7 @@ export async function syncProductSkus(
           barcode: input.barcode?.trim() || null,
           images: imagesNorm,
           is_active: input.is_active !== false,
-          sort_order: i,
+          sort_order: sortOrder,
           updated_at: new Date().toISOString(),
         },
       );
@@ -196,7 +204,7 @@ export async function syncProductSkus(
         barcode: input.barcode?.trim() || null,
         images: imagesNorm,
         is_active: input.is_active !== false,
-        sort_order: i,
+        sort_order: sortOrder,
       });
       if (rows[0]?.id) keptIds.add(String(rows[0].id));
     }
@@ -210,7 +218,16 @@ export async function syncProductSkus(
 
   const synced = await loadProductSkus(productId);
   const totalStock = aggregateParentStock(synced);
+  const defaultSku = getDefaultProductSku(synced);
+  const defaultPrice = defaultSku ? Number(defaultSku.price) : NaN;
   const minPrice = minSkuPrice(synced);
+  const parentPrice =
+    Number.isFinite(defaultPrice) && defaultPrice > 0
+      ? defaultPrice
+      : minPrice != null
+        ? minPrice
+        : undefined;
+  const defaultImages = defaultSku ? normalizeImagesArray(defaultSku.images) : [];
 
   await update(
     'products',
@@ -218,7 +235,8 @@ export async function syncProductSkus(
     {
       has_variations: synced.length > 0,
       stock: totalStock,
-      ...(minPrice != null ? { price: minPrice } : {}),
+      ...(parentPrice != null ? { price: parentPrice } : {}),
+      ...(defaultImages.length > 0 ? { images: defaultImages } : {}),
       updated_at: new Date().toISOString(),
     },
   );
@@ -343,13 +361,22 @@ export async function upsertProductSkuRow(
   }
 
   const synced = await loadProductSkus(productId);
+  const defaultSku = getDefaultProductSku(synced);
+  const defaultPrice = defaultSku ? Number(defaultSku.price) : NaN;
+  const parentPrice =
+    Number.isFinite(defaultPrice) && defaultPrice > 0
+      ? defaultPrice
+      : minSkuPrice(synced) != null
+        ? minSkuPrice(synced)!
+        : undefined;
+
   await update(
     'products',
     { id: productId },
     {
       has_variations: synced.length > 0,
       stock: aggregateParentStock(synced),
-      ...(minSkuPrice(synced) != null ? { price: minSkuPrice(synced)! } : {}),
+      ...(parentPrice != null ? { price: parentPrice } : {}),
       updated_at: new Date().toISOString(),
     },
   );

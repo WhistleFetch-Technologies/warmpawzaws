@@ -18,6 +18,9 @@ export function shopProductToCartItem(product: ShopProduct, quantity = 1): CartI
       vendor_name: product.vendor_name,
       category_id: product.category_id,
       stock: product.stock ?? 99,
+      ...(product.delivery_regions?.length
+        ? { delivery_regions: product.delivery_regions }
+        : {}),
     },
   };
 
@@ -35,10 +38,23 @@ export function shopProductToCartItem(product: ShopProduct, quantity = 1): CartI
   };
 }
 
-export function formatSelectedVariations(variations?: Record<string, string>): string | null {
+const AXIS_DISPLAY_LABELS: Record<string, string> = {
+  size: 'Size',
+  color: 'Color',
+  pack: 'Pack',
+  weight: 'Weight',
+};
+
+export function formatSelectedVariations(
+  variations?: Record<string, string>,
+  axisLabels?: Record<string, string>,
+): string | null {
   if (!variations || Object.keys(variations).length === 0) return null;
   return Object.entries(variations)
-    .map(([k, v]) => `${k}: ${v}`)
+    .map(([k, v]) => {
+      const label = axisLabels?.[k] ?? AXIS_DISPLAY_LABELS[k] ?? k;
+      return `${label}: ${v}`;
+    })
     .join(' · ');
 }
 

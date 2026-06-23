@@ -1,5 +1,7 @@
 'use client';
 
+/** @deprecated Use Seller Hub ProductFormModal for inline variant editing. Kept for legacy API compatibility. */
+
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import {

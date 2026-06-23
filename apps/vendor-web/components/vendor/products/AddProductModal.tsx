@@ -1,5 +1,7 @@
 'use client';
 
+/** Legacy /products page modal. Canonical add/edit UX: Seller Hub → ProductCatalogManagement → ProductFormModal. */
+
 import { X, ShoppingBag, Plus, Trash2, Upload, Image as ImageIcon, MapPin } from 'lucide-react';
 import { useState } from 'react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
@@ -33,7 +35,7 @@ export function AddProductModal({
 }: AddProductModalProps) {
   const [loading, setLoading] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
-  const [variants, setVariants] = useState<Array<{ id: string; size?: string; color?: string; price: string; stock: string; sku: string }>>([]);
+  const [variants, setVariants] = useState<Array<{ id: string; size?: string; color?: string; price: string; stock: string }>>([]);
   const [images, setImages] = useState<string[]>([]);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [deliveryRegions, setDeliveryRegions] = useState<string[]>([]);
@@ -56,7 +58,7 @@ export function AddProductModal({
 
   // Variants Management
   const addVariant = () => {
-    setVariants([...variants, { id: Date.now().toString(), size: '', color: '', price: formData.price || '', stock: '', sku: '' }]);
+    setVariants([...variants, { id: Date.now().toString(), size: '', color: '', price: formData.price || '', stock: '' }]);
   };
 
   const removeVariant = (id: string) => {
@@ -222,7 +224,6 @@ export function AddProductModal({
                 price: parseFloat(v.price) || selling,
                 compare_at_price: mrp,
                 stock: parseInt(v.stock, 10) || 0,
-                sku: v.sku || null,
                 images: [],
               }))
             : undefined,
@@ -516,16 +517,6 @@ export function AddProductModal({
                           onChange={(e) => updateVariant(variant.id, 'stock', e.target.value)}
                           className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-100 outline-none"
                           placeholder="0"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <label className="block text-xs text-gray-600 mb-1">Variant SKU</label>
-                        <input
-                          type="text"
-                          value={variant.sku}
-                          onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
-                          className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-100 outline-none"
-                          placeholder="Optional SKU for this variant"
                         />
                       </div>
                     </div>

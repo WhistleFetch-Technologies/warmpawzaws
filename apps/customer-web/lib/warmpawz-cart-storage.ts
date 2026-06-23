@@ -19,6 +19,8 @@ export type WarmpawzCartProductSnapshot = {
   vendor_name?: string;
   category_id?: string;
   stock: number;
+  /** City names; empty/undefined = ships everywhere */
+  delivery_regions?: string[];
 };
 
 export type WarmpawzCartLine = {

@@ -23,6 +23,7 @@ import {
   resolveEcommerceOrderLine,
   decrementSkuStock,
 } from '../../../utils/product-sku-order';
+import { assertProductDeliverableToCity } from '../../../utils/product-delivery-regions';
 
 /** Maps checkout address shapes to NOT NULL `orders.shipping_*`; full object also in `metadata.address_snapshot`. */
 function shippingColumnsFromAddress(
@@ -179,12 +180,23 @@ class CreateCustomerOrderHandler extends BaseHandler {
       const orderItems: LineRow[] = [];
       let firstVendorId: string | null = null;
 
+      const customerCity = String(
+        (shippingAddress as { city?: string; City?: string })?.city ??
+          (shippingAddress as { City?: string })?.City ??
+          '',
+      ).trim();
+
       for (const item of items) {
         try {
           const resolved = await resolveEcommerceOrderLine(item as Record<string, unknown>);
           if (!resolved) {
             return this.error('Each item must include a valid product id (UUID)', 400);
           }
+          await assertProductDeliverableToCity(
+            resolved.product_id,
+            resolved.product_name,
+            customerCity,
+          );
           if (!firstVendorId && resolved.vendor_id) {
             firstVendorId = resolved.vendor_id;
           }

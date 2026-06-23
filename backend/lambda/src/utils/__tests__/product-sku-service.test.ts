@@ -1,11 +1,16 @@
-import { query, update } from '../../database/rds-connection';
-import { updateProductSkuStock } from '../product-sku-service';
+import { query, update, insert } from '../../database/rds-connection';
+import { updateProductSkuStock, syncProductSkus } from '../product-sku-service';
 
 jest.mock('../../database/rds-connection', () => ({
   query: jest.fn(),
   update: jest.fn(),
   insert: jest.fn(),
   deleteRows: jest.fn(),
+}));
+
+jest.mock('../product-sku-images', () => ({
+  processProductImagesForS3Storage: jest.fn(async (urls: string[]) => urls),
+  stripPresignFromProductImagesJsonb: jest.fn((urls: string[]) => urls),
 }));
 
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111';
@@ -66,5 +71,114 @@ describe('updateProductSkuStock', () => {
     await expect(
       updateProductSkuStock(VENDOR_ID, PRODUCT_ID, SKU_A, 3),
     ).rejects.toThrow('SKU not found or access denied');
+  });
+});
+
+describe('syncProductSkus', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('preserves existing SKU code on update when input.sku is empty', async () => {
+    (query as jest.Mock)
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: SKU_A,
+            sku: 'WP-EXISTING-SKU',
+            option_values: { size: 'M' },
+            price: 200,
+            compare_at_price: 250,
+            stock: 4,
+            images: [],
+            is_active: true,
+            sort_order: 0,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ id: SKU_A }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: SKU_A,
+            sku: 'WP-EXISTING-SKU',
+            option_values: { size: 'M' },
+            price: 200,
+            compare_at_price: 250,
+            stock: 6,
+            images: [],
+            is_active: true,
+            sort_order: 0,
+          },
+        ],
+      });
+
+    await syncProductSkus(
+      VENDOR_ID,
+      PRODUCT_ID,
+      [
+        {
+          id: SKU_A,
+          option_values: { size: 'M' },
+          stock: 6,
+          sku: null,
+        },
+      ],
+      { price: 200, compare_at_price: 250 },
+    );
+
+    expect(update).toHaveBeenCalledWith(
+      'product_skus',
+      { id: SKU_A },
+      expect.objectContaining({ sku: 'WP-EXISTING-SKU', stock: 6 }),
+    );
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('sets parent products.price from default SKU not minimum SKU', async () => {
+    const syncedRows = [
+      {
+        id: SKU_A,
+        sku: 'WP-A',
+        option_values: { size: 'L' },
+        price: 150,
+        compare_at_price: 200,
+        stock: 2,
+        images: ['https://example.com/l.jpg'],
+        is_active: true,
+        sort_order: 0,
+      },
+      {
+        id: SKU_B,
+        sku: 'WP-B',
+        option_values: { size: 'S' },
+        price: 100,
+        compare_at_price: 200,
+        stock: 3,
+        images: [],
+        is_active: true,
+        sort_order: 1,
+      },
+    ];
+
+    (query as jest.Mock)
+      .mockResolvedValueOnce({ rows: syncedRows })
+      .mockResolvedValueOnce({ rows: syncedRows });
+
+    await syncProductSkus(
+      VENDOR_ID,
+      PRODUCT_ID,
+      [
+        { id: SKU_A, option_values: { size: 'L' }, price: 150, stock: 2, images: ['https://example.com/l.jpg'] },
+        { id: SKU_B, option_values: { size: 'S' }, price: 100, stock: 3, images: [] },
+      ],
+      { price: 100, compare_at_price: 200 },
+    );
+
+    expect(update).toHaveBeenCalledWith(
+      'products',
+      { id: PRODUCT_ID },
+      expect.objectContaining({ price: 150, stock: 5 }),
+    );
   });
 });

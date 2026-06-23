@@ -33,8 +33,21 @@ import {
   parseProductImageList,
   validateEcommerceProductInput,
 } from '../utils/product-ecommerce-validation';
-import { upsertProductSkuRow } from '../utils/product-sku-service';
-import { normalizeOptionValues } from '../utils/product-sku-resolve';
+import { syncProductSkus } from '../utils/product-sku-service';
+import {
+  groupBulkRows,
+  buildSkuInputsFromGroup,
+  validateVariantGroup,
+  rowHasVariantAxes,
+  aggregateGroupStock,
+  pickGroupParentImages,
+  type BulkVariantRow,
+} from '../utils/bulk-product-variant-builder';
+import {
+  applyVendorProductExtrasToPayload,
+  vendorExtrasFromBulkRow,
+  getProductsColumnSet,
+} from '../utils/product-vendor-persist';
 
 interface BulkProductRow {
   name: string;
@@ -54,6 +67,26 @@ interface BulkProductRow {
   images?: string | null;
   is_active?: boolean;
   status?: string;
+  rowNum?: number;
+  size_variant?: string | null;
+  colour?: string | null;
+  variant_attr_1?: string | null;
+  variant_value_1?: string | null;
+  variant_attr_2?: string | null;
+  variant_value_2?: string | null;
+  is_default?: boolean | string | null;
+  variant_sp?: number | string | null;
+  variant_mrp?: number | string | null;
+  barcode?: string | null;
+  key_features?: string | null;
+  product_specifications?: string | null;
+  length_cm?: string | number | null;
+  breadth_cm?: string | number | null;
+  height_cm?: string | number | null;
+  pet_type?: string | null;
+  pet_type_other?: string | null;
+  manufacturing_details?: string | null;
+  delivery_regions?: string[] | string | null;
 }
 
 interface ValidationError {
@@ -177,23 +210,75 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             images: normalized.imageUrls.join(', '),
             is_active: false,
             status: 'pending',
+            rowNum,
+            size_variant: product.size_variant != null ? String(product.size_variant).trim() : null,
+            colour: product.colour != null ? String(product.colour).trim() : (product.color != null ? String(product.color).trim() : null),
+            variant_attr_1: product.variant_attr_1 != null ? String(product.variant_attr_1).trim() : null,
+            variant_value_1: product.variant_value_1 != null ? String(product.variant_value_1).trim() : null,
+            variant_attr_2: product.variant_attr_2 != null ? String(product.variant_attr_2).trim() : null,
+            variant_value_2: product.variant_value_2 != null ? String(product.variant_value_2).trim() : null,
+            is_default: product.is_default ?? null,
+            variant_sp: product.variant_sp ?? null,
+            variant_mrp: product.variant_mrp ?? null,
+            barcode: product.barcode?.trim() || null,
+            key_features: product.key_features?.trim() || null,
+            product_specifications: product.product_specifications?.trim() || null,
+            length_cm: product.length_cm ?? null,
+            breadth_cm: product.breadth_cm ?? null,
+            height_cm: product.height_cm ?? null,
+            pet_type: product.pet_type?.trim() || null,
+            pet_type_other: product.pet_type_other?.trim() || null,
+            manufacturing_details: product.manufacturing_details?.trim() || null,
+            delivery_regions: product.delivery_regions ?? null,
           });
         }
 
         errors.push(...rowErrors);
       });
 
+      const groups = groupBulkRows(validProducts as BulkVariantRow[]);
+      const invalidRowSet = new Set<number>();
+      for (const group of groups) {
+        const groupErrors = validateVariantGroup(group);
+        if (groupErrors.length > 0) {
+          for (const rowNum of group.rowNums) {
+            invalidRowSet.add(rowNum);
+          }
+          for (const ge of groupErrors) {
+            errors.push({
+              row: ge.row ?? group.rowNums[0] ?? 0,
+              field: ge.field,
+              message: ge.message,
+            });
+          }
+        }
+      }
+
+      for (const e of errors) {
+        if (e.row) invalidRowSet.add(e.row);
+      }
+
+      const fullyValidProducts = validProducts.filter(
+        (p) => !invalidRowSet.has(p.rowNum ?? 0),
+      );
+
       return c.json({
         success: true,
         validation: {
           totalRows: rowsToValidate.length,
-          validRows: validProducts.length,
+          validRows: fullyValidProducts.length,
           invalidRows: errors.length > 0 ? [...new Set(errors.map(e => e.row))].length : 0,
           errors: errors.slice(0, 100), // Limit errors returned
           hasMoreErrors: errors.length > 100,
         },
-        validProducts,
-        canProceed: errors.length === 0 && validProducts.length > 0,
+        validProducts: fullyValidProducts,
+        productGroups: groups.map((g) => ({
+          name: g.name,
+          category: g.category,
+          variantCount: g.variants.length,
+          rowNums: g.rowNums,
+        })),
+        canProceed: errors.length === 0 && fullyValidProducts.length > 0,
       });
     } catch (error: any) {
       console.error('Error validating bulk upload:', error);
@@ -234,113 +319,122 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
       };
 
       const categoryMap = await loadActiveEcommerceCategoryMap();
+      const productCols = await getProductsColumnSet();
 
-      // Process each product (skip rows without a Title)
+      const rowsWithNum: BulkVariantRow[] = [];
       let titledRowNum = 0;
       for (let i = 0; i < products.length; i++) {
         const product = products[i];
         if (!getBulkProductTitle(product)) continue;
         titledRowNum++;
-        const rowNum = titledRowNum;
+        rowsWithNum.push({ ...(product as BulkVariantRow), rowNum: product.rowNum ?? titledRowNum });
+      }
 
+      const groups = groupBulkRows(rowsWithNum);
+
+      for (const group of groups) {
+        const primaryRowNum = group.rowNums[0] ?? 1;
         try {
-          const categoryTrim = product.category ? String(product.category).trim() : '';
+          const groupErrors = validateVariantGroup(group);
+          if (groupErrors.length > 0) {
+            throw new Error(groupErrors[0].message);
+          }
+
+          const categoryTrim = group.category.trim();
           const resolvedCategory = resolveEcommerceCategoryByName(categoryMap, categoryTrim);
           if (!resolvedCategory) {
             throw new Error(
               categoryTrim
                 ? `Unknown or inactive category: "${categoryTrim}". Use an exact name from the template category list.`
-                : 'Category is required (must match an active catalog name).'
+                : 'Category is required (must match an active catalog name).',
             );
           }
 
-          // Match existing product by vendor + title (SKU is system-assigned; not in template).
-          const productTitle = product.name?.trim() || getBulkProductTitle(product);
+          const productTitle = group.name.trim();
           let existingProduct: { id: string; sku?: string } | null = null;
           if (productTitle) {
             const existing = await query(
               `SELECT id, sku FROM products
                WHERE vendor_id = $1 AND lower(trim(name)) = lower(trim($2))
                LIMIT 1`,
-              [vendorId, productTitle]
+              [vendorId, productTitle],
             );
             if (existing.rows.length > 0) {
               existingProduct = existing.rows[0] as { id: string; sku?: string };
             }
           }
 
-          const images = parseProductImageList(product.images ?? product.image_urls);
-
-          // Parse tags
-          let tags: string[] = [];
-          if (product.tags) {
-            if (typeof product.tags === 'string') {
-              tags = product.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
-            } else if (Array.isArray(product.tags)) {
-              tags = product.tags;
-            }
-          }
-
-          const stockValue =
-            Number(product.stock_quantity ?? product.stock ?? product.stockQuantity) || 0;
-
-          const pricingNorm = normalizeEcommerceProductPricing(product as Record<string, unknown>);
+          const firstRow = group.variants[0];
+          const pricingNorm = normalizeEcommerceProductPricing(firstRow as Record<string, unknown>);
           const parentPrice = pricingNorm.ok
             ? pricingNorm.pricing.sellingPrice
-            : Number(product.price);
+            : Number(group.parent.price);
           const parentMrp = pricingNorm.ok
             ? pricingNorm.pricing.mrp
-            : product.compare_at_price
-              ? Number(product.compare_at_price)
+            : group.parent.compare_at_price != null
+              ? Number(group.parent.compare_at_price)
               : null;
 
-          const option_values = normalizeOptionValues({
-            size: (product as Record<string, unknown>).size_variant,
-            color: (product as Record<string, unknown>).colour,
-          });
-          const hasVariantAxes = Object.keys(option_values).length > 0;
+          const hasVariants = group.variants.some((r) => rowHasVariantAxes(r));
+          const stockValue = hasVariants
+            ? aggregateGroupStock(group)
+            : Number(firstRow.stock_quantity) || 0;
+
+          const parentImages = hasVariants
+            ? pickGroupParentImages(group)
+            : parseProductImageList(firstRow.images ?? firstRow.image_urls);
 
           const productData: Record<string, unknown> = {
             vendor_id: vendorId,
-            name: product.name?.trim(),
-            description: product.description?.trim() || null,
+            name: productTitle,
+            description: group.parent.description || null,
             category_id: resolvedCategory.id,
             category: resolvedCategory.name,
             price: parentPrice,
             compare_at_price: parentMrp,
-            stock: hasVariantAxes ? 0 : stockValue,
-            hsn_code: product.hsn_code?.trim() || null,
-            gst_rate: product.gst_rate ? Number(product.gst_rate) : null,
-            weight: product.weight ? Number(product.weight) : null,
-            dimensions: product.dimensions?.trim() || null,
-            images,
-            tags: JSON.stringify(tags),
-            metadata: JSON.stringify({
-              material: product.material?.trim() || null,
-              brand: product.brand?.trim() || null,
-              barcode: product.barcode?.trim() || null,
-              bulk_uploaded: true,
-              upload_date: new Date().toISOString(),
-            }),
+            stock: stockValue,
+            hsn_code: group.parent.hsn_code || null,
+            gst_rate: group.parent.gst_rate != null ? Number(group.parent.gst_rate) : null,
+            images: parentImages,
             updated_at: new Date().toISOString(),
           };
+
+          applyVendorProductExtrasToPayload(
+            productData,
+            vendorExtrasFromBulkRow(group.parent as Record<string, unknown>),
+            productCols,
+          );
+
+          if (!productData.metadata) {
+            productData.metadata = { bulk_uploaded: true, upload_date: new Date().toISOString() };
+          } else {
+            productData.metadata = {
+              ...(productData.metadata as Record<string, unknown>),
+              bulk_uploaded: true,
+              upload_date: new Date().toISOString(),
+            };
+          }
+          if (typeof productData.metadata === 'object' && productData.metadata !== null) {
+            productData.metadata = JSON.stringify(productData.metadata);
+          }
+          if (productData.specifications && typeof productData.specifications === 'object') {
+            productData.specifications = JSON.stringify(productData.specifications);
+          }
 
           let savedProductId: string | null = existingProduct?.id ?? null;
 
           if (existingProduct) {
-            // Update existing product — preserve system SKU; backfill if legacy row has none
             const updatePayload = { ...productData };
             if (!existingProduct.sku?.trim()) {
-              updatePayload.sku = generateVendorProductSku(vendorId, String(rowNum));
+              updatePayload.sku = generateVendorProductSku(vendorId, String(primaryRowNum));
             }
             await update('products', { id: existingProduct.id }, updatePayload);
             savedProductId = existingProduct.id;
             results.updated++;
           } else {
-            // Create new product — not visible until admin approves
             const inserted = await insert('products', {
               ...productData,
-              sku: generateVendorProductSku(vendorId, String(rowNum)),
+              sku: generateVendorProductSku(vendorId, String(primaryRowNum)),
               is_active: false,
               status: 'pending',
               created_at: new Date().toISOString(),
@@ -349,30 +443,24 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             results.created++;
           }
 
-          if (savedProductId && hasVariantAxes) {
-            await upsertProductSkuRow(
-              vendorId,
-              savedProductId,
-              {
-                option_values,
-                price: parentPrice,
-                compare_at_price: parentMrp,
-                stock: stockValue,
-                images,
-                barcode: (product as Record<string, unknown>).barcode
-                  ? String((product as Record<string, unknown>).barcode).trim()
-                  : null,
-                sort_order: rowNum,
-              },
-              { price: parentPrice, compare_at_price: parentMrp },
-            );
+          if (savedProductId && hasVariants) {
+            const skuInputs = buildSkuInputsFromGroup(group, {
+              price: parentPrice,
+              compare_at_price: parentMrp,
+            });
+            await syncProductSkus(vendorId, savedProductId, skuInputs, {
+              price: parentPrice,
+              compare_at_price: parentMrp,
+            });
           }
         } catch (error: any) {
-          results.failed++;
-          results.errors.push({
-            row: rowNum,
-            error: error.message || 'Unknown error',
-          });
+          results.failed += group.rowNums.length;
+          for (const rowNum of group.rowNums) {
+            results.errors.push({
+              row: rowNum,
+              error: error.message || 'Unknown error',
+            });
+          }
         }
       }
 
@@ -488,6 +576,17 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'weightkg': 'weight',
         'dimensions': 'dimensions',
         'size': 'dimensions',
+        'sizevariant': 'size_variant',
+        'colour': 'colour',
+        'color': 'colour',
+        'variantattribute1': 'variant_attr_1',
+        'variantvalue1': 'variant_value_1',
+        'variantattribute2': 'variant_attr_2',
+        'variantvalue2': 'variant_value_2',
+        'isdefault': 'is_default',
+        'default': 'is_default',
+        'variantsp': 'variant_sp',
+        'variantmrp': 'variant_mrp',
         'material': 'material',
         'materials': 'material',
         'ingredients': 'material',
