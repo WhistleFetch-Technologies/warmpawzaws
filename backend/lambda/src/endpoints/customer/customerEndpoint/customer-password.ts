@@ -294,9 +294,28 @@ class ChangePasswordHandler extends BaseHandler {
 
       await updateCustomerPasswordHashWithAuthVersionBump(newPasswordHash, customer.id);
 
+      let freshToken: Record<string, unknown> | null = null;
+      try {
+        const { issueAuthTokensAfterOtp } = await import('../../../lib/services/auth/vendor-otp-success-payload');
+        const tokens = await issueAuthTokensAfterOtp({
+          userId: customer.id,
+          phone: String(customer.phone || ''),
+          role: 'customer',
+        });
+        freshToken = {
+          access_token: tokens.accessToken,
+          id_token: tokens.idToken,
+          refresh_token: tokens.refreshToken,
+          expires_in: tokens.expiresIn,
+        };
+      } catch {
+        // fresh token is optional; password was still saved
+      }
+
       return this.success({
         message: 'Password changed successfully',
         customerId: customer.id,
+        ...(freshToken ? { token: freshToken } : {}),
       });
     } catch (error: any) {
       console.error('Error changing password:', error);
@@ -388,9 +407,31 @@ export async function handleCustomerSetPassword(c: Context) {
   const hash = await hashCustomerPasswordBcrypt(password);
   await updateCustomerPasswordHashWithAuthVersionBump(hash, customerId);
 
+  const phoneRow = await query(
+    `SELECT phone FROM customers WHERE id = $1::uuid LIMIT 1`,
+    [customerId]
+  );
+  const customerPhone = String((phoneRow as any).rows?.[0]?.phone || '');
+  let freshToken: Record<string, unknown> | null = null;
+  try {
+    const { issueAuthTokensAfterOtp } = await import('../../../lib/services/auth/vendor-otp-success-payload');
+    const tokens = await issueAuthTokensAfterOtp({
+      userId: customerId,
+      phone: customerPhone,
+      role: 'customer',
+    });
+    freshToken = {
+      access_token: tokens.accessToken,
+      id_token: tokens.idToken,
+      refresh_token: tokens.refreshToken,
+      expires_in: tokens.expiresIn,
+    };
+  } catch {
+    // fresh token is optional; password was still saved
+  }
   return c.json({
     success: true,
-    data: { ok: true },
+    data: { ok: true, ...(freshToken ? { token: freshToken } : {}) },
     meta: { timestamp: new Date().toISOString(), version: 'v1' },
   });
 }

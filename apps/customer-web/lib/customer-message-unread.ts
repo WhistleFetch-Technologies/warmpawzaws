@@ -76,7 +76,6 @@ export function supportTicketDetailIndicatesUnreadForCustomer(
 ): boolean {
   const tick = detail.ticket;
   if (!tick) return false;
-
   type Turn = { t: number; customer: boolean };
   const turns: Turn[] = [];
   const initial = tick.message != null ? String(tick.message).trim() : '';
@@ -99,8 +98,16 @@ export function supportTicketDetailIndicatesUnreadForCustomer(
   turns.sort((a, b) => a.t - b.t);
   const last = turns[turns.length - 1]!;
   if (last.customer) return false;
-
   const threadTipMs = getSupportThreadMaxTimestampMs(detail);
+  // Primary: server-side timestamp — reliable on all devices including iOS
+  const serverViewedAt = (tick as Record<string, unknown>).customer_viewed_at;
+  if (serverViewedAt) {
+    const serverViewedMs = new Date(String(serverViewedAt)).getTime();
+    if (Number.isFinite(serverViewedMs) && serverViewedMs > 0 && serverViewedMs >= threadTipMs) {
+      return false;
+    }
+  }
+  // Fallback: localStorage — for immediate UI response before server round-trip
   const seenUpTo = getSupportSeenUpToMs(ticketId);
   if (seenUpTo > 0 && threadTipMs > 0 && seenUpTo >= threadTipMs) {
     return false;
