@@ -135,6 +135,9 @@ export async function syncProductSkus(
   parentDefaults: { price: number; compare_at_price?: number | null },
 ): Promise<ProductSkuRow[]> {
   const existing = await loadProductSkus(productId);
+  if (skuInputs.length === 0 && existing.length === 0) {
+    return [];
+  }
   const existingIds = new Set(existing.map((s) => String(s.id)));
   const keptIds = new Set<string>();
 

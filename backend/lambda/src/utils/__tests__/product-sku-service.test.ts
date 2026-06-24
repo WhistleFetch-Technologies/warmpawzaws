@@ -1,4 +1,4 @@
-import { query, update, insert } from '../../database/rds-connection';
+import { query, update, insert, deleteRows } from '../../database/rds-connection';
 import { updateProductSkuStock, syncProductSkus } from '../product-sku-service';
 
 jest.mock('../../database/rds-connection', () => ({
@@ -180,5 +180,19 @@ describe('syncProductSkus', () => {
       { id: PRODUCT_ID },
       expect.objectContaining({ price: 150, stock: 5 }),
     );
+  });
+
+  it('no-ops when skuInputs empty and no existing SKUs (does not zero parent stock)', async () => {
+    (query as jest.Mock).mockResolvedValueOnce({ rows: [] });
+
+    const result = await syncProductSkus(VENDOR_ID, PRODUCT_ID, [], {
+      price: 450,
+      compare_at_price: 500,
+    });
+
+    expect(result).toEqual([]);
+    expect(update).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(deleteRows).not.toHaveBeenCalled();
   });
 });
