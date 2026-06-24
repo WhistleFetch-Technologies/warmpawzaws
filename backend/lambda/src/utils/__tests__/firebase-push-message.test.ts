@@ -12,7 +12,7 @@ describe('buildUnifiedPushMessage', () => {
     expect(android?.notification?.channelId).toBe('warmpawz_push_alerts');
   });
 
-  test('includes APNs payload with custom data for iOS deep links (same dispatch path)', () => {
+  test('includes APNs payload with alert + custom data for iOS tray + deep links', () => {
     const message = buildUnifiedPushMessage(
       {
         title: 'Booking',
@@ -23,8 +23,15 @@ describe('buildUnifiedPushMessage', () => {
       'ios-apns-token-via-fcm'
     );
     const apns = message.apns as {
-      payload?: { aps?: { sound?: string }; deep_link?: string; booking_id?: string };
+      headers?: { 'apns-push-type'?: string };
+      payload?: {
+        aps?: { sound?: string; alert?: { title?: string; body?: string } };
+        deep_link?: string;
+        booking_id?: string;
+      };
     };
+    expect(apns?.headers?.['apns-push-type']).toBe('alert');
+    expect(apns?.payload?.aps?.alert).toEqual({ title: 'Booking', body: 'Confirmed' });
     expect(apns?.payload?.aps?.sound).toBe('default');
     expect(apns?.payload?.deep_link).toBe('/bookings');
     expect(apns?.payload?.booking_id).toBe('abc-123');
