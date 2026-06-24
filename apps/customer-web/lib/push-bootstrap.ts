@@ -125,7 +125,13 @@ function getOrCreateDeviceId(): string {
 
 function getCachedFcmToken(): string | null {
   const t = localStorage.getItem(PUSH_TOKEN_CACHE_KEY);
-  return t && t.length >= 10 ? t : null;
+  if (!t || t.length < 10) return null;
+  if (isCapacitorIos() && isLikelyApnsDeviceToken(t)) {
+    localStorage.removeItem(PUSH_TOKEN_CACHE_KEY);
+    console.warn('[push-bootstrap] cleared stale APNs hex token from cache (iOS needs FCM token)');
+    return null;
+  }
+  return t;
 }
 
 function capacitorPlatform(): string {
@@ -134,6 +140,162 @@ function capacitorPlatform(): string {
 
 function isCapacitorIos(): boolean {
   return isCapacitor() && capacitorPlatform() === 'ios';
+}
+
+/** Capacitor PushNotifications on iOS returns raw APNs hex — invalid for Firebase Admin multicast. */
+function isLikelyApnsDeviceToken(token: string): boolean {
+  return /^[0-9a-fA-F]{64}$/.test(token.trim());
+}
+
+function isLikelyFcmRegistrationToken(token: string): boolean {
+  const t = token.trim();
+  return t.length >= 20 && !isLikelyApnsDeviceToken(t);
+}
+
+function extractFirebaseNotificationData(event: unknown): Record<string, string> {
+  const raw =
+    (event as { notification?: { data?: Record<string, unknown> } })?.notification?.data ?? {};
+  const data: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (value != null) data[key] = String(value);
+  }
+  return data;
+}
+
+let firebaseIosPipelineAttached = false;
+
+async function ensureFirebaseMessagingIosPipeline(): Promise<void> {
+  if (firebaseIosPipelineAttached) return;
+  firebaseIosPipelineAttached = true;
+
+  const { FirebaseMessaging } = await import('@capacitor-firebase/messaging');
+
+  await FirebaseMessaging.addListener('tokenReceived', (event) => {
+    const value = (event as { token?: string }).token?.trim() ?? '';
+    if (!isLikelyFcmRegistrationToken(value)) {
+      console.warn('[push-bootstrap] tokenReceived ignored (not FCM shape)', { len: value.length });
+      return;
+    }
+    localStorage.setItem(PUSH_TOKEN_CACHE_KEY, value);
+    console.log('[push-bootstrap] Firebase iOS FCM tokenReceived', {
+      tokenPrefix: value.slice(0, 20) + '...',
+      tokenLength: value.length,
+    });
+    const ctx = capacitorRegistrationContext;
+    if (!ctx?.userId?.trim()) {
+      console.warn('[push-bootstrap] FCM token before userId — cached for next bootstrap');
+      return;
+    }
+    void postRegisterDeviceToBackend(ctx, value, 'registration-callback');
+  });
+
+  await FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
+    console.log('[push-bootstrap] Firebase notificationActionPerformed');
+    try {
+      navigateFromPushPayload(extractFirebaseNotificationData(event));
+    } catch (err) {
+      console.warn('[push-bootstrap] Firebase tap navigation failed:', err);
+      window.location.assign('/');
+    }
+  });
+
+  await FirebaseMessaging.addListener('notificationReceived', (event) => {
+    console.log('[push-bootstrap] Firebase notificationReceived (iOS foreground)');
+    void showIosForegroundPushToast(
+      (event as { notification?: unknown }).notification
+    );
+  });
+
+  console.log('[push-bootstrap] Firebase Messaging iOS listeners attached');
+}
+
+async function resolveFirebaseIosPermission(
+  options: CapacitorTokenOptions
+): Promise<PushPermissionReceive> {
+  const { FirebaseMessaging } = await import('@capacitor-firebase/messaging');
+  let status = await FirebaseMessaging.checkPermissions().catch(() => ({ receive: 'unknown' }));
+  let receive = String(status.receive || 'unknown') as PushPermissionReceive;
+
+  const shouldRequest =
+    options.forceRequest ||
+    receive === 'prompt' ||
+    receive === 'prompt-with-rationale' ||
+    (options.requestIfNeeded !== false && receive !== 'granted' && receive !== 'denied');
+
+  if (shouldRequest && receive !== 'granted') {
+    status = await FirebaseMessaging.requestPermissions();
+    receive = String(status.receive || 'unknown') as PushPermissionReceive;
+    console.log('[push-bootstrap] Firebase iOS permission after request:', receive);
+  }
+
+  return receive;
+}
+
+async function triggerFirebaseMessagingIosRegister(reason: string): Promise<void> {
+  if (!isCapacitorIos()) return;
+  try {
+    const { FirebaseMessaging } = await import('@capacitor-firebase/messaging');
+    const permission = await resolveFirebaseIosPermission({ requestIfNeeded: true });
+    if (!permissionAllowsRegister(permission)) {
+      console.warn('[push-bootstrap] Firebase iOS permission denied:', permission);
+      return;
+    }
+    const { token } = await FirebaseMessaging.getToken();
+    if (!token || !isLikelyFcmRegistrationToken(token)) {
+      console.warn('[push-bootstrap] Firebase getToken invalid for FCM', {
+        reason,
+        len: token?.length ?? 0,
+      });
+      return;
+    }
+    localStorage.setItem(PUSH_TOKEN_CACHE_KEY, token);
+    console.log('[push-bootstrap] Firebase getToken ok', {
+      reason,
+      tokenPrefix: token.slice(0, 20) + '...',
+      tokenLength: token.length,
+    });
+    const ctx = capacitorRegistrationContext;
+    if (ctx?.userId?.trim()) {
+      await postRegisterDeviceToBackend(ctx, token, 'registration-callback');
+    }
+  } catch (err) {
+    console.warn('[push-bootstrap] Firebase iOS register failed:', err);
+  }
+}
+
+async function getTokenFromFirebaseMessagingIos(
+  options: CapacitorTokenOptions = {}
+): Promise<{ token: string | null; permission: PushPermissionReceive }> {
+  try {
+    const permission = await resolveFirebaseIosPermission(options);
+    if (!permissionAllowsRegister(permission)) {
+      return { token: null, permission };
+    }
+
+    const cached = getCachedFcmToken();
+    if (cached && isLikelyFcmRegistrationToken(cached)) {
+      console.log('[push-bootstrap] using cached Firebase iOS FCM token');
+      return { token: cached, permission: permission === 'unknown' ? 'granted' : permission };
+    }
+
+    const { FirebaseMessaging } = await import('@capacitor-firebase/messaging');
+    const { token } = await FirebaseMessaging.getToken();
+    if (!token || !isLikelyFcmRegistrationToken(token)) {
+      console.warn('[push-bootstrap] Firebase getToken returned non-FCM token', {
+        len: token?.length ?? 0,
+      });
+      return { token: null, permission };
+    }
+    localStorage.setItem(PUSH_TOKEN_CACHE_KEY, token);
+    console.log('[push-bootstrap] Firebase iOS getToken', {
+      tokenPrefix: token.slice(0, 20) + '...',
+      tokenLength: token.length,
+    });
+    return { token, permission: permission === 'unknown' ? 'granted' : permission };
+  } catch (err) {
+    console.warn('[push-bootstrap] Firebase iOS token acquisition failed:', err);
+    return { token: null, permission: 'unknown' };
+  }
 }
 
 function extractPushNotificationContent(notification: unknown): { title: string; body: string } {
@@ -240,6 +402,8 @@ async function postRegisterDeviceToBackend(
     apiBaseUrl,
     deviceId: deviceId.slice(0, 8) + '...',
     userId: opts.userId.slice(0, 8) + '...',
+    tokenLength: fcmToken.length,
+    tokenLooksFcm: isLikelyFcmRegistrationToken(fcmToken),
   });
   return true;
 }
@@ -273,6 +437,12 @@ export async function ensureCapacitorPushRegistrationPipeline(
   }
 
   capacitorRegistrationPipeline = (async () => {
+    if (isCapacitorIos()) {
+      await ensureFirebaseMessagingIosPipeline();
+      await triggerFirebaseMessagingIosRegister('pipeline-init');
+      return;
+    }
+
     const mod = await importCapacitorPushModule();
     if (!mod?.PushNotifications) return;
     const { PushNotifications } = mod;
@@ -280,6 +450,10 @@ export async function ensureCapacitorPushRegistrationPipeline(
     await PushNotifications.addListener('registration', (token) => {
       const value = (token as { value?: string })?.value;
       if (!value) return;
+      if (isLikelyApnsDeviceToken(value)) {
+        console.warn('[push-bootstrap] ignoring APNs hex from PushNotifications (Android-only path)');
+        return;
+      }
       localStorage.setItem(PUSH_TOKEN_CACHE_KEY, value);
       console.log('[push-bootstrap] FCM registration event', {
         tokenPrefix: value.slice(0, 12) + '...',
@@ -482,6 +656,10 @@ async function ensureAndroidNotificationChannel(): Promise<void> {
 
 async function triggerCapacitorPushRegister(reason: string): Promise<void> {
   if (!isCapacitor()) return;
+  if (isCapacitorIos()) {
+    await triggerFirebaseMessagingIosRegister(reason);
+    return;
+  }
   if (capacitorNativeRegisterInFlight) {
     await capacitorNativeRegisterInFlight.catch(() => undefined);
     return;
@@ -510,6 +688,20 @@ async function triggerCapacitorPushRegister(reason: string): Promise<void> {
 export async function getCapacitorPushPermissionStatus(): Promise<PushPermissionReceive> {
   if (!isCapacitor()) return 'unknown';
   try {
+    if (isCapacitorIos()) {
+      const { FirebaseMessaging } = await import('@capacitor-firebase/messaging');
+      const status = await FirebaseMessaging.checkPermissions();
+      const receive = String(status.receive || 'unknown');
+      if (
+        receive === 'granted' ||
+        receive === 'denied' ||
+        receive === 'prompt' ||
+        receive === 'prompt-with-rationale'
+      ) {
+        return receive;
+      }
+      return 'unknown';
+    }
     const mod = await importCapacitorPushModule();
     if (!mod?.PushNotifications?.checkPermissions) return 'unknown';
     const status = await mod.PushNotifications.checkPermissions();
@@ -581,6 +773,9 @@ async function resolveCapacitorPermission(
 async function getTokenFromCapacitor(
   options: CapacitorTokenOptions = {}
 ): Promise<{ token: string | null; permission: PushPermissionReceive }> {
+  if (isCapacitorIos()) {
+    return getTokenFromFirebaseMessagingIos(options);
+  }
   try {
     const mod = await importCapacitorPushModule();
     if (!mod?.PushNotifications) return { token: null, permission: 'unknown' };

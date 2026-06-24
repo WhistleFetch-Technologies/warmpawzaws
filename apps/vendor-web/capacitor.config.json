@@ -9,9 +9,24 @@
   "android": {
     "allowMixedContent": false
   },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#ffffff"
+  },
   "plugins": {
-    "CapacitorHttp": {
-      "enabled": true
+    "FirebaseMessaging": {
+      "presentationOptions": ["alert", "badge", "sound"]
+    }
+  },
+  "experimental": {
+    "ios": {
+      "spm": {
+        "packageOptions": {
+          "@capacitor-firebase/messaging": {
+            "symlink": true
+          }
+        }
+      }
     }
   }
 }

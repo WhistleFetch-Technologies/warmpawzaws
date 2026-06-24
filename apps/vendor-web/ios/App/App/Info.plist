@@ -2,10 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CAPACITOR_DEBUG</key>
+	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Warmpawz Customer</string>
+	<string>Warmpawz Service Provider</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -20,18 +22,6 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>upi</string>
-		<string>tez</string>
-		<string>gpay</string>
-		<string>phonepe</string>
-		<string>paytmmp</string>
-		<string>bhim</string>
-		<string>credpay</string>
-		<string>amazonpay</string>
-		<string>whatsapp</string>
-	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
@@ -40,6 +30,8 @@
 	<string>Location access is required to show nearby services and improve service discovery.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone access is required for teleconsultation and voice communication.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Photo library access is required to upload profile and service images.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
