@@ -251,18 +251,23 @@ function buildAndroidPushConfig() {
   };
 }
 
-function buildApnsPushConfig(data?: Record<string, string>) {
+function buildApnsPushConfig(payload: PushNotificationPayload) {
   return {
     headers: {
       'apns-priority': '10',
+      'apns-push-type': 'alert',
     },
     payload: {
       aps: {
+        alert: {
+          title: payload.title,
+          body: payload.body,
+        },
         sound: 'default',
         badge: 1,
         'interruption-level': 'active',
       },
-      ...(data || {}),
+      ...(payload.data || {}),
     },
   };
 }
@@ -276,7 +281,7 @@ function buildFcmMessage(payload: PushNotificationPayload, target: 'token' | 'to
     },
     data: payload.data,
     android: buildAndroidPushConfig(),
-    apns: buildApnsPushConfig(payload.data),
+    apns: buildApnsPushConfig(payload),
   };
 
   if (target === 'token') {
