@@ -984,6 +984,9 @@ export const supportCrmApi = {
   
   getTicket: (ticketId: string) => apiClient.get(`/support/tickets/${ticketId}`, supportTicketReadRetry),
   
+  markCustomerRead: (ticketId: string) =>
+    apiClient.post(`/support/tickets/${ticketId}/mark-customer-read`, {}),
+
   respondToTicket: (ticketId: string, data: {
     message: string;
     responderId?: string;

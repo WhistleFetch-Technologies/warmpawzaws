@@ -443,6 +443,29 @@ export function registerSupportCrmEndpoints(app: Hono) {
   });
 
   /**
+   * POST /support/tickets/:ticketId/mark-customer-read
+   * Stamps customer_viewed_at when the customer opens the ticket thread.
+   */
+  app.post("/support/tickets/:ticketId/mark-customer-read", async (c) => {
+    try {
+      const { ticketId } = c.req.param();
+      if (!isValidUUID(ticketId)) {
+        return c.json({ success: false, error: 'Invalid ticket id' }, 400);
+      }
+      await query(
+        `UPDATE public.support_tickets
+         SET customer_viewed_at = NOW()
+         WHERE id = $1::uuid`,
+        [ticketId]
+      ).catch(() => {});
+      return c.json({ success: true });
+    } catch (error: any) {
+      console.error('Error marking support ticket read:', error);
+      return c.json({ success: true });
+    }
+  });
+
+  /**
    * POST /support/tickets/:ticketId/respond
    * Add response to support ticket (agent or customer)
    */

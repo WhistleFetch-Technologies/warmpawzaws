@@ -602,7 +602,7 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
               <ProfileQuickActions
                 onEditProfile={() => enterEditMode()}
                 onChangePassword={() =>
-                  router.push('/auth/set-password?next=/profile')
+                  router.push('/auth/set-password?next=/profile&change=1')
                 }
                 onManageAddress={() => enterEditMode(true)}
                 onFavouritePets={() => router.push('/wishlist')}
