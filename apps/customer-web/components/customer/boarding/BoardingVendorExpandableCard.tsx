@@ -22,6 +22,7 @@ import { minPriceForVendor, priceForCard } from '@/lib/boarding-vendor-booking-u
 import { formatDistanceDisplay } from '@/lib/distance-display';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
 
 export interface BoardingVendorExpandableCardProps {
   v: BoardingListVendor;
