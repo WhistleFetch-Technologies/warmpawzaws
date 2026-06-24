@@ -1,11 +1,12 @@
 import {
+  attemptAutoStoreRedirect,
+  buildAndroidPlayStoreIntentUrl,
   buildReferralInviteUrl,
   detectMobileDeviceKind,
   getCustomerAndroidStoreUrl,
   getCustomerIosStoreUrl,
   getReferralInviteBaseUrl,
   normalizeReferralCode,
-  redirectToStoreByUserAgent,
   resolveStoreRedirectUrl,
 } from '../referral-share';
 
@@ -38,22 +39,56 @@ describe('referral-share', () => {
     expect(getCustomerIosStoreUrl()).toContain('id6761255735');
   });
 
-  it('redirectToStoreByUserAgent replaces location and schedules fallback', () => {
+  it('builds Android Play Store intent with market scheme and https fallback', () => {
+    const intent = buildAndroidPlayStoreIntentUrl();
+    expect(intent).toContain('intent://details?id=com.warmpawz.customer');
+    expect(intent).toContain('scheme=market');
+    expect(intent).toContain(encodeURIComponent(getCustomerAndroidStoreUrl()));
+  });
+
+  it('attemptAutoStoreRedirect uses Android intent on mobile Android', () => {
     const replace = jest.fn();
-    const setTimeoutFn = jest.fn((_fn: () => void, _ms: number) => 99);
+    let href = '';
     Object.defineProperty(window, 'location', {
       configurable: true,
-      value: { replace },
+      value: {
+        get href() {
+          return href;
+        },
+        set href(v: string) {
+          href = v;
+        },
+        replace,
+      },
     });
     Object.defineProperty(window, 'navigator', {
       configurable: true,
       value: { userAgent: 'Android' },
     });
-    jest.spyOn(global, 'setTimeout').mockImplementation(setTimeoutFn as typeof setTimeout);
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
 
-    redirectToStoreByUserAgent();
+    attemptAutoStoreRedirect();
 
-    expect(replace).toHaveBeenCalledWith(getCustomerAndroidStoreUrl());
-    expect(setTimeoutFn).toHaveBeenCalledWith(expect.any(Function), 3000);
+    expect(href).toContain('intent://details?id=com.warmpawz.customer');
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('attemptAutoStoreRedirect sends desktop users to customer home', () => {
+    const replace = jest.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { replace, href: '' },
+    });
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: { userAgent: 'Windows NT 10.0' },
+    });
+
+    attemptAutoStoreRedirect();
+
+    expect(replace).toHaveBeenCalledWith(getReferralInviteBaseUrl());
   });
 });

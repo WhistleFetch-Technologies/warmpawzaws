@@ -4,7 +4,10 @@ const DEFAULT_ANDROID_STORE =
   'https://play.google.com/store/apps/details?id=com.warmpawz.customer&pcampaignid=web_share';
 const DEFAULT_IOS_STORE = 'https://apps.apple.com/in/app/warmpawz/id6761255735';
 
-const REDIRECT_FALLBACK_MS = 3000;
+/** Play Store listing package (matches DEFAULT_ANDROID_STORE). */
+export const ANDROID_PLAY_STORE_PACKAGE = 'com.warmpawz.customer';
+
+const MOBILE_STORE_REDIRECT_DELAY_MS = 1500;
 
 export function getReferralInviteBaseUrl(): string {
   const override = process.env.NEXT_PUBLIC_CUSTOMER_WEB_ORIGIN?.trim();
@@ -74,18 +77,50 @@ export function persistPendingReferralCode(code: string): string {
 }
 
 /**
- * UA-based redirect to Play/App Store or customer home (desktop).
- * Referral-agnostic — call persistPendingReferralCode() first when needed.
+ * Android intent URL that opens Play Store (or https fallback).
+ * Works better than bare https in WhatsApp / in-app browsers (#374 pattern).
  */
-export function redirectToStoreByUserAgent(): void {
+export function buildAndroidPlayStoreIntentUrl(): string {
+  const fallback = encodeURIComponent(getCustomerAndroidStoreUrl());
+  return (
+    `intent://details?id=${ANDROID_PLAY_STORE_PACKAGE}` +
+    `#Intent;scheme=market;package=com.android.vending;` +
+    `S.browser_fallback_url=${fallback};end`
+  );
+}
+
+/**
+ * Auto-redirect to store (mobile) or customer home (desktop).
+ * WhatsApp often blocks programmatic redirects — pair with a visible <a href={storeUrl}>.
+ */
+export function attemptAutoStoreRedirect(): void {
   if (typeof window === 'undefined') return;
 
-  const targetUrl = resolveStoreRedirectUrl();
-  window.location.replace(targetUrl);
+  const kind = detectMobileDeviceKind();
 
-  window.setTimeout(() => {
+  if (kind === 'desktop') {
     window.location.replace(getReferralInviteBaseUrl());
-  }, REDIRECT_FALLBACK_MS);
+    return;
+  }
+
+  if (kind === 'android') {
+    window.location.href = buildAndroidPlayStoreIntentUrl();
+    window.setTimeout(() => {
+      if (document.visibilityState !== 'hidden') {
+        window.location.replace(getCustomerAndroidStoreUrl());
+      }
+    }, MOBILE_STORE_REDIRECT_DELAY_MS);
+    return;
+  }
+
+  if (kind === 'ios') {
+    window.location.replace(getCustomerIosStoreUrl());
+  }
+}
+
+/** @deprecated Use attemptAutoStoreRedirect — kept for callers migrating from earlier draft. */
+export function redirectToStoreByUserAgent(): void {
+  attemptAutoStoreRedirect();
 }
 
 export function isCapacitorNativeApp(): boolean {
