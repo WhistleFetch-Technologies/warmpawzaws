@@ -1,5 +1,11 @@
 const PROD_CUSTOMER_ORIGIN = 'https://customer.warmpawz.com';
 
+const DEFAULT_ANDROID_STORE =
+  'https://play.google.com/store/apps/details?id=com.warmpawz.customer&pcampaignid=web_share';
+const DEFAULT_IOS_STORE = 'https://apps.apple.com/in/app/warmpawz/id6761255735';
+
+const REDIRECT_FALLBACK_MS = 3000;
+
 export function getReferralInviteBaseUrl(): string {
   const override = process.env.NEXT_PUBLIC_CUSTOMER_WEB_ORIGIN?.trim();
   if (override) return override.replace(/\/$/, '');
@@ -12,13 +18,17 @@ export function getReferralInviteBaseUrl(): string {
   return PROD_CUSTOMER_ORIGIN;
 }
 
+export function normalizeReferralCode(code: string): string {
+  return code.trim().toUpperCase();
+}
+
 export function buildReferralInviteUrl(code: string): string {
-  const normalized = code.trim().toUpperCase();
-  return `${getReferralInviteBaseUrl()}/invite/${encodeURIComponent(normalized)}`;
+  const normalized = normalizeReferralCode(code);
+  return `${getReferralInviteBaseUrl()}/r/${encodeURIComponent(normalized)}`;
 }
 
 export function buildReferralShareMessage(code: string): { title: string; text: string; url: string } {
-  const normalized = code.trim().toUpperCase();
+  const normalized = normalizeReferralCode(code);
   const url = buildReferralInviteUrl(normalized);
   const text = `Join Warmpawz for amazing pet care! Use my referral code ${normalized} when you sign up.`;
   return { title: 'Join Warmpawz', text, url };
@@ -28,10 +38,6 @@ export function buildReferralShareBody(code: string): string {
   const { text, url } = buildReferralShareMessage(code);
   return `${text}\n${url}`;
 }
-
-const DEFAULT_ANDROID_STORE =
-  'https://play.google.com/store/apps/details?id=com.warmpawz.app';
-const DEFAULT_IOS_STORE = 'https://apps.apple.com/app/warmpawz';
 
 export function getCustomerAndroidStoreUrl(): string {
   return process.env.NEXT_PUBLIC_CUSTOMER_ANDROID_STORE_URL?.trim() || DEFAULT_ANDROID_STORE;
@@ -43,23 +49,43 @@ export function getCustomerIosStoreUrl(): string {
 
 export type MobileDeviceKind = 'ios' | 'android' | 'desktop';
 
-export function detectMobileDeviceKind(): MobileDeviceKind {
-  if (typeof navigator === 'undefined') return 'desktop';
-  const ua = navigator.userAgent;
+export function detectMobileDeviceKind(userAgent?: string): MobileDeviceKind {
+  const ua = userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : '');
   if (/iPad|iPhone|iPod/i.test(ua)) return 'ios';
   if (/Android/i.test(ua)) return 'android';
   return 'desktop';
 }
 
-/** Android intent URL: open installed app or fall back to Play Store. */
-export function buildAndroidInviteIntentUrl(code: string): string {
-  const normalized = code.trim().toUpperCase();
-  const fallback = encodeURIComponent(getCustomerAndroidStoreUrl());
-  return (
-    `intent://customer.warmpawz.com/invite/${normalized}` +
-    `#Intent;scheme=https;package=com.warmpawz.app;` +
-    `S.browser_fallback_url=${fallback};end`
-  );
+/** Resolve store or desktop home URL from user agent (no side effects). */
+export function resolveStoreRedirectUrl(userAgent?: string): string {
+  const kind = detectMobileDeviceKind(userAgent);
+  if (kind === 'android') return getCustomerAndroidStoreUrl();
+  if (kind === 'ios') return getCustomerIosStoreUrl();
+  return getReferralInviteBaseUrl();
+}
+
+/** Persist normalized referral code for future signup auto-suggest. Returns normalized code. */
+export function persistPendingReferralCode(code: string): string {
+  const normalized = normalizeReferralCode(code);
+  if (typeof window !== 'undefined' && normalized) {
+    localStorage.setItem('pendingReferralCode', normalized);
+  }
+  return normalized;
+}
+
+/**
+ * UA-based redirect to Play/App Store or customer home (desktop).
+ * Referral-agnostic — call persistPendingReferralCode() first when needed.
+ */
+export function redirectToStoreByUserAgent(): void {
+  if (typeof window === 'undefined') return;
+
+  const targetUrl = resolveStoreRedirectUrl();
+  window.location.replace(targetUrl);
+
+  window.setTimeout(() => {
+    window.location.replace(getReferralInviteBaseUrl());
+  }, REDIRECT_FALLBACK_MS);
 }
 
 export function isCapacitorNativeApp(): boolean {

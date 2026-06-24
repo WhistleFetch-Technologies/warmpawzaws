@@ -8,29 +8,31 @@ import {
   redirectToStoreByUserAgent,
 } from '@/lib/referral-share';
 
-function parseInviteCode(codeProp?: string): string {
+function parseCodeFromPath(pathPattern: RegExp, codeProp?: string): string {
   const fromProp = normalizeReferralCode(codeProp || '');
   if (fromProp && fromProp !== 'PLACEHOLDER') return fromProp;
   if (typeof window === 'undefined') return '';
-  const match = window.location.pathname.match(/\/invite\/([^/?]+)/);
+  const match = window.location.pathname.match(pathPattern);
   const fromPath = normalizeReferralCode(match?.[1] || '');
   if (!fromPath || fromPath === 'PLACEHOLDER') return '';
   return fromPath;
 }
 
-interface InviteLandingClientProps {
+interface ReferralRedirectClientProps {
   code?: string;
 }
 
-/** Legacy /invite/CODE links — same store redirect as /r/CODE. */
-export function InviteLandingClient({ code: codeProp }: InviteLandingClientProps) {
+export function ReferralRedirectClient({ code: codeProp }: ReferralRedirectClientProps) {
   useEffect(() => {
     if (isCapacitorNativeApp()) return;
 
-    const code = parseInviteCode(codeProp);
-    if (code) {
-      persistPendingReferralCode(code);
+    const code = parseCodeFromPath(/\/r\/([^/?]+)/, codeProp);
+    if (!code) {
+      redirectToStoreByUserAgent();
+      return;
     }
+
+    persistPendingReferralCode(code);
     redirectToStoreByUserAgent();
   }, [codeProp]);
 
