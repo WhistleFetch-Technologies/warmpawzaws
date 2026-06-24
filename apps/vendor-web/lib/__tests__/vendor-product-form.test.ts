@@ -8,6 +8,7 @@ import {
   presetVariantAxes,
   deliveryRegionsFromProduct,
   sellingPriceForForm,
+  detectProductMode,
   type VariantRow,
   type ProductFormState,
 } from '../vendor-product-form';
@@ -86,8 +87,8 @@ describe('vendor-product-form', () => {
     });
     expect(payload.skus).toHaveLength(1);
     expect(payload.skus[0]).not.toHaveProperty('sku');
-    expect(payload.skus[0].price).toBeNull();
-    expect(payload.skus[0].compare_at_price).toBeNull();
+    expect(payload.skus[0].price).toBe(450);
+    expect(payload.skus[0].compare_at_price).toBe(500);
     expect(payload.skus[0].option_values).toEqual({ size: 'M', color: 'Red' });
     expect(payload.metadata?.variant_axes).toHaveLength(2);
     expect(payload.stock).toBe(5);
@@ -246,5 +247,49 @@ describe('vendor-product-form', () => {
   it('sellingPriceForForm returns price when SP equals MRP', () => {
     expect(sellingPriceForForm({ price: 799, original_price: 799 })).toBe('799');
     expect(sellingPriceForForm({ price: 450, compare_at_price: 500 })).toBe('450');
+  });
+
+  it('buildVendorProductPayload simple mode uses form.basePrice not stale simpleSku.price', () => {
+    const payload = buildVendorProductPayload({
+      form: { ...baseForm, baseMrp: '500', basePrice: '450' },
+      mode: 'simple',
+      variants: [],
+      simpleSku: { mrp: '500', price: '659', stock: '10', images: ['https://img/a.jpg'] },
+      variantAxes: presetVariantAxes('size'),
+      sellerId: 'vendor-1',
+      stripImageUrl: strip,
+    });
+    expect(payload.price).toBe(450);
+    expect(payload.original_price).toBe(500);
+  });
+
+  it('buildVendorProductPayload simple mode uses form.basePrice when simpleSku.price empty', () => {
+    const payload = buildVendorProductPayload({
+      form: { ...baseForm, baseMrp: '500', basePrice: '400' },
+      mode: 'simple',
+      variants: [],
+      simpleSku: { mrp: '', price: '', stock: '10', images: ['https://img/a.jpg'] },
+      variantAxes: presetVariantAxes('size'),
+      sellerId: 'vendor-1',
+      stripImageUrl: strip,
+    });
+    expect(payload.price).toBe(400);
+    expect(payload.original_price).toBe(500);
+  });
+
+  it('detectProductMode treats single phantom SKU as simple', () => {
+    expect(
+      detectProductMode({
+        skus: [{ id: 'sku-1', option_values: {}, price: 100, stock: 5 }],
+      }),
+    ).toBe('simple');
+    expect(
+      detectProductMode({
+        skus: [
+          { id: 'a', option_values: { size: 'M' }, price: 100, stock: 1 },
+          { id: 'b', option_values: { size: 'L' }, price: 100, stock: 2 },
+        ],
+      }),
+    ).toBe('multi');
   });
 });

@@ -41,6 +41,7 @@ import {
   updateProductSkuStock,
   type SkuInput,
 } from '../../../utils/product-sku-service';
+import { putSkuSyncDecision } from '../../../utils/put-sku-sync-decision';
 import {
   metadataVariantsToSkus,
   normalizeImagesArray,
@@ -327,7 +328,9 @@ async function enrichProductRowWithSkus(
   productOut.skus = skusPresigned;
   productOut.has_variants = skus.length > 0;
   if (skus.length > 0) {
-    productOut.stock = aggregateParentStock(skus);
+    const aggregated = aggregateParentStock(skus);
+    const parentStock = Number(row.stock) || 0;
+    productOut.stock = aggregated > 0 ? aggregated : parentStock;
   }
   return flattenProductForApiResponse(productOut);
 }
@@ -1153,7 +1156,14 @@ class UpdateVendorProductHandler extends BaseHandler {
         body as Record<string, unknown>,
         Number(updated[0]?.price) || undefined,
       );
-      if (skuInputs !== null) {
+      const syncDecision = putSkuSyncDecision(skuInputs, hasSkuRows);
+      if (syncDecision === 'reject_empty_with_variants') {
+        return this.error(
+          'Product contains existing variants. Empty skus payload is not allowed.',
+          400,
+        );
+      }
+      if (syncDecision === 'run' && skuInputs !== null) {
         await syncProductSkus(resolvedVendorId, productId, skuInputs, {
           price: Number(updated[0]?.price) || 0,
           compare_at_price:

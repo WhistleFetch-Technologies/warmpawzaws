@@ -511,12 +511,26 @@ export function initialSimpleSkuFromProduct(
   };
 }
 
+function isPhantomSingleSkuRow(sku: unknown): boolean {
+  const row = sku as Record<string, unknown>;
+  const ov = row?.option_values;
+  if (ov == null || typeof ov !== 'object' || Array.isArray(ov)) return true;
+  const keys = Object.keys(ov as Record<string, unknown>).filter((k) =>
+    String((ov as Record<string, unknown>)[k] ?? '').trim(),
+  );
+  return keys.length === 0;
+}
+
 export function detectProductMode(product: Record<string, unknown> | null | undefined): ProductMode {
-  const skus = product?.skus;
-  if (Array.isArray(skus) && skus.length > 0) return 'multi';
   const meta = product?.metadata as Record<string, unknown> | undefined;
   const legacy = meta?.variants ?? product?.variants;
   if (Array.isArray(legacy) && legacy.length > 0) return 'multi';
+
+  const skus = product?.skus;
+  if (Array.isArray(skus) && skus.length > 0) {
+    if (skus.length === 1 && isPhantomSingleSkuRow(skus[0])) return 'simple';
+    return 'multi';
+  }
   return 'simple';
 }
 
@@ -659,10 +673,8 @@ export function buildVendorProductPayload(
   const baseSelling = basePriceRaw ? parseFloat(basePriceRaw) : baseMrp;
 
   if (mode === 'simple') {
-    const simpleMrpRaw = String(simpleSku.mrp ?? '').trim();
-    const mrp = simpleMrpRaw ? parseFloat(simpleMrpRaw) : baseMrp;
-    const simplePriceRaw = String(simpleSku.price ?? '').trim();
-    const selling = simplePriceRaw ? parseFloat(simplePriceRaw) : mrp;
+    const mrp = baseMrp;
+    const selling = baseSelling;
     const payload: VendorProductPayload = {
       name: form.name.trim(),
       description: form.description,
@@ -710,13 +722,11 @@ export function buildVendorProductPayload(
     skus: ordered.map((v) => {
       const mrp = effectiveVariantMrp(v, form.baseMrp);
       const selling = effectiveVariantPrice(v, form.basePrice, form.baseMrp);
-      const mrpOverride = String(v.mrp ?? '').trim();
-      const priceOverride = String(v.price ?? '').trim();
       return {
         ...(isSkuUuid(v.skuRowId) ? { id: v.skuRowId } : {}),
         option_values: variantRowOptionValues(v, variantAxes),
-        compare_at_price: mrpOverride ? mrp : null,
-        price: priceOverride ? selling : null,
+        compare_at_price: mrp,
+        price: selling,
         stock: parseInt(String(v.stock), 10) || 0,
         images: v.images.map(stripImageUrl),
         ...(v.barcode?.trim() ? { barcode: v.barcode.trim() } : {}),
