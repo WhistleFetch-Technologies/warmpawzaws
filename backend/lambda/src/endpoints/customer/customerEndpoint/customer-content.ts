@@ -24,6 +24,7 @@ import {
   resolveBannerCtaNavigation,
 } from '../../../utils/banner-cta-resolver';
 import { listPublishedCustomerArticlesForCustomer } from '../../../utils/content-page-articles';
+import { presignBannerImageForDisplay } from '../../../utils/banner-s3-image';
 
 export function registerCustomerContentEndpoints(app: Hono) {
   /**
@@ -108,28 +109,30 @@ export function registerCustomerContentEndpoints(app: Hono) {
       const legacyHeroTitles = new Set(['Get 50% OFF', 'Premium Pet Food']);
 
       // Map banners to frontend format (type exposed as position for backward compat)
-      const rawBanners = (bannersResult.rows || [])
-        .filter((b: any) => !legacyHeroTitles.has(String(b.title || '').trim()))
-        .map((b: any) => {
-        const meta = parseMetadata(b.metadata);
-        return {
-        id: b.id,
-        title: b.title,
-        subtitle: b.subtitle,
-        imageUrl: b.image_url,
-        ctaText: b.cta_text || 'Learn More',
-        ctaLink: b.cta_link,
-        position:
-          b.type === 'main' || b.type === 'home_top'
-            ? 'home_top'
-            : b.type || 'home_top',
-        displayOrder: b.display_order || 0,
-        gradientFrom: (meta.gradient_from as string) || '#FF8C42',
-        gradientTo: (meta.gradient_to as string) || '#FF6B35',
-        icon: meta.icon,
-        metadata: meta,
-        };
-      });
+      const rawBanners = await Promise.all(
+        (bannersResult.rows || [])
+          .filter((b: any) => !legacyHeroTitles.has(String(b.title || '').trim()))
+          .map(async (b: any) => {
+            const meta = parseMetadata(b.metadata);
+            return {
+              id: b.id,
+              title: b.title,
+              subtitle: b.subtitle,
+              imageUrl: await presignBannerImageForDisplay(b.image_url),
+              ctaText: b.cta_text || 'Learn More',
+              ctaLink: b.cta_link,
+              position:
+                b.type === 'main' || b.type === 'home_top'
+                  ? 'home_top'
+                  : b.type || 'home_top',
+              displayOrder: b.display_order || 0,
+              gradientFrom: (meta.gradient_from as string) || '#FF8C42',
+              gradientTo: (meta.gradient_to as string) || '#FF6B35',
+              icon: meta.icon,
+              metadata: meta,
+            };
+          })
+      );
 
       const banners = await enrichBannersWithNavTargets(rawBanners);
 
