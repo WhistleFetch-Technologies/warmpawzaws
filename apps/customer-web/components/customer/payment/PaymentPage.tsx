@@ -190,7 +190,6 @@ export function PaymentPage({
             serviceId,
             amount: baseAmount,
             quantity: 1,
-            category: 'pet_services',
             serviceStyle,
           },
         ],

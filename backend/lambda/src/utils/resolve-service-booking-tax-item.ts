@@ -2,14 +2,50 @@
  * Resolve service-booking GST inputs for taxCalculationService (catalog category + vendor role).
  * Shared by POST /tax/calculate, payments-enhanced, and /customer/pricing/quote.
  *
- * Vaccination services use a separate GST lane: they do not inherit the veterinary 0% catalogue
- * row unless metadata or sub_category_id points at a dedicated admin GST config.
+ * All veterinary services (including vaccinations) use the veterinary catalogue GST row (0% for vet roles).
  */
 
 import { query, select } from '../database/rds-connection';
 import { isValidUUID } from '../types/entities';
 import { resolveCatalogCategoryUuidFromRef } from '../lib/services/gst-catalog-role-resolution';
 import type { TaxItem } from '../lib/services/tax-calculation-service';
+
+/** Vendor roles that receive 0% GST on service_booking when catalogue category is missing. */
+export const VET_VENDOR_ROLE_NAMES = [
+  'vet_clinic',
+  'veterinarian',
+  'vet_solo',
+  'vet',
+  'veterinary_clinic',
+  'solo_vet',
+  'pet_clinic',
+] as const;
+
+export function isVetVendorRoleName(roleName: string | null | undefined): boolean {
+  if (roleName == null || String(roleName).trim() === '') return false;
+  const n = String(roleName).toLowerCase().trim();
+  return (VET_VENDOR_ROLE_NAMES as readonly string[]).includes(n);
+}
+
+async function resolveVendorRole(
+  vendorRoleId: string | null | undefined,
+  vendorId: string | null | undefined,
+): Promise<{ roleId: string | null; roleName: string | null }> {
+  let roleId = vendorRoleId ? String(vendorRoleId).trim() : '';
+  if (!roleId && vendorId) {
+    const vendors = await select('vendors', { id: vendorId }).catch(() => []);
+    roleId = vendors[0]?.role_id ? String(vendors[0].role_id).trim() : '';
+  }
+  if (!roleId) return { roleId: null, roleName: null };
+  const rows = await query(`SELECT name FROM roles WHERE id = $1::uuid LIMIT 1`, [roleId]).catch(
+    () => ({ rows: [] }),
+  );
+  const name = rows.rows?.[0]?.name;
+  return {
+    roleId,
+    roleName: name != null ? String(name).trim() : null,
+  };
+}
 
 export function catalogPriceIncludesTaxMeta(meta: unknown): boolean {
   if (meta == null || typeof meta !== 'object') return false;
@@ -28,7 +64,7 @@ function metadataGstCatalogRef(meta: unknown): string | null {
   return String(raw).trim();
 }
 
-/** Vaccination bookings keep separate GST (not the general veterinary 0% catalogue row). */
+/** Detect vaccination services (booking UX / reminders — not a separate GST lane). */
 export function isVaccinationService(params: {
   catalogServiceId?: string | null;
   serviceName?: string | null;
@@ -57,29 +93,23 @@ export async function resolveGstCatalogCategoryRefForBooking(params: {
   scMetadata?: unknown;
   vsMetadata?: unknown;
   categoryFallback?: string | null;
+  vendorRoleName?: string | null;
 }): Promise<string | null> {
   for (const meta of [params.vsMetadata, params.scMetadata]) {
     const explicit = metadataGstCatalogRef(meta);
     if (explicit) return explicit;
   }
 
-  if (
-    isVaccinationService({
-      catalogServiceId: params.catalogServiceId,
-      serviceName: params.serviceName,
-      subCategory: params.subCategoryName ?? params.subCategoryIdFromCatalog,
-    })
-  ) {
-    const subRef = params.subCategoryIdFromCatalog ? String(params.subCategoryIdFromCatalog).trim() : '';
-    if (subRef) return subRef;
-    return null;
-  }
-
   const catRef = params.categoryIdFromCatalog ? String(params.categoryIdFromCatalog).trim() : '';
   if (catRef) return catRef;
 
+  if (isVetVendorRoleName(params.vendorRoleName)) {
+    return 'veterinary';
+  }
+
   const fallback = params.categoryFallback ? String(params.categoryFallback).trim() : '';
-  return fallback || null;
+  if (fallback && fallback.toLowerCase() !== 'pet_services') return fallback;
+  return null;
 }
 
 export type ServiceBookingTaxResolveInput = {
@@ -116,7 +146,20 @@ async function loadCatalogContext(
   vendorId: string | null | undefined,
   bookingId: string | null | undefined,
 ): Promise<CatalogRow | null> {
-  if (serviceId && vendorId) {
+  if (serviceId && vendorId && isValidUUID(String(serviceId))) {
+    const vendorSvcs = await query(
+      `SELECT sc.category_id, sc.category_name, sc.service_id, sc.service_name,
+              sc.sub_category_id, sc.sub_category_name,
+              sc.metadata AS sc_metadata, vs.metadata AS vs_metadata
+       FROM vendor_services vs
+       LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+       WHERE vs.vendor_id = $2::uuid
+         AND (vs.id = $1::uuid OR vs.service_id = $1::uuid OR sc.id = $1::uuid)
+       LIMIT 1`,
+      [serviceId, vendorId],
+    ).catch(() => ({ rows: [] }));
+    if (vendorSvcs.rows?.length > 0) return vendorSvcs.rows[0] as CatalogRow;
+  } else if (serviceId && vendorId) {
     const vendorSvcs = await query(
       `SELECT sc.category_id, sc.category_name, sc.service_id, sc.service_name,
               sc.sub_category_id, sc.sub_category_name,
@@ -193,6 +236,7 @@ export async function resolveServiceBookingTaxItem(
   let amountIsTaxInclusive = input.amountIsTaxInclusive === true;
 
   const ctx = await loadCatalogContext(serviceId, input.vendorId, input.bookingId);
+  const vendorRole = await resolveVendorRole(input.vendorRoleId, input.vendorId);
 
   if (ctx) {
     if (!category) category = ctx.category_name || ctx.category_id;
@@ -211,13 +255,18 @@ export async function resolveServiceBookingTaxItem(
     scMetadata: ctx?.sc_metadata,
     vsMetadata: ctx?.vs_metadata,
     categoryFallback: category,
+    vendorRoleName: vendorRole.roleName,
   });
 
   let catalogCategoryUuid: string | null = null;
   if (scCatRef) {
     catalogCategoryUuid = await resolveCatalogCategoryUuidFromRef(scCatRef);
   }
-  if (!catalogCategoryUuid && category) {
+  if (
+    !catalogCategoryUuid &&
+    category &&
+    String(category).trim().toLowerCase() !== 'pet_services'
+  ) {
     catalogCategoryUuid = await resolveCatalogCategoryUuidFromRef(String(category).trim());
   }
 
@@ -238,7 +287,7 @@ export async function resolveServiceBookingTaxItem(
     catalogCategoryId: catalogCategoryUuid ?? undefined,
     category,
     serviceStyle,
-    roleId: input.vendorRoleId ?? undefined,
+    roleId: input.vendorRoleId ?? vendorRole.roleId ?? undefined,
     amountIsTaxInclusive,
     gstApplicationScope: 'service_booking',
   };

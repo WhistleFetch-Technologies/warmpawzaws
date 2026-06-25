@@ -1,5 +1,6 @@
 import {
   isVaccinationService,
+  isVetVendorRoleName,
   resolveGstCatalogCategoryRefForBooking,
 } from '../resolve-service-booking-tax-item';
 
@@ -50,16 +51,26 @@ describe('resolveGstCatalogCategoryRefForBooking', () => {
     expect(ref).toBe('veterinary');
   });
 
-  it('keeps vaccination off veterinary catalogue row (18% default path)', async () => {
+  it('uses veterinary category for vaccination (0% with vet roles)', async () => {
     const ref = await resolveGstCatalogCategoryRefForBooking({
       categoryIdFromCatalog: 'veterinary',
       catalogServiceId: 'vet_vaccination',
       serviceName: 'Vaccination',
     });
-    expect(ref).toBeNull();
+    expect(ref).toBe('veterinary');
   });
 
-  it('uses metadata gst catalog override for vaccination when set', async () => {
+  it('infers veterinary for vaccination when catalog category is null and vendor is vet_clinic', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      catalogServiceId: 'vet_vaccination',
+      serviceName: 'Anti-Rabies Vaccination',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('veterinary');
+  });
+
+  it('uses metadata gst catalog override when set', async () => {
     const ref = await resolveGstCatalogCategoryRefForBooking({
       categoryIdFromCatalog: 'veterinary',
       catalogServiceId: 'vet_vaccination',
@@ -68,12 +79,44 @@ describe('resolveGstCatalogCategoryRefForBooking', () => {
     expect(ref).toBe('pharmacy');
   });
 
-  it('uses sub_category_id for vaccination when present', async () => {
+  it('infers veterinary when catalog category is null and vendor is vet_clinic', async () => {
     const ref = await resolveGstCatalogCategoryRefForBooking({
-      categoryIdFromCatalog: 'veterinary',
-      catalogServiceId: 'vet_vaccination',
-      subCategoryIdFromCatalog: 'preventive_vaccination',
+      categoryIdFromCatalog: null,
+      catalogServiceId: 'svc_veterinary_clinic_at_home_custom',
+      serviceName: 'Home Visit Consultation',
+      vendorRoleName: 'vet_clinic',
     });
-    expect(ref).toBe('preventive_vaccination');
+    expect(ref).toBe('veterinary');
+  });
+
+  it('does not infer veterinary for groomer when catalog category is null', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      catalogServiceId: 'groom_home',
+      serviceName: 'Home Grooming',
+      vendorRoleName: 'groomer_solo',
+    });
+    expect(ref).toBeNull();
+  });
+
+  it('ignores pet_services fallback', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      catalogServiceId: 'groom_home',
+      serviceName: 'Home Grooming',
+      categoryFallback: 'pet_services',
+    });
+    expect(ref).toBeNull();
+  });
+});
+
+describe('isVetVendorRoleName', () => {
+  it('recognises vet clinic roles', () => {
+    expect(isVetVendorRoleName('vet_clinic')).toBe(true);
+    expect(isVetVendorRoleName('VET_SOLO')).toBe(true);
+  });
+
+  it('rejects groomer roles', () => {
+    expect(isVetVendorRoleName('groomer_center')).toBe(false);
   });
 });
