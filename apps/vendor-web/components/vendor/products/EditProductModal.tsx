@@ -4,6 +4,8 @@ import { X, ShoppingBag, Upload } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import { IntegerInput } from '@/components/shared/IntegerInput';
+import { DecimalInput } from '@/components/shared/DecimalInput';
 
 function stripAwsPresignFromProductImageUrl(url: string): string {
   try {
@@ -337,12 +339,9 @@ export function EditProductModal({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 MRP (₹) *
               </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
+              <DecimalInput
                 value={formData.original_price}
-                onChange={(e) => handleChange('original_price', e.target.value)}
+                onChange={(v) => handleChange('original_price', v)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
               />
             </div>
@@ -350,12 +349,9 @@ export function EditProductModal({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Selling price (₹)
               </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
+              <DecimalInput
                 value={formData.price}
-                onChange={(e) => handleChange('price', e.target.value)}
+                onChange={(v) => handleChange('price', v)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                 placeholder="Optional — same as MRP if empty"
               />
@@ -364,11 +360,9 @@ export function EditProductModal({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Stock Quantity *
               </label>
-              <input
-                type="number"
-                min="0"
+              <IntegerInput
                 value={formData.stock}
-                onChange={(e) => handleChange('stock', e.target.value)}
+                onChange={(v) => handleChange('stock', v)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
               />
             </div>

@@ -14,6 +14,9 @@ export interface ShopProduct {
   vendor_name: string;
   is_active: boolean;
   delivery_regions?: string[];
+  has_variants?: boolean;
+  price_from?: boolean;
+  min_price?: number;
 }
 
 export interface ShopCategory {

@@ -93,6 +93,7 @@ export type VendorProductPayload = {
   delivery_regions: string[] | null;
   metadata?: {
     variant_axes?: Array<{ key: string; label: string; preset?: VariantAxisPreset }>;
+    product_group_id?: string;
   };
 };
 
@@ -393,27 +394,17 @@ export function variantsFromProduct(
     const rawSkuId = s.id != null ? String(s.id) : '';
     const rowMrp = String(s.compare_at_price ?? s.original_price ?? s.price ?? '');
     const rowPrice = String(s.price ?? '');
-    const mrpNum = parseFloat(rowMrp);
-    const priceNum = parseFloat(rowPrice);
-    const baseMrpNum = parseFloat(baseM);
-    const basePriceNum = parseFloat(baseP) || baseMrpNum;
     return {
       id: isSkuUuid(rawSkuId) ? rawSkuId : `sku-${idx}`,
       skuRowId: isSkuUuid(rawSkuId) ? rawSkuId : undefined,
       optionValues,
       size: optionValues.size ?? '',
       color: optionValues.color ?? '',
-      mrp:
-        Number.isFinite(mrpNum) && Number.isFinite(baseMrpNum) && mrpNum === baseMrpNum
-          ? ''
-          : rowMrp,
-      price:
-        Number.isFinite(priceNum) && Number.isFinite(basePriceNum) && priceNum === basePriceNum
-          ? ''
-          : rowPrice,
+      mrp: rowMrp,
+      price: rowPrice,
       stock: String(s.stock ?? ''),
       images: skuImageUrlsFromApi(s.images),
-      isDefault: idx === 0,
+      isDefault: false,
       systemSku: s.sku ? String(s.sku) : undefined,
       barcode: s.barcode ? String(s.barcode) : '',
     };
@@ -428,7 +419,7 @@ export function variantsFromProduct(
     });
     return sorted.map((s, idx) => ({
       ...mapSkuRow(s, idx),
-      isDefault: idx === 0,
+      isDefault: false,
     }));
   }
 
@@ -534,39 +525,61 @@ export function detectProductMode(product: Record<string, unknown> | null | unde
   return 'simple';
 }
 
-export function effectiveVariantMrp(row: VariantRow, baseMrp: string): number {
-  const raw = String(row.mrp ?? '').trim();
-  const parsed = raw ? parseFloat(raw) : parseFloat(baseMrp);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : parseFloat(baseMrp) || 0;
+export function effectiveVariantMrp(row: VariantRow): number {
+  const parsed = parseFloat(String(row.mrp ?? '').trim());
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-export function effectiveVariantPrice(
-  row: VariantRow,
-  basePrice: string,
-  baseMrp: string,
-): number {
-  const mrp = effectiveVariantMrp(row, baseMrp);
-  const raw = String(row.price ?? '').trim();
-  const baseRaw = String(basePrice ?? '').trim();
-  const parsed = raw ? parseFloat(raw) : baseRaw ? parseFloat(baseRaw) : mrp;
+export function effectiveVariantPrice(row: VariantRow): number {
+  const mrp = effectiveVariantMrp(row);
+  const parsed = parseFloat(String(row.price ?? '').trim());
   return Number.isFinite(parsed) && parsed > 0 ? parsed : mrp;
 }
 
-export function orderVariantsForSubmit(variants: VariantRow[]): VariantRow[] {
-  const copy = [...variants];
-  copy.sort((a, b) => {
-    if (a.isDefault && !b.isDefault) return -1;
-    if (!a.isDefault && b.isDefault) return 1;
-    return 0;
-  });
-  if (copy.length > 0 && !copy.some((v) => v.isDefault)) {
-    copy[0] = { ...copy[0], isDefault: true };
+export function pickListingVariantRow(
+  variants: VariantRow[],
+  variantAxes: VariantAxisConfig[],
+): VariantRow | null {
+  if (variants.length === 0) return null;
+  const scored = variants.map((v) => ({
+    row: v,
+    stock: parseInt(String(v.stock), 10) || 0,
+    price: effectiveVariantPrice(v),
+  }));
+  const inStock = scored.filter((s) => s.stock > 0);
+  const candidates = inStock.length > 0 ? inStock : scored;
+  let best = candidates[0];
+  for (const c of candidates) {
+    if (c.price > 0 && c.price <= best.price) best = c;
   }
-  return copy;
+  return best?.row ?? variants[0];
 }
 
-export function setDefaultVariant(variants: VariantRow[], id: string): VariantRow[] {
-  return variants.map((v) => ({ ...v, isDefault: v.id === id }));
+export function computeListingPreviewFromVariants(
+  variants: VariantRow[],
+  variantAxes: VariantAxisConfig[],
+): { price: number; mrp: number; totalStock: number } {
+  const listing = pickListingVariantRow(variants, variantAxes);
+  const totalStock = variants.reduce(
+    (sum, v) => sum + (parseInt(String(v.stock), 10) || 0),
+    0,
+  );
+  if (!listing) return { price: 0, mrp: 0, totalStock };
+  return {
+    price: effectiveVariantPrice(listing),
+    mrp: effectiveVariantMrp(listing),
+    totalStock,
+  };
+}
+
+export function productGroupIdFromProduct(
+  product: Record<string, unknown> | null | undefined,
+): string {
+  if (!product) return '';
+  const meta = product.metadata as Record<string, unknown> | undefined;
+  const fromMeta = meta?.product_group_id;
+  if (fromMeta != null && String(fromMeta).trim()) return String(fromMeta).trim();
+  return '';
 }
 
 export type ValidateProductFormInput = {
@@ -611,51 +624,53 @@ export function validateProductForm(input: ValidateProductFormInput): string | n
   }
 
   const baseMrp = parseFloat(form.baseMrp);
-  if (!Number.isFinite(baseMrp) || baseMrp <= 0) {
-    return 'Base MRP is required and must be greater than 0';
-  }
-
   const basePriceRaw = String(form.basePrice ?? '').trim();
   const baseSelling = basePriceRaw ? parseFloat(basePriceRaw) : baseMrp;
+
+  if (mode !== 'simple') {
+    if (variants.length === 0) return 'Add at least one variant or switch to single product mode';
+
+    const seen = new Set<string>();
+    for (const v of variants) {
+      for (const axis of variantAxes) {
+        const val = variantRowOptionValues(v, variantAxes)[axis.key]?.trim();
+        if (!val) {
+          return `Each variant needs a ${axis.label} value`;
+        }
+      }
+      const key = optionValuesKey(variantRowOptionValues(v, variantAxes));
+      if (seen.has(key)) return 'Duplicate variant — option combination must be unique';
+      seen.add(key);
+
+      const stockNum = parseInt(String(v.stock), 10);
+      if (!Number.isInteger(stockNum) || stockNum < 0) {
+        return 'Each variant stock must be a whole number ≥ 0';
+      }
+      if (v.images.length === 0) return 'Each variant needs at least one image';
+
+      const vMrp = effectiveVariantMrp(v);
+      if (vMrp <= 0) return 'Each variant needs MRP greater than 0';
+      const vPrice = effectiveVariantPrice(v);
+      if (vPrice <= 0) return 'Each variant needs selling price greater than 0';
+      if (vPrice > vMrp) return 'Variant selling price cannot exceed variant MRP';
+    }
+    return null;
+  }
+
+  if (!Number.isFinite(baseMrp) || baseMrp <= 0) {
+    return 'MRP is required and must be greater than 0';
+  }
+
   if (!Number.isFinite(baseSelling) || baseSelling <= 0) {
     return 'Selling price must be greater than 0';
   }
   if (baseSelling > baseMrp) return 'Selling price cannot exceed MRP';
 
-  if (mode === 'simple') {
-    const stockNum = parseInt(String(simpleSku.stock), 10);
-    if (!Number.isInteger(stockNum) || stockNum < 0) {
-      return 'Stock quantity must be a whole number ≥ 0';
-    }
-    if (simpleSku.images.length === 0) return 'At least one product image is required';
-    return null;
+  const stockNum = parseInt(String(simpleSku.stock), 10);
+  if (!Number.isInteger(stockNum) || stockNum < 0) {
+    return 'Stock quantity must be a whole number ≥ 0';
   }
-
-  if (variants.length === 0) return 'Add at least one variant or switch to single product mode';
-
-  const seen = new Set<string>();
-  for (const v of variants) {
-    for (const axis of variantAxes) {
-      const val = variantRowOptionValues(v, variantAxes)[axis.key]?.trim();
-      if (!val) {
-        return `Each variant needs a ${axis.label} value`;
-      }
-    }
-    const key = optionValuesKey(variantRowOptionValues(v, variantAxes));
-    if (seen.has(key)) return 'Duplicate variant — option combination must be unique';
-    seen.add(key);
-
-    const stockNum = parseInt(String(v.stock), 10);
-    if (!Number.isInteger(stockNum) || stockNum < 0) {
-      return 'Each variant stock must be a whole number ≥ 0';
-    }
-    if (v.images.length === 0) return 'Each variant needs at least one image';
-
-    const vMrp = effectiveVariantMrp(v, form.baseMrp);
-    const vPrice = effectiveVariantPrice(v, form.basePrice, form.baseMrp);
-    if (vPrice > vMrp) return 'Variant selling price cannot exceed variant MRP';
-  }
-
+  if (simpleSku.images.length === 0) return 'At least one product image is required';
   return null;
 }
 
@@ -663,6 +678,7 @@ export function buildVendorProductPayload(
   input: ValidateProductFormInput & {
     sellerId: string;
     stripImageUrl: (url: string) => string;
+    productGroupId?: string;
   },
 ): VendorProductPayload {
   const { form, mode, variants, simpleSku, sellerId, stripImageUrl, variantAxes } = input;
@@ -698,13 +714,10 @@ export function buildVendorProductPayload(
     return payload;
   }
 
-  const ordered = orderVariantsForSubmit(variants);
-  const defaultVariant = ordered[0];
-  const defaultImages = defaultVariant?.images.map(stripImageUrl) ?? [];
-  const totalStock = ordered.reduce(
-    (sum, v) => sum + (parseInt(String(v.stock), 10) || 0),
-    0,
-  );
+  const listingPreview = computeListingPreviewFromVariants(variants, variantAxes);
+  const listingVariant = pickListingVariantRow(variants, variantAxes);
+  const listingImages = listingVariant?.images.map(stripImageUrl) ?? [];
+  const productGroupId = input.productGroupId?.trim() || undefined;
 
   const payload: VendorProductPayload = {
     name: form.name.trim(),
@@ -712,16 +725,16 @@ export function buildVendorProductPayload(
     category_id: form.category_id,
     emoji: form.emoji,
     status: form.status,
-    price: baseSelling,
-    original_price: baseMrp,
-    stock: totalStock,
+    price: listingPreview.price,
+    original_price: listingPreview.mrp,
+    stock: listingPreview.totalStock,
     hsn_code: String(form.hsn_code).trim(),
     gst_rate: parseFloat(form.gst_rate),
     vendor_id: sellerId,
-    images: defaultImages,
-    skus: ordered.map((v) => {
-      const mrp = effectiveVariantMrp(v, form.baseMrp);
-      const selling = effectiveVariantPrice(v, form.basePrice, form.baseMrp);
+    images: listingImages,
+    skus: variants.map((v) => {
+      const mrp = effectiveVariantMrp(v);
+      const selling = effectiveVariantPrice(v);
       return {
         ...(isSkuUuid(v.skuRowId) ? { id: v.skuRowId } : {}),
         option_values: variantRowOptionValues(v, variantAxes),
@@ -734,6 +747,7 @@ export function buildVendorProductPayload(
     }),
     metadata: {
       variant_axes: variantAxes.map(({ key, label, preset }) => ({ key, label, preset })),
+      ...(productGroupId ? { product_group_id: productGroupId } : {}),
     },
     delivery_regions:
       input.deliveryRegions && input.deliveryRegions.length > 0

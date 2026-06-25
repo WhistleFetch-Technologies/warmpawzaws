@@ -25,7 +25,7 @@ import {
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { isValidUUID } from '../../../types/entities';
 import { prepareStorefrontProductRow, prepareStorefrontProductRows, presignProductSkusForDisplay, presignProductImagesJsonb } from '../../../utils/s3-media-presign';
-import { loadProductSkus } from '../../../utils/product-sku-service';
+import { loadProductSkus, loadProductSkusForProducts } from '../../../utils/product-sku-service';
 import {
   resolveEcommerceOrderLine,
   decrementSkuStock,
@@ -36,12 +36,8 @@ import {
   mapSkusToCustomerVariations,
   buildGalleryImageUnion,
   normalizeImagesArray,
-  aggregateParentStock,
-  minSkuPrice,
   mergeLegacyVariantImagesIntoSkus,
-  getDefaultProductSku,
-  hasVariableSkuPricing,
-  normalizeOptionValues,
+  applyStorefrontSkuPricingFields,
 } from '../../../utils/product-sku-resolve';
 import { computeEcommerceDeliveryFee } from '../../../utils/ecommerce/delivery-fee';
 import {
@@ -120,6 +116,21 @@ function normalizeTaxBreakdownForDb(raw: unknown): Record<string, unknown>[] | n
   return null;
 }
 
+/** Presign product rows and apply SKU listing pricing for variant products (single batch query). */
+async function enrichStorefrontProductListRows(
+  rows: Record<string, unknown>[],
+): Promise<Record<string, unknown>[]> {
+  const signed = await prepareStorefrontProductRows(rows);
+  const ids = signed.map((r) => String(r.id ?? '')).filter(Boolean);
+  const skuMap = await loadProductSkusForProducts(ids);
+  return signed.map((row) => {
+    const pid = String(row.id ?? '');
+    const skus = skuMap.get(pid) ?? [];
+    if (skus.length === 0) return row;
+    return applyStorefrontSkuPricingFields(row, skus);
+  });
+}
+
 export function registerEcommerceEndpoints(app: Hono) {
   /** Shared handler body for GET /products/:id and GET /ecommerce/products/:id */
   const handleGetPublicProductById = async (c: any, logLabel: string) => {
@@ -171,32 +182,11 @@ export function registerEcommerceEndpoints(app: Hono) {
       );
 
       product.images = galleryPresigned;
-      product.has_variants = skusRaw.length > 0;
       if (skusRaw.length > 0) {
-        const aggStock = aggregateParentStock(skusRaw);
-        const defaultSku = getDefaultProductSku(skusRaw);
-        const minPrice = minSkuPrice(skusRaw);
-        const defaultPrice = defaultSku ? Number(defaultSku.price) : NaN;
-        if (Number.isFinite(defaultPrice) && defaultPrice > 0) {
-          product.price = defaultPrice;
-        } else if (minPrice != null) {
-          product.price = minPrice;
-        }
-        product.stock = aggStock;
+        Object.assign(product, applyStorefrontSkuPricingFields(product, skusRaw));
         product.variations = variations;
-        if (defaultSku?.id) {
-          product.default_sku_id = String(defaultSku.id);
-          product.default_option_values = normalizeOptionValues(
-            defaultSku.option_values as Record<string, unknown>,
-          );
-        }
-        const minP = minPrice ?? defaultPrice;
-        const defP = Number.isFinite(defaultPrice) && defaultPrice > 0 ? defaultPrice : minP;
-        product.price_from =
-          hasVariableSkuPricing(skusRaw) &&
-          minP != null &&
-          defP != null &&
-          Number(minP).toFixed(2) !== Number(defP).toFixed(2);
+      } else {
+        product.has_variants = false;
       }
 
       return c.json({
@@ -297,7 +287,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       const rows = (products?.rows || []) as Record<string, unknown>[];
-      const signedProducts = await prepareStorefrontProductRows(rows);
+      const signedProducts = await enrichStorefrontProductListRows(rows);
 
       return c.json({
         success: true,
@@ -384,7 +374,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       const rows = (products?.rows || []) as Record<string, unknown>[];
-      const signedProducts = await prepareStorefrontProductRows(rows);
+      const signedProducts = await enrichStorefrontProductListRows(rows);
 
       return c.json({
         success: true,

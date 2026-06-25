@@ -41,6 +41,7 @@ export function ShopProductCard({
 
   const discount = getProductDiscountPercent(product);
   const outOfStock = product.stock === 0;
+  const pricePrefix = product.price_from ? 'From ' : '';
 
   const handleCardClick = () => {
     const pid = (wishlistPid || product.id || '').trim();
@@ -89,7 +90,7 @@ export function ShopProductCard({
             {product.name}
           </h3>
           <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-sm font-bold text-slate-900 tabular-nums">₹{product.price}</span>
+            <span className="text-sm font-bold text-slate-900 tabular-nums">{pricePrefix}₹{product.price}</span>
             {discount > 0 && product.original_price != null && (
               <span className="text-[10px] text-slate-400 line-through tabular-nums">
                 ₹{product.original_price}
@@ -161,7 +162,7 @@ export function ShopProductCard({
         </h3>
 
         <div className="flex items-baseline gap-1.5 flex-wrap">
-          <span className="text-sm font-bold text-slate-900 tabular-nums">₹{product.price}</span>
+          <span className="text-sm font-bold text-slate-900 tabular-nums">{pricePrefix}₹{product.price}</span>
           {discount > 0 && product.original_price != null && (
             <span className="text-[10px] text-slate-400 line-through tabular-nums">
               ₹{product.original_price}

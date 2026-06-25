@@ -1,7 +1,6 @@
 import {
   buildVendorProductPayload,
   validateProductForm,
-  orderVariantsForSubmit,
   effectiveVariantPrice,
   effectiveVariantMrp,
   variantsFromProduct,
@@ -53,27 +52,18 @@ describe('vendor-product-form', () => {
     expect(payload.images).toEqual(['https://img/a.jpg']);
   });
 
-  it('orderVariantsForSubmit puts default variant first', () => {
-    const variants: VariantRow[] = [
-      { id: 'a', optionValues: { size: 'L' }, mrp: '', price: '', stock: '1', images: ['x'], isDefault: false, size: 'L' },
-      { id: 'b', optionValues: { size: 'S' }, mrp: '', price: '', stock: '2', images: ['y'], isDefault: true, size: 'S' },
-    ];
-    const ordered = orderVariantsForSubmit(variants);
-    expect(ordered[0].id).toBe('b');
-  });
-
-  it('buildVendorProductPayload multi mode does not include sku field', () => {
+  it('buildVendorProductPayload multi mode uses per-variant MRP and SP', () => {
     const variants: VariantRow[] = [
       {
         id: 'v1',
         optionValues: { size: 'M', color: 'Red' },
         size: 'M',
         color: 'Red',
-        mrp: '',
-        price: '',
+        mrp: '500',
+        price: '450',
         stock: '5',
         images: ['https://img/v.jpg'],
-        isDefault: true,
+        isDefault: false,
       },
     ];
     const payload = buildVendorProductPayload({
@@ -93,9 +83,11 @@ describe('vendor-product-form', () => {
     expect(payload.metadata?.variant_axes).toHaveLength(2);
     expect(payload.stock).toBe(5);
     expect(payload.images).toEqual(['https://img/v.jpg']);
+    expect(payload.price).toBe(450);
+    expect(payload.original_price).toBe(500);
   });
 
-  it('effectiveVariantPrice inherits base when empty', () => {
+  it('effectiveVariantPrice requires explicit variant MRP', () => {
     const row: VariantRow = {
       id: '1',
       optionValues: {},
@@ -103,16 +95,19 @@ describe('vendor-product-form', () => {
       price: '',
       stock: '1',
       images: [],
-      isDefault: true,
+      isDefault: false,
     };
-    expect(effectiveVariantMrp(row, '500')).toBe(500);
-    expect(effectiveVariantPrice(row, '450', '500')).toBe(450);
+    expect(effectiveVariantMrp(row)).toBe(0);
+    expect(effectiveVariantPrice(row)).toBe(0);
+    const filled: VariantRow = { ...row, mrp: '500', price: '450' };
+    expect(effectiveVariantMrp(filled)).toBe(500);
+    expect(effectiveVariantPrice(filled)).toBe(450);
   });
 
   it('validateProductForm rejects duplicate variants', () => {
     const variants: VariantRow[] = [
-      { id: '1', optionValues: { size: 'M', color: 'Red' }, size: 'M', color: 'Red', mrp: '', price: '', stock: '1', images: ['a'], isDefault: true },
-      { id: '2', optionValues: { size: 'M', color: 'Red' }, size: 'M', color: 'Red', mrp: '', price: '', stock: '2', images: ['b'], isDefault: false },
+      { id: '1', optionValues: { size: 'M', color: 'Red' }, size: 'M', color: 'Red', mrp: '500', price: '450', stock: '1', images: ['a'], isDefault: false },
+      { id: '2', optionValues: { size: 'M', color: 'Red' }, size: 'M', color: 'Red', mrp: '500', price: '450', stock: '2', images: ['b'], isDefault: false },
     ];
     const err = validateProductForm({
       form: baseForm,
@@ -124,7 +119,7 @@ describe('vendor-product-form', () => {
     expect(err).toMatch(/Duplicate variant/);
   });
 
-  it('variantsFromProduct loads skus and marks sort_order 0 as default', () => {
+  it('variantsFromProduct loads skus sorted by sort_order', () => {
     const rows = variantsFromProduct({
       price: 33,
       original_price: 33,
@@ -153,8 +148,8 @@ describe('vendor-product-form', () => {
     });
     expect(rows).toHaveLength(2);
     expect(rows[0].skuRowId).toBe('22222222-2222-4222-8222-222222222222');
-    expect(rows[0].isDefault).toBe(true);
-    expect(rows[1].isDefault).toBe(false);
+    expect(rows[0].mrp).toBe('33');
+    expect(rows[0].price).toBe('33');
   });
 
   it('buildVendorProductPayload multi mode supports pack axis', () => {

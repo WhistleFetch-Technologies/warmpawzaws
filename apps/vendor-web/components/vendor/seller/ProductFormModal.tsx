@@ -7,6 +7,8 @@ import {
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import { IntegerInput } from '@/components/shared/IntegerInput';
+import { DecimalInput } from '@/components/shared/DecimalInput';
 import {
   type ProductMode,
   type VariantAxisConfig,
@@ -24,7 +26,8 @@ import {
   customVariantAxis,
   effectiveVariantMrp,
   effectiveVariantPrice,
-  setDefaultVariant,
+  computeListingPreviewFromVariants,
+  productGroupIdFromProduct,
   createEmptyVariant,
   migrateSimpleSkuToFirstVariant,
   updateVariantOptionValue,
@@ -85,6 +88,12 @@ export function ProductFormModal({
     customSpecRowsFromProduct(product),
   );
   const [deliveryCityInput, setDeliveryCityInput] = useState('');
+  const [productGroupId, setProductGroupId] = useState(() => productGroupIdFromProduct(product));
+
+  const listingPreview = useMemo(
+    () => (productMode === 'multi' ? computeListingPreviewFromVariants(variants, variantAxes) : null),
+    [productMode, variants, variantAxes],
+  );
 
   useEffect(() => {
     if (!product?.id) return;
@@ -101,6 +110,7 @@ export function ProductFormModal({
     );
     setDeliveryRegions(deliveryRegionsFromProduct(product));
     setCustomSpecs(customSpecRowsFromProduct(product));
+    setProductGroupId(productGroupIdFromProduct(product));
   }, [product?.id]);
 
   const totalVariantStock = useMemo(
@@ -192,7 +202,7 @@ export function ProductFormModal({
       const migrated =
         simpleSku.images.length > 0 || simpleSku.stock
           ? migrateSimpleSkuToFirstVariant(simpleSku, axes)
-          : { ...createEmptyVariant(axes), isDefault: true };
+          : createEmptyVariant(axes);
       setVariants([migrated]);
     }
     setPendingAxisPick(false);
@@ -221,7 +231,7 @@ export function ProductFormModal({
     setPendingAxisPick(false);
     const row = createEmptyVariant(axes);
     if (variants.length === 0) {
-      setVariants([{ ...row, isDefault: true }]);
+      setVariants([row]);
     } else {
       setVariants((prev) => [...prev, row]);
     }
@@ -272,6 +282,7 @@ export function ProductFormModal({
         deliveryRegions,
         customSpecs,
         sellerId,
+        productGroupId,
         stripImageUrl: stripAwsPresignFromProductImageUrl,
       });
 
@@ -434,45 +445,37 @@ export function ProductFormModal({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Weight (kg)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.001"
+                <DecimalInput
+                  maxDecimals={3}
                   value={form.weightKg}
-                  onChange={(e) => setForm({ ...form, weightKg: e.target.value })}
+                  onChange={(v) => setForm({ ...form, weightKg: v })}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Length (cm)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
+                <DecimalInput
+                  maxDecimals={1}
                   value={form.lengthCm}
-                  onChange={(e) => setForm({ ...form, lengthCm: e.target.value })}
+                  onChange={(v) => setForm({ ...form, lengthCm: v })}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Breadth (cm)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
+                <DecimalInput
+                  maxDecimals={1}
                   value={form.breadthCm}
-                  onChange={(e) => setForm({ ...form, breadthCm: e.target.value })}
+                  onChange={(v) => setForm({ ...form, breadthCm: v })}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Height (cm)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
+                <DecimalInput
+                  maxDecimals={1}
                   value={form.heightCm}
-                  onChange={(e) => setForm({ ...form, heightCm: e.target.value })}
+                  onChange={(v) => setForm({ ...form, heightCm: v })}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl"
                 />
               </div>
@@ -537,49 +540,57 @@ export function ProductFormModal({
             </div>
           </div>
 
-          {/* Base pricing */}
+          {/* Pricing */}
           <div className="space-y-4">
             <h3 className="font-semibold text-slate-900 flex items-center gap-2">
               <IndianRupee className="w-5 h-5 text-orange-500" />
-              {productMode === 'multi' ? 'Base Pricing (default for variants)' : 'Pricing & Inventory'}
+              {productMode === 'multi' ? 'Shop listing preview' : 'Pricing & Inventory'}
             </h3>
+            {productMode === 'multi' && listingPreview && (
+              <div className="rounded-xl border border-orange-200 bg-orange-50/60 px-4 py-3 text-sm text-slate-800">
+                <span className="font-medium">Customers see: </span>
+                ₹{listingPreview.price.toLocaleString('en-IN')}
+                {listingPreview.mrp > listingPreview.price && (
+                  <span className="text-slate-500 ml-2 line-through">
+                    ₹{listingPreview.mrp.toLocaleString('en-IN')}
+                  </span>
+                )}
+                <span className="text-slate-500 ml-2">
+                  (lowest in-stock variant — set per variant below)
+                </span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  {productMode === 'multi' ? 'Base MRP (₹) *' : 'MRP (₹) *'}
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="0.01"
-                  step="0.01"
-                  value={form.baseMrp}
-                  onChange={(e) => setForm({ ...form, baseMrp: e.target.value })}
-                  placeholder="Maximum retail price"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Selling price (₹)</label>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={form.basePrice}
-                  onChange={(e) => setForm({ ...form, basePrice: e.target.value })}
-                  placeholder="Optional — same as MRP if empty"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                />
-              </div>
+              {productMode === 'simple' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">MRP (₹) *</label>
+                    <DecimalInput
+                      required
+                      value={form.baseMrp}
+                      onChange={(v) => setForm({ ...form, baseMrp: v })}
+                      placeholder="Maximum retail price"
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Selling price (₹)</label>
+                    <DecimalInput
+                      value={form.basePrice}
+                      onChange={(v) => setForm({ ...form, basePrice: v })}
+                      placeholder="Optional — same as MRP if empty"
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                    />
+                  </div>
+                </>
+              )}
               {productMode === 'simple' && (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">Stock Quantity *</label>
-                  <input
-                    type="number"
+                  <IntegerInput
                     required
-                    min="0"
                     value={simpleSku.stock}
-                    onChange={(e) => setSimpleSku({ ...simpleSku, stock: e.target.value })}
+                    onChange={(v) => setSimpleSku({ ...simpleSku, stock: v })}
                     className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                   />
                 </div>
@@ -790,31 +801,16 @@ export function ProductFormModal({
             {productMode === 'multi' && variants.length > 0 && (
               <div className="space-y-3">
                 {variants.map((variant, idx) => {
-                  const effMrp = effectiveVariantMrp(variant, form.baseMrp);
-                  const effPrice = effectiveVariantPrice(variant, form.basePrice, form.baseMrp);
+                  const effMrp = effectiveVariantMrp(variant);
+                  const effPrice = effectiveVariantPrice(variant);
                   return (
                     <div key={variant.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-medium text-slate-700">Variant #{idx + 1}</span>
-                          <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="defaultVariant"
-                              checked={variant.isDefault}
-                              onChange={() => setVariants(setDefaultVariant(variants, variant.id))}
-                              className="text-orange-500"
-                            />
-                            Default for customers
-                          </label>
-                        </div>
+                        <span className="text-sm font-medium text-slate-700">Variant #{idx + 1}</span>
                         <button
                           type="button"
                           onClick={() => {
                             const next = variants.filter((v) => v.id !== variant.id);
-                            if (next.length > 0 && !next.some((v) => v.isDefault)) {
-                              next[0] = { ...next[0], isDefault: true };
-                            }
                             setVariants(next);
                             if (next.length === 0) setProductMode('simple');
                           }}
@@ -849,37 +845,30 @@ export function ProductFormModal({
                           </div>
                         ))}
                         <div>
-                          <label className="block text-xs text-slate-600 mb-1">MRP (₹) optional</label>
-                          <input
-                            type="number"
-                            step="0.01"
+                          <label className="block text-xs text-slate-600 mb-1">MRP (₹) *</label>
+                          <DecimalInput
+                            required
                             value={variant.mrp}
-                            onChange={(e) => updateVariant(variant.id, 'mrp', e.target.value)}
-                            placeholder={`Uses base (₹${form.baseMrp || '…'})`}
+                            onChange={(v) => updateVariant(variant.id, 'mrp', v)}
+                            placeholder="Maximum retail price"
                             className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-slate-600 mb-1">Selling price (₹) optional</label>
-                          <input
-                            type="number"
-                            step="0.01"
+                          <label className="block text-xs text-slate-600 mb-1">Selling price (₹) *</label>
+                          <DecimalInput
+                            required
                             value={variant.price}
-                            onChange={(e) => updateVariant(variant.id, 'price', e.target.value)}
-                            placeholder={`Uses base (₹${form.basePrice || form.baseMrp || '…'})`}
+                            onChange={(v) => updateVariant(variant.id, 'price', v)}
+                            placeholder="Selling price"
                             className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg"
                           />
-                        </div>
-                        <div className="col-span-2 text-xs text-slate-500">
-                          Effective: MRP ₹{effMrp.toLocaleString()} · Selling ₹{effPrice.toLocaleString()}
-                          {!variant.mrp && !variant.price ? ' (from base pricing)' : ''}
                         </div>
                         <div>
                           <label className="block text-xs text-slate-600 mb-1">Stock *</label>
-                          <input
-                            type="number"
+                          <IntegerInput
                             value={variant.stock}
-                            onChange={(e) => updateVariant(variant.id, 'stock', e.target.value)}
+                            onChange={(v) => updateVariant(variant.id, 'stock', v)}
                             className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg"
                             placeholder="0"
                           />

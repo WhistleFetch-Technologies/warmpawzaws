@@ -83,15 +83,57 @@ export function parseCartLineKey(lineKey: string): { productId: string; productS
   return { productId: lineKey };
 }
 
-/** Default SKU: lowest sort_order among active rows (Phase 1). */
-export function getDefaultProductSku(skus: ClientProductSku[]): ClientProductSku | null {
+/** Listing SKU: lowest in-stock SP, tie-break sort_order; else lowest SP any stock. */
+function pickListingSkuFromCandidates(candidates: ClientProductSku[]): ClientProductSku | null {
+  const priced = candidates.filter((s) => {
+    const p = Number(s.price);
+    return Number.isFinite(p) && p > 0;
+  });
+  if (priced.length === 0) return null;
+  const minPrice = Math.min(...priced.map((s) => Number(s.price)));
+  const atMin = sortClientSkusByDefaultOrder(priced).filter(
+    (s) => Number(s.price).toFixed(2) === minPrice.toFixed(2),
+  );
+  return atMin[0] ?? null;
+}
+
+export function getListingProductSku(skus: ClientProductSku[]): ClientProductSku | null {
   const active = skus.filter((s) => s.is_active !== false);
-  const ordered = [...active].sort((a, b) => {
+  const inStock = active.filter((s) => (Number(s.stock) || 0) > 0);
+  return pickListingSkuFromCandidates(inStock) ?? pickListingSkuFromCandidates(active);
+}
+
+/** @deprecated Use getListingProductSku — listing SKU is the storefront featured variant. */
+export function getDefaultProductSku(skus: ClientProductSku[]): ClientProductSku | null {
+  return getListingProductSku(skus);
+}
+
+export function sortClientSkusByDefaultOrder(skus: ClientProductSku[]): ClientProductSku[] {
+  return [...skus].sort((a, b) => {
     const ao = Number(a.sort_order);
     const bo = Number(b.sort_order);
     return (Number.isFinite(ao) ? ao : 0) - (Number.isFinite(bo) ? bo : 0);
   });
-  return ordered[0] ?? null;
+}
+
+/** First in-stock SKU by sort_order among active rows. */
+export function getFirstInStockProductSku(skus: ClientProductSku[]): ClientProductSku | null {
+  const ordered = sortClientSkusByDefaultOrder(skus.filter((s) => s.is_active !== false));
+  return ordered.find((s) => (Number(s.stock) || 0) > 0) ?? null;
+}
+
+/** PDP initial selection: listing SKU (lowest in-stock selling price). */
+export function getInitialProductSku(skus: ClientProductSku[]): ClientProductSku | null {
+  return getListingProductSku(skus);
+}
+
+/** True when selection does not resolve to a full SKU match. */
+export function hasIncompleteVariantSelection(
+  skus: ClientProductSku[],
+  selected: Record<string, string>,
+): boolean {
+  if (skus.length === 0) return false;
+  return resolveSkuFromSelection(skus, selected) == null;
 }
 
 /** Selection key for a variation axis (prefer API option_key). */
@@ -137,7 +179,7 @@ export function resolveSkuPriceForSelection(
   const sku =
     resolveSkuFromSelection(skus, selected) ??
     resolveSkuFromSelection(skus, selected, { partial: true }) ??
-    getDefaultProductSku(skus);
+    getListingProductSku(skus);
   if (!sku) return fallbackPrice ?? 0;
   return parseClientSkuPrice(sku.price, fallbackPrice);
 }
