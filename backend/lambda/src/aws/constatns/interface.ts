@@ -62,6 +62,8 @@ export type NotificationEventType =
     | 'meal_order_ready'
     | 'meal_order_eta_updated'
     | 'meal_rider_assigned'
+    | 'meal_rider_reassign_pending'
+    | 'meal_rider_reassigned'
     | 'meal_order_pickup'
     | 'meal_rider_on_the_way'
     | 'meal_rider_nearby'
@@ -79,6 +81,8 @@ export type NotificationEventType =
     | 'vendor_meal_order_received'
     | 'vendor_meal_order_cancelled'
     | 'vendor_meal_rider_assigned'
+    | 'vendor_meal_rider_reassign_pending'
+    | 'vendor_meal_rider_reassigned'
     | 'vendor_meal_rider_picked_up'
     | 'vendor_meal_order_delivered'
     | 'vendor_meal_delivery_failed'
@@ -251,6 +255,16 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEventType, {
         body: 'A rider is on the way to pick up your order from {vendorName}.',
         sound: 'high_priority',
     },
+    meal_rider_reassign_pending: {
+        title: '🔄 Finding a new delivery partner',
+        body: 'We are assigning a new rider for your meal order #{orderNumber} from {vendorName}.',
+        sound: 'high_priority',
+    },
+    meal_rider_reassigned: {
+        title: '🛵 New delivery partner assigned',
+        body: 'A new rider ({riderName}) is heading to pick up your order from {vendorName}.',
+        sound: 'high_priority',
+    },
     meal_order_pickup: {
         title: '🚴 Order Picked Up',
         body: 'Your meal was picked up and is heading your way.',
@@ -275,8 +289,8 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEventType, {
         body: '{vendorName} cancelled order #{orderNumber}. {reason}',
     },
     meal_logistics_cancelled: {
-        title: 'Delivery could not be completed',
-        body: 'Your meal order #{orderNumber} from {vendorName} could not be delivered. {reason}',
+        title: 'Delivery cancelled',
+        body: 'Your meal order #{orderNumber} from {vendorName} was cancelled. {customerMessage}',
         sound: 'high_priority',
     },
     meal_refund_review_initiated: {
@@ -322,6 +336,14 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEventType, {
     vendor_meal_rider_assigned: {
         title: '🛵 Rider Assigned',
         body: 'A delivery partner is heading to pick up order #{orderNumber}.',
+    },
+    vendor_meal_rider_reassign_pending: {
+        title: '🔄 Rider reassign in progress',
+        body: 'Finding a new delivery partner for order #{orderNumber}.',
+    },
+    vendor_meal_rider_reassigned: {
+        title: '🛵 New rider assigned',
+        body: 'New delivery partner {riderName} is heading to pick up order #{orderNumber}.',
     },
     vendor_meal_rider_picked_up: {
         title: '📦 Order Picked Up',

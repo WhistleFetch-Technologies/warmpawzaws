@@ -7,7 +7,9 @@ import com.warmpawz.delivery.entity.ShipmentTrackingEvent;
 import com.warmpawz.delivery.repository.DeliveryTrackingRepository;
 import com.warmpawz.delivery.repository.ShipmentRepository;
 import com.warmpawz.delivery.repository.ShipmentTrackingEventRepository;
+import com.warmpawz.delivery.service.DeliveryTrackingMetadataHelper;
 import com.warmpawz.delivery.service.MealDeliveryNotificationService;
+import com.warmpawz.delivery.service.MealRiderReassignService;
 import com.warmpawz.delivery.service.OrderStatusJdbcService;
 import com.warmpawz.delivery.service.MealRefundCaseBridgeService;
 import com.warmpawz.delivery.service.PidgeMealCancellationService;
@@ -96,6 +98,7 @@ public class PidgeWebhookProcessingService {
 	private final MealDeliveryNotificationService mealDeliveryNotificationService;
 	private final PidgeMealCancellationService pidgeMealCancellationService;
 	private final MealRefundCaseBridgeService mealRefundCaseBridgeService;
+	private final MealRiderReassignService mealRiderReassignService;
 
 	/** Pidge Communications Module — Rider Active Task webhook (batch rider + order_details). */
 	static boolean isRiderTaskPayload(JsonNode payload) {
@@ -188,6 +191,17 @@ public class PidgeWebhookProcessingService {
 
 		DeliveryTracking dt = trackingOpt.get();
 
+		UUID hyperlocalOrderId = dt.getPharmacyOrderId() != null
+				? dt.getPharmacyOrderId()
+				: dt.getMealOrderId();
+		if (hyperlocalOrderId == null && dt.getSubscriptionDeliveryId() != null) {
+			hyperlocalOrderId = orderStatusJdbc.resolveMealOrderIdForSubscriptionDelivery(dt.getSubscriptionDeliveryId());
+		}
+		boolean isMealHyperlocal = dt.getPharmacyOrderId() == null && hyperlocalOrderId != null;
+		boolean reassignPending = isMealHyperlocal && isReassignActive(dt);
+		boolean mealAlreadyCancelled =
+				isMealHyperlocal && orderStatusJdbc.isMealOrderCancelled(hyperlocalOrderId);
+
 		String rawFulfillmentStatus = payload.path("fulfillment").path("status").asText("");
 		String dummyStatus = payload.hasNonNull("dummy_status") ? payload.get("dummy_status").asText() : "";
 
@@ -204,7 +218,26 @@ public class PidgeWebhookProcessingService {
 					payload, pidgeId, referenceId, dt, null);
 		}
 
+		if (reassignPending && "cancelled".equalsIgnoreCase(normalized)) {
+			mealRiderReassignService.handleReassignPhaseWebhook(dt, normalized);
+			deliveryTrackingRepository.save(dt);
+			log.info(
+					"[PIDGE WEBHOOK] reassign_phase_unallocate deliveryTrackingId={} mealOrderId={} pidgeId={}",
+					dt.getId(),
+					hyperlocalOrderId,
+					pidgeId);
+			return Map.of(
+					"success", true,
+					"message", "Pidge reassign phase webhook processed",
+					"deliveryTrackingId", dt.getId(),
+					"status", "pending_assignment",
+					"reassign", true);
+		}
+
 		String dtStatus = mapPidgeNormalizedToDeliveryTrackingStatus(normalized);
+		if (isMealHyperlocal && "cancelled".equalsIgnoreCase(normalized)) {
+			dtStatus = "cancelled";
+		}
 		String riderName = extractRiderName(rider);
 		String riderPhone = extractRiderPhone(rider);
 		String riderPhoto = extractRiderPhoto(rider);
@@ -229,13 +262,22 @@ public class PidgeWebhookProcessingService {
 			dt.setTrackingUrl(trackCode);
 		}
 		if (riderName != null && !riderName.isBlank()) {
-			dt.setDeliveryPersonName(riderName);
+			if (reassignPending) {
+				mealRiderReassignService.completeReassignIfPending(dt, pidgeId, riderName);
+			}
+			if (!reassignPending || !DeliveryTrackingMetadataHelper.isReassignPending(dt.getMetadataJson(), objectMapper)) {
+				dt.setDeliveryPersonName(riderName);
+			}
 		}
 		if (riderPhone != null && !riderPhone.isBlank()) {
-			dt.setDeliveryPersonPhone(riderPhone);
+			if (!reassignPending || !DeliveryTrackingMetadataHelper.isReassignPending(dt.getMetadataJson(), objectMapper)) {
+				dt.setDeliveryPersonPhone(riderPhone);
+			}
 		}
 		if (riderPhoto != null && !riderPhoto.isBlank()) {
-			dt.setDeliveryPersonPhoto(riderPhoto);
+			if (!reassignPending || !DeliveryTrackingMetadataHelper.isReassignPending(dt.getMetadataJson(), objectMapper)) {
+				dt.setDeliveryPersonPhoto(riderPhoto);
+			}
 		}
 		if (lastLocation != null && lastLocation.has("latitude") && lastLocation.has("longitude")) {
 			BigDecimal lat = BigDecimal.valueOf(lastLocation.get("latitude").asDouble());
@@ -245,18 +287,10 @@ public class PidgeWebhookProcessingService {
 		dt.setUpdatedAt(Instant.now());
 		deliveryTrackingRepository.save(dt);
 
-		UUID hyperlocalOrderId = dt.getPharmacyOrderId() != null
-				? dt.getPharmacyOrderId()
-				: dt.getMealOrderId();
-		if (hyperlocalOrderId == null && dt.getSubscriptionDeliveryId() != null) {
-			hyperlocalOrderId = orderStatusJdbc.resolveMealOrderIdForSubscriptionDelivery(dt.getSubscriptionDeliveryId());
-		}
-
 		MealCancelProcessResult mealCancelResult = MealCancelProcessResult.NOT_APPLICABLE;
 		UUID mealCancelWebhookEventId = null;
 		String mealCancellationReason = null;
-		boolean isMealHyperlocal = dt.getPharmacyOrderId() == null && hyperlocalOrderId != null;
-		if (isMealHyperlocal && "cancelled".equalsIgnoreCase(normalized)) {
+		if (isMealHyperlocal && "cancelled".equalsIgnoreCase(normalized) && !reassignPending) {
 			MealCancelOutcome mealCancelOutcome = pidgeMealCancellationService.tryProcessMealCancellation(
 					hyperlocalOrderId,
 					dt.getId(),
@@ -285,6 +319,17 @@ public class PidgeWebhookProcessingService {
 		}
 
 		if (mealCancelResult == MealCancelProcessResult.DUPLICATE) {
+			String dupCancellationReason = PidgeMealCancellationSupport.extractCancellationReason(
+					parentStatus, rawFulfillmentStatus, dummyStatus, lastLog);
+			try {
+				mealRefundCaseBridgeService.dispatchRefundCaseOnPidgeCancel(
+						hyperlocalOrderId,
+						pidgeId,
+						dupCancellationReason,
+						mealCancelWebhookEventId);
+			} catch (Exception e) {
+				log.warn("[PIDGE WEBHOOK] meal refund case bridge on duplicate cancel failed: {}", e.getMessage());
+			}
 			log.info(
 					"[PIDGE WEBHOOK] idempotent_duplicate_cancel pidgeId={} mealOrderId={}",
 					pidgeId,
@@ -299,10 +344,15 @@ public class PidgeWebhookProcessingService {
 
 		String orderStatus = mapPidgeNormalizedToPharmacyMealOrderStatus(normalized);
 		if (!trackingDowngradeBlocked && hyperlocalOrderId != null && orderStatus != null) {
-			if (dt.getPharmacyOrderId() != null) {
+			if (mealAlreadyCancelled && !"cancelled".equalsIgnoreCase(orderStatus)) {
+				log.info(
+						"[PIDGE WEBHOOK] skip_order_status_overwrite_cancelled mealOrderId={} attemptedStatus={}",
+						hyperlocalOrderId,
+						orderStatus);
+			} else if (dt.getPharmacyOrderId() != null) {
 				orderStatusJdbc.updatePharmacyOrderStatus(hyperlocalOrderId, orderStatus);
 			} else if (mealCancelResult != MealCancelProcessResult.APPLIED) {
-				orderStatusJdbc.updateMealOrderStatus(hyperlocalOrderId, orderStatus);
+				orderStatusJdbc.updateMealOrderStatusIfNotCancelled(hyperlocalOrderId, orderStatus);
 				if ("delivered".equals(orderStatus)) {
 					orderStatusJdbc.ensureMealOrderSettlementOnDelivered(hyperlocalOrderId);
 				}
@@ -768,14 +818,27 @@ public class PidgeWebhookProcessingService {
 				riderResolved.compositeKey(),
 				normalized);
 
+		boolean isMeal = dt.getPharmacyOrderId() == null && dt.getMealOrderId() != null;
+		boolean reassignPending = isMeal && isReassignActive(dt);
+		String pidgeOrderId = dt.getExternalTaskId();
+
 		if (riderName != null && !riderName.isBlank()) {
-			dt.setDeliveryPersonName(riderName);
+			if (reassignPending) {
+				mealRiderReassignService.completeReassignIfPending(dt, pidgeOrderId, riderName);
+			}
+			if (!reassignPending || !DeliveryTrackingMetadataHelper.isReassignPending(dt.getMetadataJson(), objectMapper)) {
+				dt.setDeliveryPersonName(riderName);
+			}
 		}
 		if (riderPhone != null && !riderPhone.isBlank()) {
-			dt.setDeliveryPersonPhone(riderPhone);
+			if (!reassignPending || !DeliveryTrackingMetadataHelper.isReassignPending(dt.getMetadataJson(), objectMapper)) {
+				dt.setDeliveryPersonPhone(riderPhone);
+			}
 		}
 		if (riderPhoto != null && !riderPhoto.isBlank()) {
-			dt.setDeliveryPersonPhoto(riderPhoto);
+			if (!reassignPending || !DeliveryTrackingMetadataHelper.isReassignPending(dt.getMetadataJson(), objectMapper)) {
+				dt.setDeliveryPersonPhoto(riderPhoto);
+			}
 		}
 		if (riderLat != null && riderLng != null) {
 			Instant ts = eventTimestamp > 0 ? Instant.ofEpochMilli(eventTimestamp) : Instant.now();
@@ -824,12 +887,21 @@ public class PidgeWebhookProcessingService {
 		if (hyperlocalOrderId == null && dt.getSubscriptionDeliveryId() != null) {
 			hyperlocalOrderId = orderStatusJdbc.resolveMealOrderIdForSubscriptionDelivery(dt.getSubscriptionDeliveryId());
 		}
+		boolean mealAlreadyCancelled =
+				dt.getPharmacyOrderId() == null
+						&& hyperlocalOrderId != null
+						&& orderStatusJdbc.isMealOrderCancelled(hyperlocalOrderId);
 		String orderStatus = mapPidgeNormalizedToPharmacyMealOrderStatus(normalized);
 		if (!riderDowngradeBlocked && hyperlocalOrderId != null && orderStatus != null) {
-			if (dt.getPharmacyOrderId() != null) {
+			if (mealAlreadyCancelled && !"cancelled".equalsIgnoreCase(orderStatus)) {
+				log.info(
+						"[PIDGE RIDER TASK] skip_order_status_overwrite_cancelled mealOrderId={} attemptedStatus={}",
+						hyperlocalOrderId,
+						orderStatus);
+			} else if (dt.getPharmacyOrderId() != null) {
 				orderStatusJdbc.updatePharmacyOrderStatus(hyperlocalOrderId, orderStatus);
 			} else {
-				orderStatusJdbc.updateMealOrderStatus(hyperlocalOrderId, orderStatus);
+				orderStatusJdbc.updateMealOrderStatusIfNotCancelled(hyperlocalOrderId, orderStatus);
 				if ("delivered".equals(orderStatus)) {
 					orderStatusJdbc.ensureMealOrderSettlementOnDelivered(hyperlocalOrderId);
 				}
@@ -915,5 +987,13 @@ public class PidgeWebhookProcessingService {
 		} catch (Exception e) {
 			return null;
 		}
+	}
+
+	private boolean isReassignActive(DeliveryTracking dt) {
+		if (dt == null || dt.getMealOrderId() == null) {
+			return false;
+		}
+		return DeliveryTrackingMetadataHelper.isReassignPending(dt.getMetadataJson(), objectMapper)
+				|| mealRiderReassignService.hasOpenReassignRequest(dt.getMealOrderId());
 	}
 }

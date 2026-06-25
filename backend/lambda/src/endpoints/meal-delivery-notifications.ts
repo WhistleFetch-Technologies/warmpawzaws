@@ -72,6 +72,8 @@ export function registerMealDeliveryNotificationEndpoints(app: Hono) {
         customerName: body.customerName != null ? String(body.customerName) : undefined,
         riderName: body.riderName != null ? String(body.riderName) : undefined,
         reason: body.reason != null ? String(body.reason) : undefined,
+        customerMessage:
+          body.customerMessage != null ? String(body.customerMessage) : undefined,
         deliveryTrackingId:
           body.deliveryTrackingId != null ? String(body.deliveryTrackingId) : undefined,
         pidgeOrderId: body.pidgeOrderId != null ? String(body.pidgeOrderId) : undefined,

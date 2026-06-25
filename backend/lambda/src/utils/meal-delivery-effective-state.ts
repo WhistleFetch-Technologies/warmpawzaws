@@ -8,6 +8,7 @@ export type MealDeliveryEffective =
   | 'confirmed'
   | 'preparing'
   | 'ready_for_pickup'
+  | 'reassign_pending'
   | 'picked_up'
   | 'on_the_way'
   | 'delivered'
@@ -42,13 +43,26 @@ export function normalizeMealDeliveryToken(raw: string | null | undefined): stri
 export function resolveEffectiveMealDeliveryState(
   orderStatus: string | null | undefined,
   logisticsStatus: string | null | undefined,
+  options?: {
+    reassignPending?: boolean;
+    cancelledBy?: string | null;
+    cancelledAt?: string | null;
+  },
 ): MealDeliveryEffective {
+  if (options?.reassignPending && String(orderStatus ?? '').trim().toLowerCase() === 'ready_for_pickup') {
+    return 'reassign_pending';
+  }
+
   const orderSegs = splitMealStatusSegments(orderStatus);
   const logSegs = splitMealStatusSegments(logisticsStatus);
   const oJoined = orderSegs.join('_');
   const lJoined = logSegs.join('_');
 
-  const hasCancelled = [...orderSegs, ...logSegs].some((s) => s === 'cancelled');
+  const hasCancelledBy =
+    options?.cancelledBy != null && String(options.cancelledBy).trim() !== '';
+  const hasCancelledAt =
+    options?.cancelledAt != null && String(options.cancelledAt).trim() !== '';
+  const hasCancelled = hasCancelledBy || hasCancelledAt || [...orderSegs, ...logSegs].some((s) => s === 'cancelled');
   if (hasCancelled) return 'cancelled';
 
   const hasFailed = [...orderSegs, ...logSegs].some((s) => s === 'failed');
@@ -105,12 +119,33 @@ function mapBelowReadyTier(tier: number, _o: string, _l: string): MealDeliveryEf
   return 'pending';
 }
 
+export function parseDeliveryTrackingReassignPending(metadata: unknown): boolean {
+  if (metadata == null) return false;
+  let obj: Record<string, unknown>;
+  if (typeof metadata === 'string') {
+    try {
+      obj = JSON.parse(metadata) as Record<string, unknown>;
+    } catch {
+      return false;
+    }
+  } else if (typeof metadata === 'object' && !Array.isArray(metadata)) {
+    obj = metadata as Record<string, unknown>;
+  } else {
+    return false;
+  }
+  return obj.reassign_pending === true;
+}
+
 export function isTerminalMealDeliveryState(status: MealDeliveryEffective): boolean {
   return status === 'delivered' || status === 'cancelled' || status === 'failed';
 }
 
 /** Rider footer bar on customer home — active Pidge delivery phases only (not kitchen). */
-export function shouldShowMealRiderFooterBar(logisticsStatus: string | null | undefined): boolean {
+export function shouldShowMealRiderFooterBar(
+  logisticsStatus: string | null | undefined,
+  options?: { reassignPending?: boolean },
+): boolean {
+  if (options?.reassignPending) return true;
   const segs = splitMealStatusSegments(logisticsStatus);
   const active = new Set([
     'heading_to_pickup',
@@ -124,7 +159,11 @@ export function shouldShowMealRiderFooterBar(logisticsStatus: string | null | un
   return segs.some((s) => active.has(s));
 }
 
-export function shouldShowDeliveryRider(logisticsStatus: string | null | undefined): boolean {
+export function shouldShowDeliveryRider(
+  logisticsStatus: string | null | undefined,
+  options?: { reassignPending?: boolean },
+): boolean {
+  if (options?.reassignPending) return false;
   const segs = splitMealStatusSegments(logisticsStatus);
   const active = new Set([
     'heading_to_pickup',

@@ -32,9 +32,20 @@ class PidgeMealCancellationSupportTest {
 	}
 
 	@Test
-	void extractCancellationReason_minimalPayload() {
-		String reason =
+	void toCustomerCancellationMessage_neverExposesAuditTokens() {
+		String audit =
 				PidgeMealCancellationSupport.extractCancellationReason("cancelled", "CANCELLED", null, null);
-		assertEquals("pidge_logistics_cancelled;parent=cancelled;fulfillment=CANCELLED", reason);
+		assertEquals("Your refund is being processed.", PidgeMealCancellationSupport.toCustomerCancellationMessage(audit));
+	}
+
+	@Test
+	void toCustomerCancellationMessage_usesRemarkWhenPresent() throws Exception {
+		var lastLog = objectMapper.readTree(
+				"""
+				{"status":"CANCELLED","remark":"No rider found in zone","timestamp":1778500477813}
+				""");
+		String audit = PidgeMealCancellationSupport.extractCancellationReason(
+				"cancelled", "CANCELLED", "", lastLog);
+		assertEquals("No rider found in zone", PidgeMealCancellationSupport.toCustomerCancellationMessage(audit));
 	}
 }

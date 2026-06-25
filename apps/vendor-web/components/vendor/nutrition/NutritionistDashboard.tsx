@@ -18,8 +18,10 @@ import {
   resolveEffectiveMealDeliveryState,
   formatVendorMealDeliveryBadge,
   isTerminalMealDeliveryState,
+  mealReassignMessage,
   type MealDeliveryEffective,
 } from '@warmpawz/shared-types';
+import { CreateTicketModal } from '@/components/vendor/support/CreateTicketModal';
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -168,6 +170,9 @@ interface MealOrder {
   logistics_type?: string;
   /** Latest delivery_tracking.status for this meal_order (API enriched). */
   delivery_tracking_status?: string | null;
+  reassign_pending?: boolean;
+  delivery_partner_name?: string;
+  delivery_partner_phone?: string;
   /** Resolved display status (order ∪ logistics precedence). */
   effective_delivery_status?: MealDeliveryEffective;
 }
@@ -297,6 +302,7 @@ function vendorMealEffectiveStatus(o: MealOrder): MealDeliveryEffective {
     resolveEffectiveMealDeliveryState(
       String(o.status || ''),
       o.delivery_tracking_status != null ? String(o.delivery_tracking_status) : undefined,
+      { reassignPending: Boolean(o.reassign_pending) },
     )
   );
 }
@@ -350,6 +356,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   const [acceptedOrderIds, setAcceptedOrderIds] = useState<Set<string>>(getStoredAcceptedOrders());
   /** Which bucket’s order list is shown under the stats on the Orders tab. */
   const [ordersBucketFilter, setOrdersBucketFilter] = useState<OrdersTabBucketFilter>('today');
+  const [supportTicketOrder, setSupportTicketOrder] = useState<MealOrder | null>(null);
   const [ordersFetchError, setOrdersFetchError] = useState<string | null>(null);
   
   // Helper to update both state and localStorage
@@ -945,9 +952,32 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
               </>
             )}
             {order.status === 'ready_for_pickup' && isPidgeLogistics && (
-              <p className="text-sm text-slate-600 w-full py-2 px-3 rounded-lg bg-slate-50 border border-slate-200">
-                Waiting for rider pickup — status updates when Pidge confirms pickup and delivery.
-              </p>
+              <div className="w-full space-y-2">
+                {order.reassign_pending ? (
+                  <p className="text-sm text-amber-800 w-full py-2 px-3 rounded-lg bg-amber-50 border border-amber-200">
+                    {mealReassignMessage()}
+                  </p>
+                ) : (
+                  <>
+                    {(order.delivery_partner_name || order.delivery_partner_phone) && (
+                      <p className="text-xs text-slate-600 px-1">
+                        Rider: {order.delivery_partner_name || 'Assigned'}
+                        {order.delivery_partner_phone ? ` · ${order.delivery_partner_phone}` : ''}
+                      </p>
+                    )}
+                    <p className="text-sm text-slate-600 w-full py-2 px-3 rounded-lg bg-slate-50 border border-slate-200">
+                      Waiting for rider pickup — status updates when Pidge confirms pickup and delivery.
+                    </p>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSupportTicketOrder(order)}
+                  className="w-full py-2 px-3 rounded-lg border border-orange-200 bg-orange-50 text-orange-800 text-sm font-medium hover:bg-orange-100 transition-colors"
+                >
+                  Rider issue — contact support
+                </button>
+              </div>
             )}
             {(order.status === 'picked_up' || order.status === 'on_the_way' || order.status === 'dispatched') &&
               !isPidgeLogistics && (
@@ -1305,6 +1335,28 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         vendorId={vendorId}
         editingProduct={editingProduct}
         onSave={handleSaveMealProduct}
+      />
+
+      <CreateTicketModal
+        open={Boolean(supportTicketOrder)}
+        onOpenChange={(open) => {
+          if (!open) setSupportTicketOrder(null);
+        }}
+        vendorId={vendorId}
+        mealOrderId={supportTicketOrder?.id}
+        defaultSubject={
+          supportTicketOrder
+            ? `Rider pickup issue — ${supportTicketOrder.order_number || supportTicketOrder.id.slice(0, 8)}`
+            : undefined
+        }
+        defaultDescription={
+          supportTicketOrder
+            ? `Meal order ${supportTicketOrder.order_number || supportTicketOrder.id} is ready for pickup but the assigned Pidge rider cannot reach the kitchen.\n\nRider: ${supportTicketOrder.delivery_partner_name || 'unknown'}${supportTicketOrder.delivery_partner_phone ? ` (${supportTicketOrder.delivery_partner_phone})` : ''}\n\nPlease reassign a delivery partner.`
+            : undefined
+        }
+        defaultCategory="delivery"
+        ticketMetadata={{ sub_reason: 'rider_pickup_issue' }}
+        onTicketCreated={() => setSupportTicketOrder(null)}
       />
     </div>
   );

@@ -70,7 +70,9 @@ public class MealDeliveryNotificationService {
 			ObjectNode customerBody =
 					buildBody(ctx, mealOrderId, dt, pidgeOrderId, customerEvent, "customer", ctx.customerId());
 			if (cancellationReason != null && !cancellationReason.isBlank()) {
-				customerBody.put("reason", cancellationReason);
+				customerBody.put(
+						"customerMessage",
+						PidgeMealCancellationSupport.toCustomerCancellationMessage(cancellationReason));
 			}
 			dispatchMealNotify(customerBody, mealOrderId, pidgeOrderId, ctx.customerId(), ctx.vendorId());
 		} else if (isLogisticsTerminal(normalizedInternal, dt.getStatus())) {
@@ -325,4 +327,54 @@ public class MealDeliveryNotificationService {
 			String orderNumber,
 			String vendorName,
 			String customerName) {}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void notifyMealRiderReassignPending(DeliveryTracking dt, String pidgeOrderId) {
+		notifyReassignEvent(dt, pidgeOrderId, "meal_rider_reassign_pending", "vendor_meal_rider_reassign_pending");
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void notifyMealRiderReassigned(DeliveryTracking dt, String pidgeOrderId, String newRiderName) {
+		if (newRiderName != null && !newRiderName.isBlank() && dt != null) {
+			dt.setDeliveryPersonName(newRiderName);
+		}
+		notifyReassignEvent(dt, pidgeOrderId, "meal_rider_reassigned", "vendor_meal_rider_reassigned");
+	}
+
+	private void notifyReassignEvent(
+			DeliveryTracking dt,
+			String pidgeOrderId,
+			String customerEvent,
+			String vendorEvent) {
+		if (dt == null) {
+			return;
+		}
+		UUID mealOrderId = dt.getMealOrderId();
+		if (mealOrderId == null && dt.getSubscriptionDeliveryId() != null) {
+			mealOrderId = resolveMealOrderIdForSubscription(dt.getSubscriptionDeliveryId());
+		}
+		if (mealOrderId == null) {
+			return;
+		}
+		MealOrderContext ctx = loadMealOrderContext(mealOrderId);
+		if (ctx == null) {
+			return;
+		}
+		if (ctx.customerId() != null) {
+			dispatchMealNotify(
+					buildBody(ctx, mealOrderId, dt, pidgeOrderId, customerEvent, "customer", ctx.customerId()),
+					mealOrderId,
+					pidgeOrderId,
+					ctx.customerId(),
+					ctx.vendorId());
+		}
+		if (ctx.vendorId() != null) {
+			dispatchMealNotify(
+					buildBody(ctx, mealOrderId, dt, pidgeOrderId, vendorEvent, "vendor", ctx.vendorId()),
+					mealOrderId,
+					pidgeOrderId,
+					ctx.customerId(),
+					ctx.vendorId());
+		}
+	}
 }

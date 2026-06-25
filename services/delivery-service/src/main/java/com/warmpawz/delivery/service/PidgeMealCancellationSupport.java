@@ -51,6 +51,20 @@ public final class PidgeMealCancellationSupport {
 		return sb.toString();
 	}
 
+	/** Customer-facing copy for push/in-app — never expose internal audit tokens. */
+	public static String toCustomerCancellationMessage(String auditReason) {
+		if (auditReason != null && auditReason.toLowerCase(Locale.ROOT).contains("remark=")) {
+			int idx = auditReason.indexOf(";remark=");
+			if (idx >= 0) {
+				String remark = auditReason.substring(idx + 8).trim();
+				if (!remark.isEmpty() && !remark.startsWith("pidge_")) {
+					return truncate(remark, 200);
+				}
+			}
+		}
+		return "Your refund is being processed.";
+	}
+
 	private static String truncate(String value, int maxLen) {
 		if (value.length() <= maxLen) {
 			return value;

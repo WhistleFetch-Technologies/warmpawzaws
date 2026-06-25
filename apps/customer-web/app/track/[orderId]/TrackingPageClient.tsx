@@ -253,10 +253,35 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
   const steps = isHyperlocal ? deliveryStatusSteps : statusSteps;
   const trackingStatus = tracking.tracking?.status || (isHyperlocal ? 'pending_assignment' : 'pending');
   const currentStepIndex = getStatusIndex(trackingStatus, steps);
-  const mealDeliveryEff = resolveEffectiveMealDeliveryState(tracking.order.status, tracking.tracking?.status ?? null);
+  const mealDeliveryEff = resolveEffectiveMealDeliveryState(
+    tracking.order.status,
+    tracking.tracking?.status ?? null,
+    {
+      reassignPending: Boolean(tracking.tracking?.reassignPending),
+      cancelledBy:
+        (tracking.order as { cancelled_by?: string; cancelledBy?: string }).cancelled_by ??
+        (tracking.order as { cancelledBy?: string }).cancelledBy ??
+        null,
+      cancelledAt:
+        (tracking.order as { cancelled_at?: string; cancelledAt?: string }).cancelled_at ??
+        (tracking.order as { cancelledAt?: string }).cancelledAt ??
+        null,
+    },
+  );
+  const mealCancelledBy =
+    (tracking.order as { cancelled_by?: string; cancelledBy?: string }).cancelled_by ??
+    (tracking.order as { cancelledBy?: string }).cancelledBy ??
+    null;
+  const mealCancelledAt =
+    (tracking.order as { cancelled_at?: string; cancelledAt?: string }).cancelled_at ??
+    (tracking.order as { cancelledAt?: string }).cancelledAt ??
+    null;
+  const isMealCancelled =
+    tracking.orderType === 'meal' &&
+    (mealDeliveryEff === 'cancelled' || (mealDeliveryEff === 'failed' && Boolean(mealCancelledBy)));
   const isDelivered =
     tracking.orderType === 'meal'
-      ? mealDeliveryEff === 'delivered'
+      ? mealDeliveryEff === 'delivered' && !mealCancelledBy
       : tracking.tracking?.status === 'delivered' || tracking.order.status === 'delivered';
 
   const mealBackHref =
@@ -310,6 +335,8 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
         orderDisplayId={formatMealOrderDisplayId(tracking.order)}
         orderStatus={tracking.order.status}
         logisticsStatus={logisticsStatus}
+        cancelledBy={mealCancelledBy}
+        cancelledAt={mealCancelledAt}
         totalAmount={orderTotal}
         refundReviewCard={
           refundReview ? <MealRefundReviewTrackingCard refundReview={refundReview} /> : undefined
@@ -438,14 +465,17 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
                   ? `Delivered ${formatDate(tracking.tracking.deliveredAt)}`
                   : 'Your meal plan order has been delivered.'}
               </p>
-              <button
-                type="button"
-                onClick={openMealOrderHelp}
-                className="mt-4 px-6 py-2 rounded-full font-medium border-2 border-white/90 text-white hover:bg-white/15 inline-flex items-center justify-center gap-2"
-              >
-                <HelpCircle className="w-4 h-4" />
-                Need help with this order?
-              </button>
+            </div>
+          ) : undefined
+        }
+        cancelledBanner={
+          isMealCancelled ? (
+            <div className="bg-red-50 border border-red-100 rounded-2xl p-6 text-center shadow-sm">
+              <AlertCircle className="w-12 h-12 mx-auto mb-3 text-red-500" />
+              <h2 className="text-xl font-bold text-red-900 mb-1">Order cancelled</h2>
+              <p className="text-sm text-red-800/90">
+                Your delivery could not be completed. Refund details are shown above if applicable.
+              </p>
             </div>
           ) : undefined
         }
@@ -466,16 +496,6 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
           >
             <HelpCircle className="w-5 h-5" />
             Need help with this order?
-          </button>
-        }
-        floatingChatButton={
-          <button
-            type="button"
-            onClick={openMealOrderHelp}
-            className="w-14 h-14 bg-white shadow-lg rounded-full flex items-center justify-center border border-slate-100 hover:bg-slate-50 transition"
-            aria-label="Help with this order"
-          >
-            <HelpCircle className="w-7 h-7 text-[#FF8C42]" />
           </button>
         }
       />

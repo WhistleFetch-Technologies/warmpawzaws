@@ -33,6 +33,7 @@ import {
 	ticketHasAssignee,
 } from "./crm-utils";
 import { SupportAttachmentList } from "./SupportAttachmentList";
+import { MealLogisticsActions } from "./MealLogisticsActions";
 
 interface SupportCrmContextPanelProps {
 	ticket: Ticket;
@@ -128,6 +129,12 @@ export function SupportCrmContextPanel({
 						) : (
 							<p className="text-xs font-mono text-gray-600 break-all">{ticket.mealOrderId}</p>
 						)}
+						{ticket.mealOrderId ? (
+							<MealLogisticsActions
+								mealOrderId={ticket.mealOrderId}
+								supportTicketId={ticket.id}
+							/>
+						) : null}
 					</Section>
 				)}
 

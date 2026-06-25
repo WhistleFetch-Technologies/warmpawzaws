@@ -73,7 +73,7 @@ import {
   type MealProductParsedCore,
 } from '../utils/meal-product-persistence';
 import { formatMealProductZodError, parseMealProductRequest } from '../zodContracts/meal-product.contract';
-import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
+import { resolveEffectiveMealDeliveryState, parseDeliveryTrackingReassignPending } from '../utils/meal-delivery-effective-state';
 import { resolveMealCatalogDisplayName } from '../utils/meal-plan-resolve';
 import {
   deleteOrDeactivateMealPlanForVendor,
@@ -2765,19 +2765,27 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         .filter((o: { source?: string; id?: string }) => String(o.source || '') === 'meal_orders' && o.id)
         .map((o: { id: string }) => String(o.id));
 
-      const trackingByMealId = new Map<string, string>();
+      const trackingByMealId = new Map<string, { status: string; reassignPending: boolean; riderName?: string; riderPhone?: string }>();
       if (mealOrderIds.length > 0) {
         try {
           const trRows = await query(
-            `SELECT DISTINCT ON (meal_order_id) meal_order_id::text AS meal_order_id, status
+            `SELECT DISTINCT ON (meal_order_id) meal_order_id::text AS meal_order_id, status, metadata,
+                    delivery_person_name, delivery_person_phone
                FROM delivery_tracking
               WHERE meal_order_id::text = ANY($1::text[])
               ORDER BY meal_order_id, updated_at DESC NULLS LAST, created_at DESC`,
             [mealOrderIds],
-          ).catch(() => ({ rows: [] as Array<{ meal_order_id?: string; status?: string }> }));
+          ).catch(() => ({ rows: [] as Array<{ meal_order_id?: string; status?: string; metadata?: unknown; delivery_person_name?: string; delivery_person_phone?: string }> }));
           for (const r of trRows.rows || []) {
             const mid = String(r.meal_order_id || '');
-            if (mid) trackingByMealId.set(mid, String(r.status ?? ''));
+            if (mid) {
+              trackingByMealId.set(mid, {
+                status: String(r.status ?? ''),
+                reassignPending: parseDeliveryTrackingReassignPending(r.metadata),
+                riderName: r.delivery_person_name ? String(r.delivery_person_name) : undefined,
+                riderPhone: r.delivery_person_phone ? String(r.delivery_person_phone) : undefined,
+              });
+            }
           }
         } catch (trErr) {
           console.warn('[meal-orders] delivery_tracking batch lookup failed:', (trErr as Error)?.message);
@@ -2788,9 +2796,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         const rec = { ...(row as Record<string, unknown>) };
         if (String(rec.source || '') === 'meal_orders' && rec.id) {
           const mid = String(rec.id);
-          const dtStatus = trackingByMealId.get(mid);
-          rec.delivery_tracking_status = dtStatus ?? null;
-          rec.effective_delivery_status = resolveEffectiveMealDeliveryState(String(rec.status ?? ''), dtStatus ?? '');
+          const tr = trackingByMealId.get(mid);
+          const dtStatus = tr?.status ?? null;
+          const reassignPending = tr?.reassignPending ?? false;
+          rec.delivery_tracking_status = dtStatus;
+          rec.reassign_pending = reassignPending;
+          if (tr?.riderName) rec.delivery_partner_name = tr.riderName;
+          if (tr?.riderPhone) rec.delivery_partner_phone = tr.riderPhone;
+          rec.effective_delivery_status = resolveEffectiveMealDeliveryState(
+            String(rec.status ?? ''),
+            dtStatus ?? '',
+            { reassignPending },
+          );
         }
         return sanitizeVendorMealOrderRow(rec);
       });

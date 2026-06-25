@@ -33,7 +33,7 @@ import {
   pidgeCreateOrder,
   extractPidgeOrderIdMap,
 } from '../lib/services/pidge-logistics';
-import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
+import { resolveEffectiveMealDeliveryState, parseDeliveryTrackingReassignPending } from '../utils/meal-delivery-effective-state';
 import {
   buildCustomerMealTrackingOrderPayload,
   buildMealTrackingCustomerPayload,
@@ -992,6 +992,8 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
         const deliveryTracking = tracking.rows[0];
         const rawOrderStatus = order.status ?? order.order_status ?? 'pending';
         const logisticsRaw = String(deliveryTracking?.status ?? '').trim();
+        const reassignPending =
+          orderType === 'meal' ? parseDeliveryTrackingReassignPending(deliveryTracking?.metadata) : false;
 
         let displayStatus: string = rawOrderStatus;
         let trackingStatusOut: string;
@@ -1007,10 +1009,20 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
 
         // Meals: never let stale logistics rows override terminal meal_orders state (e.g. delivered).
         if (orderType === 'meal') {
-          const effective = resolveEffectiveMealDeliveryState(rawOrderStatus, logisticsRaw);
+          const cancelledBy =
+            order.cancelled_by != null ? String(order.cancelled_by) : null;
+          const cancelledAt =
+            order.cancelled_at != null ? String(order.cancelled_at) : null;
+          const effective = resolveEffectiveMealDeliveryState(rawOrderStatus, logisticsRaw, {
+            reassignPending,
+            cancelledBy,
+            cancelledAt,
+          });
           displayStatus = effective;
           if (effective === 'delivered' || effective === 'cancelled' || effective === 'failed') {
             trackingStatusOut = effective === 'delivered' ? 'delivered' : effective;
+          } else if (effective === 'reassign_pending') {
+            trackingStatusOut = 'pending_assignment';
           }
         }
 
@@ -1074,6 +1086,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
               trackingUrl: deliveryTracking.tracking_url,
               locationHistory: deliveryTracking.location_history?.slice(0, 20) || [],
               logistics_partner: deliveryTracking.logistics_partner,
+              reassignPending,
             }
           : {
               status: orderType === 'meal' ? trackingStatusOut : 'pending_assignment',
@@ -1129,7 +1142,10 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
                 };
 
         if (orderType === 'meal' && mealOrderSource === 'meal_orders' && order.id) {
-          const refundReview = await getMealRefundReviewCustomerMetadata(String(order.id));
+          const refundReview = await getMealRefundReviewCustomerMetadata(String(order.id), {
+            cancelledBy: order.cancelled_by,
+            paymentStatus: order.payment_status,
+          });
           if (refundReview) {
             orderPayload = { ...orderPayload, refundReview };
           }

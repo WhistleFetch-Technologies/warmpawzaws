@@ -10,6 +10,7 @@ export function MealLiveMapSection({
   logisticsType,
   logisticsStatus,
   orderEffectiveState,
+  reassignPending = false,
   riderCoords,
   destination,
   etaMinutes,
@@ -19,6 +20,7 @@ export function MealLiveMapSection({
   logisticsType?: string | null;
   logisticsStatus?: string | null;
   orderEffectiveState?: MealDeliveryEffective;
+  reassignPending?: boolean;
   riderCoords: { lat: number; lng: number } | null;
   destination: Coords | null;
   etaMinutes?: number | null;
@@ -29,6 +31,7 @@ export function MealLiveMapSection({
     logisticsType,
     logisticsStatus,
     orderEffectiveState,
+    reassignPending,
   });
 
   if (!show) return null;
