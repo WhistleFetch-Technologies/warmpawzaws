@@ -41,18 +41,18 @@ describe('parseBulkProductXlsxBuffer', () => {
     expect(BULK_HEADER_FIELD_MAP.image1000x1000px).toBe('images');
   });
 
-  it('template has 28 unified columns', () => {
-    expect(BULK_TEMPLATE_COLUMN_HEADERS).toHaveLength(28);
+  it('template has 26 unified columns', () => {
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toHaveLength(26);
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Delivery Regions');
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Product Group ID');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Variant Attribute 1');
-    expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Is Default');
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).not.toContain('Is Default');
   });
 
   it('maps variant attribute columns for bulk upload', () => {
     expect(BULK_HEADER_FIELD_MAP.variantattribute1).toBe('variant_attr_1');
     expect(BULK_HEADER_FIELD_MAP.variantvalue1).toBe('variant_value_1');
-    expect(BULK_HEADER_FIELD_MAP.isdefault).toBe('is_default');
-    expect(BULK_HEADER_FIELD_MAP.variantsp).toBe('variant_sp');
+    expect(BULK_HEADER_FIELD_MAP.productgroupid).toBe('product_group_id');
   });
 
   it('maps Barcode (EAN) to barcode, not sku', () => {

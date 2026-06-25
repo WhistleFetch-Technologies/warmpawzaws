@@ -42,8 +42,15 @@ import {
   aggregateGroupStock,
   pickGroupParentImages,
   bulkGroupExtrasSource,
+  listingPriceFromGroup,
   type BulkVariantRow,
 } from '../utils/bulk-product-variant-builder';
+import {
+  findExistingProductByGroupKey,
+  generateProductGroupId,
+  parseProductMetadata,
+  resolveBulkGroupKey,
+} from '../utils/product-group-identity';
 import {
   applyVendorProductExtrasToPayload,
   vendorExtrasFromBulkRow,
@@ -75,9 +82,7 @@ interface BulkProductRow {
   variant_value_1?: string | null;
   variant_attr_2?: string | null;
   variant_value_2?: string | null;
-  is_default?: boolean | string | null;
-  variant_sp?: number | string | null;
-  variant_mrp?: number | string | null;
+  product_group_id?: string | null;
   barcode?: string | null;
   key_features?: string | null;
   product_specifications?: string | null;
@@ -218,9 +223,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             variant_value_1: product.variant_value_1 != null ? String(product.variant_value_1).trim() : null,
             variant_attr_2: product.variant_attr_2 != null ? String(product.variant_attr_2).trim() : null,
             variant_value_2: product.variant_value_2 != null ? String(product.variant_value_2).trim() : null,
-            is_default: product.is_default ?? null,
-            variant_sp: product.variant_sp ?? null,
-            variant_mrp: product.variant_mrp ?? null,
+            product_group_id:
+              product.product_group_id != null ? String(product.product_group_id).trim() : null,
             barcode: product.barcode?.trim() || null,
             key_features: product.key_features?.trim() || null,
             product_specifications: product.product_specifications?.trim() || null,
@@ -237,7 +241,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         errors.push(...rowErrors);
       });
 
-      const groups = groupBulkRows(validProducts as BulkVariantRow[]);
+      const groups = groupBulkRows(validProducts as BulkVariantRow[], vendorId);
       const invalidRowSet = new Set<number>();
       for (const group of groups) {
         const groupErrors = validateVariantGroup(group);
@@ -276,6 +280,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         productGroups: groups.map((g) => ({
           name: g.name,
           category: g.category,
+          product_group_id: g.product_group_id,
           variantCount: g.variants.length,
           rowNums: g.rowNums,
         })),
@@ -331,7 +336,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         rowsWithNum.push({ ...(product as BulkVariantRow), rowNum: product.rowNum ?? titledRowNum });
       }
 
-      const groups = groupBulkRows(rowsWithNum);
+      const groups = groupBulkRows(rowsWithNum, vendorId);
 
       for (const group of groups) {
         const primaryRowNum = group.rowNums[0] ?? 1;
@@ -352,31 +357,47 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           }
 
           const productTitle = group.name.trim();
-          let existingProduct: { id: string; sku?: string } | null = null;
-          if (productTitle) {
-            const existing = await query(
-              `SELECT id, sku FROM products
-               WHERE vendor_id = $1 AND lower(trim(name)) = lower(trim($2))
-               LIMIT 1`,
-              [vendorId, productTitle],
+          const groupKey =
+            resolveBulkGroupKey(vendorId, {
+              product_group_id: group.product_group_id,
+              name: productTitle,
+              brand: group.parent.brand,
+              category_id: resolvedCategory.id,
+            }) ?? group.groupKey;
+
+          let existingProduct: {
+            id: string;
+            sku?: string;
+            category_id?: string;
+            metadata?: unknown;
+          } | null = await findExistingProductByGroupKey(vendorId, groupKey);
+
+          if (
+            existingProduct?.category_id &&
+            String(existingProduct.category_id) !== String(resolvedCategory.id)
+          ) {
+            throw new Error(
+              'Category cannot change for an existing Product Group ID — create a new group ID for a different category',
             );
-            if (existing.rows.length > 0) {
-              existingProduct = existing.rows[0] as { id: string; sku?: string };
-            }
           }
 
           const firstRow = group.variants[0];
-          const pricingNorm = normalizeEcommerceProductPricing(firstRow as Record<string, unknown>);
-          const parentPrice = pricingNorm.ok
-            ? pricingNorm.pricing.sellingPrice
-            : Number(group.parent.price);
-          const parentMrp = pricingNorm.ok
-            ? pricingNorm.pricing.mrp
-            : group.parent.compare_at_price != null
-              ? Number(group.parent.compare_at_price)
-              : null;
-
           const hasVariants = group.variants.some((r) => rowHasVariantAxes(r));
+
+          let productGroupId =
+            group.product_group_id ?? String(firstRow.product_group_id ?? '').trim();
+          if (hasVariants && !productGroupId) {
+            productGroupId = generateProductGroupId();
+          }
+
+          const listingPricing = hasVariants
+            ? listingPriceFromGroup(group)
+            : {
+                price: Number(firstRow.price) || Number(firstRow.compare_at_price) || 0,
+                compare_at_price:
+                  firstRow.compare_at_price != null ? Number(firstRow.compare_at_price) : null,
+              };
+
           const stockValue = hasVariants
             ? aggregateGroupStock(group)
             : Number(firstRow.stock_quantity) || 0;
@@ -391,12 +412,13 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             description: group.parent.description || null,
             category_id: resolvedCategory.id,
             category: resolvedCategory.name,
-            price: parentPrice,
-            compare_at_price: parentMrp,
+            price: listingPricing.price,
+            compare_at_price: listingPricing.compare_at_price,
             stock: stockValue,
             hsn_code: group.parent.hsn_code || null,
             gst_rate: group.parent.gst_rate != null ? Number(group.parent.gst_rate) : null,
             images: parentImages,
+            brand: group.parent.brand || null,
             updated_at: new Date().toISOString(),
           };
 
@@ -407,13 +429,31 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           );
 
           if (!productData.metadata) {
-            productData.metadata = { bulk_uploaded: true, upload_date: new Date().toISOString() };
+            productData.metadata = {
+              bulk_uploaded: true,
+              upload_date: new Date().toISOString(),
+            };
           } else {
             productData.metadata = {
               ...(productData.metadata as Record<string, unknown>),
               bulk_uploaded: true,
               upload_date: new Date().toISOString(),
             };
+          }
+          if (productGroupId) {
+            productData.metadata = {
+              ...(productData.metadata as Record<string, unknown>),
+              product_group_id: productGroupId,
+            };
+          }
+          if (existingProduct) {
+            const existingMeta = parseProductMetadata(existingProduct.metadata);
+            if (existingMeta.product_group_id) {
+              productData.metadata = {
+                ...(productData.metadata as Record<string, unknown>),
+                product_group_id: existingMeta.product_group_id,
+              };
+            }
           }
           if (typeof productData.metadata === 'object' && productData.metadata !== null) {
             productData.metadata = JSON.stringify(productData.metadata);
@@ -445,14 +485,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           }
 
           if (savedProductId && hasVariants) {
-            const skuInputs = buildSkuInputsFromGroup(group, {
-              price: parentPrice,
-              compare_at_price: parentMrp,
-            });
-            await syncProductSkus(vendorId, savedProductId, skuInputs, {
-              price: parentPrice,
-              compare_at_price: parentMrp,
-            });
+            const skuInputs = buildSkuInputsFromGroup(group);
+            await syncProductSkus(vendorId, savedProductId, skuInputs);
           }
         } catch (error: any) {
           results.failed += group.rowNums.length;
@@ -584,10 +618,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'variantvalue1': 'variant_value_1',
         'variantattribute2': 'variant_attr_2',
         'variantvalue2': 'variant_value_2',
-        'isdefault': 'is_default',
-        'default': 'is_default',
-        'variantsp': 'variant_sp',
-        'variantmrp': 'variant_mrp',
+        'productgroupid': 'product_group_id',
+        'productgroup': 'product_group_id',
         'material': 'material',
         'materials': 'material',
         'ingredients': 'material',

@@ -32,7 +32,8 @@ import {
   resolveSkuPriceForSelection,
   skuImages,
   cartLineKey,
-  getDefaultProductSku,
+  getInitialProductSku,
+  hasIncompleteVariantSelection,
   optionValuesToSelectedVariations,
   parseClientSkuPrice,
   variationSelectionKey,
@@ -85,6 +86,10 @@ interface Product {
   key_features?: string;
   pet_type?: string;
   manufacturing_details?: string;
+  has_variants?: boolean;
+  price_from?: boolean;
+  min_price?: number;
+  default_option_values?: Record<string, string>;
 }
 
 interface ProductVariation {
@@ -365,7 +370,14 @@ export default function ProductDetailClient() {
             !Array.isArray(p.specifications)
               ? (p.specifications as Record<string, unknown>)
               : undefined,
-          default_option_values: p.default_option_values,
+          listing_option_values: p.listing_option_values,
+          default_option_values: p.default_option_values ?? p.listing_option_values,
+          has_variants: Boolean(p.has_variants ?? p.has_variations),
+          price_from: Boolean(p.price_from),
+          min_price:
+            p.min_price != null && Number.isFinite(Number(p.min_price))
+              ? Number(p.min_price)
+              : undefined,
         });
         const skusFromApi = (
           (productRes?.skus ??
@@ -392,7 +404,8 @@ export default function ProductDetailClient() {
         );
         defaultVariationsAppliedRef.current = false;
         if (!userTouchedVariationsRef.current) {
-          const fromProduct = p.default_option_values as Record<string, unknown> | undefined;
+          const fromProduct =
+            (p.listing_option_values ?? p.default_option_values) as Record<string, unknown> | undefined;
           const defaultOv =
             fromProduct && typeof fromProduct === 'object'
               ? optionValuesToSelectedVariations(fromProduct, variationList)
@@ -469,7 +482,15 @@ export default function ProductDetailClient() {
     }
     return product?.original_price;
   }, [matchedSku, product?.original_price]);
+  const showFromPrice = useMemo(() => {
+    if (!product?.price_from || productSkus.length === 0) return false;
+    return hasIncompleteVariantSelection(productSkus, selectedVariations);
+  }, [product?.price_from, productSkus, selectedVariations]);
+
+  const headerPrice = showFromPrice && product?.min_price != null ? product.min_price : displayPrice;
+
   const displayStock = matchedSku?.stock ?? product?.stock ?? 0;
+
   const displayImages = useMemo(() => {
     const skuImgs = skuImages(matchedSku);
     if (skuImgs.length > 0) return skuImgs;
@@ -479,10 +500,10 @@ export default function ProductDetailClient() {
   useEffect(() => {
     if (userTouchedVariationsRef.current || defaultVariationsAppliedRef.current) return;
     if (productSkus.length === 0) return;
-    const defaultSku = getDefaultProductSku(productSkus);
-    if (!defaultSku?.option_values) return;
+    const initialSku = getInitialProductSku(productSkus);
+    if (!initialSku?.option_values) return;
     const next = optionValuesToSelectedVariations(
-      defaultSku.option_values as Record<string, unknown>,
+      initialSku.option_values as Record<string, unknown>,
       product?.variations,
     );
     if (Object.keys(next).length > 0) {
@@ -652,7 +673,7 @@ export default function ProductDetailClient() {
   // COMPUTED VALUES
   // ============================================================================
 
-  const discount = getProductDiscountPercent(displayPrice, displayOriginalPrice);
+  const discount = getProductDiscountPercent(headerPrice, displayOriginalPrice);
 
   const finalPrice = displayPrice * quantity;
 
@@ -862,9 +883,11 @@ export default function ProductDetailClient() {
             </div>
 
             {/* Price */}
-            <div className="flex items-center gap-4">
-              <span className="text-3xl font-bold text-slate-900">₹{displayPrice.toLocaleString()}</span>
-              {displayOriginalPrice && displayOriginalPrice > displayPrice && (
+            <div className="flex items-center gap-4 flex-wrap">
+              <span className="text-3xl font-bold text-slate-900">
+                {showFromPrice ? 'From ' : ''}₹{headerPrice.toLocaleString()}
+              </span>
+              {!showFromPrice && displayOriginalPrice && displayOriginalPrice > displayPrice && (
                 <>
                   <span className="text-lg text-slate-400 line-through">₹{displayOriginalPrice.toLocaleString()}</span>
                   <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-sm font-semibold rounded-lg">
@@ -965,16 +988,16 @@ export default function ProductDetailClient() {
                   </button>
                   <span className="w-14 text-center font-semibold text-slate-900">{quantity}</span>
                   <button
-                    onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
+                    onClick={() => setQuantity(Math.min(displayStock, quantity + 1))}
                     className="p-3 hover:bg-slate-100 transition-colors"
-                    disabled={quantity >= displayStock}
+                    disabled={quantity >= displayStock || displayStock === 0}
                   >
                     <Plus className="w-5 h-5 text-slate-600" />
                   </button>
                 </div>
-                {product.stock > 0 && product.stock <= 10 && (
+                {displayStock > 0 && displayStock <= 10 && (
                   <span className="text-sm text-amber-600 font-medium">
-                    Only {product.stock} left in stock!
+                    Only {displayStock} left in stock!
                   </span>
                 )}
               </div>

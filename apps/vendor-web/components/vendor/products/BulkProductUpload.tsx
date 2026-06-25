@@ -42,13 +42,49 @@ interface UploadResult {
 interface ProductGroupPreview {
   name: string;
   category: string;
+  product_group_id?: string;
   variants: Array<{
     rowNum: number;
     label: string;
     stock: number;
     price: number;
-    isDefault: boolean;
   }>;
+}
+
+function groupValidProductsForPreview(rows: any[]): ProductGroupPreview[] {
+  const map = new Map<string, ProductGroupPreview>();
+  for (const row of rows) {
+    const name = String(row.name ?? '').trim();
+    const category = String(row.category ?? '').trim();
+    if (!name) continue;
+    const pgid = String(row.product_group_id ?? '').trim();
+    const brand = String(row.brand ?? '').trim().toLowerCase();
+    const key = pgid
+      ? `pgid::${pgid.toLowerCase()}`
+      : `${brand}::${name.toLowerCase()}::${category.toLowerCase()}`;
+    const mrp = Number(row.compare_at_price) || 0;
+    const spRaw = row.price;
+    const sp =
+      spRaw != null && String(spRaw).trim() !== '' ? Number(spRaw) : mrp;
+    const variant = {
+      rowNum: Number(row.rowNum) || 0,
+      label: bulkVariantLabel(row),
+      stock: Number(row.stock_quantity) || 0,
+      price: Number.isFinite(sp) && sp > 0 ? sp : mrp,
+    };
+    const existing = map.get(key);
+    if (existing) {
+      existing.variants.push(variant);
+    } else {
+      map.set(key, {
+        name,
+        category,
+        product_group_id: pgid || undefined,
+        variants: [variant],
+      });
+    }
+  }
+  return [...map.values()];
 }
 
 function bulkVariantLabel(row: Record<string, unknown>): string {
@@ -62,40 +98,6 @@ function bulkVariantLabel(row: Record<string, unknown>): string {
     parts.push(`${row.variant_attr_2}: ${row.variant_value_2}`);
   }
   return parts.length > 0 ? parts.join(' · ') : 'Single variant';
-}
-
-function isDefaultBulkRow(raw: unknown): boolean {
-  if (raw === true || raw === 1) return true;
-  const s = String(raw ?? '').trim().toLowerCase();
-  return s === 'yes' || s === 'y' || s === 'true' || s === '1' || s === 'default';
-}
-
-function groupValidProductsForPreview(rows: any[]): ProductGroupPreview[] {
-  const map = new Map<string, ProductGroupPreview>();
-  for (const row of rows) {
-    const name = String(row.name ?? '').trim();
-    const category = String(row.category ?? '').trim();
-    if (!name) continue;
-    const key = `${name.toLowerCase()}::${category.toLowerCase()}`;
-    const variantPrice =
-      row.variant_sp != null && String(row.variant_sp).trim()
-        ? Number(row.variant_sp)
-        : Number(row.price) || 0;
-    const variant = {
-      rowNum: Number(row.rowNum) || 0,
-      label: bulkVariantLabel(row),
-      stock: Number(row.stock_quantity) || 0,
-      price: variantPrice,
-      isDefault: isDefaultBulkRow(row.is_default),
-    };
-    const existing = map.get(key);
-    if (existing) {
-      existing.variants.push(variant);
-    } else {
-      map.set(key, { name, category, variants: [variant] });
-    }
-  }
-  return [...map.values()];
 }
 
 export function BulkProductUpload({
@@ -137,7 +139,7 @@ export function BulkProductUpload({
     setTemplateOkMessage('');
     // Compulsory headers carry `*` so the parser still maps them after
     // normalization (`*` is stripped). Order matches the XLSX template.
-    const headers = ['name*', 'description', 'key_features', 'brand', 'category*', 'product_specifications', 'weight', 'length_cm', 'breadth_cm', 'height_cm', 'barcode', 'stock_quantity*', 'hsn_code*', 'gst_rate*', 'mrp*', 'selling_price', 'pet_type', 'pet_type_other', 'manufacturing_details', 'delivery_regions', 'images*', 'variant_attr_1', 'variant_value_1', 'is_default'];
+    const headers = ['name*', 'description', 'key_features', 'brand', 'category*', 'product_specifications', 'weight', 'length_cm', 'breadth_cm', 'height_cm', 'barcode', 'stock_quantity*', 'images*', 'selling_price', 'mrp*', 'pet_type', 'pet_type_other', 'tax*', 'hsn_code*', 'manufacturing_details', 'delivery_regions', 'product_group_id', 'variant_attr_1', 'variant_value_1', 'variant_attr_2', 'variant_value_2'];
     const sample = [
       '"Smiling Sunflower Dog Dress"', '"Bright, happy, full of joy."', '"Design: Smiling Flower"', '"15 FURRIES"', '"Pet Accessories"', '"Material:Cotton"', '0.15', '35', '25', '1', '', '100', '62052000', '5', '1598', '799', 'Dog', '', '"Made in India"', '"Mumbai, Pune"', '"https://example.com/your-product-image-1000x1000.jpg"', '', '', ''
     ];
@@ -507,11 +509,6 @@ export function BulkProductUpload({
                             <span>{v.label}</span>
                             <span className="text-gray-500">· stock {v.stock}</span>
                             <span className="text-gray-500">· ₹{v.price}</span>
-                            {v.isDefault ? (
-                              <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">
-                                default
-                              </span>
-                            ) : null}
                           </li>
                         ))}
                       </ul>

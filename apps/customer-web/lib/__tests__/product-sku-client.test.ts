@@ -5,6 +5,9 @@ import {
   parseClientSkuPrice,
   optionValuesToSelectedVariations,
   variationSelectionKey,
+  getInitialProductSku,
+  getFirstInStockProductSku,
+  hasIncompleteVariantSelection,
   type ClientProductSku,
 } from '../product-sku-client';
 
@@ -84,5 +87,34 @@ describe('product-sku-client', () => {
     ];
     expect(resolveSkuFromSelection(packSkus, { pack: '2X100' })?.price).toBe(1000);
     expect(resolveSkuPriceForSelection(packSkus, { pack: '1X100' }, 0)).toBe(550);
+  });
+
+  it('getInitialProductSku uses listing SKU (lowest in-stock SP)', () => {
+    const rows: ClientProductSku[] = [
+      { id: 'd', price: 500, stock: 0, sort_order: 0 },
+      { id: 'c', price: 400, stock: 5, sort_order: 1 },
+    ];
+    expect(getInitialProductSku(rows)?.id).toBe('c');
+  });
+
+  it('getInitialProductSku picks lowest in-stock price not sort_order zero', () => {
+    const rows: ClientProductSku[] = [
+      { id: 'd', price: 500, stock: 3, sort_order: 0 },
+      { id: 'c', price: 400, stock: 5, sort_order: 1 },
+    ];
+    expect(getInitialProductSku(rows)?.id).toBe('c');
+  });
+
+  it('getFirstInStockProductSku returns null when all OOS', () => {
+    expect(
+      getFirstInStockProductSku([
+        { id: 'a', price: 1, stock: 0, sort_order: 0 },
+      ]),
+    ).toBeNull();
+  });
+
+  it('hasIncompleteVariantSelection is true for partial selection', () => {
+    expect(hasIncompleteVariantSelection(skus, { size: 's' })).toBe(false);
+    expect(hasIncompleteVariantSelection(skus, {})).toBe(true);
   });
 });

@@ -80,52 +80,33 @@ describe('syncProductSkus', () => {
   });
 
   it('preserves existing SKU code on update when input.sku is empty', async () => {
-    (query as jest.Mock)
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            id: SKU_A,
-            sku: 'WP-EXISTING-SKU',
-            option_values: { size: 'M' },
-            price: 200,
-            compare_at_price: 250,
-            stock: 4,
-            images: [],
-            is_active: true,
-            sort_order: 0,
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ rows: [{ id: SKU_A }] })
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            id: SKU_A,
-            sku: 'WP-EXISTING-SKU',
-            option_values: { size: 'M' },
-            price: 200,
-            compare_at_price: 250,
-            stock: 6,
-            images: [],
-            is_active: true,
-            sort_order: 0,
-          },
-        ],
-      });
+    const syncedRow = {
+      id: SKU_A,
+      sku: 'WP-EXISTING-SKU',
+      option_values: { size: 'M' },
+      price: 200,
+      compare_at_price: 250,
+      stock: 6,
+      images: [],
+      is_active: true,
+      sort_order: 0,
+    };
 
-    await syncProductSkus(
-      VENDOR_ID,
-      PRODUCT_ID,
-      [
-        {
-          id: SKU_A,
-          option_values: { size: 'M' },
-          stock: 6,
-          sku: null,
-        },
-      ],
-      { price: 200, compare_at_price: 250 },
-    );
+    (query as jest.Mock)
+      .mockResolvedValueOnce({ rows: [syncedRow] })
+      .mockResolvedValueOnce({ rows: [syncedRow] })
+      .mockResolvedValueOnce({ rows: [syncedRow] });
+
+    await syncProductSkus(VENDOR_ID, PRODUCT_ID, [
+      {
+        id: SKU_A,
+        option_values: { size: 'M' },
+        price: 200,
+        compare_at_price: 250,
+        stock: 6,
+        sku: null,
+      },
+    ]);
 
     expect(update).toHaveBeenCalledWith(
       'product_skus',
@@ -135,7 +116,7 @@ describe('syncProductSkus', () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it('sets parent products.price from default SKU not minimum SKU', async () => {
+  it('sets parent products.price from listing SKU not sort_order zero', async () => {
     const syncedRows = [
       {
         id: SKU_A,
@@ -163,32 +144,39 @@ describe('syncProductSkus', () => {
 
     (query as jest.Mock)
       .mockResolvedValueOnce({ rows: syncedRows })
+      .mockResolvedValueOnce({ rows: syncedRows })
       .mockResolvedValueOnce({ rows: syncedRows });
 
-    await syncProductSkus(
-      VENDOR_ID,
-      PRODUCT_ID,
-      [
-        { id: SKU_A, option_values: { size: 'L' }, price: 150, stock: 2, images: ['https://example.com/l.jpg'] },
-        { id: SKU_B, option_values: { size: 'S' }, price: 100, stock: 3, images: [] },
-      ],
-      { price: 100, compare_at_price: 200 },
-    );
+    await syncProductSkus(VENDOR_ID, PRODUCT_ID, [
+      {
+        id: SKU_A,
+        option_values: { size: 'L' },
+        price: 150,
+        compare_at_price: 200,
+        stock: 2,
+        images: ['https://example.com/l.jpg'],
+      },
+      {
+        id: SKU_B,
+        option_values: { size: 'S' },
+        price: 100,
+        compare_at_price: 200,
+        stock: 3,
+        images: [],
+      },
+    ]);
 
     expect(update).toHaveBeenCalledWith(
       'products',
       { id: PRODUCT_ID },
-      expect.objectContaining({ price: 150, stock: 5 }),
+      expect.objectContaining({ price: 100, stock: 5 }),
     );
   });
 
   it('no-ops when skuInputs empty and no existing SKUs (does not zero parent stock)', async () => {
     (query as jest.Mock).mockResolvedValueOnce({ rows: [] });
 
-    const result = await syncProductSkus(VENDOR_ID, PRODUCT_ID, [], {
-      price: 450,
-      compare_at_price: 500,
-    });
+    const result = await syncProductSkus(VENDOR_ID, PRODUCT_ID, []);
 
     expect(result).toEqual([]);
     expect(update).not.toHaveBeenCalled();
