@@ -7367,20 +7367,30 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const vendorLocation = vendor.state ? { state: vendor.state, city: vendor.city } : undefined;
       const customerLocation = body.customerState ? { state: body.customerState, city: body.customerCity } : undefined;
 
+      const vendorRoleId = vendor.role_id ? String(vendor.role_id) : undefined;
+      let resolvedVendorServiceId: string | undefined;
+      if (vsRow.rows?.length > 0) {
+        resolvedVendorServiceId = String(vsRow.rows[0].id);
+      }
+
+      const { resolveServiceBookingTaxItem } = await import('../../../utils/resolve-service-booking-tax-item');
+      const { taxItem } = await resolveServiceBookingTaxItem({
+        serviceId: resolvedVendorServiceId || serviceId,
+        vendorId: vendor.id,
+        vendorRoleId,
+        amount: amountAfterDiscount,
+        quantity: 1,
+        category: category || undefined,
+        serviceStyle: body.serviceStyle || body.service_style || undefined,
+      });
+
       const taxResult = await taxCalculationService.calculateTax({
-        items: [{
-          id: serviceId,
-          type: 'service',
-          amount: amountAfterDiscount,
-          quantity: 1,
-          category,
-          taxCategoryId: taxCategoryId || undefined,
-        }],
+        items: [taxItem],
         customerLocation,
         vendorLocation,
         vendorId: vendor.id,
-        serviceType: category,
-        category,
+        serviceType: taxItem.category || category,
+        category: taxItem.category || category,
       });
 
       const tax = taxResult.totalTax;

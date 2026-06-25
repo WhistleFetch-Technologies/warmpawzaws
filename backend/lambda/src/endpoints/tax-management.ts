@@ -19,12 +19,10 @@ import {
 import { findCustomerByPhone } from '../utils/customer-phone-lookup';
 import { resolveCatalogCategoryUuidFromRef } from '../lib/services/gst-catalog-role-resolution';
 import type { TaxItem } from '../lib/services/tax-calculation-service';
-
-/** service_catalog / vendor_services metadata: admin "Show final price (incl. taxes)" */
-function catalogPriceIncludesTaxMeta(meta: unknown): boolean {
-  if (meta == null || typeof meta !== 'object') return false;
-  return !!(meta as Record<string, unknown>).show_final_price_inclusive_tax;
-}
+import {
+  catalogPriceIncludesTaxMeta,
+  resolveServiceBookingTaxItem,
+} from '../utils/resolve-service-booking-tax-item';
 
 /** Address may be a JSON object, a JSON string, or legacy plain text (e.g. "Bangalore") — never JSON.parse blindly. */
 function addressFieldToLocation(raw: unknown): { state?: string; city?: string; pincode?: string } | null {
@@ -1004,106 +1002,27 @@ export function registerTaxManagementEndpoints(app: Hono) {
             }
           }
 
-          let scCatRef: string | undefined;
-          if (serviceId && vendorId) {
-            const vendorSvcs = await query(
-              `SELECT sc.category_id, sc.category_name, sc.metadata AS sc_metadata, vs.metadata AS vs_metadata
-               FROM vendor_services vs
-               LEFT JOIN service_catalog sc ON sc.id = vs.service_id
-               WHERE vs.id = $1::uuid LIMIT 1`,
-              [serviceId]
-            ).catch(() => ({ rows: [] }));
-            if (vendorSvcs.rows?.length > 0) {
-              const row = vendorSvcs.rows[0];
-              scCatRef = row.category_id;
-              if (!category) category = row.category_name || row.category_id;
-              if (!amountIsTaxInclusive) {
-                amountIsTaxInclusive =
-                  catalogPriceIncludesTaxMeta(row.sc_metadata) ||
-                  catalogPriceIncludesTaxMeta(row.vs_metadata);
-              }
-            }
-          }
-          if (!scCatRef && serviceId) {
-            const catalogRows = await query(
-              `SELECT category_id, category_name, metadata FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
-              [serviceId]
-            ).catch(() => ({ rows: [] }));
-            if (catalogRows.rows?.length > 0) {
-              const row = catalogRows.rows[0];
-              scCatRef = row.category_id;
-              if (!category) category = row.category_name || row.category_id;
-              if (!amountIsTaxInclusive) {
-                amountIsTaxInclusive = catalogPriceIncludesTaxMeta(row.metadata);
-              }
-            }
-          }
-          if (serviceId && !scCatRef) {
-            const services = await select('services', { id: serviceId }).catch(() => []);
-            if (services.length > 0 && !category) category = services[0].category;
-          }
+          const bidRaw =
+            (item as { bookingId?: string }).bookingId || requestBookingId;
+          const bookingIdForResolve =
+            bidRaw != null && String(bidRaw).trim() !== '' && isValidUUID(String(bidRaw).trim())
+              ? String(bidRaw).trim()
+              : undefined;
 
-          /** Payment step often has bookingId but no serviceId — resolve catalogue category from the booking row. */
-          if (!scCatRef) {
-            const bidRaw =
-              (item as { bookingId?: string }).bookingId || requestBookingId;
-            const bid =
-              bidRaw != null && String(bidRaw).trim() !== '' && isValidUUID(String(bidRaw).trim())
-                ? String(bidRaw).trim()
-                : '';
-            if (bid) {
-              const bkg = await query(
-                `SELECT sc.category_id, sc.category_name, sc.metadata AS sc_metadata, vs.metadata AS vs_metadata
-                 FROM bookings b
-                 JOIN vendor_services vs ON vs.id = b.service_id
-                 LEFT JOIN service_catalog sc ON sc.id = vs.service_id
-                 WHERE b.id = $1::uuid
-                 LIMIT 1`,
-                [bid]
-              ).catch(() => ({ rows: [] }));
-              if (bkg.rows?.length > 0) {
-                const row = bkg.rows[0] as {
-                  category_id?: string;
-                  category_name?: string;
-                  sc_metadata?: unknown;
-                  vs_metadata?: unknown;
-                };
-                if (row.category_id) scCatRef = row.category_id;
-                if (!category) category = row.category_name || row.category_id;
-                if (!amountIsTaxInclusive) {
-                  amountIsTaxInclusive =
-                    catalogPriceIncludesTaxMeta(row.sc_metadata) ||
-                    catalogPriceIncludesTaxMeta(row.vs_metadata);
-                }
-              }
-            }
-          }
-
-          let catalogCategoryUuid = scCatRef
-            ? await resolveCatalogCategoryUuidFromRef(scCatRef)
-            : null;
-          /** e.g. UniversalPaymentPage sends category: "boarding" when serviceId is missing */
-          if (!catalogCategoryUuid && category) {
-            catalogCategoryUuid = await resolveCatalogCategoryUuidFromRef(String(category).trim());
-          }
-
-          taxItems.push({
-            id: item.id || serviceId || `item-${Math.random().toString(36).slice(2)}`,
-            type: 'service',
+          const resolved = await resolveServiceBookingTaxItem({
+            serviceId: serviceId || undefined,
+            vendorId,
+            bookingId: bookingIdForResolve,
+            vendorRoleId: (item as { roleId?: string }).roleId || vendorRoleId,
             amount,
             quantity,
-            catalogCategoryId: catalogCategoryUuid ?? undefined,
-            category,
+            category: category || undefined,
             serviceStyle: item.serviceStyle,
-            roleId: item.roleId || vendorRoleId,
             amountIsTaxInclusive,
-            gstApplicationScope:
-              gstScopeRaw === 'meal_plan_food'
-                ? 'meal_plan_food'
-                : gstScopeRaw === 'meal_plan_delivery'
-                  ? 'meal_plan_delivery'
-                  : undefined,
+            itemId: (item as { id?: string }).id || serviceId,
           });
+          if (!category && resolved.category) category = resolved.category;
+          taxItems.push(resolved.taxItem);
           continue;
         }
 

@@ -208,18 +208,14 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         }
       }
 
-      // Get service details for tax calculation - 360 mapping: vendor_services → service_catalog → tax
+      // Get service details for tax calculation — align with POST /tax/calculate (catalog + role).
       const serviceId = booking.service_id;
-      let serviceHsnCode = null;
-      let serviceHsnCodeId = null;
-      let serviceTaxCategoryId = null;
       let serviceCategory = null;
       let serviceStyle = booking.service_style;
 
       if (serviceId) {
-        // 1. Try vendor_services (booking.service_id is often vendor_services.id)
         const vendorSvcs = await query(
-          `SELECT vs.*, sc.tax_category_id, sc.hsn_code_id, sc.category_id, sc.category_name
+          `SELECT vs.*, sc.category_id, sc.category_name
            FROM vendor_services vs
            LEFT JOIN service_catalog sc ON sc.id = vs.service_id
            WHERE vs.id = $1::uuid LIMIT 1`,
@@ -227,52 +223,45 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         ).catch(() => ({ rows: [] }));
         if (vendorSvcs.rows?.length > 0) {
           const row = vendorSvcs.rows[0];
-          serviceTaxCategoryId = row.tax_category_id;
-          serviceHsnCodeId = row.hsn_code_id;
           serviceCategory = row.category_name || row.category_id || row.category;
         }
-        // 2. Try service_catalog directly (booking.service_id may be catalog id)
-        if (!serviceTaxCategoryId && !serviceHsnCodeId) {
+        if (!serviceCategory) {
           const catalogRows = await query(
-            `SELECT tax_category_id, hsn_code_id, category_id, category_name FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
+            `SELECT category_id, category_name FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
             [serviceId]
           ).catch(() => ({ rows: [] }));
           if (catalogRows.rows?.length > 0) {
             const row = catalogRows.rows[0];
-            serviceTaxCategoryId = row.tax_category_id;
-            serviceHsnCodeId = row.hsn_code_id;
-            if (!serviceCategory) serviceCategory = row.category_name || row.category_id;
+            serviceCategory = row.category_name || row.category_id;
           }
         }
-        // 3. Fallback: legacy services table
-        if (!serviceHsnCode && !serviceHsnCodeId && !serviceTaxCategoryId) {
+        if (!serviceCategory) {
           const services = await select('services', { id: serviceId });
-          if (services.length > 0) {
-            serviceHsnCode = services[0].hsn_code;
-            if (!serviceCategory) serviceCategory = services[0].category;
-          }
+          if (services.length > 0) serviceCategory = services[0].category;
         }
       }
 
       const vendorRow = booking.vendor_id ? await select('vendors', { id: booking.vendor_id }) : [];
       const roleId = vendorRow.length > 0 ? vendorRow[0]?.role_id : undefined;
 
-      // Calculate tax using tax calculation service (GST Config → Tax Rules → 18%)
       try {
+        const { resolveServiceBookingTaxItem } = await import('../utils/resolve-service-booking-tax-item');
         const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
+        const { taxItem } = await resolveServiceBookingTaxItem({
+          serviceId: serviceId || undefined,
+          vendorId: booking.vendor_id || undefined,
+          bookingId: booking.id,
+          vendorRoleId: roleId,
+          amount,
+          quantity: 1,
+          category: serviceCategory || undefined,
+          serviceStyle: serviceStyle || undefined,
+          itemId: serviceId || booking.id,
+        });
+        if (!serviceCategory && taxItem.category) serviceCategory = taxItem.category;
+
         const taxResult = await taxCalculationService.calculateTax({
-          items: [{
-            id: serviceId || booking.id,
-            type: 'service',
-            hsnCode: serviceHsnCode || undefined,
-            hsnCodeId: serviceHsnCodeId || undefined,
-            taxCategoryId: serviceTaxCategoryId || undefined,
-            amount: amount,
-            quantity: 1,
-            category: serviceCategory || undefined,
-            serviceStyle: serviceStyle || undefined,
-            roleId,
-          }],
+          items: [taxItem],
           customerLocation,
           vendorLocation,
           vendorId: booking.vendor_id || undefined,
