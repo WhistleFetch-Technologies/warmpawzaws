@@ -213,57 +213,21 @@ export async function quotePackagePricing(
       customerLocation = undefined;
     }
 
-    let catalogCategoryId: string | null = null;
-    try {
-      const catRes = await query(
-        `SELECT vs.category::text AS vs_cat, sc.category_id::text AS sc_cat
-         FROM vendor_services vs
-         LEFT JOIN service_catalog sc ON sc.id = vs.service_id
-         WHERE vs.id = $1::uuid
-         LIMIT 1`,
-        [comp.vendorServiceId]
-      );
-      const crow = catRes.rows?.[0] as { vs_cat?: string; sc_cat?: string } | undefined;
-      if (crow?.sc_cat) {
-        catalogCategoryId = String(crow.sc_cat).trim();
-      }
-      if (!catalogCategoryId) {
-        const { resolveCatalogCategoryUuidFromRef } = await import(
-          '../lib/services/gst-catalog-role-resolution'
-        );
-        catalogCategoryId = await resolveCatalogCategoryUuidFromRef(
-          crow?.vs_cat || comp.serviceType || ''
-        );
-      }
-    } catch {
-      catalogCategoryId = null;
-    }
-
-    const serviceStyleNorm = String(comp.serviceStyle || '')
-      .toLowerCase()
-      .trim() as 'at_center' | 'at_home' | 'tele' | 'hybrid';
+    const { resolveServiceBookingTaxItem } = await import('./resolve-service-booking-tax-item');
+    const { taxItem } = await resolveServiceBookingTaxItem({
+      serviceId: comp.vendorServiceId,
+      vendorId: comp.vendorId,
+      vendorRoleId: roleId,
+      amount: basePrice,
+      quantity: 1,
+      category: comp.serviceType,
+      serviceStyle: comp.serviceStyle,
+      itemId: comp.vendorServiceId,
+    });
 
     const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
     const taxResult = await taxCalculationService.calculateTax({
-      items: [
-        {
-          id: comp.vendorServiceId,
-          type: 'service',
-          amount: basePrice,
-          quantity: 1,
-          category: comp.serviceType,
-          serviceStyle:
-            serviceStyleNorm === 'at_center' ||
-            serviceStyleNorm === 'at_home' ||
-            serviceStyleNorm === 'tele' ||
-            serviceStyleNorm === 'hybrid'
-              ? serviceStyleNorm
-              : undefined,
-          catalogCategoryId: catalogCategoryId || undefined,
-          roleId,
-          gstApplicationScope: 'service_booking',
-        },
-      ],
+      items: [taxItem],
       customerLocation,
       vendorLocation,
       vendorId: comp.vendorId,

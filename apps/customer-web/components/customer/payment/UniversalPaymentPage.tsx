@@ -16,6 +16,10 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
+import {
+  flattenVendorServicesResponse,
+  resolveVendorServiceIdForTax,
+} from '@/lib/resolve-vendor-service-id-for-tax';
 import { buildCheckoutPaymentSources } from '@/lib/payment-display-utils';
 import type { PaymentSource } from '@/lib/payment-display-utils';
 import { PaymentPageHeader } from './PaymentPageHeader';
@@ -695,7 +699,8 @@ export function UniversalPaymentPage({
   ]);
 
   const calculateTax = useCallback(async () => {
-    const catalogServiceId = resolvedServiceId || serviceId;
+    const taxServiceId =
+      resolvedServiceId || selectedServices?.[0]?.id || serviceId;
     const addr = selectedAddress || address;
     const hasAddrHint =
       addr &&
@@ -714,14 +719,14 @@ export function UniversalPaymentPage({
       const taxRes = await apiClient.post<any>('/tax/calculate', {
         items: [
           {
-            id: catalogServiceId || productId || bookingId || 'item',
+            id: taxServiceId || productId || bookingId || 'item',
             type: type === 'booking' ? 'service' : 'product',
-            serviceId: type === 'booking' ? catalogServiceId : undefined,
+            serviceId: type === 'booking' ? taxServiceId : undefined,
             bookingId: type === 'booking' ? bookingId : undefined,
             productId: type === 'order' ? productId : undefined,
             amount: baseAmount,
             quantity,
-            category: category || 'pet_services',
+            category: category || undefined,
             serviceStyle,
             amountTaxInclusive: priceIncludesTax,
           },
@@ -789,6 +794,7 @@ export function UniversalPaymentPage({
     quantity,
     resolvedServiceId,
     selectedAddress,
+    selectedServices,
     serviceId,
     serviceStyle,
     type,
@@ -889,121 +895,65 @@ export function UniversalPaymentPage({
 
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-      // If already a UUID, no need to resolve
-      if (uuidRegex.test(serviceId)) {
-        setResolvedServiceId(serviceId);
+      if (selectedServices?.[0]?.id && uuidRegex.test(String(selectedServices[0].id))) {
+        setResolvedServiceId(String(selectedServices[0].id));
         return;
       }
 
-      // If numeric, try to resolve
-      console.log(`ðŸ”„ Resolving serviceId "${serviceId}" to UUID...`);
+      console.log(`🔄 Resolving serviceId "${serviceId}" to vendor_services.id...`);
       setServiceIdResolving(true);
 
       try {
-        // Try multiple endpoints to get vendor services
         let vendorServicesRes: any = null;
         const endpoints = [
           `/vendor/${vendorId}/services`,
           `/vendor/services/${vendorId}`,
-          `/vendor-services?vendorId=${vendorId}`
+          `/vendor-services?vendorId=${vendorId}`,
         ];
 
         for (const endpoint of endpoints) {
           try {
             vendorServicesRes = await apiClient.get<any>(endpoint);
-            // Check if response has services in any format
-            if (vendorServicesRes?.allServices ||
+            if (
+              vendorServicesRes?.allServices ||
               vendorServicesRes?.services ||
               vendorServicesRes?.data?.services ||
-              Array.isArray(vendorServicesRes)) {
-              console.log(`âœ… [SERVICE-RESOLUTION] Found services from endpoint: ${endpoint}`);
+              Array.isArray(vendorServicesRes)
+            ) {
               break;
             }
-          } catch (e: any) {
-            console.warn(`âš ï¸ [SERVICE-RESOLUTION] Endpoint ${endpoint} failed:`, e.message);
-            continue; // Try next endpoint
+          } catch {
+            continue;
           }
         }
 
         if (vendorServicesRes) {
-          // âœ… CRITICAL: Handle different API response formats
-          let services: any[] = [];
-
-          // Format 1: { services: { at_home: { services: [...] }, ... }, allServices: [...] }
-          if (vendorServicesRes.allServices && Array.isArray(vendorServicesRes.allServices)) {
-            services = vendorServicesRes.allServices;
-          }
-          // Format 2: { services: { at_home: { services: [...] }, ... } }
-          else if (vendorServicesRes.services && typeof vendorServicesRes.services === 'object' && !Array.isArray(vendorServicesRes.services)) {
-            // Flatten servicesByStyle object
-            services = Object.values(vendorServicesRes.services).flatMap((style: any) =>
-              (style?.services && Array.isArray(style.services)) ? style.services : []
-            );
-          }
-          // Format 3: { services: [...] } (direct array)
-          else if (vendorServicesRes.services && Array.isArray(vendorServicesRes.services)) {
-            services = vendorServicesRes.services;
-          }
-          // Format 4: { data: { services: [...] } }
-          else if (vendorServicesRes.data?.services && Array.isArray(vendorServicesRes.data.services)) {
-            services = vendorServicesRes.data.services;
-          }
-          // Format 5: Direct array response
-          else if (Array.isArray(vendorServicesRes)) {
-            services = vendorServicesRes;
-          }
-
-          console.log('ðŸ“¦ [SERVICE-RESOLUTION-EARLY] Extracted services:', {
-            count: services.length,
-            sample: services[0],
-            responseKeys: Object.keys(vendorServicesRes),
-          });
-
-          // Ensure services is an array before calling .find()
-          if (!Array.isArray(services)) {
-            console.error('âŒ [SERVICE-RESOLUTION-EARLY] Services is not an array:', typeof services, services);
-            // Don't throw - will be caught during payment
-            return;
-          }
-
-          // Look for service with matching numeric ID
-          const matchingService = services.find((s: any) =>
-            s.id === serviceId ||
-            s.serviceId === serviceId ||
-            s.service_id === serviceId ||
-            String(s.id) === String(serviceId) ||
-            String(s.serviceId) === String(serviceId) ||
-            String(s.service_id) === String(serviceId)
-          );
-
-          if (matchingService) {
-            // âœ… FIX: Prioritize id (vendor_services.id) over service_id (services.id reference)
-            // bookings.service_id must reference vendor_services.id, not services.id
-            if (uuidRegex.test(matchingService.id)) {
-              setResolvedServiceId(matchingService.id);
-              console.log(`âœ… Resolved serviceId "${serviceId}" to vendor_services.id: "${matchingService.id}"`);
-            } else if (uuidRegex.test(matchingService.service_id || matchingService.serviceId)) {
-              // Fallback: if id is not a UUID, try service_id (shouldn't happen normally)
-            const resolved = matchingService.service_id || matchingService.serviceId;
-              setResolvedServiceId(resolved);
-              console.log(`âœ… Resolved serviceId "${serviceId}" to service_id: "${resolved}"`);
-            } else {
-              console.warn(`âš ï¸ Could not resolve serviceId "${serviceId}" - service found but no UUID available`);
+          const services = flattenVendorServicesResponse(vendorServicesRes);
+          const resolved = resolveVendorServiceIdForTax(services, serviceId);
+          if (resolved && uuidRegex.test(resolved)) {
+            setResolvedServiceId(resolved);
+            if (resolved !== serviceId) {
+              console.log(`✅ Resolved serviceId "${serviceId}" → vendor_services.id "${resolved}"`);
             }
-          } else {
-            console.warn(`âš ï¸ Service "${serviceId}" not found in vendor services`);
+          } else if (uuidRegex.test(serviceId)) {
+            setResolvedServiceId(serviceId);
           }
+        } else if (uuidRegex.test(serviceId)) {
+          setResolvedServiceId(serviceId);
         }
       } catch (error: any) {
-        console.warn(`âš ï¸ Failed to resolve serviceId "${serviceId}":`, error.message);
-        // Don't set error - will be caught during booking creation
+        console.warn(`⚠️ Failed to resolve serviceId "${serviceId}":`, error.message);
+        if (uuidRegex.test(serviceId)) {
+          setResolvedServiceId(serviceId);
+        }
       } finally {
         setServiceIdResolving(false);
       }
     };
 
     resolveServiceId();
-  }, [serviceId, vendorId, type]);
+  }, [serviceId, vendorId, type, selectedServices]);
+
 
   //  Pre-load Razorpay script on component mount so it's ready when user clicks payment
   useEffect(() => {
