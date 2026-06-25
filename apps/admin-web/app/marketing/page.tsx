@@ -72,6 +72,7 @@ import {
 	validateBannerCtaLink,
 	getStoredBannerImageUrl,
 	getBannerDisplayImageUrl,
+	getBannerPreviewImageUrl,
 	buildArticleBannerCtaLink,
 	formatArticleOptionLabel,
 	isPublishedArticleRow,
@@ -87,6 +88,8 @@ import {
 	type ShopBannerTargetLevel,
 } from "@/lib/banner-admin";
 import { ShopBannerDestinationFields } from "@/components/admin/marketing/ShopBannerDestinationFields";
+import { BannerImageField } from "@/components/admin/marketing/BannerImageField";
+import { uploadBannerImage } from "@/lib/banner-image-upload";
 import { toast, Toaster } from "sonner";
 import {
 	CouponManagement,
@@ -128,6 +131,8 @@ export default function MarketingPromotionsTab() {
 	});
 	const [bannerGeoStates, setBannerGeoStates] = useState<string[]>([]);
 	const [bannerGeoCities, setBannerGeoCities] = useState<string[]>([]);
+	const [pendingBannerFile, setPendingBannerFile] = useState<File | null>(null);
+	const [bannerModalPreviewUrl, setBannerModalPreviewUrl] = useState("");
 	const [bannerCtaPersona, setBannerCtaPersona] = useState("");
 	const [bannerCtaServiceStyle, setBannerCtaServiceStyle] = useState("");
 	const [bannerCtaVendorId, setBannerCtaVendorId] = useState("");
@@ -930,9 +935,15 @@ export default function MarketingPromotionsTab() {
 			return;
 		}
 
-		const imageUrl = bannerForm.image_url.trim() || null;
+		const imageUrl = pendingBannerFile
+			? editingBanner
+				? getStoredBannerImageUrl(editingBanner)
+				: null
+			: bannerForm.image_url.trim() || null;
 
 		try {
+			let bannerId = editingBanner?.id as string | undefined;
+
 			if (editingBanner) {
 				await apiClient.put(`/admin/banners/${editingBanner.id}`, {
 					title: bannerForm.title,
@@ -949,8 +960,9 @@ export default function MarketingPromotionsTab() {
 					targetState: normalizeLocationValue(bannerForm.target_state),
 					targetCity: normalizeLocationValue(bannerForm.target_city),
 				});
+				bannerId = editingBanner.id;
 			} else {
-				await apiClient.post("/admin/banners", {
+				const created = await apiClient.post<{ banner?: { id?: string } }>("/admin/banners", {
 					title: bannerForm.title,
 					description: bannerForm.subtitle,
 					imageUrl,
@@ -965,14 +977,20 @@ export default function MarketingPromotionsTab() {
 					targetState: normalizeLocationValue(bannerForm.target_state),
 					targetCity: normalizeLocationValue(bannerForm.target_city),
 				});
+				bannerId = created?.banner?.id;
 			}
+
+			if (pendingBannerFile && bannerId) {
+				await uploadBannerImage(bannerId, pendingBannerFile);
+			}
+
 			toast.success(`Banner ${editingBanner ? "updated" : "created"} successfully`);
 			setShowBannerModal(false);
 			loadBanners();
 			resetBannerForm();
-		} catch (error) {
+		} catch (error: any) {
 			console.error("Error saving banner:", error);
-			toast.error("Error saving banner");
+			toast.error(error?.message || "Error saving banner");
 		}
 	};
 
@@ -989,6 +1007,8 @@ export default function MarketingPromotionsTab() {
 
 	const resetBannerForm = () => {
 		setEditingBanner(null);
+		setPendingBannerFile(null);
+		setBannerModalPreviewUrl("");
 		setBannerCtaPersona("");
 		setBannerCtaServiceStyle("");
 		setBannerCtaVendorId("");
@@ -2176,7 +2196,7 @@ export default function MarketingPromotionsTab() {
 													className="h-32 flex items-center justify-center relative"
 													style={{
 														background: buildBannerPreviewBackground({
-															imageUrl: getBannerDisplayImageUrl(banner),
+															imageUrl: getBannerPreviewImageUrl(banner),
 															gradientFrom: parseBannerMetadataRecord(banner.metadata).gradient_from as string,
 															gradientTo: parseBannerMetadataRecord(banner.metadata).gradient_to as string,
 														}),
@@ -2749,17 +2769,14 @@ export default function MarketingPromotionsTab() {
 							</div>
 						</div>
 
-						<div>
-							<Label>Image URL</Label>
-							<Input
-								value={bannerForm.image_url}
-								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, image_url: e.target.value })}
-								placeholder="https://example.com/banner.jpg"
-							/>
-							<p className="text-xs text-gray-500 mt-1">
-								Leave empty for gradient-only. Image is saved exactly as entered — no automatic default.
-							</p>
-						</div>
+						<BannerImageField
+							value={bannerForm.image_url}
+							onChange={(url) => setBannerForm({ ...bannerForm, image_url: url })}
+							onPendingFileChange={setPendingBannerFile}
+							onPreviewUrlChange={setBannerModalPreviewUrl}
+							gradientFrom={bannerForm.gradient_from}
+							gradientTo={bannerForm.gradient_to}
+						/>
 
 						<div className="grid grid-cols-2 gap-4">
 							<div>
@@ -3183,7 +3200,7 @@ export default function MarketingPromotionsTab() {
 								className="h-24 rounded-xl overflow-hidden flex items-center justify-between px-4"
 								style={{
 									background: buildBannerPreviewBackground({
-										imageUrl: bannerForm.image_url,
+										imageUrl: bannerModalPreviewUrl || bannerForm.image_url,
 										gradientFrom: bannerForm.gradient_from,
 										gradientTo: bannerForm.gradient_to,
 									}),
