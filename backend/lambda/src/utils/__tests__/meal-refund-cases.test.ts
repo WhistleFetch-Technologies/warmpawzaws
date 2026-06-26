@@ -2,6 +2,7 @@ import {
   approveMealRefundCase,
   computeMealRefundRecommendation,
   createMealRefundCaseOnPidgeCancel,
+  getMealRefundReviewCustomerMetadata,
   rejectMealRefundCase,
 } from '../meal-refund-cases';
 import { approveAndExecuteMealRefundCase } from '../meal-refund-case-execution';
@@ -187,5 +188,29 @@ describe('approveMealRefundCase / rejectMealRefundCase', () => {
     mockedExecute.mockResolvedValueOnce({ ok: false, error: 'case_not_found_or_not_pending' });
     const result = await approveMealRefundCase('case-1', 'admin@test.com');
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('getMealRefundReviewCustomerMetadata', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns synthetic refund_processing when Pidge cancelled paid order has no case row', async () => {
+    mockedQuery.mockResolvedValueOnce({ rows: [] } as any);
+    const meta = await getMealRefundReviewCustomerMetadata(PAID_ORDER_ID, {
+      cancelledBy: 'system_pidge',
+      paymentStatus: 'paid',
+    });
+    expect(meta).toEqual({
+      status: 'refund_processing',
+      message: 'Your refund is being processed. This usually takes 3–5 business days.',
+    });
+  });
+
+  it('returns null when no case and not Pidge cancel', async () => {
+    mockedQuery.mockResolvedValueOnce({ rows: [] } as any);
+    const meta = await getMealRefundReviewCustomerMetadata(PAID_ORDER_ID);
+    expect(meta).toBeNull();
   });
 });

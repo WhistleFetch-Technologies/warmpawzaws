@@ -143,6 +143,10 @@ export function computeMealRefundRecommendation(
 
 export async function getMealRefundReviewCustomerMetadata(
   mealOrderId: string,
+  options?: {
+    cancelledBy?: string | null;
+    paymentStatus?: string | null;
+  },
 ): Promise<MealRefundReviewCustomerMetadata | null> {
   let res: { rows?: Record<string, unknown>[] };
   try {
@@ -164,7 +168,21 @@ export async function getMealRefundReviewCustomerMetadata(
     throw e;
   }
   const row = res.rows?.[0] as Record<string, unknown> | undefined;
-  if (!row?.status) return null;
+  if (!row?.status) {
+    const cancelledBy = String(options?.cancelledBy ?? '').trim();
+    const paymentStatus = String(options?.paymentStatus ?? '').trim().toLowerCase();
+    const paid =
+      paymentStatus === 'paid' ||
+      paymentStatus === 'completed';
+    if (cancelledBy === 'system_pidge' && paid) {
+      return {
+        status: 'refund_processing',
+        message:
+          'Your refund is being processed. This usually takes 3–5 business days.',
+      };
+    }
+    return null;
+  }
   const status = String(row.status) as MealRefundCaseStatus;
   const recommended = parseFloat(String(row.recommended_refund_amount ?? ''));
   const executed = parseFloat(String(row.refund_amount_executed ?? ''));

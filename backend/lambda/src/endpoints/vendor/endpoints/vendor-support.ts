@@ -36,6 +36,7 @@ export function registerVendorSupportEndpoints(app: Hono) {
         priority,
         bookingId,
         orderId,
+        mealOrderId,
         metadata,
       } = await c.req.json();
 
@@ -73,6 +74,7 @@ export function registerVendorSupportEndpoints(app: Hono) {
         vendor_id: vendorId,
         booking_id: bookingId || null,
         order_id: orderId || null,
+        meal_order_id: mealOrderId || null,
         customer_name: vendor.business_name || vendor.owner_name,
         customer_phone: vendor.phone,
         customer_email: vendor.email,
@@ -80,6 +82,12 @@ export function registerVendorSupportEndpoints(app: Hono) {
           ...metadata,
           vendor_type: vendor.vendor_type,
           source: 'vendor_dashboard',
+          ...(mealOrderId
+            ? {
+                ticket_type: 'meal_order',
+                sub_reason: metadata?.sub_reason || 'rider_pickup_issue',
+              }
+            : {}),
         }),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

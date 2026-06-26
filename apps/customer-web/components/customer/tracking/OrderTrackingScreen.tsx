@@ -276,18 +276,37 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
 
   if (orderType === 'meal') {
     const logisticsStatus = tracking?.status ?? null;
-    const deliveryEff = resolveEffectiveMealDeliveryState(order.status, logisticsStatus);
-    const isDelivered = deliveryEff === 'delivered';
+    const reassignPending = Boolean(tracking?.reassignPending);
+    const cancelledBy =
+      (order.cancelled_by as string | undefined) ??
+      (order.cancelledBy as string | undefined) ??
+      null;
+    const cancelledAt =
+      (order.cancelled_at as string | undefined) ??
+      (order.cancelledAt as string | undefined) ??
+      null;
+    const deliveryEff = resolveEffectiveMealDeliveryState(order.status, logisticsStatus, {
+      reassignPending,
+      cancelledBy,
+      cancelledAt,
+    });
+    const isCancelled =
+      deliveryEff === 'cancelled' || (deliveryEff === 'failed' && Boolean(cancelledBy));
+    const isDelivered = deliveryEff === 'delivered' && !cancelledBy;
     const riderActive =
-      deliveryEff === 'picked_up' ||
-      deliveryEff === 'on_the_way' ||
-      shouldShowDeliveryRider(logisticsStatus);
+      !reassignPending &&
+      (deliveryEff === 'picked_up' ||
+        deliveryEff === 'on_the_way' ||
+        shouldShowDeliveryRider(logisticsStatus, { reassignPending }));
     const riderName =
       tracking?.rider?.name?.trim() || tracking?.deliveryPerson?.name?.trim() || '';
     const riderPhone =
       tracking?.rider?.phone?.trim() || tracking?.deliveryPerson?.phone?.trim() || '';
     const showRiderCard =
-      !isDelivered && shouldShowDeliveryRider(logisticsStatus) && Boolean(riderName);
+      !isDelivered &&
+      !reassignPending &&
+      shouldShowDeliveryRider(logisticsStatus, { reassignPending }) &&
+      Boolean(riderName);
     const otp = tracking?.deliveryOtp;
     const totalAmt =
       order.total_amount ?? order.totalAmount ?? order.total ?? order.amount;
@@ -325,6 +344,9 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
           orderDisplayId={formatMealOrderDisplayId(order)}
           orderStatus={order.status}
           logisticsStatus={logisticsStatus}
+          reassignPending={reassignPending}
+          cancelledBy={cancelledBy}
+          cancelledAt={cancelledAt}
           totalAmount={typeof totalAmt === 'number' ? totalAmt : undefined}
           refundReviewCard={
             refundReview ? <MealRefundReviewTrackingCard refundReview={refundReview} /> : undefined
@@ -378,6 +400,7 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
               logisticsType={order.logistics_type ?? order.logisticsType ?? null}
               logisticsStatus={logisticsStatus}
               orderEffectiveState={deliveryEff}
+              reassignPending={reassignPending}
               riderCoords={riderCoords}
               destination={destination}
               etaMinutes={tracking?.eta ?? tracking?.etaMinutes}
@@ -447,14 +470,17 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
                     <Star className="w-4 h-4 fill-current" /> Thank you for your review!
                   </p>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={openMealOrderHelp}
-                  className="mt-4 px-6 py-2 rounded-full font-medium border-2 border-white/90 text-white hover:bg-white/15 inline-flex items-center justify-center gap-2"
-                >
-                  <HelpCircle className="w-4 h-4" />
-                  Need help with this order?
-                </button>
+              </div>
+            ) : undefined
+          }
+          cancelledBanner={
+            isCancelled ? (
+              <div className="bg-red-50 border border-red-100 rounded-2xl p-6 text-center shadow-sm">
+                <AlertCircle className="w-12 h-12 mx-auto mb-3 text-red-500" />
+                <h2 className="text-xl font-bold text-red-900 mb-1">Order cancelled</h2>
+                <p className="text-sm text-red-800/90">
+                  Your delivery could not be completed. Refund details are shown above if applicable.
+                </p>
               </div>
             ) : undefined
           }
@@ -468,16 +494,6 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
             <MealOrderDetailsCollapsible order={order as Record<string, unknown>} />
           }
           supportHelpCard={mealHelpButton}
-          floatingChatButton={
-            <button
-              type="button"
-              onClick={openMealOrderHelp}
-              className="w-14 h-14 bg-white shadow-lg rounded-full flex items-center justify-center border border-slate-100 hover:bg-slate-50 transition"
-              aria-label="Help with this order"
-            >
-              <HelpCircle className="w-7 h-7 text-[#FF8C42]" />
-            </button>
-          }
         />
         {showReviewModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">

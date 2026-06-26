@@ -7,6 +7,7 @@ import com.warmpawz.delivery.mapper.ShiprocketAdhocMapper;
 import com.warmpawz.delivery.service.ExternalPartnerLogisticsService;
 import com.warmpawz.delivery.service.PidgeIntegrationService;
 import com.warmpawz.delivery.service.ShipmentService;
+import com.warmpawz.delivery.service.MealRiderReassignService;
 import com.warmpawz.delivery.service.serviceimpl.MealLogisticsDispatchService;
 import com.warmpawz.delivery.util.PidgeOrderIdMap;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Parity with Lambda {@code logistics.ts} HTTP routes (partner APIs + Pidge).
@@ -31,6 +33,7 @@ public class LogisticsController {
 	private final PidgeIntegrationService pidge;
 	private final ShipmentService shipmentService;
 	private final MealLogisticsDispatchService mealLogisticsDispatchService;
+	private final MealRiderReassignService mealRiderReassignService;
 	private final ObjectMapper objectMapper;
 	private final JdbcTemplate jdbc;
 
@@ -95,6 +98,39 @@ public class LogisticsController {
 			return ResponseEntity.badRequest().body(result);
 		}
 		return ResponseEntity.ok(result);
+	}
+
+	/**
+	 * Admin-triggered Pidge rider reassign: unallocate fulfillment only; rider updates via webhooks.
+	 */
+	@PostMapping("/logistics/meal/reassign-rider")
+	public ResponseEntity<Map<String, Object>> mealReassignRider(@RequestBody JsonNode body) {
+		Map<String, Object> result = mealRiderReassignService.reassignRider(body);
+		if (Boolean.FALSE.equals(result.get("success"))) {
+			String code = result.get("code") != null ? String.valueOf(result.get("code")) : "";
+			if ("not_eligible".equals(code)) {
+				return ResponseEntity.status(HttpStatus.CONFLICT).body(result);
+			}
+			if ("pidge_error".equals(code)) {
+				return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(result);
+			}
+			return ResponseEntity.badRequest().body(result);
+		}
+		return ResponseEntity.accepted().body(result);
+	}
+
+	@GetMapping("/logistics/meal/{mealOrderId}/logistics-summary")
+	public ResponseEntity<Map<String, Object>> mealLogisticsSummary(@PathVariable String mealOrderId) {
+		try {
+			UUID id = UUID.fromString(mealOrderId.trim());
+			Map<String, Object> result = mealRiderReassignService.logisticsSummary(id);
+			if (Boolean.FALSE.equals(result.get("success"))) {
+				return ResponseEntity.notFound().build();
+			}
+			return ResponseEntity.ok(result);
+		} catch (IllegalArgumentException e) {
+			return ResponseEntity.badRequest().body(Map.of("success", false, "error", "mealOrderId must be a UUID"));
+		}
 	}
 
 	@GetMapping("/logistics/pidge/order/{id}")

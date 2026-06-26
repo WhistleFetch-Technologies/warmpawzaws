@@ -39,16 +39,54 @@ public class OrderStatusJdbcService {
 	}
 
 	public void updateMealOrderStatus(UUID orderId, String status) {
-		if (status != null && "delivered".equalsIgnoreCase(status)) {
+		updateMealOrderStatusIfNotCancelled(orderId, status);
+	}
+
+	/** Skip status writes when meal order is already cancelled (prevents post-cancel webhook overwrite). */
+	public void updateMealOrderStatusIfNotCancelled(UUID orderId, String status) {
+		if (orderId == null || status == null || status.isBlank()) {
+			return;
+		}
+		if ("delivered".equalsIgnoreCase(status)) {
 			jdbc.update(
-					"UPDATE meal_orders SET status = ?, delivered_at = NOW(), updated_at = NOW() WHERE id = ?",
+					"""
+							UPDATE meal_orders SET status = ?, delivered_at = NOW(), updated_at = NOW()
+							WHERE id = ?
+							  AND status IS DISTINCT FROM 'cancelled'
+							  AND cancelled_by IS NULL
+							""",
 					status,
 					orderId);
 		} else {
 			jdbc.update(
-					"UPDATE meal_orders SET status = ?, updated_at = NOW() WHERE id = ?",
+					"""
+							UPDATE meal_orders SET status = ?, updated_at = NOW()
+							WHERE id = ?
+							  AND status IS DISTINCT FROM 'cancelled'
+							  AND cancelled_by IS NULL
+							""",
 					status,
 					orderId);
+		}
+	}
+
+	public boolean isMealOrderCancelled(UUID orderId) {
+		if (orderId == null) {
+			return false;
+		}
+		try {
+			List<java.util.Map<String, Object>> rows = jdbc.queryForList(
+					"SELECT status, cancelled_by FROM meal_orders WHERE id = ? LIMIT 1",
+					orderId);
+			if (rows.isEmpty()) {
+				return false;
+			}
+			String status = rows.get(0).get("status") != null ? String.valueOf(rows.get(0).get("status")) : "";
+			Object cancelledBy = rows.get(0).get("cancelled_by");
+			return "cancelled".equalsIgnoreCase(status.trim())
+					|| (cancelledBy != null && !String.valueOf(cancelledBy).isBlank() && !"null".equals(String.valueOf(cancelledBy)));
+		} catch (Exception e) {
+			return false;
 		}
 	}
 

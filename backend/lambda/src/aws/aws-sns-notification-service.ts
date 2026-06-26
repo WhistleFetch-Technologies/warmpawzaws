@@ -335,12 +335,24 @@ class PushNotificationServiceImpl {
     let title = template.title;
     let body = template.body;
 
-    // Replace placeholders with actual data
-    Object.entries(data).forEach(([key, value]) => {
+    const sanitized = { ...data };
+    if (typeof sanitized.reason === 'string' && /^pidge_logistics_cancelled/i.test(sanitized.reason)) {
+      sanitized.reason = '';
+      if (!sanitized.customerMessage) {
+        sanitized.customerMessage = 'Your refund is being processed.';
+      }
+    }
+    if (!sanitized.customerMessage && body.includes('{customerMessage}')) {
+      sanitized.customerMessage = 'Your refund is being processed.';
+    }
+
+    Object.entries(sanitized).forEach(([key, value]) => {
       const placeholder = `{${key}}`;
-      title = title.replace(placeholder, String(value));
-      body = body.replace(placeholder, String(value));
+      const str = value != null ? String(value) : '';
+      title = title.replaceAll(placeholder, str);
+      body = body.replaceAll(placeholder, str);
     });
+    body = body.replace(/\s{2,}/g, ' ').trim();
 
     return {
       title,

@@ -161,6 +161,7 @@ export type NotifyMealEventParams = {
   customerName?: string;
   riderName?: string;
   reason?: string;
+  customerMessage?: string;
   deliveryTrackingId?: string;
   pidgeOrderId?: string;
   logisticsStatus?: string;
@@ -226,6 +227,7 @@ export async function notifyMealEvent(
       customerName: params.customerName,
       riderName: params.riderName,
       reason: params.reason,
+      customerMessage: params.customerMessage,
       mealPlanName: params.mealPlanName,
       deliveryTrackingId: params.deliveryTrackingId,
       pidgeOrderId: params.pidgeOrderId,

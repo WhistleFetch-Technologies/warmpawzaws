@@ -12,6 +12,7 @@ export type MealDeliveryEffective =
   | 'confirmed'
   | 'preparing'
   | 'ready_for_pickup'
+  | 'reassign_pending'
   | 'picked_up'
   | 'on_the_way'
   | 'delivered'
@@ -55,13 +56,26 @@ export function normalizeMealDeliveryToken(raw: string | null | undefined): stri
 export function resolveEffectiveMealDeliveryState(
   orderStatus: string | null | undefined,
   logisticsStatus: string | null | undefined,
+  options?: {
+    reassignPending?: boolean;
+    cancelledBy?: string | null;
+    cancelledAt?: string | null;
+  },
 ): MealDeliveryEffective {
+  if (options?.reassignPending && String(orderStatus ?? '').trim().toLowerCase() === 'ready_for_pickup') {
+    return 'reassign_pending';
+  }
+
   const orderSegs = splitMealStatusSegments(orderStatus);
   const logSegs = splitMealStatusSegments(logisticsStatus);
   const oJoined = orderSegs.join('_');
   const lJoined = logSegs.join('_');
 
-  const hasCancelled = [...orderSegs, ...logSegs].some((s) => s === 'cancelled');
+  const hasCancelledBy =
+    options?.cancelledBy != null && String(options.cancelledBy).trim() !== '';
+  const hasCancelledAt =
+    options?.cancelledAt != null && String(options.cancelledAt).trim() !== '';
+  const hasCancelled = hasCancelledBy || hasCancelledAt || [...orderSegs, ...logSegs].some((s) => s === 'cancelled');
   if (hasCancelled) return 'cancelled';
 
   const hasFailed = [...orderSegs, ...logSegs].some((s) => s === 'failed');
@@ -142,6 +156,8 @@ export function formatVendorMealDeliveryBadge(status: MealDeliveryEffective): st
       return 'Picked up';
     case 'ready_for_pickup':
       return 'Ready for pickup';
+    case 'reassign_pending':
+      return 'Finding new rider';
     case 'preparing':
       return 'Preparing';
     case 'confirmed':
@@ -183,7 +199,11 @@ export function shouldShowMealLiveMap(input: {
   /** @deprecated Coords no longer gate visibility; map shows placeholder until GPS arrives. */
   hasCoordinates?: boolean;
   orderEffectiveState?: MealDeliveryEffective;
+  reassignPending?: boolean;
 }): boolean {
+  if (input.reassignPending || input.orderEffectiveState === 'reassign_pending') {
+    return false;
+  }
   const partner = String(input.logisticsPartner ?? '').trim().toLowerCase();
   const logisticsType = String(input.logisticsType ?? '').trim().toLowerCase();
   if (partner !== 'pidge' && logisticsType !== 'pidge') return false;
@@ -200,7 +220,13 @@ export function shouldShowMealLiveMap(input: {
 }
 
 /** Rider card / live enrichment only during active delivery phases (Pidge + internal). */
-export function shouldShowDeliveryRider(logisticsStatus: string | null | undefined): boolean {
+export function shouldShowDeliveryRider(
+  logisticsStatus: string | null | undefined,
+  options?: { reassignPending?: boolean },
+): boolean {
+  if (options?.reassignPending) {
+    return false;
+  }
   const segs = splitMealStatusSegments(logisticsStatus);
   const active = new Set([
     'heading_to_pickup',
@@ -225,8 +251,19 @@ export function mealRiderDeliveryMessage(logisticsStatus: string | null | undefi
   return null;
 }
 
+/** Customer/vendor copy while admin reassign is in flight. */
+export function mealReassignMessage(): string {
+  return 'Finding a new delivery partner…';
+}
+
 /** Compact footer "Track order" bar — rider phase only (not kitchen preparing/ready). */
-export function shouldShowMealRiderFooterBar(logisticsStatus: string | null | undefined): boolean {
+export function shouldShowMealRiderFooterBar(
+  logisticsStatus: string | null | undefined,
+  options?: { reassignPending?: boolean },
+): boolean {
+  if (options?.reassignPending) {
+    return true;
+  }
   const segs = splitMealStatusSegments(logisticsStatus);
   const active = new Set([
     'heading_to_pickup',

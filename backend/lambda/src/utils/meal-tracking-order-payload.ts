@@ -264,11 +264,16 @@ export function buildCustomerMealTrackingOrderPayload(input: {
     }
   }
 
-  const deliveredAt =
+  const deliveredAtRaw =
     order.delivered_at ??
     order.actual_delivery_time ??
     deliveryTracking?.delivered_at ??
     null;
+  const includeDeliveredAt = displayStatus === 'delivered';
+  const deliveredAt = includeDeliveredAt ? deliveredAtRaw : null;
+
+  const cancelledBy = order.cancelled_by ?? order.cancelledBy ?? null;
+  const cancelledAt = order.cancelled_at ?? order.cancelledAt ?? null;
 
   const snapForAddr = parseSnap(order.purchase_snapshot);
   const snapAddr = snapForAddr.deliveryAddress as Record<string, unknown> | undefined;
@@ -307,6 +312,10 @@ export function buildCustomerMealTrackingOrderPayload(input: {
     order_number: order.order_number || String(order.id ?? '').slice(-8),
     orderNumber: order.order_number || String(order.id ?? '').slice(-8),
     status: displayStatus,
+    cancelled_by: cancelledBy,
+    cancelledBy,
+    cancelled_at: cancelledAt,
+    cancelledAt,
     meal_plan_name: mealPlanName || undefined,
     mealPlanName: mealPlanName || undefined,
     quantity,

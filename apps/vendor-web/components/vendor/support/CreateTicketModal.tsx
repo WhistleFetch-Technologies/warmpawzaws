@@ -30,6 +30,11 @@ interface CreateTicketModalProps {
   onTicketCreated?: () => void;
   bookingId?: string;
   orderId?: string;
+  mealOrderId?: string;
+  defaultSubject?: string;
+  defaultDescription?: string;
+  defaultCategory?: string;
+  ticketMetadata?: Record<string, unknown>;
 }
 
 interface Category {
@@ -45,6 +50,11 @@ export function CreateTicketModal({
   onTicketCreated,
   bookingId,
   orderId,
+  mealOrderId,
+  defaultSubject,
+  defaultDescription,
+  defaultCategory,
+  ticketMetadata,
 }: CreateTicketModalProps) {
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -58,8 +68,16 @@ export function CreateTicketModal({
   useEffect(() => {
     if (open) {
       loadCategories();
+      if (defaultSubject || defaultDescription || defaultCategory) {
+        setFormData((prev) => ({
+          ...prev,
+          subject: defaultSubject?.trim() || prev.subject,
+          description: defaultDescription?.trim() || prev.description,
+          category: defaultCategory?.trim() || prev.category,
+        }));
+      }
     }
-  }, [open]);
+  }, [open, defaultSubject, defaultDescription, defaultCategory]);
 
   const loadCategories = async () => {
     try {
@@ -94,6 +112,8 @@ export function CreateTicketModal({
         priority: formData.priority,
         bookingId,
         orderId,
+        mealOrderId,
+        metadata: ticketMetadata,
       });
 
       if (res.success) {
