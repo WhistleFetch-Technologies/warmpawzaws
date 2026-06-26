@@ -22,6 +22,7 @@ import {
   type MealDeliveryEffective,
 } from '@warmpawz/shared-types';
 import { formatVendorMealDeliveryLocationLine } from '@/lib/format-vendor-meal-delivery-location';
+import { CreateTicketModal } from '@/components/vendor/support/CreateTicketModal';
 
 // 2D Sketch-style SVG Icons
 const Icons = {
