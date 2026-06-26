@@ -8,15 +8,16 @@ import {
   getBulkProductTitle,
   MAX_BULK_PRODUCT_ROWS,
 } from '../utils/product-ecommerce-validation';
-import { parseDeliveryRegionsCsv } from '@warmpawz/shared-types';
+import { parseDeliveryRegionsCsv, getVariantGuideSheetRows } from '@warmpawz/shared-types';
 
 import ExcelJS from 'exceljs';
 
 export { getBulkProductTitle };
 
 export const SHEET_NAME = 'NPI';
+export const VARIANT_GUIDE_SHEET_NAME = 'Variant Guide';
 
-/** 26 columns. Compulsory ones carry a `*` suffix. */
+/** 28 columns. Compulsory ones carry a `*` suffix. */
 export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Title*',
   'Description',
@@ -44,6 +45,8 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Variant Value 1',
   'Variant Attribute 2',
   'Variant Value 2',
+  'Variant Attribute 3',
+  'Variant Value 3',
 ];
 
 const REQUIRED_COL_LETTERS = {
@@ -91,7 +94,7 @@ const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill
   },
   {
     start: 22,
-    end: 26,
+    end: 28,
     title: 'Same Product Group ID = one product (variants). Each row: one SKU with its own MRP & SP.',
     fill: TAN,
   },
@@ -139,6 +142,7 @@ function buildSampleRow(sampleCategory: string): string[] {
     '62052000',
     'Country of Origin: India. Manufactured by Apparo Lifestyle Pvt Ltd.',
     'Mumbai, Pune',
+    '',
     '',
     '',
     '',
@@ -238,8 +242,50 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
   addInlineDropdown(ws, `${PET_TYPE}3:${PET_TYPE}500`, STATIC_PET_TYPES);
   addInlineDropdown(ws, `${TAX}3:${TAX}500`, STATIC_TAX_LABELS);
 
+  addVariantGuideSheet(wb);
+
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
+}
+
+const VARIANT_GUIDE_HEADERS = [
+  'Category',
+  'Suggested Attr 1',
+  'Suggested Attr 2',
+  'Suggested Attr 3',
+  'Example combo 1',
+  'Example combo 2',
+];
+
+function addVariantGuideSheet(wb: ExcelJS.Workbook): void {
+  const guideWs = wb.addWorksheet(VARIANT_GUIDE_SHEET_NAME);
+  guideWs.getRow(1).height = 28;
+  VARIANT_GUIDE_HEADERS.forEach((h, i) => {
+    const cell = guideWs.getCell(1, i + 1);
+    cell.value = h;
+    cell.font = { bold: true, size: 10 };
+    cell.fill = HEADER_ROW_FILL as ExcelJS.Fill;
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = THIN_BORDER as ExcelJS.Borders;
+    guideWs.getColumn(i + 1).width = i === 0 ? 22 : 28;
+  });
+
+  const rows = getVariantGuideSheetRows();
+  rows.forEach((row, idx) => {
+    const r = idx + 2;
+    guideWs.getCell(r, 1).value = row.category;
+    guideWs.getCell(r, 2).value = row.attr1;
+    guideWs.getCell(r, 3).value = row.attr2;
+    guideWs.getCell(r, 4).value = row.attr3;
+    guideWs.getCell(r, 5).value = row.example1;
+    guideWs.getCell(r, 6).value = row.example2;
+    for (let c = 1; c <= 6; c++) {
+      const cell = guideWs.getCell(r, c);
+      cell.font = { size: 10 };
+      cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+      cell.border = THIN_BORDER as ExcelJS.Borders;
+    }
+  });
 }
 
 function colLetter(n: number): string {
@@ -318,6 +364,8 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   variantvalue1: 'variant_value_1',
   variantattribute2: 'variant_attr_2',
   variantvalue2: 'variant_value_2',
+  variantattribute3: 'variant_attr_3',
+  variantvalue3: 'variant_value_3',
   // Legacy 52-column aliases (backward compat for old files)
   benefits: 'benefits',
   uniquesellingpropositions: 'usp',
@@ -466,6 +514,8 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     if (bag.variant_value_1?.trim()) product.variant_value_1 = bag.variant_value_1.trim();
     if (bag.variant_attr_2?.trim()) product.variant_attr_2 = bag.variant_attr_2.trim();
     if (bag.variant_value_2?.trim()) product.variant_value_2 = bag.variant_value_2.trim();
+    if (bag.variant_attr_3?.trim()) product.variant_attr_3 = bag.variant_attr_3.trim();
+    if (bag.variant_value_3?.trim()) product.variant_value_3 = bag.variant_value_3.trim();
 
     products.push(product);
   });

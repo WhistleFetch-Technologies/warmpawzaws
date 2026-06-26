@@ -35,7 +35,12 @@ import {
   deliveryRegionsFromProduct,
   customSpecRowsFromProduct,
   type SpecKvRow,
+  variantAxesFromPresetSuggestion,
 } from '@/lib/vendor-product-form';
+import {
+  getVariantSuggestionsForCategory,
+  MAX_VARIANT_ATTRIBUTES,
+} from '@warmpawz/shared-types';
 
 function stripAwsPresignFromProductImageUrl(url: string): string {
   try {
@@ -93,6 +98,16 @@ export function ProductFormModal({
   const listingPreview = useMemo(
     () => (productMode === 'multi' ? computeListingPreviewFromVariants(variants, variantAxes) : null),
     [productMode, variants, variantAxes],
+  );
+
+  const selectedCategoryName = useMemo(() => {
+    const cat = categories.find((c) => c.id === form.category_id);
+    return cat?.name?.trim() ?? '';
+  }, [categories, form.category_id]);
+
+  const variantSuggestions = useMemo(
+    () => getVariantSuggestionsForCategory(form.category_id, selectedCategoryName),
+    [form.category_id, selectedCategoryName],
   );
 
   useEffect(() => {
@@ -301,14 +316,36 @@ export function ProductFormModal({
   };
 
   const handleCustomAxis = () => {
-    const label = window.prompt('Custom variant attribute name (e.g. Flavor, Material):');
-    if (!label) return;
-    const axis = customVariantAxis(label);
-    if (!axis) {
-      toast.error('Enter a valid attribute name');
-      return;
+    const axes: VariantAxisConfig[] = [];
+    for (let i = 0; i < MAX_VARIANT_ATTRIBUTES; i++) {
+      const label = window.prompt(
+        i === 0
+          ? 'Custom variant attribute name (e.g. Flavour, Material):'
+          : `Add another attribute? (${i + 1} of ${MAX_VARIANT_ATTRIBUTES}) — leave blank to finish:`,
+      );
+      if (label == null) return;
+      const trimmed = String(label).trim();
+      if (!trimmed) break;
+      const axis = customVariantAxis(trimmed);
+      if (!axis) {
+        toast.error('Enter a valid attribute name');
+        return;
+      }
+      if (axes.some((a) => a.key === axis.key)) {
+        toast.error(`Attribute "${axis.label}" is already added`);
+        return;
+      }
+      axes.push(axis);
+      if (axes.length >= MAX_VARIANT_ATTRIBUTES) break;
     }
-    confirmAxisAndAdd([axis]);
+    if (axes.length === 0) return;
+    confirmAxisAndAdd(axes);
+  };
+
+  const handlePresetSuggestion = (suggestionId: string) => {
+    const preset = variantSuggestions.find((s) => s.id === suggestionId);
+    if (!preset) return;
+    confirmAxisAndAdd(variantAxesFromPresetSuggestion(preset));
   };
 
   const axisLabel =
@@ -744,42 +781,27 @@ export function ProductFormModal({
             {pendingAxisPick && (
               <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl space-y-3">
                 <p className="text-sm font-medium text-slate-800">What varies between variants?</p>
+                {selectedCategoryName ? (
+                  <p className="text-xs text-slate-600">
+                    Suggestions for {selectedCategoryName} — you can still enter any attribute manually.
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-600">
+                    Select a category above for tailored suggestions, or pick a preset below.
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => confirmAxisAndAdd(presetVariantAxes('pack'))}
-                    className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
-                  >
-                    Pack
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => confirmAxisAndAdd(presetVariantAxes('weight'))}
-                    className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
-                  >
-                    Weight
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => confirmAxisAndAdd(presetVariantAxes('size'))}
-                    className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
-                  >
-                    Size only
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => confirmAxisAndAdd(presetVariantAxes('color'))}
-                    className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
-                  >
-                    Color only
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => confirmAxisAndAdd(presetVariantAxes('size_color'))}
-                    className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
-                  >
-                    Size + Color
-                  </button>
+                  {variantSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      onClick={() => handlePresetSuggestion(suggestion.id)}
+                      className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
+                      title={suggestion.description}
+                    >
+                      {suggestion.label}
+                    </button>
+                  ))}
                   <button
                     type="button"
                     onClick={handleCustomAxis}

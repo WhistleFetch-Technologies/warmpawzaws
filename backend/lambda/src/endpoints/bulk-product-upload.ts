@@ -82,6 +82,8 @@ interface BulkProductRow {
   variant_value_1?: string | null;
   variant_attr_2?: string | null;
   variant_value_2?: string | null;
+  variant_attr_3?: string | null;
+  variant_value_3?: string | null;
   product_group_id?: string | null;
   barcode?: string | null;
   key_features?: string | null;
@@ -223,6 +225,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             variant_value_1: product.variant_value_1 != null ? String(product.variant_value_1).trim() : null,
             variant_attr_2: product.variant_attr_2 != null ? String(product.variant_attr_2).trim() : null,
             variant_value_2: product.variant_value_2 != null ? String(product.variant_value_2).trim() : null,
+            variant_attr_3: product.variant_attr_3 != null ? String(product.variant_attr_3).trim() : null,
+            variant_value_3: product.variant_value_3 != null ? String(product.variant_value_3).trim() : null,
             product_group_id:
               product.product_group_id != null ? String(product.product_group_id).trim() : null,
             barcode: product.barcode?.trim() || null,
@@ -618,6 +622,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'variantvalue1': 'variant_value_1',
         'variantattribute2': 'variant_attr_2',
         'variantvalue2': 'variant_value_2',
+        'variantattribute3': 'variant_attr_3',
+        'variantvalue3': 'variant_value_3',
         'productgroupid': 'product_group_id',
         'productgroup': 'product_group_id',
         'material': 'material',

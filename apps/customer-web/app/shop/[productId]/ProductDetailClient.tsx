@@ -34,9 +34,13 @@ import {
   cartLineKey,
   getInitialProductSku,
   hasIncompleteVariantSelection,
+  hasInvalidVariantSelection,
+  isOptionValueAvailable,
   optionValuesToSelectedVariations,
   parseClientSkuPrice,
   variationSelectionKey,
+  resolveDisplaySku,
+  sanitizeVariantSelection,
 } from '@/lib/product-sku-client';
 import {
   readCheckoutAddressId,
@@ -460,10 +464,23 @@ export default function ProductDetailClient() {
 
   const matchedSku = useMemo(() => {
     if (productSkus.length === 0) return null;
-    const full = resolveSkuFromSelection(productSkus, selectedVariations);
-    if (full) return full;
-    return resolveSkuFromSelection(productSkus, selectedVariations, { partial: true });
+    return resolveDisplaySku(productSkus, selectedVariations, product?.variations);
+  }, [productSkus, selectedVariations, product?.variations]);
+
+  const exactMatchedSku = useMemo(() => {
+    if (productSkus.length === 0) return null;
+    return resolveSkuFromSelection(productSkus, selectedVariations);
   }, [productSkus, selectedVariations]);
+
+  const invalidVariantSelection = useMemo(
+    () =>
+      hasInvalidVariantSelection(
+        productSkus,
+        selectedVariations,
+        product?.variations,
+      ),
+    [productSkus, selectedVariations, product?.variations],
+  );
 
   const displayPrice = useMemo(() => {
     if (productSkus.length > 0) {
@@ -471,6 +488,7 @@ export default function ProductDetailClient() {
         productSkus,
         selectedVariations,
         product?.price ?? 0,
+        product?.variations,
       );
     }
     return product?.price ?? 0;
@@ -489,7 +507,7 @@ export default function ProductDetailClient() {
 
   const headerPrice = showFromPrice && product?.min_price != null ? product.min_price : displayPrice;
 
-  const displayStock = matchedSku?.stock ?? product?.stock ?? 0;
+  const displayStock = exactMatchedSku?.stock ?? matchedSku?.stock ?? product?.stock ?? 0;
 
   const displayImages = useMemo(() => {
     const skuImgs = skuImages(matchedSku);
@@ -553,7 +571,7 @@ export default function ProductDetailClient() {
 
   const cartLineId = cartLineKey(
     String(wishlistProductId || productId),
-    matchedSku?.id,
+    exactMatchedSku?.id,
   );
 
   useEffect(() => {
@@ -575,8 +593,10 @@ export default function ProductDetailClient() {
   const persistCartQuantity = (qty: number): boolean => {
     if (!product || displayStock === 0) return false;
     if (!assertCanAddToCart()) return false;
-    if (productSkus.length > 0 && !matchedSku) {
-      alert('Please select all product options');
+    if (productSkus.length > 0 && !exactMatchedSku) {
+      alert(invalidVariantSelection
+        ? 'This combination is not available'
+        : 'Please select all product options');
       return false;
     }
     const snap = productSnapshot();
@@ -584,7 +604,7 @@ export default function ProductDetailClient() {
     const ok = setLineQuantityInWarmpawzCartStorage({
       lineId: cartLineId,
       quantity: qty,
-      product_sku_id: matchedSku?.id,
+      product_sku_id: exactMatchedSku?.id,
       product: snap,
       selectedVariations:
         Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
@@ -596,8 +616,10 @@ export default function ProductDetailClient() {
   const mergeLineIntoLocalCart = (): boolean => {
     if (!product || displayStock === 0) return false;
     if (!assertCanAddToCart()) return false;
-    if (productSkus.length > 0 && !matchedSku) {
-      alert('Please select all product options');
+    if (productSkus.length > 0 && !exactMatchedSku) {
+      alert(invalidVariantSelection
+        ? 'This combination is not available'
+        : 'Please select all product options');
       return false;
     }
     const snap = productSnapshot();
@@ -605,7 +627,7 @@ export default function ProductDetailClient() {
     const ok = mergeLineIntoWarmpawzCartStorage({
       lineId: cartLineId,
       quantity,
-      product_sku_id: matchedSku?.id,
+      product_sku_id: exactMatchedSku?.id,
       product: snap,
       selectedVariations:
         Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
@@ -902,6 +924,12 @@ export default function ProductDetailClient() {
             {/* Product Variations */}
             {product.variations && product.variations.length > 0 && (
               <div className="space-y-4">
+                {invalidVariantSelection && (
+                  <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    This combination is not available
+                  </div>
+                )}
                 {product.variations.map((variation) => {
                   const selKey = variationSelectionKey(variation);
                   return (
@@ -911,6 +939,14 @@ export default function ProductDetailClient() {
                     </label>
                     <div className="flex flex-wrap gap-2">
                       {(variation.options || []).map((option) => {
+                        const available =
+                          productSkus.length === 0 ||
+                          isOptionValueAvailable(
+                            productSkus,
+                            selectedVariations,
+                            selKey,
+                            option.value,
+                          );
                         const previewSelection = {
                           ...selectedVariations,
                           [selKey]: option.value,
@@ -921,6 +957,7 @@ export default function ProductDetailClient() {
                                 productSkus,
                                 previewSelection,
                                 product?.price ?? 0,
+                                product?.variations,
                               )
                             : option.price;
                         const basePrice =
@@ -929,17 +966,24 @@ export default function ProductDetailClient() {
                                 productSkus,
                                 {},
                                 product?.price ?? 0,
+                                product?.variations,
                               )
                             : product?.price ?? 0;
                         return (
                         <button
                           key={option.value}
+                          type="button"
+                          disabled={!available}
                           onClick={() => {
+                            if (!available) return;
                             userTouchedVariationsRef.current = true;
-                            const next = {
-                              ...selectedVariations,
-                              [selKey]: option.value,
-                            };
+                            const next = sanitizeVariantSelection(
+                              productSkus,
+                              selectedVariations,
+                              selKey,
+                              option.value,
+                              product.variations ?? [],
+                            );
                             setSelectedVariations(next);
                             const partial = resolveSkuFromSelection(productSkus, next, {
                               partial: true,
@@ -948,7 +992,9 @@ export default function ProductDetailClient() {
                             if (imgs.length > 0) setSelectedImage(0);
                           }}
                           className={`px-4 py-2 rounded-xl border-2 transition-all ${
-                            selectedVariations[selKey] === option.value
+                            !available
+                              ? 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed line-through'
+                              : selectedVariations[selKey] === option.value
                               ? 'border-orange-500 bg-orange-50 text-orange-700'
                               : 'border-slate-200 hover:border-orange-300'
                           }`}
@@ -1037,6 +1083,7 @@ export default function ProductDetailClient() {
                 disabled={
                   displayStock === 0 ||
                   addingToCart ||
+                  invalidVariantSelection ||
                   (Boolean(customerCity) && !canDeliverToCustomer)
                 }
                 className={`flex-1 py-4 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
@@ -1065,6 +1112,7 @@ export default function ProductDetailClient() {
                 onClick={buyNow}
                 disabled={
                   displayStock === 0 ||
+                  invalidVariantSelection ||
                   (Boolean(customerCity) && !canDeliverToCustomer)
                 }
                 className="flex-1 py-4 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"

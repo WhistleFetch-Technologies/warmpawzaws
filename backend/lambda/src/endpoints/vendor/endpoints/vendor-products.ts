@@ -58,6 +58,10 @@ import {
   generateProductGroupId,
   parseProductMetadata,
 } from '../../../utils/product-group-identity';
+import {
+  getBulkVariantHintsForCategory,
+  getVariantSuggestionsForCategory,
+} from '@warmpawz/shared-types';
 
 // PHASE 1.3: S3 client for product image uploads
 const s3Client = new S3Client({
@@ -1365,6 +1369,28 @@ export function registerVendorProductsEndpoints(app: Hono) {
   const updateProductHandler = new UpdateVendorProductHandler();
   const patchSkuStockHandler = new PatchVendorProductSkuStockHandler();
   const deleteProductHandler = new DeleteVendorProductHandler();
+
+  app.get('/vendor/:vendorId/ecommerce/categories/:categoryId/variant-presets', async (c) => {
+    try {
+      const categoryId = c.req.param('categoryId');
+      const rows = await select('ecommerce_categories', { id: categoryId, is_active: true });
+      const category = rows[0] as { id?: string; name?: string } | undefined;
+      if (!category?.id) {
+        return c.json({ success: false, error: 'Category not found' }, 404);
+      }
+      const categoryName = String(category.name ?? '').trim();
+      return c.json({
+        success: true,
+        category_id: categoryId,
+        category_name: categoryName,
+        suggestions: getVariantSuggestionsForCategory(categoryId, categoryName),
+        bulk_hints: getBulkVariantHintsForCategory(categoryId, categoryName),
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return c.json({ success: false, error: msg }, 500);
+    }
+  });
 
   app.get('/vendor/:vendorId/products', async (c) => {
     try {

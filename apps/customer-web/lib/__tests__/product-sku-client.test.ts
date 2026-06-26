@@ -8,6 +8,10 @@ import {
   getInitialProductSku,
   getFirstInStockProductSku,
   hasIncompleteVariantSelection,
+  isOptionValueAvailable,
+  getAvailableOptionValues,
+  hasInvalidVariantSelection,
+  resolveDisplaySku,
   type ClientProductSku,
 } from '../product-sku-client';
 
@@ -116,5 +120,85 @@ describe('product-sku-client', () => {
   it('hasIncompleteVariantSelection is true for partial selection', () => {
     expect(hasIncompleteVariantSelection(skus, { size: 's' })).toBe(false);
     expect(hasIncompleteVariantSelection(skus, {})).toBe(true);
+  });
+
+  describe('SKU matrix availability', () => {
+    const matrixSkus: ClientProductSku[] = [
+      {
+        id: 'a',
+        option_values: { color: 'red', flavour: 'blackberry' },
+        price: 100,
+        stock: 5,
+      },
+      {
+        id: 'b',
+        option_values: { color: 'red', flavour: 'choclate' },
+        price: 110,
+        stock: 3,
+      },
+    ];
+    const axes = [
+      { type: 'color' as const, name: 'Color', option_key: 'color' },
+      { type: 'other' as const, name: 'Flavour', option_key: 'flavour' },
+    ];
+
+    it('isOptionValueAvailable disables invalid cross-combinations', () => {
+      expect(isOptionValueAvailable(matrixSkus, { color: 'red' }, 'flavour', 'blackberry')).toBe(
+        true,
+      );
+      expect(isOptionValueAvailable(matrixSkus, { color: 'red' }, 'flavour', 'choclate')).toBe(
+        true,
+      );
+      expect(isOptionValueAvailable(matrixSkus, { colour: 'blue' }, 'flavour', 'blackberry')).toBe(
+        false,
+      );
+    });
+
+    it('hasInvalidVariantSelection when full selection has no exact SKU', () => {
+      expect(
+        hasInvalidVariantSelection(matrixSkus, { color: 'red', flavour: 'blackberry' }, axes),
+      ).toBe(false);
+      expect(
+        hasInvalidVariantSelection(matrixSkus, { color: 'blue', flavour: 'blackberry' }, axes),
+      ).toBe(true);
+    });
+
+    it('resolveDisplaySku uses exact match only when all axes selected', () => {
+      expect(resolveDisplaySku(matrixSkus, { color: 'red', flavour: 'blackberry' }, axes)?.id).toBe(
+        'a',
+      );
+      expect(resolveDisplaySku(matrixSkus, { color: 'blue', flavour: 'blackberry' }, axes)).toBeNull();
+    });
+
+    it('getAvailableOptionValues filters by partial selection', () => {
+      expect(getAvailableOptionValues(matrixSkus, { color: 'red' }, 'flavour')).toEqual([
+        'blackberry',
+        'choclate',
+      ]);
+      expect(getAvailableOptionValues(matrixSkus, { colour: 'blue' }, 'flavour')).toEqual([]);
+    });
+
+    it('supports three-axis matrix', () => {
+      const threeAxisSkus: ClientProductSku[] = [
+        {
+          id: '1',
+          option_values: { flavour: 'Chicken', pack: '500g', size: 'Adult' },
+          price: 500,
+          stock: 2,
+        },
+        {
+          id: '2',
+          option_values: { flavour: 'Chicken', pack: '1kg', size: 'Adult' },
+          price: 900,
+          stock: 1,
+        },
+      ];
+      expect(
+        isOptionValueAvailable(threeAxisSkus, { flavour: 'Chicken', pack: '500g' }, 'size', 'Adult'),
+      ).toBe(true);
+      expect(
+        isOptionValueAvailable(threeAxisSkus, { flavour: 'Chicken', pack: '500g' }, 'size', 'Puppy'),
+      ).toBe(false);
+    });
   });
 });
