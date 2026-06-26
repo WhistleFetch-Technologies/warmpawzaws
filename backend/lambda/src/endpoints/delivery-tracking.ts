@@ -18,11 +18,6 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
 import { resolveMealOrderIdForSubscriptionDelivery } from '../utils/resolve-meal-order-for-subscription-delivery';
-import {
-  applyLiveTrackingEnrichmentForCustomer,
-  fetchLiveTrackingByTrackingId,
-  mergeTrackingFromDeliveryService,
-} from '../utils/delivery-tracking-enrichment';
 
 export function registerDeliveryTrackingEndpoints(app: Hono) {
 
@@ -330,13 +325,6 @@ export function registerDeliveryTrackingEndpoints(app: Hono) {
         },
       };
 
-      if (String(tracking.logistics_partner || '').toLowerCase() === 'pidge') {
-        const live = await fetchLiveTrackingByTrackingId(String(tracking.id));
-        if (live) {
-          trackingPayload = mergeTrackingFromDeliveryService(trackingPayload, live);
-        }
-      }
-
       return c.json({
         success: true,
         tracking: trackingPayload,
@@ -388,18 +376,6 @@ export function registerDeliveryTrackingEndpoints(app: Hono) {
         eta: tracking.eta_to_delivery_minutes,
         etaMinutes: tracking.eta_to_delivery_minutes,
       };
-
-      if (String(tracking.logistics_partner || '').toLowerCase() === 'pidge') {
-        const enriched = await applyLiveTrackingEnrichmentForCustomer(
-          orderType as 'meal' | 'pharmacy',
-          orderId,
-          trackingPayload,
-          tracking.logistics_partner
-        );
-        if (enriched) {
-          trackingPayload = enriched;
-        }
-      }
 
       return c.json({
         success: true,
