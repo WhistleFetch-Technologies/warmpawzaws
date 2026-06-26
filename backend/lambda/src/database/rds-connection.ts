@@ -554,6 +554,12 @@ const JSONB_COLUMN_NAMES = new Set([
   'variant_info',
   'option_values',
   'specializations',
+  'applicable_products',
+  'applicable_categories',
+  'bundle_products',
+  'applicable_services',
+  'applicable_service_styles',
+  'combo_services',
 ]);
 
 function isJsonbColumn(key: string): boolean {

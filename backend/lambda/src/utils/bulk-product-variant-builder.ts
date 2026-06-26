@@ -2,6 +2,7 @@
  * Bulk upload variant grouping — one row = one SKU; shared product_group_id or composite identity.
  */
 
+import { MAX_VARIANT_ATTRIBUTES, MAX_SKUS_PER_PRODUCT } from '@warmpawz/shared-types';
 import { normalizeOptionValues } from './product-sku-resolve';
 import type { SkuInput } from './product-sku-service';
 import { parseProductImageList } from './product-ecommerce-validation';
@@ -24,6 +25,8 @@ export type BulkVariantRow = Record<string, unknown> & {
   variant_value_1?: string | null;
   variant_attr_2?: string | null;
   variant_value_2?: string | null;
+  variant_attr_3?: string | null;
+  variant_value_3?: string | null;
   barcode?: string | null;
   brand?: string | null;
 };
@@ -111,6 +114,7 @@ export function parseBulkRowOptionValues(row: Record<string, unknown>): Record<s
   const pairs: Array<[unknown, unknown]> = [
     [row.variant_attr_1, row.variant_value_1],
     [row.variant_attr_2, row.variant_value_2],
+    [row.variant_attr_3, row.variant_value_3],
   ];
   for (const [attrRaw, valRaw] of pairs) {
     const attrLabel = String(attrRaw ?? '').trim();
@@ -349,8 +353,18 @@ export function validateVariantGroup(group: BulkProductGroup): VariantGroupValid
   }
 
   const referenceKeys = [...axisKeysPerRow.find((r) => r.keys.length > 0)?.keys ?? []].sort();
-  if (referenceKeys.length > 2) {
-    push('variants', 'Maximum 2 variant attributes per product');
+  if (referenceKeys.length > MAX_VARIANT_ATTRIBUTES) {
+    push(
+      'variants',
+      `Maximum ${MAX_VARIANT_ATTRIBUTES} variant attributes per product`,
+    );
+  }
+
+  if (group.variants.length > MAX_SKUS_PER_PRODUCT) {
+    push(
+      'variants',
+      `Maximum ${MAX_SKUS_PER_PRODUCT} variant rows (SKUs) per product group`,
+    );
   }
 
   const seen = new Set<string>();

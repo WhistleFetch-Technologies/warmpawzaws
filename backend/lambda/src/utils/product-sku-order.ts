@@ -7,8 +7,17 @@ import { loadProductSkus } from './product-sku-service';
 import {
   resolveSkuFromSelection,
   normalizeImagesArray,
+  normalizeOptionValues,
   type ProductSkuRow,
 } from './product-sku-resolve';
+
+export function productHasVariantSkus(skus: ProductSkuRow[]): boolean {
+  return skus.some((s) => {
+    if (s.is_active === false) return false;
+    const ov = normalizeOptionValues(s.option_values as Record<string, unknown>);
+    return Object.keys(ov).length > 0;
+  });
+}
 
 export type ResolvedOrderLine = {
   product_id: string;
@@ -39,6 +48,9 @@ export async function resolveEcommerceOrderLine(
   if (!products.rows.length) return null;
   const product = products.rows[0] as Record<string, unknown>;
 
+  const allSkus = await loadProductSkus(productId);
+  const requiresVariantSku = productHasVariantSkus(allSkus);
+
   let skuRow: ProductSkuRow | null = null;
   if (productSkuId) {
     const sk = await query(
@@ -48,8 +60,11 @@ export async function resolveEcommerceOrderLine(
     );
     if (sk.rows.length) skuRow = sk.rows[0] as ProductSkuRow;
   } else if (selectedVariations && Object.keys(selectedVariations).length > 0) {
-    const skus = await loadProductSkus(productId);
-    skuRow = resolveSkuFromSelection(skus, selectedVariations) ?? null;
+    skuRow = resolveSkuFromSelection(allSkus, selectedVariations) ?? null;
+  }
+
+  if (requiresVariantSku && !skuRow) {
+    throw new Error(`Variant is not available for ${String(product.name)}`);
   }
 
   const unitPrice =

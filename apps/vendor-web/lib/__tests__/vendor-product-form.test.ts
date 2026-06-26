@@ -5,6 +5,7 @@ import {
   effectiveVariantMrp,
   variantsFromProduct,
   presetVariantAxes,
+  customVariantAxis,
   deliveryRegionsFromProduct,
   sellingPriceForForm,
   detectProductMode,
@@ -286,5 +287,86 @@ describe('vendor-product-form', () => {
         ],
       }),
     ).toBe('multi');
+  });
+
+  it('buildVendorProductPayload multi mode supports three variant axes', () => {
+    const axes = [
+      customVariantAxis('Flavour')!,
+      customVariantAxis('Pack')!,
+      customVariantAxis('Size')!,
+    ];
+    const variants: VariantRow[] = [
+      {
+        id: 'v1',
+        optionValues: { flavour: 'Chicken', pack: '500g', size: 'Adult' },
+        mrp: '600',
+        price: '550',
+        stock: '3',
+        images: ['https://img/p.jpg'],
+        isDefault: true,
+      },
+    ];
+    const payload = buildVendorProductPayload({
+      form: baseForm,
+      mode: 'multi',
+      variants,
+      simpleSku: { mrp: '', price: '', stock: '', images: [] },
+      variantAxes: axes,
+      sellerId: 'vendor-1',
+      stripImageUrl: strip,
+    });
+    expect(payload.skus[0].option_values).toEqual({
+      flavour: 'Chicken',
+      pack: '500g',
+      size: 'Adult',
+    });
+    expect(payload.metadata?.variant_axes).toHaveLength(3);
+  });
+
+  it('validateProductForm rejects more than three variant axes', () => {
+    const axes = [
+      customVariantAxis('A')!,
+      customVariantAxis('B')!,
+      customVariantAxis('C')!,
+      customVariantAxis('D')!,
+    ];
+    const err = validateProductForm({
+      form: baseForm,
+      mode: 'multi',
+      variants: [
+        {
+          id: 'v1',
+          optionValues: { a: '1', b: '2', c: '3', d: '4' },
+          mrp: '100',
+          price: '90',
+          stock: '1',
+          images: ['https://img/a.jpg'],
+          isDefault: true,
+        },
+      ],
+      simpleSku: { mrp: '', price: '', stock: '', images: [] },
+      variantAxes: axes,
+    });
+    expect(err).toMatch(/Maximum 3 variant attributes/);
+  });
+
+  it('validateProductForm rejects more than fifty SKU rows', () => {
+    const variants: VariantRow[] = Array.from({ length: 51 }, (_, i) => ({
+      id: `v${i}`,
+      optionValues: { size: `S${i}` },
+      mrp: '100',
+      price: '90',
+      stock: '1',
+      images: ['https://img/a.jpg'],
+      isDefault: i === 0,
+    }));
+    const err = validateProductForm({
+      form: baseForm,
+      mode: 'multi',
+      variants,
+      simpleSku: { mrp: '', price: '', stock: '', images: [] },
+      variantAxes: presetVariantAxes('size'),
+    });
+    expect(err).toMatch(/Maximum 50 variant rows/);
   });
 });

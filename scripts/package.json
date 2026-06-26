@@ -15,6 +15,7 @@
     "@aws-sdk/client-cloudwatch-logs": "^3.995.0",
     "@aws-sdk/client-rds": "^3.994.0",
     "@aws-sdk/client-rds-data": "^3.994.0",
+    "@aws-sdk/client-s3": "^3.1075.0",
     "@aws-sdk/client-secrets-manager": "^3.980.0",
     "pg": "^8.16.3"
   }

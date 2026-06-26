@@ -1,11 +1,17 @@
 'use client';
 
 import { X, ShoppingBag, Upload } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { IntegerInput } from '@/components/shared/IntegerInput';
 import { DecimalInput } from '@/components/shared/DecimalInput';
+import {
+  discardAllPendingProductImages,
+  registerPendingProductImageKey,
+  removePendingProductImageByUrl,
+  uploadProductImage,
+} from '@/lib/product-image-upload';
 
 function stripAwsPresignFromProductImageUrl(url: string): string {
   try {
@@ -78,6 +84,8 @@ export function EditProductModal({
   const [loading, setLoading] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [images, setImages] = useState<string[]>([]);
+  const pendingFileKeysRef = useRef<Map<string, string>>(new Map());
+  const saveCommittedRef = useRef(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -90,6 +98,20 @@ export function EditProductModal({
     gst_rate: '',
     is_active: true,
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    saveCommittedRef.current = false;
+    pendingFileKeysRef.current.clear();
+  }, [isOpen, product?.id]);
+
+  const handleClose = useCallback(async () => {
+    const vendorId = typeof window !== 'undefined' ? localStorage.getItem('vendorId') : null;
+    if (!saveCommittedRef.current && vendorId) {
+      await discardAllPendingProductImages(vendorId, pendingFileKeysRef.current);
+    }
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (product && isOpen) {
@@ -130,25 +152,13 @@ export function EditProductModal({
 
       const uploadedUrls: string[] = [];
       for (const file of Array.from(files)) {
-        const fd = new FormData();
-        fd.append('image', file);
         try {
-          const response = await apiClient.post<{ image_url?: string; url?: string }>(
-            `/vendor/${vendorId}/products/images`,
-            fd
-          );
-          const imageUrl = response.image_url || response.url;
-          if (imageUrl) {
-            uploadedUrls.push(imageUrl);
-          } else {
-            const dataUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(String(reader.result));
-              reader.onerror = () => reject(new Error('Failed to read image file'));
-              reader.readAsDataURL(file);
-            });
-            uploadedUrls.push(dataUrl);
+          const result = await uploadProductImage(vendorId, file);
+          const stableUrl = result.s3_url || result.displayUrl;
+          if (result.fileKey) {
+            registerPendingProductImageKey(pendingFileKeysRef.current, [stableUrl, result.displayUrl], result.fileKey);
           }
+          uploadedUrls.push(result.displayUrl || stableUrl);
         } catch {
           const dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -169,6 +179,11 @@ export function EditProductModal({
   };
 
   const removeImage = (index: number) => {
+    const url = images[index];
+    const vendorId = typeof window !== 'undefined' ? localStorage.getItem('vendorId') : null;
+    if (url && vendorId) {
+      void removePendingProductImageByUrl(vendorId, pendingFileKeysRef.current, url);
+    }
     setImages(images.filter((_, i) => i !== index));
   };
 
@@ -243,6 +258,8 @@ export function EditProductModal({
       };
 
       await apiClient.put(`/vendor/${vendorId}/products/${product.id}`, productData);
+      saveCommittedRef.current = true;
+      pendingFileKeysRef.current.clear();
       alert('Product updated successfully!');
       onSuccess?.();
       onClose();
@@ -257,8 +274,14 @@ export function EditProductModal({
   if (!isOpen || !product) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={() => void handleClose()}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between p-6 border-b sticky top-0 bg-white">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -267,7 +290,7 @@ export function EditProductModal({
             <h3 className="text-lg font-semibold text-gray-900">Edit Product</h3>
           </div>
           <button
-            onClick={onClose}
+            onClick={() => void handleClose()}
             className="p-2 hover:bg-gray-100 rounded"
             disabled={loading}
           >
@@ -448,7 +471,7 @@ export function EditProductModal({
 
         <div className="flex items-center justify-end gap-3 p-6 border-t bg-gray-50">
           <button
-            onClick={onClose}
+            onClick={() => void handleClose()}
             disabled={loading}
             className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition disabled:opacity-50"
           >

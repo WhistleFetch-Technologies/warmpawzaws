@@ -9,6 +9,21 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import {
+  formatRevenueStat,
+  getEffectivePromotionStatus,
+  getEffectiveStatusLabel,
+  getToggleLabel,
+  isPromotionLiveForFilter,
+  sumNumeric,
+} from '@/lib/promotion-stats';
+import {
+  parseJsonbArray,
+  productScopeLabel,
+  usesApplicableProducts,
+  usesBundleProducts,
+} from '@/lib/promotion-form-utils';
+import { PromotionProductPicker } from './PromotionProductPicker';
 
 // Promotion types with icons and descriptions
 const PROMOTION_TYPES = [
@@ -177,13 +192,11 @@ export function PromotionsManagement({ sellerId }: PromotionsManagementProps) {
   // Filter promotions
   const filteredPromotions = promotions.filter(p => {
     const now = new Date();
-    const startDate = new Date(p.start_date);
-    const endDate = new Date(p.end_date);
-    
-    // Status filter
-    if (filter === 'active' && (!p.is_active || now < startDate || now > endDate)) return false;
-    if (filter === 'scheduled' && now >= startDate) return false;
-    if (filter === 'expired' && now <= endDate) return false;
+    const effective = getEffectivePromotionStatus(p, now);
+
+    if (filter === 'active' && effective !== 'live') return false;
+    if (filter === 'scheduled' && effective !== 'scheduled') return false;
+    if (filter === 'expired' && effective !== 'expired') return false;
     
     // Type filter
     if (typeFilter !== 'all' && p.promotion_type !== typeFilter) return false;
@@ -197,14 +210,11 @@ export function PromotionsManagement({ sellerId }: PromotionsManagementProps) {
 
   const stats = {
     total: promotions.length,
-    active: promotions.filter(p => {
-      const now = new Date();
-      return p.is_active && new Date(p.start_date) <= now && new Date(p.end_date) >= now;
-    }).length,
-    scheduled: promotions.filter(p => new Date(p.start_date) > new Date()).length,
-    expired: promotions.filter(p => new Date(p.end_date) < new Date()).length,
-    totalConversions: promotions.reduce((sum, p) => sum + (p.conversions || 0), 0),
-    totalRevenue: promotions.reduce((sum, p) => sum + (p.revenue_generated || 0), 0)
+    active: promotions.filter(p => isPromotionLiveForFilter(p)).length,
+    scheduled: promotions.filter(p => getEffectivePromotionStatus(p) === 'scheduled').length,
+    expired: promotions.filter(p => getEffectivePromotionStatus(p) === 'expired').length,
+    totalConversions: sumNumeric(promotions.map(p => p.usage_count ?? p.conversions)),
+    totalRevenue: sumNumeric(promotions.map(p => p.revenue_generated)),
   };
 
   if (loading) {
@@ -291,7 +301,7 @@ export function PromotionsManagement({ sellerId }: PromotionsManagementProps) {
             </div>
             <div>
               <p className="text-xs text-slate-500">Revenue</p>
-              <p className="text-xl font-bold text-green-600">₹{(stats.totalRevenue / 1000).toFixed(1)}k</p>
+              <p className="text-xl font-bold text-green-600">{formatRevenueStat(stats.totalRevenue)}</p>
             </div>
           </div>
         </div>
@@ -373,9 +383,10 @@ export function PromotionsManagement({ sellerId }: PromotionsManagementProps) {
           {filteredPromotions.map(promo => {
             const promoType = PROMOTION_TYPES.find(t => t.id === promo.promotion_type) || PROMOTION_TYPES[0];
             const TypeIcon = promoType.icon;
-            const isActive = promo.is_active && new Date(promo.start_date) <= new Date() && new Date(promo.end_date) >= new Date();
-            const isScheduled = new Date(promo.start_date) > new Date();
-            const isExpired = new Date(promo.end_date) < new Date();
+            const effectiveStatus = getEffectivePromotionStatus(promo);
+            const isActive = effectiveStatus === 'live';
+            const isScheduled = effectiveStatus === 'scheduled';
+            const isExpired = effectiveStatus === 'expired';
             
             return (
               <div 
@@ -400,7 +411,10 @@ export function PromotionsManagement({ sellerId }: PromotionsManagementProps) {
                         <span className="px-2 py-1 bg-white/20 rounded-full text-xs font-medium">Scheduled</span>
                       )}
                       {isExpired && (
-                        <span className="px-2 py-1 bg-white/20 rounded-full text-xs font-medium">Expired</span>
+                        <span className="px-2 py-1 bg-white/20 rounded-full text-xs font-medium">{getEffectiveStatusLabel('expired')}</span>
+                      )}
+                      {effectiveStatus === 'inactive' && (
+                        <span className="px-2 py-1 bg-white/20 rounded-full text-xs font-medium">{getEffectiveStatusLabel('inactive')}</span>
                       )}
                     </div>
                   </div>
@@ -466,7 +480,7 @@ export function PromotionsManagement({ sellerId }: PromotionsManagementProps) {
                       <Eye className="w-3 h-3" /> {promo.views || 0} views
                     </span>
                     <span className="flex items-center gap-1">
-                      <TrendingUp className="w-3 h-3" /> {promo.conversions || 0} uses
+                      <TrendingUp className="w-3 h-3" /> {promo.usage_count ?? promo.conversions ?? 0} uses
                     </span>
                     {promo.usage_limit && (
                       <span className="flex items-center gap-1">
@@ -486,7 +500,7 @@ export function PromotionsManagement({ sellerId }: PromotionsManagementProps) {
                       }`}
                     >
                       {promo.is_active ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-                      {promo.is_active ? 'Active' : 'Inactive'}
+                      {getToggleLabel(promo)}
                     </button>
                     <button
                       onClick={() => {
@@ -599,14 +613,14 @@ function PromotionModal({
     is_active: promo?.is_active ?? true,
     usage_limit: promo?.usage_limit || 0,
     target_audience: promo?.target_audience || 'all',
-    applicable_products: promo?.applicable_products || [],
-    applicable_categories: promo?.applicable_categories || [],
+    applicable_products: parseJsonbArray(promo?.applicable_products),
+    applicable_categories: parseJsonbArray(promo?.applicable_categories),
     // BOGO
     buy_quantity: promo?.buy_quantity || 2,
     get_quantity: promo?.get_quantity || 1,
     get_discount_percent: promo?.get_discount_percent || 100,
     // Bundle
-    bundle_products: promo?.bundle_products || [],
+    bundle_products: parseJsonbArray(promo?.bundle_products),
     bundle_discount: promo?.bundle_discount || 15,
   });
 
@@ -622,7 +636,14 @@ function PromotionModal({
     try {
       const payload = {
         ...formData,
-        vendor_id: sellerId
+        vendor_id: sellerId,
+        usage_limit: formData.usage_limit > 0 ? formData.usage_limit : null,
+        min_order_value: formData.min_order_value > 0 ? formData.min_order_value : null,
+        max_discount_amount: formData.max_discount_amount > 0 ? formData.max_discount_amount : null,
+        discount_value:
+          formData.promotion_type === 'bundle'
+            ? formData.bundle_discount || formData.discount_value
+            : formData.discount_value,
       };
 
       if (promo?.id) {
@@ -909,32 +930,28 @@ function PromotionModal({
                       Customers get {formData.bundle_discount}% off when buying selected products together
                     </div>
                     {products.length > 0 && (
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Select Bundle Products
-                        </label>
-                        <div className="max-h-40 overflow-y-auto space-y-2 bg-white rounded-lg p-2">
-                          {products.slice(0, 10).map(product => (
-                            <label key={product.id} className="flex items-center gap-2 p-2 rounded hover:bg-slate-50 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={formData.bundle_products.includes(product.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setFormData({ ...formData, bundle_products: [...formData.bundle_products, product.id] });
-                                  } else {
-                                    setFormData({ ...formData, bundle_products: formData.bundle_products.filter(id => id !== product.id) });
-                                  }
-                                }}
-                                className="rounded text-teal-500 focus:ring-teal-500"
-                              />
-                              <span className="text-sm text-slate-700">{product.name}</span>
-                              <span className="text-xs text-slate-400 ml-auto">₹{product.price}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
+                      <PromotionProductPicker
+                        products={products}
+                        selectedIds={formData.bundle_products}
+                        onChange={(ids) => setFormData({ ...formData, bundle_products: ids })}
+                        mode="bundle_required"
+                        label="Select Bundle Products"
+                        hint="Customer must have all selected products in cart."
+                      />
                     )}
+                  </div>
+                )}
+
+                {usesApplicableProducts(formData.promotion_type) && products.length > 0 && (
+                  <div className="rounded-xl border border-slate-100 p-4 bg-slate-50/50">
+                    <PromotionProductPicker
+                      products={products}
+                      selectedIds={formData.applicable_products}
+                      onChange={(ids) => setFormData({ ...formData, applicable_products: ids })}
+                      mode="all_or_selected"
+                      label="Product scope (optional)"
+                      hint="Leave as all products or pick specific SKUs for this offer."
+                    />
                   </div>
                 )}
 
@@ -1107,6 +1124,28 @@ function PromotionModal({
                       <div className="flex items-center gap-2 text-slate-600">
                         <Target className="w-4 h-4 text-slate-400" />
                         <span>Limit: {formData.usage_limit} uses</span>
+                      </div>
+                    )}
+                    {(usesApplicableProducts(formData.promotion_type) ||
+                      usesBundleProducts(formData.promotion_type)) && (
+                      <div className="sm:col-span-2 flex items-center gap-2 text-slate-600">
+                        <Package className="w-4 h-4 text-slate-400" />
+                        <span>
+                          {usesBundleProducts(formData.promotion_type)
+                            ? productScopeLabel(formData.bundle_products, products.length)
+                            : productScopeLabel(formData.applicable_products, products.length)}
+                          {(() => {
+                            const ids = usesBundleProducts(formData.promotion_type)
+                              ? formData.bundle_products
+                              : formData.applicable_products;
+                            if (ids.length === 0) return '';
+                            const names = ids
+                              .map((id) => products.find((p) => p.id === id)?.name)
+                              .filter(Boolean)
+                              .slice(0, 3);
+                            return names.length ? ` — ${names.join(', ')}${ids.length > 3 ? '…' : ''}` : '';
+                          })()}
+                        </span>
                       </div>
                     )}
                   </div>

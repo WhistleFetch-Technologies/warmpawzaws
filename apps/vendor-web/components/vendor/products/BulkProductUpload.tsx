@@ -10,6 +10,11 @@ import { countBulkRowImages, countTitledBulkProducts, MAX_BULK_PRODUCT_ROWS } fr
 /** Keep under API Gateway JSON body limits after base64 (~33% overhead). */
 const MAX_BULK_FILE_BYTES = 6 * 1024 * 1024;
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import {
+  getBulkVariantHintsForCategory,
+  MAX_SKUS_PER_PRODUCT,
+  MAX_VARIANT_ATTRIBUTES,
+} from '@warmpawz/shared-types';
 
 interface BulkProductUploadProps {
   isOpen: boolean;
@@ -97,6 +102,9 @@ function bulkVariantLabel(row: Record<string, unknown>): string {
   if (row.variant_attr_2 && row.variant_value_2) {
     parts.push(`${row.variant_attr_2}: ${row.variant_value_2}`);
   }
+  if (row.variant_attr_3 && row.variant_value_3) {
+    parts.push(`${row.variant_attr_3}: ${row.variant_value_3}`);
+  }
   return parts.length > 0 ? parts.join(' · ') : 'Single variant';
 }
 
@@ -126,6 +134,9 @@ export function BulkProductUpload({
   const [productGroups, setProductGroups] = useState<ProductGroupPreview[]>([]);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const [hintCategory, setHintCategory] = useState('Pet Food');
+
+  const bulkVariantHints = getBulkVariantHintsForCategory('', hintCategory);
 
   async function blobLooksLikeXlsx(blob: Blob): Promise<boolean> {
     if (!blob || blob.size < 64) return false;
@@ -139,7 +150,7 @@ export function BulkProductUpload({
     setTemplateOkMessage('');
     // Compulsory headers carry `*` so the parser still maps them after
     // normalization (`*` is stripped). Order matches the XLSX template.
-    const headers = ['name*', 'description', 'key_features', 'brand', 'category*', 'product_specifications', 'weight', 'length_cm', 'breadth_cm', 'height_cm', 'barcode', 'stock_quantity*', 'images*', 'selling_price', 'mrp*', 'pet_type', 'pet_type_other', 'tax*', 'hsn_code*', 'manufacturing_details', 'delivery_regions', 'product_group_id', 'variant_attr_1', 'variant_value_1', 'variant_attr_2', 'variant_value_2'];
+    const headers = ['name*', 'description', 'key_features', 'brand', 'category*', 'product_specifications', 'weight', 'length_cm', 'breadth_cm', 'height_cm', 'barcode', 'stock_quantity*', 'images*', 'selling_price', 'mrp*', 'pet_type', 'pet_type_other', 'tax*', 'hsn_code*', 'manufacturing_details', 'delivery_regions', 'product_group_id', 'variant_attr_1', 'variant_value_1', 'variant_attr_2', 'variant_value_2', 'variant_attr_3', 'variant_value_3'];
     const sample = [
       '"Smiling Sunflower Dog Dress"', '"Bright, happy, full of joy."', '"Design: Smiling Flower"', '"15 FURRIES"', '"Pet Accessories"', '"Material:Cotton"', '0.15', '35', '25', '1', '', '100', '62052000', '5', '1598', '799', 'Dog', '', '"Made in India"', '"Mumbai, Pune"', '"https://example.com/your-product-image-1000x1000.jpg"', '', '', ''
     ];
@@ -423,6 +434,33 @@ export function BulkProductUpload({
                 </p>
               </TouchFilePicker>
 
+              <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-left">
+                <h4 className="font-semibold text-orange-900 mb-2">Variant column hints (max {MAX_VARIANT_ATTRIBUTES} attributes per product)</h4>
+                <p className="text-xs text-orange-800 mb-3">
+                  Each row = one SKU. Use Variant Attribute 1–3 columns — any custom names allowed. See the <strong>Variant Guide</strong> sheet in the Excel template.
+                </p>
+                <label className="block text-xs font-medium text-orange-900 mb-1">Category for suggestions</label>
+                <select
+                  value={hintCategory}
+                  onChange={(e) => setHintCategory(e.target.value)}
+                  className="w-full max-w-xs mb-3 px-3 py-2 text-sm border border-orange-200 rounded-lg bg-white"
+                >
+                  {['Pet Food', 'Pet Clothing', 'Pet Accessories', 'Pet Grooming', 'Pet Beds & Furniture', 'Pet Toys', 'Pet Health', 'Pet Pharmacy', 'Pet Training', 'Pet Travel'].map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <ul className="text-sm text-orange-900 space-y-1">
+                  <li><strong>Attr 1 examples:</strong> {bulkVariantHints.attr1Examples.join(', ') || '—'}</li>
+                  <li><strong>Attr 2 examples:</strong> {bulkVariantHints.attr2Examples.join(', ') || '—'}</li>
+                  {bulkVariantHints.attr3Examples.length > 0 && (
+                    <li><strong>Attr 3 examples:</strong> {bulkVariantHints.attr3Examples.join(', ')}</li>
+                  )}
+                  {bulkVariantHints.sampleCombos.map((combo, i) => (
+                    <li key={i}><strong>Example {i + 1}:</strong> {combo}</li>
+                  ))}
+                </ul>
+              </div>
+
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <h4 className="font-semibold text-amber-800 mb-2">Required fields (marked <span className="font-mono">*</span> in the template)</h4>
                 <ul className="text-sm text-amber-700 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
@@ -502,6 +540,11 @@ export function BulkProductUpload({
                     <div key={gi} className="px-4 py-3">
                       <p className="font-medium text-gray-900">{group.name}</p>
                       <p className="text-xs text-gray-500 mb-2">{group.category || 'Uncategorized'}</p>
+                      {group.variants.length > MAX_SKUS_PER_PRODUCT && (
+                        <p className="text-xs text-amber-700 font-medium mb-2">
+                          Warning: {group.variants.length} variant rows exceeds max {MAX_SKUS_PER_PRODUCT} SKUs per product
+                        </p>
+                      )}
                       <ul className="space-y-1 text-sm text-gray-700">
                         {group.variants.map((v) => (
                           <li key={v.rowNum} className="flex flex-wrap items-center gap-2">

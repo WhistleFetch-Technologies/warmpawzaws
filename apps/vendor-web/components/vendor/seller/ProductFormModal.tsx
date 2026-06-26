@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Plus, Trash2, X, Upload, IndianRupee, Package, Image as ImageIcon, MapPin,
 } from 'lucide-react';
@@ -35,7 +35,18 @@ import {
   deliveryRegionsFromProduct,
   customSpecRowsFromProduct,
   type SpecKvRow,
+  variantAxesFromPresetSuggestion,
 } from '@/lib/vendor-product-form';
+import {
+  getVariantSuggestionsForCategory,
+  MAX_VARIANT_ATTRIBUTES,
+} from '@warmpawz/shared-types';
+import {
+  discardAllPendingProductImages,
+  registerPendingProductImageKey,
+  removePendingProductImageByUrl,
+  uploadProductImage,
+} from '@/lib/product-image-upload';
 
 function stripAwsPresignFromProductImageUrl(url: string): string {
   try {
@@ -81,6 +92,8 @@ export function ProductFormModal({
   const [pendingAxisPick, setPendingAxisPick] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
+  const pendingFileKeysRef = useRef<Map<string, string>>(new Map());
+  const saveCommittedRef = useRef(false);
   const [deliveryRegions, setDeliveryRegions] = useState<string[]>(() =>
     deliveryRegionsFromProduct(product),
   );
@@ -93,6 +106,16 @@ export function ProductFormModal({
   const listingPreview = useMemo(
     () => (productMode === 'multi' ? computeListingPreviewFromVariants(variants, variantAxes) : null),
     [productMode, variants, variantAxes],
+  );
+
+  const selectedCategoryName = useMemo(() => {
+    const cat = categories.find((c) => c.id === form.category_id);
+    return cat?.name?.trim() ?? '';
+  }, [categories, form.category_id]);
+
+  const variantSuggestions = useMemo(
+    () => getVariantSuggestionsForCategory(form.category_id, selectedCategoryName),
+    [form.category_id, selectedCategoryName],
   );
 
   useEffect(() => {
@@ -122,31 +145,40 @@ export function ProductFormModal({
     [variants],
   );
 
+  useEffect(() => {
+    saveCommittedRef.current = false;
+    pendingFileKeysRef.current.clear();
+  }, [product?.id]);
+
+  const registerPendingFileKey = useCallback((urls: string[], fileKey: string) => {
+    registerPendingProductImageKey(pendingFileKeysRef.current, urls, fileKey);
+  }, []);
+
+  const handleClose = useCallback(async () => {
+    if (!saveCommittedRef.current) {
+      await discardAllPendingProductImages(sellerId, pendingFileKeysRef.current);
+    }
+    onClose();
+  }, [sellerId, onClose]);
+
+  const removePendingUploadFromS3 = useCallback(
+    async (url: string) => {
+      await removePendingProductImageByUrl(sellerId, pendingFileKeysRef.current, url);
+    },
+    [sellerId],
+  );
+
   const uploadImages = async (files: FileList | File[]): Promise<string[]> => {
     const uploadedUrls: string[] = [];
     for (const file of Array.from(files)) {
-      const fd = new FormData();
-      fd.append('image', file);
       try {
-        const response = await apiClient.post<{
-          image_url?: string;
-          url?: string;
-          s3_url?: string;
-        }>(`/vendor/${sellerId}/products/images`, fd);
-        const imageUrl = response.s3_url || response.image_url || response.url;
-        if (imageUrl) {
-          uploadedUrls.push(imageUrl);
-        } else {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.onerror = () => reject(new Error('Failed to read image file'));
-            reader.readAsDataURL(file);
-          });
-          uploadedUrls.push(dataUrl);
-        }
+        const result = await uploadProductImage(sellerId, file);
+        const stableUrl = result.s3_url || result.displayUrl;
+        registerPendingFileKey([stableUrl, result.displayUrl], result.fileKey);
+        uploadedUrls.push(result.displayUrl || stableUrl);
       } catch (error) {
         console.warn('Image upload failed; using data URL for save:', error);
+        const message = error instanceof Error ? error.message : 'Failed to upload image';
         try {
           const dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -156,11 +188,31 @@ export function ProductFormModal({
           });
           uploadedUrls.push(dataUrl);
         } catch {
-          toast.error(`Failed to upload ${file.name}`);
+          toast.error(message || `Failed to upload ${file.name}`);
         }
       }
     }
     return uploadedUrls;
+  };
+
+  const removeSimpleImageAt = async (index: number) => {
+    const url = simpleSku.images[index];
+    if (url) await removePendingUploadFromS3(url);
+    setSimpleSku({
+      ...simpleSku,
+      images: simpleSku.images.filter((_, i) => i !== index),
+    });
+  };
+
+  const removeVariantImageAt = async (variantId: string, imgIdx: number) => {
+    const variant = variants.find((v) => v.id === variantId);
+    const url = variant?.images[imgIdx];
+    if (url) await removePendingUploadFromS3(url);
+    setVariants((prev) =>
+      prev.map((v) =>
+        v.id === variantId ? { ...v, images: v.images.filter((_, i) => i !== imgIdx) } : v,
+      ),
+    );
   };
 
   const handleSimpleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -291,6 +343,8 @@ export function ProductFormModal({
       } else {
         await apiClient.post(`/vendor/${sellerId}/products`, payload);
       }
+      saveCommittedRef.current = true;
+      pendingFileKeysRef.current.clear();
       onSave();
     } catch (error) {
       console.error('Error saving product:', error);
@@ -301,14 +355,36 @@ export function ProductFormModal({
   };
 
   const handleCustomAxis = () => {
-    const label = window.prompt('Custom variant attribute name (e.g. Flavor, Material):');
-    if (!label) return;
-    const axis = customVariantAxis(label);
-    if (!axis) {
-      toast.error('Enter a valid attribute name');
-      return;
+    const axes: VariantAxisConfig[] = [];
+    for (let i = 0; i < MAX_VARIANT_ATTRIBUTES; i++) {
+      const label = window.prompt(
+        i === 0
+          ? 'Custom variant attribute name (e.g. Flavour, Material):'
+          : `Add another attribute? (${i + 1} of ${MAX_VARIANT_ATTRIBUTES}) — leave blank to finish:`,
+      );
+      if (label == null) return;
+      const trimmed = String(label).trim();
+      if (!trimmed) break;
+      const axis = customVariantAxis(trimmed);
+      if (!axis) {
+        toast.error('Enter a valid attribute name');
+        return;
+      }
+      if (axes.some((a) => a.key === axis.key)) {
+        toast.error(`Attribute "${axis.label}" is already added`);
+        return;
+      }
+      axes.push(axis);
+      if (axes.length >= MAX_VARIANT_ATTRIBUTES) break;
     }
-    confirmAxisAndAdd([axis]);
+    if (axes.length === 0) return;
+    confirmAxisAndAdd(axes);
+  };
+
+  const handlePresetSuggestion = (suggestionId: string) => {
+    const preset = variantSuggestions.find((s) => s.id === suggestionId);
+    if (!preset) return;
+    confirmAxisAndAdd(variantAxesFromPresetSuggestion(preset));
   };
 
   const axisLabel =
@@ -317,8 +393,14 @@ export function ProductFormModal({
       : variantAxes.map((a) => a.label).join(' & ');
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={() => void handleClose()}
+    >
+      <div
+        className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="shrink-0 border-b border-slate-100 bg-white p-6 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900">
@@ -326,7 +408,7 @@ export function ProductFormModal({
             </h2>
             <p className="text-sm text-slate-500 mt-1">Fill in the details below</p>
           </div>
-          <button type="button" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+          <button type="button" onClick={() => void handleClose()} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
@@ -681,12 +763,7 @@ export function ProductFormModal({
                     <img src={image} alt="" className="w-full h-full object-cover" />
                     <button
                       type="button"
-                      onClick={() =>
-                        setSimpleSku({
-                          ...simpleSku,
-                          images: simpleSku.images.filter((_, i) => i !== index),
-                        })
-                      }
+                      onClick={() => void removeSimpleImageAt(index)}
                       className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
                     >
                       <X className="w-3 h-3" />
@@ -702,7 +779,9 @@ export function ProductFormModal({
                   innerClassName="flex w-full flex-col items-center justify-center p-1"
                 >
                   <Upload className="mb-1 w-6 h-6 text-slate-400" />
-                  <span className="text-xs text-slate-500">Upload</span>
+                  <span className="text-xs text-slate-500">
+                    {uploadingImages ? 'Compressing…' : 'Upload'}
+                  </span>
                 </TouchFilePicker>
               </div>
             </div>
@@ -744,42 +823,27 @@ export function ProductFormModal({
             {pendingAxisPick && (
               <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl space-y-3">
                 <p className="text-sm font-medium text-slate-800">What varies between variants?</p>
+                {selectedCategoryName ? (
+                  <p className="text-xs text-slate-600">
+                    Suggestions for {selectedCategoryName} — you can still enter any attribute manually.
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-600">
+                    Select a category above for tailored suggestions, or pick a preset below.
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => confirmAxisAndAdd(presetVariantAxes('pack'))}
-                    className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
-                  >
-                    Pack
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => confirmAxisAndAdd(presetVariantAxes('weight'))}
-                    className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
-                  >
-                    Weight
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => confirmAxisAndAdd(presetVariantAxes('size'))}
-                    className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
-                  >
-                    Size only
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => confirmAxisAndAdd(presetVariantAxes('color'))}
-                    className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
-                  >
-                    Color only
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => confirmAxisAndAdd(presetVariantAxes('size_color'))}
-                    className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
-                  >
-                    Size + Color
-                  </button>
+                  {variantSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      onClick={() => handlePresetSuggestion(suggestion.id)}
+                      className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg hover:bg-orange-100"
+                      title={suggestion.description}
+                    >
+                      {suggestion.label}
+                    </button>
+                  ))}
                   <button
                     type="button"
                     onClick={handleCustomAxis}
@@ -896,15 +960,7 @@ export function ProductFormModal({
                                 <img src={img} alt="" className="h-full w-full object-cover" />
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setVariants((prev) =>
-                                      prev.map((v) =>
-                                        v.id === variant.id
-                                          ? { ...v, images: v.images.filter((_, i) => i !== imgIdx) }
-                                          : v,
-                                      ),
-                                    )
-                                  }
+                                  onClick={() => void removeVariantImageAt(variant.id, imgIdx)}
                                   className="absolute top-0 right-0 bg-red-500 text-white rounded-bl p-0.5"
                                 >
                                   <X className="w-3 h-3" />
@@ -997,7 +1053,7 @@ export function ProductFormModal({
           <div className="flex gap-3 pt-4 border-t border-slate-200">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => void handleClose()}
               className="flex-1 py-3 border border-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-50"
             >
               Cancel

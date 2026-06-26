@@ -10,6 +10,7 @@ import {
 import { PromoOffersSection } from '@/components/customer/shared/PromotionBadge';
 import { Gift, Tag } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
 
 type SellerProductPromotionsProps = {
   vendorId?: string;
@@ -41,6 +42,16 @@ export function SellerProductPromotions({
       if (!cancelled) {
         setPromotions(list);
         setLoading(false);
+        if (list.length > 0 && typeof window !== 'undefined') {
+          const topId = list[0]?.id;
+          if (topId) {
+            const key = `warmpawz_promo_view_${topId}`;
+            if (!sessionStorage.getItem(key)) {
+              sessionStorage.setItem(key, '1');
+              void apiClient.post('/promotions/record-view', { promotionId: topId }).catch(() => {});
+            }
+          }
+        }
       }
     })();
     return () => {

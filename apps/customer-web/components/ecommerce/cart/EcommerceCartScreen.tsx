@@ -9,6 +9,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import {
@@ -66,6 +68,11 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   const phone = phoneProp || resolveCustomerPhone();
 
   const [selectedPromo, setSelectedPromo] = useState<SelectedCartPromotion | null>(null);
+  const [autoPromo, setAutoPromo] = useState<{
+    discountAmount: number;
+    promotionId?: string;
+    label?: string;
+  } | null>(null);
   const [addresses, setAddresses] = useState<DeliveryAddress[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<DeliveryAddress | null>(null);
   const [addressesLoading, setAddressesLoading] = useState(true);
@@ -88,15 +95,17 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   }, []);
 
   const sellerPromotionPricing = useMemo(() => {
-    if (!selectedPromo) return undefined;
+    const autoDiscount = selectedPromo ? 0 : (autoPromo?.discountAmount ?? 0);
+    const codeDiscount = selectedPromo?.discountAmount ?? 0;
+    if (autoDiscount <= 0 && codeDiscount <= 0) return undefined;
     return {
-      autoDiscount: 0,
-      codeDiscount: selectedPromo.discountAmount,
-      label: selectedPromo.label,
-      promotionId: selectedPromo.promotionId,
-      code: selectedPromo.code,
+      autoDiscount,
+      codeDiscount,
+      label: selectedPromo?.label ?? autoPromo?.label,
+      promotionId: selectedPromo?.promotionId ?? autoPromo?.promotionId,
+      code: selectedPromo?.code,
     };
-  }, [selectedPromo]);
+  }, [selectedPromo, autoPromo]);
 
   const pricing = useMemo(() => {
     const persisted = readPricingOptionsForCheckout();
@@ -118,6 +127,60 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     () => cart.find((i) => i.vendorId && i.vendorId !== 'default')?.vendorId,
     [cart]
   );
+
+  const cartPromoItems = useMemo(
+    () =>
+      cart.map((item) => ({
+        productId: item.id,
+        id: item.id,
+        quantity: item.quantity,
+        price: item.price,
+        categoryId: item.categoryId || item.category,
+        category: item.categoryId || item.category,
+      })),
+    [cart]
+  );
+
+  useEffect(() => {
+    if (!primaryVendorId || cart.length === 0 || selectedPromo) {
+      if (!selectedPromo) setAutoPromo(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.post<{
+          bestPromotion?: {
+            id?: string;
+            name?: string;
+            description?: string;
+            calculatedDiscount?: number;
+          };
+        }>('/promotions/calculate-cart', {
+          vendorId: primaryVendorId,
+          customerId: getResolvedCustomerId() || undefined,
+          items: cartPromoItems,
+        });
+        if (cancelled) return;
+        const best = res?.bestPromotion;
+        const amount = best?.calculatedDiscount ?? 0;
+        if (amount > 0) {
+          setAutoPromo({
+            discountAmount: amount,
+            promotionId: best?.id,
+            label: best?.description || best?.name || 'Promotion applied',
+          });
+        } else {
+          setAutoPromo(null);
+        }
+      } catch {
+        if (!cancelled) setAutoPromo(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [primaryVendorId, cart.length, cartPromoItems, selectedPromo]);
 
   const refreshAddresses = useCallback(async () => {
     if (!phone) {
@@ -207,23 +270,31 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   const persistPromoForCheckout = useCallback(
     (promo: SelectedCartPromotion | null) => {
       const persisted = readPricingOptionsForCheckout();
+      const autoDiscount = promo ? 0 : (autoPromo?.discountAmount ?? 0);
       persistPricingOptionsForCheckout({
         ...persisted,
         itemCount,
         deliverySpeed: 'standard',
-        sellerPromotion: promo
-          ? {
-              autoDiscount: 0,
-              codeDiscount: promo.discountAmount,
-              label: promo.label,
-              code: promo.code,
-              promotionId: promo.promotionId,
-            }
-          : undefined,
+        sellerPromotion:
+          promo || autoDiscount > 0
+            ? {
+                autoDiscount,
+                codeDiscount: promo?.discountAmount ?? 0,
+                label: promo?.label ?? autoPromo?.label,
+                code: promo?.code,
+                promotionId: promo?.promotionId ?? autoPromo?.promotionId,
+              }
+            : undefined,
       });
     },
-    [itemCount]
+    [itemCount, autoPromo]
   );
+
+  useEffect(() => {
+    if (!selectedPromo) {
+      persistPromoForCheckout(null);
+    }
+  }, [autoPromo, selectedPromo, persistPromoForCheckout]);
 
   const handleApplyPromo = (promo: SelectedCartPromotion) => {
     setSelectedPromo(promo);
@@ -368,10 +439,21 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             <CartPromotionSelect
               orderAmount={pricing.lineSubtotal}
               vendorId={primaryVendorId}
+              cartItems={cartPromoItems}
+              customerId={getResolvedCustomerId() || undefined}
               selected={selectedPromo}
               onApply={handleApplyPromo}
               onRemove={handleRemovePromo}
             />
+
+            {!selectedPromo && autoPromo && autoPromo.discountAmount > 0 && (
+              <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
+                <p className="text-sm font-semibold text-emerald-900">{autoPromo.label}</p>
+                <p className="text-xs text-emerald-700 mt-0.5">
+                  −₹{autoPromo.discountAmount.toFixed(0)} auto-applied
+                </p>
+              </section>
+            )}
 
             <section className="space-y-3">
               {cart.map((item) => {

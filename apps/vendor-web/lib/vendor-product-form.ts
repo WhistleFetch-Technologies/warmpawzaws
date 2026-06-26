@@ -3,7 +3,14 @@
  * Canonical UX: Seller Hub ProductCatalogManagement ProductModal.
  */
 
-import { normalizeDeliveryRegionsList, normalizePetType, RESERVED_SPEC_KEYS } from '@warmpawz/shared-types';
+import {
+  normalizeDeliveryRegionsList,
+  normalizePetType,
+  RESERVED_SPEC_KEYS,
+  MAX_VARIANT_ATTRIBUTES,
+  MAX_SKUS_PER_PRODUCT,
+  type VariantPresetSuggestion,
+} from '@warmpawz/shared-types';
 
 export type ProductMode = 'simple' | 'multi';
 export type PetTypeOption = '' | 'dog' | 'cat' | 'other';
@@ -247,6 +254,23 @@ export function customVariantAxis(label: string): VariantAxisConfig | null {
   return { key, label: trimmed, preset: 'custom' };
 }
 
+/** Map shared category preset suggestion to vendor form axis config. */
+export function variantAxesFromPresetSuggestion(
+  suggestion: VariantPresetSuggestion,
+): VariantAxisConfig[] {
+  return suggestion.axes.map((axis) => {
+    const presetEntry = PRESET_AXIS_LABELS[axis.key];
+    if (presetEntry) {
+      return { key: axis.key, label: axis.label || presetEntry.label, preset: presetEntry.preset };
+    }
+    return {
+      key: axis.key,
+      label: axis.label,
+      preset: (axis.preset as VariantAxisPreset | undefined) ?? 'custom',
+    };
+  });
+}
+
 export function syncVariantRowLegacyFields(row: VariantRow): VariantRow {
   return {
     ...row,
@@ -318,7 +342,7 @@ export function sellingPriceForForm(product: {
 
 function inferAxesFromOptionKeys(keys: string[]): VariantAxisConfig[] {
   const unique = [...new Set(keys.filter(Boolean))].sort();
-  return unique.slice(0, 2).map((key) => {
+  return unique.slice(0, MAX_VARIANT_ATTRIBUTES).map((key) => {
     const preset = PRESET_AXIS_LABELS[key];
     if (preset) {
       return { key, label: preset.label, preset: preset.preset };
@@ -629,6 +653,13 @@ export function validateProductForm(input: ValidateProductFormInput): string | n
 
   if (mode !== 'simple') {
     if (variants.length === 0) return 'Add at least one variant or switch to single product mode';
+
+    if (variantAxes.length > MAX_VARIANT_ATTRIBUTES) {
+      return `Maximum ${MAX_VARIANT_ATTRIBUTES} variant attributes per product`;
+    }
+    if (variants.length > MAX_SKUS_PER_PRODUCT) {
+      return `Maximum ${MAX_SKUS_PER_PRODUCT} variant rows (SKUs) per product`;
+    }
 
     const seen = new Set<string>();
     for (const v of variants) {

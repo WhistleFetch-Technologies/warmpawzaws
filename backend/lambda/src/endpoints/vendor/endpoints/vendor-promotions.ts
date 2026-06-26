@@ -15,6 +15,22 @@
 import { Hono } from 'hono';
 import { select, insert, update, query, deleteRows } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows } from '../../../utils/entity-extractor';
+import {
+  promotionEndDateToIso,
+  promotionStartDateToIso,
+} from '../../../utils/promotion-date-bounds';
+import {
+  calculateBestCartPromotion,
+  evaluatePromotionDiscount,
+  isPromotionEligible,
+  normalizePromotionRow,
+  type CartLineItem,
+} from '../../../utils/vendor-promotion-engine';
+import {
+  countPriorVendorOrders,
+  incrementPromotionView,
+  recordVendorPromotionUsage,
+} from '../../../utils/vendor-promotion-usage';
 
 export function registerVendorPromotionsEndpoints(app: Hono) {
   // ============================================================================
@@ -109,6 +125,11 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
         return c.json({ error: 'name, discount_value, start_date, and end_date are required' }, 400);
       }
 
+      const resolvedDiscountValue =
+        promotion_type === 'bundle' && bundle_discount != null
+          ? parseFloat(String(bundle_discount))
+          : parseFloat(String(discount_value));
+
       // Check for duplicate code
       if (code) {
         const existingCode = await query(
@@ -128,21 +149,21 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
         code: code ? code.toUpperCase() : null,
         promotion_type,
         discount_type,
-        discount_value: parseFloat(discount_value),
+        discount_value: resolvedDiscountValue,
         min_order_value: min_order_value ? parseFloat(min_order_value) : null,
         max_discount_amount: max_discount_amount ? parseFloat(max_discount_amount) : null,
-        start_date: new Date(start_date).toISOString(),
-        end_date: new Date(end_date).toISOString(),
+        start_date: promotionStartDateToIso(start_date),
+        end_date: promotionEndDateToIso(end_date),
         is_active,
         usage_limit: usage_limit || null,
         usage_count: 0,
         target_audience,
-        applicable_products: applicable_products ? JSON.stringify(applicable_products) : null,
-        applicable_categories: applicable_categories ? JSON.stringify(applicable_categories) : null,
+        applicable_products: applicable_products?.length ? applicable_products : null,
+        applicable_categories: applicable_categories?.length ? applicable_categories : null,
         buy_quantity: buy_quantity || null,
         get_quantity: get_quantity || null,
         get_discount_percent: get_discount_percent || null,
-        bundle_products: bundle_products ? JSON.stringify(bundle_products) : null,
+        bundle_products: bundle_products?.length ? bundle_products : null,
         bundle_discount: bundle_discount || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -190,17 +211,23 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
       if (body.max_discount_amount !== undefined) updateData.max_discount_amount = body.max_discount_amount ? parseFloat(body.max_discount_amount) : null;
       if (body.usage_limit !== undefined) updateData.usage_limit = body.usage_limit || null;
 
-      // Date fields
-      if (body.start_date !== undefined) updateData.start_date = new Date(body.start_date).toISOString();
-      if (body.end_date !== undefined) updateData.end_date = new Date(body.end_date).toISOString();
+      // Date fields (IST calendar bounds)
+      if (body.start_date !== undefined) updateData.start_date = promotionStartDateToIso(body.start_date);
+      if (body.end_date !== undefined) updateData.end_date = promotionEndDateToIso(body.end_date);
 
       // Code (uppercase)
       if (body.code !== undefined) updateData.code = body.code ? body.code.toUpperCase() : null;
 
-      // JSON fields
-      if (body.applicable_products !== undefined) updateData.applicable_products = body.applicable_products ? JSON.stringify(body.applicable_products) : null;
-      if (body.applicable_categories !== undefined) updateData.applicable_categories = body.applicable_categories ? JSON.stringify(body.applicable_categories) : null;
-      if (body.bundle_products !== undefined) updateData.bundle_products = body.bundle_products ? JSON.stringify(body.bundle_products) : null;
+      // JSON fields (arrays — insert layer handles JSONB)
+      if (body.applicable_products !== undefined) {
+        updateData.applicable_products = body.applicable_products?.length ? body.applicable_products : null;
+      }
+      if (body.applicable_categories !== undefined) {
+        updateData.applicable_categories = body.applicable_categories?.length ? body.applicable_categories : null;
+      }
+      if (body.bundle_products !== undefined) {
+        updateData.bundle_products = body.bundle_products?.length ? body.bundle_products : null;
+      }
 
       await update('vendor_promotions', { id: promoId, vendor_id: vendorId }, updateData);
 
@@ -661,14 +688,36 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
    */
   app.post("/promotions/validate-code", async (c) => {
     try {
-      const { code, vendorId, orderAmount, bookingAmount, orderType } = await c.req.json();
+      const body = await c.req.json();
+      const {
+        code,
+        vendorId,
+        orderAmount,
+        bookingAmount,
+        orderType,
+        customerId,
+        items,
+      } = body;
 
       if (!code) {
         return c.json({ valid: false, message: 'Coupon code is required' }, 400);
       }
 
-      const now = new Date().toISOString();
       const amount = orderAmount || bookingAmount || 0;
+      const now = new Date().toISOString();
+      const cartLines: CartLineItem[] = Array.isArray(items)
+        ? items.map((item: Record<string, unknown>) => ({
+            productId: String(item.productId || item.product_id || item.id || ''),
+            quantity: parseInt(String(item.quantity ?? 1), 10) || 1,
+            price: parseFloat(String(item.price ?? item.unitPrice ?? 0)) || 0,
+            category: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
+            categoryId: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
+          }))
+        : [];
+
+      const lineSubtotal = cartLines.length
+        ? cartLines.reduce((s, i) => s + i.price * i.quantity, 0)
+        : amount;
 
       // Check in vendor promotions (products)
       if (orderType !== 'service') {
@@ -676,50 +725,78 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
           SELECT * FROM vendor_promotions 
           WHERE code = $1 
             AND is_active = true 
-            AND start_date <= $2 
-            AND end_date >= $2
-            ${vendorId ? 'AND vendor_id = $3::uuid' : ''}
+            AND start_date <= NOW() 
+            AND end_date >= NOW()
+            ${vendorId ? 'AND vendor_id = $2::uuid' : ''}
           LIMIT 1
-        `, vendorId ? [code.toUpperCase(), now, vendorId] : [code.toUpperCase(), now]);
+        `, vendorId ? [code.toUpperCase(), vendorId] : [code.toUpperCase()]);
         
         const vendorRows = Array.isArray(vendorPromo) ? vendorPromo : (vendorPromo as any).rows || [];
         
         if (vendorRows.length > 0) {
-          const promo = normalizeDbRow(vendorRows[0]);
-          
-          // Check min order value
-          if (promo.min_order_value && amount < promo.min_order_value) {
-            return c.json({
-              valid: false,
-              message: `Minimum order value of ₹${promo.min_order_value} required`
-            });
+          const promo = normalizePromotionRow(normalizeDbRow(vendorRows[0]) as Record<string, unknown>);
+          let priorVendorOrderCount = 0;
+          if (customerId && promo.vendor_id) {
+            priorVendorOrderCount = await countPriorVendorOrders(String(customerId), promo.vendor_id);
           }
 
-          // Check usage limit
-          if (promo.usage_limit && promo.usage_count >= promo.usage_limit) {
-            return c.json({
-              valid: false,
-              message: 'This promotion has reached its usage limit'
-            });
-          }
+          let evaluation = evaluatePromotionDiscount(
+            promo,
+            cartLines.length > 0 ? cartLines : [],
+            { vendorId, customerId, priorVendorOrderCount }
+          );
 
-          // Calculate discount
-          let discountAmount = 0;
-          if (promo.discount_type === 'percentage') {
-            discountAmount = (amount * promo.discount_value) / 100;
-            if (promo.max_discount_amount) {
-              discountAmount = Math.min(discountAmount, promo.max_discount_amount);
+          if (!evaluation && cartLines.length === 0 && lineSubtotal > 0) {
+            const eligibility = isPromotionEligible(promo, { vendorId, customerId, priorVendorOrderCount });
+            if (eligibility.ok && promo.promotion_type !== 'buy_x_get_y' && promo.promotion_type !== 'bundle') {
+              if (promo.min_order_value && lineSubtotal < promo.min_order_value) {
+                return c.json({
+                  valid: false,
+                  message: `Minimum order value of ₹${promo.min_order_value} required`,
+                });
+              }
+              let discountAmount = 0;
+              if (promo.discount_type === 'percentage') {
+                discountAmount = (lineSubtotal * promo.discount_value) / 100;
+                if (promo.max_discount_amount) {
+                  discountAmount = Math.min(discountAmount, promo.max_discount_amount);
+                }
+              } else {
+                discountAmount = promo.discount_value;
+              }
+              evaluation = {
+                discountAmount,
+                promotionId: promo.id,
+                promotionType: promo.promotion_type,
+                label: promo.name,
+                description: promo.name,
+                affectedProductIds: [],
+                autoApplyEligible: !promo.code,
+                promotion: promo,
+              };
             }
-          } else {
-            discountAmount = promo.discount_value;
+          }
+
+          if (!evaluation) {
+            if (promo.min_order_value && lineSubtotal < promo.min_order_value) {
+              return c.json({
+                valid: false,
+                message: `Minimum order value of ₹${promo.min_order_value} required`,
+              });
+            }
+            return c.json({
+              valid: false,
+              message: 'Promotion not applicable to this cart',
+            });
           }
 
           return c.json({
             valid: true,
             promotion: promo,
-            discount_amount: discountAmount,
-            final_amount: Math.max(0, amount - discountAmount),
-            promo_category: 'product'
+            discount_amount: evaluation.discountAmount,
+            final_amount: Math.max(0, lineSubtotal - evaluation.discountAmount),
+            promo_category: 'product',
+            description: evaluation.description,
           });
         }
       }
@@ -829,6 +906,24 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error validating promotion code:', error);
       return c.json({ valid: false, message: 'Error validating code' }, 500);
+    }
+  });
+
+  /**
+   * POST /promotions/record-view
+   * Increment view count for a vendor product promotion (debounced client-side).
+   */
+  app.post('/promotions/record-view', async (c) => {
+    try {
+      const { promotionId } = await c.req.json();
+      if (!promotionId) {
+        return c.json({ success: false, error: 'promotionId is required' }, 400);
+      }
+      await incrementPromotionView(String(promotionId));
+      return c.json({ success: true });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return c.json({ success: false, error: msg }, 500);
     }
   });
 

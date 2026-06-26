@@ -10,6 +10,8 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import { calculateBestCartPromotion, discountsWithinTolerance, normalizePromotionRow, type CartLineItem } from '../utils/vendor-promotion-engine';
+import { countPriorVendorOrders, recordVendorPromotionUsage } from '../utils/vendor-promotion-usage';
 
 // ============================================================================
 // SPONSORED ADS ENDPOINTS
@@ -547,142 +549,78 @@ app.get('/ads-recommendations/products/:productId/similar', async (c) => {
 app.post('/promotions/calculate-cart', async (c) => {
   try {
     const body = await c.req.json();
-    const { items, vendorId } = body;
+    const { items, vendorId, customerId, manualCode } = body;
 
     if (!items || !Array.isArray(items)) {
       return c.json({ success: false, error: 'items array required' }, 400);
     }
 
-    // Get applicable promotions
-    let promotions: any[] = [];
+    const cartLines = items.map((item: Record<string, unknown>) => ({
+      productId: String(item.productId || item.id || ''),
+      quantity: parseInt(String(item.quantity ?? 1), 10) || 1,
+      price: parseFloat(String(item.price ?? 0)) || 0,
+      category: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
+      categoryId: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
+      id: item.id ? String(item.id) : undefined,
+    }));
 
-    // Get vendor product promotions if vendorId provided
+    let promotions: Record<string, unknown>[] = [];
+
     if (vendorId) {
-      const vendorPromosSql = `
-        SELECT * FROM vendor_promotions
-        WHERE vendor_id = $1
-          AND is_active = true
-          AND start_date <= CURRENT_TIMESTAMP
-          AND end_date >= CURRENT_TIMESTAMP
-          AND (usage_limit IS NULL OR usage_count < usage_limit)
-      `;
-      const vendorPromosResult = await query(vendorPromosSql, [vendorId]);
-      promotions.push(...(vendorPromosResult.rows || []));
+      const vendorPromosResult = await query(
+        `SELECT * FROM vendor_promotions
+         WHERE vendor_id = $1::uuid
+           AND is_active = true
+           AND start_date <= NOW()
+           AND end_date >= NOW()
+           AND (usage_limit IS NULL OR usage_count < usage_limit)`,
+        [vendorId]
+      );
+      promotions = vendorPromosResult.rows || [];
     }
 
-    // Calculate cart total
-    const cartTotal = items.reduce(
-      (sum: number, item: any) => sum + (item.price * item.quantity),
-      0
+    let priorVendorOrderCount = 0;
+    if (customerId && vendorId) {
+      priorVendorOrderCount = await countPriorVendorOrders(String(customerId), String(vendorId));
+    }
+
+    const normalizedPromos = promotions.map((p) =>
+      normalizePromotionRow(p as Record<string, unknown>)
     );
 
-    // Find applicable promotions
-    const applicablePromotions: any[] = [];
-    
-    for (const promo of promotions) {
-      // Check min order value
-      if (promo.min_order_value && cartTotal < parseFloat(promo.min_order_value)) {
-        continue;
-      }
+    const result = calculateBestCartPromotion(normalizedPromos, cartLines, {
+      vendorId,
+      customerId,
+      priorVendorOrderCount,
+      manualCode: manualCode || undefined,
+    });
 
-      // BOGO calculation
-      if (promo.promotion_type === 'buy_x_get_y') {
-        const buyQty = promo.buy_quantity || 2;
-        const getQty = promo.get_quantity || 1;
-        const discountPercent = promo.get_discount_percent || 100;
-
-        // Check if applicable products are in cart
-        const applicableProds = promo.applicable_products || [];
-        const applicableCats = promo.applicable_categories || [];
-        
-        const applicableItems = items.filter((item: any) => {
-          if (applicableProds.length === 0 && applicableCats.length === 0) {
-            return true;
-          }
-          if (applicableProds.includes(item.productId || item.id)) {
-            return true;
-          }
-          if (applicableCats.includes(item.categoryId || item.category)) {
-            return true;
-          }
-          return false;
-        });
-
-        const totalQty = applicableItems.reduce((sum: number, item: any) => sum + item.quantity, 0);
-        const setSize = buyQty + getQty;
-        const completeSets = Math.floor(totalQty / setSize);
-
-        if (completeSets > 0) {
-          const sortedByPrice = [...applicableItems].sort((a: any, b: any) => a.price - b.price);
-          let freeQty = completeSets * getQty;
-          let discount = 0;
-
-          for (const item of sortedByPrice) {
-            if (freeQty <= 0) break;
-            const freeFromThis = Math.min(freeQty, item.quantity);
-            discount += (item.price * freeFromThis * discountPercent) / 100;
-            freeQty -= freeFromThis;
-          }
-
-          if (promo.max_discount_amount && discount > parseFloat(promo.max_discount_amount)) {
-            discount = parseFloat(promo.max_discount_amount);
-          }
-
-          applicablePromotions.push({
-            ...promo,
-            calculatedDiscount: discount,
-            description: discountPercent === 100 
-              ? `Buy ${buyQty} Get ${getQty} FREE!`
-              : `Buy ${buyQty} Get ${getQty} at ${discountPercent}% OFF!`,
-            type: 'bogo',
-          });
-        }
-      }
-      // Standard percentage/fixed discount
-      else {
-        let discount = 0;
-        if (promo.discount_type === 'percentage') {
-          discount = (cartTotal * promo.discount_value) / 100;
-        } else {
-          discount = promo.discount_value || 0;
-        }
-
-        if (promo.max_discount_amount && discount > parseFloat(promo.max_discount_amount)) {
-          discount = parseFloat(promo.max_discount_amount);
-        }
-
-        discount = Math.min(discount, cartTotal);
-
-        applicablePromotions.push({
-          ...promo,
-          calculatedDiscount: discount,
-          description: promo.discount_type === 'percentage'
-            ? `${promo.discount_value}% OFF`
-            : `₹${promo.discount_value} OFF`,
-          type: promo.discount_type,
-        });
-      }
-    }
-
-    // Sort by discount amount (best first)
-    applicablePromotions.sort((a, b) => b.calculatedDiscount - a.calculatedDiscount);
-
-    // Auto-apply best promotion
-    const bestPromotion = applicablePromotions.length > 0 ? applicablePromotions[0] : null;
+    const best = result.bestPromotion;
 
     return c.json({
       success: true,
-      originalTotal: cartTotal,
-      bestPromotion,
-      allPromotions: applicablePromotions,
-      discountedTotal: bestPromotion 
-        ? cartTotal - bestPromotion.calculatedDiscount 
-        : cartTotal,
-      totalSavings: bestPromotion?.calculatedDiscount || 0,
+      originalTotal: result.originalTotal,
+      bestPromotion: best
+        ? {
+            ...best.promotion,
+            calculatedDiscount: best.discountAmount,
+            description: best.description,
+            type: best.promotionType,
+          }
+        : null,
+      allPromotions: result.allPromotions.map((e) => ({
+        ...e.promotion,
+        calculatedDiscount: e.discountAmount,
+        description: e.description,
+        type: e.promotionType,
+      })),
+      discountedTotal: result.discountedTotal,
+      totalSavings: result.totalSavings,
     });
-  } catch (error: any) {
-    console.error('Error calculating cart promotions:', error);
-    return c.json({ success: false, error: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error('Error calculating cart promotions:', msg);
+    return c.json({ success: false, error: msg });
   }
-  });
+});
 }

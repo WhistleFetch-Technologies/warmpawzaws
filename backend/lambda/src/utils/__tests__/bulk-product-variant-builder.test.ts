@@ -275,4 +275,43 @@ describe('bulk-product-variant-builder', () => {
     expect(extras.key_features).toBe('Design: Smiling Flower');
     expect(extras.delivery_regions).toEqual(['Mumbai', 'Pune']);
   });
+
+  it('parseBulkRowOptionValues supports three variant attributes', () => {
+    expect(
+      parseBulkRowOptionValues({
+        variant_attr_1: 'Flavour',
+        variant_value_1: 'Chicken',
+        variant_attr_2: 'Pack',
+        variant_value_2: '500g',
+        variant_attr_3: 'Size',
+        variant_value_3: 'Adult',
+      }),
+    ).toEqual({ flavour: 'Chicken', pack: '500g', size: 'Adult' });
+  });
+
+  it('validateVariantGroup rejects more than fifty SKU rows', () => {
+    const variants = Array.from({ length: 51 }, (_, i) => ({
+      name: 'Food',
+      category: 'Pet Food',
+      product_group_id: 'pg-1',
+      price: 100,
+      compare_at_price: 120,
+      stock_quantity: 5,
+      images: 'https://example.com/a.jpg',
+      variant_attr_1: 'Flavour',
+      variant_value_1: `F${i}`,
+      rowNum: i + 1,
+    })) as any;
+    const group = {
+      groupKey: 'g1',
+      product_group_id: 'pg-1',
+      name: 'Food',
+      category: 'Pet Food',
+      parent: { price: 100, compare_at_price: 120, hsn_code: '1234', gst_rate: 5 },
+      variants,
+      rowNums: variants.map((v: { rowNum: number }) => v.rowNum),
+    };
+    const errors = validateVariantGroup(group as any);
+    expect(errors.some((e) => e.message.includes('Maximum 50 variant rows'))).toBe(true);
+  });
 });

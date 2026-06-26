@@ -41,6 +41,13 @@ import {
 } from '../../../utils/product-sku-resolve';
 import { computeEcommerceDeliveryFee } from '../../../utils/ecommerce/delivery-fee';
 import {
+  calculateBestCartPromotion,
+  discountsWithinTolerance,
+  normalizePromotionRow,
+  type CartLineItem,
+} from '../../../utils/vendor-promotion-engine';
+import { countPriorVendorOrders, recordVendorPromotionUsage } from '../../../utils/vendor-promotion-usage';
+import {
   isEcommerceCategoryUuid,
   mapCategoryRowsForPublic,
   parseAdminCategoryPayloadItem,
@@ -552,7 +559,96 @@ export function registerEcommerceEndpoints(app: Hono) {
       const bodyIgst = orderData.igstAmount ?? orderData.igst_amount;
       const promoId = orderData.promotionId ?? orderData.promotion_id ?? null;
 
-      const subtotalAfterDiscount = Math.max(0, subtotal - (Number(bodyDiscount) || 0));
+      const cartLines: CartLineItem[] = orderItems.map((oi) => {
+        const raw = items.find(
+          (it: Record<string, unknown>) =>
+            String(it.productId || it.product_id || '') === String(oi.product_id)
+        );
+        return {
+          productId: String(oi.product_id),
+          quantity: oi.quantity,
+          price: oi.unit_price,
+          category:
+            raw?.categoryId || raw?.category
+              ? String(raw.categoryId || raw.category)
+              : undefined,
+          categoryId:
+            raw?.categoryId || raw?.category
+              ? String(raw.categoryId || raw.category)
+              : undefined,
+        };
+      });
+
+      let serverPromoDiscount = 0;
+      let appliedPromotionId: string | null = promoId ? String(promoId) : null;
+
+      if (
+        firstVendorId &&
+        (couponCode || promoId || (Number(bodyDiscount) > 0 && cartLines.length > 0))
+      ) {
+        try {
+          const promosRes = await query(
+            `SELECT * FROM vendor_promotions
+             WHERE vendor_id = $1::uuid
+               AND is_active = true
+               AND start_date <= NOW()
+               AND end_date >= NOW()`,
+            [firstVendorId]
+          );
+          const promos = (promosRes.rows || []).map((row: Record<string, unknown>) =>
+            normalizePromotionRow(row)
+          );
+          const priorVendorOrderCount =
+            customerId && firstVendorId
+              ? await countPriorVendorOrders(String(customerId), String(firstVendorId))
+              : 0;
+
+          const autoResult = calculateBestCartPromotion(promos, cartLines, {
+            vendorId: String(firstVendorId),
+            customerId: customerId ? String(customerId) : undefined,
+            priorVendorOrderCount,
+          });
+
+          const codeResult = couponCode
+            ? calculateBestCartPromotion(promos, cartLines, {
+                vendorId: String(firstVendorId),
+                customerId: customerId ? String(customerId) : undefined,
+                priorVendorOrderCount,
+                manualCode: String(couponCode).trim(),
+              })
+            : null;
+
+          const autoDiscount = autoResult.bestPromotion?.discountAmount ?? 0;
+          const codeDiscount = codeResult?.bestPromotion?.discountAmount ?? 0;
+          serverPromoDiscount = Math.max(autoDiscount, codeDiscount);
+          const bestEval =
+            codeDiscount >= autoDiscount
+              ? codeResult?.bestPromotion
+              : autoResult.bestPromotion;
+          if (bestEval) {
+            appliedPromotionId = bestEval.promotionId;
+          }
+
+          if (Number(bodyDiscount) > 0) {
+            if (
+              serverPromoDiscount === 0 ||
+              !discountsWithinTolerance(serverPromoDiscount, Number(bodyDiscount))
+            ) {
+              return c.json({ error: 'Promotion discount mismatch' }, 400);
+            }
+          }
+        } catch (promoErr) {
+          console.warn('[ecommerce/orders] promotion validation skipped:', promoErr);
+        }
+      }
+
+      const discountAmount =
+        serverPromoDiscount > 0
+          ? serverPromoDiscount
+          : bodyDiscount != null && Number.isFinite(Number(bodyDiscount)) && Number(bodyDiscount) >= 0
+            ? Number(bodyDiscount)
+            : 0;
+      const subtotalAfterDiscount = Math.max(0, subtotal - discountAmount);
       const shippingAmount =
         bodyShipping != null && Number.isFinite(Number(bodyShipping))
           ? Number(bodyShipping)
@@ -561,10 +657,6 @@ export function registerEcommerceEndpoints(app: Hono) {
         bodyTax != null && Number.isFinite(Number(bodyTax)) && Number(bodyTax) >= 0
           ? Number(bodyTax)
           : subtotal * 0.18;
-      const discountAmount =
-        bodyDiscount != null && Number.isFinite(Number(bodyDiscount)) && Number(bodyDiscount) >= 0
-          ? Number(bodyDiscount)
-          : 0;
       const cgstAmount =
         bodyCgst != null && Number.isFinite(Number(bodyCgst)) ? Number(bodyCgst) : null;
       const sgstAmount =
@@ -596,7 +688,7 @@ export function registerEcommerceEndpoints(app: Hono) {
           total_amount: totalAmount,
         },
         shippingAddress: normalizedAddress,
-        promotionId: promoId,
+        promotionId: appliedPromotionId,
         couponCode: couponCode || null,
       };
 
@@ -649,12 +741,29 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
+      if (appliedPromotionId && discountAmount > 0) {
+        try {
+          await recordVendorPromotionUsage({
+            promotionId: appliedPromotionId,
+            orderId,
+            customerId: customerId ? String(customerId) : null,
+            discountAmount,
+            orderSubtotal: subtotal,
+          });
+        } catch (usageErr) {
+          console.warn('[ecommerce/orders] promotion usage record failed:', usageErr);
+        }
+      }
+
       return c.json({
         success: true,
         customerId,
         totalAmount,
         isFirstPlatformProductOrder: priorOrderCount === 0,
         containsPetFood,
+        appliedPromotion: appliedPromotionId
+          ? { id: appliedPromotionId, discountAmount, type: 'vendor' }
+          : undefined,
         order: {
           id: orderId,
           order_number: orderNumber,

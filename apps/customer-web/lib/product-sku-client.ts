@@ -136,6 +136,128 @@ export function hasIncompleteVariantSelection(
   return resolveSkuFromSelection(skus, selected) == null;
 }
 
+function activeSkusWithOptionValues(skus: ClientProductSku[]): ClientProductSku[] {
+  return skus.filter((s) => {
+    if (s.is_active === false) return false;
+    const ov = normalizeOptionValues(s.option_values as Record<string, unknown>);
+    return Object.keys(ov).length > 0;
+  });
+}
+
+/** True if some active SKU matches current selection + this axis value. */
+export function isOptionValueAvailable(
+  skus: ClientProductSku[],
+  selected: Record<string, string>,
+  axisKey: string,
+  optionValue: string,
+): boolean {
+  const trial = { ...normalizeOptionValues(selected), [axisKey]: optionValue };
+  return activeSkusWithOptionValues(skus).some((s) => {
+    const ov = normalizeOptionValues(s.option_values as Record<string, unknown>);
+    return Object.entries(trial).every(([k, v]) => ov[k] === v);
+  });
+}
+
+/** Distinct values for an axis that remain compatible with the current partial selection. */
+export function getAvailableOptionValues(
+  skus: ClientProductSku[],
+  selected: Record<string, string>,
+  axisKey: string,
+): string[] {
+  const seen = new Set<string>();
+  const normSel = normalizeOptionValues(selected);
+  for (const s of activeSkusWithOptionValues(skus)) {
+    const ov = normalizeOptionValues(s.option_values as Record<string, unknown>);
+    const val = ov[axisKey];
+    if (!val) continue;
+    const matchesPartial = Object.entries(normSel).every(([k, v]) => {
+      if (k === axisKey) return true;
+      return ov[k] === v;
+    });
+    if (matchesPartial) seen.add(val);
+  }
+  return [...seen].sort();
+}
+
+/** All variation axes have a value but no exact SKU exists. */
+export function hasInvalidVariantSelection(
+  skus: ClientProductSku[],
+  selected: Record<string, string>,
+  variationAxes?: Array<{ type: string; option_key?: string }>,
+): boolean {
+  if (skus.length === 0) return false;
+  const withOpts = activeSkusWithOptionValues(skus);
+  if (withOpts.length === 0) return false;
+
+  if (variationAxes?.length) {
+    for (const axis of variationAxes) {
+      const key = variationSelectionKey(axis);
+      if (!selected[key]?.trim()) return false;
+    }
+    return resolveSkuFromSelection(skus, selected) == null;
+  }
+
+  const refKeys = new Set<string>();
+  for (const s of withOpts) {
+    Object.keys(normalizeOptionValues(s.option_values as Record<string, unknown>)).forEach((k) =>
+      refKeys.add(k),
+    );
+  }
+  for (const k of refKeys) {
+    if (!selected[k]?.trim()) return false;
+  }
+  return resolveSkuFromSelection(skus, selected) == null;
+}
+
+/** Exact SKU when fully selected; partial only while selection is incomplete. */
+export function resolveDisplaySku(
+  skus: ClientProductSku[],
+  selected: Record<string, string>,
+  variationAxes?: Array<{ type: string; option_key?: string }>,
+): ClientProductSku | null {
+  if (skus.length === 0) return null;
+  const exact = resolveSkuFromSelection(skus, selected);
+  if (exact) return exact;
+
+  const incomplete =
+    Boolean(variationAxes?.length) &&
+    variationAxes!.some((a) => !selected[variationSelectionKey(a)]?.trim());
+  if (incomplete) {
+    return resolveSkuFromSelection(skus, selected, { partial: true });
+  }
+  return null;
+}
+
+/** After changing one axis, clear invalid downstream picks and snap to a valid SKU when possible. */
+export function sanitizeVariantSelection(
+  skus: ClientProductSku[],
+  selected: Record<string, string>,
+  changedAxisKey: string,
+  newValue: string,
+  variationAxes: Array<{ type: string; option_key?: string }>,
+): Record<string, string> {
+  let next: Record<string, string> = { ...selected, [changedAxisKey]: newValue };
+  const axisOrder = variationAxes.map((a) => variationSelectionKey(a));
+  const changedIdx = axisOrder.indexOf(changedAxisKey);
+  if (changedIdx >= 0) {
+    for (let i = changedIdx + 1; i < axisOrder.length; i++) {
+      delete next[axisOrder[i]];
+    }
+  }
+
+  if (resolveSkuFromSelection(skus, next)) return next;
+
+  const partial = resolveSkuFromSelection(skus, next, { partial: true });
+  if (partial?.option_values) {
+    const ov = optionValuesToSelectedVariations(
+      partial.option_values as Record<string, unknown>,
+      variationAxes,
+    );
+    next = { ...next, ...ov };
+  }
+  return next;
+}
+
 /** Selection key for a variation axis (prefer API option_key). */
 export function variationSelectionKey(variation: {
   type: string;
@@ -174,12 +296,11 @@ export function resolveSkuPriceForSelection(
   skus: ClientProductSku[],
   selected: Record<string, string>,
   fallbackPrice?: number,
+  variationAxes?: Array<{ type: string; option_key?: string }>,
 ): number {
   if (skus.length === 0) return fallbackPrice ?? 0;
   const sku =
-    resolveSkuFromSelection(skus, selected) ??
-    resolveSkuFromSelection(skus, selected, { partial: true }) ??
-    getListingProductSku(skus);
+    resolveDisplaySku(skus, selected, variationAxes) ?? getListingProductSku(skus);
   if (!sku) return fallbackPrice ?? 0;
   return parseClientSkuPrice(sku.price, fallbackPrice);
 }
