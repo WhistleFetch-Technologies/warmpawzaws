@@ -1,34 +1,8 @@
 /**
  * Product image processing for SKU rows — mirrors vendor product image pipeline.
  */
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { stripPresignFromProductImagesJsonb } from './s3-media-presign';
-
-const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-const S3_BUCKET_NAME =
-  process.env.S3_UPLOADS_BUCKET || process.env.S3_BUCKET_NAME || 'warmpawz-dev-uploads';
-const AWS_REGION_EFFECTIVE = process.env.AWS_REGION || 'ap-south-1';
-
-async function uploadProductImageBufferToS3(
-  vendorId: string,
-  buffer: Buffer,
-  contentType: string,
-  fileExtension: string,
-): Promise<string> {
-  const timestamp = Date.now();
-  const randomStr = Math.random().toString(36).substring(2, 15);
-  const ext = fileExtension.replace(/^\./, '') || 'jpg';
-  const fileKey = `products/${vendorId}/${timestamp}_${randomStr}.${ext}`;
-  await s3Client.send(
-    new PutObjectCommand({
-      Bucket: S3_BUCKET_NAME,
-      Key: fileKey,
-      Body: buffer,
-      ContentType: contentType || 'image/jpeg',
-    }),
-  );
-  return `https://${S3_BUCKET_NAME}.s3.${AWS_REGION_EFFECTIVE}.amazonaws.com/${fileKey}`;
-}
+import { uploadProductImageBufferToS3 } from './product-s3-image';
 
 async function tryUploadDataImageUrlToS3(vendorId: string, dataUrl: string): Promise<string | null> {
   const m = dataUrl.match(/^data:image\/([\w.+-]+);base64,(.+)$/i);

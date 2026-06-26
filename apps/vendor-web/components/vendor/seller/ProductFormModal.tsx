@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Plus, Trash2, X, Upload, IndianRupee, Package, Image as ImageIcon, MapPin,
 } from 'lucide-react';
@@ -41,6 +41,12 @@ import {
   getVariantSuggestionsForCategory,
   MAX_VARIANT_ATTRIBUTES,
 } from '@warmpawz/shared-types';
+import {
+  discardAllPendingProductImages,
+  registerPendingProductImageKey,
+  removePendingProductImageByUrl,
+  uploadProductImage,
+} from '@/lib/product-image-upload';
 
 function stripAwsPresignFromProductImageUrl(url: string): string {
   try {
@@ -86,6 +92,8 @@ export function ProductFormModal({
   const [pendingAxisPick, setPendingAxisPick] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
+  const pendingFileKeysRef = useRef<Map<string, string>>(new Map());
+  const saveCommittedRef = useRef(false);
   const [deliveryRegions, setDeliveryRegions] = useState<string[]>(() =>
     deliveryRegionsFromProduct(product),
   );
@@ -137,31 +145,40 @@ export function ProductFormModal({
     [variants],
   );
 
+  useEffect(() => {
+    saveCommittedRef.current = false;
+    pendingFileKeysRef.current.clear();
+  }, [product?.id]);
+
+  const registerPendingFileKey = useCallback((urls: string[], fileKey: string) => {
+    registerPendingProductImageKey(pendingFileKeysRef.current, urls, fileKey);
+  }, []);
+
+  const handleClose = useCallback(async () => {
+    if (!saveCommittedRef.current) {
+      await discardAllPendingProductImages(sellerId, pendingFileKeysRef.current);
+    }
+    onClose();
+  }, [sellerId, onClose]);
+
+  const removePendingUploadFromS3 = useCallback(
+    async (url: string) => {
+      await removePendingProductImageByUrl(sellerId, pendingFileKeysRef.current, url);
+    },
+    [sellerId],
+  );
+
   const uploadImages = async (files: FileList | File[]): Promise<string[]> => {
     const uploadedUrls: string[] = [];
     for (const file of Array.from(files)) {
-      const fd = new FormData();
-      fd.append('image', file);
       try {
-        const response = await apiClient.post<{
-          image_url?: string;
-          url?: string;
-          s3_url?: string;
-        }>(`/vendor/${sellerId}/products/images`, fd);
-        const imageUrl = response.s3_url || response.image_url || response.url;
-        if (imageUrl) {
-          uploadedUrls.push(imageUrl);
-        } else {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.onerror = () => reject(new Error('Failed to read image file'));
-            reader.readAsDataURL(file);
-          });
-          uploadedUrls.push(dataUrl);
-        }
+        const result = await uploadProductImage(sellerId, file);
+        const stableUrl = result.s3_url || result.displayUrl;
+        registerPendingFileKey([stableUrl, result.displayUrl], result.fileKey);
+        uploadedUrls.push(result.displayUrl || stableUrl);
       } catch (error) {
         console.warn('Image upload failed; using data URL for save:', error);
+        const message = error instanceof Error ? error.message : 'Failed to upload image';
         try {
           const dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -171,11 +188,31 @@ export function ProductFormModal({
           });
           uploadedUrls.push(dataUrl);
         } catch {
-          toast.error(`Failed to upload ${file.name}`);
+          toast.error(message || `Failed to upload ${file.name}`);
         }
       }
     }
     return uploadedUrls;
+  };
+
+  const removeSimpleImageAt = async (index: number) => {
+    const url = simpleSku.images[index];
+    if (url) await removePendingUploadFromS3(url);
+    setSimpleSku({
+      ...simpleSku,
+      images: simpleSku.images.filter((_, i) => i !== index),
+    });
+  };
+
+  const removeVariantImageAt = async (variantId: string, imgIdx: number) => {
+    const variant = variants.find((v) => v.id === variantId);
+    const url = variant?.images[imgIdx];
+    if (url) await removePendingUploadFromS3(url);
+    setVariants((prev) =>
+      prev.map((v) =>
+        v.id === variantId ? { ...v, images: v.images.filter((_, i) => i !== imgIdx) } : v,
+      ),
+    );
   };
 
   const handleSimpleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -306,6 +343,8 @@ export function ProductFormModal({
       } else {
         await apiClient.post(`/vendor/${sellerId}/products`, payload);
       }
+      saveCommittedRef.current = true;
+      pendingFileKeysRef.current.clear();
       onSave();
     } catch (error) {
       console.error('Error saving product:', error);
@@ -354,8 +393,14 @@ export function ProductFormModal({
       : variantAxes.map((a) => a.label).join(' & ');
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={() => void handleClose()}
+    >
+      <div
+        className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="shrink-0 border-b border-slate-100 bg-white p-6 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900">
@@ -363,7 +408,7 @@ export function ProductFormModal({
             </h2>
             <p className="text-sm text-slate-500 mt-1">Fill in the details below</p>
           </div>
-          <button type="button" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+          <button type="button" onClick={() => void handleClose()} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
@@ -718,12 +763,7 @@ export function ProductFormModal({
                     <img src={image} alt="" className="w-full h-full object-cover" />
                     <button
                       type="button"
-                      onClick={() =>
-                        setSimpleSku({
-                          ...simpleSku,
-                          images: simpleSku.images.filter((_, i) => i !== index),
-                        })
-                      }
+                      onClick={() => void removeSimpleImageAt(index)}
                       className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
                     >
                       <X className="w-3 h-3" />
@@ -739,7 +779,9 @@ export function ProductFormModal({
                   innerClassName="flex w-full flex-col items-center justify-center p-1"
                 >
                   <Upload className="mb-1 w-6 h-6 text-slate-400" />
-                  <span className="text-xs text-slate-500">Upload</span>
+                  <span className="text-xs text-slate-500">
+                    {uploadingImages ? 'Compressing…' : 'Upload'}
+                  </span>
                 </TouchFilePicker>
               </div>
             </div>
@@ -918,15 +960,7 @@ export function ProductFormModal({
                                 <img src={img} alt="" className="h-full w-full object-cover" />
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setVariants((prev) =>
-                                      prev.map((v) =>
-                                        v.id === variant.id
-                                          ? { ...v, images: v.images.filter((_, i) => i !== imgIdx) }
-                                          : v,
-                                      ),
-                                    )
-                                  }
+                                  onClick={() => void removeVariantImageAt(variant.id, imgIdx)}
                                   className="absolute top-0 right-0 bg-red-500 text-white rounded-bl p-0.5"
                                 >
                                   <X className="w-3 h-3" />
@@ -1019,7 +1053,7 @@ export function ProductFormModal({
           <div className="flex gap-3 pt-4 border-t border-slate-200">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => void handleClose()}
               className="flex-1 py-3 border border-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-50"
             >
               Cancel

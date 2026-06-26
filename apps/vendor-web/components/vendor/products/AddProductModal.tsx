@@ -3,11 +3,17 @@
 /** Legacy /products page modal. Canonical add/edit UX: Seller Hub → ProductCatalogManagement → ProductFormModal. */
 
 import { X, ShoppingBag, Plus, Trash2, Upload, Image as ImageIcon, MapPin } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { IntegerInput } from '@/components/shared/IntegerInput';
 import { DecimalInput } from '@/components/shared/DecimalInput';
+import {
+  discardAllPendingProductImages,
+  registerPendingProductImageKey,
+  removePendingProductImageByUrl,
+  uploadProductImage,
+} from '@/lib/product-image-upload';
 
 function stripAwsPresignFromProductImageUrl(url: string): string {
   try {
@@ -40,6 +46,8 @@ export function AddProductModal({
   const [variants, setVariants] = useState<Array<{ id: string; size?: string; color?: string; price: string; stock: string }>>([]);
   const [images, setImages] = useState<string[]>([]);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const pendingFileKeysRef = useRef<Map<string, string>>(new Map());
+  const saveCommittedRef = useRef(false);
   const [deliveryRegions, setDeliveryRegions] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     name: '',
@@ -53,6 +61,20 @@ export function AddProductModal({
     gst_rate: '',
     is_active: true,
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    saveCommittedRef.current = false;
+    pendingFileKeysRef.current.clear();
+  }, [isOpen]);
+
+  const handleClose = useCallback(async () => {
+    const vendorId = localStorage.getItem('vendorId');
+    if (!saveCommittedRef.current && vendorId) {
+      await discardAllPendingProductImages(vendorId, pendingFileKeysRef.current);
+    }
+    onClose();
+  }, [onClose]);
 
   const handleChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -86,27 +108,13 @@ export function AddProductModal({
 
       const uploadedUrls: string[] = [];
       for (const file of Array.from(files)) {
-        const formData = new FormData();
-        formData.append('image', file);
-
         try {
-          // Try to upload to product images endpoint
-          const response = await apiClient.post<{ image_url?: string; url?: string }>(
-            `/vendor/${vendorId}/products/images`,
-            formData
-          );
-          const imageUrl = response.image_url || response.url;
-          if (imageUrl) {
-            uploadedUrls.push(imageUrl);
-          } else {
-            const dataUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(String(reader.result));
-              reader.onerror = () => reject(new Error('Failed to read image file'));
-              reader.readAsDataURL(file);
-            });
-            uploadedUrls.push(dataUrl);
+          const result = await uploadProductImage(vendorId, file);
+          const stableUrl = result.s3_url || result.displayUrl;
+          if (result.fileKey) {
+            registerPendingProductImageKey(pendingFileKeysRef.current, [stableUrl, result.displayUrl], result.fileKey);
           }
+          uploadedUrls.push(result.displayUrl || stableUrl);
         } catch (error) {
           console.warn('Image upload failed; using data URL for server-side S3 on save:', error);
           try {
@@ -134,6 +142,11 @@ export function AddProductModal({
   };
 
   const removeImage = (index: number) => {
+    const url = images[index];
+    const vendorId = typeof window !== 'undefined' ? localStorage.getItem('vendorId') : null;
+    if (url && vendorId) {
+      void removePendingProductImageByUrl(vendorId, pendingFileKeysRef.current, url);
+    }
     setImages(images.filter((_, i) => i !== index));
     setImageFiles(imageFiles.filter((_, i) => i !== index));
   };
@@ -233,6 +246,8 @@ export function AddProductModal({
       };
 
       await apiClient.post(`/vendor/${vendorId}/products`, productData);
+      saveCommittedRef.current = true;
+      pendingFileKeysRef.current.clear();
       alert('Product created successfully!');
       onSuccess?.();
       onClose();
@@ -263,8 +278,14 @@ export function AddProductModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={() => void handleClose()}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between p-6 border-b sticky top-0 bg-white">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-green-100 rounded-lg">
@@ -273,7 +294,7 @@ export function AddProductModal({
             <h3 className="text-lg font-semibold text-gray-900">Add Product</h3>
           </div>
           <button
-            onClick={onClose}
+            onClick={() => void handleClose()}
             className="p-2 hover:bg-gray-100 rounded"
             disabled={loading}
           >
@@ -559,7 +580,7 @@ export function AddProductModal({
 
         <div className="flex items-center justify-end gap-3 p-6 border-t bg-gray-50">
           <button
-            onClick={onClose}
+            onClick={() => void handleClose()}
             disabled={loading}
             className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition disabled:opacity-50"
           >

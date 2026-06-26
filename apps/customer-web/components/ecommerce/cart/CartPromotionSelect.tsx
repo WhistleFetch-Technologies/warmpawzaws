@@ -24,9 +24,20 @@ type PromoOption = {
   source: 'platform' | 'vendor';
 };
 
+type CartPromoLineItem = {
+  productId: string;
+  id?: string;
+  quantity: number;
+  price: number;
+  categoryId?: string;
+  category?: string;
+};
+
 type CartPromotionSelectProps = {
   orderAmount: number;
   vendorId?: string;
+  cartItems?: CartPromoLineItem[];
+  customerId?: string;
   selected: SelectedCartPromotion | null;
   onApply: (promo: SelectedCartPromotion) => void;
   onRemove: () => void;
@@ -46,6 +57,8 @@ function formatPromoLabel(p: PromoOption): string {
 export function CartPromotionSelect({
   orderAmount,
   vendorId,
+  cartItems = [],
+  customerId,
   selected,
   onApply,
   onRemove,
@@ -130,6 +143,14 @@ export function CartPromotionSelect({
         vendorId: vendorId && vendorId !== 'default' ? vendorId : undefined,
         orderAmount,
         orderType: 'product',
+        customerId,
+        items: cartItems.map((item) => ({
+          productId: item.productId || item.id,
+          quantity: item.quantity,
+          price: item.price,
+          categoryId: item.categoryId || item.category,
+          category: item.categoryId || item.category,
+        })),
       });
 
       if (!res.valid) {

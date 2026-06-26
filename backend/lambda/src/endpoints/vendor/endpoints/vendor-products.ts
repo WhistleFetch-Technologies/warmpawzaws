@@ -19,12 +19,21 @@ import { select, insert, update, query, deleteRows } from '../../../database/rds
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import {
   presignProductRowForDisplay,
   presignS3GetUrlIfApplicable,
   stripPresignFromProductImagesJsonb,
 } from '../../../utils/s3-media-presign';
+import {
+  cleanupRemovedProductS3Images,
+  collectAllProductImageUrls,
+  deleteAllManagedProductImages,
+  deleteManagedProductS3Image,
+  extensionFromContentType,
+  extractProductS3Key,
+  PRODUCT_UPLOAD_MAX_BYTES,
+  uploadProductImageBufferToS3,
+} from '../../../utils/product-s3-image';
 import { resolveVendorById } from './vendorProfile.vendor';
 import {
   applyNormalizedPricingToDbPayload,
@@ -62,13 +71,6 @@ import {
   getBulkVariantHintsForCategory,
   getVariantSuggestionsForCategory,
 } from '@warmpawz/shared-types';
-
-// PHASE 1.3: S3 client for product image uploads
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION || 'ap-south-1',
-});
-// Use consistent S3_UPLOADS_BUCKET env var (set by CDK lambda-stack)
-const S3_BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || process.env.S3_BUCKET_NAME || 'warmpawz-dev-uploads';
 
 /** Cached information_schema snapshot so we avoid hitting metadata column when it is not migrated yet */
 const PRODUCTS_COLUMN_CACHE: { until: number; cols: Set<string> | null } = { until: 0, cols: null };
@@ -341,29 +343,6 @@ async function enrichProductRowWithSkus(
     productOut.stock = aggregated > 0 ? aggregated : parentStock;
   }
   return flattenProductForApiResponse(productOut);
-}
-
-const AWS_REGION_EFFECTIVE = process.env.AWS_REGION || 'ap-south-1';
-
-async function uploadProductImageBufferToS3(
-  vendorId: string,
-  buffer: Buffer,
-  contentType: string,
-  fileExtension: string,
-): Promise<string> {
-  const timestamp = Date.now();
-  const randomStr = Math.random().toString(36).substring(2, 15);
-  const ext = fileExtension.replace(/^\./, '') || 'jpg';
-  const fileKey = `products/${vendorId}/${timestamp}_${randomStr}.${ext}`;
-  await s3Client.send(
-    new PutObjectCommand({
-      Bucket: S3_BUCKET_NAME,
-      Key: fileKey,
-      Body: buffer,
-      ContentType: contentType || 'image/jpeg',
-    }),
-  );
-  return `https://${S3_BUCKET_NAME}.s3.${AWS_REGION_EFFECTIVE}.amazonaws.com/${fileKey}`;
 }
 
 async function tryUploadDataImageUrlToS3(vendorId: string, dataUrl: string): Promise<string | null> {
@@ -970,6 +949,7 @@ class UpdateVendorProductHandler extends BaseHandler {
       const prevStatus = String(prevRow.status || '').trim().toLowerCase();
       const existingSkus = await loadProductSkus(productId);
       const hasSkuRows = existingSkus.length > 0;
+      const prevImageUrls = collectAllProductImageUrls(prevRow, existingSkus);
 
       const cols = await getProductsColumnSet();
       const hasMetadataCol = cols.has('metadata');
@@ -1211,7 +1191,17 @@ class UpdateVendorProductHandler extends BaseHandler {
         await syncProductSkus(resolvedVendorId, productId, skuInputs);
       }
 
-      const productOut = await enrichProductRowWithSkus(updated[0] as Record<string, unknown>);
+      const nextProductRows = await select('products', { id: productId, vendor_id: resolvedVendorId });
+      const nextSkus = await loadProductSkus(productId);
+      const nextImageUrls = collectAllProductImageUrls(
+        (nextProductRows[0] ?? updated[0]) as Record<string, unknown>,
+        nextSkus,
+      );
+      await cleanupRemovedProductS3Images(prevImageUrls, nextImageUrls, resolvedVendorId);
+
+      const productOut = await enrichProductRowWithSkus(
+        (nextProductRows[0] ?? updated[0]) as Record<string, unknown>,
+      );
 
       return this.success({
         product: productOut,
@@ -1342,6 +1332,11 @@ class DeleteVendorProductHandler extends BaseHandler {
             'Product removed from your catalog. It has past orders, so it was archived for order history and is no longer visible to customers.',
         });
       }
+
+      const existingSkus = await loadProductSkus(productId);
+      const productRow = existingProducts[0] as Record<string, unknown>;
+      const imageUrls = collectAllProductImageUrls(productRow, existingSkus);
+      await deleteAllManagedProductImages(imageUrls, resolvedVendorId);
 
       // Hard delete if no orders
       await deleteRows('products', { id: productId, vendor_id: resolvedVendorId });
@@ -1573,21 +1568,31 @@ export function registerVendorProductsEndpoints(app: Hono) {
       }
 
       const buffer = Buffer.from(await imageFile.arrayBuffer());
-      const fileExtension = imageFile.name.split('.').pop() || 'jpg';
+      if (buffer.length === 0) {
+        return c.json({ error: 'Image file is empty' }, 400);
+      }
+      if (buffer.length > PRODUCT_UPLOAD_MAX_BYTES) {
+        return c.json(
+          {
+            error: `Image must be ${Math.floor(PRODUCT_UPLOAD_MAX_BYTES / 1024)} KB or smaller`,
+          },
+          400,
+        );
+      }
+
+      const contentType = imageFile.type || 'image/jpeg';
+      const fileExtension =
+        extensionFromContentType(contentType) ||
+        imageFile.name.split('.').pop() ||
+        'jpg';
       const imageUrl = await uploadProductImageBufferToS3(
         vendorId,
         buffer,
-        imageFile.type || 'image/jpeg',
+        contentType,
         fileExtension,
       );
       const displayUrl = (await presignS3GetUrlIfApplicable(imageUrl)) ?? imageUrl;
-      let fileKey = '';
-      try {
-        const u = new URL(imageUrl);
-        fileKey = u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
-      } catch {
-        fileKey = '';
-      }
+      const fileKey = extractProductS3Key(imageUrl, vendorId) ?? '';
 
       return c.json({
         success: true,
@@ -1600,6 +1605,32 @@ export function registerVendorProductsEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error uploading product image:', error);
       return c.json({ error: error.message || 'Failed to upload image' }, 500);
+    }
+  });
+
+  app.delete('/vendor/:vendorId/products/images', async (c) => {
+    try {
+      const paramVendorId = c.req.param('vendorId');
+      const vendor = await resolveVendorById(paramVendorId);
+      if (!vendor?.id) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+
+      const body = await c.req.json().catch(() => ({}));
+      const fileKey = String(body?.fileKey ?? '').trim();
+      if (!fileKey) {
+        return c.json({ error: 'fileKey is required' }, 400);
+      }
+      if (!extractProductS3Key(fileKey, resolvedVendorId)) {
+        return c.json({ error: 'Invalid or unauthorized file key' }, 403);
+      }
+
+      await deleteManagedProductS3Image(fileKey, resolvedVendorId);
+      return c.json({ success: true, message: 'Image deleted successfully' });
+    } catch (error: any) {
+      console.error('Error deleting product image:', error);
+      return c.json({ error: error.message || 'Failed to delete image' }, 500);
     }
   });
 }
