@@ -667,7 +667,12 @@ export function HomeServiceProviderProfile({
               ) : null}
               <button
                 type="button"
-                onClick={() => onNavigate?.('chat', { vendorId: provider.id })}
+                onClick={() =>
+                  onNavigate?.('chat', {
+                    vendorId: provider.vendorId || provider.id,
+                    vendorName: provider.businessName,
+                  })
+                }
                 className="group flex flex-col items-center justify-center gap-1.5 rounded-xl bg-gray-50 p-3 transition-colors hover:bg-gray-100"
               >
                 <MessageCircle className="h-5 w-5 text-[#FF8C42] transition-transform group-hover:scale-110" />

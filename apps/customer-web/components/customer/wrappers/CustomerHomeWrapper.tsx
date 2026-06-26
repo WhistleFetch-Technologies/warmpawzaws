@@ -120,6 +120,7 @@ import { useCart } from '@/context/CartContext';
 import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
 import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
 import { toast } from 'sonner';
+import { openVendorProfileChat } from '@/lib/open-vendor-profile-chat';
 
 // ============================================================================
 // Lazy-loaded shell screens
@@ -617,7 +618,7 @@ export function CustomerHomeWrapper({
   const [teleWizardRestore, setTeleWizardRestore] = useState<TeleWizardSnapshot | null>(null);
   const [homeVisitWizardRestore, setHomeVisitWizardRestore] = useState<HomeVisitWizardSnapshot | null>(null);
   const { addToCart } = useCart();
-  const { openMessages } = useCustomerBookingMessagesModal();
+  const { openMessages, openBookingChat } = useCustomerBookingMessagesModal();
 
   // ✅ FIX: User profile state for consistent header display
   const [userName, setUserName] = useState<string>(() => readCachedProfileName(phone).name);
@@ -1923,6 +1924,18 @@ export function CustomerHomeWrapper({
     }
   };
 
+  const handleVendorProfileChat = useCallback(
+    (data?: { vendorId?: string; vendorName?: string }) => {
+      void openVendorProfileChat({
+        phone,
+        vendorId: String(data?.vendorId ?? '').trim(),
+        vendorName: String(data?.vendorName ?? '').trim() || undefined,
+        openBookingChat,
+      });
+    },
+    [phone, openBookingChat]
+  );
+
   const handleAccountNavigate = (path: string) => {
     setUserSidebarOpen(false);
     if (path === 'home') goToHome();
@@ -2839,7 +2852,13 @@ export function CustomerHomeWrapper({
           }));
           navigateToScreen('walker-booking');
         }}
-        onNavigate={(screen, data) => handleWalkerNavigate(screen, data)}
+        onNavigate={(screen, data) => {
+          if (screen === 'chat') {
+            handleVendorProfileChat(data);
+            return;
+          }
+          handleWalkerNavigate(screen, data);
+        }}
       />
     );
   }
@@ -2886,9 +2905,9 @@ export function CustomerHomeWrapper({
           });
           navigateToScreen('universal-home-booking');
         }}
-        onNavigate={(screen) => {
+        onNavigate={(screen, data) => {
           if (screen === 'chat') {
-            openMessages();
+            handleVendorProfileChat(data);
             return;
           }
           handleBottomNav(screen);
@@ -2933,9 +2952,9 @@ export function CustomerHomeWrapper({
           });
           navigateToScreen('pet-sitter-booking');
         }}
-        onNavigate={(screen) => {
+        onNavigate={(screen, data) => {
           if (screen === 'chat') {
-            openMessages();
+            handleVendorProfileChat(data);
             return;
           }
           handleBottomNav(screen);

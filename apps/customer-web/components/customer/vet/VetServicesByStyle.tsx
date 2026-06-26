@@ -319,6 +319,13 @@ export function VetServicesByStyle({
   });
 
   const toggleServiceSelection = (serviceId: string) => {
+    if (serviceStyle === 'tele') {
+      setSelectedServices((prev) => {
+        if (prev.has(serviceId)) return new Set();
+        return new Set([serviceId]);
+      });
+      return;
+    }
     const newSelection = new Set(selectedServices);
     if (newSelection.has(serviceId)) {
       newSelection.delete(serviceId);
@@ -923,7 +930,9 @@ export function VetServicesByStyle({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-700">
-                    {selectedServices.size} service{selectedServices.size > 1 ? 's' : ''} selected
+                    {serviceStyle === 'tele'
+                      ? 'Selected service'
+                      : `${selectedServices.size} service${selectedServices.size > 1 ? 's' : ''} selected`}
                   </p>
                   <p className="text-lg font-bold text-orange-600">{formatPriceWithSymbol(totalPrice)}</p>
                 </div>
@@ -944,7 +953,9 @@ export function VetServicesByStyle({
             >
               {selectedServices.size === 0 
                 ? (profileProvider.services.length === 0 ? 'No Services Available' : 'Select Services to Book')
-                : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
+                : serviceStyle === 'tele'
+                  ? `Continue • ${formatPriceWithSymbol(totalPrice)}`
+                  : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
               }
             </Button>
           </div>
