@@ -192,6 +192,18 @@ function servicesMatchingSelection(services: Service[], selected: Set<string>): 
   );
 }
 
+function initialSelectedServiceSet(
+  ids: string[] | undefined,
+  style: UniversalProviderProfileProps['serviceStyle'],
+): Set<string> {
+  const list = ids ?? [];
+  if (style === 'tele') {
+    const first = list[0];
+    return first ? new Set([first]) : new Set();
+  }
+  return new Set(list);
+}
+
 export function UniversalProviderProfile({
   phone,
   provider,
@@ -212,7 +224,7 @@ export function UniversalProviderProfile({
 }: UniversalProviderProfileProps) {
   const [activeTab, setActiveTab] = useState<'services' | 'about' | 'reviews'>('services');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(
-    () => new Set(initialSelectedServiceIds ?? []),
+    () => initialSelectedServiceSet(initialSelectedServiceIds, serviceStyle),
   );
   const [isFavorite, setIsFavorite] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -457,8 +469,15 @@ export function UniversalProviderProfile({
     }
   }, [activeTab]);
 
-  // Toggle service selection
+  // Toggle service selection (single-select for tele; multi-select for other styles)
   const toggleService = (serviceId: string) => {
+    if (serviceStyle === 'tele') {
+      setSelectedServices((prev) => {
+        if (prev.has(serviceId)) return new Set();
+        return new Set([serviceId]);
+      });
+      return;
+    }
     const newSelected = new Set(selectedServices);
     if (newSelected.has(serviceId)) {
       newSelected.delete(serviceId);
@@ -1056,7 +1075,9 @@ export function UniversalProviderProfile({
                 className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2"
                 onClick={handleProceedToBooking}
               >
-                Continue with {selectedServices.size} service{selectedServices.size !== 1 ? 's' : ''} • {formatPriceWithSymbol(totalAmount)}
+                {serviceStyle === 'tele'
+                  ? `Continue • ${formatPriceWithSymbol(totalAmount)}`
+                  : `Continue with ${selectedServices.size} service${selectedServices.size !== 1 ? 's' : ''} • ${formatPriceWithSymbol(totalAmount)}`}
                 <ChevronRight className="w-5 h-5" />
               </Button>
             ) : (

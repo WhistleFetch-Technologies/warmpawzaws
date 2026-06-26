@@ -686,7 +686,16 @@ export function UniversalServicesByStyle({
     return 0;
   });
 
+  const isSingleServiceSelection = serviceStyle === 'tele' || roleId === 'trainer';
+
   const toggleServiceSelection = (serviceId: string) => {
+    if (isSingleServiceSelection) {
+      setSelectedServices((prev) => {
+        if (prev.has(serviceId)) return new Set();
+        return new Set([serviceId]);
+      });
+      return;
+    }
     const newSelection = new Set(selectedServices);
     if (newSelection.has(serviceId)) {
       newSelection.delete(serviceId);
@@ -740,16 +749,21 @@ export function UniversalServicesByStyle({
         }
       }
 
-      const firstService = selectedServicesData[0];
+      const bookingServices =
+        roleId === 'trainer' ||
+        (serviceStyle === 'tele' && roleId === 'veterinarian')
+          ? [selectedServicesData[0]]
+          : selectedServicesData;
+      const firstService = bookingServices[0];
       const bookingData: any = {
         vendorId: profileProvider!.providerId || profileProvider!.vendorId,
         vendorName: profileProvider!.name,
         serviceStyle,
-        selectedServices: selectedServicesData,
+        selectedServices: bookingServices,
         serviceId: firstService?.id || firstService?.serviceId,
         serviceName: firstService?.name,
-        price: totalPrice,
-        duration: selectedServicesData.reduce((sum, s) => sum + (s?.duration || 0), 0),
+        price: bookingServices.reduce((sum, s) => sum + (s?.price || 0), 0),
+        duration: bookingServices.reduce((sum, s) => sum + (s?.duration || 0), 0),
         providerName: profileProvider!.name,
         service: firstService, // Backward compatibility
       };
@@ -1288,7 +1302,9 @@ export function UniversalServicesByStyle({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-700">
-                    {selectedServices.size} service{selectedServices.size > 1 ? 's' : ''} selected
+                    {isSingleServiceSelection
+                      ? 'Selected service'
+                      : `${selectedServices.size} service${selectedServices.size > 1 ? 's' : ''} selected`}
                   </p>
                   <p className="text-lg font-bold text-orange-600">{formatPriceWithSymbol(totalPrice)}</p>
                 </div>
@@ -1309,7 +1325,9 @@ export function UniversalServicesByStyle({
             >
               {selectedServices.size === 0 
                 ? (profileProvider.services.length === 0 ? 'No Services Available' : 'Select Services to Book')
-                : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
+                : isSingleServiceSelection
+                  ? `Continue • ${formatPriceWithSymbol(totalPrice)}`
+                  : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
               }
             </Button>
           </div>
