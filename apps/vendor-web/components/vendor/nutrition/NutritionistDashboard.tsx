@@ -21,6 +21,7 @@ import {
   mealReassignMessage,
   type MealDeliveryEffective,
 } from '@warmpawz/shared-types';
+import { formatVendorMealDeliveryLocationLine } from '@/lib/format-vendor-meal-delivery-location';
 import { CreateTicketModal } from '@/components/vendor/support/CreateTicketModal';
 
 // 2D Sketch-style SVG Icons
@@ -157,6 +158,8 @@ interface MealOrder {
   prep_started_at?: string; // Timestamp when vendor started preparing (indicates vendor accepted)
   items: any[];
   delivery_address?: any;
+  delivery_area_label?: string;
+  delivery_distance_km?: number;
   /** Canonical weekly/monthly: parent queue row — Accept/Cancel signup. */
   subscription_vendor_parent_booking?: boolean;
   /** Mirrored per-session row — no Accept/Cancel; follows parent acceptance + scheduled date. */
@@ -701,6 +704,10 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       ? 'flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white'
       : 'flex-1 py-2 rounded-lg flex items-center justify-center gap-1 bg-slate-200 text-slate-500 cursor-not-allowed';
 
+    const deliveryLocationLine = formatVendorMealDeliveryLocationLine(
+      order as Record<string, unknown>,
+    );
+
     return (
       <div key={order.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
         <div className="p-4 border-b border-slate-100">
@@ -775,6 +782,12 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
               )}
             </div>
           </div>
+          {deliveryLocationLine ? (
+            <p className="text-sm text-slate-600 flex items-center gap-1 mb-4 -mt-2">
+              {Icons.mapPin}
+              <span>{deliveryLocationLine}</span>
+            </p>
+          ) : null}
 
           <VendorMealPrepScheduleInfo
             order={order as Record<string, unknown>}

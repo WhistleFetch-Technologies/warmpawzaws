@@ -50,6 +50,7 @@ import {
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
 import { getMealOrderVendorLookupIds } from '../utils/meal-order-vendor-lookup';
 import { fetchVendorMealOrdersForVendorIds } from '../utils/fetch-vendor-meal-orders';
+import { enrichVendorMealOrderDeliveryLocation } from '../utils/vendor-meal-order-delivery-location';
 import {
   processMealOrderVendorCancelOriginalRefund,
   processMealSubscriptionParentVendorCancelOriginalRefund,
@@ -2581,6 +2582,20 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         return c.json({ success: true, orders: [], total: 0 });
       }
 
+      const vendorGeoRes = await query(
+        `SELECT latitude, longitude, metadata FROM vendors WHERE id::text = ANY($1::text[]) LIMIT 1`,
+        [allVendorIds],
+      ).catch(() => ({ rows: [] as Array<{ latitude?: unknown; longitude?: unknown; metadata?: unknown }> }));
+      const vendorGeoRow = vendorGeoRes.rows?.[0] || {};
+      const vendorGeoMeta =
+        typeof vendorGeoRow.metadata === 'object' && vendorGeoRow.metadata
+          ? (vendorGeoRow.metadata as Record<string, unknown>)
+          : {};
+      const vendorKitchenLat =
+        vendorGeoRow.latitude ?? vendorGeoMeta.lat ?? vendorGeoMeta.latitude ?? null;
+      const vendorKitchenLng =
+        vendorGeoRow.longitude ?? vendorGeoMeta.lng ?? vendorGeoMeta.longitude ?? null;
+
       await syncDeliveredMealOrdersFromTracking(allVendorIds);
       await syncCancelledMealOrdersFromTracking(allVendorIds);
       await backfillMissingMealDeliverySettlementsForVendorIds(
@@ -2809,7 +2824,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             { reassignPending },
           );
         }
-        return sanitizeVendorMealOrderRow(rec);
+        return sanitizeVendorMealOrderRow(
+          enrichVendorMealOrderDeliveryLocation(rec, vendorKitchenLat, vendorKitchenLng),
+        );
       });
       return c.json({ success: true, orders: forVendor, total: forVendor.length });
     } catch (error: any) {

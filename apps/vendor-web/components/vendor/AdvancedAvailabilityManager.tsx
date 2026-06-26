@@ -11,7 +11,7 @@
  * - Holidays and vacation management
  * - Copy schedule across days
  * - Online/offline toggle (all vendors — customer discovery)
- * - Service radius (solo) / service distance km (center & business)
+ * - Service radius (solo) / service distance km (center & business; hidden for nutritionists — admin policy)
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { getVendorRoleName, isSoloVendor } from '@/lib/vendor-utils';
+import { getVendorRoleName, hasVendorRole, isSoloVendor } from '@/lib/vendor-utils';
 
 interface AdvancedAvailabilityManagerProps {
   vendorId: string;
@@ -262,6 +262,15 @@ export function AdvancedAvailabilityManager({
   // Get vendor role name
   const roleName = getVendorRoleName(vendorData);
 
+  /** Meal delivery distance is admin-controlled; nutritionists must not set vendor-side radius. */
+  const isNutritionistVendor =
+    hasVendorRole(vendorData, [
+      'nutritionist',
+      'pet_nutritionist',
+      'nutritionist_center',
+      'nutritionist_solo',
+    ]) || (roleName || '').toLowerCase().includes('nutritionist');
+
   /** Single source of truth for customer distance matching (km); persisted on vendors.service_radius when saving availability */
   const [travelRadiusKm, setTravelRadiusKm] = useState(7);
   /** Center/business: service coverage from business location (km), persisted as vendors.service_distance_km */
@@ -302,10 +311,18 @@ export function AdvancedAvailabilityManager({
         vendorData?.longitude != null && vendorData.longitude !== ''
           ? Number(vendorData.longitude)
           : undefined;
+      const base = { address: addr, lat, lng };
+      if (isNutritionistVendor) return base;
       const r = Number.isFinite(travelRadiusKm) && travelRadiusKm > 0 ? travelRadiusKm : 7;
-      return { address: addr, lat, lng, serviceRadiusKm: r };
+      return { ...base, serviceRadiusKm: r };
     },
-    [vendorData?.address, vendorData?.latitude, vendorData?.longitude, travelRadiusKm]
+    [
+      vendorData?.address,
+      vendorData?.latitude,
+      vendorData?.longitude,
+      travelRadiusKm,
+      isNutritionistVendor,
+    ]
   );
   
   const allowedStylesSafe = useMemo(
@@ -963,7 +980,7 @@ export function AdvancedAvailabilityManager({
       // Save availability slots
       const availRes = await apiClient.post(`/vendor/${vendorId}/availability`, {
         slots: slotsToSave,
-        ...(isSoloProvider ? { serviceRadiusKm: travelRadiusKm } : {}),
+        ...(isSoloProvider && !isNutritionistVendor ? { serviceRadiusKm: travelRadiusKm } : {}),
       }) as any;
       console.log('[SAVE] Availability response:', availRes);
       
@@ -996,7 +1013,7 @@ export function AdvancedAvailabilityManager({
       
       toast.success(`Saved: ${slotCount} slots, ${breakCount} breaks, ${holidayCount} holidays`);
 
-      if (!isSoloProvider) {
+      if (!isSoloProvider && !isNutritionistVendor) {
         try {
           await apiClient.put(`/vendor/${vendorId}/profile`, {
             serviceDistanceKm,
@@ -1128,7 +1145,7 @@ export function AdvancedAvailabilityManager({
         </div>
 
         {/* Service radius — single source of truth (vendors.service_radius); uses profile address & map coordinates */}
-        {isSoloProvider && (
+        {isSoloProvider && !isNutritionistVendor && (
           <div className="rounded-xl border border-amber-100 bg-amber-50/40 p-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div className="min-w-0">
@@ -1161,7 +1178,7 @@ export function AdvancedAvailabilityManager({
           </div>
         )}
 
-        {!isSoloProvider && (
+        {!isSoloProvider && !isNutritionistVendor && (
           <div className="rounded-xl border border-blue-100 bg-blue-50/30 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div className="min-w-0">

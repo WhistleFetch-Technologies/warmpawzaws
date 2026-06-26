@@ -24,7 +24,6 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
 import { resolveCustomerMealPlanOrderDisplayTotals } from '../utils/meal-order-pricing';
 import { resolveMealOrderIdForSubscriptionDelivery } from '../utils/resolve-meal-order-for-subscription-delivery';
-import { applyLiveTrackingEnrichmentForCustomer } from '../utils/delivery-tracking-enrichment';
 import { logisticsPartnerService } from '../lib/services/logistics-partner-service';
 import {
   getPidgeCredentials,
@@ -1093,18 +1092,6 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
               deliveryOtp: null,
               deliveryPerson: null,
             };
-
-        if (deliveryTracking && (orderType === 'meal' || orderType === 'pharmacy')) {
-          const enriched = await applyLiveTrackingEnrichmentForCustomer(
-            orderType,
-            String(order.id),
-            trackingPayload,
-            deliveryTracking.logistics_partner
-          );
-          if (enriched) {
-            trackingPayload = enriched;
-          }
-        }
 
         let customerPayload: Record<string, unknown> | null = null;
         if (orderType === 'meal' && order.customer_id) {

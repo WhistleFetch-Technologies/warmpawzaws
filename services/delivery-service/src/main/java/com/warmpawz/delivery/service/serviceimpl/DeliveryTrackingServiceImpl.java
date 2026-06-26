@@ -9,7 +9,7 @@ import com.warmpawz.delivery.repository.DeliveryLocationHistoryRepository;
 import com.warmpawz.delivery.repository.DeliveryTrackingRepository;
 import com.warmpawz.delivery.service.DeliveryTrackingService;
 import com.warmpawz.delivery.service.OrderStatusJdbcService;
-import com.warmpawz.delivery.tracking.DeliveryTrackingEnrichmentService;
+import com.warmpawz.delivery.tracking.DeliveryTrackingRiderVisibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,7 +35,6 @@ public class DeliveryTrackingServiceImpl implements DeliveryTrackingService {
 	private final CourierPartnerRepository courierPartnerRepository;
 	private final OrderStatusJdbcService orderStatusJdbc;
 	private final JdbcTemplate jdbc;
-	private final DeliveryTrackingEnrichmentService trackingEnrichmentService;
 
 	@Override
 	@Transactional
@@ -173,7 +172,6 @@ public class DeliveryTrackingServiceImpl implements DeliveryTrackingService {
 						"recorded_at", rs.getTimestamp("recorded_at") != null ? rs.getTimestamp("recorded_at").toInstant().toString() : null),
 				trackingId);
 		Map<String, Object> tracking = buildTrackingPayload(t);
-		trackingEnrichmentService.enrichIfApplicable(t).ifPresent(en -> trackingEnrichmentService.mergeIntoTrackingMap(tracking, en));
 		return Map.of("success", true, "tracking", tracking, "locationHistory", rows);
 	}
 
@@ -188,7 +186,6 @@ public class DeliveryTrackingServiceImpl implements DeliveryTrackingService {
 		}
 		DeliveryTracking t = list.get(0);
 		Map<String, Object> tracking = buildTrackingPayload(t);
-		trackingEnrichmentService.enrichIfApplicable(t).ifPresent(en -> trackingEnrichmentService.mergeIntoTrackingMap(tracking, en));
 		return Map.of("success", true, "tracking", tracking);
 	}
 
@@ -420,6 +417,10 @@ public class DeliveryTrackingServiceImpl implements DeliveryTrackingService {
 				"reachedPickup", t.getReachedPickupAt() != null ? t.getReachedPickupAt().toString() : null,
 				"pickedUp", t.getPickedUpAt() != null ? t.getPickedUpAt().toString() : null,
 				"delivered", t.getDeliveredAt() != null ? t.getDeliveredAt().toString() : null));
+		if ("pidge".equalsIgnoreCase(t.getLogisticsPartner() != null ? t.getLogisticsPartner().trim() : "")
+				&& DeliveryTrackingRiderVisibility.shouldExposeRider(t.getStatus())) {
+			tracking.put("liveTrackingSource", "database");
+		}
 		return tracking;
 	}
 
