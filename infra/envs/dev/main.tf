@@ -339,6 +339,8 @@ module "delivery_service_ecs" {
   openapi_public_server_url = local.dev_http_api_invoke_url
   hibernate_ddl_auto  = var.delivery_hibernate_ddl_auto
   meal_delivery_notify_secret = "warmpawz-dev-meal-delivery-notify-2026"
+  cpu                 = 512
+  memory              = 1024
 }
 
 module "delivery_codebuild" {
