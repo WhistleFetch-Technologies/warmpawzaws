@@ -1,15 +1,16 @@
 /**
- * Bulk upload variant grouping — mirrors Seller Hub multi-variant rules.
- * One spreadsheet row = one SKU; rows with same title+category = one product.
+ * Bulk upload variant grouping — one row = one SKU; shared product_group_id or composite identity.
  */
 
 import { normalizeOptionValues } from './product-sku-resolve';
 import type { SkuInput } from './product-sku-service';
 import { parseProductImageList } from './product-ecommerce-validation';
+import { resolveBulkGroupKey } from './product-group-identity';
 
 export type BulkVariantRow = Record<string, unknown> & {
   name: string;
   category?: string | null;
+  product_group_id?: string | null;
   price: number;
   compare_at_price?: number | null;
   stock_quantity: number;
@@ -23,14 +24,13 @@ export type BulkVariantRow = Record<string, unknown> & {
   variant_value_1?: string | null;
   variant_attr_2?: string | null;
   variant_value_2?: string | null;
-  is_default?: boolean | string | null;
-  variant_sp?: number | string | null;
-  variant_mrp?: number | string | null;
   barcode?: string | null;
+  brand?: string | null;
 };
 
 export type BulkProductGroup = {
   groupKey: string;
+  product_group_id?: string;
   name: string;
   category: string;
   parent: {
@@ -83,14 +83,9 @@ export function slugifyVariantKey(label: string): string {
     .slice(0, 48);
 }
 
+/** @deprecated Use resolveBulkGroupKey — title+category only grouping removed. */
 export function normalizeProductGroupKey(title: string, categoryName: string): string {
   return `${String(title ?? '').trim().toLowerCase()}::${String(categoryName ?? '').trim().toLowerCase()}`;
-}
-
-function parseBoolDefault(raw: unknown): boolean {
-  if (raw === true || raw === 1) return true;
-  const s = String(raw ?? '').trim().toLowerCase();
-  return s === 'yes' || s === 'y' || s === 'true' || s === '1' || s === 'default';
 }
 
 function attrKeyFromLabel(label: string): string {
@@ -132,19 +127,21 @@ export function rowHasVariantAxes(row: Record<string, unknown>): boolean {
   return Object.keys(parseBulkRowOptionValues(row)).length > 0;
 }
 
+function trimStr(v: unknown): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s || null;
+}
+
+function dimVal(v: unknown): string | number | null {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  const s = String(v).trim();
+  return s || null;
+}
+
 /** Product-level fields from first bulk row for persist / vendorExtrasFromBulkRow. */
 function parentFieldsFromBulkRow(row: BulkVariantRow): BulkProductGroup['parent'] {
-  const trimStr = (v: unknown): string | null => {
-    if (v == null) return null;
-    const s = String(v).trim();
-    return s || null;
-  };
-  const dimVal = (v: unknown): string | number | null => {
-    if (v == null || v === '') return null;
-    if (typeof v === 'number' && Number.isFinite(v)) return v;
-    const s = String(v).trim();
-    return s || null;
-  };
   return {
     description: trimStr(row.description),
     price: Number(row.price) || 0,
@@ -178,7 +175,7 @@ export function bulkGroupExtrasSource(group: BulkProductGroup): Record<string, u
   } as Record<string, unknown>;
 }
 
-export function groupBulkRows(rows: BulkVariantRow[]): BulkProductGroup[] {
+export function groupBulkRows(rows: BulkVariantRow[], vendorId: string): BulkProductGroup[] {
   const map = new Map<string, BulkProductGroup>();
 
   for (let i = 0; i < rows.length; i++) {
@@ -187,13 +184,15 @@ export function groupBulkRows(rows: BulkVariantRow[]): BulkProductGroup[] {
     const category = String(row.category ?? '').trim();
     if (!name || !category) continue;
 
-    const groupKey = normalizeProductGroupKey(name, category);
+    const groupKey = resolveBulkGroupKey(vendorId, row) ?? normalizeProductGroupKey(name, category);
     const rowNum = row.rowNum != null ? Number(row.rowNum) : i + 1;
+    const pgid = String(row.product_group_id ?? '').trim();
 
     let group = map.get(groupKey);
     if (!group) {
       group = {
         groupKey,
+        product_group_id: pgid || undefined,
         name,
         category,
         parent: parentFieldsFromBulkRow(row),
@@ -201,6 +200,8 @@ export function groupBulkRows(rows: BulkVariantRow[]): BulkProductGroup[] {
         rowNums: [],
       };
       map.set(groupKey, group);
+    } else if (pgid && !group.product_group_id) {
+      group.product_group_id = pgid;
     }
 
     group.variants.push({ ...row, rowNum });
@@ -218,52 +219,42 @@ function optionValuesKey(ov: Record<string, string>): string {
   );
 }
 
-export function buildSkuInputsFromGroup(
-  group: BulkProductGroup,
-  parentDefaults: { price: number; compare_at_price?: number | null },
-): SkuInput[] {
+function rowMrpFromBulkRow(row: BulkVariantRow): number {
+  const mrp = Number(row.compare_at_price);
+  return Number.isFinite(mrp) && mrp > 0 ? mrp : 0;
+}
+
+function rowSpFromBulkRow(row: BulkVariantRow): number {
+  const spRaw = row.price;
+  const mrp = rowMrpFromBulkRow(row);
+  if (spRaw != null && String(spRaw).trim() !== '') {
+    const sp = Number(spRaw);
+    if (Number.isFinite(sp) && sp > 0) return sp;
+  }
+  return mrp;
+}
+
+export function buildSkuInputsFromGroup(group: BulkProductGroup): SkuInput[] {
   if (group.variants.length === 0) return [];
 
   const withOv = group.variants.map((row) => ({
     row,
     option_values: parseBulkRowOptionValues(row),
-    isDefault: parseBoolDefault(row.is_default),
   }));
 
-  const hasAnyDefault = withOv.some((v) => v.isDefault);
-  withOv.sort((a, b) => {
-    if (a.isDefault && !b.isDefault) return -1;
-    if (!a.isDefault && b.isDefault) return 1;
-    return (a.row.rowNum ?? 0) - (b.row.rowNum ?? 0);
-  });
-  if (!hasAnyDefault && withOv.length > 0) {
-    withOv[0].isDefault = true;
-  }
+  withOv.sort((a, b) => (a.row.rowNum ?? 0) - (b.row.rowNum ?? 0));
 
   return withOv.map((entry, idx) => {
     const { row, option_values } = entry;
     const images = parseProductImageList(row.images ?? row.image_urls);
     const stock = Math.max(0, Math.floor(Number(row.stock_quantity) || 0));
-
-    const variantSpRaw = row.variant_sp;
-    const variantMrpRaw = row.variant_mrp;
-    const hasSpOverride =
-      variantSpRaw !== undefined &&
-      variantSpRaw !== null &&
-      String(variantSpRaw).trim() !== '';
-    const hasMrpOverride =
-      variantMrpRaw !== undefined &&
-      variantMrpRaw !== null &&
-      String(variantMrpRaw).trim() !== '';
-
-    const spOverride = hasSpOverride ? Number(variantSpRaw) : NaN;
-    const mrpOverride = hasMrpOverride ? Number(variantMrpRaw) : NaN;
+    const mrp = rowMrpFromBulkRow(row);
+    const selling = rowSpFromBulkRow(row);
 
     return {
       option_values,
-      price: hasSpOverride && Number.isFinite(spOverride) && spOverride > 0 ? spOverride : undefined,
-      compare_at_price:
-        hasMrpOverride && Number.isFinite(mrpOverride) && mrpOverride > 0 ? mrpOverride : null,
+      price: selling,
+      compare_at_price: mrp > 0 ? mrp : null,
       stock,
       images,
       barcode: row.barcode ? String(row.barcode).trim() : null,
@@ -280,6 +271,27 @@ export type VariantGroupValidationError = {
   message: string;
 };
 
+function parentFieldsMustMatch(
+  group: BulkProductGroup,
+  field: keyof BulkProductGroup['parent'],
+  label: string,
+  errors: VariantGroupValidationError[],
+): void {
+  const ref = group.parent[field];
+  const refStr = ref == null ? '' : String(ref).trim();
+  for (const row of group.variants) {
+    const rowVal = (row as Record<string, unknown>)[field];
+    const rowStr = rowVal == null ? '' : String(rowVal).trim();
+    if (rowStr && refStr && rowStr !== refStr) {
+      errors.push({
+        field,
+        message: `${label} must match across all rows in the product group`,
+        row: row.rowNum,
+      });
+    }
+  }
+}
+
 export function validateVariantGroup(group: BulkProductGroup): VariantGroupValidationError[] {
   const errors: VariantGroupValidationError[] = [];
   const push = (field: string, message: string, row?: number) =>
@@ -295,14 +307,44 @@ export function validateVariantGroup(group: BulkProductGroup): VariantGroupValid
     return { row, ov, keys: Object.keys(ov) };
   });
 
+  const hasVariantAxes = axisKeysPerRow.some((r) => r.keys.length > 0);
+  const isMultiRow = group.variants.length > 1;
+  const pgid = group.product_group_id ?? String(group.variants[0]?.product_group_id ?? '').trim();
+
+  if (hasVariantAxes || isMultiRow) {
+    if (!pgid) {
+      push(
+        'product_group_id',
+        'Product Group ID is required for multi-row or variant products',
+        group.rowNums[0],
+      );
+    }
+    if (!pgid && !group.parent.brand?.trim()) {
+      push(
+        'brand',
+        'Brand is required when Product Group ID is blank for multi-variant products',
+        group.rowNums[0],
+      );
+    }
+  }
+
+  parentFieldsMustMatch(group, 'hsn_code', 'HSN', errors);
+  parentFieldsMustMatch(group, 'gst_rate', 'Tax (GST)', errors);
+
   const isSimple = axisKeysPerRow.every((r) => r.keys.length === 0);
   if (isSimple) {
     if (group.variants.length > 1) {
       push(
         'variants',
-        'Multiple rows with the same title but no variant attributes — use variant columns or unique titles',
+        'Multiple rows with the same identity but no variant attributes — add variant columns or unique Product Group IDs',
       );
     }
+    const row = group.variants[0];
+    const mrp = rowMrpFromBulkRow(row);
+    if (mrp <= 0) push('compare_at_price', 'MRP is required and must be greater than 0', row.rowNum);
+    const sp = rowSpFromBulkRow(row);
+    if (sp <= 0) push('price', 'Selling price must be greater than 0', row.rowNum);
+    if (sp > mrp) push('price', 'Selling price cannot exceed MRP', row.rowNum);
     return errors;
   }
 
@@ -343,20 +385,16 @@ export function validateVariantGroup(group: BulkProductGroup): VariantGroupValid
       push('images', 'Each variant row needs at least one image URL', rowNum);
     }
 
-    const baseMrp = Number(group.parent.compare_at_price ?? group.parent.price) || 0;
-    const baseSp = Number(group.parent.price) || baseMrp;
-    const vSpRaw = row.variant_sp;
-    const vMrpRaw = row.variant_mrp;
-    const vSp =
-      vSpRaw != null && String(vSpRaw).trim()
-        ? Number(vSpRaw)
-        : baseSp;
-    const vMrp =
-      vMrpRaw != null && String(vMrpRaw).trim()
-        ? Number(vMrpRaw)
-        : baseMrp;
-    if (Number.isFinite(vSp) && Number.isFinite(vMrp) && vSp > vMrp) {
-      push('variant_sp', 'Variant selling price cannot exceed variant MRP', rowNum);
+    const mrp = rowMrpFromBulkRow(row);
+    if (mrp <= 0) {
+      push('compare_at_price', 'MRP is required and must be greater than 0', rowNum);
+    }
+    const sp = rowSpFromBulkRow(row);
+    if (sp <= 0) {
+      push('price', 'Selling price must be greater than 0 (or leave SP empty to use MRP)', rowNum);
+    }
+    if (sp > mrp) {
+      push('price', 'Selling price cannot exceed MRP', rowNum);
     }
   }
 
@@ -365,14 +403,40 @@ export function validateVariantGroup(group: BulkProductGroup): VariantGroupValid
 
 export function aggregateGroupStock(group: BulkProductGroup): number {
   return group.variants.reduce(
-    (sum, row) => sum + (Math.max(0, Math.floor(Number(row.stock_quantity) || 0))),
+    (sum, row) => sum + Math.max(0, Math.floor(Number(row.stock_quantity) || 0)),
     0,
   );
 }
 
+/** Listing row images for parent provisional payload (before sync). */
 export function pickGroupParentImages(group: BulkProductGroup): string[] {
-  const defaultRow =
-    group.variants.find((r) => parseBoolDefault(r.is_default)) ?? group.variants[0];
-  if (!defaultRow) return [];
-  return parseProductImageList(defaultRow.images ?? defaultRow.image_urls);
+  const listingRow = pickListingRowFromGroup(group);
+  if (!listingRow) return [];
+  return parseProductImageList(listingRow.images ?? listingRow.image_urls);
+}
+
+function pickListingRowFromGroup(group: BulkProductGroup): BulkVariantRow | null {
+  const withStock = group.variants.filter((r) => (Number(r.stock_quantity) || 0) > 0);
+  const candidates = withStock.length > 0 ? withStock : group.variants;
+  let best: BulkVariantRow | null = null;
+  let bestPrice = Infinity;
+  for (const row of candidates) {
+    const sp = rowSpFromBulkRow(row);
+    if (sp > 0 && sp <= bestPrice) {
+      bestPrice = sp;
+      best = row;
+    }
+  }
+  return best ?? group.variants[0] ?? null;
+}
+
+export function listingPriceFromGroup(group: BulkProductGroup): {
+  price: number;
+  compare_at_price: number | null;
+} {
+  const row = pickListingRowFromGroup(group);
+  if (!row) return { price: 0, compare_at_price: null };
+  const mrp = rowMrpFromBulkRow(row);
+  const sp = rowSpFromBulkRow(row);
+  return { price: sp, compare_at_price: mrp > 0 ? mrp : null };
 }

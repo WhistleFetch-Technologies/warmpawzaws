@@ -52,6 +52,49 @@ export function goBackOrHome(router: MinimalRouter): void {
   goBackOrReplace(router, '/');
 }
 
+const MEAL_PLAN_ORDERS_PATH = '/orders/meal-plans';
+
+function isMealPlanOrdersPathname(pathname: string): boolean {
+  return pathname === MEAL_PLAN_ORDERS_PATH || pathname.startsWith(`${MEAL_PLAN_ORDERS_PATH}/`);
+}
+
+/**
+ * `/bookings` Back — prefer real history, but skip a stale `/orders/meal-plans` entry left when
+ * the meal-plan list used `router.push('/bookings')` instead of `router.back()`.
+ */
+export function goBackFromBookingsPage(router: MinimalRouter): void {
+  if (typeof window === 'undefined') {
+    router.replace('/');
+    return;
+  }
+
+  const snapshot = () => `${window.location.pathname}${window.location.search}`;
+  const start = snapshot();
+  if (!window.location.pathname.startsWith('/bookings')) {
+    goBackOrReplace(router, '/');
+    return;
+  }
+
+  router.back();
+
+  window.setTimeout(() => {
+    const after = snapshot();
+    if (after === start) {
+      router.replace('/');
+      return;
+    }
+    if (isMealPlanOrdersPathname(window.location.pathname)) {
+      router.back();
+      window.setTimeout(() => {
+        const again = snapshot();
+        if (again === start || isMealPlanOrdersPathname(window.location.pathname)) {
+          router.replace('/');
+        }
+      }, 150);
+    }
+  }, 150);
+}
+
 // --- Shop: remember where to return when opening `/shop` from profile/orders (SPA same URL) ---
 
 export const WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY = 'warmpawz_open_screen_after_nav';

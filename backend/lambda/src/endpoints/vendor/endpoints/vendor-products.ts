@@ -54,6 +54,10 @@ import {
   applyVendorProductExtrasToPayload,
   buildMetadataWithDeliveryRegions,
 } from '../../../utils/product-vendor-persist';
+import {
+  generateProductGroupId,
+  parseProductMetadata,
+} from '../../../utils/product-group-identity';
 
 // PHASE 1.3: S3 client for product image uploads
 const s3Client = new S3Client({
@@ -808,15 +812,31 @@ class CreateVendorProductHandler extends BaseHandler {
         (productData.metadata as Record<string, unknown> | undefined) ?? null,
       );
 
+      const skuInputsPreview = parseSkuInputsFromBody(
+        body as Record<string, unknown>,
+        normalized.sellingPrice,
+      );
+      if (hasMetadataCol && skuInputsPreview && skuInputsPreview.length > 0) {
+        const bodyMeta =
+          body.metadata &&
+          typeof body.metadata === 'object' &&
+          !Array.isArray(body.metadata)
+            ? (body.metadata as Record<string, unknown>)
+            : {};
+        const pgid =
+          String(bodyMeta.product_group_id ?? '').trim() || generateProductGroupId();
+        productData.metadata = {
+          ...((productData.metadata as Record<string, unknown>) ?? {}),
+          product_group_id: pgid,
+        };
+      }
+
       // Create product
       const newProduct = await insert('products', productData);
       const newProductId = String(newProduct[0]?.id ?? '');
-      const skuInputs = parseSkuInputsFromBody(body as Record<string, unknown>, normalized.sellingPrice);
+      const skuInputs = skuInputsPreview;
       if (newProductId && skuInputs && skuInputs.length > 0) {
-        await syncProductSkus(resolvedVendorId, newProductId, skuInputs, {
-          price: normalized.sellingPrice,
-          compare_at_price: normalized.mrp,
-        });
+        await syncProductSkus(resolvedVendorId, newProductId, skuInputs);
       }
       const productOut = await enrichProductRowWithSkus(newProduct[0] as Record<string, unknown>);
 
@@ -1164,11 +1184,27 @@ class UpdateVendorProductHandler extends BaseHandler {
         );
       }
       if (syncDecision === 'run' && skuInputs !== null) {
-        await syncProductSkus(resolvedVendorId, productId, skuInputs, {
-          price: Number(updated[0]?.price) || 0,
-          compare_at_price:
-            updated[0]?.compare_at_price != null ? Number(updated[0].compare_at_price) : null,
-        });
+        if (skuInputs.length > 0 && hasMetadataCol) {
+          const existingMetaRows = await query('SELECT metadata FROM products WHERE id = $1', [
+            productId,
+          ]);
+          const existingMeta = parseProductMetadata(existingMetaRows.rows[0]?.metadata);
+          if (!existingMeta.product_group_id) {
+            const bodyMeta =
+              body.metadata &&
+              typeof body.metadata === 'object' &&
+              !Array.isArray(body.metadata)
+                ? (body.metadata as Record<string, unknown>)
+                : {};
+            const pgid =
+              String(bodyMeta.product_group_id ?? '').trim() || generateProductGroupId();
+            await update('products', { id: productId }, {
+              metadata: { ...existingMeta, product_group_id: pgid },
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }
+        await syncProductSkus(resolvedVendorId, productId, skuInputs);
       }
 
       const productOut = await enrichProductRowWithSkus(updated[0] as Record<string, unknown>);

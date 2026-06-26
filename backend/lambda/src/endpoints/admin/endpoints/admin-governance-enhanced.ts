@@ -24,6 +24,13 @@ import { isValidUUID } from '../../../types/entities';
 import { listVendorServicesForBannerPicker } from '../../../utils/banner-cta-resolver';
 import { getBannerDestinationOptions } from '../../../utils/banner-destination-options';
 import { listShopBannerDestinationProducts } from '../../../utils/banner-shop-destination-options';
+import {
+  BANNER_UPLOAD_MAX_BYTES,
+  cleanupBannerImageOnUrlChange,
+  deleteManagedBannerS3Image,
+  presignBannerImageForDisplay,
+  uploadBannerImageToS3,
+} from '../../../utils/banner-s3-image';
 
 // ============================================================================
 // CAPABILITY REFRESH SYSTEM
@@ -479,10 +486,18 @@ class GetBannersHandler extends BaseHandler {
 
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
-      const banners = rows.map((r: any) => ({
-        ...r,
-        position: positionAliasForAdminBannerRow(r.type),
-      }));
+      const banners = await Promise.all(
+        rows.map(async (r: any) => {
+          const presignedImageUrl = r.image_url
+            ? await presignBannerImageForDisplay(r.image_url)
+            : r.image_url;
+          return {
+            ...r,
+            position: positionAliasForAdminBannerRow(r.type),
+            imageUrl: presignedImageUrl,
+          };
+        })
+      );
 
       return this.success({ banners, total: banners.length });
     } catch (error: any) {
@@ -612,6 +627,12 @@ class UpdateBannerHandler extends BaseHandler {
     }
 
     try {
+      const existingRows = await select('banners', { id: bannerId });
+      if (existingRows.length === 0) {
+        return this.error('Banner not found', 404);
+      }
+      const previousImageUrl = existingRows[0].image_url;
+
       const updateData: any = { updated_at: new Date().toISOString() };
       if (title !== undefined) updateData.title = title;
       if (subtitle !== undefined) updateData.subtitle = subtitle;
@@ -621,6 +642,10 @@ class UpdateBannerHandler extends BaseHandler {
       }
       if (image_url !== undefined) {
         updateData.image_url = pickBannerNullableField(image_url);
+      }
+
+      if (updateData.image_url !== undefined) {
+        await cleanupBannerImageOnUrlChange(previousImageUrl, updateData.image_url);
       }
       if (cta_text !== undefined) updateData.cta_text = cta_text;
       if (ctaText !== undefined) updateData.cta_text = ctaText;
@@ -683,6 +708,7 @@ class DeleteBannerHandler extends BaseHandler {
         return this.error('Banner not found', 404);
       }
 
+      await deleteManagedBannerS3Image(banner[0].image_url);
       await deleteRows('banners', { id: bannerId });
 
       // Publish banner change event
@@ -819,6 +845,82 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await updateBannerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.post('/admin/banners/:id/image', async (c) => {
+    try {
+      const bannerId = c.req.param('id');
+      if (!bannerId?.trim()) {
+        return c.json({ error: 'Banner ID is required' }, 400);
+      }
+
+      const existing = await select('banners', { id: bannerId });
+      if (existing.length === 0) {
+        return c.json({ error: 'Banner not found' }, 404);
+      }
+
+      let formData: FormData;
+      try {
+        formData = await c.req.formData();
+      } catch {
+        return c.json({ error: 'Invalid form data' }, 400);
+      }
+
+      const fileEntry = formData.get('file');
+      if (!fileEntry || typeof fileEntry === 'string') {
+        return c.json({ error: 'Missing required field: file' }, 400);
+      }
+
+      const uploadFile = fileEntry as File;
+      const contentType = uploadFile.type || 'application/octet-stream';
+      if (!contentType.startsWith('image/')) {
+        return c.json({ error: 'File must be an image' }, 400);
+      }
+
+      const arrayBuffer = await uploadFile.arrayBuffer();
+      const body = new Uint8Array(arrayBuffer);
+      if (body.length === 0) {
+        return c.json({ error: 'File is empty' }, 400);
+      }
+      if (body.length > BANNER_UPLOAD_MAX_BYTES) {
+        return c.json(
+          {
+            error: `Image must be ${Math.floor(BANNER_UPLOAD_MAX_BYTES / 1024)} KB or smaller`,
+          },
+          400
+        );
+      }
+
+      const previousImageUrl = existing[0].image_url;
+      const { fileKey } = await uploadBannerImageToS3({
+        bannerId,
+        body,
+        contentType,
+      });
+
+      await cleanupBannerImageOnUrlChange(previousImageUrl, fileKey);
+
+      await update(
+        'banners',
+        { id: bannerId },
+        { image_url: fileKey, updated_at: new Date().toISOString() }
+      );
+
+      await publishToSNS('banner-change', {
+        action: 'update',
+        bannerId,
+        position: existing[0].type || 'main',
+      });
+
+      return c.json({
+        success: true,
+        fileKey,
+        imageUrl: fileKey,
+      });
+    } catch (error: any) {
+      console.error('Error uploading banner image:', error);
+      return c.json({ error: error.message || 'Failed to upload banner image' }, 500);
+    }
   });
 
   app.delete('/admin/banners/:id', async (c) => {

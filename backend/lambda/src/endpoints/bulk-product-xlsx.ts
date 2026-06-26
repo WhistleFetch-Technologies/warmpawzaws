@@ -16,7 +16,7 @@ export { getBulkProductTitle };
 
 export const SHEET_NAME = 'NPI';
 
-/** 28 columns. Compulsory ones carry a `*` suffix. */
+/** 26 columns. Compulsory ones carry a `*` suffix. */
 export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Title*',
   'Description',
@@ -39,13 +39,11 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'HSN*',
   'Manufacturing Details',
   'Delivery Regions',
+  'Product Group ID',
   'Variant Attribute 1',
   'Variant Value 1',
   'Variant Attribute 2',
   'Variant Value 2',
-  'Is Default',
-  'Variant SP',
-  'Variant MRP',
 ];
 
 const REQUIRED_COL_LETTERS = {
@@ -91,7 +89,12 @@ const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill
     title: `Product Details (max ${MAX_BULK_PRODUCT_ROWS} rows per file)`,
     fill: YELLOW,
   },
-  { start: 22, end: 28, title: 'Variant Options (same Title + Category = one product)', fill: TAN },
+  {
+    start: 22,
+    end: 26,
+    title: 'Same Product Group ID = one product (variants). Each row: one SKU with its own MRP & SP.',
+    fill: TAN,
+  },
 ];
 
 const WRAP_COL_INDEXES = new Set([2, 3, 6, 13, 20]);
@@ -136,8 +139,6 @@ function buildSampleRow(sampleCategory: string): string[] {
     '62052000',
     'Country of Origin: India. Manufactured by Apparo Lifestyle Pvt Ltd.',
     'Mumbai, Pune',
-    '',
-    '',
     '',
     '',
     '',
@@ -200,7 +201,7 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     cell.value = h;
     if (c === 1) {
       cell.note =
-        'Required (*): Title, Category, Quantity, Image URL(s), MRP, Tax, HSN. SP optional. Product Specifications: Key:Value, Key:Value. Delivery Regions: comma-separated city names. Same Title + Category = one product (variant rows).';
+        'Required (*): Title, Category, Quantity, Image URL(s), MRP, Tax, HSN. SP optional (defaults to MRP). Same Product Group ID = one product (variant rows).';
     }
     if (h === 'Image (1000X1000px)*') {
       cell.note = 'One or more image URLs, comma-separated.';
@@ -312,14 +313,11 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   hsn: 'hsn_code',
   manufacturingdetails: 'manufacturing_details',
   deliveryregions: 'delivery_regions',
+  productgroupid: 'product_group_id',
   variantattribute1: 'variant_attr_1',
   variantvalue1: 'variant_value_1',
   variantattribute2: 'variant_attr_2',
   variantvalue2: 'variant_value_2',
-  isdefault: 'is_default',
-  default: 'is_default',
-  variantsp: 'variant_sp',
-  variantmrp: 'variant_mrp',
   // Legacy 52-column aliases (backward compat for old files)
   benefits: 'benefits',
   uniquesellingpropositions: 'usp',
@@ -461,15 +459,13 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     if (bag.delivery_regions?.trim()) {
       product.delivery_regions = parseDeliveryRegionsCsv(bag.delivery_regions);
     }
+    if (bag.product_group_id?.trim()) product.product_group_id = bag.product_group_id.trim();
     if (bag.colour?.trim()) product.colour = bag.colour.trim();
     if (bag.dimensions_variant?.trim()) product.size_variant = bag.dimensions_variant.trim();
     if (bag.variant_attr_1?.trim()) product.variant_attr_1 = bag.variant_attr_1.trim();
     if (bag.variant_value_1?.trim()) product.variant_value_1 = bag.variant_value_1.trim();
     if (bag.variant_attr_2?.trim()) product.variant_attr_2 = bag.variant_attr_2.trim();
     if (bag.variant_value_2?.trim()) product.variant_value_2 = bag.variant_value_2.trim();
-    if (bag.is_default?.trim()) product.is_default = bag.is_default;
-    if (bag.variant_sp?.trim()) product.variant_sp = bag.variant_sp;
-    if (bag.variant_mrp?.trim()) product.variant_mrp = bag.variant_mrp;
 
     products.push(product);
   });

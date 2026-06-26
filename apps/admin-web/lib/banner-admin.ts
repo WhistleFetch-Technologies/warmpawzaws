@@ -28,6 +28,16 @@ export function getStoredBannerImageUrl(row: {
   return String(raw).trim();
 }
 
+/** Admin list/modal preview — prefer presigned imageUrl from API, else stored value. */
+export function getBannerPreviewImageUrl(row: {
+  image_url?: unknown;
+  imageUrl?: unknown;
+}): string {
+  const apiUrl = String(row.imageUrl ?? '').trim();
+  if (apiUrl) return apiUrl;
+  return getBannerDisplayImageUrl(row);
+}
+
 /** Admin list/preview only — returns stored URL when valid, else empty (gradient preview). */
 export function getBannerDisplayImageUrl(row: {
   image_url?: unknown;

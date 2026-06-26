@@ -7,8 +7,8 @@ import {
   normalizeOptionValues,
   normalizeImagesArray,
   aggregateParentStock,
-  minSkuPrice,
-  getDefaultProductSku,
+  applyListingSkuOrdering,
+  deriveParentFromListingSku,
   type ProductSkuRow,
 } from './product-sku-resolve';
 import { generateVendorProductSku } from './product-ecommerce-validation';
@@ -132,7 +132,7 @@ export async function syncProductSkus(
   vendorId: string,
   productId: string,
   skuInputs: SkuInput[],
-  parentDefaults: { price: number; compare_at_price?: number | null },
+  _parentDefaults?: { price: number; compare_at_price?: number | null },
 ): Promise<ProductSkuRow[]> {
   const existing = await loadProductSkus(productId);
   if (skuInputs.length === 0 && existing.length === 0) {
@@ -144,11 +144,15 @@ export async function syncProductSkus(
   for (let i = 0; i < skuInputs.length; i++) {
     const input = skuInputs[i];
     const option_values = normalizeOptionValues(input.option_values as Record<string, unknown>);
-    const price = Number(input.price) > 0 ? Number(input.price) : parentDefaults.price;
+    const priceNum = Number(input.price);
+    if (!Number.isFinite(priceNum) || priceNum <= 0) {
+      throw new Error('Each SKU must have a selling price greater than 0');
+    }
+    const price = priceNum;
     const compare_at_price =
       input.compare_at_price != null && Number(input.compare_at_price) > 0
         ? Number(input.compare_at_price)
-        : parentDefaults.compare_at_price ?? null;
+        : null;
     const stock = Math.max(0, Math.floor(Number(input.stock) || 0));
     let imagesNorm = normalizeImagesArray(input.images);
     const targetId = await resolveSyncTargetSkuId(input, existingIds, productId, option_values);
@@ -219,27 +223,33 @@ export async function syncProductSkus(
     }
   }
 
-  const synced = await loadProductSkus(productId);
-  const totalStock = aggregateParentStock(synced);
-  const defaultSku = getDefaultProductSku(synced);
-  const defaultPrice = defaultSku ? Number(defaultSku.price) : NaN;
-  const minPrice = minSkuPrice(synced);
-  const parentPrice =
-    Number.isFinite(defaultPrice) && defaultPrice > 0
-      ? defaultPrice
-      : minPrice != null
-        ? minPrice
-        : undefined;
-  const defaultImages = defaultSku ? normalizeImagesArray(defaultSku.images) : [];
+  let synced = await loadProductSkus(productId);
+
+  const ordering = applyListingSkuOrdering(synced);
+  for (const { id, sort_order } of ordering) {
+    await update(
+      'product_skus',
+      { id },
+      { sort_order, updated_at: new Date().toISOString() },
+    );
+  }
+  if (ordering.length > 0) {
+    synced = await loadProductSkus(productId);
+  }
+
+  const parentDerived = deriveParentFromListingSku(synced);
 
   await update(
     'products',
     { id: productId },
     {
       has_variations: synced.length > 0,
-      stock: totalStock,
-      ...(parentPrice != null ? { price: parentPrice } : {}),
-      ...(defaultImages.length > 0 ? { images: defaultImages } : {}),
+      stock: parentDerived.stock,
+      ...(parentDerived.price != null ? { price: parentDerived.price } : {}),
+      ...(parentDerived.compare_at_price != null
+        ? { compare_at_price: parentDerived.compare_at_price }
+        : {}),
+      ...(parentDerived.images != null ? { images: parentDerived.images } : {}),
       updated_at: new Date().toISOString(),
     },
   );
@@ -282,13 +292,17 @@ export async function updateProductSkuStock(
   );
 
   const synced = await loadProductSkus(productId);
-  const parent_stock = aggregateParentStock(synced);
+  const parentDerived = deriveParentFromListingSku(synced);
 
   await update(
     'products',
     { id: productId },
     {
-      stock: parent_stock,
+      stock: parentDerived.stock,
+      ...(parentDerived.price != null ? { price: parentDerived.price } : {}),
+      ...(parentDerived.compare_at_price != null
+        ? { compare_at_price: parentDerived.compare_at_price }
+        : {}),
       updated_at: new Date().toISOString(),
     },
   );
@@ -298,7 +312,7 @@ export async function updateProductSkuStock(
     throw new Error('SKU not found after update');
   }
 
-  return { sku: updatedSku, parent_stock };
+  return { sku: updatedSku, parent_stock: parentDerived.stock };
 }
 
 /** Upsert a single SKU row for bulk upload (does not delete sibling SKUs). */
@@ -306,14 +320,18 @@ export async function upsertProductSkuRow(
   vendorId: string,
   productId: string,
   input: SkuInput,
-  parentDefaults: { price: number; compare_at_price?: number | null },
+  _parentDefaults?: { price: number; compare_at_price?: number | null },
 ): Promise<void> {
   const option_values = normalizeOptionValues(input.option_values as Record<string, unknown>);
-  const price = Number(input.price) > 0 ? Number(input.price) : parentDefaults.price;
+  const priceNum = Number(input.price);
+  if (!Number.isFinite(priceNum) || priceNum <= 0) {
+    throw new Error('SKU selling price must be greater than 0');
+  }
+  const price = priceNum;
   const compare_at_price =
     input.compare_at_price != null && Number(input.compare_at_price) > 0
       ? Number(input.compare_at_price)
-      : parentDefaults.compare_at_price ?? null;
+      : null;
   const stock = Math.max(0, Math.floor(Number(input.stock) || 0));
   let imagesNorm = normalizeImagesArray(input.images);
   if (imagesNorm.length > 0) {
@@ -363,23 +381,31 @@ export async function upsertProductSkuRow(
     });
   }
 
-  const synced = await loadProductSkus(productId);
-  const defaultSku = getDefaultProductSku(synced);
-  const defaultPrice = defaultSku ? Number(defaultSku.price) : NaN;
-  const parentPrice =
-    Number.isFinite(defaultPrice) && defaultPrice > 0
-      ? defaultPrice
-      : minSkuPrice(synced) != null
-        ? minSkuPrice(synced)!
-        : undefined;
+  let synced = await loadProductSkus(productId);
+  const ordering = applyListingSkuOrdering(synced);
+  for (const { id, sort_order } of ordering) {
+    await update(
+      'product_skus',
+      { id },
+      { sort_order, updated_at: new Date().toISOString() },
+    );
+  }
+  if (ordering.length > 0) {
+    synced = await loadProductSkus(productId);
+  }
+  const parentDerived = deriveParentFromListingSku(synced);
 
   await update(
     'products',
     { id: productId },
     {
       has_variations: synced.length > 0,
-      stock: aggregateParentStock(synced),
-      ...(parentPrice != null ? { price: parentPrice } : {}),
+      stock: parentDerived.stock,
+      ...(parentDerived.price != null ? { price: parentDerived.price } : {}),
+      ...(parentDerived.compare_at_price != null
+        ? { compare_at_price: parentDerived.compare_at_price }
+        : {}),
+      ...(parentDerived.images != null ? { images: parentDerived.images } : {}),
       updated_at: new Date().toISOString(),
     },
   );

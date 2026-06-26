@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Package, AlertTriangle, TrendingDown, ArrowUp, ArrowDown, Search } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { IntegerInput } from '@/components/shared/IntegerInput';
 
 export type InventoryManagementHandle = {
   refresh: () => Promise<void>;
@@ -363,15 +364,13 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
                           >
                             <ArrowDown className="w-4 h-4" />
                           </button>
-                          <input
-                            type="number"
-                            min="0"
-                            value={variantStock}
-                            onChange={(e) =>
+                          <IntegerInput
+                            value={String(variantStock)}
+                            onChange={(v) =>
                               updateVariantStock(
                                 product.id,
                                 selectedSkuId,
-                                parseInt(e.target.value, 10) || 0,
+                                parseInt(v, 10) || 0,
                               )
                             }
                             className="w-16 text-center py-1 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
@@ -396,11 +395,9 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
                         >
                           <ArrowDown className="w-4 h-4" />
                         </button>
-                        <input
-                          type="number"
-                          min="0"
-                          value={product.stock}
-                          onChange={(e) => updateStock(product.id, parseInt(e.target.value, 10) || 0)}
+                        <IntegerInput
+                          value={String(product.stock)}
+                          onChange={(v) => updateStock(product.id, parseInt(v, 10) || 0)}
                           className="w-16 text-center py-1 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                         />
                         <button

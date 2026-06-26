@@ -15,6 +15,7 @@ import {
   formatAdminBannerLocationLabel,
   getStoredBannerImageUrl,
   getBannerDisplayImageUrl,
+  getBannerPreviewImageUrl,
   isShopBannerPosition,
   isCheckoutBannerPosition,
   buildShopBannerTarget,
@@ -26,7 +27,9 @@ import {
   type ShopBannerTargetLevel,
 } from '@/lib/banner-admin';
 import { ShopBannerDestinationFields } from '@/components/admin/marketing/ShopBannerDestinationFields';
+import { BannerImageField } from '@/components/admin/marketing/BannerImageField';
 import { getCustomerWebBaseUrl } from '@/lib/api-client';
+import { uploadBannerImage } from '@/lib/banner-image-upload';
 
 // ============================================================================
 // TYPES
@@ -102,6 +105,7 @@ export default function BannersPage() {
   // Filters
   const [filterPosition, setFilterPosition] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [pendingBannerFile, setPendingBannerFile] = useState<File | null>(null);
 
   // Reusable hooks
   const { data: banners, loading, error: dataError, refetch } = useApiData<Banner>({
@@ -278,20 +282,50 @@ export default function BannersPage() {
       return;
     }
 
+    const externalImageUrl = modal.formData.image_url.trim();
     const payload: BannerFormData = {
       ...modal.formData,
-      image_url: modal.formData.image_url.trim(),
+      image_url: pendingBannerFile
+        ? modal.editingItem
+          ? getStoredBannerImageUrl(modal.editingItem)
+          : ''
+        : externalImageUrl,
     };
 
-    if (modal.editingItem) {
-      await update(modal.editingItem.id, payload);
-    } else {
-      await create(payload);
-    }
+    let bannerId = modal.editingItem?.id;
 
-    if (!crudError) {
+    try {
+      if (modal.editingItem) {
+        const updated = await update(modal.editingItem.id, payload);
+        if (!updated) return;
+        bannerId = modal.editingItem.id;
+      } else {
+        const created = await create(payload);
+        if (!created) return;
+        bannerId =
+          (created as { banner?: { id?: string }; id?: string }).banner?.id ??
+          (created as { id?: string }).id;
+      }
+
+      if (pendingBannerFile && bannerId) {
+        await uploadBannerImage(bannerId, pendingBannerFile);
+      }
+
+      setPendingBannerFile(null);
       modal.closeModal();
+    } catch (err: any) {
+      notifications.setError(err?.message || 'Failed to save banner image');
     }
+  };
+
+  const openCreateBanner = () => {
+    setPendingBannerFile(null);
+    modal.openCreate();
+  };
+
+  const openEditBanner = (banner: Banner) => {
+    setPendingBannerFile(null);
+    modal.openEdit(banner);
   };
 
   const handleDelete = async (banner: Banner) => {
@@ -344,7 +378,7 @@ export default function BannersPage() {
             </div>
             <div className="flex items-center gap-3">
               <Button
-                onClick={modal.openCreate}
+                onClick={openCreateBanner}
                 variant="default"
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -421,7 +455,7 @@ export default function BannersPage() {
                   <CardContent className="p-12 text-center">
                     <div className="text-5xl mb-4">🎨</div>
                     <p className="text-gray-500">No banners found</p>
-                    <Button onClick={modal.openCreate} className="mt-4" variant="default">
+                    <Button onClick={openCreateBanner} className="mt-4" variant="default">
                       Create Your First Banner
                     </Button>
                   </CardContent>
@@ -431,12 +465,12 @@ export default function BannersPage() {
               banners.map(banner => (
                 <Card key={banner.id} className="overflow-hidden">
                   <div className="relative h-48 bg-gradient-to-br from-primary/20 to-primary/5">
-                    {getBannerDisplayImageUrl(banner) ? (
+                    {getBannerPreviewImageUrl(banner) ? (
                       <img
                         src={
-                          getBannerDisplayImageUrl(banner).startsWith('/')
-                            ? `${getCustomerWebBaseUrl()}${getBannerDisplayImageUrl(banner)}`
-                            : getBannerDisplayImageUrl(banner)
+                          getBannerPreviewImageUrl(banner).startsWith('/')
+                            ? `${getCustomerWebBaseUrl()}${getBannerPreviewImageUrl(banner)}`
+                            : getBannerPreviewImageUrl(banner)
                         }
                         alt={banner.title}
                         className="w-full h-full object-cover"
@@ -489,7 +523,7 @@ export default function BannersPage() {
                     </div>
                     <div className="flex gap-2">
                       <Button
-                        onClick={() => modal.openEdit(banner)}
+                        onClick={() => openEditBanner(banner)}
                         variant="outline"
                         size="sm"
                         className="flex-1"
@@ -551,21 +585,13 @@ export default function BannersPage() {
                 />
               </div>
 
-              <div>
-                <Label htmlFor="image_url">Image URL</Label>
-                <Input
-                  id="image_url"
-                  type="text"
-                  value={modal.formData.image_url}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    modal.setFormData({ ...modal.formData, image_url: e.target.value })
-                  }
-                  placeholder="https://example.com/image.jpg"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Leave empty for gradient-only. Image is saved exactly as entered.
-                </p>
-              </div>
+              <BannerImageField
+                value={modal.formData.image_url}
+                onChange={(url) =>
+                  modal.setFormData({ ...modal.formData, image_url: url })
+                }
+                onPendingFileChange={setPendingBannerFile}
+              />
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

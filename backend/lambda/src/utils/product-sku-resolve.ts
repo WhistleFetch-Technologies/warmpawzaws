@@ -146,7 +146,36 @@ export function minSkuPrice(skus: ProductSkuRow[]): number | null {
   return prices.length ? Math.min(...prices) : null;
 }
 
-/** Active SKUs ordered by sort_order ASC (stable default-variant selection). */
+/** Lowest SP among active SKUs with stock > 0; null if none in stock. */
+export function minInStockSkuPrice(skus: ProductSkuRow[]): number | null {
+  const prices = sortSkusByDefaultOrder(skus)
+    .filter((s) => (Number(s.stock) || 0) > 0)
+    .map((s) => Number(s.price))
+    .filter((p) => Number.isFinite(p) && p > 0);
+  return prices.length ? Math.min(...prices) : null;
+}
+
+function pickListingSkuFromCandidates(candidates: ProductSkuRow[]): ProductSkuRow | null {
+  const priced = candidates.filter((s) => {
+    const p = Number(s.price);
+    return Number.isFinite(p) && p > 0;
+  });
+  if (priced.length === 0) return null;
+  const minPrice = Math.min(...priced.map((s) => Number(s.price)));
+  const atMin = sortSkusByDefaultOrder(priced).filter(
+    (s) => Number(s.price).toFixed(2) === minPrice.toFixed(2),
+  );
+  return atMin[0] ?? null;
+}
+
+/** SKU for storefront listing: lowest in-stock SP, tie-break sort_order; else lowest SP any stock. */
+export function getListingProductSku(skus: ProductSkuRow[]): ProductSkuRow | null {
+  const active = skus.filter((s) => s.is_active !== false);
+  const inStock = active.filter((s) => (Number(s.stock) || 0) > 0);
+  return pickListingSkuFromCandidates(inStock) ?? pickListingSkuFromCandidates(active);
+}
+
+/** Active SKUs ordered by sort_order ASC (stable tie-break). */
 export function sortSkusByDefaultOrder(skus: ProductSkuRow[]): ProductSkuRow[] {
   return [...skus]
     .filter((s) => s.is_active !== false)
@@ -160,10 +189,122 @@ export function sortSkusByDefaultOrder(skus: ProductSkuRow[]): ProductSkuRow[] {
     });
 }
 
-/** Default sellable SKU: lowest sort_order among active rows (Phase 1 — no is_default column). */
+/** Assign sort_order so listing SKU is 0, others follow stable order. */
+export function applyListingSkuOrdering(skus: ProductSkuRow[]): Array<{ id: string; sort_order: number }> {
+  const listing = getListingProductSku(skus);
+  const listingId = listing?.id ? String(listing.id) : null;
+  const ordered = sortSkusByDefaultOrder(skus.filter((s) => s.id));
+  const assignments: Array<{ id: string; sort_order: number }> = [];
+  let order = 0;
+  if (listingId) {
+    assignments.push({ id: listingId, sort_order: 0 });
+    order = 1;
+  }
+  for (const s of ordered) {
+    const id = String(s.id);
+    if (id === listingId) continue;
+    assignments.push({ id, sort_order: order++ });
+  }
+  return assignments;
+}
+
+/** Parent display fields derived from Listing SKU (sync + storefront). */
+export function deriveParentFromListingSku(skus: ProductSkuRow[]): {
+  stock: number;
+  price?: number;
+  compare_at_price?: number;
+  images?: string[];
+} {
+  const listing = getListingProductSku(skus);
+  const stock = aggregateParentStock(skus);
+  const out: {
+    stock: number;
+    price?: number;
+    compare_at_price?: number;
+    images?: string[];
+  } = { stock };
+
+  if (listing) {
+    const sp = Number(listing.price);
+    if (Number.isFinite(sp) && sp > 0) out.price = sp;
+    const mrp =
+      listing.compare_at_price != null && Number(listing.compare_at_price) > 0
+        ? Number(listing.compare_at_price)
+        : NaN;
+    if (Number.isFinite(mrp) && mrp > 0) out.compare_at_price = mrp;
+    const images = normalizeImagesArray(listing.images);
+    if (images.length > 0) out.images = images;
+  }
+
+  return out;
+}
+
+/** Apply listing SKU fields onto a product row (pure, no I/O). */
+export function applyStorefrontSkuPricingFields(
+  product: Record<string, unknown>,
+  skus: ProductSkuRow[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...product };
+  if (skus.length === 0) {
+    out.has_variants = false;
+    return out;
+  }
+
+  const listingSku = getListingProductSku(skus);
+  const minPrice = minSkuPrice(skus);
+  const minInStock = minInStockSkuPrice(skus);
+  const aggStock = aggregateParentStock(skus);
+
+  const listingSp = listingSku ? Number(listingSku.price) : NaN;
+  const listingCompare =
+    listingSku?.compare_at_price != null && Number(listingSku.compare_at_price) > 0
+      ? Number(listingSku.compare_at_price)
+      : null;
+
+  out.has_variants = true;
+  out.stock = aggStock;
+
+  if (Number.isFinite(listingSp) && listingSp > 0) {
+    out.price = listingSp;
+  } else if (minPrice != null) {
+    out.price = minPrice;
+  }
+
+  if (listingCompare != null) {
+    out.compare_at_price = listingCompare;
+    out.original_price = listingCompare;
+  }
+
+  if (minInStock != null) {
+    out.min_price = minInStock;
+  } else if (minPrice != null) {
+    out.min_price = minPrice;
+  }
+
+  if (listingCompare != null) {
+    out.min_compare_at_price = listingCompare;
+  }
+
+  if (listingSku?.id) {
+    const listingId = String(listingSku.id);
+    const listingOv = normalizeOptionValues(
+      listingSku.option_values as Record<string, unknown>,
+    );
+    out.listing_sku_id = listingId;
+    out.listing_option_values = listingOv;
+    // Alias for one release — consumers should migrate to listing_* fields
+    out.default_sku_id = listingId;
+    out.default_option_values = listingOv;
+  }
+
+  out.price_from = hasVariableSkuPricing(skus);
+
+  return out;
+}
+
+/** @deprecated Use getListingProductSku — listing SKU is the featured variant after sync reorder. */
 export function getDefaultProductSku(skus: ProductSkuRow[]): ProductSkuRow | null {
-  const ordered = sortSkusByDefaultOrder(skus);
-  return ordered[0] ?? null;
+  return getListingProductSku(skus);
 }
 
 /** True when active SKUs have more than one distinct selling price. */
@@ -182,8 +323,8 @@ export function mapSkusToCustomerVariations(
 ): CustomerVariation[] {
   const variationAxes = axes ?? buildVariationAxes(skus);
   const active = skus.filter((s) => s.is_active !== false);
-  const defaultSku = getDefaultProductSku(active);
-  const refPrice = defaultSku ? Number(defaultSku.price) : 0;
+  const listingSku = getListingProductSku(active);
+  const refPrice = listingSku ? Number(listingSku.price) : 0;
 
   return variationAxes.map((axis, idx) => {
     const key = axis.key;

@@ -5,6 +5,9 @@ import {
   mapSkusToCustomerVariations,
   aggregateParentStock,
   minSkuPrice,
+  minInStockSkuPrice,
+  getListingProductSku,
+  applyStorefrontSkuPricingFields,
   optionValuesMatch,
   metadataVariantsToSkus,
   buildGalleryImageUnion,
@@ -77,20 +80,66 @@ describe('product-sku-resolve', () => {
     expect(minSkuPrice(skus)).toBe(100);
   });
 
-  it('getDefaultProductSku picks lowest sort_order active SKU', () => {
-    const ordered: ProductSkuRow[] = [
-      { ...skus[1], sort_order: 1 },
-      { ...skus[0], sort_order: 0 },
-    ];
-    expect(getDefaultProductSku(ordered)?.id).toBe('1');
+  it('minInStockSkuPrice ignores zero-stock SKUs', () => {
+    expect(minInStockSkuPrice(skus)).toBe(100);
+    const allOos = skus.map((s) => ({ ...s, stock: 0 }));
+    expect(minInStockSkuPrice(allOos)).toBeNull();
   });
 
-  it('getDefaultProductSku skips inactive SKUs', () => {
-    const withInactive: ProductSkuRow[] = [
-      { ...skus[0], sort_order: 0, is_active: false },
-      { ...skus[1], sort_order: 1, is_active: true },
+  it('getListingProductSku picks lowest in-stock SP with sort_order tie-break', () => {
+    const variantSkus: ProductSkuRow[] = [
+      { id: 'd', price: 500, stock: 10, sort_order: 0, is_active: true },
+      { id: 'c', price: 400, stock: 5, sort_order: 1, is_active: true },
+      { id: 'o', price: 300, stock: 0, sort_order: 2, is_active: true },
     ];
-    expect(getDefaultProductSku(withInactive)?.id).toBe('2');
+    expect(getListingProductSku(variantSkus)?.id).toBe('c');
+  });
+
+  it('getListingProductSku falls back to lowest price when all OOS', () => {
+    const allOos: ProductSkuRow[] = [
+      { id: 'd', price: 500, stock: 0, sort_order: 0, is_active: true },
+      { id: 'c', price: 400, stock: 0, sort_order: 1, is_active: true },
+    ];
+    expect(getListingProductSku(allOos)?.id).toBe('c');
+  });
+
+  it('applyStorefrontSkuPricingFields sets listing price and price_from', () => {
+    const variantSkus: ProductSkuRow[] = [
+      {
+        id: 'd',
+        price: 500,
+        compare_at_price: 600,
+        stock: 10,
+        sort_order: 0,
+        is_active: true,
+        option_values: { size: 'L' },
+      },
+      {
+        id: 'c',
+        price: 400,
+        compare_at_price: 550,
+        stock: 5,
+        sort_order: 1,
+        is_active: true,
+        option_values: { size: 'S' },
+      },
+    ];
+    const out = applyStorefrontSkuPricingFields({ id: 'p1', price: 500 }, variantSkus);
+    expect(out.price).toBe(400);
+    expect(out.min_price).toBe(400);
+    expect(out.original_price).toBe(550);
+    expect(out.price_from).toBe(true);
+    expect(out.has_variants).toBe(true);
+    expect(out.default_sku_id).toBe('c');
+    expect(out.listing_sku_id).toBe('c');
+  });
+
+  it('getDefaultProductSku aliases getListingProductSku', () => {
+    const variantSkus: ProductSkuRow[] = [
+      { id: 'd', price: 500, stock: 10, sort_order: 0, is_active: true },
+      { id: 'c', price: 400, stock: 5, sort_order: 1, is_active: true },
+    ];
+    expect(getDefaultProductSku(variantSkus)?.id).toBe('c');
   });
 
   it('hasVariableSkuPricing detects multiple prices', () => {

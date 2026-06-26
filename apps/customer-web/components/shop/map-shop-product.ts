@@ -33,6 +33,12 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
     vendor_id: String(p.vendor_id ?? ''),
     vendor_name: '',
     is_active: p.is_active !== false,
+    has_variants: Boolean(p.has_variants ?? p.has_variations),
+    price_from: Boolean(p.price_from),
+    min_price:
+      p.min_price != null && Number.isFinite(Number(p.min_price))
+        ? Number(p.min_price)
+        : undefined,
   };
 }
 

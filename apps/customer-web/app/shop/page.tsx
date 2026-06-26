@@ -323,6 +323,10 @@ export default function ShopPage() {
   };
 
   const addToCart = (product: ShopProduct) => {
+    if (product.has_variants) {
+      router.push(`/shop/${encodeURIComponent(product.id)}`);
+      return;
+    }
     updateProductQuantity(
       product,
       (cart.find((item) => item.product_id === product.id)?.quantity ?? 0) + 1
