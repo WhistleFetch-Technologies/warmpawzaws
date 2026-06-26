@@ -27,6 +27,7 @@ import {
   extractMealSchedulePolicy,
   minDeliveryTimeHm,
 } from '@/lib/meal-checkout-schedule';
+import { formatDeliveryAddressLine } from '@/lib/ecommerce/delivery-address-display';
 
 interface MealOrderCheckoutProps {
   phone: string;
@@ -515,19 +516,21 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
           />
         </div>
 
-        <div>
+        <div className="min-w-0">
           <Label className="flex items-center gap-2"><MapPin className="w-4 h-4" /> Delivery address</Label>
           {addresses.length === 0 ? (
             <p className="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">Add an address in your profile first.</p>
           ) : (
             <Select value={addressId} onValueChange={setAddressId} required>
-              <SelectTrigger>
-                <SelectValue placeholder="Select address" />
+              <SelectTrigger className="min-w-0 overflow-hidden px-3 [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:overflow-hidden [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left">
+                <SelectValue placeholder="Select address">
+                  {selectedAddress ? formatDeliveryAddressLine(selectedAddress) : undefined}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {addresses.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.addressLine1}, {a.city} {a.pincode}
+                  <SelectItem key={a.id} value={a.id} className="items-start py-2">
+                    <span className="line-clamp-2 break-words">{formatDeliveryAddressLine(a)}</span>
                   </SelectItem>
                 ))}
               </SelectContent>

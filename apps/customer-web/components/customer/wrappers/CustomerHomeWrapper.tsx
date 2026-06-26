@@ -4483,7 +4483,7 @@ export function CustomerHomeWrapper({
         <MyBookings 
           phone={phone} 
           onBack={handleMyBookingsBack}
-          onCloseToHome={handleBack}
+          onCloseToHome={goToHome}
           initialBookingId={selectedBookingId || undefined}
           onCloseInitialBookingDetail={returnToAccountMenuBookings}
           onReorderMedicine={handleReorderMedicine}
