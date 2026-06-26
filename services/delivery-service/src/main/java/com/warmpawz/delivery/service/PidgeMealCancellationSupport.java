@@ -57,6 +57,10 @@ public final class PidgeMealCancellationSupport {
 			int idx = auditReason.indexOf(";remark=");
 			if (idx >= 0) {
 				String remark = auditReason.substring(idx + 8).trim();
+				int nextField = remark.indexOf(';');
+				if (nextField >= 0) {
+					remark = remark.substring(0, nextField).trim();
+				}
 				if (!remark.isEmpty() && !remark.startsWith("pidge_")) {
 					return truncate(remark, 200);
 				}
