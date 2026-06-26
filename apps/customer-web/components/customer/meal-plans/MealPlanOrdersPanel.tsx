@@ -29,6 +29,7 @@ import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
 import {
   rememberSubscriptionsBackFromCurrentUrl,
   rememberSubscriptionsBackSpaScreen,
+  goBackOrReplace,
 } from '@/lib/go-back-or-replace';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
@@ -473,13 +474,12 @@ function MealPlanOrdersPanelLive({
   };
 
   const handleBackClick = () => {
-    // Shell passes onBack → My Bookings. Standalone must not use router.back() after visiting
-    // /subscriptions from this page — history would return to subscriptions instead of bookings.
+    // Shell passes onBack → My Bookings. Standalone: pop history (avoid push loop with /bookings).
     if (onBack) {
       onBack();
       return;
     }
-    router.push('/bookings');
+    goBackOrReplace(router, '/bookings');
   };
 
   const openSubscriptions = () => {
