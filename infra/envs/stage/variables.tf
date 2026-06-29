@@ -10,9 +10,3 @@ variable "alert_emails" {
   default     = []
 }
 
-variable "opensearch_master_password" {
-  description = "OpenSearch master password"
-  type        = string
-  sensitive   = true
-}
-

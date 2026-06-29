@@ -58,11 +58,6 @@ output "s3_uploads_bucket" {
   value       = module.s3.user_uploads_bucket_name
 }
 
-output "opensearch_endpoint" {
-  description = "OpenSearch endpoint"
-  value       = var.enable_opensearch ? module.opensearch[0].domain_endpoint : null
-}
-
 # Frontend Deployment Outputs
 
 output "cloudfront_admin_distribution_id" {

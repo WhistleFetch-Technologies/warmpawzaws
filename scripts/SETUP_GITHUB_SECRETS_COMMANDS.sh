@@ -23,11 +23,6 @@ gh secret set GOOGLE_MAPS_API_KEY --body "AIzaSyC6iwRfS_r1zRtjiGyLjgueZ_rDV_l7yo
 gh secret set SHIPROCKET_EMAIL --body "ketanh@warmpawz.com"
 gh secret set SHIPROCKET_PASSWORD --body "znoMnd9FkntmRuXCq\$d@eKfQj1M8oXGj."
 
-# OpenSearch Passwords (generate strong passwords or use defaults)
-gh secret set DEV_OPENSEARCH_PASSWORD --body "DevPassword123!@#"
-gh secret set STAGE_OPENSEARCH_PASSWORD --body "StagePassword456!@#"
-gh secret set PROD_OPENSEARCH_PASSWORD --body "ProdPassword789!@#"
-
 # Frontend Keys
 gh secret set NEXT_PUBLIC_RAZORPAY_KEY_DEV --body "rzp_test_Rnp57suJH3wzUl"
 gh secret set NEXT_PUBLIC_RAZORPAY_KEY_STAGE --body "rzp_test_Rnp57suJH3wzUl"

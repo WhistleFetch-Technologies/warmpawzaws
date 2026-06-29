@@ -16,17 +16,17 @@ AWS_ACCOUNT_ID             # Your AWS account ID
 
 #### Development
 ```
-DEV_OPENSEARCH_PASSWORD    # OpenSearch master password for dev (optional)
+# (no environment-specific secrets beyond shared AWS/integration keys)
 ```
 
 #### Stage
 ```
-STAGE_OPENSEARCH_PASSWORD  # OpenSearch master password for stage
+# (no environment-specific secrets beyond shared AWS/integration keys)
 ```
 
 #### Production
 ```
-PROD_OPENSEARCH_PASSWORD   # OpenSearch master password for production
+# (no environment-specific secrets beyond shared AWS/integration keys)
 ```
 
 ### External Integrations

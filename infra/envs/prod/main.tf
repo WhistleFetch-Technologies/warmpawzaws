@@ -261,7 +261,6 @@ module "lambda" {
       GOOGLE_MAPS_SECRET_ARN              = module.secrets.google_maps_secret_arn
       SHIPROCKET_SECRET_ARN               = module.secrets.shiprocket_secret_arn
       AFTERSHIP_SECRET_ARN                = module.secrets.aftership_secret_arn
-      OPENSEARCH_ENDPOINT                 = module.opensearch.domain_endpoint
     },
     local.delivery_stack_live ? {
       DELIVERY_SERVICE_BASE_URL = "http://${module.delivery_service_ecs[0].internal_alb_dns_name}"
@@ -276,7 +275,6 @@ module "lambda" {
   dynamodb_arns        = [module.dynamodb.sessions_table_arn, module.dynamodb.cache_table_arn]
   sns_arns             = [module.sns.user_notifications_topic_arn, module.sns.booking_updates_topic_arn, module.sns.payment_events_topic_arn]
   sqs_arns             = [module.sqs.booking_processing_queue_arn, module.sqs.payment_processing_queue_arn, module.sqs.notification_delivery_queue_arn]
-  opensearch_arns      = [module.opensearch.domain_arn]
   dlq_arn              = module.sqs.dlq_arn
   rds_proxy_arn        = module.rds.proxy_arn
   rds_proxy_db_username = module.rds.master_username
@@ -462,26 +460,5 @@ module "api_gateway" {
     vpc_link_security_group_ids = [aws_security_group.apigw_delivery_vpc_link[0].id]
     alb_listener_arn            = module.delivery_service_ecs[0].alb_listener_arn
   } : null
-}
-
-module "opensearch" {
-  source = "../../modules/opensearch"
-
-  environment                = local.environment
-  vpc_id                     = module.vpc.vpc_id
-  vpc_cidr                   = "10.2.0.0/16"
-  private_subnet_ids         = module.vpc.private_subnet_ids
-  allowed_security_groups    = [module.lambda.lambda_security_group_id]
-  instance_type              = "r6g.large.search"
-  instance_count             = 3
-  dedicated_master_enabled   = true
-  master_instance_type       = "r6g.large.search"
-  master_instance_count      = 3
-  zone_awareness_enabled     = true
-  availability_zone_count    = 3
-  volume_size                = 100
-  master_user_password       = var.opensearch_master_password
-  create_service_linked_role = false
-  alarm_actions              = [module.sns.system_alerts_topic_arn]
 }
 

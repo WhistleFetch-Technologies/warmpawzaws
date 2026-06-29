@@ -14,15 +14,6 @@ alert_emails = [
 ]
 
 # ===========================================
-# OPENSEARCH
-# ===========================================
-
-# OpenSearch master password
-# IMPORTANT: Use strong password and store in Secrets Manager for production
-# Minimum 8 characters, must contain uppercase, lowercase, number, and special char
-opensearch_master_password = "REPLACE_WITH_SECURE_PASSWORD"
-
-# ===========================================
 # OPTIONAL: CUSTOM DOMAIN (PRODUCTION ONLY)
 # ===========================================
 
@@ -34,9 +25,6 @@ opensearch_master_password = "REPLACE_WITH_SECURE_PASSWORD"
 # ===========================================
 # FEATURE FLAGS (OPTIONAL)
 # ===========================================
-
-# Enable OpenSearch in development (disabled by default for cost)
-# enable_opensearch = false
 
 # ===========================================
 # DELIVERY SERVICE (Java on ECS) — optional

@@ -5,7 +5,7 @@
 # This workflow:
 # - Builds backend (Lambda) then later builds all three web frontends (admin-web, vendor-web, customer-web).
 # - Terraform apply: prod uses existing VPC (terraform.tfvars: existing_vpc_id, existing_nat_gateway_id);
-#   RDS uses existing DB subnet group in its own VPC (use_existing_subnet_group_vpc); CloudFront (3), SQS, SNS, OpenSearch, secrets.
+#   RDS uses existing DB subnet group in its own VPC (use_existing_subnet_group_vpc); CloudFront (3), SQS, SNS, secrets.
 # - DB migrations + seed (idempotent) against prod RDS.
 # - Deploys web assets to prod S3 + CloudFront invalidation.
 # - Capacitor/native app build: use mobile-build-android.yml and mobile-build-ios.yml (or add later).
@@ -112,7 +112,6 @@ jobs:
         run: |
           terraform plan \
             -var-file=terraform.tfvars \
-            -var="opensearch_master_password=${{ secrets.PROD_OPENSEARCH_PASSWORD }}" \
             -out=tfplan
       - uses: actions/upload-artifact@v4
         with:

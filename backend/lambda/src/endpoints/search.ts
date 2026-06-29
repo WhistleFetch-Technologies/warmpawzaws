@@ -1,23 +1,13 @@
 /**
  * ============================================================================
- * SEARCH ENDPOINTS - LAMBDA VERSION WITH OPENSEARCH FALLBACK
+ * SEARCH ENDPOINTS - PostgreSQL-backed universal search
  * ============================================================================
- * 
- * Handles search for services and vendors with intelligent fallback:
- * 1. Try OpenSearch (if available)
- * 2. Fall back to PostgreSQL full-text search
- * 
- * - Universal service discovery
- * - Vendor search
- * - Service search
- * - Problem-based discovery
- * 
- * Date: 2025-01-28 (Updated: 2026-01-02)
- * Migration: Supabase to AWS Lambda
  *
- * Service result ids: OpenSearch warmpawz-services documents MUST use vendor_services.id
- * (same as SQL fallback) so customer /booking/:id and GET /services/:id resolve correctly.
- * Canonical service detail for that id: GET /services/:serviceId (service_catalog row first, else vendor_services).
+ * - Universal service discovery (GET /search)
+ * - Vendor and service keyword search via PostgreSQL
+ * - Hub browse, taxonomy resolution, discovery parity with discover-services
+ *
+ * Service result ids use vendor_services.id so customer /booking/:id and GET /services/:id resolve.
  * ============================================================================
  */
 
@@ -28,7 +18,6 @@ import { query, select } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import {
-  expandSearchCategoryForOpenSearch,
   expandSearchCategoryForSql,
   getSearchCategoryIlikePatterns,
   isHubBrowseCategoryOnly,
@@ -41,7 +30,6 @@ import {
   hubSlugToDiscoveryContext,
   resolveEffectiveSearchCategory,
   resolveSearchUserCoords,
-  vendorRowIsOnline,
 } from '../lib/search-discovery-parity';
 import {
   buildDiscoveryVendorExistsSql,
@@ -57,15 +45,7 @@ import {
   type CategorySource,
   type SearchCategoryMatch,
 } from '../lib/search-taxonomy';
-
-// Import OpenSearch client with fallback handling
-let openSearchClient: any = null;
-try {
-  const { getOpenSearchClient } = require('../utils/opensearch-client');
-  openSearchClient = getOpenSearchClient();
-} catch (error) {
-  console.warn('⚠️  OpenSearch client not available, will use SQL fallback');
-}
+import { hasFtsEntityIds, resolveSearchEntityIds, type SearchEntityIds } from '../lib/sql-search-fts';
 
 /** Whitespace-separated query → tokens (cap avoids huge SQL from pasted text). */
 function searchTokens(searchQuery: string, maxTokens = 6): string[] {
@@ -77,7 +57,7 @@ function searchTokens(searchQuery: string, maxTokens = 6): string[] {
   return raw.slice(0, maxTokens);
 }
 
-/** Fill missing listing photos from RDS when OpenSearch index only has profile_image. */
+/** Fill missing listing photos from RDS when search results only have profile_image. */
 async function enrichSearchResultPhotos(
   vendors: Array<{ id: string; profileImage?: string | null; vendorId?: string }>,
   services: Array<{ vendorId?: string; vendorProfileImage?: string | null }>
@@ -188,8 +168,12 @@ function isProductSearchHub(category: string | undefined): boolean {
  * Query the products table for a given set of search tokens.
  * Returns empty array if tokens are empty or if the products table does not exist.
  */
-async function queryProductsForSearch(tokens: string[], productLimit: number): Promise<any[]> {
-  if (tokens.length === 0) return [];
+async function queryProductsForSearch(
+  tokens: string[],
+  productLimit: number,
+  ftsProductIds?: string[]
+): Promise<any[]> {
+  if (tokens.length === 0 && !(ftsProductIds && ftsProductIds.length > 0)) return [];
   let productQuery = `
     SELECT p.id, p.name, p.description, p.price, p.image_url, p.thumbnail_url,
            p.category, p.vendor_id, v.business_name AS vendor_name
@@ -199,11 +183,19 @@ async function queryProductsForSearch(tokens: string[], productLimit: number): P
   `;
   const productParams: any[] = [];
   let productParamIndex = 1;
-  for (const token of tokens) {
-    productQuery += ` AND (p.name ILIKE $${productParamIndex} OR COALESCE(p.description, '') ILIKE $${productParamIndex})`;
-    productParams.push(`%${token}%`);
+
+  if (ftsProductIds && ftsProductIds.length > 0) {
+    productQuery += ` AND p.id = ANY($${productParamIndex}::uuid[])`;
+    productParams.push(ftsProductIds);
     productParamIndex++;
+  } else {
+    for (const token of tokens) {
+      productQuery += ` AND (p.name ILIKE $${productParamIndex} OR COALESCE(p.description, '') ILIKE $${productParamIndex})`;
+      productParams.push(`%${token}%`);
+      productParamIndex++;
+    }
   }
+
   productQuery += ` ORDER BY p.created_at DESC LIMIT $${productParamIndex}`;
   productParams.push(productLimit);
   try {
@@ -292,45 +284,7 @@ class UniversalSearchHandler extends BaseHandler {
       searchText: residual.searchText,
     });
 
-    // Try OpenSearch first if available
-    if (openSearchClient && process.env.ENABLE_OPENSEARCH === 'true') {
-      try {
-        console.log('🔍 Using OpenSearch for search query:', searchQuery);
-        const result = await this.searchWithOpenSearch(
-          searchQuery,
-          effectiveCategory,
-          location,
-          limit,
-          userCoords,
-          qs,
-          hubContext,
-          taxonomyMeta,
-          residual.tokens
-        );
-        logSearchTaxonomyDebug({
-          query: searchQuery,
-          categories,
-          topHubSlug: taxonomy.topHubSlug,
-          explicitCategory,
-          effectiveCategory,
-          categorySource,
-          searchMethod: 'opensearch',
-          taxonomySource: taxonomy.source,
-          hubDrivenRetrieval: hubFromTaxonomy,
-          searchText: residual.searchText,
-          searchTokens: residual.tokens,
-        });
-        return result;
-      } catch (error) {
-        console.warn('⚠️  OpenSearch failed, falling back to SQL:', error);
-        // Fall through to SQL search
-      }
-    } else {
-      console.log('🔍 Using SQL fallback for search query:', searchQuery);
-    }
-
-    // ✅ SQL Fallback: Search vendors and services using PostgreSQL
-    const result = await this.searchWithSQL(
+    const result = await this.searchWithPostgres(
       searchQuery,
       effectiveCategory,
       location,
@@ -348,7 +302,7 @@ class UniversalSearchHandler extends BaseHandler {
       explicitCategory,
       effectiveCategory,
       categorySource,
-      searchMethod: 'sql-fallback',
+      searchMethod: 'sql',
       taxonomySource: taxonomy.source,
       hubDrivenRetrieval: hubFromTaxonomy,
       searchText: residual.searchText,
@@ -358,267 +312,10 @@ class UniversalSearchHandler extends BaseHandler {
   }
 
   /**
-   * Search using OpenSearch (primary method)
+   * Search using PostgreSQL
+   * LIVE STATUS: Only returns vendors that meet live eligibility criteria
    */
-  private async searchWithOpenSearch(
-    searchQuery: string,
-    category: string | undefined,
-    location: string | undefined,
-    limit: number,
-    userCoords: { lat: number; lng: number } | null,
-    qs: Record<string, string | undefined> | undefined,
-    hubContext: ReturnType<typeof hubSlugToDiscoveryContext>,
-    taxonomyMeta: Record<string, unknown>,
-    keywordTokens: string[]
-  ): Promise<HandlerResponse> {
-    const searchBody: any = {
-      query: {
-        bool: {
-          must: [],
-          filter: [],
-        },
-      },
-      size: limit,
-    };
-
-    const productHub = isProductSearchHub(category);
-
-    // Residual tokens after category constraint (taxonomy hub + intent/pet stripping).
-    if (keywordTokens.length > 0) {
-      const searchFields = productHub
-        ? ['business_name^3', 'service_name^2', 'name^2', 'description', 'specialization']
-        : ['business_name^3', 'service_name^2', 'description', 'specialization'];
-      searchBody.query.bool.must.push({
-        multi_match: {
-          query: keywordTokens.join(' '),
-          fields: searchFields,
-          fuzziness: 'AUTO' as const,
-        },
-      });
-    } else if (searchBody.query.bool.must.length === 0) {
-      searchBody.query.bool.must.push({ match_all: {} });
-    }
-
-    // Category filter applies to vendors/services; product rows use product.category, not hub aliases.
-    const categoryTerms = expandSearchCategoryForOpenSearch(category);
-    if (categoryTerms?.length) {
-      if (productHub) {
-        searchBody.query.bool.filter.push({
-          bool: {
-            should: [
-              { term: { _index: 'warmpawz-products' } },
-              { terms: { category: categoryTerms } },
-            ],
-            minimum_should_match: 1,
-          },
-        });
-      } else {
-        searchBody.query.bool.filter.push({ terms: { category: categoryTerms } });
-      }
-    }
-
-    // Add location filter
-    if (location) {
-      searchBody.query.bool.filter.push({ term: { city: location.toLowerCase() } });
-    }
-
-    // Status filters apply to vendors/services only; warmpawz-products has no vendor status field.
-    if (productHub) {
-      searchBody.query.bool.filter.push({
-        bool: {
-          should: [
-            { term: { _index: 'warmpawz-products' } },
-            {
-              bool: {
-                must: [
-                  { term: { is_active: true } },
-                  { terms: { status: ['approved', 'active', 'activated'] } },
-                ],
-              },
-            },
-          ],
-          minimum_should_match: 1,
-        },
-      });
-    } else {
-      searchBody.query.bool.filter.push({ term: { is_active: true } });
-      searchBody.query.bool.filter.push({
-        terms: { status: ['approved', 'active', 'activated'] },
-      });
-    }
-
-    const searchIndexes = productHub
-      ? 'warmpawz-vendors,warmpawz-services,warmpawz-products'
-      : 'warmpawz-vendors,warmpawz-services';
-
-    const result = await openSearchClient.search({
-      index: searchIndexes,
-      body: searchBody,
-    });
-
-    const hits = result.body.hits.hits;
-    const vendors: any[] = [];
-    const services: any[] = [];
-    const products: any[] = [];
-
-    hits.forEach((hit: { _index: string; _source: Record<string, unknown> }) => {
-      const source = hit._source;
-      if (hit._index.includes('products')) {
-        products.push({
-          id: source.id,
-          productName: source.name,
-          description: source.description ?? null,
-          price: source.price ?? null,
-          imageUrl: (source.image_url ?? source.thumbnail_url) ?? null,
-          category: source.category ?? null,
-          vendorId: source.vendor_id ?? null,
-          vendorName: source.vendor_name ?? null,
-        });
-      } else if (hit._index.includes('vendors')) {
-        const loc = source.location;
-        const latRaw =
-          loc != null && typeof loc === 'object'
-            ? parseFloat(String((loc as any).lat ?? (loc as any).latitude ?? ''))
-            : source.latitude != null
-              ? parseFloat(String(source.latitude))
-              : NaN;
-        const lngRaw =
-          loc != null && typeof loc === 'object'
-            ? parseFloat(String((loc as any).lon ?? (loc as any).lng ?? (loc as any).longitude ?? ''))
-            : source.longitude != null
-              ? parseFloat(String(source.longitude))
-              : NaN;
-        const lat = Number.isFinite(latRaw) ? latRaw : NaN;
-        const lng = Number.isFinite(lngRaw) ? lngRaw : NaN;
-        const vlat = Number.isFinite(lat) ? lat : null;
-        const vlng = Number.isFinite(lng) ? lng : null;
-        let distanceKm: number | null = null;
-        if (userCoords && vlat != null && vlng != null) {
-          distanceKm = haversineKm(userCoords.lat, userCoords.lng, vlat, vlng);
-        }
-        const isOnlineRaw = source.is_online ?? source.isOnline;
-        if (hubContext && !vendorRowIsOnline(isOnlineRaw)) {
-          return;
-        }
-        vendors.push({
-          id: source.id,
-          businessName: source.business_name,
-          ownerName: source.owner_name,
-          category: source.category ?? source.role ?? source.role_name ?? null,
-          city: source.city,
-          state: source.state,
-          rating: source.rating || 0,
-          completedBookings: source.completed_bookings || 0,
-          profileImage: source.profile_image ?? source.profileImage,
-          address: source.address,
-          landmark: source.landmark,
-          pincode: source.pincode,
-          latitude: vlat,
-          longitude: vlng,
-          distanceKm,
-          is_online: isOnlineRaw,
-        });
-      } else {
-        const sloc = source.location;
-        const slatRaw =
-          sloc != null && typeof sloc === 'object'
-            ? parseFloat(String((sloc as any).lat ?? (sloc as any).latitude ?? ''))
-            : source.vendor_latitude != null
-              ? parseFloat(String(source.vendor_latitude))
-              : NaN;
-        const slngRaw =
-          sloc != null && typeof sloc === 'object'
-            ? parseFloat(String((sloc as any).lon ?? (sloc as any).lng ?? (sloc as any).longitude ?? ''))
-            : source.vendor_longitude != null
-              ? parseFloat(String(source.vendor_longitude))
-              : NaN;
-        const slat = Number.isFinite(slatRaw) ? slatRaw : NaN;
-        const slng = Number.isFinite(slngRaw) ? slngRaw : NaN;
-        const svcVlat = Number.isFinite(slat) ? slat : null;
-        const svcVlng = Number.isFinite(slng) ? slng : null;
-        let distanceKm: number | null = null;
-        if (userCoords && svcVlat != null && svcVlng != null) {
-          distanceKm = haversineKm(userCoords.lat, userCoords.lng, svcVlat, svcVlng);
-        }
-        services.push({
-          id: source.id,
-          serviceName: source.service_name || source.name,
-          description: source.description,
-          price: source.price,
-          vendorId: source.vendor_id,
-          vendorName: source.vendor_name,
-          city: source.city,
-          state: source.state,
-          category: source.category ?? source.service_type,
-          imageUrl:
-            typeof source.image_url === 'string' ? source.image_url : source.service_image ?? undefined,
-          vendorProfileImage: source.vendor_profile_image ?? source.vendor_profile_photo,
-          vendorAddress: source.vendor_address ?? source.address,
-          vendorLandmark: source.vendor_landmark ?? source.landmark,
-          vendorPincode: source.vendor_pincode ?? source.pincode,
-          vendorLatitude: svcVlat,
-          vendorLongitude: svcVlng,
-          distanceKm,
-        });
-      }
-    });
-
-    await enrichSearchResultPhotos(vendors, services);
-
-    const parity = await applySearchDiscoveryParity({
-      vendors,
-      services,
-      category,
-      searchQuery,
-      queryString: qs,
-    });
-
-    let finalVendors = parity.vendors;
-    let finalServices = parity.services;
-    if (hubContext) {
-      const styles = acceptableStylesForService(hubContext.serviceStyle);
-      finalVendors = await gateVendorsByListableService(parity.vendors, styles, {
-        sittingRelaxed: !!hubContext.sittingDiscoveryRelaxed,
-      });
-      const keptIds = new Set(finalVendors.map((v) => String(v.id)));
-      finalServices = filterServicesToKeptVendors(parity.services, keptIds);
-    }
-
-    const finalProducts = products;
-
-    // Hub-browse fallback: taxonomy resolved a hub but no results matched the text tokens.
-    // Re-run as pure hub browse (drop text tokens) so users never see "No Results Found"
-    // when a valid service category exists.
-    const osCategorySource = (taxonomyMeta as any).categorySource as CategorySource;
-    if (
-      finalVendors.length === 0 &&
-      finalServices.length === 0 &&
-      finalProducts.length === 0 &&
-      osCategorySource === 'taxonomy' &&
-      keywordTokens.length > 0
-    ) {
-      return this.searchWithOpenSearch(
-        searchQuery, category, location, limit, userCoords, qs, hubContext, taxonomyMeta, []
-      );
-    }
-
-    return this.success({
-      query: searchQuery,
-      ...taxonomyMeta,
-      vendors: finalVendors,
-      services: finalServices,
-      products: finalProducts,
-      total: finalVendors.length + finalServices.length + finalProducts.length,
-      searchMethod: 'opensearch',
-      discoveryParity: parity.discoveryApplied,
-    });
-  }
-
-  /**
-   * Search using SQL (fallback method)
-   * ✅ LIVE STATUS: Only returns vendors that meet live eligibility criteria
-   */
-  private async searchWithSQL(
+  private async searchWithPostgres(
     searchQuery: string,
     category: string | undefined,
     location: string | undefined,
@@ -660,8 +357,33 @@ class UniversalSearchHandler extends BaseHandler {
       keywordTokens.length > 0 ? keywordTokens.join(' ') : ''
     );
 
-    for (const token of keywordTokens) {
-      vendorsQuery += ` AND (
+    const useFts = process.env.SEARCH_USE_FTS === 'true';
+    let ftsIds: SearchEntityIds | null = null;
+    if (useFts && keywordTokens.length > 0) {
+      ftsIds = await resolveSearchEntityIds(keywordTokens);
+    }
+    const ftsActive = ftsIds != null && hasFtsEntityIds(ftsIds);
+
+    if (ftsActive && ftsIds) {
+      const vendorFtsClauses: string[] = [];
+      if (ftsIds.vendorIds.length > 0) {
+        vendorFtsClauses.push(`v.id = ANY($${paramIndex}::uuid[])`);
+        params.push(ftsIds.vendorIds);
+        paramIndex++;
+      }
+      if (ftsIds.serviceIds.length > 0) {
+        vendorFtsClauses.push(
+          `EXISTS (SELECT 1 FROM vendor_services vs_fts WHERE vs_fts.vendor_id = v.id AND vs_fts.id = ANY($${paramIndex}::uuid[]))`
+        );
+        params.push(ftsIds.serviceIds);
+        paramIndex++;
+      }
+      if (vendorFtsClauses.length > 0) {
+        vendorsQuery += ` AND (${vendorFtsClauses.join(' OR ')})`;
+      }
+    } else {
+      for (const token of keywordTokens) {
+        vendorsQuery += ` AND (
         v.business_name ILIKE $${paramIndex} OR
         v.owner_name ILIKE $${paramIndex} OR
         v.specialization ILIKE $${paramIndex} OR
@@ -677,8 +399,9 @@ class UniversalSearchHandler extends BaseHandler {
             )
         )
       )`;
-      params.push(`%${token}%`);
-      paramIndex++;
+        params.push(`%${token}%`);
+        paramIndex++;
+      }
     }
 
     const vendorCategoryValues = expandSearchCategoryForSql(category);
@@ -794,15 +517,32 @@ class UniversalSearchHandler extends BaseHandler {
     const serviceParams: any[] = [isBrowseAll];
     let serviceParamIndex = 2;
 
-    for (const token of keywordTokens) {
-      servicesQuery += ` AND (
+    if (ftsActive && ftsIds) {
+      const serviceFtsClauses: string[] = [];
+      if (ftsIds.serviceIds.length > 0) {
+        serviceFtsClauses.push(`vs.id = ANY($${serviceParamIndex}::uuid[])`);
+        serviceParams.push(ftsIds.serviceIds);
+        serviceParamIndex++;
+      }
+      if (ftsIds.vendorIds.length > 0) {
+        serviceFtsClauses.push(`v.id = ANY($${serviceParamIndex}::uuid[])`);
+        serviceParams.push(ftsIds.vendorIds);
+        serviceParamIndex++;
+      }
+      if (serviceFtsClauses.length > 0) {
+        servicesQuery += ` AND (${serviceFtsClauses.join(' OR ')})`;
+      }
+    } else {
+      for (const token of keywordTokens) {
+        servicesQuery += ` AND (
         vs.service_name ILIKE $${serviceParamIndex}
         OR COALESCE(vs.custom_description, '') ILIKE $${serviceParamIndex}
         OR COALESCE(vs.sub_category, '') ILIKE $${serviceParamIndex}
         OR COALESCE(vs.category, '') ILIKE $${serviceParamIndex}
       )`;
-      serviceParams.push(`%${token}%`);
-      serviceParamIndex++;
+        serviceParams.push(`%${token}%`);
+        serviceParamIndex++;
+      }
     }
 
     if ((hubBrowseOnly || (hubContext && category)) && vendorIdsForServices.length > 0) {
@@ -942,7 +682,11 @@ class UniversalSearchHandler extends BaseHandler {
 
     // Query ecommerce products for shop/pharmacy hub searches.
     const finalProducts = isProductSearchHub(category)
-      ? await queryProductsForSearch(keywordTokens, Math.min(limit, 20))
+      ? await queryProductsForSearch(
+          keywordTokens,
+          Math.min(limit, 20),
+          ftsActive && ftsIds?.productIds.length ? ftsIds.productIds : undefined
+        )
       : [];
 
     // Hub-browse fallback: taxonomy resolved a hub but no results matched the text tokens.
@@ -956,7 +700,7 @@ class UniversalSearchHandler extends BaseHandler {
       sqlCategorySource === 'taxonomy' &&
       keywordTokens.length > 0
     ) {
-      return this.searchWithSQL(
+      return this.searchWithPostgres(
         searchQuery, category, location, limit, userCoords, qs, hubContext, taxonomyMeta, []
       );
     }
@@ -968,7 +712,7 @@ class UniversalSearchHandler extends BaseHandler {
       services: finalServices,
       products: finalProducts,
       total: finalVendors.length + finalServices.length + finalProducts.length,
-      searchMethod: 'sql-fallback',
+      searchMethod: 'sql',
       discoveryParity: parity.discoveryApplied,
     });
   }

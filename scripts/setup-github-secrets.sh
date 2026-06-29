@@ -47,14 +47,6 @@ gh secret set SHIPROCKET_PASSWORD --repo "$REPO" --body 'znoMnd9FkntmRuXCq$d@eKf
 echo "✅ Shiprocket credentials set"
 
 echo ""
-echo "📝 Setting OpenSearch Password (generated)..."
-OPENSEARCH_PWD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 20)
-gh secret set DEV_OPENSEARCH_PASSWORD --repo "$REPO" --body "${OPENSEARCH_PWD}Aa1!"
-gh secret set STAGE_OPENSEARCH_PASSWORD --repo "$REPO" --body "${OPENSEARCH_PWD}Bb2!"
-gh secret set PROD_OPENSEARCH_PASSWORD --repo "$REPO" --body "${OPENSEARCH_PWD}Cc3!"
-echo "✅ OpenSearch passwords set"
-
-echo ""
 echo "========================================"
 echo "✅ All secrets configured successfully!"
 echo ""
@@ -66,8 +58,5 @@ echo "   - RAZORPAY_KEY_SECRET"
 echo "   - GOOGLE_MAPS_API_KEY"
 echo "   - SHIPROCKET_EMAIL"
 echo "   - SHIPROCKET_PASSWORD"
-echo "   - DEV_OPENSEARCH_PASSWORD"
-echo "   - STAGE_OPENSEARCH_PASSWORD"
-echo "   - PROD_OPENSEARCH_PASSWORD"
 echo ""
 echo "🚀 You can now run the GitHub Actions workflows!"

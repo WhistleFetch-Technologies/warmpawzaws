@@ -21,19 +21,6 @@ export function expandSearchCategoryForSql(slug: string | undefined): string[] {
   return Array.from(new Set(list.map((v) => v.toLowerCase().trim()).filter(Boolean)));
 }
 
-export function expandSearchCategoryForOpenSearch(slug: string | undefined): string[] {
-  const list = getSearchCategoryAliases(slug);
-  if (!list.length) return [];
-  const out = new Set<string>();
-  for (const value of list) {
-    const trimmed = String(value).trim();
-    if (!trimmed) continue;
-    out.add(trimmed);
-    out.add(trimmed.toLowerCase());
-  }
-  return Array.from(out);
-}
-
 export function getSearchCategoryIlikePatterns(slug: string | undefined): string[] {
   const PATTERNS: Record<string, string[]> = {
     vet:          ['%vet%', '%veterinar%', '%clinic%', '%animal hosp%', '%pet hosp%', '%pet care%'],

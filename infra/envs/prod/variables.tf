@@ -9,12 +9,6 @@ variable "alert_emails" {
   type        = list(string)
 }
 
-variable "opensearch_master_password" {
-  description = "OpenSearch master password"
-  type        = string
-  sensitive   = true
-}
-
 variable "custom_domain_name" {
   description = "Custom domain name for API Gateway"
   type        = string

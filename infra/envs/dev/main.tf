@@ -622,23 +622,3 @@ resource "aws_apigatewayv2_api_mapping" "api" {
   domain_name = aws_apigatewayv2_domain_name.api[0].id
   stage       = "$default"
 }
-
-# OpenSearch Module (Elasticsearch - using AWS OpenSearch which is the managed Elasticsearch service)
-module "opensearch" {
-  source = "../../modules/opensearch"
-  count  = var.enable_opensearch ? 1 : 0
-
-  environment                = local.environment
-  vpc_id                     = module.vpc.vpc_id
-  vpc_cidr                   = "10.0.0.0/16"
-  private_subnet_ids         = module.vpc.private_subnet_ids
-  allowed_security_groups    = [module.lambda.lambda_security_group_id]
-  instance_type              = "t3.small.search"
-  instance_count             = 1
-  dedicated_master_enabled   = false
-  zone_awareness_enabled     = false
-  volume_size                = 10
-  master_user_password       = var.opensearch_master_password
-  create_service_linked_role = false
-  alarm_actions              = [module.sns.system_alerts_topic_arn]
-}

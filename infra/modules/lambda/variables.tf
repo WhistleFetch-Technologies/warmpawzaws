@@ -75,12 +75,6 @@ variable "cognito_arns" {
   default     = ["*"]
 }
 
-variable "opensearch_arns" {
-  description = "ARNs of OpenSearch domains Lambda can access"
-  type        = list(string)
-  default     = ["*"]
-}
-
 variable "dlq_arn" {
   description = "ARN of DLQ for failed invocations"
   type        = string

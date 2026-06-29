@@ -217,24 +217,3 @@ module "api_gateway" {
   alarm_actions = [module.sns.system_alerts_topic_arn]
 }
 
-module "opensearch" {
-  source = "../../modules/opensearch"
-
-  environment                = local.environment
-  vpc_id                     = module.vpc.vpc_id
-  vpc_cidr                   = "10.1.0.0/16"
-  private_subnet_ids         = module.vpc.private_subnet_ids
-  allowed_security_groups    = [module.lambda.lambda_security_group_id]
-  instance_type              = "t3.medium.search"
-  instance_count             = 2
-  dedicated_master_enabled   = true
-  master_instance_type       = "t3.small.search"
-  master_instance_count      = 3
-  zone_awareness_enabled     = true
-  availability_zone_count    = 2
-  volume_size                = 50
-  master_user_password       = var.opensearch_master_password
-  create_service_linked_role = false
-  alarm_actions              = [module.sns.system_alerts_topic_arn]
-}
-

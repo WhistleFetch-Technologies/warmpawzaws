@@ -15,7 +15,6 @@
  * - DynamoDB tables
  * - Bedrock AI models
  * - Chime SDK (video/chat)
- * - OpenSearch (search)
  * - EventBridge
  * - CloudWatch Logs
  * 
@@ -217,41 +216,6 @@ export class IamStack extends Construct {
           'chime:ListChannelMemberships',
         ],
         resources: ['*'], // Chime doesn't support resource-level permissions
-      })
-    );
-
-    // ✅ NEW: OpenSearch access for search functionality
-    this.lambdaExecutionRole.addToPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          'es:ESHttpGet',
-          'es:ESHttpPost',
-          'es:ESHttpPut',
-          'es:ESHttpDelete',
-          'es:ESHttpHead',
-          'es:ESHttpPatch',
-          'es:DescribeDomain',
-          'es:DescribeDomains',
-          'es:ListDomainNames',
-        ],
-        resources: [
-          `arn:aws:es:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:domain/warmpawz-*`,
-          `arn:aws:es:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:domain/warmpawz-*/*`,
-        ],
-      })
-    );
-
-    // ✅ NEW: OpenSearch Serverless access (if using serverless)
-    this.lambdaExecutionRole.addToPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          'aoss:APIAccessAll',
-        ],
-        resources: [
-          `arn:aws:aoss:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:collection/*`,
-        ],
       })
     );
 

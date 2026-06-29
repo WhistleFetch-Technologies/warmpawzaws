@@ -10,19 +10,6 @@ variable "alert_emails" {
   default     = []
 }
 
-variable "enable_opensearch" {
-  description = "Enable OpenSearch/Elasticsearch"
-  type        = bool
-  default     = true
-}
-
-variable "opensearch_master_password" {
-  description = "OpenSearch master password"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 # External Integration Secrets
 
 variable "razorpay_key_id" {
