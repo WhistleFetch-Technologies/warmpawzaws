@@ -5,8 +5,14 @@ import { useRouter } from 'next/navigation';
 import { 
   MapPin, Package, Truck, CheckCircle, Clock, Phone, 
   Navigation, ChevronDown, Star, ArrowLeft,
-  AlertCircle, Loader2, X, HelpCircle
+  AlertCircle, Loader2, X, HelpCircle, Download
 } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  downloadMealOrderInvoice,
+  getMealOrderInvoiceDownloadMessage,
+  isMealOrderInvoiceAvailable,
+} from '@/lib/meal-order-invoice-download';
 import { apiClient } from '@/lib/api-client';
 import {
   MealPlanOrderTrackingUI,
@@ -327,6 +333,23 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
         navigateToMealOrderSupport(router, ctx);
       }
     };
+    const handleDownloadInvoice = async () => {
+      if (!isMealOrderInvoiceAvailable(order as Record<string, unknown>)) {
+        toast.error('Invoice is available after payment is confirmed');
+        return;
+      }
+      try {
+        const { saveResult } = await downloadMealOrderInvoice(orderId);
+        if (saveResult === 'failed') {
+          toast.error(getMealOrderInvoiceDownloadMessage(saveResult));
+        } else {
+          toast.success(getMealOrderInvoiceDownloadMessage(saveResult));
+        }
+      } catch (err: unknown) {
+        console.error('[OrderTrackingScreen] invoice download failed:', err);
+        toast.error(err instanceof Error ? err.message : 'Failed to download invoice');
+      }
+    };
     const mealHelpButton = (
       <button
         type="button"
@@ -362,14 +385,26 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
             </button>
           }
           headerActions={
-            <button
-              type="button"
-              onClick={openMealOrderHelp}
-              className="p-2 rounded-full hover:bg-white/15 text-white transition"
-              aria-label="Help with this order"
-            >
-              <HelpCircle className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              {isMealOrderInvoiceAvailable(order as Record<string, unknown>) ? (
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadInvoice()}
+                  className="p-2 rounded-full hover:bg-white/15 text-white transition"
+                  aria-label="Download invoice"
+                >
+                  <Download className="w-5 h-5" />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={openMealOrderHelp}
+                className="p-2 rounded-full hover:bg-white/15 text-white transition"
+                aria-label="Help with this order"
+              >
+                <HelpCircle className="w-5 h-5" />
+              </button>
+            </div>
           }
           deliveryOtpBanner={
             otp && riderActive && !isDelivered ? (

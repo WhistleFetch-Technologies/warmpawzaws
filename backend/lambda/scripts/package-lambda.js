@@ -44,6 +44,12 @@ if (!fs.existsSync(path.join(distDir, 'node_modules', 'firebase-admin'))) {
   process.exit(1);
 }
 
+const assetsSrc = path.join(lambdaRoot, 'assets');
+const assetsDest = path.join(distDir, 'assets');
+if (fs.existsSync(assetsSrc)) {
+  fs.cpSync(assetsSrc, assetsDest, { recursive: true });
+}
+
 function zipWithPowerShell(sourcePattern, destinationPath, literalPath) {
   const useLiteral = Boolean(literalPath);
   const literalFlag = useLiteral ? '-LiteralPath' : '-Path';

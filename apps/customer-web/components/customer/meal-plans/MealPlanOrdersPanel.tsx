@@ -22,8 +22,14 @@ import {
   AlertCircle,
   UtensilsCrossed,
   ChevronRight,
+  Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  downloadMealOrderInvoice,
+  getMealOrderInvoiceDownloadMessage,
+  isMealOrderInvoiceAvailable,
+} from '@/lib/meal-order-invoice-download';
 import { sanitizeDisplayImageUrl } from '@/lib/resolve-display-image-url';
 import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
 import {
@@ -483,6 +489,25 @@ function MealPlanOrdersPanelLive({
     router.push(`/track/${orderId}?${q.toString()}`);
   };
 
+  const handleDownloadInvoice = async (order: MealPlanOrder, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isMealOrderInvoiceAvailable(order)) {
+      toast.error('Invoice is available after payment is confirmed');
+      return;
+    }
+    try {
+      const { saveResult } = await downloadMealOrderInvoice(order.id);
+      if (saveResult === 'failed') {
+        toast.error(getMealOrderInvoiceDownloadMessage(saveResult));
+      } else {
+        toast.success(getMealOrderInvoiceDownloadMessage(saveResult));
+      }
+    } catch (err: unknown) {
+      console.error('[MealPlanOrders] invoice download failed:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to download invoice');
+    }
+  };
+
   const handleBackClick = () => {
     // Shell passes onBack → My Bookings. Standalone: pop history (avoid push loop with /bookings).
     if (onBack) {
@@ -782,12 +807,23 @@ function MealPlanOrdersPanelLive({
                         Pay now
                       </button>
                     ) : (
-                      <button
-                        onClick={(e) => handleTrackClick(order.id, e)}
-                        className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
-                      >
-                        Track Order
-                      </button>
+                      <>
+                        {isMealOrderInvoiceAvailable(order) ? (
+                          <button
+                            onClick={(e) => handleDownloadInvoice(order, e)}
+                            className="px-4 py-2 rounded-lg text-sm font-semibold border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 flex items-center gap-2"
+                          >
+                            <Download className="w-4 h-4" />
+                            Invoice
+                          </button>
+                        ) : null}
+                        <button
+                          onClick={(e) => handleTrackClick(order.id, e)}
+                          className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
+                        >
+                          Track Order
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

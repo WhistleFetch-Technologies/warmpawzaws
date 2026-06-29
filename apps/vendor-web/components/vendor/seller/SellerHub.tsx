@@ -21,7 +21,7 @@ import { SellerDashboard } from './SellerDashboard';
 import { ProductCatalogManagement } from './ProductCatalogManagement';
 import { InventoryManagement, type InventoryManagementHandle } from './InventoryManagement';
 import { SellerOrderManagement } from './SellerOrderManagement';
-import { GSTInvoicing } from './GSTInvoicing';
+import { SellerInvoicesHub } from './SellerInvoicesHub';
 import { CommissionCalculator } from './CommissionCalculator';
 import { PromotionsManagement } from './PromotionsManagement';
 import { SellerAnalytics } from './SellerAnalytics';
@@ -251,7 +251,9 @@ export function SellerHubMainPanels({
         <InventoryManagement ref={inventoryRef} sellerId={sellerId} />
       )}
       {activeTab === 'orders' && <SellerOrderManagement sellerId={sellerId} />}
-      {activeTab === 'invoices' && <GSTInvoicing sellerId={sellerId} sellerData={vendorData} />}
+      {activeTab === 'invoices' && (
+        <SellerInvoicesHub sellerId={sellerId} sellerData={vendorData} />
+      )}
       {activeTab === 'commission' && <CommissionCalculator sellerId={sellerId} />}
       {activeTab === 'promotions' && <PromotionsManagement sellerId={sellerId} />}
       {activeTab === 'analytics' && <SellerAnalytics sellerId={sellerId} />}

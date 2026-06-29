@@ -173,6 +173,7 @@ import { registerProductVariationsEndpoints } from '../endpoints/product-variati
 import { registerSelfManagedLogisticsEndpoints } from '../endpoints/self-managed-logistics';
 import { registerTrackingWebhookEndpoints } from '../endpoints/tracking-webhooks';
 import { registerTaxInvoicePdfEndpoints } from '../endpoints/tax-invoice-pdf';
+import { registerPlatformTaxEndpoints } from '../endpoints/platform-tax-documents';
 import { registerReviewsEnhancedEndpoints } from '../endpoints/reviews-enhanced';
 import { registerReturnsEnhancedEndpoints } from '../endpoints/returns-enhanced';
 import { registerFeeConfigEndpoints } from '../endpoints/fee-config';
@@ -812,6 +813,7 @@ registerProductVariationsEndpoints(app); // Product variations (size, color, wei
 registerSelfManagedLogisticsEndpoints(app); // Self-managed logistics with tracking URL
 registerTrackingWebhookEndpoints(app); // AfterShip webhooks for vendor-managed shipping
 registerTaxInvoicePdfEndpoints(app); // GST tax invoice PDF generation
+registerPlatformTaxEndpoints(app); // WarmPawz → vendor platform tax documents
 registerReviewsEnhancedEndpoints(app); // Enhanced booking reviews
 registerReturnsEnhancedEndpoints(app); // Complete return/refund management
 registerFeeConfigEndpoints(app); // Platform and convenience fee configuration

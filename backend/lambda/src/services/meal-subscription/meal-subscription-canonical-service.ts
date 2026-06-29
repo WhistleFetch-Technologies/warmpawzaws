@@ -544,9 +544,17 @@ export async function listCanonicalDeliveriesForCustomer(
   ).catch(() => ({ rows: [{ c: 0 }] }));
 
   const list = await query(
-    `SELECT * FROM meal_subscription_deliveries
-     WHERE subscription_id = $1
-     ORDER BY session_number ASC
+    `SELECT d.*,
+            (
+              SELECT mo.id::text
+              FROM meal_orders mo
+              WHERE mo.purchase_snapshot IS NOT NULL
+                AND mo.purchase_snapshot->>'canonicalDeliveryId' = d.id::text
+              LIMIT 1
+            ) AS meal_order_id
+     FROM meal_subscription_deliveries d
+     WHERE d.subscription_id = $1
+     ORDER BY d.session_number ASC
      LIMIT $2 OFFSET $3`,
     [subscriptionId, Math.min(Math.max(limit, 1), 100), Math.max(offset, 0)],
   ).catch(() => ({ rows: [] }));

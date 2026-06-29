@@ -15,9 +15,9 @@ import {
   safeInvoiceFileBaseName,
 } from '@/lib/invoice-html-to-pdf';
 
-export type OrderInvoiceSaveResult = DownloadSaveResult;
+export type MealOrderInvoiceSaveResult = DownloadSaveResult;
 
-export function getOrderInvoiceDownloadMessage(saveResult: OrderInvoiceSaveResult): string {
+export function getMealOrderInvoiceDownloadMessage(saveResult: MealOrderInvoiceSaveResult): string {
   return getDownloadMessage(saveResult, 'invoice');
 }
 
@@ -47,7 +47,20 @@ async function fetchInvoiceHtml(downloadPath: string, authHeaders: Record<string
   return response.text();
 }
 
-export async function downloadOrderInvoice(orderId: string): Promise<{
+export function isMealOrderInvoiceAvailable(order: {
+  payment_status?: string | null;
+  status?: string | null;
+}): boolean {
+  const ps = String(order.payment_status || '').toLowerCase();
+  if (ps === 'paid' || ps === 'completed') return true;
+  if (ps === 'pending' || ps === 'awaiting_payment') return false;
+  const status = String(order.status || '').toLowerCase();
+  return ['confirmed', 'preparing', 'ready', 'out_for_delivery', 'delivered', 'cancelled'].includes(
+    status,
+  );
+}
+
+export async function downloadMealOrderInvoice(orderId: string): Promise<{
   filename: string;
   saveResult: DownloadSaveResult;
   openedInBrowser: boolean;
@@ -55,7 +68,7 @@ export async function downloadOrderInvoice(orderId: string): Promise<{
   const apiBaseUrl = getApiBaseUrl() || '';
   const authHeaders = getAuthHeaders();
 
-  const generateResponse = await fetch(`${apiBaseUrl}/orders/${orderId}/invoice/generate`, {
+  const generateResponse = await fetch(`${apiBaseUrl}/meal/orders/${orderId}/invoice/generate`, {
     method: 'POST',
     headers: {
       ...authHeaders,
@@ -77,7 +90,7 @@ export async function downloadOrderInvoice(orderId: string): Promise<{
     throw new Error(message);
   }
 
-  const metaResponse = await fetch(`${apiBaseUrl}/orders/${orderId}/invoice`, {
+  const metaResponse = await fetch(`${apiBaseUrl}/meal/orders/${orderId}/invoice`, {
     headers: authHeaders,
   });
 
