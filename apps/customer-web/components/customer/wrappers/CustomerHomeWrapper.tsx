@@ -834,6 +834,23 @@ export function CustomerHomeWrapper({
         openMessages();
         return;
       }
+      if (raw === 'meal-order-checkout') {
+        try {
+          const draftRaw = sessionStorage.getItem('meal_one_time_pay_draft_v1');
+          if (draftRaw) {
+            const draft = JSON.parse(draftRaw) as { vendorId?: string; mealPlanId?: string };
+            if (draft.vendorId) setSelectedVendorId(String(draft.vendorId));
+            setVetServiceData({
+              vendorId: draft.vendorId,
+              mealPlanId: draft.mealPlanId,
+            });
+          }
+        } catch {
+          /* ignore corrupt draft */
+        }
+        shellNav.navigateToScreen('meal-order-checkout');
+        return;
+      }
       const next = raw as ScreenType;
       if (next === 'shop') {
         router.push('/shop');
