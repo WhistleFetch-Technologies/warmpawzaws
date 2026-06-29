@@ -1,11 +1,24 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, MapPin, Calendar, Clock, UtensilsCrossed, Loader2 } from 'lucide-react';
+import {
+  ArrowRight,
+  Calendar,
+  ChevronDown,
+  Clock,
+  Loader2,
+  Lock,
+  MapPin,
+  Minus,
+  PawPrint,
+  Plus,
+  Shield,
+  ShoppingBag,
+  Star,
+  UtensilsCrossed,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -27,7 +40,54 @@ import {
   extractMealSchedulePolicy,
   minDeliveryTimeHm,
 } from '@/lib/meal-checkout-schedule';
+import { rememberMealOneTimePayBackFromCheckout } from '@/lib/go-back-or-replace';
 import { formatDeliveryAddressLine } from '@/lib/ecommerce/delivery-address-display';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import { NUTRITION_HEADER_BANNER } from '@/components/customer/nutrition/constants/nutrition-hub-assets';
+import { paymentCardClass, paymentPageBgClass } from '@/components/customer/payment/payment-page-styles';
+
+const checkoutSelectTriggerClass =
+  'h-auto w-full border-0 bg-transparent p-0 shadow-none focus:ring-0 [&_svg]:hidden';
+
+const MEAL_ONE_TIME_PAY_DRAFT_KEY = 'meal_one_time_pay_draft_v1';
+
+function CheckoutFieldCard({
+  icon,
+  label,
+  children,
+  trailing,
+  className = '',
+}: {
+  icon: ReactNode;
+  label: string;
+  children: ReactNode;
+  trailing?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`${paymentCardClass} p-4 ${className}`.trim()}>
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-[#FF8C42]">
+          {icon}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-slate-500">{label}</p>
+          <div className="mt-0.5">{children}</div>
+        </div>
+        {trailing ?? <ChevronDown className="mt-2 h-4 w-4 shrink-0 text-slate-400" aria-hidden />}
+      </div>
+    </div>
+  );
+}
+
+function MealCheckoutDetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <p>
+      <span className="font-medium text-slate-500">{label}: </span>
+      <span className="text-slate-800">{value}</span>
+    </p>
+  );
+}
 
 interface MealOrderCheckoutProps {
   phone: string;
@@ -83,6 +143,34 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
   useEffect(() => {
     loadData();
   }, [phone, mealPlanId]);
+
+  useEffect(() => {
+    if (!mealPlanId || typeof window === 'undefined') return;
+    try {
+      const raw = sessionStorage.getItem(MEAL_ONE_TIME_PAY_DRAFT_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as {
+        mealPlanId?: string;
+        quantity?: number;
+        petId?: string;
+        addressId?: string;
+        scheduledDeliveryDate?: string;
+        scheduledDeliverySlot?: { start?: string };
+        specialInstructions?: string;
+      };
+      if (String(draft.mealPlanId || '') !== String(mealPlanId)) return;
+      if (draft.quantity != null && Number.isFinite(Number(draft.quantity))) {
+        setQuantity(Math.max(1, Number(draft.quantity)));
+      }
+      if (draft.petId) setPetId(String(draft.petId));
+      if (draft.addressId) setAddressId(String(draft.addressId));
+      if (draft.scheduledDeliveryDate) setScheduledDate(String(draft.scheduledDeliveryDate));
+      if (draft.scheduledDeliverySlot?.start) setScheduledTime(String(draft.scheduledDeliverySlot.start));
+      if (draft.specialInstructions) setSpecialInstructions(String(draft.specialInstructions));
+    } catch {
+      /* ignore corrupt draft */
+    }
+  }, [mealPlanId]);
 
   useEffect(() => {
     if (!mealPlanId || !quantity) return;
@@ -248,6 +336,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       vendorId,
       quantity,
       petId: petId || undefined,
+      addressId: addressId || undefined,
       specialInstructions: specialInstructions || undefined,
       deliveryAddress: addrObj,
       scheduledDeliveryDate: scheduledDate,
@@ -263,30 +352,38 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       convenienceFeeInr: preview.convenienceFee ?? 0,
     };
     try {
-      sessionStorage.setItem('meal_one_time_pay_draft_v1', JSON.stringify(draft));
+      sessionStorage.setItem(MEAL_ONE_TIME_PAY_DRAFT_KEY, JSON.stringify(draft));
     } catch {
       toast.error('Could not start checkout. Enable site storage and try again.');
       return;
     }
+    rememberMealOneTimePayBackFromCheckout();
     const name = mealPlan.name || mealPlan.plan_name || 'Meal plan';
     router.push(`/meal-plans/checkout-pay?mealPlanName=${encodeURIComponent(String(name))}`);
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-orange-50 flex items-center justify-center max-w-md mx-auto">
-        <Loader2 className="w-10 h-10 text-orange-500 animate-spin" />
+      <div className={`mx-auto flex min-h-screen max-w-md items-center justify-center ${paymentPageBgClass}`}>
+        <Loader2 className="h-10 w-10 animate-spin text-[#FF8C42]" />
       </div>
     );
   }
 
   if (!mealPlan) {
     return (
-      <div className="min-h-screen bg-orange-50 max-w-md mx-auto p-6">
-        <Button variant="ghost" onClick={onBack} className="mb-4">
-          <ArrowLeft className="w-5 h-5 mr-2" /> Back
-        </Button>
-        <p className="text-red-600">Meal plan not found.</p>
+      <div className={`mx-auto min-h-screen max-w-md ${paymentPageBgClass} p-6`}>
+        <ServiceDashboardHeader
+          serviceName="Checkout – Meal Plan"
+          serviceSubtitle="Review your meal plan and delivery details"
+          serviceIcon={UtensilsCrossed}
+          hideServiceIcon
+          serviceNameClassName="truncate whitespace-nowrap text-base sm:text-lg"
+          onBack={onBack}
+          stats={[]}
+          sheetToneClass={paymentPageBgClass}
+        />
+        <p className="mt-6 text-center text-red-600">Meal plan not found.</p>
       </div>
     );
   }
@@ -339,7 +436,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
           : null;
   const checkoutBlocked =
     Boolean(scheduleError) ||
-    (scheduledDate && scheduledTime && preview?.deliveryAllowed === false);
+    Boolean(scheduledDate && scheduledTime && preview?.deliveryAllowed === false);
 
   const handleScheduledDateChange = (value: string) => {
     setScheduledDate(value);
@@ -349,315 +446,452 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     }
   };
 
+  const mealPlanName = mealPlan.name || mealPlan.plan_name || 'Meal Plan';
+  const selectedPet = pets.find((p) => p.id === petId);
+  const submitDisabled =
+    kitchenClosed ||
+    !addressId ||
+    !preview ||
+    !hasSelectedAddressCoordinates ||
+    preview?.deliveryFee == null ||
+    Boolean(preview?.deliveryQuoteMessage) ||
+    !scheduledDate ||
+    !scheduledTime ||
+    (pets.length > 0 && !petId) ||
+    checkoutBlocked;
+
   return (
-    <div className="min-h-screen bg-orange-50 max-w-md mx-auto pb-24">
-      <div className="sticky top-0 z-10 bg-gradient-to-r from-[#FF8C42] to-orange-500 text-white px-4 py-4 flex items-center gap-3">
-        <button type="button" onClick={onBack} className="p-2 rounded-lg bg-white/20 hover:bg-white/30">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h1 className="text-lg font-bold">Checkout – Meal Plan</h1>
-      </div>
+    <div className={`mx-auto flex min-h-[100dvh] max-w-md flex-col ${paymentPageBgClass}`}>
+      <ServiceDashboardHeader
+        serviceName="Checkout – Meal Plan"
+        serviceSubtitle="Review your meal plan and delivery details"
+        serviceIcon={UtensilsCrossed}
+        hideServiceIcon
+        serviceNameClassName="truncate whitespace-nowrap text-base sm:text-lg"
+        onBack={onBack}
+        stats={[]}
+        sheetToneClass={paymentPageBgClass}
+        headerTrailingImage={NUTRITION_HEADER_BANNER}
+        headerTrailingImageAlt="Dog and cat"
+        clipHeaderTrailingImage
+        headerTrailingImageClassName="pointer-events-none absolute bottom-0 right-0 top-[2.75rem] z-[5] flex w-[52%] max-w-[210px] items-end justify-end sm:top-12"
+        headerTrailingImageImgClassName="block h-full w-auto max-w-full origin-bottom-right scale-[1.08] object-contain object-right object-bottom drop-shadow-lg"
+      />
 
-      <form onSubmit={handleSubmit} className="p-4 space-y-4">
-        {kitchenClosed ? (
-          <MealKitchenStatusBanner message={mealKitchenClosedMessage(mealPlan)} />
-        ) : null}
-        <Card className="p-4">
-          <div className="flex gap-3">
-            {mealPlanImageUrl ? (
-              <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 border border-orange-100 bg-white">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={mealPlanImageUrl} alt="" className="w-full h-full object-cover" />
-              </div>
-            ) : (
-            <div className="w-16 h-16 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
-              <UtensilsCrossed className="w-7 h-7 text-orange-600" />
-            </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <h2 className="font-semibold text-slate-900">{mealPlan.name || mealPlan.plan_name || 'Meal Plan'}</h2>
-              <p className="text-sm text-slate-600 mt-0.5">{mealPlan.description || ''}</p>
-              {preview && (
-                <p className="text-sm font-medium text-orange-600 mt-1">
-                  Meal price: ₹{preview.subtotal}
-                </p>
-              )}
-              {catalog?.packWeightLabel ? (
-                <p className="text-xs font-medium text-slate-600 mt-0.5">{catalog.packWeightLabel}</p>
-              ) : null}
-            </div>
-          </div>
+      <main className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-4 pt-2">
+        <form id="meal-checkout-form" onSubmit={handleSubmit} className="space-y-3">
+          {kitchenClosed ? (
+            <MealKitchenStatusBanner message={mealKitchenClosedMessage(mealPlan)} />
+          ) : null}
 
-          {catalog && (
-            <div className="mt-4 pt-3 border-t border-slate-100 space-y-3 text-sm text-slate-800">
-              <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm">
-                <p>
-                  <span className="text-slate-500 font-medium">Plan: </span>
-                  {catalog.customerPurchaseHeadline}
-                </p>
-                {catalog.customerPricingLine ? (
-                  <p>
-                    <span className="text-slate-500 font-medium">Pricing: </span>
-                    {catalog.customerPricingLine}
-                  </p>
-                ) : null}
-                {catalog.packWeightLabel ? (
-                  <p>
-                    <span className="text-slate-500 font-medium">Pack weight: </span>
+          <div className={`${paymentCardClass} overflow-hidden p-4`}>
+            <div className="flex gap-4">
+              <div className="relative shrink-0">
+                {mealPlanImageUrl ? (
+                  <div className="h-24 w-24 overflow-hidden rounded-2xl border border-orange-100 bg-white">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={mealPlanImageUrl} alt="" className="h-full w-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-orange-100">
+                    <UtensilsCrossed className="h-8 w-8 text-[#FF8C42]" />
+                  </div>
+                )}
+                {catalog?.packWeightLabel ? (
+                  <span className="absolute bottom-1 right-1 rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
                     {catalog.packWeightLabel}
-                  </p>
-                ) : null}
-                {catalog.customerBenefits.length > 0 ? (
-                  <ul className="list-disc list-inside text-slate-700 space-y-0.5">
-                    {catalog.customerBenefits.map((b) => (
-                      <li key={b}>{b}</li>
-                    ))}
-                  </ul>
-                ) : null}
-                <p>
-                  <span className="text-slate-500 font-medium">Shelf life: </span>
-                  {catalog.shelfLifeDays != null ? `${catalog.shelfLifeDays} days` : '—'}
-                </p>
-                <p>
-                  <span className="text-slate-500 font-medium">Preparation: </span>
-                  {catalog.preparationLabel || '—'}
-                </p>
-                {catalog.dietTypeLabel ? (
-                  <p>
-                    <span className="text-slate-500 font-medium">Diet: </span>
-                    {catalog.dietTypeLabel}
-                  </p>
+                  </span>
                 ) : null}
               </div>
 
-              {catalog.mealCategories.length > 0 ? (
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Meal categories</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {catalog.mealCategories.map((c) => (
-                      <span
-                        key={c}
-                        className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-900 text-xs border border-teal-100"
-                      >
-                        {formatCategoryLabel(c)}
-                      </span>
-                    ))}
-                  </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-bold text-slate-900">{mealPlanName}</h2>
+                {mealPlan.description ? (
+                  <p className="mt-0.5 line-clamp-2 text-xs text-slate-600">{mealPlan.description}</p>
+                ) : null}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="text-xl font-bold text-[#FF8C42]">
+                    ₹{preview?.subtotal ?? mealPlan.price_per_meal ?? mealPlan.price ?? '—'}
+                  </span>
+                  {catalog?.customerPurchaseHeadline ? (
+                    <span className="rounded-full border border-orange-100 bg-orange-50 px-2.5 py-0.5 text-[10px] font-semibold text-orange-800">
+                      {catalog.customerPurchaseHeadline}
+                    </span>
+                  ) : null}
                 </div>
-              ) : null}
-
-              {catalog.petTypes.length > 0 ? (
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Pet types</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {catalog.petTypes.map((pt) => (
-                      <span
-                        key={pt}
-                        className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-900 text-xs border border-blue-100"
-                      >
-                        {pt}
-                      </span>
-                    ))}
-                  </div>
+                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-600">
+                  {catalog?.preparationLabel ? (
+                    <span className="inline-flex items-center gap-1">
+                      <UtensilsCrossed className="h-3.5 w-3.5 text-emerald-600" />
+                      {catalog.preparationLabel}
+                    </span>
+                  ) : null}
+                  {catalog?.shelfLifeDays != null ? (
+                    <span className="inline-flex items-center gap-1">
+                      <Clock className="h-3.5 w-3.5 text-emerald-600" />
+                      {catalog.shelfLifeDays} day{catalog.shelfLifeDays === 1 ? '' : 's'} shelf life
+                    </span>
+                  ) : null}
                 </div>
-              ) : null}
-
-              {catalog.ingredients.length > 0 ? (
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Ingredients</p>
-                  <p className="text-xs text-slate-700 leading-relaxed">{catalog.ingredients.join(', ')}</p>
-                </div>
-              ) : null}
-
-              {catalog.allergens.length > 0 ? (
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Allergens</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {catalog.allergens.map((a) => (
-                      <span
-                        key={a}
-                        className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 text-xs border border-amber-100"
-                      >
-                        {formatAllergenLabel(a)}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+              </div>
             </div>
-          )}
-        </Card>
 
-        {pets.length > 0 && (
-          <div>
-            <Label>Pet</Label>
-            <Select value={petId} onValueChange={setPetId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select pet" />
-              </SelectTrigger>
-              <SelectContent>
-                {pets.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {catalog ? (
+              <>
+                <div className="mt-4 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 text-xs sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <MealCheckoutDetailRow label="Plan" value={catalog.customerPurchaseHeadline} />
+                    {catalog.packWeightLabel ? (
+                      <MealCheckoutDetailRow label="Pack weight" value={catalog.packWeightLabel} />
+                    ) : null}
+                    {catalog.dietTypeLabel ? (
+                      <MealCheckoutDetailRow label="Diet" value={catalog.dietTypeLabel} />
+                    ) : null}
+                  </div>
+                  <div className="space-y-1.5">
+                    {catalog.customerPricingLine ? (
+                      <MealCheckoutDetailRow label="Pricing" value={catalog.customerPricingLine} />
+                    ) : null}
+                    <MealCheckoutDetailRow
+                      label="Shelf life"
+                      value={catalog.shelfLifeDays != null ? `${catalog.shelfLifeDays} days` : '—'}
+                    />
+                    <MealCheckoutDetailRow label="Preparation" value={catalog.preparationLabel || '—'} />
+                  </div>
+                  {catalog.customerBenefits.length > 0 ? (
+                    <div>
+                      <p className="mb-1.5 flex items-center gap-1 font-semibold text-slate-700">
+                        <Star className="h-3.5 w-3.5 text-[#FF8C42]" />
+                        Why choose this?
+                      </p>
+                      <ul className="list-inside list-disc space-y-0.5 text-slate-700">
+                        {catalog.customerBenefits.map((b) => (
+                          <li key={b}>{b}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+
+                {(catalog.mealCategories.length > 0 ||
+                  catalog.petTypes.length > 0 ||
+                  catalog.ingredients.length > 0 ||
+                  catalog.allergens.length > 0) && (
+                  <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-3">
+                    {catalog.mealCategories.length > 0 ? (
+                      <div>
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          Meal categories
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {catalog.mealCategories.map((c) => (
+                            <span
+                              key={c}
+                              className="rounded-full border border-teal-100 bg-teal-50 px-2 py-0.5 text-[10px] text-teal-900"
+                            >
+                              {formatCategoryLabel(c)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {catalog.petTypes.length > 0 ? (
+                      <div>
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          Pet types
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {catalog.petTypes.map((pt) => (
+                            <span
+                              key={pt}
+                              className="rounded-full border border-violet-100 bg-violet-50 px-2 py-0.5 text-[10px] text-violet-900"
+                            >
+                              {pt}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {catalog.ingredients.length > 0 ? (
+                      <div>
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          Ingredients
+                        </p>
+                        <p className="text-[11px] leading-relaxed text-slate-700">
+                          {catalog.ingredients.join(', ')}
+                        </p>
+                      </div>
+                    ) : null}
+                    {catalog.allergens.length > 0 ? (
+                      <div className="sm:col-span-3">
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          Allergens
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {catalog.allergens.map((a) => (
+                            <span
+                              key={a}
+                              className="rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-900"
+                            >
+                              {formatAllergenLabel(a)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </>
+            ) : null}
           </div>
-        )}
 
-        <div>
-          <Label>Quantity</Label>
-          <Input
-            type="number"
-            min={1}
-            value={quantity}
-            onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-          />
-        </div>
+          {pets.length > 0 ? (
+            <CheckoutFieldCard icon={<PawPrint className="h-5 w-5" />} label="Pet">
+              <Select value={petId} onValueChange={setPetId}>
+                <SelectTrigger className={checkoutSelectTriggerClass}>
+                  <SelectValue placeholder="Select pet">
+                    {selectedPet?.name ?? undefined}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {pets.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CheckoutFieldCard>
+          ) : null}
 
-        <div className="min-w-0">
-          <Label className="flex items-center gap-2"><MapPin className="w-4 h-4" /> Delivery address</Label>
+          <CheckoutFieldCard
+            icon={<ShoppingBag className="h-5 w-5" />}
+            label="Quantity"
+            trailing={
+              <div className="mt-1 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:border-orange-200 hover:bg-orange-50"
+                  aria-label="Decrease quantity"
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+                <span className="min-w-[1.5rem] text-center text-sm font-semibold text-slate-900">{quantity}</span>
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => q + 1)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:border-orange-200 hover:bg-orange-50"
+                  aria-label="Increase quantity"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+            }
+          >
+            <span className="text-sm font-semibold text-slate-900">
+              {quantity} meal{quantity === 1 ? '' : 's'}
+            </span>
+          </CheckoutFieldCard>
+
           {addresses.length === 0 ? (
-            <p className="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">Add an address in your profile first.</p>
+            <div className={`${paymentCardClass} p-4 text-sm text-amber-800`}>
+              Add a delivery address in your profile first.
+            </div>
           ) : (
-            <Select value={addressId} onValueChange={setAddressId} required>
-              <SelectTrigger className="min-w-0 overflow-hidden px-3 [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:overflow-hidden [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left">
-                <SelectValue placeholder="Select address">
-                  {selectedAddress ? formatDeliveryAddressLine(selectedAddress) : undefined}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {addresses.map((a) => (
-                  <SelectItem key={a.id} value={a.id} className="items-start py-2">
-                    <span className="line-clamp-2 break-words">{formatDeliveryAddressLine(a)}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <CheckoutFieldCard icon={<MapPin className="h-5 w-5" />} label="Delivery address">
+              <Select value={addressId} onValueChange={setAddressId} required>
+                <SelectTrigger
+                  className={`${checkoutSelectTriggerClass} min-w-0 [&_[data-slot=select-value]]:line-clamp-2 [&_[data-slot=select-value]]:text-left`}
+                >
+                  <SelectValue placeholder="Select address">
+                    {selectedAddress ? formatDeliveryAddressLine(selectedAddress) : undefined}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {addresses.map((a) => (
+                    <SelectItem key={a.id} value={a.id} className="items-start py-2">
+                      <span className="line-clamp-2 break-words">{formatDeliveryAddressLine(a)}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CheckoutFieldCard>
           )}
-          {addressId && !hasSelectedAddressCoordinates && (
-            <p className="text-xs text-amber-700 mt-2">
+          {addressId && !hasSelectedAddressCoordinates ? (
+            <p className="px-1 text-xs text-amber-700">
               This address has no latitude/longitude. Update the address with map location to get delivery fee.
             </p>
-          )}
-          {preview?.deliveryQuoteMessage && (
-            <p className="text-xs text-red-700 mt-2">{preview.deliveryQuoteMessage}</p>
-          )}
-        </div>
+          ) : null}
+          {preview?.deliveryQuoteMessage ? (
+            <p className="px-1 text-xs text-red-700">{preview.deliveryQuoteMessage}</p>
+          ) : null}
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label className="flex items-center gap-2"><Calendar className="w-4 h-4" /> Date</Label>
-            <Input
-              type="date"
-              value={scheduledDate}
-              onChange={(e) => handleScheduledDateChange(e.target.value)}
-              min={minDateStr}
-              required
-            />
-          </div>
-          <div>
-            <Label className="flex items-center gap-2"><Clock className="w-4 h-4" /> Time</Label>
-            <Input
-              type="time"
-              value={scheduledTime}
-              onChange={(e) => setScheduledTime(e.target.value)}
-              min={minTimeStr}
-              required
-            />
-          </div>
-        </div>
-        <p className="text-xs text-slate-600 -mt-2">
-          Order at least {leadHours} hour{leadHours === 1 ? '' : 's'} before delivery.
-          {orderCutoffDisplay ? ` Orders for today must be placed before ${orderCutoffDisplay}.` : ''}
-          {sameDayHint}
-        </p>
-        {scheduleError ? (
-          <p className="text-xs text-red-700">{scheduleError}</p>
-        ) : null}
-
-        <div>
-          <Label>Special instructions</Label>
-          <Textarea
-            value={specialInstructions}
-            onChange={(e) => setSpecialInstructions(e.target.value)}
-            placeholder="Allergies, notes..."
-            rows={2}
-          />
-        </div>
-
-        {preview && (
-          <Card className="p-4 bg-white">
-            <h3 className="font-semibold text-slate-900 mb-2">Order summary</h3>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between"><span>Meal price</span><span>₹{preview.subtotal}</span></div>
-              <div className="flex justify-between">
-                <span>Delivery</span>
-                <span>
-                  {preview.deliveryFeePendingAddress || preview.deliveryFee == null
-                    ? 'Select address'
-                    : `₹${preview.deliveryFee}`}
-                </span>
-              </div>
-              <div className="flex justify-between"><span>Platform fee</span><span>₹{preview.platformFee}</span></div>
-              <div className="flex justify-between"><span>Convenience fee</span><span>₹{preview.convenienceFee ?? 0}</span></div>
-              {preview.gst && preview.gst.foodGstPct != null ? (
-                <div className="flex justify-between text-slate-700">
-                  <span>GST on meal (food)</span>
-                  <span>
-                    ₹
-                    {(preview.gst.foodGstAmount != null
-                      ? Number(preview.gst.foodGstAmount).toFixed(2)
-                      : ((preview.subtotal * (Number(preview.gst.foodGstPct) || 0)) / 100).toFixed(2))}{' '}
-                    ({Number(preview.gst.foodGstPct)}%)
-                  </span>
+          <div className="grid grid-cols-2 gap-3">
+            <div className={`${paymentCardClass} p-4`}>
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-[#FF8C42]">
+                  <Calendar className="h-5 w-5" />
                 </div>
-              ) : null}
-              {preview.gst &&
-              preview.gst.deliveryGstPct != null &&
-              preview.deliveryFee != null &&
-              Number(preview.deliveryFee) > 0 ? (
-                <div className="flex justify-between text-slate-700">
-                  <span>GST on delivery</span>
-                  <span>
-                    ₹
-                    {(preview.gst.deliveryGstAmount != null
-                      ? Number(preview.gst.deliveryGstAmount).toFixed(2)
-                      : (
-                          (Number(preview.deliveryFee) * (Number(preview.gst.deliveryGstPct) || 0)) /
-                          100
-                        ).toFixed(2))}{' '}
-                    ({Number(preview.gst.deliveryGstPct)}%)
-                  </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-slate-500">Date</p>
+                  <Input
+                    type="date"
+                    value={scheduledDate}
+                    onChange={(e) => handleScheduledDateChange(e.target.value)}
+                    min={minDateStr}
+                    required
+                    className="mt-0.5 h-auto border-0 bg-transparent p-0 text-sm font-semibold text-slate-900 shadow-none focus-visible:ring-0"
+                  />
                 </div>
-              ) : null}
-              <div className="flex justify-between font-semibold text-slate-900 pt-2 border-t">
-                <span>Total</span><span>₹{preview.totalAmount}</span>
               </div>
             </div>
-          </Card>
-        )}
+            <div className={`${paymentCardClass} p-4`}>
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-[#FF8C42]">
+                  <Clock className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-slate-500">Time</p>
+                  <Input
+                    type="time"
+                    value={scheduledTime}
+                    onChange={(e) => setScheduledTime(e.target.value)}
+                    min={minTimeStr}
+                    required
+                    className="mt-0.5 h-auto border-0 bg-transparent p-0 text-sm font-semibold text-slate-900 shadow-none focus-visible:ring-0"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <p className="px-1 text-xs leading-relaxed text-slate-600">
+            Order at least {leadHours} hour{leadHours === 1 ? '' : 's'} before delivery.
+            {orderCutoffDisplay ? ` Orders for today must be placed before ${orderCutoffDisplay}.` : ''}
+            {sameDayHint}
+          </p>
+          {scheduleError ? <p className="px-1 text-xs text-red-700">{scheduleError}</p> : null}
+
+          <div className={`${paymentCardClass} p-4`}>
+            <p className="mb-2 text-sm font-semibold text-slate-900">Special instructions</p>
+            <Textarea
+              value={specialInstructions}
+              onChange={(e) => setSpecialInstructions(e.target.value)}
+              placeholder="Allergies, notes..."
+              rows={2}
+              className="resize-none border-slate-100 bg-[#FAF6F0] focus-visible:ring-[#FF8C42]"
+            />
+          </div>
+
+          {preview ? (
+            <div className={`${paymentCardClass} p-4`}>
+              <h3 className="mb-3 font-semibold text-slate-900">Order summary</h3>
+              <div className="space-y-2 text-sm text-slate-700">
+                <div className="flex justify-between gap-3">
+                  <span>Meal price</span>
+                  <span className="font-medium text-slate-900">₹{preview.subtotal}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>Delivery</span>
+                  <span className="font-medium text-slate-900">
+                    {preview.deliveryFeePendingAddress || preview.deliveryFee == null
+                      ? 'Select address'
+                      : `₹${preview.deliveryFee}`}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>Platform fee</span>
+                  <span className="font-medium text-slate-900">₹{preview.platformFee}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>Convenience fee</span>
+                  <span className="font-medium text-slate-900">₹{preview.convenienceFee ?? 0}</span>
+                </div>
+                {preview.gst && preview.gst.foodGstPct != null ? (
+                  <div className="flex justify-between gap-3">
+                    <span>GST on meal (food)</span>
+                    <span className="font-medium text-slate-900">
+                      ₹
+                      {(preview.gst.foodGstAmount != null
+                        ? Number(preview.gst.foodGstAmount).toFixed(2)
+                        : ((preview.subtotal * (Number(preview.gst.foodGstPct) || 0)) / 100).toFixed(2))}{' '}
+                      ({Number(preview.gst.foodGstPct)}%)
+                    </span>
+                  </div>
+                ) : null}
+                {preview.gst &&
+                preview.gst.deliveryGstPct != null &&
+                preview.deliveryFee != null &&
+                Number(preview.deliveryFee) > 0 ? (
+                  <div className="flex justify-between gap-3">
+                    <span>GST on delivery</span>
+                    <span className="font-medium text-slate-900">
+                      ₹
+                      {(preview.gst.deliveryGstAmount != null
+                        ? Number(preview.gst.deliveryGstAmount).toFixed(2)
+                        : (
+                            (Number(preview.deliveryFee) * (Number(preview.gst.deliveryGstPct) || 0)) /
+                            100
+                          ).toFixed(2))}{' '}
+                      ({Number(preview.gst.deliveryGstPct)}%)
+                    </span>
+                  </div>
+                ) : null}
+                <div className="flex justify-between border-t border-slate-100 pt-2 font-bold text-slate-900">
+                  <span>Total</span>
+                  <span>₹{preview.totalAmount}</span>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </form>
+      </main>
+
+      <footer className="relative shrink-0 bg-[#FFF4EB] px-4 pb-[max(1rem,env(safe-area-inset-bottom,1rem))] pt-5 shadow-[0_-8px_30px_rgba(0,0,0,0.08)]">
+        <svg
+          className="pointer-events-none absolute -top-3 left-0 block h-4 w-full"
+          viewBox="0 0 1200 24"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <path d="M0 24 L1200 24 L1200 18 Q600 0 0 18 Z" fill="#FFF4EB" />
+        </svg>
+
+        <div className="mb-3 flex items-end justify-between gap-4">
+          <div className="flex min-w-0 items-start gap-2">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+              <Shield className="h-4 w-4 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Secure Checkout</p>
+              <p className="text-[11px] text-slate-600">100% safe &amp; secure payments</p>
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className="text-xs text-slate-500">Total</p>
+            <p className="text-xl font-bold text-[#FF8C42]">₹{preview?.totalAmount ?? 0}</p>
+          </div>
+        </div>
 
         <Button
           type="submit"
-          className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E]"
-          disabled={
-            kitchenClosed ||
-            !addressId ||
-            !preview ||
-            !hasSelectedAddressCoordinates ||
-            preview.deliveryFee == null ||
-            Boolean(preview.deliveryQuoteMessage) ||
-            !scheduledDate ||
-            !scheduledTime ||
-            (pets.length > 0 && !petId) ||
-            checkoutBlocked
-          }
+          form="meal-checkout-form"
+          disabled={submitDisabled}
+          className="h-auto w-full rounded-full bg-gradient-to-r from-[#FF8C42] to-[#FF7029] py-4 text-base font-bold text-white shadow-[0_8px_24px_rgba(255,107,53,0.35)] hover:from-[#E67A35] hover:to-[#D66A25] disabled:opacity-50"
         >
-          {`Continue to pay ₹${preview?.totalAmount ?? 0}`}
+          <span className="flex w-full items-center justify-center gap-2">
+            Proceed to Pay
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-[#FF8C42]">
+              <ArrowRight className="h-4 w-4" />
+            </span>
+          </span>
         </Button>
-      </form>
+
+        <p className="mt-2 flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-500">
+          <Lock className="h-3 w-3 shrink-0" aria-hidden />
+          Your payment details are safe with us
+        </p>
+      </footer>
     </div>
   );
 }

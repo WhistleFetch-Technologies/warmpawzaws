@@ -91,6 +91,10 @@ export interface ServiceDashboardHeaderProps {
    * Scoped to screens that opt in (e.g. My Bookings); default layout unchanged.
    */
   headerVariant?: 'default' | 'premium';
+  /** Hide the frosted service icon chip (e.g. checkout title-only headers). */
+  hideServiceIcon?: boolean;
+  /** Optional class names merged onto the service title `<h1>`. */
+  serviceNameClassName?: string;
 }
 
 /**
@@ -176,6 +180,8 @@ export function ServiceDashboardHeader({
   headerTrailingImageImgClassName,
   clipHeaderTrailingImage = false,
   headerVariant = 'default',
+  hideServiceIcon = false,
+  serviceNameClassName = '',
 }: ServiceDashboardHeaderProps) {
   const isPremium = headerVariant === 'premium';
   const waveGradId = useId().replace(/:/g, '');
@@ -292,6 +298,18 @@ export function ServiceDashboardHeader({
         ? '-mt-6 sm:-mt-7'
         : '-mt-4';
 
+  const defaultTitleClass = isPremium
+    ? premiumTitleClass
+    : `mb-1 font-bold text-white ${compact ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`;
+  const titleTextClass = serviceNameClassName
+    ? `${defaultTitleClass} ${serviceNameClassName}`.trim()
+    : defaultTitleClass;
+  const titleBlockWithHeroClass = headerTrailingImage
+    ? hideServiceIcon
+      ? 'max-w-[50%] pr-1 sm:max-w-[52%]'
+      : 'max-w-[52%] pr-1 sm:max-w-[54%]'
+    : '';
+
   return (
     <div
       className={`relative z-10 isolate w-full ${fullWidth ? 'max-w-none' : 'mx-auto max-w-customer'} ${className}`.trim()}
@@ -391,8 +409,8 @@ export function ServiceDashboardHeader({
                   <div className={isPremium ? 'text-[#FF7A3D]' : iconColor}>{ServiceIcon as ReactNode}</div>
                 )}
               </div>
-              <div className={`flex-1 min-w-0 ${isPremium ? 'pt-0.5' : 'pt-1'}`}>
-                <h1 className={isPremium ? premiumTitleClass : `mb-1 font-bold text-white ${compact ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}>
+              <div className={`flex-1 min-w-0 ${isPremium ? 'pt-0.5' : 'pt-1'} ${titleBlockWithHeroClass}`}>
+                <h1 className={titleTextClass}>
                   {serviceName}
                 </h1>
                 {serviceSubtitle && (
@@ -422,6 +440,7 @@ export function ServiceDashboardHeader({
               </button>
             )}
 
+            {!hideServiceIcon ? (
             <div className={iconShellClass}>
               {isLucideIcon ? (
                 <IconComponent
@@ -431,17 +450,18 @@ export function ServiceDashboardHeader({
                 <div className={isPremium ? 'text-[#FF7A3D]' : iconColor}>{ServiceIcon as ReactNode}</div>
               )}
             </div>
+            ) : null}
 
-            <div className={`min-w-0 flex-1 py-0.5 ${headerTrailingImage ? 'max-w-[52%] pr-1 sm:max-w-[54%]' : ''}`}>
-              <h1 className={isPremium ? premiumTitleClass : `mb-1 font-bold text-white ${compact ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}>
+            <div className={`min-w-0 flex-1 py-0.5 ${titleBlockWithHeroClass}`}>
+              <h1 className={titleTextClass}>
                 {serviceName}
               </h1>
               {serviceSubtitle && (
                 <p
                   className={
                     isPremium
-                      ? 'text-sm leading-snug text-white/95 sm:text-[0.9rem]'
-                      : 'text-xs leading-tight text-white/90 sm:text-sm'
+                      ? `text-sm leading-snug text-white/95 sm:text-[0.9rem] ${titleBlockWithHeroClass ? 'line-clamp-2' : ''}`
+                      : `text-xs leading-tight text-white/90 sm:text-sm ${titleBlockWithHeroClass ? 'line-clamp-2' : ''}`
                   }
                 >
                   {serviceSubtitle}

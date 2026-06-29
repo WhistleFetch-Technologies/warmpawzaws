@@ -1,9 +1,15 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 import { apiClient, extractHttpErrorMessage } from '@/lib/api-client';
 import { ApiError } from '@/lib/error-handling';
+import { handleSetPasswordPageBack } from '@/lib/go-back-or-replace';
+import {
+  BACK_HANDLER_PRIORITY,
+  registerBackHandler,
+} from '@/lib/navigation/back-handler-registry';
 import { clearNeedsPasswordSetup, getStoredCustomerJwtForSession } from '@/lib/session-utils';
 
 const noRetry = { maxRetries: 0, retryableStatusCodes: [] as number[], retryableErrors: [] as string[] };
@@ -63,6 +69,19 @@ export default function SetPasswordPage() {
   const [hasExistingPassword, setHasExistingPassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [authExpired, setAuthExpired] = useState(false);
+
+  const handleBack = useCallback(() => {
+    handleSetPasswordPageBack(router);
+  }, [router]);
+
+  useEffect(() => {
+    return registerBackHandler(() => {
+      if (typeof window === 'undefined') return false;
+      if (window.location.pathname !== '/auth/set-password') return false;
+      handleSetPasswordPageBack(router);
+      return true;
+    }, BACK_HANDLER_PRIORITY.urlHistory + 5);
+  }, [router]);
 
   useEffect(() => {
     const token = getStoredCustomerJwtForSession();
@@ -227,9 +246,20 @@ export default function SetPasswordPage() {
     <div className="min-h-screen flex justify-center bg-[#FF8C42]">
       <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
         <div
-          className="px-6 pb-12 cw-header-safe-top flex flex-col items-center"
+          className="cw-header-safe-top cw-header-safe-x pb-2 flex items-center"
           style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
         >
+          <button
+            type="button"
+            onClick={handleBack}
+            className="flex min-h-[44px] items-center gap-1 rounded-full bg-white/20 px-3 py-2 text-black/80 transition-colors touch-manipulation hover:bg-white/30 hover:text-black active:bg-white/30"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="h-5 w-5" />
+            <span className="text-sm font-medium">Back</span>
+          </button>
+        </div>
+        <div className="px-6 pb-12 flex flex-col items-center">
           <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-xl mb-4 p-2">
             <img src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
           </div>

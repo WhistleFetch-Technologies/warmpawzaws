@@ -29,6 +29,8 @@ import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
 import {
   rememberSubscriptionsBackFromCurrentUrl,
   rememberSubscriptionsBackSpaScreen,
+  rememberMealOneTimePayBackFromPath,
+  rememberMealOneTimePayBackToSpaScreen,
   goBackOrReplace,
 } from '@/lib/go-back-or-replace';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
@@ -452,6 +454,14 @@ function MealPlanOrdersPanelLive({
         convenienceFeeInr: Number(pricing.convenienceFee ?? 0),
       };
       sessionStorage.setItem('meal_one_time_pay_draft_v1', JSON.stringify(draft));
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname + window.location.search;
+        if (path.startsWith('/orders/meal-plans')) {
+          rememberMealOneTimePayBackFromPath(path);
+        } else {
+          rememberMealOneTimePayBackToSpaScreen('meal-plan-orders');
+        }
+      }
       router.push(
         `/meal-plans/checkout-pay?mealPlanName=${encodeURIComponent(order.meal_plan_name || 'Meal plan')}`,
       );

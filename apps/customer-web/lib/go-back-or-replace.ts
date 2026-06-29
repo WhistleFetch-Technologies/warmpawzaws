@@ -151,7 +151,69 @@ export const WARMPAWZ_HOME_RESUME_SCREENS = new Set<string>([
   'services',
   'integrated-services',
   'vet',
+  'meal-order-checkout',
 ]);
+
+const MEAL_ONE_TIME_PAY_BACK_INTENT_KEY = 'warmpawz_meal_one_time_pay_back_intent';
+
+type MealOneTimePayBackIntent =
+  | { kind: 'path'; path: string }
+  | { kind: 'spa'; screen: 'meal-order-checkout' | 'meal-plan-orders' };
+
+/** Resume a home-shell screen after leaving `/meal-plans/checkout-pay`. */
+export function rememberMealOneTimePayBackToSpaScreen(
+  screen: 'meal-order-checkout' | 'meal-plan-orders',
+): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(
+    MEAL_ONE_TIME_PAY_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'spa', screen } satisfies MealOneTimePayBackIntent),
+  );
+}
+
+/** Call before `/meal-plans/checkout-pay` from shell Checkout – Meal Plan. */
+export function rememberMealOneTimePayBackFromCheckout(): void {
+  rememberMealOneTimePayBackToSpaScreen('meal-order-checkout');
+}
+
+/** Call before `/meal-plans/checkout-pay` from a full route (e.g. meal plan orders retry pay). */
+export function rememberMealOneTimePayBackFromPath(path: string): void {
+  if (typeof window === 'undefined') return;
+  if (!isSafeInternalPath(path) || path.startsWith('/meal-plans/checkout-pay')) return;
+  sessionStorage.setItem(
+    MEAL_ONE_TIME_PAY_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'path', path } satisfies MealOneTimePayBackIntent),
+  );
+}
+
+/** Payment page Back — return to Checkout – Meal Plan or the route that opened pay. Keeps pay draft intact. */
+export function navigateBackFromMealOneTimePay(router: RouterWithPush): void {
+  if (typeof window === 'undefined') {
+    router.replace('/');
+    return;
+  }
+
+  const raw = sessionStorage.getItem(MEAL_ONE_TIME_PAY_BACK_INTENT_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as MealOneTimePayBackIntent;
+      sessionStorage.removeItem(MEAL_ONE_TIME_PAY_BACK_INTENT_KEY);
+      if (parsed.kind === 'path' && isSafeInternalPath(parsed.path)) {
+        router.replace(parsed.path);
+        return;
+      }
+      if (parsed.kind === 'spa' && WARMPAWZ_HOME_RESUME_SCREENS.has(parsed.screen)) {
+        sessionStorage.setItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY, parsed.screen);
+        router.replace('/');
+        return;
+      }
+    } catch {
+      sessionStorage.removeItem(MEAL_ONE_TIME_PAY_BACK_INTENT_KEY);
+    }
+  }
+
+  goBackOrReplace(router, '/');
+}
 
 /** @deprecated Use string; kept for call sites that passed a narrow union. */
 export type ShopReturnSpaScreen = string;
@@ -606,4 +668,19 @@ export function navigateToProfileShopOrders(
     }
   }
   router.push('/');
+}
+
+/** Resolve back fallback for `/auth/set-password` from `next` / `change` query params. */
+export function getSetPasswordBackFallback(): string {
+  if (typeof window === 'undefined') return '/';
+  const params = new URLSearchParams(window.location.search);
+  const next = params.get('next');
+  if (next && next.startsWith('/') && !next.startsWith('//')) return next;
+  if (params.get('change') === '1') return '/profile';
+  return '/';
+}
+
+/** Set-password header / hardware back — prefer history, else `next` or profile/home. */
+export function handleSetPasswordPageBack(router: MinimalRouter): void {
+  goBackOrReplace(router, getSetPasswordBackFallback());
 }

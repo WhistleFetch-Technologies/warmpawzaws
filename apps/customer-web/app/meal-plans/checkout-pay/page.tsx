@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
 import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
 import type { MealSubscriptionSummaryLine } from '@/components/customer/payment/MealSubscriptionPaymentSummary';
-import { goBackOrHome, navigateAfterMealOrderPlaced } from '@/lib/go-back-or-replace';
+import { goBackOrHome, navigateAfterMealOrderPlaced, navigateBackFromMealOneTimePay } from '@/lib/go-back-or-replace';
 import { Button } from '@/components/ui/button';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
@@ -21,6 +21,7 @@ export type MealOneTimePayDraft = {
   vendorId: string;
   quantity: number;
   petId?: string;
+  addressId?: string;
   specialInstructions?: string;
   deliveryAddress: Record<string, unknown>;
   scheduledDeliveryDate: string;
@@ -157,14 +158,7 @@ function MealOneTimePayInner() {
       customerId={draft.customerId}
       address={addressForTax}
       mealSubscriptionSummaryLines={summaryLines}
-      onBack={() => {
-        try {
-          sessionStorage.removeItem(STORAGE_KEY);
-        } catch {
-          /* ignore */
-        }
-        goBackOrHome(router);
-      }}
+      onBack={() => navigateBackFromMealOneTimePay(router)}
       onSuccess={(orderId) => {
         try {
           sessionStorage.removeItem(STORAGE_KEY);
