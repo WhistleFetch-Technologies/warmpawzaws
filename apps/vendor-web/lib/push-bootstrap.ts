@@ -271,12 +271,9 @@ async function getTokenFromFirebaseMessagingIos(
       return { token: null, permission };
     }
 
+    // Always refresh from native Firebase — cached localStorage may be a dev APNs FCM token
+    // after Xcode debug, while TestFlight uses production APNs (same bundle ID / WebView storage).
     const cached = getCachedFcmToken();
-    if (cached && isLikelyFcmRegistrationToken(cached)) {
-      console.log('[push-bootstrap] using cached Firebase iOS FCM token');
-      return { token: cached, permission: permission === 'unknown' ? 'granted' : permission };
-    }
-
     const { FirebaseMessaging } = await import('@capacitor-firebase/messaging');
     const { token } = await FirebaseMessaging.getToken();
     if (!token || !isLikelyFcmRegistrationToken(token)) {
@@ -285,10 +282,17 @@ async function getTokenFromFirebaseMessagingIos(
       });
       return { token: null, permission };
     }
+    if (cached && cached !== token) {
+      console.log('[push-bootstrap] Firebase iOS FCM token changed (e.g. dev→prod APNs)', {
+        cachedPrefix: cached.slice(0, 20) + '...',
+        freshPrefix: token.slice(0, 20) + '...',
+      });
+    }
     localStorage.setItem(PUSH_TOKEN_CACHE_KEY, token);
     console.log('[push-bootstrap] Firebase iOS getToken', {
       tokenPrefix: token.slice(0, 20) + '...',
       tokenLength: token.length,
+      unchangedFromCache: cached === token,
     });
     return { token, permission: permission === 'unknown' ? 'granted' : permission };
   } catch (err) {
@@ -961,7 +965,8 @@ export async function bootstrapPushNotifications(
     try {
       const deviceId = getOrCreateDeviceId();
       const cachedToken = getCachedFcmToken();
-      if (cachedToken && !needsPushRegistrationSync(opts.userId)) {
+      // iOS must always refresh FCM from native layer — WebView localStorage survives debug→TestFlight.
+      if (cachedToken && !needsPushRegistrationSync(opts.userId) && !isCapacitorIos()) {
         return { ok: true, deviceId };
       }
 

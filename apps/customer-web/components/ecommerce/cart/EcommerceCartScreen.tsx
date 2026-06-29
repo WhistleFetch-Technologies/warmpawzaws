@@ -32,7 +32,6 @@ import {
   writeCheckoutAddressId,
 } from '@/lib/ecommerce/checkout-address-storage';
 import { CheckoutPriceBreakdown } from '@/components/ecommerce/checkout/CheckoutPriceBreakdown';
-import { apiClient } from '@/lib/api-client';
 import { mapApiProductsList } from '@/components/shop/map-shop-product';
 import type { ShopProduct } from '@/components/shop/shop-types';
 import {
