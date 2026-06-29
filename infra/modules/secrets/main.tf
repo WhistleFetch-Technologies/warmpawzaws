@@ -17,7 +17,7 @@ resource "aws_secretsmanager_secret" "razorpay" {
 
   # CRITICAL: Prevent duplicate secrets - ONE secret per name per environment
   lifecycle {
-    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    prevent_destroy       = true # Prevent accidental deletion (set to false for dev/staging if needed)
     create_before_destroy = true # Ensure no downtime and prevent duplicates
   }
 }
@@ -26,11 +26,11 @@ resource "aws_secretsmanager_secret_version" "razorpay" {
   secret_id = aws_secretsmanager_secret.razorpay.id
   secret_string = jsonencode({
     # Lambda expects camelCase (keyId, keySecret, razorpayXAccountNumber)
-    key_id                  = var.razorpay_key_id
-    key_secret              = var.razorpay_key_secret
-    keyId                   = var.razorpay_key_id
-    keySecret               = var.razorpay_key_secret
-    razorpayXAccountNumber  = var.razorpay_x_account_number
+    key_id                 = var.razorpay_key_id
+    key_secret             = var.razorpay_key_secret
+    keyId                  = var.razorpay_key_id
+    keySecret              = var.razorpay_key_secret
+    razorpayXAccountNumber = var.razorpay_x_account_number
   })
 }
 
@@ -47,7 +47,7 @@ resource "aws_secretsmanager_secret" "google_maps" {
 
   # CRITICAL: Prevent duplicate secrets - ONE secret per name per environment
   lifecycle {
-    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    prevent_destroy       = true # Prevent accidental deletion (set to false for dev/staging if needed)
     create_before_destroy = true # Ensure no downtime and prevent duplicates
   }
 }
@@ -72,7 +72,7 @@ resource "aws_secretsmanager_secret" "shiprocket" {
 
   # CRITICAL: Prevent duplicate secrets - ONE secret per name per environment
   lifecycle {
-    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    prevent_destroy       = true # Prevent accidental deletion (set to false for dev/staging if needed)
     create_before_destroy = true # Ensure no downtime and prevent duplicates
   }
 }
@@ -94,6 +94,15 @@ resource "aws_secretsmanager_secret" "firebase" {
 
   tags = {
     Name        = "warmpawz-${var.environment}-firebase"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy       = true
+    create_before_destroy = true
+  }
+}
+
 # AfterShip tracking (vendor-managed shipping)
 resource "aws_secretsmanager_secret" "aftership" {
   name                    = "warmpawz/${var.environment}/aftership"
@@ -112,9 +121,11 @@ resource "aws_secretsmanager_secret" "aftership" {
 }
 
 resource "aws_secretsmanager_secret_version" "firebase" {
-  count     = var.firebase_service_account_json != "" ? 1 : 0
-  secret_id = aws_secretsmanager_secret.firebase[0].id
+  count         = var.firebase_service_account_json != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.firebase[0].id
   secret_string = var.firebase_service_account_json
+}
+
 resource "aws_secretsmanager_secret_version" "aftership" {
   count     = var.aftership_api_key != "" ? 1 : 0
   secret_id = aws_secretsmanager_secret.aftership.id
