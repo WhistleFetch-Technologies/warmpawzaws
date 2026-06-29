@@ -92,6 +92,22 @@ const nextConfig = {
   },
   
   webpack: (config, { isServer, dev }) => {
+    // #region agent log
+    try {
+      const messagingPkg = path.resolve(__dirname, 'node_modules/@capacitor-firebase/messaging/package.json');
+      const logLine =
+        JSON.stringify({
+          sessionId: '0135ea',
+          hypothesisId: 'A',
+          location: 'next.config.js:webpack',
+          message: 'capacitor-firebase messaging install check',
+          data: { installed: fs.existsSync(messagingPkg), messagingPkg },
+          timestamp: Date.now(),
+          runId: process.env.DEBUG_RUN_ID || 'verify',
+        }) + '\n';
+      fs.appendFileSync(path.resolve(__dirname, '../../debug-0135ea.log'), logLine);
+    } catch (_) {}
+    // #endregion
     // Configure webpack to resolve modules from packages/ui/node_modules
     // This ensures Next.js can find dependencies from the linked @warmpawz/ui package
     const uiNodeModulesPath = path.resolve(__dirname, '../../packages/ui/node_modules');

@@ -32,6 +32,45 @@ export function parseOrderShippingAddress(
   return null;
 }
 
+/** Normalized address for invoices when `shipping_address` is JSON or legacy plain text + columns. */
+export function resolveOrderShippingAddress(
+  order: Record<string, unknown>
+): Record<string, unknown> {
+  const parsed = parseOrderShippingAddress(order);
+  if (parsed) {
+    return {
+      address_line1: String(
+        parsed.address_line1 ??
+          parsed.addressLine1 ??
+          parsed.line1 ??
+          parsed.street ??
+          parsed.address ??
+          ''
+      ).trim(),
+      city: String(parsed.city ?? order.shipping_city ?? '').trim(),
+      state: String(parsed.state ?? order.shipping_state ?? '').trim(),
+      pincode: String(
+        parsed.pincode ??
+          parsed.postalCode ??
+          parsed.postal_code ??
+          parsed.zip ??
+          order.shipping_pincode ??
+          ''
+      ).trim(),
+      gstin: parsed.gstin,
+      phone: parsed.phone ?? parsed.mobile ?? order.shipping_phone,
+    };
+  }
+
+  return {
+    address_line1: String(order.shipping_address ?? '').trim(),
+    city: String(order.shipping_city ?? '').trim(),
+    state: String(order.shipping_state ?? '').trim(),
+    pincode: String(order.shipping_pincode ?? '').trim(),
+    phone: order.shipping_phone,
+  };
+}
+
 export function resolveDeliveryPincode(order: Record<string, unknown>): string {
   const addr = parseOrderShippingAddress(order);
   const candidates = [

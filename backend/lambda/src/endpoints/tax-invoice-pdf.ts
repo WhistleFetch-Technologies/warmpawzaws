@@ -13,11 +13,14 @@
  * ============================================================================
  */
 
-import { Hono } from 'hono';
+import { Hono, Context } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
 import { parseSelectedServices } from '../utils/entity-extractor';
+import { extractAndVerifyAuthToken } from '../utils/jwt-verification';
+import { resolveVendorId } from '../utils/vendor-resolve';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { resolveOrderShippingAddress } from '../utils/logistics/shipment-pincodes';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 const INVOICE_BUCKET = process.env.S3_INVOICES_BUCKET || process.env.S3_UPLOADS_BUCKET || 'warmpawz-invoices';
@@ -52,124 +55,14 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
   app.post('/orders/:orderId/invoice/generate', async (c) => {
     try {
       const orderId = c.req.param('orderId');
-
-      // Fetch order with all related data
-      const orderQuery = `
-        SELECT 
-          o.*,
-          c.full_name as customer_name,
-          c.phone as customer_phone,
-          c.email as customer_email,
-          v.business_name as vendor_name,
-          v.gst_number as vendor_gstin,
-          v.pan_number as vendor_pan,
-          v.address as vendor_address,
-          v.city as vendor_city,
-          v.state as vendor_state,
-          v.pincode as vendor_pincode
-        FROM orders o
-        LEFT JOIN customers c ON o.customer_id = c.id
-        LEFT JOIN vendors v ON o.vendor_id = v.id
-        WHERE o.id = $1
-      `;
-      const orderResult = await query(orderQuery, [orderId]);
-
-      if (orderResult.rows.length === 0) {
+      const result = await ensureOrderInvoiceGenerated(orderId);
+      if (!result.invoice && !result.invoiceId) {
         return c.json({ success: false, error: 'Order not found' }, 404);
       }
-
-      const order = orderResult.rows[0];
-
-      // Fetch order items
-      const itemsQuery = `
-        SELECT 
-          oi.*,
-          p.name as product_name,
-          p.hsn_code,
-          p.gst_rate
-        FROM order_items oi
-        LEFT JOIN products p ON oi.product_id = p.id
-        WHERE oi.order_id = $1
-      `;
-      const itemsResult = await query(itemsQuery, [orderId]);
-      const items = itemsResult.rows || [];
-
-      // Generate invoice number
-      const invoiceNumber = await generateInvoiceNumber(order.vendor_id);
-
-      // Calculate tax breakdown
-      const shippingAddress = typeof order.shipping_address === 'string' 
-        ? JSON.parse(order.shipping_address || '{}') 
-        : (order.shipping_address || {});
-      
-      const isInterState = (order.vendor_state || '').toLowerCase() !== (shippingAddress.state || '').toLowerCase();
-
-      const invoiceData = buildInvoiceData({
-        order,
-        items,
-        invoiceNumber,
-        isInterState,
-        shippingAddress,
-      });
-
-      // Generate HTML invoice
-      const htmlContent = generateInvoiceHTML(normalizeInvoiceDataForHtml(invoiceData));
-
-      // Store invoice record
-      const [invoice] = await insert('invoices', {
-        order_id: orderId,
-        vendor_id: order.vendor_id,
-        customer_id: order.customer_id,
-        invoice_number: invoiceNumber,
-        invoice_type: 'tax_invoice',
-        invoice_date: new Date().toISOString(),
-        subtotal: invoiceData.subtotal,
-        tax_amount: invoiceData.totalTax,
-        cgst_amount: invoiceData.cgst,
-        sgst_amount: invoiceData.sgst,
-        igst_amount: invoiceData.igst,
-        shipping_amount: order.shipping_fee || 0,
-        discount_amount: order.discount_amount || 0,
-        total_amount: order.total_amount,
-        is_inter_state: isInterState,
-        customer_gstin: shippingAddress.gstin || null,
-        place_of_supply: shippingAddress.state || order.vendor_state,
-        invoice_data: JSON.stringify(invoiceData),
-        status: 'generated',
-        created_at: new Date().toISOString(),
-      });
-
-      // Upload HTML to S3
-      const s3Key = `invoices/${order.vendor_id}/${new Date().getFullYear()}/${invoiceNumber}.html`;
-      
-      try {
-        await s3Client.send(new PutObjectCommand({
-          Bucket: INVOICE_BUCKET,
-          Key: s3Key,
-          Body: htmlContent,
-          ContentType: 'text/html',
-        }));
-
-        await update('invoices', { id: invoice.id }, {
-          pdf_url: s3Key,
-          updated_at: new Date().toISOString(),
-        });
-      } catch (s3Error: any) {
-        console.warn('S3 upload failed:', s3Error.message);
-      }
-
       return c.json({
         success: true,
-        invoice: {
-          id: invoice.id,
-          invoiceNumber,
-          date: invoice.invoice_date,
-          subtotal: invoiceData.subtotal,
-          tax: invoiceData.totalTax,
-          total: order.total_amount,
-          isInterState,
-        },
-        html: htmlContent,
+        invoice: result.invoice ?? { id: result.invoiceId },
+        created: result.created,
       });
     } catch (error: any) {
       console.error('Error generating invoice:', error);
@@ -206,17 +99,17 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
           id: invoice.id,
           invoiceNumber: invoice.invoice_number,
           date: invoice.invoice_date,
-          type: invoice.invoice_type,
+          type: invoice.invoice_type || invoiceData?.invoiceType || 'tax_invoice',
           subtotal: parseFloat(invoice.subtotal),
           cgst: parseFloat(invoice.cgst_amount) || 0,
           sgst: parseFloat(invoice.sgst_amount) || 0,
           igst: parseFloat(invoice.igst_amount) || 0,
           totalTax: parseFloat(invoice.tax_amount),
-          shipping: parseFloat(invoice.shipping_amount) || 0,
-          discount: parseFloat(invoice.discount_amount) || 0,
+          shipping: parseFloat(invoice.shipping_amount) || Number(invoiceData?.shipping) || 0,
+          discount: parseFloat(invoice.discount_amount) || Number(invoiceData?.discount) || 0,
           total: parseFloat(invoice.total_amount),
-          isInterState: invoice.is_inter_state,
-          placeOfSupply: invoice.place_of_supply,
+          isInterState: invoice.is_inter_state ?? invoiceData?.isInterState ?? false,
+          placeOfSupply: invoice.place_of_supply || invoiceData?.placeOfSupply || '',
           status: invoice.status,
         },
         data: invoiceData,
@@ -277,25 +170,16 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
             booking_id: bookingId,
           };
           
-          await insert('invoices', {
-            vendor_id: booking.vendor_id,
-            customer_id: booking.customer_id,
-            invoice_number: invoiceNumber,
-            invoice_type: 'tax_invoice',
-            invoice_date: new Date().toISOString(),
-            subtotal: invoiceData.subtotal,
-            tax_amount: invoiceData.totalTax,
-            cgst_amount: invoiceData.cgst,
-            sgst_amount: invoiceData.sgst,
-            igst_amount: invoiceData.igst,
-            discount_amount: invoiceData.discount,
-            total_amount: invoiceData.total,
-            is_inter_state: invoiceData.isInterState,
-            place_of_supply: invoiceData.placeOfSupply,
-            invoice_data: JSON.stringify(invoiceDataWithBooking),
-            status: 'generated',
-            created_at: new Date().toISOString(),
-          });
+          await insert(
+            'invoices',
+            buildInvoicesInsertRow({
+              vendorId: booking.vendor_id,
+              customerId: booking.customer_id,
+              invoiceNumber,
+              invoiceData: invoiceDataWithBooking,
+              totalAmount: invoiceData.total,
+            })
+          );
         } catch (insertError: any) {
           console.warn('Failed to store invoice in database:', insertError.message);
           // Continue anyway - invoice generation succeeded
@@ -343,6 +227,10 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
       }
 
       const invoice = invoices[0];
+      const access = await assertInvoiceDownloadAccess(c, invoice);
+      if (!access.ok) {
+        return c.json({ success: false, error: access.error }, access.status);
+      }
 
       if (invoice.pdf_url) {
         // Get presigned URL from S3
@@ -454,10 +342,14 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
           id: i.id,
           invoiceNumber: i.invoice_number,
           orderNumber: i.order_number,
+          orderId: i.order_id,
           customerName: i.customer_name,
           date: i.invoice_date,
           subtotal: parseFloat(i.subtotal),
           tax: parseFloat(i.tax_amount),
+          cgst: parseFloat(i.cgst_amount || 0),
+          sgst: parseFloat(i.sgst_amount || 0),
+          igst: parseFloat(i.igst_amount || 0),
           total: parseFloat(i.total_amount),
           isInterState: i.is_inter_state,
           status: i.status,
@@ -509,6 +401,8 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
 
       const result = await query(invoicesQuery, [vendorId, month]);
 
+      const effectiveRate = (i: any) => effectiveInvoiceGstRatePercent(i);
+
       // Format for GSTR-1 B2C (Business to Consumer) section
       const b2cInvoices = (result.rows || [])
         .filter((i: any) => !i.customer_gstin)
@@ -516,7 +410,7 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
           'Invoice Number': i.invoice_number,
           'Invoice Date': new Date(i.invoice_date).toLocaleDateString('en-IN'),
           'Place of Supply': i.place_of_supply,
-          'Rate': '18', // Assuming 18% GST
+          'Rate': effectiveRate(i),
           'Taxable Value': parseFloat(i.subtotal).toFixed(2),
           'CGST': parseFloat(i.cgst_amount || 0).toFixed(2),
           'SGST': parseFloat(i.sgst_amount || 0).toFixed(2),
@@ -533,7 +427,7 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
           'Invoice Date': new Date(i.invoice_date).toLocaleDateString('en-IN'),
           'Invoice Value': parseFloat(i.total_amount).toFixed(2),
           'Place of Supply': i.place_of_supply,
-          'Rate': '18',
+          'Rate': effectiveRate(i),
           'Taxable Value': parseFloat(i.subtotal).toFixed(2),
           'IGST': parseFloat(i.igst_amount || 0).toFixed(2),
           'CGST': parseFloat(i.cgst_amount || 0).toFixed(2),
@@ -649,6 +543,34 @@ interface InvoiceData {
   isInterState: boolean;
   placeOfSupply: string;
   amountInWords: string;
+}
+
+/** Compatible with migration 021 invoices table; extended columns live in invoice_data until 1047 is applied. */
+function buildInvoicesInsertRow(params: {
+  orderId?: string | null;
+  vendorId: string;
+  customerId: string | null;
+  invoiceNumber: string;
+  invoiceData: InvoiceData | Record<string, unknown>;
+  totalAmount: number;
+}): Record<string, unknown> {
+  const data = params.invoiceData as InvoiceData;
+  return {
+    ...(params.orderId ? { order_id: params.orderId } : {}),
+    vendor_id: params.vendorId,
+    customer_id: params.customerId,
+    invoice_number: params.invoiceNumber,
+    invoice_date: new Date().toISOString().slice(0, 10),
+    subtotal: Number(data.subtotal) || 0,
+    tax_amount: Number(data.totalTax) || 0,
+    cgst_amount: Number(data.cgst) || 0,
+    sgst_amount: Number(data.sgst) || 0,
+    igst_amount: Number(data.igst) || 0,
+    total_amount: params.totalAmount,
+    invoice_data: params.invoiceData,
+    status: 'generated',
+    created_at: new Date().toISOString(),
+  };
 }
 
 function buildInvoiceData(params: {
@@ -1298,4 +1220,167 @@ function numberToWords(num: number): string {
   }
 
   return words.trim();
+}
+
+function effectiveInvoiceGstRatePercent(invoiceRow: {
+  subtotal?: string | number;
+  tax_amount?: string | number;
+}): string {
+  const subtotal = parseFloat(String(invoiceRow.subtotal ?? 0));
+  const tax = parseFloat(String(invoiceRow.tax_amount ?? 0));
+  if (subtotal <= 0 || tax <= 0) return '0';
+  return (Math.round((tax / subtotal) * 10000) / 100).toFixed(2);
+}
+
+async function assertInvoiceDownloadAccess(
+  c: Context,
+  invoice: { vendor_id?: string; customer_id?: string }
+): Promise<{ ok: true } | { ok: false; error: string; status: 401 | 403 }> {
+  const authHeader = c.req.header('Authorization') || c.req.header('authorization') || '';
+  if (!authHeader) {
+    return { ok: false, error: 'Authentication required', status: 401 };
+  }
+
+  const verified = await extractAndVerifyAuthToken({ authorization: authHeader });
+  if (!verified.valid || !verified.payload?.sub) {
+    return { ok: false, error: 'Authentication required', status: 401 };
+  }
+
+  const userId = verified.payload.sub;
+  const role = String(verified.payload['custom:user_type'] || verified.payload['custom:role'] || '').toLowerCase();
+  if (role === 'admin' || role.includes('admin')) {
+    return { ok: true };
+  }
+
+  if (invoice.customer_id && String(invoice.customer_id) === String(userId)) {
+    return { ok: true };
+  }
+
+  if (invoice.vendor_id) {
+    const resolvedVendor = await resolveVendorId(String(invoice.vendor_id));
+    const resolvedUser = await resolveVendorId(String(userId));
+    if (resolvedVendor && resolvedUser && String(resolvedVendor) === String(resolvedUser)) {
+      return { ok: true };
+    }
+    if (String(userId) === String(invoice.vendor_id)) {
+      return { ok: true };
+    }
+  }
+
+  return { ok: false, error: 'Not authorized to download this invoice', status: 403 };
+}
+
+export interface GeneratedOrderInvoice {
+  id: string;
+  invoiceNumber: string;
+  subtotal: number;
+  tax: number;
+  total: number;
+  isInterState: boolean;
+}
+
+/** Idempotent: create invoice row for order if none exists. */
+export async function ensureOrderInvoiceGenerated(orderId: string): Promise<{
+  created: boolean;
+  invoiceId?: string;
+  invoice?: GeneratedOrderInvoice;
+}> {
+  const existing = await query(
+    `SELECT id FROM invoices WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [orderId]
+  );
+  if (existing.rows.length > 0) {
+    return { created: false, invoiceId: String(existing.rows[0].id) };
+  }
+
+  const orderQuery = `
+    SELECT 
+      o.*,
+      c.full_name as customer_name,
+      c.phone as customer_phone,
+      c.email as customer_email,
+      v.business_name as vendor_name,
+      v.gst_number as vendor_gstin,
+      v.pan_number as vendor_pan,
+      v.address as vendor_address,
+      v.city as vendor_city,
+      v.state as vendor_state,
+      v.pincode as vendor_pincode
+    FROM orders o
+    LEFT JOIN customers c ON o.customer_id = c.id
+    LEFT JOIN vendors v ON o.vendor_id = v.id
+    WHERE o.id = $1
+  `;
+  const orderResult = await query(orderQuery, [orderId]);
+  if (orderResult.rows.length === 0) {
+    return { created: false };
+  }
+
+  const order = orderResult.rows[0];
+  const itemsResult = await query(
+    `SELECT oi.*, p.name as product_name, p.hsn_code, p.gst_rate
+     FROM order_items oi
+     LEFT JOIN products p ON oi.product_id = p.id
+     WHERE oi.order_id = $1`,
+    [orderId]
+  );
+  const items = itemsResult.rows || [];
+
+  const shippingAddress = resolveOrderShippingAddress(order as Record<string, unknown>);
+  const customerState = String(shippingAddress.state ?? order.shipping_state ?? '').toLowerCase();
+  const isInterState =
+    String(order.vendor_state ?? '').toLowerCase() !== customerState;
+
+  const invoiceNumber = await generateInvoiceNumber(order.vendor_id);
+  const invoiceData = buildInvoiceData({
+    order,
+    items,
+    invoiceNumber,
+    isInterState,
+    shippingAddress,
+  });
+  const htmlContent = generateInvoiceHTML(normalizeInvoiceDataForHtml(invoiceData));
+
+  const [invoice] = await insert(
+    'invoices',
+    buildInvoicesInsertRow({
+      orderId: orderId,
+      vendorId: order.vendor_id,
+      customerId: order.customer_id,
+      invoiceNumber,
+      invoiceData,
+      totalAmount: parseFloat(String(order.total_amount)) || invoiceData.total,
+    })
+  );
+
+  const s3Key = `invoices/${order.vendor_id}/${new Date().getFullYear()}/${invoiceNumber}.html`;
+  try {
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: INVOICE_BUCKET,
+        Key: s3Key,
+        Body: htmlContent,
+        ContentType: 'text/html',
+      })
+    );
+    await update('invoices', { id: invoice.id }, {
+      pdf_url: s3Key,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (s3Error: any) {
+    console.warn('S3 upload failed:', s3Error.message);
+  }
+
+  return {
+    created: true,
+    invoiceId: String(invoice.id),
+    invoice: {
+      id: String(invoice.id),
+      invoiceNumber,
+      subtotal: invoiceData.subtotal,
+      tax: invoiceData.totalTax,
+      total: parseFloat(String(order.total_amount)),
+      isInterState,
+    },
+  };
 }

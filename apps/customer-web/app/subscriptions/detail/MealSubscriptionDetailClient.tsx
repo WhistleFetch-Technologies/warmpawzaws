@@ -2,8 +2,12 @@
 
 import React, { useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Loader2, RefreshCw, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  downloadMealOrderInvoice,
+  getMealOrderInvoiceDownloadMessage,
+} from '@/lib/meal-order-invoice-download';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
@@ -83,6 +87,20 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
       delQ.refetch();
     } catch (e: any) {
       toast.error(e?.message || 'Resume failed');
+    }
+  };
+
+  const handleDownloadSessionInvoice = async (mealOrderId: string) => {
+    try {
+      const { saveResult } = await downloadMealOrderInvoice(mealOrderId);
+      if (saveResult === 'failed') {
+        toast.error(getMealOrderInvoiceDownloadMessage(saveResult));
+      } else {
+        toast.success(getMealOrderInvoiceDownloadMessage(saveResult));
+      }
+    } catch (e: unknown) {
+      console.error('[MealSubscriptionDetail] invoice download failed:', e);
+      toast.error(e instanceof Error ? e.message : 'Failed to download invoice');
     }
   };
 
@@ -195,6 +213,7 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
             <ul className="space-y-3">
               {deliveries.map((d: Record<string, unknown>) => {
                 const id = String(d.id);
+                const mealOrderId = d.meal_order_id ? String(d.meal_order_id) : '';
                 const slot = d.delivery_time_slot as { start?: string; end?: string } | undefined;
                 const st = String(d.status || '');
                 return (
@@ -212,6 +231,17 @@ export default function MealSubscriptionDetailClient({ subscriptionId }: { subsc
                       {formatMealSubscriptionSessionLine(d.delivery_date, slot)}
                     </p>
                     <div className="flex flex-wrap gap-2 pt-1">
+                      {mealOrderId ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleDownloadSessionInvoice(mealOrderId)}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Invoice
+                        </Button>
+                      ) : null}
                       {lifecycle === 'active' &&
                         ['scheduled', 'preparing', 'rescheduled'].includes(st) &&
                         customerId && (

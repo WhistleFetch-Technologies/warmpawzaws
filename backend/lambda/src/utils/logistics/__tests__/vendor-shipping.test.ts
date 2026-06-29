@@ -10,6 +10,7 @@ import {
 } from '../shipment-order-sync';
 import {
   resolveDeliveryPincode,
+  resolveOrderShippingAddress,
   resolvePickupPincode,
   shipmentPincodeFieldsForInsert,
 } from '../shipment-pincodes';
@@ -157,6 +158,41 @@ describe('shipment-pincodes', () => {
       })
     ).toBe('700001');
     expect(resolvePickupPincode({}, { pincode: '560078' })).toBe('560078');
+  });
+
+  it('resolves plain-text shipping_address with separate columns for invoices', () => {
+    expect(
+      resolveOrderShippingAddress({
+        shipping_address: 'Mirra Heal, 12 MG Road',
+        shipping_city: 'Bengaluru',
+        shipping_state: 'Karnataka',
+        shipping_pincode: '560001',
+      })
+    ).toEqual({
+      address_line1: 'Mirra Heal, 12 MG Road',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      pincode: '560001',
+      phone: undefined,
+    });
+  });
+
+  it('resolves JSON shipping_address for invoices', () => {
+    expect(
+      resolveOrderShippingAddress({
+        shipping_address: JSON.stringify({
+          line1: 'Flat 4',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          pincode: '400001',
+        }),
+      })
+    ).toMatchObject({
+      address_line1: 'Flat 4',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      pincode: '400001',
+    });
   });
 });
 

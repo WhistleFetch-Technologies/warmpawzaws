@@ -5,8 +5,14 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 import { apiClient } from '@/lib/api-client';
 import { 
   Package, MapPin, Truck, Clock, Check, AlertCircle, 
-  Phone, ChevronRight, ArrowLeft, Navigation, RefreshCcw, MessageCircle, CheckCircle, HelpCircle
+  Phone, ChevronRight, ArrowLeft, Navigation, RefreshCcw, MessageCircle, CheckCircle, HelpCircle, Download
 } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  downloadMealOrderInvoice,
+  getMealOrderInvoiceDownloadMessage,
+  isMealOrderInvoiceAvailable,
+} from '@/lib/meal-order-invoice-download';
 import {
   MealPlanOrderTrackingUI,
   formatMealOrderDisplayId,
@@ -330,6 +336,26 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
       );
     };
 
+    const handleDownloadInvoice = async () => {
+      const mealOrder = tracking.order as Record<string, unknown>;
+      if (!isMealOrderInvoiceAvailable(mealOrder)) {
+        toast.error('Invoice is available after payment is confirmed');
+        return;
+      }
+      const orderIdForInvoice = String(mealOrder.id || resolvedOrderId);
+      try {
+        const { saveResult } = await downloadMealOrderInvoice(orderIdForInvoice);
+        if (saveResult === 'failed') {
+          toast.error(getMealOrderInvoiceDownloadMessage(saveResult));
+        } else {
+          toast.success(getMealOrderInvoiceDownloadMessage(saveResult));
+        }
+      } catch (err: unknown) {
+        console.error('[MealTracking] invoice download failed:', err);
+        toast.error(err instanceof Error ? err.message : 'Failed to download invoice');
+      }
+    };
+
     return (
       <MealPlanOrderTrackingUI
         orderDisplayId={formatMealOrderDisplayId(tracking.order)}
@@ -352,6 +378,16 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
         }
         headerActions={
           <div className="flex items-center gap-1">
+            {isMealOrderInvoiceAvailable(tracking.order as Record<string, unknown>) ? (
+              <button
+                type="button"
+                onClick={() => void handleDownloadInvoice()}
+                className="p-2 rounded-full hover:bg-white/15 text-white transition"
+                aria-label="Download invoice"
+              >
+                <Download className="w-5 h-5" />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={openMealOrderHelp}
