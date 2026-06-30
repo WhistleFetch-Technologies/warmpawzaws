@@ -2,6 +2,7 @@ import type { AppRouterInstance } from 'next/navigation';
 import {
   rememberBeforeMyPackagesNav,
   rememberHelpBackFromCurrentUrl,
+  rememberOrdersBackFromCurrentUrl,
   rememberPromotionsBackFromCurrentUrl,
   rememberShopBackFromCurrentUrl,
 } from '@/lib/go-back-or-replace';
@@ -18,6 +19,7 @@ export function navigateFromStandaloneAccountMenu(router: AppRouterInstance, pat
     return;
   }
   if (path === 'account/orders' || path === 'orders') {
+    rememberOrdersBackFromCurrentUrl();
     router.push('/orders');
     return;
   }

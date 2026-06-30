@@ -152,6 +152,8 @@ export const WARMPAWZ_HOME_RESUME_SCREENS = new Set<string>([
   'integrated-services',
   'vet',
   'meal-order-checkout',
+  'profile',
+  'customer-profile',
 ]);
 
 const MEAL_ONE_TIME_PAY_BACK_INTENT_KEY = 'warmpawz_meal_one_time_pay_back_intent';
@@ -420,6 +422,63 @@ export function handleHelpPageBack(router: RouterWithPush): void {
       }
     } catch {
       sessionStorage.removeItem(HELP_BACK_INTENT_KEY);
+    }
+  }
+  goBackOrReplace(router, '/');
+}
+
+// --- Shop orders (`/orders`): return to profile shell or prior full route ---
+
+const ORDERS_BACK_INTENT_KEY = 'warmpawz_orders_back_intent';
+
+type OrdersBackIntent =
+  | { kind: 'path'; path: string }
+  | { kind: 'spa'; screen: string };
+
+/** Call before navigating to `/orders` from a real route (e.g. `/profile`). */
+export function rememberOrdersBackFromCurrentUrl(): void {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname + window.location.search;
+  if (!isSafeInternalPath(path) || path.startsWith('/orders')) return;
+  if (path === '/' || path === '') return;
+  sessionStorage.setItem(
+    ORDERS_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'path', path } satisfies OrdersBackIntent)
+  );
+}
+
+/** Call before `router.push('/orders')` from an embedded screen on `/` (e.g. profile). */
+export function rememberOrdersBackToSpaScreen(screen: string): void {
+  if (typeof window === 'undefined') return;
+  const safe = WARMPAWZ_HOME_RESUME_SCREENS.has(screen) ? screen : 'home';
+  sessionStorage.setItem(
+    ORDERS_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'spa', screen: safe } satisfies OrdersBackIntent)
+  );
+}
+
+/** Orders page Back — honor remembered path or SPA screen; else browser back / home. */
+export function handleOrdersPageBack(router: RouterWithPush): void {
+  if (typeof window === 'undefined') {
+    router.replace('/');
+    return;
+  }
+  const raw = sessionStorage.getItem(ORDERS_BACK_INTENT_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as OrdersBackIntent;
+      sessionStorage.removeItem(ORDERS_BACK_INTENT_KEY);
+      if (parsed.kind === 'path' && isSafeInternalPath(parsed.path)) {
+        router.push(parsed.path);
+        return;
+      }
+      if (parsed.kind === 'spa' && WARMPAWZ_HOME_RESUME_SCREENS.has(parsed.screen)) {
+        sessionStorage.setItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY, parsed.screen);
+        router.push('/');
+        return;
+      }
+    } catch {
+      sessionStorage.removeItem(ORDERS_BACK_INTENT_KEY);
     }
   }
   goBackOrReplace(router, '/');

@@ -2693,6 +2693,7 @@ export function CustomerHomeWrapper({
         phone={phone}
         onBack={handleCustomerProfileBack}
         onCloseToHome={goToHome}
+        ordersBackSpaScreen="customer-profile"
       />
     );
   }
@@ -5147,7 +5148,14 @@ export function CustomerHomeWrapper({
     );
   }
   if (currentScreen === 'profile') {
-    return <CustomerProfileView phone={phone} onBack={handleBack} onCloseToHome={handleBack} />;
+    return (
+      <CustomerProfileView
+        phone={phone}
+        onBack={handleBack}
+        onCloseToHome={handleBack}
+        ordersBackSpaScreen="profile"
+      />
+    );
   }
 
   // Emergency Booking
