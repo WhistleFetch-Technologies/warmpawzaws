@@ -33,6 +33,7 @@ import {
   updateVariantOptionValue,
   isSkuUuid,
   deliveryRegionsFromProduct,
+  VENDOR_PET_TYPE_SUGGESTIONS,
   customSpecRowsFromProduct,
   type SpecKvRow,
   variantAxesFromPresetSuggestion,
@@ -462,30 +463,23 @@ export function ProductFormModal({
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Pet Type</label>
-                <select
-                  value={form.petType}
-                  onChange={(e) =>
-                    setForm({ ...form, petType: e.target.value as ProductFormState['petType'] })
-                  }
+                <input
+                  list="vendor-product-pet-type-suggestions"
+                  value={form.petTypeInput}
+                  onChange={(e) => setForm({ ...form, petTypeInput: e.target.value })}
+                  placeholder="Dog, Cat, All pets, or type a specific pet"
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                >
-                  <option value="">Select (optional)</option>
-                  <option value="dog">Dog</option>
-                  <option value="cat">Cat</option>
-                  <option value="other">Other</option>
-                </select>
+                />
+                <datalist id="vendor-product-pet-type-suggestions">
+                  {VENDOR_PET_TYPE_SUGGESTIONS.map((option) => (
+                    <option key={option} value={option} />
+                  ))}
+                </datalist>
+                <p className="text-xs text-slate-500 mt-1">
+                  Choose Dog or Cat, All pets if unknown or general, or type a specific pet (e.g.
+                  Birds).
+                </p>
               </div>
-              {form.petType === 'other' && (
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Pet Type (Other) *</label>
-                  <input
-                    value={form.petTypeOther}
-                    onChange={(e) => setForm({ ...form, petTypeOther: e.target.value })}
-                    placeholder="e.g., Birds, Small pets"
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                  />
-                </div>
-              )}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Category *</label>
                 <select

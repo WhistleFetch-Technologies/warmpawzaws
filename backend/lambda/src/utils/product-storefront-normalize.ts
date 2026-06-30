@@ -5,6 +5,7 @@
 import {
   normalizeDeliveryRegionsList,
   parseOptionalPositiveNumber,
+  formatPetTypeForCustomer,
   RESERVED_SPEC_KEYS,
   type StorefrontDimensions,
 } from '@warmpawz/shared-types';
@@ -101,6 +102,8 @@ export function flattenProductForApiResponse(
     out.manufacturing_details = specs.manufacturing_details;
   }
 
+  out.pet_type_display = formatPetTypeForCustomer(out.pet_type, out.pet_type_other);
+
   return out;
 }
 
@@ -133,6 +136,9 @@ export function sanitizeStorefrontProductForCustomer(
   delete out.sku;
   delete out.cost_price;
   delete out.metadata;
+  if (out.pet_type_display == null) {
+    out.pet_type_display = formatPetTypeForCustomer(out.pet_type, out.pet_type_other);
+  }
   delete out.pet_type_other;
 
   const specs = parseSpecificationsObject(out.specifications);
