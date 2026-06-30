@@ -1,30 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { apiClient } from '@/lib/api-client';
-import {
-  Package,
-  MapPin,
-  Calendar,
-  Clock,
-  CheckCircle,
-  Truck,
-  Home,
-  Key,
-  Eye,
-  EyeOff,
-  Copy,
-  Check,
-  Phone,
-  User,
-  AlertCircle,
-  UtensilsCrossed,
-  ChevronRight,
-  Download,
-} from 'lucide-react';
+import { UtensilsCrossed } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
 import {
   downloadMealOrderInvoice,
   getMealOrderInvoiceDownloadMessage,
@@ -41,16 +21,21 @@ import {
 } from '@/lib/go-back-or-replace';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
-import {
-  isMealOrderAwaitingPayment,
-  isMealOrderPaymentHoldVisible,
-  isMealPaymentHoldExpired,
-  PaymentHoldBanner,
-  resolvePaymentHoldExpiresAt,
-} from '@/lib/payment-hold-ui';
+import { isMealPaymentHoldExpired } from '@/lib/payment-hold-ui';
 import { parseMealRefundReview, type MealRefundReviewMetadata } from '@/lib/meal-refund-review';
-import { MealRefundReviewListBanner } from '@/components/customer/meal-plans/MealRefundReviewListBanner';
 import { getResolvedCustomerId, persistCustomerDatabaseId } from '@/lib/customer-id-storage';
+import { useMealSubscriptionsList } from '@/hooks/useMealSubscriptions';
+import { Button } from '@/components/ui/button';
+import { ActivePlanBanner } from '@/components/customer/meal-plans/ActivePlanBanner';
+import { MealOrderCard } from '@/components/customer/meal-plans/MealOrderCard';
+import { MealOrderFilterTabs } from '@/components/customer/meal-plans/MealOrderFilterTabs';
+import { MealPlanOrdersHeader } from '@/components/customer/meal-plans/MealPlanOrdersHeader';
+import { MealPlanOrdersListSkeleton } from '@/components/customer/meal-plans/MealPlanOrdersListSkeleton';
+import { TrustFooter } from '@/components/customer/meal-plans/TrustFooter';
+import {
+  matchesMealOrderFilter,
+  type MealOrderFilterId,
+} from '@/components/customer/meal-plans/meal-plan-order-display';
 
 export interface MealPlanOrder {
   id: string;
@@ -62,6 +47,8 @@ export interface MealPlanOrder {
   meal_plan_image_url?: string;
   pet_id: string;
   pet_name: string;
+  /** Present when API includes breed; optional display-only field. */
+  pet_breed?: string;
   quantity: number;
   total_amount: number;
   status: string;
@@ -112,28 +99,6 @@ function resolveMealOrderImageUrl(o: Record<string, unknown>): string | undefine
       typeof raw === 'string' ? raw : sanitized ?? null,
     ) ?? sanitized
   );
-}
-
-function isMealOrderUnpaid(order: MealPlanOrder): boolean {
-  return isMealOrderAwaitingPayment({
-    status: order.status,
-    paymentStatus: order.payment_status,
-    paymentHoldExpiresAt: order.paymentHoldExpiresAt ?? order.payment_hold_expires_at,
-    createdAt: order.created_at,
-  });
-}
-
-function displayMealOrderStatus(order: MealPlanOrder): string {
-  if (isMealPaymentHoldExpired({
-    status: order.status,
-    paymentStatus: order.payment_status,
-    paymentHoldExpiresAt: order.paymentHoldExpiresAt ?? order.payment_hold_expires_at,
-    createdAt: order.created_at,
-  })) {
-    return 'cancelled';
-  }
-  if (isMealOrderUnpaid(order)) return 'payment pending';
-  return order.status.replace('_', ' ');
 }
 
 function resolveCustomerPhoneForOrders(
@@ -204,6 +169,7 @@ function mapRawMealPlanOrderRow(o: Record<string, unknown>): MealPlanOrder {
       'Meal Plan',
     meal_plan_image_url: resolveMealOrderImageUrl(o),
     pet_name: (o.pet_name as string) || undefined,
+    pet_breed: (o.pet_breed as string) || (o.petBreed as string) || undefined,
     quantity: o.quantity != null ? Number(o.quantity) : undefined,
     payment_status: o.payment_status != null ? String(o.payment_status) : undefined,
     paymentHoldExpiresAt:
@@ -297,11 +263,17 @@ function MealPlanOrdersPanelLive({
 }: MealPlanOrdersPanelProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const filterRef = useRef<HTMLDivElement>(null);
 
   const [orders, setOrders] = useState<MealPlanOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showOTP, setShowOTP] = useState<Record<string, boolean>>({});
-  const [copiedOTP, setCopiedOTP] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<MealOrderFilterId>('all');
+
+  const activeSubsQuery = useMealSubscriptionsList(customerId, 'active');
+  const activeSubscription = activeSubsQuery.data?.[0] as Record<string, unknown> | undefined;
+  const hasActiveSubscription = Boolean(activeSubscription);
+  const subscriptionsReady = !customerId || !activeSubsQuery.isLoading;
 
   useEffect(() => {
     loadOrders();
@@ -310,16 +282,17 @@ function MealPlanOrdersPanelLive({
   const loadOrders = async () => {
     try {
       setLoading(true);
-      const { customerId, customerPhone } = await resolveCustomerIdForMealOrders(
-        fixedCustomerPhone,
-        searchParams,
-      );
-      if (!customerId) {
+      const resolved = await resolveCustomerIdForMealOrders(fixedCustomerPhone, searchParams);
+      setCustomerId(resolved.customerId);
+      if (!resolved.customerId) {
         setOrders([]);
         return;
       }
 
-      const mealPlanOrders = await fetchMealPlanOrdersForCustomer(customerId, customerPhone);
+      const mealPlanOrders = await fetchMealPlanOrdersForCustomer(
+        resolved.customerId,
+        resolved.customerPhone,
+      );
       setOrders(mealPlanOrders);
     } catch (error) {
       console.error('Error loading orders:', error);
@@ -328,69 +301,13 @@ function MealPlanOrdersPanelLive({
     }
   };
 
-  const copyOTP = (orderId: string, otp: string) => {
-    navigator.clipboard.writeText(otp);
-    setCopiedOTP(orderId);
-    toast.success('OTP copied to clipboard');
-    setTimeout(() => setCopiedOTP(null), 2000);
-  };
+  const filteredOrders = useMemo(
+    () => orders.filter((order) => matchesMealOrderFilter(order, activeFilter)),
+    [orders, activeFilter],
+  );
 
-  const toggleOTPVisibility = (orderId: string) => {
-    setShowOTP((prev) => ({ ...prev, [orderId]: !prev[orderId] }));
-  };
-
-  const isOutForDelivery = (status: string) => {
-    return ['out_for_delivery', 'dispatched', 'in_transit', 'arriving', 'on_way'].includes(
-      status.toLowerCase(),
-    );
-  };
-
-  const getStatusColor = (status: string, order?: MealPlanOrder) => {
-    if (order && isMealPaymentHoldExpired({
-      status: order.status,
-      paymentStatus: order.payment_status,
-      paymentHoldExpiresAt: order.paymentHoldExpiresAt ?? order.payment_hold_expires_at,
-      createdAt: order.created_at,
-    })) {
-      return 'bg-red-100 text-red-800';
-    }
-    if (order && isMealOrderUnpaid(order)) return 'bg-amber-100 text-amber-900';
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      case 'confirmed':
-        return 'bg-blue-100 text-blue-800';
-      case 'preparing':
-        return 'bg-purple-100 text-purple-800';
-      case 'out_for_delivery':
-        return 'bg-orange-100 text-orange-800';
-      case 'delivered':
-        return 'bg-green-100 text-green-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return <Clock className="w-4 h-4" />;
-      case 'confirmed':
-        return <CheckCircle className="w-4 h-4" />;
-      case 'preparing':
-        return <Package className="w-4 h-4" />;
-      case 'out_for_delivery':
-        return <Truck className="w-4 h-4" />;
-      case 'delivered':
-        return <Home className="w-4 h-4" />;
-      default:
-        return <Clock className="w-4 h-4" />;
-    }
-  };
+  const showFullEmpty =
+    !loading && subscriptionsReady && orders.length === 0 && !hasActiveSubscription;
 
   const handlePayNow = async (order: MealPlanOrder, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -485,7 +402,6 @@ function MealPlanOrdersPanelLive({
     }
     const q = new URLSearchParams();
     q.set('from', 'meal-plans');
-    // Omit ?phone= — mismatched formatting caused 403 Unauthorized on GET /customer/tracking/:id
     router.push(`/track/${orderId}?${q.toString()}`);
   };
 
@@ -509,7 +425,6 @@ function MealPlanOrdersPanelLive({
   };
 
   const handleBackClick = () => {
-    // Shell passes onBack → My Bookings. Standalone: pop history (avoid push loop with /bookings).
     if (onBack) {
       onBack();
       return;
@@ -517,321 +432,101 @@ function MealPlanOrdersPanelLive({
     goBackOrReplace(router, '/bookings');
   };
 
-  const openSubscriptions = () => {
+  const openActivePlanDetails = () => {
+    if (!activeSubscription?.id) return;
     if (onBack) {
       rememberSubscriptionsBackSpaScreen('meal-plan-orders');
     } else {
       rememberSubscriptionsBackFromCurrentUrl();
     }
-    router.push('/subscriptions');
+    router.push(`/subscriptions/detail?id=${encodeURIComponent(String(activeSubscription.id))}`);
   };
 
-  const hubNav = (
-    <div
-      className="mt-5 rounded-xl border border-orange-100 bg-gradient-to-r from-orange-50/80 to-amber-50/60 p-3 sm:p-4"
-      role="navigation"
-      aria-label="Subscriptions"
-    >
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-orange-800/80">
-        More nutrition
-      </p>
-      <button
-        type="button"
-        onClick={openSubscriptions}
-        className="group flex w-full items-center justify-between gap-2 rounded-lg border border-white/80 bg-white/90 px-3 py-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md"
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
-            <UtensilsCrossed className="h-4 w-4" aria-hidden />
-          </span>
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold text-gray-900">Subscriptions</span>
-            <span className="block truncate text-xs text-gray-500">Meal plans &amp; recurring deliveries</span>
-          </span>
-        </span>
-        <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-orange-500" aria-hidden />
-      </button>
-    </div>
-  );
+  const browseMeals = () => {
+    router.push('/services/nutrition');
+  };
+
+  const scrollToFilters = () => {
+    filterRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
+  const filterEmptyLabel =
+    activeFilter === 'all'
+      ? 'No meal orders yet'
+      : activeFilter === 'delivered'
+        ? 'No delivered orders'
+        : activeFilter === 'upcoming'
+          ? 'No upcoming orders'
+          : 'No cancelled orders';
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="mb-6">
-          <button
-            onClick={handleBackClick}
-            className="text-gray-600 hover:text-gray-900 mb-4 flex items-center gap-2"
-          >
-            ← Back
-          </button>
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <Package className="text-orange-500" size={32} />
-            Meal Plan Orders
-          </h1>
-          <p className="text-gray-600 mt-2">Track your meal plan deliveries</p>
-          {hubNav}
-        </div>
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-customer flex-col overflow-x-hidden bg-[var(--color-primary-50,#FFF5EE)] pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <MealPlanOrdersHeader
+        onBack={handleBackClick}
+        onHelp={() => router.push('/help')}
+        onFilter={scrollToFilters}
+      />
+
+      <main className="flex-1 space-y-4 px-4 pt-4">
+        {!loading && hasActiveSubscription && activeSubscription ? (
+          <ActivePlanBanner subscription={activeSubscription} onViewDetails={openActivePlanDetails} />
+        ) : null}
 
         {loading ? (
-          <div className="flex justify-center py-16">
-            <div className="h-12 w-12 animate-spin rounded-full border-2 border-orange-200 border-t-orange-500" />
+          <MealPlanOrdersListSkeleton />
+        ) : showFullEmpty ? (
+          <div className="rounded-3xl bg-white px-6 py-14 text-center shadow-sm ring-1 ring-slate-200/60">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-100 to-amber-100">
+              <UtensilsCrossed className="h-8 w-8 text-orange-500" strokeWidth={1.75} />
+            </div>
+            <h2 className="text-lg font-bold text-slate-900">No meal orders yet</h2>
+            <p className="mx-auto mt-2 max-w-[280px] text-sm leading-relaxed text-slate-500">
+              Start ordering fresh healthy meals for your pet.
+            </p>
+            <Button type="button" className="mt-6 min-h-11 w-full max-w-xs rounded-2xl" onClick={browseMeals}>
+              Browse Meals
+            </Button>
           </div>
-        ) : null}
+        ) : (
+          <>
+            {orders.length > 0 ? (
+              <MealOrderFilterTabs
+                activeFilter={activeFilter}
+                onFilterChange={setActiveFilter}
+                filterRef={filterRef}
+              />
+            ) : null}
 
-        {!loading && orders.length === 0 ? (
-          <div className="bg-white rounded-xl p-12 text-center">
-            <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No Orders Yet</h3>
-            <p className="text-gray-600 mb-6">You haven&apos;t placed any meal plan orders yet.</p>
-            <button
-              onClick={() => router.push('/services/nutrition')}
-              className="px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600"
-            >
-              Order Meal Plan
-            </button>
-          </div>
-        ) : null}
-
-        {!loading && orders.length > 0 ? (
-          <div className="space-y-4">
-            {orders.map((order) => (
-              <div
-                key={order.id}
-                className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {order.meal_plan_name || 'Meal Plan'}
-                      </h3>
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(order.status, order)}`}
-                      >
-                        {getStatusIcon(order.status)}
-                        {displayMealOrderStatus(order).toUpperCase()}
-                      </span>
-                    </div>
-
-                    {order.meal_plan_image_url ? (
-                      <div className="mb-3 overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
-                        <img
-                          src={order.meal_plan_image_url}
-                          alt={order.meal_plan_name || 'Meal plan'}
-                          className="h-40 w-full object-cover"
-                          loading="lazy"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      </div>
-                    ) : null}
-
-                    <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
-                      <div className="flex items-center gap-2">
-                        <Package className="w-4 h-4" />
-                        <span>Order #{order.order_number || order.id.slice(-8)}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">Pet:</span>
-                        <span>{order.pet_name || 'N/A'}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4" />
-                        <span>
-                          Delivery:{' '}
-                          {order.delivery_date
-                            ? new Date(order.delivery_date).toLocaleDateString()
-                            : '—'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4" />
-                        <span>{order.delivery_time || '—'}</span>
-                      </div>
-                      <div className="flex items-center gap-2 col-span-2">
-                        <MapPin className="w-4 h-4" />
-                        <span className="truncate">{order.delivery_address || 'Address not available'}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right ml-4">
-                    <p className="text-2xl font-bold text-orange-600">₹{order.total_amount}</p>
-                    <p className="text-sm text-gray-500 mt-1">Qty: {order.quantity ?? '—'}</p>
-                  </div>
-                </div>
-
-                {order.status?.toLowerCase() === 'cancelled' &&
-                order.refundReview?.status === 'pending_review' ? (
-                  <MealRefundReviewListBanner refundReview={order.refundReview} />
-                ) : null}
-
-                {isMealOrderPaymentHoldVisible({
-                  status: order.status,
-                  paymentStatus: order.payment_status,
-                  paymentHoldExpiresAt: order.paymentHoldExpiresAt ?? order.payment_hold_expires_at,
-                  createdAt: order.created_at,
-                }) ? (
-                  <PaymentHoldBanner
-                    expiresAt={resolvePaymentHoldExpiresAt({
-                      paymentHoldExpiresAt: order.paymentHoldExpiresAt ?? order.payment_hold_expires_at,
-                      createdAt: order.created_at,
-                    })}
-                    onPayNow={(e) => void handlePayNow(order, e)}
-                    onExpired={() => void loadOrders()}
-                    holdMessage="Complete payment within 5 minutes to confirm your order with the kitchen."
-                  />
-                ) : null}
-
-                {isOutForDelivery(order.status) && order.delivery_otp && !order.otp_verified && (
-                  <div className="mt-4 p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border-2 border-orange-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <Key className="w-5 h-5 text-orange-600" />
-                        <span className="font-bold text-orange-800">Your Delivery OTP</span>
-                      </div>
-                      {order.delivery_partner_name && (
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1 text-sm text-gray-600">
-                            <User className="w-4 h-4" />
-                            <span>{order.delivery_partner_name}</span>
-                          </div>
-                          {order.delivery_partner_phone && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                window.location.href = `tel:${order.delivery_partner_phone}`;
-                              }}
-                              className="p-2 bg-orange-100 rounded-full hover:bg-orange-200 transition"
-                            >
-                              <Phone className="w-4 h-4 text-orange-600" />
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex justify-center gap-2 mb-3">
-                      {order.delivery_otp.split('').map((digit, idx) => (
-                        <div
-                          key={idx}
-                          className="w-12 h-14 bg-white rounded-lg shadow-sm border-2 border-orange-300 flex items-center justify-center"
-                        >
-                          <span className="text-2xl font-bold text-orange-600">
-                            {showOTP[order.id] ? digit : '•'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="flex justify-center gap-3">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleOTPVisibility(order.id);
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 bg-white border border-orange-300 rounded-lg text-orange-700 hover:bg-orange-50 transition text-sm font-medium"
-                      >
-                        {showOTP[order.id] ? (
-                          <>
-                            <EyeOff className="w-4 h-4" />
-                            Hide OTP
-                          </>
-                        ) : (
-                          <>
-                            <Eye className="w-4 h-4" />
-                            Show OTP
-                          </>
-                        )}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          copyOTP(order.id, order.delivery_otp!);
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 bg-white border border-orange-300 rounded-lg text-orange-700 hover:bg-orange-50 transition text-sm font-medium"
-                      >
-                        {copiedOTP === order.id ? (
-                          <>
-                            <Check className="w-4 h-4 text-green-600" />
-                            Copied!
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-4 h-4" />
-                            Copy OTP
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    <div className="mt-3 flex items-start gap-2 text-sm text-orange-700">
-                      <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                      <p>Share this OTP with the delivery partner only after receiving your order.</p>
-                    </div>
-                  </div>
-                )}
-
-                {order.otp_verified && order.status.toLowerCase() === 'delivered' && (
-                  <div className="mt-4 p-4 bg-green-50 rounded-xl border border-green-200 flex items-center justify-center gap-3">
-                    <CheckCircle className="w-6 h-6 text-green-600" />
-                    <div>
-                      <p className="font-semibold text-green-800">Delivery Confirmed!</p>
-                      <p className="text-sm text-green-600">
-                        Your meal plan has been delivered successfully.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm text-gray-600">
-                    Ordered: {new Date(order.created_at).toLocaleString()}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 justify-end">
-                    {order.subscription_id ? (
-                      <Link
-                        href={`/subscriptions/detail?id=${encodeURIComponent(order.subscription_id)}`}
-                        className="px-4 py-2 rounded-lg text-sm font-semibold border border-orange-300 text-orange-700 bg-white hover:bg-orange-50"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Reschedule in subscription
-                      </Link>
-                    ) : null}
-                    {isMealOrderUnpaid(order) ? (
-                      <button
-                        onClick={(e) => handlePayNow(order, e)}
-                        className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
-                      >
-                        Pay now
-                      </button>
-                    ) : (
-                      <>
-                        {isMealOrderInvoiceAvailable(order) ? (
-                          <button
-                            onClick={(e) => handleDownloadInvoice(order, e)}
-                            className="px-4 py-2 rounded-lg text-sm font-semibold border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 flex items-center gap-2"
-                          >
-                            <Download className="w-4 h-4" />
-                            Invoice
-                          </button>
-                        ) : null}
-                        <button
-                          onClick={(e) => handleTrackClick(order.id, e)}
-                          className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
-                        >
-                          Track Order
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
+            {orders.length > 0 && filteredOrders.length === 0 ? (
+              <div className="rounded-2xl bg-white px-6 py-10 text-center shadow-sm ring-1 ring-slate-200/60">
+                <p className="font-semibold text-slate-800">{filterEmptyLabel}</p>
+                <p className="mt-1 text-sm text-slate-500">Try another filter to see your orders.</p>
               </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
+            ) : null}
+
+            {filteredOrders.length > 0 ? (
+              <div className="space-y-3">
+                {filteredOrders.map((order) => (
+                  <MealOrderCard
+                    key={order.id}
+                    order={order}
+                    onTrack={(e) => handleTrackClick(order.id, e)}
+                    onPayNow={(e) => void handlePayNow(order, e)}
+                    onDownloadInvoice={(e) => void handleDownloadInvoice(order, e)}
+                    onReorder={(e) => {
+                      e.stopPropagation();
+                      browseMeals();
+                    }}
+                    onPaymentHoldExpired={() => void loadOrders()}
+                  />
+                ))}
+              </div>
+            ) : null}
+
+            <TrustFooter />
+          </>
+        )}
+      </main>
     </div>
   );
 }

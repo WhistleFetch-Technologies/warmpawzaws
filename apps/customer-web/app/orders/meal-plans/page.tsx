@@ -24,8 +24,8 @@ export default function MealPlanOrdersPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500" />
+        <div className="mx-auto flex min-h-[100dvh] max-w-customer items-center justify-center bg-[var(--color-primary-50,#FFF5EE)]">
+          <div className="h-11 w-11 animate-spin rounded-full border-2 border-orange-200 border-t-orange-500" />
         </div>
       }
     >
