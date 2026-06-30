@@ -15,7 +15,7 @@ public class PidgeRiderLocationPollProperties {
 	private boolean enabled = false;
 
 	/**
-	 * Milliseconds between poll cycles (default 60s — within Pidge 1 call / 30s / order limit).
+	 * Milliseconds between poll cycles (default 30s — aligns with Pidge ~1 call / 30s per order limit).
 	 */
-	private long intervalMs = 60_000L;
+	private long intervalMs = 30_000L;
 }

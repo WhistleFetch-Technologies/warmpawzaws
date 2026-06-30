@@ -2,7 +2,7 @@
  * Shared helpers for meal order live tracking UI (coordinates, polling interval).
  */
 
-export const MEAL_TRACKING_POLL_MS = 18_000;
+export const MEAL_TRACKING_POLL_MS = 10_000;
 
 /** Hyperlocal deliveries — ignore sandbox rider GPS far from drop-off (avoids India-wide map zoom). */
 export const MAX_RIDER_DESTINATION_KM = 80;

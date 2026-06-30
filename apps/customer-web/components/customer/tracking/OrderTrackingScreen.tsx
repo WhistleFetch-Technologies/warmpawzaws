@@ -440,6 +440,11 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
               destination={destination}
               etaMinutes={tracking?.eta ?? tracking?.etaMinutes}
               distanceRemainingKm={tracking?.distanceRemaining}
+              lastLocationUpdate={
+                (tracking as { lastLocationUpdate?: string })?.lastLocationUpdate ??
+                (tracking as { last_location_update?: string })?.last_location_update ??
+                null
+              }
             />
           }
           deliveryPartnerCard={

@@ -442,6 +442,11 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
             destination={destination}
             etaMinutes={etaMinutes}
             distanceRemainingKm={tracking.tracking?.distanceRemaining}
+            lastLocationUpdate={
+              tracking.tracking?.lastLocationUpdate ??
+              (tracking.tracking as { last_location_update?: string })?.last_location_update ??
+              null
+            }
           />
         }
         deliveryPartnerCard={

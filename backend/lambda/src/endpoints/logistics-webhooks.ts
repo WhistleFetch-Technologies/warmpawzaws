@@ -1083,6 +1083,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
               pickedUpAt: deliveryTracking.picked_up_at,
               deliveredAt: deliveryTracking.delivered_at,
               trackingUrl: deliveryTracking.tracking_url,
+              lastLocationUpdate: deliveryTracking.last_location_update || null,
               locationHistory: deliveryTracking.location_history?.slice(0, 20) || [],
               logistics_partner: deliveryTracking.logistics_partner,
               reassignPending,

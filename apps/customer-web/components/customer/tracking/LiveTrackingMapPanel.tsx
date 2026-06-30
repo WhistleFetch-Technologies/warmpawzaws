@@ -17,6 +17,8 @@ export interface LiveTrackingMapPanelProps {
   currentLocation: { lat: number; lng: number } | null;
   etaMinutes?: number | null;
   distanceRemainingKm?: number | null;
+  /** ISO timestamp of last rider GPS write; used for stale-location hint. */
+  lastLocationUpdate?: string | null;
   /** meal = teal accent (default), pharmacy = orange */
   variant?: 'meal' | 'pharmacy';
   className?: string;
@@ -90,11 +92,42 @@ function clampMapZoom(map: any, minZoom: number, maxZoom: number) {
   if (z > maxZoom) map.setZoom(maxZoom);
 }
 
+/** Meal live map: scooter emoji marker instead of the default arrow glyph. */
+function createMealRiderMarkerIcon(google: typeof window.google) {
+  const size = 44;
+  const anchor = size / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    <circle cx="${anchor}" cy="${anchor}" r="18" fill="white" fill-opacity="0.95" stroke="#0d9488" stroke-width="2"/>
+    <text x="${anchor}" y="${anchor + 1}" text-anchor="middle" dominant-baseline="middle" font-size="22">🛵</text>
+  </svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new google.maps.Size(size, size),
+    anchor: new google.maps.Point(anchor, anchor),
+  };
+}
+
+function createRiderMarkerIcon(google: typeof window.google, variant: 'meal' | 'pharmacy', riderColor: string) {
+  if (variant === 'meal') {
+    return createMealRiderMarkerIcon(google);
+  }
+  return {
+    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+    scale: 6,
+    fillColor: riderColor,
+    fillOpacity: 1,
+    strokeColor: '#ffffff',
+    strokeWeight: 2,
+    rotation: 0,
+  };
+}
+
 export function LiveTrackingMapPanel({
   deliveryAddress,
   currentLocation,
   etaMinutes,
   distanceRemainingKm,
+  lastLocationUpdate,
   variant = 'meal',
   className = '',
 }: LiveTrackingMapPanelProps) {
@@ -117,6 +150,13 @@ export function LiveTrackingMapPanel({
     deliveryAddress &&
     currentLocation &&
     isRiderNearDestination(currentLocation, deliveryAddress);
+
+  const locationStaleMs = 90_000;
+  const locationIsStale =
+    showLiveRoute &&
+    lastLocationUpdate != null &&
+    Number.isFinite(Date.parse(lastLocationUpdate)) &&
+    Date.now() - Date.parse(lastLocationUpdate) > locationStaleMs;
 
   const waitingMessage = !hasDestination
     ? 'Waiting for delivery location…'
@@ -205,15 +245,7 @@ export function LiveTrackingMapPanel({
       riderMarkerRef.current = new window.google.maps.Marker({
         position: { lat, lng },
         map,
-        icon: {
-          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-          scale: 6,
-          fillColor: riderColor,
-          fillOpacity: 1,
-          strokeColor: '#ffffff',
-          strokeWeight: 2,
-          rotation: 0,
-        },
+        icon: createRiderMarkerIcon(window.google, variant, riderColor),
         title: 'Delivery partner',
         zIndex: 3,
       });
@@ -246,7 +278,7 @@ export function LiveTrackingMapPanel({
         },
       );
     }
-  }, [currentLocation, mapLoaded, deliveryAddress, hasDestination, hasRider, riderColor, showLiveRoute]);
+  }, [currentLocation, mapLoaded, deliveryAddress, hasDestination, hasRider, riderColor, showLiveRoute, variant]);
 
   const accentBg = accent === 'teal' ? 'bg-teal-50' : 'bg-orange-50';
   const accentText = accent === 'teal' ? 'text-teal-900' : 'text-orange-900';
@@ -297,7 +329,9 @@ export function LiveTrackingMapPanel({
             {showLiveRoute ? (
               <div className="absolute top-3 left-3 bg-white rounded-full px-3 py-1.5 shadow-md flex items-center gap-2">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-xs font-semibold text-slate-700">LIVE ROUTE</span>
+                <span className="text-xs font-semibold text-slate-700">
+                  {locationIsStale ? 'UPDATING LOCATION' : 'LIVE ROUTE'}
+                </span>
               </div>
             ) : waitingMessage ? (
               <div className="absolute inset-x-3 top-3 bg-white/95 backdrop-blur rounded-xl px-3 py-2.5 shadow-md border border-slate-100">
@@ -305,6 +339,11 @@ export function LiveTrackingMapPanel({
                 <p className="text-[11px] text-slate-600 mt-0.5">
                   Your delivery address is pinned. The driving route appears when partner GPS is nearby.
                 </p>
+              </div>
+            ) : null}
+            {locationIsStale ? (
+              <div className="absolute bottom-3 left-3 right-3 bg-white/95 backdrop-blur rounded-xl px-3 py-2 shadow-md border border-slate-100">
+                <p className="text-[11px] text-slate-600">Updating rider location…</p>
               </div>
             ) : null}
           </>

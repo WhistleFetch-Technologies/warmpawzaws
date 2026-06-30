@@ -15,6 +15,7 @@ export function MealLiveMapSection({
   destination,
   etaMinutes,
   distanceRemainingKm,
+  lastLocationUpdate,
 }: {
   logisticsPartner?: string | null;
   logisticsType?: string | null;
@@ -25,6 +26,7 @@ export function MealLiveMapSection({
   destination: Coords | null;
   etaMinutes?: number | null;
   distanceRemainingKm?: number | null;
+  lastLocationUpdate?: string | null;
 }) {
   const show = shouldShowMealLiveMap({
     logisticsPartner,
@@ -43,6 +45,7 @@ export function MealLiveMapSection({
       currentLocation={riderCoords}
       etaMinutes={etaMinutes}
       distanceRemainingKm={distanceRemainingKm}
+      lastLocationUpdate={lastLocationUpdate}
     />
   );
 }

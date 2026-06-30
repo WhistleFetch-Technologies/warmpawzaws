@@ -18,6 +18,8 @@ import com.warmpawz.delivery.service.PidgeMealCancellationService.MealCancelProc
 import com.warmpawz.delivery.service.PidgeMealCancellationSupport;
 import com.warmpawz.delivery.service.PidgePartialDeliverySupport;
 import com.warmpawz.delivery.service.DeliveryLocationHistoryWriter;
+import com.warmpawz.delivery.service.GpsSanityFilter;
+import com.warmpawz.delivery.service.MealOrderDestinationResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -99,6 +101,7 @@ public class PidgeWebhookProcessingService {
 	private final PidgeMealCancellationService pidgeMealCancellationService;
 	private final MealRefundCaseBridgeService mealRefundCaseBridgeService;
 	private final MealRiderReassignService mealRiderReassignService;
+	private final MealOrderDestinationResolver mealOrderDestinationResolver;
 
 	/** Pidge Communications Module — Rider Active Task webhook (batch rider + order_details). */
 	static boolean isRiderTaskPayload(JsonNode payload) {
@@ -198,7 +201,7 @@ public class PidgeWebhookProcessingService {
 			hyperlocalOrderId = orderStatusJdbc.resolveMealOrderIdForSubscriptionDelivery(dt.getSubscriptionDeliveryId());
 		}
 		boolean isMealHyperlocal = dt.getPharmacyOrderId() == null && hyperlocalOrderId != null;
-		boolean reassignPending = isMealHyperlocal && isReassignActive(dt);
+		boolean reassignPending = isMealHyperlocal && mealRiderReassignService.isReassignActiveForTracking(dt);
 		boolean mealAlreadyCancelled =
 				isMealHyperlocal && orderStatusJdbc.isMealOrderCancelled(hyperlocalOrderId);
 
@@ -641,6 +644,28 @@ public class PidgeWebhookProcessingService {
 		if (!DeliveryLocationHistoryWriter.isValidCoord(lat, lng)) {
 			return;
 		}
+		Optional<GpsSanityFilter.GpsPoint> destination = dt.getMealOrderId() != null
+				? mealOrderDestinationResolver.resolveDestination(dt.getMealOrderId())
+				: Optional.empty();
+		Optional<GpsSanityFilter.RejectReason> reject = GpsSanityFilter.rejectReason(
+				dt.getCurrentLat(),
+				dt.getCurrentLng(),
+				dt.getLastLocationUpdate(),
+				lat,
+				lng,
+				recordedAt,
+				dt.getPickedUpAt(),
+				destination.orElse(null));
+		if (reject.isPresent()) {
+			log.warn(
+					"[PIDGE GPS] rejected trackingId={} mealOrderId={} reason={} lat={} lng={}",
+					dt.getId(),
+					dt.getMealOrderId(),
+					reject.get(),
+					lat,
+					lng);
+			return;
+		}
 		if (DeliveryLocationHistoryWriter.coordsEqual(dt.getCurrentLat(), dt.getCurrentLng(), lat, lng)) {
 			deliveryLocationHistoryWriter.appendIfChanged(dt.getId(), lat, lng, "pidge", recordedAt);
 			return;
@@ -819,7 +844,7 @@ public class PidgeWebhookProcessingService {
 				normalized);
 
 		boolean isMeal = dt.getPharmacyOrderId() == null && dt.getMealOrderId() != null;
-		boolean reassignPending = isMeal && isReassignActive(dt);
+		boolean reassignPending = isMeal && mealRiderReassignService.isReassignActiveForTracking(dt);
 		String pidgeOrderId = dt.getExternalTaskId();
 
 		if (riderName != null && !riderName.isBlank()) {
@@ -987,13 +1012,5 @@ public class PidgeWebhookProcessingService {
 		} catch (Exception e) {
 			return null;
 		}
-	}
-
-	private boolean isReassignActive(DeliveryTracking dt) {
-		if (dt == null || dt.getMealOrderId() == null) {
-			return false;
-		}
-		return DeliveryTrackingMetadataHelper.isReassignPending(dt.getMetadataJson(), objectMapper)
-				|| mealRiderReassignService.hasOpenReassignRequest(dt.getMealOrderId());
 	}
 }

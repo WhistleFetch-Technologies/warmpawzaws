@@ -28,14 +28,15 @@ import java.util.UUID;
 public class MealRiderReassignService {
 
 	private static final Duration REASSIGN_DEBOUNCE = Duration.ofMinutes(2);
+	private static final Duration RECENT_REASSIGN_WINDOW = Duration.ofMinutes(3);
 
 	private final JdbcTemplate jdbc;
 	private final ObjectMapper objectMapper;
 	private final DeliveryTrackingRepository deliveryTrackingRepository;
 	private final PidgeIntegrationService pidgeIntegrationService;
 	private final MealDeliveryNotificationService mealDeliveryNotificationService;
+	private final MealRiderReassignPersistence mealRiderReassignPersistence;
 
-	@Transactional
 	public Map<String, Object> reassignRider(JsonNode body) {
 		String mealOrderIdRaw = body != null && body.hasNonNull("mealOrderId") ? body.get("mealOrderId").asText() : null;
 		if (mealOrderIdRaw == null || mealOrderIdRaw.isBlank()) {
@@ -104,16 +105,7 @@ public class MealRiderReassignService {
 				? String.valueOf(dtRow.get("delivery_person_phone"))
 				: null;
 
-		UUID reassignId = jdbc.queryForObject(
-				"""
-						INSERT INTO meal_rider_reassign_requests (
-						  meal_order_id, delivery_tracking_id, pidge_order_id,
-						  requested_by_admin_id, support_ticket_id, status,
-						  previous_rider_name, previous_rider_phone
-						) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
-						RETURNING id
-						""",
-				UUID.class,
+		MealRiderReassignPrepared prepared = mealRiderReassignPersistence.prepareReassignPending(
 				mealOrderId,
 				trackingId,
 				pidgeOrderId,
@@ -121,31 +113,14 @@ public class MealRiderReassignService {
 				supportTicketId,
 				prevName,
 				prevPhone);
-
-		Optional<DeliveryTracking> dtOpt = deliveryTrackingRepository.findById(trackingId);
-		if (dtOpt.isPresent()) {
-			DeliveryTracking dt = dtOpt.get();
-			dt.setMetadataJson(
-					DeliveryTrackingMetadataHelper.setReassignPending(
-							dt.getMetadataJson(), objectMapper, reassignId, Instant.now()));
-			dt.setUpdatedAt(Instant.now());
-			deliveryTrackingRepository.save(dt);
-		}
+		UUID reassignId = prepared.reassignId();
+		Optional<DeliveryTracking> dtOpt = prepared.tracking();
 
 		try {
 			pidgeIntegrationService.unallocateFulfillment(pidgeOrderId);
 		} catch (Exception e) {
 			log.error("[meal-reassign] Pidge unallocate failed mealOrderId={} pidgeOrderId={}: {}", mealOrderId, pidgeOrderId, e.getMessage());
-			jdbc.update(
-					"UPDATE meal_rider_reassign_requests SET status = 'failed', failure_reason = ?, completed_at = NOW() WHERE id = ?",
-					truncate(e.getMessage(), 500),
-					reassignId);
-			if (dtOpt.isPresent()) {
-				DeliveryTracking dt = dtOpt.get();
-				dt.setMetadataJson(
-						DeliveryTrackingMetadataHelper.clearReassignPending(dt.getMetadataJson(), objectMapper));
-				deliveryTrackingRepository.save(dt);
-			}
+			mealRiderReassignPersistence.markReassignFailed(reassignId, trackingId, truncate(e.getMessage(), 500));
 			return Map.of(
 					"success", false,
 					"error", "Pidge unallocate failed: " + truncate(e.getMessage(), 200),
@@ -238,13 +213,36 @@ public class MealRiderReassignService {
 		return count != null && count > 0;
 	}
 
+	/**
+	 * True when a reassign was started recently (pending or just completed) — suppresses false meal cancel
+	 * on Pidge unallocate webhooks during rider swap.
+	 */
+	public boolean hasRecentReassignActivity(UUID mealOrderId) {
+		if (mealOrderId == null) {
+			return false;
+		}
+		if (hasOpenReassignRequest(mealOrderId)) {
+			return true;
+		}
+		Integer count = jdbc.queryForObject(
+				"""
+						SELECT COUNT(*)::int FROM meal_rider_reassign_requests
+						WHERE meal_order_id = ?
+						  AND status IN ('pending', 'completed')
+						  AND created_at > NOW() - (? || ' minutes')::interval
+						""",
+				Integer.class,
+				mealOrderId,
+				String.valueOf(RECENT_REASSIGN_WINDOW.toMinutes()));
+		return count != null && count > 0;
+	}
+
 	@Transactional
 	public void completeReassignIfPending(DeliveryTracking dt, String pidgeOrderId, String newRiderName) {
 		if (dt == null || dt.getMealOrderId() == null) {
 			return;
 		}
-		if (!DeliveryTrackingMetadataHelper.isReassignPending(dt.getMetadataJson(), objectMapper)
-				&& !hasOpenReassignRequest(dt.getMealOrderId())) {
+		if (!isReassignActiveForTracking(dt)) {
 			return;
 		}
 		if (newRiderName == null || newRiderName.isBlank()) {
@@ -290,8 +288,7 @@ public class MealRiderReassignService {
 		if (dt == null || dt.getMealOrderId() == null) {
 			return;
 		}
-		boolean pending = DeliveryTrackingMetadataHelper.isReassignPending(dt.getMetadataJson(), objectMapper)
-				|| hasOpenReassignRequest(dt.getMealOrderId());
+		boolean pending = isReassignActiveForTracking(dt);
 		if (!pending) {
 			return;
 		}
@@ -380,5 +377,14 @@ public class MealRiderReassignService {
 			return "";
 		}
 		return s.length() <= max ? s : s.substring(0, max);
+	}
+
+	/** Shared guard for webhook handlers and reassign phase processing. */
+	public boolean isReassignActiveForTracking(DeliveryTracking dt) {
+		if (dt == null || dt.getMealOrderId() == null) {
+			return false;
+		}
+		return DeliveryTrackingMetadataHelper.isReassignPending(dt.getMetadataJson(), objectMapper)
+				|| hasRecentReassignActivity(dt.getMealOrderId());
 	}
 }

@@ -6,7 +6,10 @@ import com.warmpawz.delivery.dto.tracking.RiderInfoDto;
 import com.warmpawz.delivery.entity.DeliveryTracking;
 import com.warmpawz.delivery.repository.DeliveryTrackingRepository;
 import com.warmpawz.delivery.service.DeliveryLocationHistoryWriter;
+import com.warmpawz.delivery.service.GpsSanityFilter;
+import com.warmpawz.delivery.service.MealOrderDestinationResolver;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -16,11 +19,13 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class DeliveryTrackingEnrichmentService {
 
 	private final PidgeTrackingEnrichmentProvider pidgeProvider;
 	private final DeliveryTrackingRepository deliveryTrackingRepository;
 	private final DeliveryLocationHistoryWriter deliveryLocationHistoryWriter;
+	private final MealOrderDestinationResolver mealOrderDestinationResolver;
 
 	public Optional<DeliveryTrackingEnrichmentDto> enrichIfApplicable(DeliveryTracking tracking) {
 		if (tracking == null) {
@@ -58,14 +63,35 @@ public class DeliveryTrackingEnrichmentService {
 			var lat = java.math.BigDecimal.valueOf(dto.getLocation().getLatitude());
 			var lng = java.math.BigDecimal.valueOf(dto.getLocation().getLongitude());
 			if (DeliveryLocationHistoryWriter.isValidCoord(lat, lng)) {
-				if (!DeliveryLocationHistoryWriter.coordsEqual(tracking.getCurrentLat(), tracking.getCurrentLng(), lat, lng)) {
+				var destination = tracking.getMealOrderId() != null
+						? mealOrderDestinationResolver.resolveDestination(tracking.getMealOrderId())
+						: java.util.Optional.<GpsSanityFilter.GpsPoint>empty();
+				var reject = GpsSanityFilter.rejectReason(
+						tracking.getCurrentLat(),
+						tracking.getCurrentLng(),
+						tracking.getLastLocationUpdate(),
+						lat,
+						lng,
+						java.time.Instant.now(),
+						tracking.getPickedUpAt(),
+						destination.orElse(null));
+				if (reject.isPresent()) {
+					log.warn(
+							"[PIDGE GPS] poll rejected trackingId={} mealOrderId={} reason={}",
+							tracking.getId(),
+							tracking.getMealOrderId(),
+							reject.get());
+				} else if (!DeliveryLocationHistoryWriter.coordsEqual(
+						tracking.getCurrentLat(), tracking.getCurrentLng(), lat, lng)) {
 					tracking.setCurrentLat(lat);
 					tracking.setCurrentLng(lng);
 					tracking.setLastLocationUpdate(java.time.Instant.now());
 					dirty = true;
 				}
-				deliveryLocationHistoryWriter.appendIfChanged(
-						tracking.getId(), lat, lng, "pidge", java.time.Instant.now());
+				if (reject.isEmpty()) {
+					deliveryLocationHistoryWriter.appendIfChanged(
+							tracking.getId(), lat, lng, "pidge", java.time.Instant.now());
+				}
 			}
 		}
 		if (dirty) {
