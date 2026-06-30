@@ -9,10 +9,8 @@ import { getResolvedCustomerId, reconcileCustomerIdStorageOnLoad } from '@/lib/c
 import { petsFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { writeCheckoutPetSelectionForPayment } from '@/lib/checkout-pet-selection';
-import { breedsForSpecies } from '@/lib/pet-breeds';
-import { addPetErrorMessage, resolveCustomerIdForPetMutation } from '@/lib/pet-create-helpers';
-import { toast } from 'sonner';
 import { CustomerPetDetails } from '@/components/customer/CustomerPetDetails';
+import { EnhancedAddPetModal } from '@/components/customer/EnhancedAddPetModal';
 
 function PetsPageContent() {
   const router = useRouter();
@@ -20,13 +18,9 @@ function PetsPageContent() {
   const forCheckout = searchParams.get('forCheckout') === '1';
   const [pets, setPets] = useState<PetUi[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [showAddPetModal, setShowAddPetModal] = useState(false);
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
-  const [newPet, setNewPet] = useState<Partial<PetUi>>(() => ({
-    species: 'dog',
-    gender: 'male',
-    breed: breedsForSpecies('dog')[0],
-  }));
+  const [phone, setPhone] = useState('');
 
   const loadPets = useCallback(async () => {
     try {
@@ -88,70 +82,26 @@ function PetsPageContent() {
   }, []);
 
   useEffect(() => {
-    const phone = localStorage.getItem('customerPhone');
-    if (!phone) {
+    const storedPhone = localStorage.getItem('customerPhone');
+    if (!storedPhone) {
       router.push('/auth');
       return;
     }
+    setPhone(storedPhone);
     loadPets();
   }, [router, loadPets]);
 
   useEffect(() => {
     if (searchParams.get('openAdd') !== '1') return;
-    router.replace('/add-pet', { scroll: false });
+    setShowAddPetModal(true);
+    router.replace('/pets', { scroll: false });
   }, [router, searchParams]);
 
   const handleBack = useCallback(() => {
     goBackOrHome(router);
   }, [router]);
 
-  const handleAddPet = async () => {
-    const name = newPet.name?.trim();
-    if (!name) {
-      toast.error('Please enter a pet name');
-      return;
-    }
-    const breed = newPet.breed?.trim();
-    if (!breed) {
-      toast.error('Please select a breed');
-      return;
-    }
-    try {
-      const customerId = await resolveCustomerIdForPetMutation();
-      if (!customerId) {
-        toast.error('Customer not found. Try signing out and back in.');
-        return;
-      }
-      const speciesLower = (newPet.species || 'dog').toLowerCase();
-      const petType = speciesLower === 'cat' ? 'Cat' : 'Dog';
-      const payload: Record<string, unknown> = {
-        customerId,
-        name,
-        petType,
-        breed,
-      };
-      if (typeof newPet.age === 'number' && !Number.isNaN(newPet.age)) {
-        payload.age = newPet.age;
-        payload.ageUnit = 'years';
-      }
-      if (newPet.gender) payload.gender = newPet.gender;
-      if (typeof newPet.weight === 'number' && !Number.isNaN(newPet.weight)) {
-        payload.weight = newPet.weight;
-      }
-      await apiClient.post('/pets', payload);
-      toast.success('Pet added');
-      setShowAddForm(false);
-      setNewPet({
-        species: 'dog',
-        gender: 'male',
-        breed: breedsForSpecies('dog')[0],
-      });
-      await loadPets();
-    } catch (err) {
-      console.error('Error adding pet:', err);
-      toast.error(addPetErrorMessage(err));
-    }
-  };
+  const openAddPet = () => setShowAddPetModal(true);
 
   const contentPadding =
     'px-4 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]';
@@ -185,7 +135,7 @@ function PetsPageContent() {
           type="button"
           size="icon"
           className="pointer-events-auto h-14 w-14 shrink-0 rounded-full bg-[#FF8C42] text-white shadow-[0_4px_14px_rgba(255,140,66,0.45)] transition-transform hover:bg-[#FF7A2E] active:scale-95 [&_svg]:size-7"
-          onClick={() => setShowAddForm(true)}
+          onClick={openAddPet}
           aria-label="Add pet"
         >
           <Plus strokeWidth={2.5} />
@@ -247,7 +197,7 @@ function PetsPageContent() {
                 <Button
                   type="button"
                   className="bg-[#FF8C42] text-white hover:bg-[#FF7A2E]"
-                  onClick={() => setShowAddForm(true)}
+                  onClick={openAddPet}
                 >
                   Add your first pet
                 </Button>
@@ -311,122 +261,17 @@ function PetsPageContent() {
       )}
       {!loading ? addFab : null}
 
-      {showAddForm && (
-        <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/50">
-          <div
-            className="max-h-[min(90vh,calc(100dvh-env(safe-area-inset-bottom,0px)))] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-xl mx-auto"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-pet-title"
-          >
-            <h2 id="add-pet-title" className="mb-4 text-xl font-semibold">
-              Add New Pet
-            </h2>
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Pet Name"
-                value={newPet.name || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setNewPet({ ...newPet, name: e.target.value })
-                }
-                className="w-full rounded-lg border p-3"
-              />
-              <select
-                value={newPet.species || 'dog'}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                  const sp = e.target.value;
-                  const list = breedsForSpecies(sp);
-                  setNewPet({
-                    ...newPet,
-                    species: sp,
-                    breed: list.includes(String(newPet.breed)) ? newPet.breed : list[0],
-                  });
-                }}
-                className="w-full rounded-lg border p-3"
-              >
-                <option value="dog">Dog</option>
-                <option value="cat">Cat</option>
-              </select>
-              <label className="block text-xs font-medium text-gray-500">Breed</label>
-              <select
-                value={newPet.breed || breedsForSpecies(newPet.species || 'dog')[0]}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                  setNewPet({ ...newPet, breed: e.target.value })
-                }
-                className="w-full rounded-lg border p-3"
-              >
-                {breedsForSpecies(newPet.species || 'dog').map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
-              </select>
-              <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="Age (years)"
-                  value={newPet.age === undefined || Number.isNaN(newPet.age as number) ? '' : newPet.age}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    const v = e.target.value;
-                    setNewPet({
-                      ...newPet,
-                      age: v === '' ? undefined : parseInt(v, 10),
-                    });
-                  }}
-                  className="w-full rounded-lg border p-3"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  placeholder="Weight (kg)"
-                  value={
-                    newPet.weight === undefined || Number.isNaN(newPet.weight as number)
-                      ? ''
-                      : newPet.weight
-                  }
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    const v = e.target.value;
-                    setNewPet({
-                      ...newPet,
-                      weight: v === '' ? undefined : parseFloat(v),
-                    });
-                  }}
-                  className="w-full rounded-lg border p-3"
-                />
-              </div>
-              <select
-                value={newPet.gender}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                  setNewPet({ ...newPet, gender: e.target.value })
-                }
-                className="w-full rounded-lg border p-3"
-              >
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-              </select>
-            </div>
-            <div className="mt-6 flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowAddForm(false)}
-                className="flex-1 rounded-lg border p-3 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleAddPet}
-                className="flex-1 rounded-lg bg-orange-500 p-3 text-white hover:bg-orange-600"
-              >
-                Add Pet
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {phone ? (
+        <EnhancedAddPetModal
+          phone={phone}
+          isOpen={showAddPetModal}
+          onClose={() => setShowAddPetModal(false)}
+          onSuccess={() => {
+            setShowAddPetModal(false);
+            void loadPets();
+          }}
+        />
+      ) : null}
         </>
       )}
     </div>
