@@ -19,8 +19,11 @@ import { parseSelectedServices } from '../utils/entity-extractor';
 import { extractAndVerifyAuthToken } from '../utils/jwt-verification';
 import { resolveVendorId } from '../utils/vendor-resolve';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { resolveOrderShippingAddress } from '../utils/logistics/shipment-pincodes';
+import {
+  buildMealOrderInvoicePayload,
+  isMealOrderInvoiceEligible,
+} from '../utils/meal-order-invoice';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 const INVOICE_BUCKET = process.env.S3_INVOICES_BUCKET || process.env.S3_UPLOADS_BUCKET || 'warmpawz-invoices';
@@ -117,6 +120,80 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching invoice:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // MEAL ORDER INVOICE
+  // ============================================================================
+
+  app.post('/meal/orders/:orderId/invoice/generate', async (c) => {
+    try {
+      const orderId = c.req.param('orderId');
+      const result = await ensureMealOrderInvoiceGenerated(orderId);
+      if (result.ineligible) {
+        return c.json({ success: false, error: 'Invoice is available after payment is confirmed' }, 400);
+      }
+      if (!result.invoice && !result.invoiceId) {
+        return c.json({ success: false, error: 'Order not found' }, 404);
+      }
+      return c.json({
+        success: true,
+        invoice: result.invoice ?? { id: result.invoiceId },
+        created: result.created,
+      });
+    } catch (error: any) {
+      console.error('Error generating meal order invoice:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.get('/meal/orders/:orderId/invoice', async (c) => {
+    try {
+      const orderId = c.req.param('orderId');
+      const result = await query(
+        `SELECT * FROM invoices WHERE invoice_data->>'meal_order_id' = $1 ORDER BY created_at DESC LIMIT 1`,
+        [orderId]
+      );
+
+      if (result.rows.length === 0) {
+        return c.json(
+          { success: false, error: 'Invoice not found. Generate it first.', needsGeneration: true },
+          404
+        );
+      }
+
+      const invoice = result.rows[0];
+      const invoiceData =
+        typeof invoice.invoice_data === 'string'
+          ? JSON.parse(invoice.invoice_data)
+          : invoice.invoice_data;
+
+      return c.json({
+        success: true,
+        invoice: {
+          id: invoice.id,
+          invoiceNumber: invoice.invoice_number,
+          date: invoice.invoice_date,
+          type: invoice.invoice_type || invoiceData?.invoiceType || 'tax_invoice',
+          subtotal: parseFloat(invoice.subtotal),
+          cgst: parseFloat(invoice.cgst_amount) || 0,
+          sgst: parseFloat(invoice.sgst_amount) || 0,
+          igst: parseFloat(invoice.igst_amount) || 0,
+          totalTax: parseFloat(invoice.tax_amount),
+          shipping: parseFloat(invoice.shipping_amount) || Number(invoiceData?.shipping) || 0,
+          discount: parseFloat(invoice.discount_amount) || Number(invoiceData?.discount) || 0,
+          total: parseFloat(invoice.total_amount),
+          isInterState: invoice.is_inter_state ?? invoiceData?.isInterState ?? false,
+          placeOfSupply: invoice.place_of_supply || invoiceData?.placeOfSupply || '',
+          status: invoice.status,
+        },
+        data: invoiceData,
+        downloadUrl: invoice.pdf_url ? `/invoices/download/${invoice.id}` : null,
+      });
+    } catch (error: any) {
+      console.error('Error fetching meal order invoice:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
@@ -233,16 +310,22 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
       }
 
       if (invoice.pdf_url) {
-        // Get presigned URL from S3
         try {
-          const command = new GetObjectCommand({
-            Bucket: INVOICE_BUCKET,
-            Key: invoice.pdf_url,
-          });
-          const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-          return c.json({ success: true, downloadUrl: url });
+          const s3Result = await s3Client.send(
+            new GetObjectCommand({
+              Bucket: INVOICE_BUCKET,
+              Key: invoice.pdf_url,
+            })
+          );
+          const htmlContent = await s3Result.Body?.transformToString('utf-8');
+          if (htmlContent) {
+            return c.html(htmlContent, 200, {
+              'Content-Type': 'text/html',
+              'Content-Disposition': `attachment; filename="invoice_${invoice.invoice_number}.html"`,
+            });
+          }
         } catch (s3Error: any) {
-          console.warn('S3 presign failed:', s3Error.message);
+          console.warn('S3 get object failed:', s3Error.message);
         }
       }
 
@@ -1380,6 +1463,128 @@ export async function ensureOrderInvoiceGenerated(orderId: string): Promise<{
       subtotal: invoiceData.subtotal,
       tax: invoiceData.totalTax,
       total: parseFloat(String(order.total_amount)),
+      isInterState,
+    },
+  };
+}
+
+const MEAL_ORDER_FOR_INVOICE_SQL = `
+  SELECT
+    mo.*,
+    mp.name as meal_plan_name,
+    c.full_name as customer_name,
+    c.phone as customer_phone,
+    c.email as customer_email,
+    v.business_name as vendor_name,
+    v.gst_number as vendor_gstin,
+    v.pan_number as vendor_pan,
+    v.address as vendor_address,
+    v.city as vendor_city,
+    v.state as vendor_state,
+    v.pincode as vendor_pincode
+  FROM meal_orders mo
+  JOIN meal_plans mp ON mo.meal_plan_id = mp.id
+  LEFT JOIN customers c ON mo.customer_id = c.id
+  LEFT JOIN vendors v ON mo.vendor_id = v.id
+  WHERE mo.id = $1
+`;
+
+function parseMealDeliveryState(order: Record<string, unknown>): string {
+  const raw = order.delivery_address;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      return String(parsed.state ?? '').trim();
+    } catch {
+      return '';
+    }
+  }
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return String((raw as Record<string, unknown>).state ?? '').trim();
+  }
+  return '';
+}
+
+/** Idempotent: create invoice row for meal_orders if none exists. */
+export async function ensureMealOrderInvoiceGenerated(mealOrderId: string): Promise<{
+  created: boolean;
+  invoiceId?: string;
+  invoice?: GeneratedOrderInvoice;
+  ineligible?: boolean;
+}> {
+  const existing = await query(
+    `SELECT id FROM invoices WHERE invoice_data->>'meal_order_id' = $1 ORDER BY created_at DESC LIMIT 1`,
+    [mealOrderId]
+  );
+  if (existing.rows.length > 0) {
+    return { created: false, invoiceId: String(existing.rows[0].id) };
+  }
+
+  const orderResult = await query(MEAL_ORDER_FOR_INVOICE_SQL, [mealOrderId]);
+  if (orderResult.rows.length === 0) {
+    return { created: false };
+  }
+
+  const order = orderResult.rows[0] as Record<string, unknown>;
+  if (!isMealOrderInvoiceEligible(order)) {
+    return { created: false, ineligible: true };
+  }
+
+  const customerState = parseMealDeliveryState(order).toLowerCase();
+  const vendorState = String(order.vendor_state ?? '').toLowerCase();
+  const isInterState = Boolean(vendorState && customerState && vendorState !== customerState);
+
+  const invoiceNumber = await generateInvoiceNumber(String(order.vendor_id));
+  const invoicePayload = buildMealOrderInvoicePayload({
+    order,
+    mealPlanName: String(order.meal_plan_name || order.meal_name || 'Meal plan'),
+    invoiceNumber,
+    isInterState,
+  });
+  const invoiceData = {
+    ...invoicePayload,
+    meal_order_id: mealOrderId,
+  };
+  const htmlContent = generateInvoiceHTML(normalizeInvoiceDataForHtml(invoiceData));
+
+  const [invoice] = await insert(
+    'invoices',
+    buildInvoicesInsertRow({
+      vendorId: String(order.vendor_id),
+      customerId: order.customer_id ? String(order.customer_id) : null,
+      invoiceNumber,
+      invoiceData,
+      totalAmount: invoicePayload.total,
+    })
+  );
+
+  const s3Key = `invoices/${order.vendor_id}/${new Date().getFullYear()}/${invoiceNumber}.html`;
+  try {
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: INVOICE_BUCKET,
+        Key: s3Key,
+        Body: htmlContent,
+        ContentType: 'text/html',
+      })
+    );
+    await update('invoices', { id: invoice.id }, {
+      pdf_url: s3Key,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (s3Error: any) {
+    console.warn('S3 upload failed:', s3Error.message);
+  }
+
+  return {
+    created: true,
+    invoiceId: String(invoice.id),
+    invoice: {
+      id: String(invoice.id),
+      invoiceNumber,
+      subtotal: invoicePayload.subtotal,
+      tax: invoicePayload.totalTax,
+      total: invoicePayload.total,
       isInterState,
     },
   };

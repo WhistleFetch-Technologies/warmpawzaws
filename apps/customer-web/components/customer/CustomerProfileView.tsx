@@ -15,7 +15,7 @@ import {
   Building2,
   MapPinned,
 } from 'lucide-react';
-import { apiClient, ordersApi } from '@/lib/api-client';
+import { apiClient, customerApi, ordersApi } from '@/lib/api-client';
 import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
 import { validateEmail } from '@/lib/validation';
@@ -29,8 +29,15 @@ import {
   patchCustomerProfileKeysInLocalStorage,
 } from '@/lib/normalize-customer-profile-api';
 import { formatMemberSinceLabel } from '@/lib/format-member-since';
-import { getResolvedCustomerId } from '@/lib/customer-id-storage';
-import { clearCustomerSession, signOutCustomer } from '@/lib/session-utils';
+import {
+  getResolvedCustomerId,
+  isCustomerDatabaseUuid,
+  persistCustomerDatabaseId,
+} from '@/lib/customer-id-storage';
+import {
+  rememberOrdersBackFromCurrentUrl,
+  rememberOrdersBackToSpaScreen,
+} from '@/lib/go-back-or-replace';
 import { ProfileAccountHero } from '@/components/customer/profile/ProfileAccountHero';
 import { ProfileStatCards, type ProfileStatCounts } from '@/components/customer/profile/ProfileStatCards';
 import { ProfileQuickActions } from '@/components/customer/profile/ProfileQuickActions';
@@ -60,6 +67,8 @@ interface CustomerProfileViewProps {
   onBack: () => void;
   /** X on header — exit to app home (same as account sidebar / wallet). */
   onCloseToHome?: () => void;
+  /** When profile is embedded on `/`, pass shell screen so Orders back restores this view. */
+  ordersBackSpaScreen?: string;
 }
 
 const INITIAL_COUNTS: ProfileStatCounts = {
@@ -68,7 +77,36 @@ const INITIAL_COUNTS: ProfileStatCounts = {
   saved: null,
 };
 
-export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerProfileViewProps) {
+function parseShopOrderCountFromListResponse(result: unknown): number {
+  const payload = result as { stats?: { total?: string | number }; orders?: unknown[] };
+  const totalRaw = payload?.stats?.total;
+  if (totalRaw != null && String(totalRaw).trim() !== '') {
+    const parsed = parseInt(String(totalRaw), 10);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  const list = payload?.orders;
+  return Array.isArray(list) ? list.length : 0;
+}
+
+async function resolveCustomerIdForProfileStats(phone: string): Promise<string | null> {
+  const existing = getResolvedCustomerId();
+  if (existing) return existing;
+
+  try {
+    const byPhone = await customerApi.getByPhone(phone);
+    const candidate = byPhone?.customer?.id ?? byPhone?.id;
+    const id = candidate != null ? String(candidate).trim() : '';
+    if (id && isCustomerDatabaseUuid(id)) {
+      return persistCustomerDatabaseId(id);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return null;
+}
+
+export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSpaScreen }: CustomerProfileViewProps) {
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [savedProfile, setSavedProfile] = useState<UserProfile | null>(null);
@@ -84,6 +122,18 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
   const addressSectionRef = useRef<HTMLDivElement>(null);
 
   const handleCloseToHome = onCloseToHome ?? onBack;
+
+  const openShopOrders = useCallback(() => {
+    if (ordersBackSpaScreen) {
+      rememberOrdersBackToSpaScreen(ordersBackSpaScreen);
+    } else if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path !== '/' && path !== '') {
+        rememberOrdersBackFromCurrentUrl();
+      }
+    }
+    router.push('/orders');
+  }, [ordersBackSpaScreen, router]);
 
   useEffect(() => {
     loadProfile();
@@ -108,23 +158,14 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
 
     const ordersPromise = (async () => {
       try {
-        const customerId = getResolvedCustomerId();
-        if (customerId) {
-          const result = await ordersApi.list({ customerId });
-          const rawList = (result as { orders?: unknown[] })?.orders;
-          if (Array.isArray(rawList)) {
-            setCount('orders', rawList.length);
-            return;
-          }
+        const customerId = await resolveCustomerIdForProfileStats(phone);
+        if (!customerId) {
+          setCount('orders', 0);
+          return;
         }
-      } catch {
-        /* fall through to bookings */
-      }
-      try {
-        const result = await apiClient.get<{ bookings?: unknown[] }>(
-          `/customer/bookings?phone=${encodeURIComponent(phone)}`
-        );
-        setCount('orders', Array.isArray(result.bookings) ? result.bookings.length : 0);
+
+        const result = await ordersApi.list({ customerId, limit: 1 });
+        setCount('orders', parseShopOrderCountFromListResponse(result));
       } catch {
         setCount('orders', 0);
       }
@@ -147,6 +188,7 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
       );
       const raw = result.profile;
       if (!raw) return;
+      persistCustomerDatabaseId(raw as Record<string, unknown>);
       const base = normalizeCustomerProfileFields(raw as any, phone);
       const addressLine = mergeStreetAddressLineOnly({
         address: base.address,
@@ -593,7 +635,7 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
           <>
             <ProfileStatCards
               counts={statCounts}
-              onViewOrders={() => router.push('/orders')}
+              onViewOrders={openShopOrders}
               onViewPets={() => router.push('/pets')}
               onViewSaved={() => router.push('/wishlist')}
             />

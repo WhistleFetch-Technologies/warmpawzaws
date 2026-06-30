@@ -10,7 +10,7 @@ import {
 import { toast } from 'sonner';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
-  goBackOrHome,
+  handleOrdersPageBack,
   rememberShopBackFromCurrentUrl,
   rememberShopBackToSpaScreen,
 } from '@/lib/go-back-or-replace';
@@ -214,7 +214,7 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
       onBack();
       return;
     }
-    goBackOrHome(router);
+    handleOrdersPageBack(router);
   };
 
   const handleCloseToHome = () => {
