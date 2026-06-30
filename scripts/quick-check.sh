@@ -52,16 +52,4 @@ else
 fi
 
 echo ""
-
-# OpenSearch
-echo "🔍 OpenSearch:"
-DOMAIN="warmpawz-opensearch${ENV_SUFFIX}"
-if aws opensearch describe-domain --domain-name "$DOMAIN" --region ap-south-1 > /dev/null 2>&1; then
-  ENDPOINT=$(aws opensearch describe-domain --domain-name "$DOMAIN" --region ap-south-1 --query 'DomainStatus.Endpoint' --output text 2>/dev/null)
-  echo "  ✅ Domain exists: $ENDPOINT"
-else
-  echo "  ⚠️  Domain not found (SQL fallback will be used)"
-fi
-
-echo ""
 echo "✅ Quick check complete!"

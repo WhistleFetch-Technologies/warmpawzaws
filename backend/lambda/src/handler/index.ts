@@ -1032,7 +1032,7 @@ app.onError((err, c) => {
         vendors: [],
         services: [],
         total: 0,
-        searchMethod: 'sql-fallback',
+        searchMethod: 'sql',
       },
       200,
       corsHeaders

@@ -185,39 +185,6 @@ done
 echo ""
 
 # ============================================================================
-# 5. VERIFY OPENSEARCH (Optional)
-# ============================================================================
-
-echo "🔍 Step 5: Verifying OpenSearch Domain"
-echo "---------------------------------------"
-
-OPENSEARCH_DOMAIN="warmpawz-opensearch${ENV_SUFFIX}"
-
-echo -n "  Checking $OPENSEARCH_DOMAIN... "
-
-DOMAIN_INFO=$(aws opensearch describe-domain --domain-name "$OPENSEARCH_DOMAIN" --region ap-south-1 --query 'DomainStatus.[DomainId,Processing,Endpoint]' --output text 2>/dev/null)
-
-if [ -n "$DOMAIN_INFO" ]; then
-  DOMAIN_ID=$(echo $DOMAIN_INFO | cut -d' ' -f1)
-  PROCESSING=$(echo $DOMAIN_INFO | cut -d' ' -f2)
-  ENDPOINT=$(echo $DOMAIN_INFO | cut -d' ' -f3)
-  
-  if [ "$PROCESSING" == "false" ]; then
-    echo -e "${GREEN}✅ EXISTS & ACTIVE${NC}"
-    PASSED=$((PASSED + 1))
-    echo "    Endpoint: $ENDPOINT"
-  else
-    echo -e "${YELLOW}⚠️  EXISTS BUT PROCESSING${NC}"
-    WARNINGS=$((WARNINGS + 1))
-  fi
-else
-  echo -e "${YELLOW}⚠️  NOT FOUND (SQL fallback will be used)${NC}"
-  WARNINGS=$((WARNINGS + 1))
-fi
-
-echo ""
-
-# ============================================================================
 # 6. TEST API ENDPOINT (if API Gateway URL available)
 # ============================================================================
 

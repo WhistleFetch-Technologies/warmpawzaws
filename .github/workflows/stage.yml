@@ -49,7 +49,6 @@ jobs:
         working-directory: infra/envs/stage
         run: |
           terraform plan -detailed-exitcode \
-            -var="opensearch_master_password=${{ secrets.STAGE_OPENSEARCH_PASSWORD }}" \
             || EXIT_CODE=$?
           
           if [ $EXIT_CODE -eq 2 ]; then
@@ -181,7 +180,6 @@ jobs:
         working-directory: infra/envs/stage
         run: |
           terraform plan \
-            -var="opensearch_master_password=${{ secrets.STAGE_OPENSEARCH_PASSWORD }}" \
             -out=tfplan
 
       - name: Upload plan

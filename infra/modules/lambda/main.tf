@@ -143,16 +143,6 @@ resource "aws_iam_role_policy" "lambda_custom" {
       {
         Effect = "Allow"
         Action = [
-          "es:ESHttpPost",
-          "es:ESHttpPut",
-          "es:ESHttpGet",
-          "es:ESHttpDelete"
-        ]
-        Resource = var.opensearch_arns
-      },
-      {
-        Effect = "Allow"
-        Action = [
           "events:PutRule",
           "events:DescribeRule"
         ]

@@ -61,12 +61,6 @@ output "cognito_user_pool_id" {
   value       = module.cognito.user_pool_id
 }
 
-output "opensearch_endpoint" {
-  description = "OpenSearch endpoint"
-  value       = module.opensearch.domain_endpoint
-  sensitive   = true
-}
-
 # Prod CloudFront – mark once created (three URLs for admin, vendor, customer)
 output "cloudfront_distribution_ids" {
   description = "Prod CloudFront distribution IDs (admin, vendor, customer)"

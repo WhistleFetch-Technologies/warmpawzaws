@@ -877,22 +877,6 @@ export const VendorAnalyticsApi = {
   },
 };
 
-// ✅ NEW: Search Analytics API (Batch 16 SQL-migrated endpoints)
-export const SearchAnalyticsApi = {
-  trackQuery: (query: string, userId: string, results: { count: number }) => 
-    ApiService.post('/search/analytics/track', { query, userId, results }),
-  trackClick: (eventId: string, clicked: string, timeToClick?: number) => 
-    ApiService.post('/search/analytics/click', { eventId, clicked, timeToClick }),
-  trackConversion: (eventId: string, conversionType: string, value?: number) => 
-    ApiService.post('/search/analytics/convert', { eventId, conversionType, value }),
-  getPopular: (limit?: number, days?: number) => {
-    const params = new URLSearchParams();
-    if (limit) params.append('limit', limit.toString());
-    if (days) params.append('days', days.toString());
-    return ApiService.get(`/search/analytics/popular?${params}`);
-  },
-};
-
 // ✅ NEW: Health Problems API (Batch 16 SQL-migrated endpoints)
 export const HealthProblemsApi = {
   getAll: (status?: string) => {
@@ -904,17 +888,6 @@ export const HealthProblemsApi = {
     ApiService.post('/admin/health-problems', data),
   update: (id: string, data: any) => ApiService.put(`/admin/health-problems/${id}`, data),
   delete: (id: string) => ApiService.delete(`/admin/health-problems/${id}`),
-};
-
-// ✅ NEW: Elasticsearch Proxy API (Batch 16 SQL-migrated endpoints)
-export const ElasticsearchProxyApi = {
-  search: (query: string, type?: string) => {
-    const params = new URLSearchParams({ q: query });
-    if (type) params.append('type', type);
-    return ApiService.get(`/search/elastic?${params}`);
-  },
-  autocomplete: (query: string) => ApiService.get(`/search/autocomplete?q=${query}`),
-  reindex: () => ApiService.post('/search/index'),
 };
 
 // ✅ NEW: Bank Verification API (Batch 16 SQL-migrated endpoints)

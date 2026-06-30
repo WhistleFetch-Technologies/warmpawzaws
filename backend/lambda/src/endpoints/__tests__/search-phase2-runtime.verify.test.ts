@@ -203,10 +203,6 @@ jest.mock('../../database/rds-connection', () => ({
   insert: jest.fn(async () => ({ rows: [] })),
 }));
 
-jest.mock('../../utils/opensearch-client', () => {
-  throw new Error('opensearch disabled');
-});
-
 jest.mock('../../utils/vendor-listing-photo', () => ({
   getVendorListingPhotoUrl: jest.fn(async () => null),
 }));
@@ -247,7 +243,6 @@ describe('Phase 2 /search runtime verification (mocked RDS)', () => {
   registerSearchEndpoints(app);
 
   it.each(QUERIES)('GET /search?q=%s', async (q) => {
-    process.env.ENABLE_OPENSEARCH = 'false';
     const res = await app.request(`http://localhost/search?q=${encodeURIComponent(q)}&limit=20`);
     const body = (await res.json()) as Record<string, unknown>;
     const vendors = body.vendors as unknown[] | undefined;
@@ -277,5 +272,6 @@ describe('Phase 2 /search runtime verification (mocked RDS)', () => {
     expect(body).toHaveProperty('taxonomySource');
     expect(body).toHaveProperty('searchText');
     expect(body).toHaveProperty('total');
+    expect(body.searchMethod).toBe('sql');
   });
 });

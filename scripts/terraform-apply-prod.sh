@@ -17,7 +17,6 @@ echo "==> Terraform plan..."
 TF_LOG=ERROR terraform plan \
   -parallelism=1 \
   -var-file=terraform.tfvars \
-  -var="opensearch_master_password=Warmpawz2025" \
   -input=false \
   -out=tfplan || {
   echo ""
