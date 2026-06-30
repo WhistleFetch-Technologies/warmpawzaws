@@ -61,6 +61,55 @@ function resolveCustomerPhone(): string {
   );
 }
 
+function CartRecommendationTile({
+  product,
+  onAdd,
+}: {
+  product: ShopProduct;
+  onAdd: () => void;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const primaryImage =
+    product.images?.length && product.images[0] && !imageFailed
+      ? String(product.images[0]).trim()
+      : '';
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [product.id, product.images?.[0]]);
+
+  return (
+    <div className="snap-start shrink-0 w-36 rounded-xl border border-slate-100 p-2">
+      <div className="w-full aspect-square rounded-lg bg-slate-50 flex items-center justify-center text-2xl mb-2 overflow-hidden">
+        {primaryImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={primaryImage}
+            alt={product.name}
+            className="w-full h-full object-cover rounded-lg"
+            loading="lazy"
+            decoding="async"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <span className="text-2xl">{product.emoji || '🐾'}</span>
+        )}
+      </div>
+      <p className="text-xs font-medium text-slate-900 line-clamp-2 min-h-[2.5rem]">
+        {product.name}
+      </p>
+      <p className="text-sm font-bold text-[#FF8C42] mt-1">₹{product.price}</p>
+      <button
+        type="button"
+        onClick={onAdd}
+        className="mt-2 w-full text-xs font-semibold py-1.5 rounded-lg border border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
+      >
+        Add
+      </button>
+    </div>
+  );
+}
+
 export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenProps) {
   const nav = useCustomerNavigation();
   const { cart, itemCount, updateQuantity, removeFromCart, addToCart } = useCart();
@@ -535,34 +584,11 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                 ) : (
                   <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
                     {recommendations.map((product) => (
-                      <div
+                      <CartRecommendationTile
                         key={product.id}
-                        className="snap-start shrink-0 w-36 rounded-xl border border-slate-100 p-2"
-                      >
-                        <div className="w-full aspect-square rounded-lg bg-slate-50 flex items-center justify-center text-2xl mb-2 overflow-hidden">
-                          {product.images?.[0] ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={product.images[0]}
-                              alt=""
-                              className="w-full h-full object-cover rounded-lg"
-                            />
-                          ) : (
-                            product.emoji || '🐾'
-                          )}
-                        </div>
-                        <p className="text-xs font-medium text-slate-900 line-clamp-2 min-h-[2.5rem]">
-                          {product.name}
-                        </p>
-                        <p className="text-sm font-bold text-[#FF8C42] mt-1">₹{product.price}</p>
-                        <button
-                          type="button"
-                          onClick={() => addToCart(shopProductToCartItem(product))}
-                          className="mt-2 w-full text-xs font-semibold py-1.5 rounded-lg border border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
-                        >
-                          Add
-                        </button>
-                      </div>
+                        product={product}
+                        onAdd={() => addToCart(shopProductToCartItem(product))}
+                      />
                     ))}
                   </div>
                 )}
