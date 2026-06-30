@@ -16,6 +16,72 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import {
+  normalizeProductImagesField,
+  prepareStorefrontProductRow,
+} from '../utils/s3-media-presign';
+
+function preparedImagesToUrls(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    return normalizeProductImagesField(raw);
+  }
+  return raw
+    .map((item) => {
+      if (typeof item === 'string') return item.trim();
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const o = item as Record<string, unknown>;
+        for (const k of ['url', 'src', 'image_url'] as const) {
+          if (typeof o[k] === 'string' && (o[k] as string).trim()) {
+            return (o[k] as string).trim();
+          }
+        }
+      }
+      return '';
+    })
+    .filter(Boolean);
+}
+
+/** Presign S3 product images and map to storefront recommendation shape (camelCase + snake_case for mappers). */
+async function formatRecommendationProduct(
+  row: Record<string, unknown>,
+  extras?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const prepared = await prepareStorefrontProductRow(row);
+  const images = preparedImagesToUrls(prepared.images);
+  const compareAt = prepared.compare_at_price;
+
+  return {
+    id: prepared.id,
+    name: prepared.name,
+    description: prepared.description,
+    price: parseFloat(String(prepared.price ?? 0)),
+    compareAtPrice:
+      compareAt != null && compareAt !== '' ? parseFloat(String(compareAt)) : null,
+    compare_at_price: compareAt,
+    images,
+    rating: parseFloat(String(prepared.rating ?? 0)) || 0,
+    reviewCount: parseInt(String(prepared.review_count ?? 0), 10) || 0,
+    review_count: prepared.review_count,
+    category: prepared.category,
+    categoryId: prepared.category_id,
+    category_id: prepared.category_id,
+    vendorName: prepared.vendor_name,
+    vendor_name: prepared.vendor_name,
+    vendor_id: prepared.vendor_id,
+    stock: prepared.stock ?? prepared.stock_quantity,
+    stock_quantity: prepared.stock_quantity,
+    ...extras,
+  };
+}
+
+async function formatRecommendationProducts(
+  rows: Record<string, unknown>[],
+  extrasFn?: (row: Record<string, unknown>) => Record<string, unknown>,
+): Promise<Record<string, unknown>[]> {
+  return Promise.all(
+    rows.map((row) => formatRecommendationProduct(row, extrasFn?.(row))),
+  );
+}
 
 export function registerRecommendationEndpoints(app: Hono) {
 
@@ -56,9 +122,13 @@ export function registerRecommendationEndpoints(app: Hono) {
           p.price,
           p.compare_at_price,
           p.images,
+          p.metadata,
           p.rating,
           p.review_count,
           p.category,
+          p.category_id,
+          p.vendor_id,
+          p.stock,
           cp.purchase_count,
           v.business_name as vendor_name
         FROM co_purchased cp
@@ -88,9 +158,13 @@ export function registerRecommendationEndpoints(app: Hono) {
               p.price,
               p.compare_at_price,
               p.images,
+              p.metadata,
               p.rating,
               p.review_count,
               p.category,
+              p.category_id,
+              p.vendor_id,
+              p.stock,
               0 as purchase_count,
               v.business_name as vendor_name
             FROM products p
@@ -110,18 +184,8 @@ export function registerRecommendationEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        products: products.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          description: p.description,
-          price: parseFloat(p.price),
-          compareAtPrice: p.compare_at_price ? parseFloat(p.compare_at_price) : null,
-          images: typeof p.images === 'string' ? JSON.parse(p.images || '[]') : (p.images || []),
-          rating: parseFloat(p.rating) || 0,
-          reviewCount: parseInt(p.review_count) || 0,
-          category: p.category,
-          vendorName: p.vendor_name,
-          purchaseCount: parseInt(p.purchase_count) || 0,
+        products: await formatRecommendationProducts(products as Record<string, unknown>[], (p) => ({
+          purchaseCount: parseInt(String(p.purchase_count), 10) || 0,
         })),
       });
     } catch (error: any) {
@@ -180,10 +244,13 @@ export function registerRecommendationEndpoints(app: Hono) {
             p.price,
             p.compare_at_price,
             p.images,
+            p.metadata,
             p.rating,
             p.review_count,
             p.category,
             p.category_id,
+            p.vendor_id,
+            p.stock,
             v.business_name as vendor_name
           FROM products p
           LEFT JOIN vendors v ON p.vendor_id = v.id
@@ -219,20 +286,7 @@ export function registerRecommendationEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        products: results.map((p) => ({
-          id: p.id,
-          name: p.name,
-          description: p.description,
-          price: parseFloat(String(p.price)),
-          compareAtPrice: p.compare_at_price ? parseFloat(String(p.compare_at_price)) : null,
-          images:
-            typeof p.images === 'string' ? JSON.parse(String(p.images || '[]')) : p.images || [],
-          rating: parseFloat(String(p.rating)) || 0,
-          reviewCount: parseInt(String(p.review_count), 10) || 0,
-          category: p.category,
-          categoryId: p.category_id,
-          vendorName: p.vendor_name,
-        })),
+        products: await formatRecommendationProducts(results),
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Recommendation failed';
@@ -459,9 +513,13 @@ export function registerRecommendationEndpoints(app: Hono) {
           p.price,
           p.compare_at_price,
           p.images,
+          p.metadata,
           p.rating,
           p.review_count,
           p.category,
+          p.category_id,
+          p.vendor_id,
+          p.stock,
           v.business_name as vendor_name,
           COALESCE(rs.units_sold, 0) as units_sold,
           COALESCE(rv.total_views, 0) as views,
@@ -478,23 +536,16 @@ export function registerRecommendationEndpoints(app: Hono) {
 
       const results = await query(trendingQuery, params);
 
+      const rows = (results.rows || []) as Record<string, unknown>[];
+      const products = await formatRecommendationProducts(rows, (p) => ({
+        unitsSold: parseInt(String(p.units_sold), 10) || 0,
+        isTrending: true,
+      }));
+
       return c.json({
         success: true,
         period,
-        products: (results.rows || []).map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          description: p.description,
-          price: parseFloat(p.price),
-          compareAtPrice: p.compare_at_price ? parseFloat(p.compare_at_price) : null,
-          images: typeof p.images === 'string' ? JSON.parse(p.images || '[]') : (p.images || []),
-          rating: parseFloat(p.rating) || 0,
-          reviewCount: parseInt(p.review_count) || 0,
-          category: p.category,
-          vendorName: p.vendor_name,
-          unitsSold: parseInt(p.units_sold) || 0,
-          isTrending: true,
-        })),
+        products,
       });
     } catch (error: any) {
       console.error('Error fetching trending products:', error);
@@ -565,9 +616,13 @@ export function registerRecommendationEndpoints(app: Hono) {
             p.price,
             p.compare_at_price,
             p.images,
+            p.metadata,
             p.rating,
             p.review_count,
             p.category,
+            p.category_id,
+            p.vendor_id,
+            p.stock,
             v.business_name as vendor_name,
             CASE WHEN p.category IN (${categoryPlaceholders}) THEN 1 ELSE 0 END as category_match
           FROM products p
@@ -589,9 +644,13 @@ export function registerRecommendationEndpoints(app: Hono) {
             p.price,
             p.compare_at_price,
             p.images,
+            p.metadata,
             p.rating,
             p.review_count,
             p.category,
+            p.category_id,
+            p.vendor_id,
+            p.stock,
             v.business_name as vendor_name,
             0 as category_match
           FROM products p
@@ -605,22 +664,14 @@ export function registerRecommendationEndpoints(app: Hono) {
       }
 
       const results = await query(recommendationsQuery, params);
+      const rows = (results.rows || []) as Record<string, unknown>[];
+      const products = await formatRecommendationProducts(rows, () => ({
+        isPersonalized: purchasedCategories.length > 0,
+      }));
 
       return c.json({
         success: true,
-        products: (results.rows || []).map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          description: p.description,
-          price: parseFloat(p.price),
-          compareAtPrice: p.compare_at_price ? parseFloat(p.compare_at_price) : null,
-          images: typeof p.images === 'string' ? JSON.parse(p.images || '[]') : (p.images || []),
-          rating: parseFloat(p.rating) || 0,
-          reviewCount: parseInt(p.review_count) || 0,
-          category: p.category,
-          vendorName: p.vendor_name,
-          isPersonalized: purchasedCategories.length > 0,
-        })),
+        products,
         basedOn: purchasedCategories.length > 0 
           ? `Your interest in ${purchasedCategories.slice(0, 3).join(', ')}`
           : 'Popular products',
@@ -660,9 +711,13 @@ export function registerRecommendationEndpoints(app: Hono) {
           p.price,
           p.compare_at_price,
           p.images,
+          p.metadata,
           p.rating,
           p.review_count,
           p.category,
+          p.category_id,
+          p.vendor_id,
+          p.stock,
           p.created_at,
           v.business_name as vendor_name
         FROM products p
@@ -673,23 +728,15 @@ export function registerRecommendationEndpoints(app: Hono) {
       `;
 
       const results = await query(newArrivalsQuery, params);
+      const rows = (results.rows || []) as Record<string, unknown>[];
+      const products = await formatRecommendationProducts(rows, (p) => ({
+        createdAt: p.created_at,
+        isNew: true,
+      }));
 
       return c.json({
         success: true,
-        products: (results.rows || []).map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          description: p.description,
-          price: parseFloat(p.price),
-          compareAtPrice: p.compare_at_price ? parseFloat(p.compare_at_price) : null,
-          images: typeof p.images === 'string' ? JSON.parse(p.images || '[]') : (p.images || []),
-          rating: parseFloat(p.rating) || 0,
-          reviewCount: parseInt(p.review_count) || 0,
-          category: p.category,
-          vendorName: p.vendor_name,
-          createdAt: p.created_at,
-          isNew: true,
-        })),
+        products,
       });
     } catch (error: any) {
       console.error('Error fetching new arrivals:', error);
