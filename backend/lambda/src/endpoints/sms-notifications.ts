@@ -19,6 +19,11 @@
 import { Hono } from 'hono';
 import { select, insert, query } from '../database/rds-connection';
 import { sendSMS } from '../utils/sms-service';
+import {
+  formatIstBookingWhen,
+  formatIstDateDisplay,
+  formatIstTimeDisplay,
+} from '../utils/notification-display-format';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
@@ -150,10 +155,12 @@ export async function triggerBookingNotification(event: string, data: any) {
     const bookingWith = sanitizeAlphanumeric(
       vendor?.business_name || service?.name || booking?.service_type || 'Service'
     );
-    const bookingDate = sanitizeAlphanumeric(booking?.booking_date || '');
-    const bookingTime = sanitizeAlphanumeric(booking?.booking_time || '');
+    const bookingDateRaw = String(booking?.booking_date || '').trim();
+    const bookingTimeRaw = String(booking?.booking_time || '').trim();
+    const bookingDate = sanitizeAlphanumeric(formatIstDateDisplay(bookingDateRaw));
+    const bookingTime = sanitizeAlphanumeric(formatIstTimeDisplay(bookingTimeRaw));
     const bookingDateTime = sanitizeAlphanumeric(
-      bookingDate && bookingTime ? `${bookingDate} at ${bookingTime}` : (bookingDate || bookingTime || '')
+      formatIstBookingWhen(bookingDateRaw, bookingTimeRaw)
     );
 
     // Build variables object
@@ -195,15 +202,16 @@ export async function triggerBookingNotification(event: string, data: any) {
       ...(template.templateId ? { templateId: template.templateId } : {}),
     });
 
-    // Log notification
+    // Log notification (in-app audit row)
     await insert('notifications', {
-      user_id: customer?.id || booking?.customer_id,
-      user_type: 'customer',
+      recipient_id: customer?.id || booking?.customer_id,
+      recipient_type: 'customer',
       title: template.event,
       message: message,
       notification_type: 'sms',
+      channels: { inApp: false, push: false, sms: true },
       is_read: false,
-      metadata: {
+      data: {
         event,
         bookingId: booking?.id,
         sentVia: 'sms',

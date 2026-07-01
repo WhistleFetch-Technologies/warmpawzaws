@@ -4,6 +4,10 @@ import { triggerBookingNotification } from '../endpoints/sms-notifications';
 import { sendVendorAppointmentScheduledSms } from '../lib/vendor-appointment-sms';
 import { sendEventNotification } from '../aws/aws-sns-notification-service';
 import { dispatchNotification } from './notification-dispatch';
+import {
+  formatIstBookingWhen,
+  enrichTemplateDataWithIstDisplay,
+} from './notification-display-format';
 
 type BookingNotificationResult = {
   notified: boolean;
@@ -65,6 +69,10 @@ export async function notifyBookingCreated(bookingId: string, requestId?: string
   if (!ctx) return { notified: false };
 
   const { booking, customer, vendor, customerName, vendorName, serviceName, serviceTypeLabel } = ctx;
+  const whenDisplay = formatIstBookingWhen(
+    String(booking.booking_date || ''),
+    String(booking.booking_time || '')
+  );
 
   if (booking.vendor_id) {
     await dispatchNotification({
@@ -72,7 +80,7 @@ export async function notifyBookingCreated(bookingId: string, requestId?: string
       recipientType: 'vendor',
       notificationType: 'new_booking',
       title: 'New appointment',
-      message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
+      message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${whenDisplay}`,
       channels: { inApp: true, push: true },
       priority: 'high',
       data: {
@@ -95,14 +103,14 @@ export async function notifyBookingCreated(bookingId: string, requestId?: string
       recipientId: String(booking.customer_id),
       recipientType: 'customer',
       relatedId: booking.id,
-      data: {
+      data: enrichTemplateDataWithIstDisplay({
         vendorName,
         date: booking.booking_date,
         time: booking.booking_time,
         serviceName,
         bookingId: booking.id,
         dedupeKey: `booking-${booking.id}-created-customer`,
-      },
+      }),
     });
   }
 
@@ -209,7 +217,7 @@ export async function notifyBookingRescheduled(params: {
     recipientId: params.vendorId,
     recipientType: 'vendor',
     relatedId: params.bookingId,
-    data: {
+    data: enrichTemplateDataWithIstDisplay({
       oldDate: params.oldDate,
       oldTime: params.oldTime,
       newDate: params.newDate,
@@ -218,7 +226,7 @@ export async function notifyBookingRescheduled(params: {
       bookingId: params.bookingId,
       customerId: params.customerId,
       dedupeKey: `booking-${params.bookingId}-rescheduled-vendor`,
-    },
+    }),
   });
 
   await dispatchNotification({
@@ -226,7 +234,7 @@ export async function notifyBookingRescheduled(params: {
     recipientType: 'customer',
     notificationType: 'booking_rescheduled',
     title: 'Booking Rescheduled',
-    message: `Your appointment has been moved to ${params.newDate} at ${params.newTime}.`,
+    message: `Your appointment has been moved to ${formatIstBookingWhen(params.newDate, params.newTime)}.`,
     channels: { inApp: true, push: true },
     data: {
       bookingId: params.bookingId,

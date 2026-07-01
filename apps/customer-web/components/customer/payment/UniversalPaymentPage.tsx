@@ -161,6 +161,8 @@ interface UniversalPaymentPageProps {
    * tele-queue-accepted: queue-first flow; booking already exists with pending_payment; just collect payment and confirm
    */
   flowType?: 'tele-scheduled' | 'tele-instant' | 'tele-queue-accepted' | 'payment-resume' | 'home-visit';
+  /** Lab diagnostics: pay-first payload from DiagnosticsBookingFlow; booking is created only after payment. */
+  prepaidBookingPayload?: Record<string, unknown>;
   initialPromotionId?: string;
   initialPromotionIntent?: {
     promotionId?: string;
@@ -384,6 +386,7 @@ export function UniversalPaymentPage({
   customerEmail,
   customerId,
   flowType,
+  prepaidBookingPayload,
   initialPromotionId,
   initialPromotionIntent,
   layoutVariant = 'fullscreen',
@@ -1823,9 +1826,23 @@ export function UniversalPaymentPage({
       /** True on payment.failed â€” user may retry; do not auto-cancel slot on dismiss. */
       let razorpayPaymentFailed = false;
 
+      const isDiagnosticsPrepaid =
+        type === 'booking' &&
+        prepaidBookingPayload != null &&
+        /^diagnostics?$/i.test(String(prepaidBookingPayload.serviceId ?? serviceId ?? ''));
+
       // Step 1: Create booking/order if not already created
       let currentBookingId: string | undefined = bookingId;
       let currentOrderId: string | undefined = orderId;
+
+      if (isDiagnosticsPrepaid) {
+        bookingCreationDeferred = true;
+        deferredBookingPayload = { ...prepaidBookingPayload };
+        requiredUpfrontAmount = Number(
+          prepaidBookingPayload.amount ?? prepaidBookingPayload.totalAmount ?? baseAmount
+        );
+        currentBookingId = undefined;
+      }
 
       // Instant tele: no booking until after payment; backend creates via instant-after-payment
       if (type === 'booking' && flowType === 'tele-instant') {
@@ -1837,7 +1854,7 @@ export function UniversalPaymentPage({
         console.log('[PAYMENT] Queue-accepted flow: using existing bookingId:', currentBookingId);
       } else if (type === 'booking' && flowType === 'payment-resume' && currentBookingId) {
         console.log('[PAYMENT] Payment resume: using existing bookingId:', currentBookingId);
-      } else if (type === 'booking' && !currentBookingId) {
+      } else if (type === 'booking' && !currentBookingId && !isDiagnosticsPrepaid) {
         // Validate required fields
         if (!customerId) {
           toast.error('Customer ID is required. Please try again.');
@@ -2268,7 +2285,12 @@ export function UniversalPaymentPage({
             const errorResponse = (error as any)?.response ?? (error as any)?.responseData ?? (error as any)?.responseBody ?? (error as any)?.originalError;
             const errorCode = errorResponse?.error?.code || errorResponse?.code;
             const is402 = (error as any)?.statusCode === 402 || (error as any)?.status === 402;
-            if (is402 || ['PAYMENT_REQUIRED', 'PAYMENT_NOT_COMPLETED', 'PAYMENT_INSUFFICIENT'].includes(errorCode)) {
+            if (
+              is402 ||
+              ['PAYMENT_REQUIRED', 'PAYMENT_NOT_COMPLETED', 'PAYMENT_INSUFFICIENT', 'DIAGNOSTICS_PAYMENT_REQUIRED'].includes(
+                errorCode
+              )
+            ) {
               paymentRequiredError = error;
               console.warn('âš ï¸ Booking creation blocked until payment is completed. Proceeding to payment.', {
                 endpoint,
@@ -2667,7 +2689,9 @@ export function UniversalPaymentPage({
               offerId: selectedRazorpayOffer?.id,
               type:
                 flowType === 'tele-instant' || bookingCreationDeferred
-                  ? 'booking_prepaid'
+                  ? isDiagnosticsPrepaid || /^diagnostics?$/i.test(String(serviceId ?? ''))
+                    ? 'diagnostics'
+                    : 'booking_prepaid'
                   : undefined,
               vendorId:
                 flowType === 'tele-instant' || bookingCreationDeferred ? vendorId : undefined,
