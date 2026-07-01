@@ -11,6 +11,12 @@ import {
 } from '../../utils/service-promotion-engine';
 import { countPriorVendorBookings } from '../../utils/vendor-promotion-usage';
 import { shadowPlatformPromoEligibility } from '../../discount-engine/rules/adapters/shadow-adapters';
+import { DiscountOwner } from '../../discount-engine/enums/discount-owner';
+import { resolveBookingParamsToDiscountContext } from '../../discount-engine/adapters/context-mappers';
+import {
+  METADATA_PRIOR_VENDOR_BOOKING_COUNT,
+} from '../../discount-engine/resolver/context-runtime';
+import { invokeResolverAlongsideLegacy } from '../../discount-engine/resolver/production-bridge';
 
 export type ResolveBookingPromotionsParams = {
   vendorId: string;
@@ -168,7 +174,7 @@ export async function resolveBookingPromotions(
   const vendorPromotions = await loadVendorServicePromotions(params.vendorId);
   const platformPromotions = await loadPlatformPromotions(params);
 
-  return calculateBookingPromotionsStack({
+  const legacy = calculateBookingPromotionsStack({
     vendorPromotions,
     platformPromotions,
     ctx: {
@@ -180,6 +186,17 @@ export async function resolveBookingPromotions(
       priorVendorBookingCount,
     },
   });
+
+  invokeResolverAlongsideLegacy(
+    'resolveBookingPromotions',
+    resolveBookingParamsToDiscountContext(params, {
+      metadata: {
+        [METADATA_PRIOR_VENDOR_BOOKING_COUNT]: priorVendorBookingCount,
+      },
+    })
+  );
+
+  return legacy;
 }
 
 export type ApplicablePromotionOffer = {
@@ -256,7 +273,23 @@ export async function listApplicableBookingPromotions(
       isSpotlight: promo.is_spotlight === true,
     }));
 
+  invokeListApplicableResolver(params, priorVendorBookingCount);
+
   return [...vendorOffers, ...platformOffers];
+}
+
+function invokeListApplicableResolver(
+  params: ResolveBookingPromotionsParams,
+  priorVendorBookingCount: number
+): void {
+  invokeResolverAlongsideLegacy(
+    'listApplicableBookingPromotions',
+    resolveBookingParamsToDiscountContext(params, {
+      metadata: {
+        [METADATA_PRIOR_VENDOR_BOOKING_COUNT]: priorVendorBookingCount,
+      },
+    })
+  );
 }
 
 export async function recordBookingPromotionUsageFromBooking(bookingId: string): Promise<void> {

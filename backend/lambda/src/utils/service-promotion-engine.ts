@@ -15,6 +15,8 @@ import {
   shadowVendorServiceBaseEligibility,
   shadowVendorServiceFullEligibility,
 } from '../discount-engine/rules/adapters/shadow-adapters';
+import { servicePromotionEvaluateToDiscountContext } from '../discount-engine/adapters/context-mappers';
+import { invokeResolverAlongsideLegacy } from '../discount-engine/resolver/production-bridge';
 
 export type ServicePromotionRow = {
   id: string;
@@ -274,18 +276,26 @@ export function evaluateServicePromotionDiscount(
   const eligibility = isServicePromotionEligible(promo, ctx);
   if (!eligibility.ok) return null;
 
+  const resolverLabel = promo.code
+    ? 'evaluateServicePromotionDiscount-code'
+    : 'evaluateServicePromotionDiscount-auto';
+  const resolverContext = servicePromotionEvaluateToDiscountContext(promo, ctx);
+
   const combo = calculateCombo(promo, ctx);
   if (combo) {
     shadowVendorServiceFullEligibility(promo, ctx, true);
+    invokeResolverAlongsideLegacy(resolverLabel, resolverContext);
     return combo;
   }
   const loyalty = calculateLoyalty(promo, ctx);
   if (loyalty) {
     shadowVendorServiceFullEligibility(promo, ctx, true);
+    invokeResolverAlongsideLegacy(resolverLabel, resolverContext);
     return loyalty;
   }
   const standard = calculateStandardService(promo, ctx);
   shadowVendorServiceFullEligibility(promo, ctx, standard != null);
+  invokeResolverAlongsideLegacy(resolverLabel, resolverContext);
   return standard;
 }
 

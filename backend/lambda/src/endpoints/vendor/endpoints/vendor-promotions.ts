@@ -31,6 +31,15 @@ import {
   incrementPromotionView,
   recordVendorPromotionUsage,
 } from '../../../utils/vendor-promotion-usage';
+import {
+  normalizeServicePromotionRow,
+} from '../../../utils/service-promotion-engine';
+import {
+  platformPromotionCodeToDiscountContext,
+  vendorServiceCodeToDiscountContext,
+} from '../../../discount-engine/adapters/context-mappers';
+import { DiscountDomain } from '../../../discount-engine/enums/discount-domain';
+import { invokeResolverAlongsideLegacy } from '../../../discount-engine/resolver/production-bridge';
 
 export function registerVendorPromotionsEndpoints(app: Hono) {
   // ============================================================================
@@ -845,6 +854,17 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
             discountAmount = promo.discount_value || 0;
           }
 
+          const normalizedService = normalizeServicePromotionRow(
+            promo as Record<string, unknown>
+          );
+          invokeResolverAlongsideLegacy(
+            'validate-code-service-vendor',
+            vendorServiceCodeToDiscountContext(normalizedService, amount, {
+              vendorId: vendorId ? String(vendorId) : normalizedService.vendor_id,
+              customerId: customerId ? String(customerId) : undefined,
+            })
+          );
+
           return c.json({
             valid: true,
             promotion: promo,
@@ -889,6 +909,17 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
         } else {
           discountAmount = promo.discount_value || 0;
         }
+
+        const promoDomain =
+          orderType === 'service' ? DiscountDomain.SERVICE : DiscountDomain.ECOMMERCE;
+        invokeResolverAlongsideLegacy(
+          'validate-code-platform',
+          platformPromotionCodeToDiscountContext(promo as Record<string, unknown>, amount, {
+            domain: promoDomain,
+            vendorId: vendorId ? String(vendorId) : undefined,
+            customerId: customerId ? String(customerId) : undefined,
+          })
+        );
 
         return c.json({
           valid: true,

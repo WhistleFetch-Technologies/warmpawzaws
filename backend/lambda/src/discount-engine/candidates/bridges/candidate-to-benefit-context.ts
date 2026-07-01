@@ -1,7 +1,7 @@
 import { DiscountDomain } from '../../enums/discount-domain';
 import { getBenefitCalculator } from '../../benefits/benefit-calculator';
 import { resolveDiscountWithLegacyFallback } from '../../benefits/compare';
-import type { BenefitContext, BenefitLineItem } from '../../benefits/types';
+import type { BenefitContext, BenefitLineItem, BenefitResult } from '../../benefits/types';
 import {
   BOGO_BENEFIT_TYPE,
   BUNDLE_BENEFIT_TYPE,
@@ -88,4 +88,18 @@ export function computeBenefitFromCandidate(
     runtime.legacyAmount,
     result.discountAmount
   );
+}
+
+/** Benefit evaluation for resolver pipeline — no legacy fallback. */
+export function evaluateCandidateBenefit(
+  candidate: DiscountCandidate,
+  runtime: Omit<CandidateBenefitRuntimeContext, 'legacyAmount' | 'label'>
+): BenefitResult {
+  const ctx = candidateToBenefitContext(candidate, runtime);
+  const strategy = resolveBenefitStrategy(candidate);
+  const calculator = getBenefitCalculator();
+  if (strategy === PERCENTAGE_BENEFIT_TYPE || strategy === FLAT_BENEFIT_TYPE) {
+    return calculator.calculate(ctx);
+  }
+  return calculator.calculateWithStrategy(ctx, strategy);
 }

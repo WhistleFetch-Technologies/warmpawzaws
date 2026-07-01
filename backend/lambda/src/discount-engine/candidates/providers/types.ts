@@ -1,6 +1,6 @@
-import type { DiscountDomain } from '../enums/discount-domain';
-import type { DiscountSource } from '../enums/discount-source';
-import type { DiscountTrigger } from '../enums/discount-trigger';
+import type { DiscountDomain } from '../../enums/discount-domain';
+import type { DiscountSource } from '../../enums/discount-source';
+import type { DiscountTrigger } from '../../enums/discount-trigger';
 
 /** Input for candidate providers (Phase 4 resolver). */
 export interface CandidateLoadContext {

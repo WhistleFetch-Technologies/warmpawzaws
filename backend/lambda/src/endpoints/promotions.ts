@@ -23,6 +23,9 @@ import {
   resolveBookingPromotions,
 } from '../lib/services/booking-promotion-service';
 import { computeCouponDiscountAmount } from '../discount-engine/benefits/adapters/coupon-benefit.adapter';
+import { couponValidateToDiscountContext } from '../discount-engine/adapters/context-mappers';
+import { DiscountDomain } from '../discount-engine/enums/discount-domain';
+import { invokeResolverAlongsideLegacy } from '../discount-engine/resolver/production-bridge';
 import {
   shadowCouponEligibility,
   shadowPlatformInlineEligibility,
@@ -734,6 +737,13 @@ export function registerPromotionEndpoints(app: Hono) {
         maxDiscountAmount: coupon.max_discount_amount,
         legacyAmount: legacyDiscountAmount,
       });
+
+      const couponContext = couponValidateToDiscountContext(coupon, amount, { usageCount });
+      invokeResolverAlongsideLegacy('validateCouponInternal-service', {
+        ...couponContext,
+        domain: DiscountDomain.SERVICE,
+      });
+      invokeResolverAlongsideLegacy('validateCouponInternal-ecommerce', couponContext);
 
       return {
         success: true,

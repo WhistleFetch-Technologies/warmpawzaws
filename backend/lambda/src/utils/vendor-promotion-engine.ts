@@ -13,6 +13,11 @@ import {
   shadowVendorProductBaseEligibility,
   shadowVendorProductFullEligibility,
 } from '../discount-engine/rules/adapters/shadow-adapters';
+import {
+  vendorCartPromotionsToDiscountContext,
+  vendorPromoEvaluateToDiscountContext,
+} from '../discount-engine/adapters/context-mappers';
+import { invokeResolverAlongsideLegacy } from '../discount-engine/resolver/production-bridge';
 
 export type CartLineItem = {
   productId: string;
@@ -331,23 +336,32 @@ export function evaluatePromotionDiscount(
 ): PromotionEvaluation | null {
   const eligibility = isPromotionEligible(promo, ctx);
   if (!eligibility.ok) return null;
+
+  const resolverLabel =
+    promo.code || ctx.manualCode ? 'evaluatePromotionDiscount-code' : 'evaluatePromotionDiscount-auto';
+  const resolverContext = vendorPromoEvaluateToDiscountContext(promo, items, ctx);
+
   if (items.length === 0) {
     shadowVendorProductFullEligibility(promo, items, ctx, false);
+    invokeResolverAlongsideLegacy(resolverLabel, resolverContext);
     return null;
   }
 
   const bogo = calculateBogo(promo, items);
   if (bogo) {
     shadowVendorProductFullEligibility(promo, items, ctx, true);
+    invokeResolverAlongsideLegacy(resolverLabel, resolverContext);
     return bogo;
   }
   const bundle = calculateBundle(promo, items);
   if (bundle) {
     shadowVendorProductFullEligibility(promo, items, ctx, true);
+    invokeResolverAlongsideLegacy(resolverLabel, resolverContext);
     return bundle;
   }
   const standard = calculateStandard(promo, items);
   shadowVendorProductFullEligibility(promo, items, ctx, standard != null);
+  invokeResolverAlongsideLegacy(resolverLabel, resolverContext);
   return standard;
 }
 
@@ -379,6 +393,11 @@ export function calculateBestCartPromotion(
 } {
   const originalTotal = cartLineSubtotal(items);
   const all = evaluateAllPromotions(promotions, items, ctx);
+
+  invokeResolverAlongsideLegacy(
+    ctx.manualCode ? 'calculateBestCartPromotion-code' : 'calculateBestCartPromotion-auto',
+    vendorCartPromotionsToDiscountContext(promotions, items, ctx)
+  );
 
   if (ctx.manualCode) {
     const code = ctx.manualCode.toUpperCase();

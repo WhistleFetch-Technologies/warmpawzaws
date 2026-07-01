@@ -6,3 +6,4 @@ export * from './di';
 export * from './benefits';
 export * from './rules';
 export * from './candidates';
+export * from './resolver';

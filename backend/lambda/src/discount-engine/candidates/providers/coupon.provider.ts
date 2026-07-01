@@ -1,4 +1,4 @@
-import { select } from '../../database/rds-connection';
+import { select } from '../../../database/rds-connection';
 import { DiscountSource } from '../../enums/discount-source';
 import type { CandidateLoadContext, CandidateProvider } from './types';
 
