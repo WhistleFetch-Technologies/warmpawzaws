@@ -11,6 +11,7 @@ import type { AppliedDiscount, DiscountEngineResult } from '../models/discount-r
 import { emptyDiscountEngineResult } from '../models/discount-result';
 import {
   contextItemsToCartLines,
+  ecommerceContextToLegacyEvaluateContext,
   isEcommerceDomain,
   METADATA_PROMOTION_ROWS,
 } from './context-mappers';
@@ -71,13 +72,11 @@ export class LegacyEcommerceCartDiscountCalculatorAdapter implements DiscountCal
       });
     }
 
-    const manualCode =
-      context.trigger === DiscountTrigger.CODE ? context.couponCode : undefined;
-
-    const legacy = calculateBestCartPromotion(promotions, items, {
-      customerId: context.customerId,
-      manualCode,
-    });
+    const legacy = calculateBestCartPromotion(
+      promotions,
+      items,
+      ecommerceContextToLegacyEvaluateContext(context)
+    );
 
     const applied: AppliedDiscount[] = [];
     if (legacy.bestPromotion) {

@@ -1,4 +1,5 @@
-import type { CartLineItem } from '../../utils/vendor-promotion-engine';
+import type { ResolveBookingPromotionsParams } from '../../lib/services/booking-promotion-service';
+import type { CartLineItem, EvaluateContext } from '../../utils/vendor-promotion-engine';
 import { DiscountDomain } from '../enums/discount-domain';
 import type { DiscountContext, DiscountContextItem } from '../models/discount-context';
 import type { AppliedDiscount, DiscountEngineResult } from '../models/discount-result';
@@ -7,6 +8,106 @@ import { DiscountTrigger } from '../enums/discount-trigger';
 import type { DiscountResult as LegacyServiceDiscountResult } from '../../lib/services/discount-calculation-service';
 
 export const METADATA_PROMOTION_ROWS = 'promotionRows';
+/** Precomputed audience count — same responsibility as ads-recommendations before calculate. */
+export const METADATA_PRIOR_VENDOR_ORDER_COUNT = 'priorVendorOrderCount';
+
+/**
+ * Normalized booking calculate request (POST /promotions/calculate-booking body shape).
+ * Snake_case aliases are accepted at parse time only.
+ */
+export type LegacyBookingCalculateRequest = {
+  vendorId: string;
+  amount: number;
+  serviceIds: string[];
+  customerId?: string;
+  serviceCategory?: string;
+  serviceStyle?: string;
+  bookingId?: string;
+};
+
+export function parseLegacyBookingCalculateRequest(
+  body: Record<string, unknown>
+): LegacyBookingCalculateRequest {
+  const vendorId = String(body.vendorId || body.vendor_id || '').trim();
+  const amount = parseFloat(String(body.amount ?? body.bookingAmount ?? 0)) || 0;
+  const serviceStyle = body.serviceStyle ?? body.service_style;
+  const customerId = body.customerId ?? body.customer_id;
+  const serviceCategory =
+    body.serviceCategory ?? body.service_category ?? body.category;
+  const serviceIdsRaw = body.serviceIds ?? body.service_ids ?? body.selectedServiceIds;
+  const serviceIds = Array.isArray(serviceIdsRaw)
+    ? serviceIdsRaw.map((x) => String(x)).filter(Boolean)
+    : body.serviceId || body.service_id
+      ? [String(body.serviceId || body.service_id)]
+      : [];
+  const bookingId = body.bookingId ?? body.booking_id;
+
+  return {
+    vendorId,
+    amount,
+    serviceIds,
+    customerId: customerId != null ? String(customerId) : undefined,
+    serviceCategory: serviceCategory != null ? String(serviceCategory) : undefined,
+    serviceStyle: serviceStyle != null ? String(serviceStyle) : undefined,
+    bookingId: bookingId != null ? String(bookingId) : undefined,
+  };
+}
+
+export function bookingCalculateRequestToDiscountContext(
+  request: LegacyBookingCalculateRequest,
+  options?: { trigger?: DiscountTrigger; couponCode?: string }
+): DiscountContext {
+  return {
+    domain: DiscountDomain.SERVICE,
+    trigger: options?.trigger ?? DiscountTrigger.AUTO,
+    vendorId: request.vendorId,
+    customerId: request.customerId,
+    amount: request.amount,
+    couponCode: options?.couponCode,
+    booking: {
+      bookingId: request.bookingId,
+      serviceIds: request.serviceIds,
+      serviceCategory: request.serviceCategory,
+      serviceStyle: request.serviceStyle,
+    },
+  };
+}
+
+export function resolveBookingParamsToDiscountContext(
+  params: ResolveBookingPromotionsParams,
+  options?: { trigger?: DiscountTrigger; couponCode?: string; bookingId?: string }
+): DiscountContext {
+  return bookingCalculateRequestToDiscountContext(
+    {
+      vendorId: params.vendorId,
+      amount: params.amount,
+      serviceIds: params.serviceIds,
+      customerId: params.customerId,
+      serviceCategory: params.serviceCategory,
+      serviceStyle: params.serviceStyle,
+      bookingId: options?.bookingId,
+    },
+    options
+  );
+}
+
+export function discountContextToResolveBookingParams(
+  context: DiscountContext
+): ResolveBookingPromotionsParams {
+  const serviceIds =
+    context.booking?.serviceIds ??
+    context.items?.map((i) => i.serviceId).filter((id): id is string => Boolean(id)) ??
+    [];
+
+  return {
+    vendorId: context.vendorId ?? '',
+    serviceIds,
+    amount: context.amount,
+    customerId: context.customerId,
+    serviceCategory: context.booking?.serviceCategory,
+    serviceStyle: context.booking?.serviceStyle,
+  };
+}
 
 export function contextItemsToCartLines(items: DiscountContextItem[]): CartLineItem[] {
   return items.map((item) => ({
@@ -18,18 +119,33 @@ export function contextItemsToCartLines(items: DiscountContextItem[]): CartLineI
 }
 
 export function serviceContextToLegacyParams(context: DiscountContext) {
-  const serviceIds =
-    context.booking?.serviceIds ??
-    context.items?.map((i) => i.serviceId).filter((id): id is string => Boolean(id)) ??
-    [];
+  const booking = discountContextToResolveBookingParams(context);
 
   return {
-    vendorId: context.vendorId ?? '',
-    serviceIds,
-    originalAmount: context.amount,
-    customerId: context.customerId,
+    vendorId: booking.vendorId,
+    serviceIds: booking.serviceIds,
+    originalAmount: booking.amount,
+    customerId: booking.customerId,
     couponCode: context.couponCode,
-    serviceCategory: context.booking?.serviceCategory,
+    serviceCategory: booking.serviceCategory,
+    serviceStyle: booking.serviceStyle,
+  };
+}
+
+export function ecommerceContextToLegacyEvaluateContext(
+  context: DiscountContext
+): EvaluateContext {
+  const priorRaw = context.metadata?.[METADATA_PRIOR_VENDOR_ORDER_COUNT];
+  const priorVendorOrderCount =
+    typeof priorRaw === 'number' && Number.isFinite(priorRaw) ? priorRaw : undefined;
+
+  return {
+    vendorId: context.vendorId,
+    customerId: context.customerId,
+    priorVendorOrderCount,
+    now: context.evaluatedAt,
+    manualCode:
+      context.trigger === DiscountTrigger.CODE ? context.couponCode : undefined,
   };
 }
 
