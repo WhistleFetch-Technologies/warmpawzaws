@@ -11,6 +11,10 @@ import {
   computeServiceLoyaltyDiscountAmount,
   computeServiceStandardDiscountAmount,
 } from '../discount-engine/benefits/adapters/service-booking-benefit.adapter';
+import {
+  shadowVendorServiceBaseEligibility,
+  shadowVendorServiceFullEligibility,
+} from '../discount-engine/rules/adapters/shadow-adapters';
 
 export type ServicePromotionRow = {
   id: string;
@@ -105,46 +109,55 @@ export function isServicePromotionEligible(
   ctx: ServiceEvaluateContext
 ): { ok: boolean; message?: string } {
   const now = ctx.now ?? new Date();
-  if (!promo.is_active) return { ok: false, message: 'Promotion is not active' };
-  if (!isPromotionLiveInIst(promo.start_date, promo.end_date, now)) {
-    return { ok: false, message: 'Promotion is not valid for the current date' };
-  }
-  if (ctx.vendorId && promo.vendor_id && promo.vendor_id !== ctx.vendorId) {
-    return { ok: false, message: 'Promotion does not apply to this vendor' };
-  }
-  if (promo.usage_limit != null && (promo.usage_count ?? 0) >= promo.usage_limit) {
-    return { ok: false, message: 'This promotion has reached its usage limit' };
-  }
-
-  const audience = promo.target_audience || 'all';
-  const prior = ctx.priorVendorBookingCount ?? 0;
-  if (audience === 'new_users' || promo.promotion_type === 'first_booking') {
-    if (prior > 0) return { ok: false, message: 'This promotion is for new customers only' };
-  }
-  if (audience === 'returning_users' && prior === 0) {
-    return { ok: false, message: 'This promotion is for returning customers only' };
-  }
-
-  const amount = ctx.bookingAmount;
-  if (promo.min_booking_value != null && amount < promo.min_booking_value) {
-    return { ok: false, message: `Minimum booking value of ₹${promo.min_booking_value} required` };
-  }
-
-  const styles = promo.applicable_service_styles || [];
-  const style = normalizeStyle(ctx.serviceStyle);
-  if (styles.length > 0 && !styles.includes('all') && style) {
-    if (!styles.map(normalizeStyle).includes(style)) {
-      return { ok: false, message: 'Promotion does not apply to this service style' };
+  let result: { ok: boolean; message?: string };
+  if (!promo.is_active) result = { ok: false, message: 'Promotion is not active' };
+  else if (!isPromotionLiveInIst(promo.start_date, promo.end_date, now)) {
+    result = { ok: false, message: 'Promotion is not valid for the current date' };
+  } else if (ctx.vendorId && promo.vendor_id && promo.vendor_id !== ctx.vendorId) {
+    result = { ok: false, message: 'Promotion does not apply to this vendor' };
+  } else if (promo.usage_limit != null && (promo.usage_count ?? 0) >= promo.usage_limit) {
+    result = { ok: false, message: 'This promotion has reached its usage limit' };
+  } else {
+    const audience = promo.target_audience || 'all';
+    const prior = ctx.priorVendorBookingCount ?? 0;
+    if ((audience === 'new_users' || promo.promotion_type === 'first_booking') && prior > 0) {
+      result = { ok: false, message: 'This promotion is for new customers only' };
+    } else if (audience === 'returning_users' && prior === 0) {
+      result = { ok: false, message: 'This promotion is for returning customers only' };
+    } else if (promo.min_booking_value != null && ctx.bookingAmount < promo.min_booking_value) {
+      result = {
+        ok: false,
+        message: `Minimum booking value of ₹${promo.min_booking_value} required`,
+      };
+    } else {
+      const styles = promo.applicable_service_styles || [];
+      const style = normalizeStyle(ctx.serviceStyle);
+      if (styles.length > 0 && !styles.includes('all') && style) {
+        if (!styles.map(normalizeStyle).includes(style)) {
+          result = { ok: false, message: 'Promotion does not apply to this service style' };
+        } else {
+          result = checkServiceIds(promo, ctx);
+        }
+      } else {
+        result = checkServiceIds(promo, ctx);
+      }
     }
   }
+  return shadowVendorServiceBaseEligibility(promo, ctx, result);
+}
 
+function checkServiceIds(
+  promo: ServicePromotionRow,
+  ctx: ServiceEvaluateContext
+): { ok: boolean; message?: string } {
   const serviceIds = (ctx.serviceIds || []).map(String).filter(Boolean);
   const applicableServices = promo.applicable_services || [];
   if (applicableServices.length > 0 && serviceIds.length > 0) {
     const match = serviceIds.some((id) => applicableServices.includes(id));
-    if (!match) return { ok: false, message: 'Promotion does not apply to selected services' };
+    if (!match) {
+      return { ok: false, message: 'Promotion does not apply to selected services' };
+    }
   }
-
   return { ok: true };
 }
 
@@ -262,10 +275,18 @@ export function evaluateServicePromotionDiscount(
   if (!eligibility.ok) return null;
 
   const combo = calculateCombo(promo, ctx);
-  if (combo) return combo;
+  if (combo) {
+    shadowVendorServiceFullEligibility(promo, ctx, true);
+    return combo;
+  }
   const loyalty = calculateLoyalty(promo, ctx);
-  if (loyalty) return loyalty;
-  return calculateStandardService(promo, ctx);
+  if (loyalty) {
+    shadowVendorServiceFullEligibility(promo, ctx, true);
+    return loyalty;
+  }
+  const standard = calculateStandardService(promo, ctx);
+  shadowVendorServiceFullEligibility(promo, ctx, standard != null);
+  return standard;
 }
 
 export function evaluateAllServicePromotions(

@@ -1,13 +1,10 @@
 import type { CartLineItem } from '../../../utils/vendor-promotion-engine';
-import { getBenefitCalculator } from '../benefit-calculator';
-import { resolveDiscountWithLegacyFallback } from '../compare';
-import type { BenefitContext, BenefitLineItem } from '../types';
-import {
-  BOGO_BENEFIT_TYPE,
-  BUNDLE_BENEFIT_TYPE,
-  FLAT_BENEFIT_TYPE,
-  PERCENTAGE_BENEFIT_TYPE,
-} from '../strategies';
+import { DiscountDomain } from '../../enums/discount-domain';
+import { DiscountOwner } from '../../enums/discount-owner';
+import { buildRuntimeBenefitCandidate } from '../../candidates/runtime-candidate';
+import { computeBenefitFromCandidate } from '../../candidates/bridges/candidate-to-benefit-context';
+import type { BenefitLineItem } from '../types';
+import { BOGO_BENEFIT_TYPE, BUNDLE_BENEFIT_TYPE } from '../strategies';
 
 function toBenefitItems(items: CartLineItem[]): BenefitLineItem[] {
   return items.map((i) => ({
@@ -26,20 +23,23 @@ export function computeVendorStandardDiscountAmount(params: {
   originalAmount: number;
   legacyAmount: number;
 }): number {
-  const ctx: BenefitContext = {
+  const candidate = buildRuntimeBenefitCandidate({
+    domain: DiscountDomain.ECOMMERCE,
+    owner: DiscountOwner.VENDOR,
+    benefits: {
+      type: 'flash_sale',
+      discountType: params.discountType === 'percentage' ? 'percentage' : 'fixed',
+      value: params.discountValue,
+      maxDiscount: params.maxDiscountAmount,
+    },
+  });
+  return computeBenefitFromCandidate(candidate, {
     originalAmount: params.originalAmount,
     currentAmount: params.applicableTotal,
     eligibleAmount: params.applicableTotal,
-    discountType: params.discountType === 'percentage' ? 'percentage' : 'fixed',
-    discountValue: params.discountValue,
-    maxDiscount: params.maxDiscountAmount,
-  };
-  const result = getBenefitCalculator().calculate(ctx);
-  return resolveDiscountWithLegacyFallback(
-    'vendor-product-standard',
-    params.legacyAmount,
-    result.discountAmount
-  );
+    legacyAmount: params.legacyAmount,
+    label: 'vendor-product-standard',
+  });
 }
 
 export function computeVendorBogoDiscountAmount(params: {
@@ -51,23 +51,25 @@ export function computeVendorBogoDiscountAmount(params: {
   originalAmount: number;
   legacyAmount: number;
 }): number {
-  const ctx: BenefitContext = {
+  const candidate = buildRuntimeBenefitCandidate({
+    domain: DiscountDomain.ECOMMERCE,
+    owner: DiscountOwner.VENDOR,
+    benefits: {
+      type: BOGO_BENEFIT_TYPE,
+      value: 0,
+      buyQuantity: params.buyQuantity,
+      getQuantity: params.getQuantity,
+      getDiscountPercent: params.getDiscountPercent,
+      maxDiscount: params.maxDiscountAmount,
+    },
+  });
+  return computeBenefitFromCandidate(candidate, {
     originalAmount: params.originalAmount,
     currentAmount: params.originalAmount,
     items: toBenefitItems(params.items),
-    benefitType: BOGO_BENEFIT_TYPE,
-    promotionType: BOGO_BENEFIT_TYPE,
-    buyQuantity: params.buyQuantity ?? undefined,
-    getQuantity: params.getQuantity ?? undefined,
-    getDiscountPercent: params.getDiscountPercent ?? undefined,
-    maxDiscount: params.maxDiscountAmount,
-  };
-  const result = getBenefitCalculator().calculateWithStrategy(ctx, BOGO_BENEFIT_TYPE);
-  return resolveDiscountWithLegacyFallback(
-    'vendor-product-bogo',
-    params.legacyAmount,
-    result.discountAmount
-  );
+    legacyAmount: params.legacyAmount,
+    label: 'vendor-product-bogo',
+  });
 }
 
 export function computeVendorBundleDiscountAmount(params: {
@@ -78,41 +80,22 @@ export function computeVendorBundleDiscountAmount(params: {
   originalAmount: number;
   legacyAmount: number;
 }): number {
-  const ctx: BenefitContext = {
+  const candidate = buildRuntimeBenefitCandidate({
+    domain: DiscountDomain.ECOMMERCE,
+    owner: DiscountOwner.VENDOR,
+    benefits: {
+      type: BUNDLE_BENEFIT_TYPE,
+      value: params.bundleDiscountPercent ?? 15,
+      bundleProductIds: params.bundleProductIds,
+      bundleDiscountPercent: params.bundleDiscountPercent,
+      maxDiscount: params.maxDiscountAmount,
+    },
+  });
+  return computeBenefitFromCandidate(candidate, {
     originalAmount: params.originalAmount,
     currentAmount: params.originalAmount,
     items: toBenefitItems(params.items),
-    benefitType: BUNDLE_BENEFIT_TYPE,
-    promotionType: BUNDLE_BENEFIT_TYPE,
-    bundleProductIds: params.bundleProductIds,
-    bundleDiscountPercent: params.bundleDiscountPercent ?? undefined,
-    maxDiscount: params.maxDiscountAmount,
-  };
-  const result = getBenefitCalculator().calculateWithStrategy(ctx, BUNDLE_BENEFIT_TYPE);
-  return resolveDiscountWithLegacyFallback(
-    'vendor-product-bundle',
-    params.legacyAmount,
-    result.discountAmount
-  );
+    legacyAmount: params.legacyAmount,
+    label: 'vendor-product-bundle',
+  });
 }
-
-export function computeCappedDiscountAmount(params: {
-  rawAmount: number;
-  maxDiscount?: number | null;
-  maxBase: number;
-  legacyAmount: number;
-  label: string;
-}): number {
-  const ctx: BenefitContext = {
-    originalAmount: params.maxBase,
-    currentAmount: params.maxBase,
-    eligibleAmount: params.maxBase,
-    discountType: 'fixed',
-    discountValue: params.rawAmount,
-    maxDiscount: params.maxDiscount,
-  };
-  const result = getBenefitCalculator().calculateWithStrategy(ctx, FLAT_BENEFIT_TYPE);
-  return resolveDiscountWithLegacyFallback(params.label, params.legacyAmount, result.discountAmount);
-}
-
-export { PERCENTAGE_BENEFIT_TYPE, FLAT_BENEFIT_TYPE };

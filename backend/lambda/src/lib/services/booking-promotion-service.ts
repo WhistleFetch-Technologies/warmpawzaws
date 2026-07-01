@@ -10,6 +10,7 @@ import {
   type ServicePromotionRow,
 } from '../../utils/service-promotion-engine';
 import { countPriorVendorBookings } from '../../utils/vendor-promotion-usage';
+import { shadowPlatformPromoEligibility } from '../../discount-engine/rules/adapters/shadow-adapters';
 
 export type ResolveBookingPromotionsParams = {
   vendorId: string;
@@ -93,6 +94,14 @@ function platformPromoMatchesContext(
   return true;
 }
 
+function platformPromoMatchesContextWithShadow(
+  row: Record<string, unknown>,
+  params: { category?: string; serviceStyle?: string; serviceIds: string[]; amount: number }
+): boolean {
+  const legacy = platformPromoMatchesContext(row, params);
+  return shadowPlatformPromoEligibility(row, params, legacy);
+}
+
 async function loadVendorServicePromotions(vendorId: string): Promise<ServicePromotionRow[]> {
   try {
     const res = await query(
@@ -124,7 +133,7 @@ async function loadPlatformPromotions(
          AND (end_date IS NULL OR end_date >= CURRENT_DATE)`
     );
     const rows = ((res as { rows?: Record<string, unknown>[] }).rows || []).filter((row) =>
-      platformPromoMatchesContext(row, {
+      platformPromoMatchesContextWithShadow(row, {
         category: params.serviceCategory,
         serviceStyle: params.serviceStyle,
         serviceIds: params.serviceIds,

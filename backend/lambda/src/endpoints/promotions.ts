@@ -23,6 +23,10 @@ import {
   resolveBookingPromotions,
 } from '../lib/services/booking-promotion-service';
 import { computeCouponDiscountAmount } from '../discount-engine/benefits/adapters/coupon-benefit.adapter';
+import {
+  shadowCouponEligibility,
+  shadowPlatformInlineEligibility,
+} from '../discount-engine/rules/adapters/shadow-adapters';
 
 export function registerPromotionEndpoints(app: Hono) {
   const normalizePromotionDiscountType = (raw: unknown): 'percentage' | 'fixed' => {
@@ -95,34 +99,51 @@ export function registerPromotionEndpoints(app: Hono) {
     const now = new Date();
     const startDate = promotion.start_date ? new Date(promotion.start_date) : null;
     const endDate = promotion.end_date ? new Date(promotion.end_date) : null;
-    if (startDate && now < startDate) return { eligible: false, reason: 'Promotion not started yet' };
-    if (endDate && now > endDate) return { eligible: false, reason: 'Promotion has expired' };
+    let legacy: { eligible: boolean; reason: string | null };
+    if (startDate && now < startDate) legacy = { eligible: false, reason: 'Promotion not started yet' };
+    else if (endDate && now > endDate) legacy = { eligible: false, reason: 'Promotion has expired' };
+    else {
+      const amount = Number(params.amount || 0);
+      const minOrder = promotion.min_order_amount != null ? parseFloat(String(promotion.min_order_amount)) : 0;
+      if (minOrder > 0 && amount > 0 && amount < minOrder) {
+        legacy = { eligible: false, reason: `Minimum order amount of ₹${minOrder} required` };
+      } else {
+        const category = String(params.category || '').trim().toLowerCase();
+        const style = normalizeStyle(params.serviceStyle || '');
+        const serviceIds = (params.serviceIds || []).map((x) => String(x).trim()).filter(Boolean);
+        const configured = parseServicesList(promotion.applicable_services);
+        const configuredCategories = configured.filter((x) => !x.startsWith('style:'));
+        const configuredStyles = configured
+          .filter((x) => x.startsWith('style:'))
+          .map((x) => normalizeStyle(x.replace(/^style:/, '')));
+        const configuredServiceIds = configured.filter((x) => isValidUUID(String(x)));
 
-    const amount = Number(params.amount || 0);
-    const minOrder = promotion.min_order_amount != null ? parseFloat(String(promotion.min_order_amount)) : 0;
-    if (minOrder > 0 && amount > 0 && amount < minOrder) {
-      return { eligible: false, reason: `Minimum order amount of ₹${minOrder} required` };
+        if (
+          category &&
+          category !== 'all' &&
+          configuredCategories.length > 0 &&
+          !configuredCategories.map((x) => x.toLowerCase()).includes(category)
+        ) {
+          legacy = { eligible: false, reason: 'Promotion not applicable for this category' };
+        } else if (
+          style &&
+          style !== 'all' &&
+          configuredStyles.length > 0 &&
+          !configuredStyles.includes(style)
+        ) {
+          legacy = { eligible: false, reason: 'Promotion not applicable for this service style' };
+        } else if (
+          serviceIds.length > 0 &&
+          configuredServiceIds.length > 0 &&
+          !serviceIds.some((sid) => configuredServiceIds.includes(sid))
+        ) {
+          legacy = { eligible: false, reason: 'Promotion not applicable for selected service' };
+        } else {
+          legacy = { eligible: true, reason: null };
+        }
+      }
     }
-
-    const category = String(params.category || '').trim().toLowerCase();
-    const style = normalizeStyle(params.serviceStyle || '');
-    const serviceIds = (params.serviceIds || []).map((x) => String(x).trim()).filter(Boolean);
-    const configured = parseServicesList(promotion.applicable_services);
-    const configuredCategories = configured.filter((x) => !x.startsWith('style:'));
-    const configuredStyles = configured.filter((x) => x.startsWith('style:')).map((x) => normalizeStyle(x.replace(/^style:/, '')));
-    const configuredServiceIds = configured.filter((x) => isValidUUID(String(x)));
-
-    if (category && category !== 'all' && configuredCategories.length > 0 && !configuredCategories.map((x) => x.toLowerCase()).includes(category)) {
-      return { eligible: false, reason: 'Promotion not applicable for this category' };
-    }
-    if (style && style !== 'all' && configuredStyles.length > 0 && !configuredStyles.includes(style)) {
-      return { eligible: false, reason: 'Promotion not applicable for this service style' };
-    }
-    if (serviceIds.length > 0 && configuredServiceIds.length > 0 && !serviceIds.some((sid) => configuredServiceIds.includes(sid))) {
-      return { eligible: false, reason: 'Promotion not applicable for selected service' };
-    }
-
-    return { eligible: true, reason: null as string | null };
+    return shadowPlatformInlineEligibility(promotion, { ...params, now }, legacy);
   };
 
   // ============================================================================
@@ -656,10 +677,18 @@ export function registerPromotionEndpoints(app: Hono) {
       const endDate = coupon.end_date ? new Date(coupon.end_date) : null;
 
       if (now < startDate || (endDate && now > endDate)) {
+        shadowCouponEligibility(coupon, amount, 0, false, 'Coupon has expired');
         return { success: false, valid: false, error: 'Coupon has expired' };
       }
 
       if (coupon.min_order_amount && amount < parseFloat(coupon.min_order_amount)) {
+        shadowCouponEligibility(
+          coupon,
+          amount,
+          0,
+          false,
+          `Minimum order amount of ₹${coupon.min_order_amount} required`
+        );
         return {
           success: false,
           valid: false,
@@ -668,16 +697,21 @@ export function registerPromotionEndpoints(app: Hono) {
       }
 
       // Check usage limit
+      let usageCount = 0;
       if (coupon.max_uses) {
-        const usageCount = await query(
+        const usageCountResult = await query(
           'SELECT COUNT(*) as count FROM coupon_usages WHERE coupon_id = $1',
           [coupon.id]
         ).catch(() => ({ rows: [{ count: '0' }] }));
 
-        if (parseInt(usageCount.rows[0]?.count || '0', 10) >= coupon.max_uses) {
+        usageCount = parseInt(usageCountResult.rows[0]?.count || '0', 10);
+        if (usageCount >= coupon.max_uses) {
+          shadowCouponEligibility(coupon, amount, usageCount, false, 'Coupon usage limit reached');
           return { success: false, valid: false, error: 'Coupon usage limit reached' };
         }
       }
+
+      shadowCouponEligibility(coupon, amount, usageCount, true);
 
       // Calculate discount
       let legacyDiscountAmount = 0;

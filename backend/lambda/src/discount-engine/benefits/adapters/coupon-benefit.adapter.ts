@@ -1,7 +1,8 @@
-import { getBenefitCalculator } from '../benefit-calculator';
-import { resolveDiscountWithLegacyFallback } from '../compare';
-import type { BenefitContext } from '../types';
-import { FLAT_BENEFIT_TYPE, PERCENTAGE_BENEFIT_TYPE } from '../strategies';
+import { DiscountDomain } from '../../enums/discount-domain';
+import { DiscountOwner } from '../../enums/discount-owner';
+import { DiscountSource } from '../../enums/discount-source';
+import { buildRuntimeBenefitCandidate } from '../../candidates/runtime-candidate';
+import { computeBenefitFromCandidate } from '../../candidates/bridges/candidate-to-benefit-context';
 
 export function computeCouponDiscountAmount(params: {
   discountType: string;
@@ -10,20 +11,22 @@ export function computeCouponDiscountAmount(params: {
   maxDiscountAmount?: number | null;
   legacyAmount: number;
 }): number {
-  const ctx: BenefitContext = {
+  const candidate = buildRuntimeBenefitCandidate({
+    domain: DiscountDomain.ECOMMERCE,
+    owner: DiscountOwner.PLATFORM,
+    source: DiscountSource.PLATFORM_COUPON,
+    benefits: {
+      type: 'coupon',
+      discountType: params.discountType === 'percentage' ? 'percentage' : 'fixed',
+      value: parseFloat(String(params.discountValue || 0)),
+      maxDiscount: params.maxDiscountAmount,
+    },
+  });
+  return computeBenefitFromCandidate(candidate, {
     originalAmount: params.amount,
     currentAmount: params.amount,
     eligibleAmount: params.amount,
-    discountType: params.discountType === 'percentage' ? 'percentage' : 'fixed',
-    discountValue: parseFloat(String(params.discountValue || 0)),
-    maxDiscount: params.maxDiscountAmount,
-  };
-  const strategy =
-    ctx.discountType === 'percentage' ? PERCENTAGE_BENEFIT_TYPE : FLAT_BENEFIT_TYPE;
-  const result = getBenefitCalculator().calculateWithStrategy(ctx, strategy);
-  return resolveDiscountWithLegacyFallback(
-    'admin-coupon',
-    params.legacyAmount,
-    result.discountAmount
-  );
+    legacyAmount: params.legacyAmount,
+    label: 'admin-coupon',
+  });
 }

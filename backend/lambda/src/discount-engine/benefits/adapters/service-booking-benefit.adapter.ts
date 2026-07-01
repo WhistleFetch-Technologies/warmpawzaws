@@ -1,12 +1,9 @@
-import { getBenefitCalculator } from '../benefit-calculator';
-import { resolveDiscountWithLegacyFallback } from '../compare';
-import type { BenefitContext } from '../types';
-import {
-  COMBO_BENEFIT_TYPE,
-  FLAT_BENEFIT_TYPE,
-  LOYALTY_BENEFIT_TYPE,
-  PERCENTAGE_BENEFIT_TYPE,
-} from '../strategies';
+import { DiscountDomain } from '../../enums/discount-domain';
+import { DiscountOwner } from '../../enums/discount-owner';
+import { DiscountSource } from '../../enums/discount-source';
+import { buildRuntimeBenefitCandidate } from '../../candidates/runtime-candidate';
+import { computeBenefitFromCandidate } from '../../candidates/bridges/candidate-to-benefit-context';
+import { COMBO_BENEFIT_TYPE, LOYALTY_BENEFIT_TYPE } from '../strategies';
 
 export function computeServiceStandardDiscountAmount(params: {
   discountType: string;
@@ -15,20 +12,23 @@ export function computeServiceStandardDiscountAmount(params: {
   maxDiscountAmount?: number | null;
   legacyAmount: number;
 }): number {
-  const ctx: BenefitContext = {
+  const candidate = buildRuntimeBenefitCandidate({
+    domain: DiscountDomain.SERVICE,
+    owner: DiscountOwner.VENDOR,
+    benefits: {
+      type: 'flash_sale',
+      discountType: params.discountType === 'percentage' ? 'percentage' : 'fixed',
+      value: params.discountValue,
+      maxDiscount: params.maxDiscountAmount,
+    },
+  });
+  return computeBenefitFromCandidate(candidate, {
     originalAmount: params.bookingAmount,
     currentAmount: params.bookingAmount,
     eligibleAmount: params.bookingAmount,
-    discountType: params.discountType === 'percentage' ? 'percentage' : 'fixed',
-    discountValue: params.discountValue,
-    maxDiscount: params.maxDiscountAmount,
-  };
-  const result = getBenefitCalculator().calculate(ctx);
-  return resolveDiscountWithLegacyFallback(
-    'service-booking-standard',
-    params.legacyAmount,
-    result.discountAmount
-  );
+    legacyAmount: params.legacyAmount,
+    label: 'service-booking-standard',
+  });
 }
 
 export function computeServiceComboDiscountAmount(params: {
@@ -37,20 +37,22 @@ export function computeServiceComboDiscountAmount(params: {
   maxDiscountAmount?: number | null;
   legacyAmount: number;
 }): number {
-  const ctx: BenefitContext = {
+  const candidate = buildRuntimeBenefitCandidate({
+    domain: DiscountDomain.SERVICE,
+    owner: DiscountOwner.VENDOR,
+    benefits: {
+      type: COMBO_BENEFIT_TYPE,
+      value: params.comboDiscountPercent,
+      comboDiscountPercent: params.comboDiscountPercent,
+      maxDiscount: params.maxDiscountAmount,
+    },
+  });
+  return computeBenefitFromCandidate(candidate, {
     originalAmount: params.bookingAmount,
     currentAmount: params.bookingAmount,
-    benefitType: COMBO_BENEFIT_TYPE,
-    promotionType: COMBO_BENEFIT_TYPE,
-    comboDiscountPercent: params.comboDiscountPercent,
-    maxDiscount: params.maxDiscountAmount,
-  };
-  const result = getBenefitCalculator().calculateWithStrategy(ctx, COMBO_BENEFIT_TYPE);
-  return resolveDiscountWithLegacyFallback(
-    'service-booking-combo',
-    params.legacyAmount,
-    result.discountAmount
-  );
+    legacyAmount: params.legacyAmount,
+    label: 'service-booking-combo',
+  });
 }
 
 export function computeServiceLoyaltyDiscountAmount(params: {
@@ -60,21 +62,22 @@ export function computeServiceLoyaltyDiscountAmount(params: {
   maxDiscountAmount?: number | null;
   legacyAmount: number;
 }): number {
-  const ctx: BenefitContext = {
+  const candidate = buildRuntimeBenefitCandidate({
+    domain: DiscountDomain.SERVICE,
+    owner: DiscountOwner.VENDOR,
+    benefits: {
+      type: LOYALTY_BENEFIT_TYPE,
+      discountType: params.discountType === 'percentage' ? 'percentage' : 'fixed',
+      value: params.discountValue,
+      maxDiscount: params.maxDiscountAmount,
+    },
+  });
+  return computeBenefitFromCandidate(candidate, {
     originalAmount: params.bookingAmount,
     currentAmount: params.bookingAmount,
-    discountType: params.discountType === 'percentage' ? 'percentage' : 'fixed',
-    discountValue: params.discountValue,
-    benefitType: LOYALTY_BENEFIT_TYPE,
-    promotionType: LOYALTY_BENEFIT_TYPE,
-    maxDiscount: params.maxDiscountAmount,
-  };
-  const result = getBenefitCalculator().calculateWithStrategy(ctx, LOYALTY_BENEFIT_TYPE);
-  return resolveDiscountWithLegacyFallback(
-    'service-booking-loyalty',
-    params.legacyAmount,
-    result.discountAmount
-  );
+    legacyAmount: params.legacyAmount,
+    label: 'service-booking-loyalty',
+  });
 }
 
 export function computePlatformPromotionDiscountAmount(params: {
@@ -85,25 +88,23 @@ export function computePlatformPromotionDiscountAmount(params: {
   minOrderAmount?: number | null;
   legacyAmount: number;
 }): number {
-  if (params.amount <= 0) return 0;
-  const min =
-    params.minOrderAmount != null ? parseFloat(String(params.minOrderAmount)) : 0;
-  if (min > 0 && params.amount < min) return 0;
-
-  const ctx: BenefitContext = {
+  const candidate = buildRuntimeBenefitCandidate({
+    domain: DiscountDomain.SERVICE,
+    owner: DiscountOwner.PLATFORM,
+    source: DiscountSource.PLATFORM_PROMOTION,
+    benefits: {
+      type: 'flash_sale',
+      discountType: params.discountType === 'percentage' ? 'percentage' : 'fixed',
+      value: parseFloat(String(params.discountValue || 0)),
+      maxDiscount: params.maxDiscountAmount,
+      minOrderAmount: params.minOrderAmount,
+    },
+  });
+  return computeBenefitFromCandidate(candidate, {
     originalAmount: params.amount,
     currentAmount: params.amount,
     eligibleAmount: params.amount,
-    discountType: params.discountType === 'percentage' ? 'percentage' : 'fixed',
-    discountValue: parseFloat(String(params.discountValue || 0)),
-    maxDiscount: params.maxDiscountAmount,
-  };
-  const strategy =
-    ctx.discountType === 'percentage' ? PERCENTAGE_BENEFIT_TYPE : FLAT_BENEFIT_TYPE;
-  const result = getBenefitCalculator().calculateWithStrategy(ctx, strategy);
-  return resolveDiscountWithLegacyFallback(
-    'platform-promotion',
-    params.legacyAmount,
-    result.discountAmount
-  );
+    legacyAmount: params.legacyAmount,
+    label: 'platform-promotion',
+  });
 }

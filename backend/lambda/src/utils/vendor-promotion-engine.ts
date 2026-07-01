@@ -9,6 +9,10 @@ import {
   computeVendorBundleDiscountAmount,
   computeVendorStandardDiscountAmount,
 } from '../discount-engine/benefits/adapters/vendor-product-benefit.adapter';
+import {
+  shadowVendorProductBaseEligibility,
+  shadowVendorProductFullEligibility,
+} from '../discount-engine/rules/adapters/shadow-adapters';
 
 export type CartLineItem = {
   productId: string;
@@ -139,25 +143,26 @@ export function isPromotionEligible(
   ctx: EvaluateContext = {}
 ): { ok: boolean; message?: string } {
   const now = ctx.now ?? new Date();
-  if (!promo.is_active) return { ok: false, message: 'Promotion is not active' };
-  if (!isPromotionLiveInIst(promo.start_date, promo.end_date, now)) {
-    return { ok: false, message: 'Promotion is not valid for the current date' };
+  let result: { ok: boolean; message?: string };
+  if (!promo.is_active) result = { ok: false, message: 'Promotion is not active' };
+  else if (!isPromotionLiveInIst(promo.start_date, promo.end_date, now)) {
+    result = { ok: false, message: 'Promotion is not valid for the current date' };
+  } else if (ctx.vendorId && promo.vendor_id && promo.vendor_id !== ctx.vendorId) {
+    result = { ok: false, message: 'Promotion does not apply to this seller' };
+  } else if (promo.usage_limit != null && (promo.usage_count ?? 0) >= promo.usage_limit) {
+    result = { ok: false, message: 'This promotion has reached its usage limit' };
+  } else {
+    const audience = promo.target_audience || 'all';
+    const prior = ctx.priorVendorOrderCount ?? 0;
+    if ((audience === 'new_users' || promo.promotion_type === 'first_order') && prior > 0) {
+      result = { ok: false, message: 'This promotion is for new customers only' };
+    } else if (audience === 'returning_users' && prior === 0) {
+      result = { ok: false, message: 'This promotion is for returning customers only' };
+    } else {
+      result = { ok: true };
+    }
   }
-  if (ctx.vendorId && promo.vendor_id && promo.vendor_id !== ctx.vendorId) {
-    return { ok: false, message: 'Promotion does not apply to this seller' };
-  }
-  if (promo.usage_limit != null && (promo.usage_count ?? 0) >= promo.usage_limit) {
-    return { ok: false, message: 'This promotion has reached its usage limit' };
-  }
-  const audience = promo.target_audience || 'all';
-  const prior = ctx.priorVendorOrderCount ?? 0;
-  if (audience === 'new_users' || promo.promotion_type === 'first_order') {
-    if (prior > 0) return { ok: false, message: 'This promotion is for new customers only' };
-  }
-  if (audience === 'returning_users' && prior === 0) {
-    return { ok: false, message: 'This promotion is for returning customers only' };
-  }
-  return { ok: true };
+  return shadowVendorProductBaseEligibility(promo, ctx, result);
 }
 
 function lineProductId(item: CartLineItem): string {
@@ -326,13 +331,24 @@ export function evaluatePromotionDiscount(
 ): PromotionEvaluation | null {
   const eligibility = isPromotionEligible(promo, ctx);
   if (!eligibility.ok) return null;
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    shadowVendorProductFullEligibility(promo, items, ctx, false);
+    return null;
+  }
 
   const bogo = calculateBogo(promo, items);
-  if (bogo) return bogo;
+  if (bogo) {
+    shadowVendorProductFullEligibility(promo, items, ctx, true);
+    return bogo;
+  }
   const bundle = calculateBundle(promo, items);
-  if (bundle) return bundle;
-  return calculateStandard(promo, items);
+  if (bundle) {
+    shadowVendorProductFullEligibility(promo, items, ctx, true);
+    return bundle;
+  }
+  const standard = calculateStandard(promo, items);
+  shadowVendorProductFullEligibility(promo, items, ctx, standard != null);
+  return standard;
 }
 
 export function evaluateAllPromotions(
