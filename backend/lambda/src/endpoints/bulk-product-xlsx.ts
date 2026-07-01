@@ -1,5 +1,5 @@
 /**
- * XLSX bulk product template — unified 28-column layout for vendor product upload.
+ * XLSX bulk product template — unified 27-column layout for vendor product upload.
  * Single sheet (NPI), inline dropdowns, one demo row.
  *
  * Required (`*`): Title, Category, Quantity, Image, MRP, Tax, HSN
@@ -8,7 +8,12 @@ import {
   getBulkProductTitle,
   MAX_BULK_PRODUCT_ROWS,
 } from '../utils/product-ecommerce-validation';
-import { parseDeliveryRegionsCsv, getVariantGuideSheetRows } from '@warmpawz/shared-types';
+import {
+  parseDeliveryRegionsCsv,
+  getVariantGuideSheetRows,
+  PET_TYPE_CUSTOMER_LABEL_ALL_PETS,
+  resolveVendorPetTypeInput,
+} from '@warmpawz/shared-types';
 
 import ExcelJS from 'exceljs';
 
@@ -17,7 +22,7 @@ export { getBulkProductTitle };
 export const SHEET_NAME = 'NPI';
 export const VARIANT_GUIDE_SHEET_NAME = 'Variant Guide';
 
-/** 28 columns. Compulsory ones carry a `*` suffix. */
+/** 27 columns. Compulsory ones carry a `*` suffix. */
 export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Title*',
   'Description',
@@ -35,7 +40,6 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'SP',
   'MRP*',
   'Pet Type',
-  'Pet Type Other',
   'Tax*',
   'HSN*',
   'Manufacturing Details',
@@ -56,8 +60,8 @@ const REQUIRED_COL_LETTERS = {
   IMAGE: 'M',
   MRP: 'O',
   PET_TYPE: 'P',
-  TAX: 'R',
-  HSN: 'S',
+  TAX: 'Q',
+  HSN: 'R',
 } as const;
 
 type Fill = ExcelJS.Fill;
@@ -88,21 +92,21 @@ const THIN_BORDER: Partial<ExcelJS.Borders> = {
 const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill }> = [
   {
     start: 1,
-    end: 21,
+    end: 20,
     title: `Product Details (max ${MAX_BULK_PRODUCT_ROWS} rows per file)`,
     fill: YELLOW,
   },
   {
-    start: 22,
-    end: 28,
+    start: 21,
+    end: 27,
     title: 'Same Product Group ID = one product (variants). Each row: one SKU with its own MRP & SP.',
     fill: TAN,
   },
 ];
 
-const WRAP_COL_INDEXES = new Set([2, 3, 6, 13, 20]);
+const WRAP_COL_INDEXES = new Set([2, 3, 6, 13, 19]);
 
-const STATIC_PET_TYPES = ['Dog', 'Cat', 'Other'];
+const STATIC_PET_TYPES = ['Dog', 'Cat', PET_TYPE_CUSTOMER_LABEL_ALL_PETS];
 const STATIC_TAX_LABELS = ['0%', '5%', '12%', '18%', '28%'];
 
 const DEFAULT_CATEGORIES = [
@@ -137,7 +141,6 @@ function buildSampleRow(sampleCategory: string): string[] {
     '799',
     '1598',
     'Dog',
-    '',
     '5%',
     '62052000',
     'Country of Origin: India. Manufactured by Apparo Lifestyle Pvt Ltd.',
@@ -216,12 +219,16 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     if (h === 'Delivery Regions') {
       cell.note = 'Optional. Comma-separated city names. Empty = ships everywhere.';
     }
+    if (h === 'Pet Type') {
+      cell.note =
+        'Dog, Cat, All pets, or type a specific pet (e.g. Birds). Leave blank = All pets.';
+    }
     cell.font = { bold: true, size: 10, color: h.includes('*') ? { argb: 'FFFFFFFF' } : undefined };
     cell.fill = (h.includes('*') ? HEADER_REQUIRED_FILL : HEADER_ROW_FILL) as ExcelJS.Fill;
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     cell.border = THIN_BORDER as ExcelJS.Borders;
     ws.getColumn(c).width =
-      c === 1 ? 40 : c === 3 || c === 6 || c === 13 || c === 20 ? 32 : 14;
+      c === 1 ? 40 : c === 3 || c === 6 || c === 13 || c === 19 ? 32 : 14;
   });
 
   SAMPLE_ROW.forEach((v, i) => {
@@ -499,8 +506,16 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     if (bag.breadth_cm?.trim()) product.breadth_cm = bag.breadth_cm.trim();
     if (bag.height_cm?.trim()) product.height_cm = bag.height_cm.trim();
     if (bag.images?.trim()) product.images = bag.images.trim();
-    if (bag.pet_type?.trim()) product.pet_type = bag.pet_type.trim();
-    if (bag.pet_type_other?.trim()) product.pet_type_other = bag.pet_type_other.trim();
+    const resolvedPet = resolveVendorPetTypeInput(
+      bag.pet_type ?? '',
+      bag.pet_type_other ?? '',
+    );
+    if (resolvedPet.pet_type) {
+      product.pet_type = resolvedPet.pet_type;
+      if (resolvedPet.pet_type_other) {
+        product.pet_type_other = resolvedPet.pet_type_other;
+      }
+    }
     if (bag.manufacturing_details?.trim()) {
       product.manufacturing_details = bag.manufacturing_details.trim();
     }

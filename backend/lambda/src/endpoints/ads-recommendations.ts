@@ -12,6 +12,10 @@ import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
 import { calculateBestCartPromotion, discountsWithinTolerance, normalizePromotionRow, type CartLineItem } from '../utils/vendor-promotion-engine';
 import { countPriorVendorOrders, recordVendorPromotionUsage } from '../utils/vendor-promotion-usage';
+import {
+  clampRecommendationLimit,
+  resolveProductRecommendations,
+} from '../lib/ecommerce/recommendation-resolver';
 
 // ============================================================================
 // SPONSORED ADS ENDPOINTS
@@ -477,59 +481,8 @@ app.get('/products/similar', async (c) => {
 app.get('/ads-recommendations/products/:productId/similar', async (c) => {
   try {
     const productId = c.req.param('productId');
-    const limit = parseInt(c.req.query('limit') || '4', 10);
-    const current = await query(
-      `SELECT id, category, vendor_id FROM products WHERE id = $1::uuid LIMIT 1`,
-      [productId],
-    );
-    if (!current.rows.length) {
-      return c.json({ success: true, products: [] });
-    }
-    const row = current.rows[0] as { category?: string; vendor_id?: string };
-    const params: unknown[] = [];
-    let paramIdx = 1;
-    let sql = `
-      SELECT
-        p.id,
-        p.name,
-        p.price,
-        p.compare_at_price,
-        p.images,
-        p.category,
-        v.business_name as vendor_name
-      FROM products p
-      LEFT JOIN vendors v ON p.vendor_id = v.id
-      WHERE p.is_active = true
-        AND COALESCE(p.stock, 0) > 0
-        AND p.id <> $${paramIdx++}::uuid
-    `;
-    params.push(productId);
-
-    if (row.category) {
-      sql += ` AND p.category = $${paramIdx++}`;
-      params.push(row.category);
-    }
-
-    if (row.vendor_id) {
-      sql += ` ORDER BY CASE WHEN p.vendor_id = $${paramIdx++}::uuid THEN 0 ELSE 1 END, p.sales_count DESC NULLS LAST`;
-      params.push(row.vendor_id);
-    } else {
-      sql += ` ORDER BY p.sales_count DESC NULLS LAST, p.created_at DESC`;
-    }
-    sql += ` LIMIT $${paramIdx}`;
-    params.push(limit);
-
-    const result = await query(sql, params);
-    const products = (result.rows || []).map((r: Record<string, unknown>) => ({
-      id: r.id,
-      name: r.name,
-      price: r.price != null ? parseFloat(String(r.price)) : 0,
-      original_price:
-        r.compare_at_price != null ? parseFloat(String(r.compare_at_price)) : undefined,
-      vendor_name: r.vendor_name,
-      rating: 0,
-    }));
-
+    const limit = clampRecommendationLimit(c.req.query('limit') || '4');
+    const products = await resolveProductRecommendations({ productId, limit });
     return c.json({ success: true, products });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);

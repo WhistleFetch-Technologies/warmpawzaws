@@ -31,8 +31,7 @@ const baseForm: ProductFormState = {
   lengthCm: '',
   breadthCm: '',
   heightCm: '',
-  petType: '',
-  petTypeOther: '',
+  petTypeInput: '',
   manufacturingDetails: '',
 };
 
@@ -189,7 +188,7 @@ describe('vendor-product-form', () => {
         lengthCm: '10',
         breadthCm: '5',
         heightCm: '3',
-        petType: 'dog',
+        petTypeInput: 'Dog',
       },
       mode: 'simple',
       variants: [],
@@ -216,15 +215,43 @@ describe('vendor-product-form', () => {
     expect(payload.delivery_regions).toEqual(['Mumbai', 'Pune']);
   });
 
-  it('validateProductForm requires pet_type_other when pet type is other', () => {
+  it('validateProductForm allows All pets without extra text', () => {
     const err = validateProductForm({
-      form: { ...baseForm, petType: 'other', petTypeOther: '' },
+      form: { ...baseForm, petTypeInput: 'All pets' },
       mode: 'simple',
       variants: [],
       simpleSku: { mrp: '500', price: '450', stock: '10', images: ['a'], barcode: '' },
       variantAxes: presetVariantAxes('size'),
     });
-    expect(err).toMatch(/pet type/i);
+    expect(err).toBeNull();
+  });
+
+  it('buildVendorProductPayload stores Birds as other + pet_type_other', () => {
+    const payload = buildVendorProductPayload({
+      form: { ...baseForm, petTypeInput: 'Birds' },
+      mode: 'simple',
+      variants: [],
+      simpleSku: { mrp: '500', price: '450', stock: '10', images: ['https://img/a.jpg'], barcode: '' },
+      variantAxes: presetVariantAxes('size'),
+      sellerId: 'vendor-1',
+      stripImageUrl: strip,
+    });
+    expect(payload.specifications?.pet_type).toBe('other');
+    expect(payload.specifications?.pet_type_other).toBe('Birds');
+  });
+
+  it('buildVendorProductPayload stores empty pet type as allpet', () => {
+    const payload = buildVendorProductPayload({
+      form: baseForm,
+      mode: 'simple',
+      variants: [],
+      simpleSku: { mrp: '500', price: '450', stock: '10', images: ['https://img/a.jpg'], barcode: '' },
+      variantAxes: presetVariantAxes('size'),
+      sellerId: 'vendor-1',
+      stripImageUrl: strip,
+    });
+    expect(payload.specifications?.pet_type).toBe('allpet');
+    expect(payload.specifications?.pet_type_other).toBeUndefined();
   });
 
   it('deliveryRegionsFromProduct reads flattened delivery_regions', () => {

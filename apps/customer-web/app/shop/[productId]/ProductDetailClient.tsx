@@ -56,6 +56,14 @@ import {
   normalizeDeliveryRegionsList,
 } from '@/lib/ecommerce/product-delivery-guard';
 import {
+  ECOMMERCE_RECOMMENDATIONS_LIMIT,
+  loadProductRecommendations,
+} from '@/lib/ecommerce/load-ecommerce-recommendations';
+import { RecommendationProductScroller } from '@/components/ecommerce/shared/RecommendationProductScroller';
+import type { ShopProduct } from '@/components/shop/shop-types';
+import { shopProductToCartItem } from '@/lib/ecommerce/cart-product-helpers';
+import { useCart } from '@/context/CartContext';
+import {
   ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
   Package, Check, Plus, Minus, Share2, ChevronRight,
   Clock, ThumbsUp, User, AlertCircle, RefreshCcw
@@ -89,6 +97,7 @@ interface Product {
   delivery_regions?: string[];
   key_features?: string;
   pet_type?: string;
+  pet_type_display?: string;
   manufacturing_details?: string;
   has_variants?: boolean;
   price_from?: boolean;
@@ -121,16 +130,6 @@ interface CartItem {
   product: Product;
   quantity: number;
   selected_variations?: Record<string, string>;
-}
-
-interface RecommendedProduct {
-  id: string;
-  name: string;
-  price: number;
-  original_price?: number;
-  emoji?: string;
-  rating: number;
-  vendor_name: string;
 }
 
 const UUID_RE =
@@ -172,31 +171,6 @@ function displaySpecValue(value: unknown): string {
   }
 }
 
-function mapRecommendedProduct(row: Record<string, unknown>): RecommendedProduct | null {
-  const id = String(row.id ?? '').trim();
-  if (!id) return null;
-  const priceRaw = row.price ?? row.unit_price;
-  const price = priceRaw != null ? parseFloat(String(priceRaw)) : 0;
-  const originalRaw =
-    row.original_price ?? row.compare_at_price ?? row.compareAtPrice ?? row.mrp;
-  const original_price =
-    originalRaw != null && Number.isFinite(parseFloat(String(originalRaw)))
-      ? parseFloat(String(originalRaw))
-      : undefined;
-  const vendor_name = String(
-    row.vendor_name ?? row.vendorName ?? row.business_name ?? 'Seller',
-  );
-  const rating = Number(row.rating ?? row.review_count) || 0;
-  return {
-    id,
-    name: String(row.name ?? 'Product'),
-    price: Number.isFinite(price) ? price : 0,
-    original_price,
-    rating,
-    vendor_name,
-  };
-}
-
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -206,13 +180,14 @@ export default function ProductDetailClient() {
   const router = useRouter();
   const nav = useCustomerNavigation();
   useDeepLinkBackStack();
+  const { addToCart: addRecommendationToCart } = useCart();
   const productId = resolveShopProductIdFromLocation(params.productId as string);
 
   const [product, setProduct] = useState<Product | null>(null);
   const [productSkus, setProductSkus] = useState<ClientProductSku[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [alsoBought, setAlsoBought] = useState<RecommendedProduct[]>([]);
-  const [similarProducts, setSimilarProducts] = useState<RecommendedProduct[]>([]);
+  const [recommendations, setRecommendations] = useState<ShopProduct[]>([]);
+  const [recsLoading, setRecsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -298,6 +273,34 @@ export default function ProductDetailClient() {
     recordProductView();
   }, [productId]);
 
+  useEffect(() => {
+    if (!productId) {
+      setRecommendations([]);
+      return;
+    }
+    let cancelled = false;
+    async function loadRecs() {
+      setRecsLoading(true);
+      try {
+        const products = await loadProductRecommendations(
+          productId,
+          ECOMMERCE_RECOMMENDATIONS_LIMIT,
+        );
+        if (!cancelled) {
+          setRecommendations(products.filter((p) => p.id !== productId));
+        }
+      } catch {
+        if (!cancelled) setRecommendations([]);
+      } finally {
+        if (!cancelled) setRecsLoading(false);
+      }
+    }
+    void loadRecs();
+    return () => {
+      cancelled = true;
+    };
+  }, [productId]);
+
   const loadProductData = async () => {
     try {
       setLoading(true);
@@ -326,13 +329,9 @@ export default function ProductDetailClient() {
         }
       }
 
-      const [reviewsRes, alsoBoughtRes, similarRes] = await Promise.all([
-        apiClient.get<any>(`/products/${productId}/reviews`).catch(() => ({ reviews: [] })),
-        apiClient.get<any>(`/products/${productId}/also-bought`).catch(() => ({ products: [] })),
-        apiClient
-          .get<any>(`/ads-recommendations/products/${productId}/similar?limit=4`)
-          .catch(() => ({ products: [] })),
-      ]);
+      const reviewsRes = await apiClient
+        .get<any>(`/products/${productId}/reviews`)
+        .catch(() => ({ reviews: [] }));
 
       if (productRes?.product) {
         const p = productRes.product;
@@ -428,16 +427,6 @@ export default function ProductDetailClient() {
       }
 
       setReviews(reviewsRes?.reviews || []);
-      setAlsoBought(
-        (alsoBoughtRes?.products || [])
-          .map((row: Record<string, unknown>) => mapRecommendedProduct(row))
-          .filter(Boolean) as RecommendedProduct[],
-      );
-      setSimilarProducts(
-        (similarRes?.products || [])
-          .map((row: Record<string, unknown>) => mapRecommendedProduct(row))
-          .filter(Boolean) as RecommendedProduct[],
-      );
     } catch (err: any) {
       console.error('Error loading product:', err);
       setError(err.message || 'Failed to load product');
@@ -1176,10 +1165,12 @@ export default function ProductDetailClient() {
                   </span>
                 </div>
               )}
-              {product.pet_type && (
+              {(product.pet_type_display || product.pet_type) && (
                 <div className="flex justify-between py-2 border-b border-slate-100">
                   <span className="text-slate-600">Pet Type</span>
-                  <span className="font-medium text-slate-900 capitalize">{product.pet_type}</span>
+                  <span className="font-medium text-slate-900">
+                    {product.pet_type_display ?? product.pet_type}
+                  </span>
                 </div>
               )}
               {product.manufacturing_details && (
@@ -1293,64 +1284,17 @@ export default function ProductDetailClient() {
           )}
         </div>
 
-        {/* Also Bought Section */}
-        {alsoBought.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-xl font-bold text-slate-900 mb-6">Customers Also Bought</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {alsoBought.slice(0, 4).map((item) => (
-                <RecommendedProductCard key={item.id} product={item} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Similar Products Section */}
-        {similarProducts.length > 0 && (
-          <div className="mt-12 mb-8">
-            <h2 className="text-xl font-bold text-slate-900 mb-6">Similar Products</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {similarProducts.slice(0, 4).map((item) => (
-                <RecommendedProductCard key={item.id} product={item} />
-              ))}
-            </div>
-          </div>
-        )}
+        {/* You may also like */}
+        <RecommendationProductScroller
+          products={recommendations}
+          loading={recsLoading}
+          className="mt-12 mb-8"
+          onAdd={(p) => addRecommendationToCart(shopProductToCartItem(p))}
+          onProductClick={(p) =>
+            router.push(`/shop/${encodeURIComponent(p.id)}`)
+          }
+        />
       </main>
     </div>
-  );
-}
-
-// ============================================================================
-// RECOMMENDED PRODUCT CARD
-// ============================================================================
-
-function RecommendedProductCard({ product }: { product: RecommendedProduct }) {
-  const router = useRouter();
-  const discount = product.original_price && product.original_price > product.price
-    ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
-    : 0;
-
-  return (
-    <button
-      onClick={() => router.push(`/shop/${product.id}`)}
-      className="bg-white rounded-xl border border-slate-100 p-4 text-left hover:shadow-lg transition-all"
-    >
-      <div className="aspect-square bg-slate-50 rounded-lg flex items-center justify-center text-4xl mb-3 relative">
-        {product.emoji || '📦'}
-        {discount > 0 && (
-          <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded">
-            {discount}%
-          </div>
-        )}
-      </div>
-      <h3 className="font-medium text-slate-900 text-sm line-clamp-2 mb-1">{product.name}</h3>
-      <div className="flex items-center gap-2">
-        <span className="font-bold text-slate-900">₹{product.price}</span>
-        {product.original_price && product.original_price > product.price && (
-          <span className="text-xs text-slate-400 line-through">₹{product.original_price}</span>
-        )}
-      </div>
-    </button>
   );
 }

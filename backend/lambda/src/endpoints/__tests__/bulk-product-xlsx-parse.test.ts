@@ -32,6 +32,7 @@ describe('parseBulkProductXlsxBuffer', () => {
     expect(getBulkProductTitle(products[0])).toBe('Smiling Sunflower Dog Dress');
     expect(products[0].key_features).toBeTruthy();
     expect(products[0].delivery_regions).toEqual(['Mumbai', 'Pune']);
+    expect(products[0].pet_type).toBe('dog');
     const demoImages = String(products[0].images ?? '');
     expect(parseProductImageList(demoImages)).toHaveLength(2);
     expect(demoImages).toContain('example.com/your-product-image-2.jpg');
@@ -41,10 +42,12 @@ describe('parseBulkProductXlsxBuffer', () => {
     expect(BULK_HEADER_FIELD_MAP.image1000x1000px).toBe('images');
   });
 
-  it('template has 28 unified columns', () => {
-    expect(BULK_TEMPLATE_COLUMN_HEADERS).toHaveLength(28);
+  it('template has 27 unified columns', () => {
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toHaveLength(27);
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Delivery Regions');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Product Group ID');
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Pet Type');
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).not.toContain('Pet Type Other');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Variant Attribute 1');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Variant Attribute 3');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).not.toContain('Is Default');

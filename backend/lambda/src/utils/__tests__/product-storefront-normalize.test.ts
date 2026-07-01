@@ -53,6 +53,25 @@ describe('product-storefront-normalize', () => {
       weight: 0.5,
     });
     expect(out.key_features).toBe('Crunchy');
+    expect(out.pet_type_display).toBe('All pets');
+  });
+
+  it('flattenProductForApiResponse sets pet_type_display for dog and custom pets', () => {
+    expect(
+      flattenProductForApiResponse({
+        specifications: { pet_type: 'dog' },
+      }).pet_type_display,
+    ).toBe('Dog');
+    expect(
+      flattenProductForApiResponse({
+        specifications: { pet_type: 'other', pet_type_other: 'Birds' },
+      }).pet_type_display,
+    ).toBe('Birds');
+    expect(
+      flattenProductForApiResponse({
+        specifications: { pet_type: 'allpet' },
+      }).pet_type_display,
+    ).toBe('All pets');
   });
 
   it('sanitizeStorefrontProductForCustomer strips seller and internal fields', () => {
@@ -81,5 +100,7 @@ describe('product-storefront-normalize', () => {
     expect(out.dimensions).toBeDefined();
     expect(out.specifications).toEqual({ Material: 'Cotton' });
     expect(out.delivery_regions).toEqual(['Pune']);
+    expect(out.pet_type_display).toBe('All pets');
+    expect(out.pet_type_other).toBeUndefined();
   });
 });
