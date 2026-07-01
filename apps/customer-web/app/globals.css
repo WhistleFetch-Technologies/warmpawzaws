@@ -438,25 +438,32 @@ body {
   --mobile-offset-left: max(0.5rem, env(safe-area-inset-left, 0px)) !important;
 }
 
-/* iOS WKWebView: native date inputs can bleed past rounded parents and render as solid gray blocks. */
-.warmpawz-date-field-wrap {
+/* iOS WKWebView: native date/time inputs can bleed past rounded parents and render as solid gray blocks. */
+.warmpawz-date-field-wrap,
+.warmpawz-time-field-wrap {
   overflow: hidden;
   border-radius: 0.5rem;
   isolation: isolate;
   width: 100%;
+  min-width: 0;
 }
 
-.warmpawz-date-field-wrap input[type='date'] {
+.warmpawz-date-field-wrap input[type='date'],
+.warmpawz-time-field-wrap input[type='time'] {
   -webkit-appearance: none;
   appearance: none;
   display: block;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 2.5rem;
   background-color: #fff;
   color: inherit;
   line-height: 1.25;
+  box-sizing: border-box;
 }
 
-.warmpawz-date-field-wrap input[type='date']::-webkit-date-and-time-value {
+.warmpawz-date-field-wrap input[type='date']::-webkit-date-and-time-value,
+.warmpawz-time-field-wrap input[type='time']::-webkit-date-and-time-value {
   text-align: left;
 }

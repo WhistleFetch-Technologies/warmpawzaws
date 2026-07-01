@@ -6,10 +6,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Calendar, Clock, MapPin, Plus } from 'lucide-react';
+import { ArrowLeft, Building2, Clock, Home, MapPin, Plus, Scissors } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { pickBookingApiMessage } from '@/lib/booking-response-message';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { toast } from 'sonner';
 
 interface SavedAddress {
@@ -29,8 +30,70 @@ interface CreateBookingPageProps {
   phone: string;
   serviceId?: string;
   vendorId?: string;
+  /** at_home | at_center — controls address section and booking payload */
+  serviceStyle?: string;
+  vendorName?: string;
+  serviceName?: string;
+  price?: number;
+  duration?: number;
+  groomer?: {
+    name?: string;
+    business_name?: string;
+    businessName?: string;
+    address?: string;
+    business_address?: string;
+    businessAddress?: string;
+    photo?: string;
+    profile_photo?: string;
+  };
   onBack: () => void;
   onSuccess: (bookingId: string) => void;
+}
+
+const scheduleFieldInputClassName =
+  'block w-full min-w-0 max-w-full box-border rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500';
+
+function formatAddressShort(addr: SavedAddress): string {
+  const label = addr.label || 'Address';
+  const line1 = (addr.addressLine1 || '').trim();
+  if (!line1) return label;
+  return `${label} · ${line1}`;
+}
+
+function formatAddressMeta(addr: SavedAddress): string {
+  return [addr.city, addr.state, addr.pincode].filter(Boolean).join(', ');
+}
+
+function isHomeServiceStyle(style?: string): boolean {
+  const s = String(style || 'at_home').toLowerCase();
+  return s !== 'at_center' && s !== 'at_vendor' && s !== 'clinic';
+}
+
+function pickVendorDisplayName(vendor: any, groomer?: CreateBookingPageProps['groomer'], fallback?: string): string {
+  return (
+    vendor?.business_name ||
+    vendor?.businessName ||
+    vendor?.name ||
+    groomer?.business_name ||
+    groomer?.businessName ||
+    groomer?.name ||
+    fallback ||
+    'Service provider'
+  );
+}
+
+function pickVendorAddress(vendor: any, groomer?: CreateBookingPageProps['groomer']): string {
+  const raw =
+    vendor?.address ||
+    vendor?.business_address ||
+    vendor?.businessAddress ||
+    vendor?.location?.address ||
+    groomer?.address ||
+    groomer?.business_address ||
+    groomer?.businessAddress;
+  if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  const parts = [vendor?.address_line1, vendor?.addressLine1, vendor?.city, vendor?.state, vendor?.pincode].filter(Boolean);
+  return parts.join(', ');
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -94,7 +157,26 @@ async function fetchResolvedServiceId(vendorId: string, preferred?: string): Pro
   return null;
 }
 
-export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSuccess }: CreateBookingPageProps) {
+export function CreateBookingPage({
+  phone,
+  serviceId,
+  vendorId,
+  serviceStyle,
+  vendorName: vendorNameProp,
+  serviceName: serviceNameProp,
+  price: priceProp,
+  duration: durationProp,
+  groomer,
+  onBack,
+  onSuccess,
+}: CreateBookingPageProps) {
+  const needsServiceAddress = isHomeServiceStyle(serviceStyle);
+  const isCenterVisit = !needsServiceAddress;
+  const resolvedServiceType = (() => {
+    const s = String(serviceStyle || '').toLowerCase();
+    if (s === 'at_center' || s === 'at_vendor' || s === 'clinic') return 'at_center' as const;
+    return 'at_home' as const;
+  })();
   const [loading, setLoading] = useState(false);
   const [loadingPets, setLoadingPets] = useState(true);
   const [loadingAddresses, setLoadingAddresses] = useState(true);
@@ -105,6 +187,8 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
   const [useNewAddress, setUseNewAddress] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [resolvedServiceId, setResolvedServiceId] = useState<string | null>(null);
+  const [vendorProfile, setVendorProfile] = useState<any>(null);
+  const [loadingVendor, setLoadingVendor] = useState(false);
 
   const [formData, setFormData] = useState({
     petId: '',
@@ -134,6 +218,32 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
       setResolvedServiceId(serviceId);
     }
   }, [serviceId, vendorId]);
+
+  useEffect(() => {
+    if (!vendorId) {
+      setVendorProfile(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingVendor(true);
+        const raw = (await apiClient.get(`/customer/vendor/${encodeURIComponent(vendorId)}`)) as any;
+        const vendor = raw?.vendor || raw?.data?.vendor || raw;
+        if (!cancelled && vendor && typeof vendor === 'object') {
+          setVendorProfile(vendor);
+        }
+      } catch (err) {
+        console.error('Error loading vendor profile:', err);
+        if (!cancelled) setVendorProfile(null);
+      } finally {
+        if (!cancelled) setLoadingVendor(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [vendorId]);
 
   const fetchPets = async () => {
     try {
@@ -227,6 +337,19 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
       return;
     }
 
+    if (needsServiceAddress) {
+      const hasSaved = !useNewAddress && selectedAddressId && savedAddresses.some((a) => a.id === selectedAddressId);
+      const hasManual = Boolean(
+        formData.address.street.trim() &&
+          formData.address.city.trim() &&
+          formData.address.pincode.trim()
+      );
+      if (!hasSaved && !hasManual) {
+        toast.error('Please select or enter a service address');
+        return;
+      }
+    }
+
     if (!customerId) {
       toast.error('Customer information not found. Please try again.');
       return;
@@ -300,8 +423,8 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
         serviceId: finalServiceId,
         bookingDate,
         bookingTime,
-        serviceType: 'at_home' as const,
-        address: addressString || undefined,
+        serviceType: resolvedServiceType,
+        address: needsServiceAddress ? (addressString || undefined) : undefined,
         city,
         state,
         pincode,
@@ -329,6 +452,17 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
     }
   };
 
+  const displayVendorName = pickVendorDisplayName(vendorProfile, groomer, vendorNameProp);
+  const displayServiceName = serviceNameProp || 'Grooming service';
+  const displayPrice = priceProp ?? 0;
+  const displayDuration = durationProp ?? 0;
+  const vendorLocation = pickVendorAddress(vendorProfile, groomer);
+  const vendorPhoto =
+    vendorProfile?.profile_image_url ||
+    vendorProfile?.photo ||
+    groomer?.photo ||
+    groomer?.profile_photo;
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-3">
@@ -338,8 +472,53 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
         <h1 className="text-lg font-bold">Create Booking</h1>
       </div>
 
-      <div className="container mx-auto px-4 py-6 max-w-lg">
-        <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 rounded-xl shadow-sm">
+      <div className="container mx-auto min-w-0 max-w-lg px-4 py-6">
+        <form onSubmit={handleSubmit} className="min-w-0 space-y-6 overflow-hidden rounded-xl bg-white p-6 shadow-sm">
+          {/* Vendor & service summary */}
+          {(vendorId || vendorNameProp || serviceNameProp) && (
+            <div className="min-w-0 space-y-3 border-b border-gray-100 pb-5">
+              <div className="flex min-w-0 items-start gap-3">
+                <div
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl ${
+                    isCenterVisit ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'
+                  }`}
+                >
+                  {vendorPhoto ? (
+                    <img src={vendorPhoto} alt="" className="h-full w-full object-cover" />
+                  ) : isCenterVisit ? (
+                    <Building2 className="h-6 w-6" />
+                  ) : (
+                    <Home className="h-6 w-6" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <p className="truncate text-base font-semibold text-gray-900">{displayVendorName}</p>
+                  <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-gray-600">
+                    <Scissors className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+                    <span className="truncate">{displayServiceName}</span>
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                    {displayDuration > 0 && (
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {displayDuration} mins
+                      </span>
+                    )}
+                    {displayPrice > 0 && (
+                      <span className="font-semibold text-orange-600">{formatPriceWithSymbol(displayPrice)}</span>
+                    )}
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 capitalize">
+                      {isCenterVisit ? 'At center' : 'At home'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              {loadingVendor && !vendorLocation && (
+                <div className="h-14 animate-pulse rounded-lg bg-gray-100" />
+              )}
+            </div>
+          )}
+
           {/* Pet Selection */}
           <div className="space-y-2">
             <Label>Select Pet</Label>
@@ -350,7 +529,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
                 value={formData.petId} 
                 onValueChange={(val: string) => setFormData({...formData, petId: val})}
               >
-                <SelectTrigger>
+                <SelectTrigger className="min-w-0 max-w-full [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate">
                   <SelectValue placeholder="Select a pet" />
                 </SelectTrigger>
                 <SelectContent>
@@ -365,39 +544,53 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
             )}
           </div>
 
-          {/* Date & Time */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
+          {/* Date & Time — warmpawz wrappers avoid iOS WKWebView overflow / duplicate picker chrome */}
+          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="min-w-0 space-y-2">
               <Label>Date</Label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <div className="warmpawz-date-field-wrap">
                 <Input
                   type="date"
                   value={formData.scheduledDate}
                   onChange={(e) => setFormData({...formData, scheduledDate: e.target.value})}
-                  className="pl-10"
+                  className={scheduleFieldInputClassName}
                   min={new Date().toISOString().split('T')[0]}
                   required
                 />
               </div>
             </div>
-            <div className="space-y-2">
+            <div className="min-w-0 space-y-2">
               <Label>Time</Label>
-              <div className="relative">
-                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <div className="warmpawz-time-field-wrap">
                 <Input
                   type="time"
                   value={formData.scheduledTime}
                   onChange={(e) => setFormData({...formData, scheduledTime: e.target.value})}
-                  className="pl-10"
+                  className={scheduleFieldInputClassName}
                   required
                 />
               </div>
             </div>
           </div>
 
-          {/* Service Address: use existing or add new (standard address selection flow) */}
-          <div className="space-y-4 border-t pt-4">
+          {/* Clinic / vendor location (center visits) */}
+          {isCenterVisit && (
+            <div className="min-w-0 space-y-3 border-t border-gray-100 pt-4">
+              <Label className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" /> Clinic location
+              </Label>
+              <div className="min-w-0 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-gray-700">
+                <p className="font-medium text-gray-900">{displayVendorName}</p>
+                <p className="mt-1 break-words">
+                  {vendorLocation || 'Address will be shared after confirmation'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Service Address: home visits */}
+          {needsServiceAddress && (
+          <div className="min-w-0 space-y-4 border-t pt-4">
             <Label className="flex items-center gap-2">
               <MapPin className="w-4 h-4" /> Service Address
             </Label>
@@ -410,27 +603,27 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
                   value={selectedAddressId || ''}
                   onValueChange={(id) => setSelectedAddressId(id)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="min-w-0 max-w-full [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate">
                     <SelectValue placeholder="Select address" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-w-[min(100vw-2rem,32rem)]">
                     {savedAddresses.map((addr) => (
-                      <SelectItem key={addr.id} value={addr.id}>
-                        {addr.addressLine1}, {addr.city} {addr.pincode}
+                      <SelectItem key={addr.id} value={addr.id} className="min-w-0">
+                        <span className="block truncate">{formatAddressShort(addr)}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {selectedAddressId && savedAddresses.find((a) => a.id === selectedAddressId) && (
-                  <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700 border">
+                  <div className="min-w-0 rounded-lg border bg-gray-50 p-3 text-sm text-gray-700">
                     {(() => {
                       const addr = savedAddresses.find((a) => a.id === selectedAddressId)!;
                       return (
                         <>
                           <p className="font-medium">{addr.label || 'Address'}</p>
-                          <p>{addr.addressLine1}</p>
-                          {addr.addressLine2 && <p>{addr.addressLine2}</p>}
-                          <p>{addr.city}, {addr.state} {addr.pincode}</p>
+                          <p className="break-words">{addr.addressLine1}</p>
+                          {addr.addressLine2 && <p className="break-words">{addr.addressLine2}</p>}
+                          <p className="break-words">{formatAddressMeta(addr)}</p>
                         </>
                       );
                     })()}
@@ -488,6 +681,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
               </>
             )}
           </div>
+          )}
 
           {/* Notes */}
           <div className="space-y-2">

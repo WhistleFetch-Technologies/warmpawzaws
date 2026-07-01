@@ -1320,13 +1320,13 @@ export function GroomingBookingRouter({
                         key={addr.id}
                         type="button"
                         onClick={() => setSelectedAddress(addr)}
-                        className={`w-full rounded-xl border-2 p-4 text-left transition-all ${
+                        className={`w-full max-w-full overflow-hidden rounded-xl border-2 p-4 text-left transition-all ${
                           selectedAddress?.id === addr.id
                             ? 'border-[#FF8C42] bg-orange-50'
                             : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
                         }`}
                       >
-                        <div className="flex items-start gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
                           <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-100">
                             {(addr.label || '').toLowerCase() === 'home' ? (
                               <Home className="h-4 w-4 text-blue-600" />
@@ -1336,18 +1336,21 @@ export function GroomingBookingRouter({
                               <MapPin className="h-4 w-4 text-blue-600" />
                             )}
                           </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <h3 className="font-semibold text-gray-900">{addr.label || 'Address'}</h3>
+                          <div className="min-w-0 flex-1 overflow-hidden">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <h3 className="truncate font-semibold text-gray-900">{addr.label || 'Address'}</h3>
                               {addr.isDefault && (
-                                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">Default</span>
+                                <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">Default</span>
                               )}
                             </div>
-                            <p className="text-sm text-gray-600">{addr.addressLine1 || addr.address}</p>
-                            <p className="text-sm text-gray-500">
-                              {addr.city} - {addr.pincode}
+                            <p className="break-words text-sm text-gray-600">{addr.addressLine1 || addr.address}</p>
+                            {(addr.addressLine2 || addr.address_line2) && (
+                              <p className="break-words text-sm text-gray-600">{addr.addressLine2 || addr.address_line2}</p>
+                            )}
+                            <p className="break-words text-sm text-gray-500">
+                              {[addr.city, addr.state, addr.pincode].filter(Boolean).join(', ')}
                             </p>
-                            {addr.landmark && <p className="text-xs text-gray-400">Near: {addr.landmark}</p>}
+                            {addr.landmark && <p className="truncate text-xs text-gray-400">Near: {addr.landmark}</p>}
                           </div>
                           {selectedAddress?.id === addr.id && <CheckCircle2 className="h-6 w-6 flex-shrink-0 text-orange-500" />}
                         </div>
@@ -1370,14 +1373,14 @@ export function GroomingBookingRouter({
                     </div>
                   )
                 ) : (
-                  <div className="rounded-xl border-2 border-[#FF8C42] bg-orange-50 p-4">
-                    <div className="flex items-start gap-3">
-                      <Building2 className="mt-0.5 h-5 w-5 text-orange-500" />
-                      <div>
+                  <div className="min-w-0 rounded-xl border-2 border-[#FF8C42] bg-orange-50 p-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-orange-500" />
+                      <div className="min-w-0 flex-1 overflow-hidden">
                         <h3 className="font-semibold text-gray-900">
                           {groomer?.business_name || groomer?.name || 'Grooming Center'}
                         </h3>
-                        <p className="text-sm text-gray-600">
+                        <p className="break-words text-sm text-gray-600">
                           {groomer?.address || 'Address will be shared after confirmation'}
                         </p>
                       </div>

@@ -4,21 +4,16 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
-import { TestTube, Calendar, Clock, FileText, Truck, CreditCard, Home, Building2, MapPin, CheckCircle2, Plus } from 'lucide-react';
+import { TestTube, Calendar, Clock, FileText, Truck, Home, Building2, MapPin, CheckCircle2, Plus } from 'lucide-react';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { AddAddressModal } from '../shared/AddAddressModal';
+import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { toast } from 'sonner';
-import {
-  buildSanitizedStandardRazorpayCheckoutOptions,
-  fetchCheckoutEmailForPrefill,
-} from '@/lib/razorpay/build-standard-checkout-options';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 
-declare global {
-  interface Window {
-    Razorpay: any;
-  }
-}
+const inputClassName =
+  'w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500';
 
 export interface DiagnosticsPackageHint {
   /** Package display name (e.g. from Health Packages carousel) */
@@ -75,6 +70,8 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
   const [selectedAddress, setSelectedAddress] = useState<any>(null);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const [preferredSampleType, setPreferredSampleType] = useState<'home' | 'center'>('center');
+  const [vendorName, setVendorName] = useState('Diagnostic Lab');
+  const [resolvedCustomerId, setResolvedCustomerId] = useState<string | undefined>();
 
   // Payment-before-booking: step 'form' | 'payment'; booking is created only after payment success
   const [step, setStep] = useState<'form' | 'payment'>('form');
@@ -107,6 +104,28 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
 
   useEffect(() => {
     loadTests();
+  }, [vendorId]);
+
+  useEffect(() => {
+    if (!vendorId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get<any>(`/vendor/${vendorId}`);
+        const name =
+          res?.vendor?.business_name ||
+          res?.vendor?.businessName ||
+          res?.vendor?.name ||
+          res?.businessName ||
+          res?.name;
+        if (!cancelled && name) setVendorName(String(name));
+      } catch {
+        // keep default label
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [vendorId]);
 
   // Load customer pets for optional "Link to pet" (so vendor sees full pet info)
@@ -351,6 +370,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
 
     try {
       const { payload, customerId } = await buildBookingPayload();
+      setResolvedCustomerId(customerId);
       setPendingBookingPayload(payload);
       pendingPayloadRef.current = payload;
       setStep('payment');
@@ -362,171 +382,11 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
     }
   };
 
-  // Load Razorpay checkout script (required before opening checkout)
-  const loadRazorpayScript = (): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      if (typeof window === 'undefined') {
-        reject(new Error('Window not available'));
-        return;
-      }
-      if (window.Razorpay) {
-        resolve();
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-      script.async = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error('Failed to load Razorpay'));
-      document.body.appendChild(script);
-    });
-  };
-
-  // Preload Razorpay when user reaches payment step so Pay button works immediately
-  useEffect(() => {
-    if (step === 'payment' && typeof window !== 'undefined' && !window.Razorpay) {
-      loadRazorpayScript().catch(() => {});
-    }
-  }, [step]);
-
-  // Payment step: create Razorpay order (no booking yet), then on success create booking
-  const handlePayNow = async () => {
-    if (!pendingBookingPayload || !pendingPayloadRef.current) {
-      setError('Booking details missing. Please go back and try again.');
-      return;
-    }
-
-    const payload = pendingPayloadRef.current;
-    const customerId = payload.customerId as string;
-    const amount = Number(payload.amount ?? payload.totalAmount ?? 0);
-    if (!customerId || amount <= 0) {
-      setError('Invalid booking details.');
-      return;
-    }
-
-    setProcessing(true);
-    setError(null);
-
-    try {
-      const orderRes = await apiClient.post<any>('/razorpay/create-order', {
-        type: 'diagnostics',
-        amount,
-        customerId,
-        vendorId,
-      }, undefined, 45000);
-
-      const orderId = orderRes?.orderId ?? orderRes?.data?.orderId;
-      const keyId = orderRes?.keyId ?? orderRes?.data?.keyId;
-      if (!orderId) {
-        throw new Error('Failed to create payment order');
-      }
-
-      const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
-      const options = buildSanitizedStandardRazorpayCheckoutOptions({
-        key: (keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
-        amountPaise: Math.max(1, Math.round(Number(amount) * 100)),
-        currency: 'INR',
-        name: 'Warmpawz',
-        description: 'Diagnostic tests booking',
-        order_id: orderId,
-        customerPhone,
-        customerEmail: checkoutEmail,
-        includeInstrumentBlocks: true,
-        handler: async (response: any) => {
-          try {
-            // Verify payment with retry
-            const MAX_RETRIES = 3;
-            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-              try {
-                await apiClient.post('/razorpay/verify-payment', {
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature: response.razorpay_signature,
-                }, undefined, 30000);
-                break;
-              } catch (verifyErr: any) {
-                console.error(`[VERIFY] Attempt ${attempt}/${MAX_RETRIES} failed:`, verifyErr?.message);
-                if (attempt === MAX_RETRIES) throw verifyErr;
-                await new Promise((r) => setTimeout(r, attempt * 1000));
-              }
-            }
-
-            const createPayload = {
-              ...pendingPayloadRef.current,
-              razorpay_order_id:
-                response.razorpay_order_id ||
-                response?.razorpayOrderId ||
-                orderId,
-            };
-            let bookingResponse: any;
-            try {
-              bookingResponse = await apiClient.post<any>('/bookings/create', createPayload);
-            } catch (createErr: any) {
-              const statusCode = createErr?.statusCode ?? createErr?.status;
-              const apiMessage =
-                (typeof createErr?.response === 'object' && createErr.response?.error != null)
-                  ? (typeof createErr.response.error === 'string' ? createErr.response.error : createErr.response.error?.message)
-                  : createErr?.message;
-              const message = apiMessage || (statusCode === 409 ? 'This time slot is already booked. Please select a different date or time.' : 'Failed to create booking.');
-              setError(message);
-              toast.error(message);
-              setProcessing(false);
-              return;
-            }
-
-            const bookingId =
-              bookingResponse?.data?.bookingId ??
-              bookingResponse?.bookingId ??
-              bookingResponse?.booking?.id;
-            if (bookingResponse?.success && bookingId) {
-              toast.success('Payment successful! Booking confirmed.');
-              if (onSuccess) onSuccess(bookingId);
-            } else {
-              const msg = (typeof bookingResponse?.error === 'string' ? bookingResponse.error : bookingResponse?.error?.message) ?? 'Failed to create booking';
-              setError(msg);
-              toast.error(msg);
-            }
-          } catch (err: any) {
-            console.error('Payment verify or booking create failed:', err);
-            const msg = err?.message || 'Payment verified but booking failed. Please contact support.';
-            setError(msg);
-            toast.error(msg);
-          } finally {
-            setProcessing(false);
-          }
-        },
-        theme: { color: '#FF8C42' },
-        modal: {
-          ondismiss: () => {
-            setProcessing(false);
-            toast.info('Payment cancelled');
-          },
-        },
-      });
-
-      if (!window.Razorpay) {
-        await loadRazorpayScript();
-      }
-      if (window.Razorpay) {
-        const razorpay = new window.Razorpay(options);
-        razorpay.open();
-      } else {
-        throw new Error('Payment gateway not loaded');
-      }
-    } catch (err: any) {
-      console.error('Payment error:', err);
-      setError(err?.message || 'Failed to start payment');
-      toast.error(err?.message || 'Failed to start payment');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+      <div className="min-h-screen overflow-x-hidden bg-gray-50 max-w-customer mx-auto">
         {onBack && (
           <ServiceDashboardHeader
             serviceName="Diagnostic Labs"
@@ -549,81 +409,84 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
     );
   }
 
-  // Payment step: show order summary and Pay button (booking created only after payment success)
-  if (step === 'payment') {
+  // Payment step: same UniversalPaymentPage as vet / other services (wallet, coupons, secure checkout)
+  if (step === 'payment' && pendingBookingPayload) {
     const total = getTotalPrice();
+    const selectedTestDetails = selectedTests
+      .map((id) => tests.find((t) => t.id === id))
+      .filter((t): t is DiagnosticTest => !!t);
+    const linkedPet = selectedPetId ? customerPets.find((p) => p.id === selectedPetId) : undefined;
+    const testNames = selectedTestDetails.map((t) => t.test_name).filter(Boolean).join(', ');
+    const totalDuration = selectedTestDetails.reduce(
+      (sum, t) => sum + (Number(t.duration_minutes) || 30),
+      0
+    );
+    const paymentCustomerId =
+      (pendingBookingPayload.customerId as string | undefined) || resolvedCustomerId;
+
     return (
-      <div className="min-h-screen bg-gray-50">
-        {onBack && (
-          <ServiceDashboardHeader
-            serviceName="Diagnostic Labs"
-            serviceSubtitle="Lab tests & diagnostics"
-            serviceIcon={TestTube}
-            iconColor="text-white"
-            stats={dashboardStats}
-            onBack={handleHeaderBack}
-            showBackButton={true}
-            headerColor="bg-[#FF8C42]"
-          />
-        )}
-        <div className="max-w-md mx-auto px-4 pb-24">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4 mt-4">Payment</h2>
-          <p className="text-gray-600 mb-4">
-            Complete payment to confirm your diagnostic tests. Booking and time slot will be reserved only after successful payment.
-          </p>
-          <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
-            <p className="font-semibold text-gray-900">{selectedTests.length} test(s) selected</p>
-            <p className="text-sm text-gray-600 mt-1">
-              {selectedTests.map(id => tests.find(t => t.id === id)?.test_name).filter(Boolean).join(', ')}
-            </p>
-            <p className="text-sm text-gray-500 mt-2">
-              {selectedDate} • {selectedTime} • {preferredSampleType === 'home' ? 'Home collection' : 'At center'}
-            </p>
-            <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-200">
-              <span className="font-semibold text-gray-900">Total</span>
-              <span className="text-xl font-bold text-orange-600">₹{total}</span>
-            </div>
-          </div>
-          {error && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 mb-4">
-              {error}
-              <p className="text-sm mt-2 text-red-600">Change date & time below and pay again to retry.</p>
-            </div>
-          )}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={goBackFromPaymentStep}
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-            >
-              {error ? 'Change date & time' : 'Back'}
-            </button>
-            <button
-              type="button"
-              onClick={handlePayNow}
-              disabled={processing}
-              className="flex-1 px-4 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {processing ? (
-                <>
-                  <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <CreditCard className="w-5 h-5" />
-                  Pay ₹{total}
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
+      <UniversalPaymentPage
+        type="booking"
+        layoutVariant="appShell"
+        fillViewport
+        category="diagnostics"
+        serviceId="diagnostics"
+        serviceName={
+          selectedTests.length > 1
+            ? `${selectedTests.length} Lab Tests`
+            : selectedTestDetails[0]?.test_name || 'Diagnostic Tests'
+        }
+        serviceDescription={testNames || 'Lab tests & diagnostics'}
+        serviceStyle={preferredSampleType === 'home' ? 'at_home' : 'at_center'}
+        vendorId={vendorId}
+        vendorName={vendorName}
+        bookingDate={selectedDate}
+        bookingTime={selectedTime}
+        petId={selectedPetId || undefined}
+        petName={linkedPet?.name || patientName || undefined}
+        petBreed={linkedPet?.breed}
+        addressId={preferredSampleType === 'home' ? selectedAddress?.id : undefined}
+        address={
+          preferredSampleType === 'home' && selectedAddress
+            ? {
+                id: selectedAddress.id,
+                label: selectedAddress.label,
+                addressLine1: selectedAddress.addressLine1 || selectedAddress.address,
+                city: selectedAddress.city,
+                pincode: selectedAddress.pincode,
+                state: selectedAddress.state,
+              }
+            : undefined
+        }
+        baseAmount={total}
+        duration={totalDuration || 30}
+        selectedServices={selectedTestDetails.map((t) => ({
+          id: t.id,
+          serviceId: t.id,
+          name: t.test_name,
+          serviceName: t.test_name,
+          price: Number(t.price) || 0,
+          duration: Number(t.duration_minutes) || 30,
+        }))}
+        customerPhone={customerPhone}
+        customerId={paymentCustomerId}
+        prepaidBookingPayload={pendingBookingPayload}
+        onBack={goBackFromPaymentStep}
+        onSuccess={(bookingId) => {
+          onSuccess?.(bookingId);
+        }}
+      />
     );
   }
 
+  const categories = getCategories();
+  const testsSubtotal = selectedTests.reduce(
+    (sum, id) => sum + (Number(tests.find((t) => t.id === id)?.price) || 0),
+    0
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen overflow-x-hidden bg-gray-50">
       {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame */}
       {onBack && (
         <ServiceDashboardHeader
@@ -638,30 +501,49 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
         />
       )}
       
-      <div className="max-w-md mx-auto px-4 pb-24">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4 mt-4">Book Diagnostic Tests</h2>
+      <div className="mx-auto w-full max-w-customer overflow-x-hidden px-4 pb-[max(7rem,calc(5.5rem+env(safe-area-inset-bottom,0px)))]">
+        <h2 className="mb-4 mt-4 text-xl font-bold text-gray-900 sm:text-2xl">Book Diagnostic Tests</h2>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form id="diagnostics-booking-form" onSubmit={handleSubmit} className="space-y-5">
         {/* Search and Filter */}
-        <div className="bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex gap-4 mb-4">
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <div className="space-y-3">
             <input
               type="text"
               value={searchQuery}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
               placeholder="Search tests..."
-              className="flex-1 px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className={inputClassName}
             />
-            <select
-              value={categoryFilter}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCategoryFilter(e.target.value)}
-              className="px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-            >
-              <option value="">All Categories</option>
-              {getCategories().map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
+            {categories.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter('')}
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                    !categoryFilter
+                      ? 'bg-[#FF8C42] text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  All Categories
+                </button>
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setCategoryFilter(cat)}
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                      categoryFilter === cat
+                        ? 'bg-[#FF8C42] text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -688,7 +570,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
               filteredTests.map((test) => (
                 <label
                   key={test.id}
-                  className={`p-4 flex items-start gap-4 cursor-pointer hover:bg-gray-50 ${
+                  className={`flex cursor-pointer items-start gap-3 p-4 hover:bg-gray-50 ${
                     selectedTests.includes(test.id) ? 'bg-orange-50' : ''
                   }`}
                 >
@@ -696,56 +578,56 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
                     type="checkbox"
                     checked={selectedTests.includes(test.id)}
                     onChange={() => toggleTest(test.id)}
-                    className="mt-0 w-5 h-5 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
+                    className="mt-1 h-5 w-5 shrink-0 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
                   />
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-3">
-                          <TestTube className="text-orange-500" size={18} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <TestTube className="shrink-0 text-orange-500" size={18} />
                           <span className="font-semibold text-gray-900">{test.test_name}</span>
                           {test.test_code && (
-                            <span className="px-0 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
+                            <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
                               {test.test_code}
                             </span>
                           )}
                         </div>
                         {test.category && (
-                          <span className="text-sm text-gray-500 mt-0 block">{test.category}</span>
+                          <span className="mt-1 block text-sm text-gray-500">{test.category}</span>
                         )}
                         {test.description && (
-                          <p className="text-sm text-gray-600 mt-0">{test.description}</p>
+                          <p className="mt-1 text-sm text-gray-600">{test.description}</p>
                         )}
-                        <div className="flex items-center gap-4 mt-0 text-sm text-gray-500">
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
                           {test.sample_type && (
                             <span>Sample: {test.sample_type}</span>
                           )}
-                          {test.duration_minutes && (
-                            <span className="flex items-center gap-3">
+                          {test.duration_minutes ? (
+                            <span className="flex items-center gap-1">
                               <Clock size={14} />
                               {test.duration_minutes} min
                             </span>
-                          )}
+                          ) : null}
                         </div>
                         {test.preparation_instructions && (
-                          <div className="mt-0 p-0 bg-blue-50 rounded text-xs text-blue-700">
-                            <FileText size={12} className="inline mr-2" />
+                          <div className="mt-2 rounded bg-blue-50 p-2 text-xs text-blue-700">
+                            <FileText size={12} className="mr-1 inline" />
                             {test.preparation_instructions}
                           </div>
                         )}
                         {preferredSampleType === 'home' && test.is_free_home_collection !== undefined && (
-                          <div className="flex items-center gap-1 mt-1 text-xs">
+                          <div className="mt-1 flex items-center gap-1 text-xs">
                             <Truck size={12} />
                             {test.is_free_home_collection
                               ? <span className="text-green-600">Free home collection</span>
-                              : <span className="text-gray-600">Home: +₹{test.home_collection_fee ?? 0}</span>}
+                              : <span className="text-gray-600">Home: +{formatPriceWithSymbol(test.home_collection_fee ?? 0)}</span>}
                           </div>
                         )}
                       </div>
-                      <div className="text-right ml-4">
-                        <p className="text-lg font-bold text-orange-600">₹{test.price}</p>
+                      <div className="shrink-0 text-right">
+                        <p className="text-lg font-bold text-orange-600">{formatPriceWithSymbol(test.price)}</p>
                         {preferredSampleType === 'home' && !test.is_free_home_collection && (test.home_collection_fee ?? 0) > 0 && (
-                          <p className="text-xs text-gray-500">+₹{test.home_collection_fee} home</p>
+                          <p className="text-xs text-gray-500">+{formatPriceWithSymbol(test.home_collection_fee)} home</p>
                         )}
                       </div>
                     </div>
@@ -765,10 +647,10 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
                 {selectedTests.map(id => tests.find(t => t.id === id)?.test_name).filter(Boolean).join(', ')}
               </p>
             </div>
-            <div className="mt-3 pt-3 border-t border-orange-200 space-y-1">
+            <div className="mt-3 space-y-1 border-t border-orange-200 pt-3">
               <div className="flex justify-between text-sm">
                 <span>Tests total</span>
-                <span>₹{selectedTests.reduce((s, id) => s + (tests.find(t => t.id === id)?.price || 0), 0)}</span>
+                <span>{formatPriceWithSymbol(testsSubtotal)}</span>
               </div>
               {preferredSampleType === 'home' && (() => {
                 const homeFees = selectedTests
@@ -779,7 +661,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
                 return homeFee > 0 ? (
                   <div className="flex justify-between text-sm">
                     <span className="flex items-center gap-1"><Truck className="h-4 w-4" /> Home collection fee</span>
-                    <span>₹{homeFee}</span>
+                    <span>{formatPriceWithSymbol(homeFee)}</span>
                   </div>
                 ) : homeFees.length === 0 ? (
                   <div className="flex justify-between text-sm text-green-600">
@@ -789,19 +671,19 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
                 ) : null;
               })()}
             </div>
-            <div className="flex justify-between items-center mt-2 pt-2 border-t border-orange-200">
+            <div className="mt-2 flex items-center justify-between border-t border-orange-200 pt-2">
               <span className="font-semibold">Total</span>
-              <p className="text-xl font-bold text-orange-600">₹{getTotalPrice()}</p>
+              <p className="text-xl font-bold text-orange-600">{formatPriceWithSymbol(getTotalPrice())}</p>
             </div>
           </div>
         )}
 
         {/* Patient Details */}
-        <div className="bg-white rounded-xl p-1 shadow-sm space-y-4">
-          <h3 className="font-semibold text-gray-900 mb-4">Patient Details</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
+        <div className="space-y-5 rounded-xl bg-white p-4 shadow-sm">
+          <h3 className="font-semibold text-gray-900">Patient Details</h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_96px]">
+            <div className="min-w-0">
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
                 Patient Name *
               </label>
               <input
@@ -809,18 +691,18 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
                 value={patientName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPatientName(e.target.value)}
                 required
-                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className={inputClassName}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
+            <div className="min-w-0">
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
                 Age
               </label>
               <input
                 type="number"
                 value={patientAge}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPatientAge(e.target.value)}
-                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className={inputClassName}
               />
             </div>
           </div>
@@ -834,7 +716,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
               <select
                 value={selectedPetId}
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedPetId(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className={inputClassName}
               >
                 <option value="">No pet linked</option>
                 {customerPets.map((p) => (
@@ -852,11 +734,11 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Sample Collection
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setPreferredSampleType('center')}
-                className={`px-4 py-3 rounded-lg border-2 transition ${
+                className={`min-w-0 rounded-lg border-2 px-3 py-3 text-sm font-medium transition sm:text-base ${
                   preferredSampleType === 'center'
                     ? 'border-orange-500 bg-orange-50 text-orange-700'
                     : 'border-gray-200 hover:border-gray-300'
@@ -867,7 +749,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
               <button
                 type="button"
                 onClick={() => setPreferredSampleType('home')}
-                className={`px-4 py-3 rounded-lg border-2 transition ${
+                className={`min-w-0 rounded-lg border-2 px-3 py-3 text-sm font-medium transition sm:text-base ${
                   preferredSampleType === 'home'
                     ? 'border-orange-500 bg-orange-50 text-orange-700'
                     : 'border-gray-200 hover:border-gray-300'
@@ -978,63 +860,72 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
           )}
 
           {/* Date and Time Selection */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
-                <Calendar className="inline mr-2" size={16} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="min-w-0">
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                <Calendar className="mr-1.5 inline" size={16} />
                 Preferred Date *
               </label>
+              <div className="warmpawz-date-field-wrap">
               <input
                 type="date"
                 value={selectedDate}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedDate(e.target.value)}
                 min={new Date().toISOString().split('T')[0]}
                 required
-                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className={`${inputClassName} block max-w-full`}
               />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
-                <Clock className="inline mr-2" size={16} />
+            <div className="min-w-0">
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                <Clock className="mr-1.5 inline" size={16} />
                 Preferred Time *
               </label>
+              <div className="warmpawz-time-field-wrap">
               <input
                 type="time"
                 value={selectedTime}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedTime(e.target.value)}
                 required
-                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className={`${inputClassName} block max-w-full`}
               />
+              </div>
             </div>
           </div>
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
             {error}
           </div>
         )}
-
-        {/* Actions */}
-        <div className="flex gap-3">
-          {onCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 px-0 py-0 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-          )}
-          <button
-            type="submit"
-            disabled={processing || selectedTests.length === 0}
-            className="flex-1 px-0 py-0 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-          >
-            {processing ? 'Preparing...' : `Continue to Payment - ₹${getTotalPrice()}`}
-          </button>
-        </div>
       </form>
+      </div>
+
+      {/* Fixed bottom actions — avoids overlap with date/time fields on small screens */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center">
+        <div className="pointer-events-auto w-full max-w-customer border-t border-gray-200 bg-white/95 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] backdrop-blur-sm pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+          <div className="flex gap-3 p-4">
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="h-12 flex-1 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:text-base"
+              >
+                Cancel
+              </button>
+            )}
+            <button
+              type="submit"
+              form="diagnostics-booking-form"
+              disabled={processing || selectedTests.length === 0}
+              className="h-12 flex-[2] rounded-lg bg-orange-500 text-sm font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-gray-300 sm:text-base"
+            >
+              {processing ? 'Preparing...' : `Continue to Payment • ${formatPriceWithSymbol(getTotalPrice())}`}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Add Address Modal */}
