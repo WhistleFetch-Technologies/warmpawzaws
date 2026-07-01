@@ -66,3 +66,91 @@ export async function countPriorVendorOrders(
     return 0;
   }
 }
+
+export async function countPriorVendorBookings(
+  customerId: string,
+  vendorId: string
+): Promise<number> {
+  try {
+    const res = await query(
+      `SELECT COUNT(*)::int AS c FROM bookings
+       WHERE customer_id = $1::uuid
+         AND vendor_id = $2::uuid
+         AND COALESCE(status, '') NOT IN ('cancelled', 'failed', 'rejected')`,
+      [customerId, vendorId]
+    );
+    return res.rows[0]?.c ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function recordServicePromotionUsage(params: {
+  promotionId: string;
+  bookingId: string;
+  customerId?: string | null;
+  discountAmount: number;
+  originalAmount: number;
+}): Promise<void> {
+  const { promotionId, bookingId, customerId, discountAmount, originalAmount } = params;
+
+  await query(
+    `UPDATE vendor_service_promotions
+     SET usage_count = COALESCE(usage_count, 0) + 1,
+         conversions = COALESCE(conversions, 0) + 1,
+         revenue_generated = COALESCE(revenue_generated, 0) + $2,
+         updated_at = NOW()
+     WHERE id = $1::uuid`,
+    [promotionId, originalAmount]
+  );
+
+  try {
+    await insert('promotion_usages', {
+      promotion_id: promotionId,
+      promotion_type: 'service',
+      booking_id: bookingId,
+      order_id: null,
+      customer_id: customerId || null,
+      discount_amount: discountAmount,
+      original_amount: originalAmount,
+      final_amount: Math.max(0, originalAmount - discountAmount),
+      created_at: new Date().toISOString(),
+    });
+  } catch {
+    /* promotion_usages table may be missing in some envs */
+  }
+}
+
+export async function recordPlatformPromotionUsage(params: {
+  promotionId: string;
+  bookingId: string;
+  customerId?: string | null;
+  discountAmount: number;
+  originalAmount: number;
+}): Promise<void> {
+  const { promotionId, bookingId, customerId, discountAmount, originalAmount } = params;
+
+  await query(
+    `UPDATE promotions
+     SET usage_count = COALESCE(usage_count, 0) + 1,
+         updated_at = NOW()
+     WHERE id = $1::uuid`,
+    [promotionId]
+  ).catch(() => undefined);
+
+  try {
+    await insert('promotion_usages', {
+      promotion_id: promotionId,
+      promotion_type: 'platform',
+      booking_id: bookingId,
+      order_id: null,
+      customer_id: customerId || null,
+      discount_amount: discountAmount,
+      original_amount: originalAmount,
+      final_amount: Math.max(0, originalAmount - discountAmount),
+      created_at: new Date().toISOString(),
+    });
+  } catch {
+    /* promotion_usages table may be missing in some envs */
+  }
+}

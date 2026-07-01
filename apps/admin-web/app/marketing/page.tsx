@@ -49,6 +49,7 @@ import {
 	EyeOff,
 	ExternalLink,
 	AlertCircle,
+	Store,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import {
@@ -94,12 +95,14 @@ import { toast, Toaster } from "sonner";
 import {
 	CouponManagement,
 } from "@/components/admin/marketing";
+import { VendorPromotionsOverview } from "@/components/admin/marketing/VendorPromotionsOverview";
 
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 
 export default function MarketingPromotionsTab() {
 	const [activeTab, setActiveTab] = useState<
 		| "promotions"
+		| "vendor-promotions"
 		| "ui-config"
 		| "spotlight"
 		| "coupons"
@@ -1614,6 +1617,17 @@ export default function MarketingPromotionsTab() {
 								<span className="font-medium text-sm">Promotions</span>
 							</button>
 							<button
+								onClick={() => setActiveTab("vendor-promotions")}
+								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
+									activeTab === "vendor-promotions"
+										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+								}`}
+							>
+								<Store className="w-4 h-4" />
+								<span className="font-medium text-sm">Vendor Promotions</span>
+							</button>
+							<button
 								onClick={() => setActiveTab("ui-config")}
 								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
 									activeTab === "ui-config"
@@ -1686,6 +1700,11 @@ export default function MarketingPromotionsTab() {
 				{/* Content - Match wireframe: max-w-7xl mx-auto p-6 */}
 				<div className="flex-1 overflow-y-auto">
 					<div className="max-w-7xl mx-auto p-6">
+						{/* VENDOR PROMOTIONS TAB */}
+						{activeTab === "vendor-promotions" && (
+							<VendorPromotionsOverview />
+						)}
+
 						{/* PROMOTIONS TAB */}
 						{activeTab === "promotions" && (
 							<Card className="p-6">

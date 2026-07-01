@@ -20,6 +20,7 @@ import {
   buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
 } from '@/lib/available-slots-response';
+import { ServiceBookingPromoSummary } from '../booking/ServiceBookingPromoSummary';
 
 interface UniversalBookingRouterProps {
   roleId: RoleId; // ✅ NEW: Role ID for universal component
@@ -1442,7 +1443,7 @@ export function UniversalBookingRouter({
                 <span>{selectedPet?.name} ({selectedPet?.breed})</span>
               </div>
               <div className="pt-2 flex justify-between items-center font-semibold">
-                <span>Total</span>
+                <span>Subtotal</span>
                 <span className="text-orange-600">{formatPriceWithSymbol(
                   selectedPackageForSwitch
                     ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
@@ -1452,6 +1453,24 @@ export function UniversalBookingRouter({
                       })()
                 )}</span>
               </div>
+              {!selectedPackageForSwitch && (vendorId || doctorId) ? (
+                <ServiceBookingPromoSummary
+                  vendorId={vendorId || doctorId}
+                  customerId={customerId}
+                  serviceIds={(() => {
+                    const services = allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption];
+                    return services
+                      .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+                      .filter(Boolean);
+                  })()}
+                  baseAmount={(() => {
+                    const services = allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption];
+                    return services.reduce((sum: number, s: any) => sum + safeNumber(s?.price ?? selectedServiceOption?.price ?? 0, 0), 0);
+                  })()}
+                  serviceStyle={selectedServiceType}
+                  serviceCategory={config.category}
+                />
+              ) : null}
               {selectedPackageForSwitch && (
                 <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700 flex items-center gap-2">
                   <Package className="w-4 h-4" />

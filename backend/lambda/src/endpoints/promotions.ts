@@ -18,6 +18,10 @@ import { Hono } from 'hono';
 import { select, insert, update, query, deleteRows } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import {
+  listApplicableBookingPromotions,
+  resolveBookingPromotions,
+} from '../lib/services/booking-promotion-service';
 
 export function registerPromotionEndpoints(app: Hono) {
   const normalizePromotionDiscountType = (raw: unknown): 'percentage' | 'fixed' => {
@@ -364,6 +368,7 @@ export function registerPromotionEndpoints(app: Hono) {
       let promotionsQuery = `
         SELECT * FROM promotions
         WHERE is_active = true
+        AND published = true
         AND start_date <= $1
         AND (end_date IS NULL OR end_date >= $1)
       `;
@@ -748,6 +753,68 @@ export function registerPromotionEndpoints(app: Hono) {
   });
 
   // ============================================================================
+  // BOOKING PROMOTIONS (service providers — auto-apply)
+  // ============================================================================
+
+  /**
+   * POST /promotions/calculate-booking
+   * Server source of truth for service booking promotion stack.
+   */
+  app.post('/promotions/calculate-booking', async (c) => {
+    try {
+      const body = await c.req.json();
+      const vendorId = String(body.vendorId || body.vendor_id || '').trim();
+      const amount = parseFloat(String(body.amount ?? body.bookingAmount ?? 0)) || 0;
+      const serviceStyle = body.serviceStyle || body.service_style;
+      const customerId = body.customerId || body.customer_id;
+      const serviceCategory = body.serviceCategory || body.service_category || body.category;
+      const serviceIdsRaw = body.serviceIds || body.service_ids || body.selectedServiceIds;
+      const serviceIds = Array.isArray(serviceIdsRaw)
+        ? serviceIdsRaw.map((x: unknown) => String(x)).filter(Boolean)
+        : body.serviceId || body.service_id
+          ? [String(body.serviceId || body.service_id)]
+          : [];
+
+      if (!vendorId || amount <= 0) {
+        return c.json({ success: false, error: 'vendorId and amount are required' }, 400);
+      }
+
+      const result = await resolveBookingPromotions({
+        vendorId,
+        serviceIds,
+        serviceStyle,
+        amount,
+        customerId: customerId ? String(customerId) : undefined,
+        serviceCategory: serviceCategory ? String(serviceCategory) : undefined,
+      });
+
+      return c.json({
+        success: true,
+        originalAmount: result.originalAmount,
+        vendorDiscountAmount: result.vendorDiscountAmount,
+        platformDiscountAmount: result.platformDiscountAmount,
+        totalSavings: result.totalSavings,
+        finalAmount: result.finalAmount,
+        applied: result.applied,
+        vendorPromotionId: result.vendorPromotionId,
+        platformPromotionId: result.platformPromotionId,
+        bestPromotion: result.applied[0]
+          ? {
+              id: result.applied[0].id,
+              source: result.applied[0].source,
+              name: result.applied[0].name,
+              calculatedDiscount: result.applied[0].discountAmount,
+            }
+          : null,
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('Error calculating booking promotions:', msg);
+      return c.json({ success: false, error: msg }, 500);
+    }
+  });
+
+  // ============================================================================
   // PUBLIC: APPLICABLE PROMOTIONS (customer checkout – no admin auth)
   // ============================================================================
 
@@ -761,6 +828,8 @@ export function registerPromotionEndpoints(app: Hono) {
     try {
       const category = c.req.query('category') || 'all';
       const serviceStyle = c.req.query('serviceStyle') || 'all';
+      const vendorId = c.req.query('vendorId') || c.req.query('vendor_id');
+      const customerId = c.req.query('customerId') || c.req.query('customer_id');
       const serviceId = c.req.query('serviceId');
       const selectedServiceIdsRaw = c.req.query('selectedServiceIds');
       const selectedServiceIds = String(selectedServiceIdsRaw || '')
@@ -770,11 +839,43 @@ export function registerPromotionEndpoints(app: Hono) {
       if (serviceId) selectedServiceIds.push(String(serviceId));
       const amount = parseFloat(c.req.query('amount') || '0');
 
+      if (vendorId && vendorId !== 'default' && amount > 0) {
+        const offers = await listApplicableBookingPromotions({
+          vendorId: String(vendorId),
+          serviceIds: selectedServiceIds,
+          serviceStyle: serviceStyle !== 'all' ? serviceStyle : undefined,
+          amount,
+          customerId: customerId ? String(customerId) : undefined,
+          serviceCategory: category !== 'all' ? category : undefined,
+        });
+
+        const promotions = offers.map((o) => ({
+          id: o.id,
+          source: o.source,
+          name: o.title,
+          title: o.title,
+          description: o.description,
+          discountType: o.discountType,
+          discountValue: o.discountValue,
+          discountAmount: o.discountAmount,
+          promotion_type: o.promotionType || (o.isSpotlight ? 'spotlight' : 'flash_sale'),
+          autoApplyEligible: o.autoApplyEligible,
+          is_spotlight: o.isSpotlight === true,
+        }));
+
+        return c.json({
+          success: true,
+          promotions,
+          total: promotions.length,
+        });
+      }
+
       const now = new Date().toISOString().split('T')[0];
 
       let queryStr = `
         SELECT * FROM promotions
         WHERE is_active = true
+        AND published = true
         AND (start_date IS NULL OR start_date <= $1)
         AND (end_date IS NULL OR end_date >= $1)
       `;

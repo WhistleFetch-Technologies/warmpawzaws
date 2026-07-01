@@ -36,6 +36,11 @@ import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import {
+  buildBookingPromotionNotesMeta,
+  resolveBookingPromotions,
+} from '../../../lib/services/booking-promotion-service';
+import { discountsWithinTolerance } from '../../../utils/vendor-promotion-engine';
+import {
   SQL_BOOKING_BLOCKS_SLOT,
   paymentHoldExpiresAt,
   expirePaymentHolds,
@@ -1134,6 +1139,53 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               ? Math.max(calculatedBasePrice, listedServerPrice)
               : calculatedBasePrice;
         const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : grossPayableBeforeWallet;
+
+        let resolvedBookingPromotions: Awaited<ReturnType<typeof resolveBookingPromotions>> | null =
+          null;
+        if (
+          !isPackageBooking &&
+          !isSubscriptionBooking &&
+          grossPayableBeforeWallet > 0 &&
+          vendorId
+        ) {
+          const serviceIdsForPromo =
+            selectedServices && selectedServices.length > 0
+              ? selectedServices.map((s: { serviceId?: string; id?: string }) =>
+                  String(s.serviceId || s.id || '')
+                ).filter(Boolean)
+              : finalServiceId
+                ? [String(finalServiceId)]
+                : serviceId
+                  ? [String(serviceId)]
+                  : [];
+
+          try {
+            resolvedBookingPromotions = await resolveBookingPromotions({
+              vendorId: String(vendorId),
+              serviceIds: serviceIdsForPromo,
+              serviceStyle: serviceType || body.serviceStyle || body.service_style,
+              amount: grossPayableBeforeWallet,
+              customerId: customerId ? String(customerId) : undefined,
+              serviceCategory: serviceCategory || undefined,
+            });
+
+            const clientDiscountRaw =
+              body.discountAmount ?? body.discount_amount ?? body.couponDiscount;
+            const clientDiscount = parseFloat(String(clientDiscountRaw ?? ''));
+            if (
+              Number.isFinite(clientDiscount) &&
+              clientDiscount > 0 &&
+              !discountsWithinTolerance(clientDiscount, resolvedBookingPromotions.totalSavings)
+            ) {
+              throw new Error('PROMOTION_DISCOUNT_MISMATCH');
+            }
+          } catch (promoErr: unknown) {
+            const msg = promoErr instanceof Error ? promoErr.message : String(promoErr);
+            if (msg === 'PROMOTION_DISCOUNT_MISMATCH') throw promoErr;
+            console.warn('[BOOKING] promotion validation skipped:', msg);
+          }
+        }
+
         let diagnosticsPrepaidPaymentId: string | null = null;
         let paymentStatus = isPackageBooking ? 'completed' : isSubscriptionBooking ? 'paid' : 'pending';
         /** Hold slot but hide from vendor lists until Razorpay succeeds (vendor APIs filter pending_payment). */
@@ -1445,14 +1497,34 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         if (promotionId && isValidUUID(String(promotionId))) {
           bookingData.promotion_id = promotionId;
+        } else if (resolvedBookingPromotions?.vendorPromotionId) {
+          bookingData.promotion_id = resolvedBookingPromotions.vendorPromotionId;
+        } else if (resolvedBookingPromotions?.platformPromotionId) {
+          bookingData.promotion_id = resolvedBookingPromotions.platformPromotionId;
         }
 
         const couponDiscountRaw = body.couponDiscount ?? body.discountAmount ?? body.discount_amount;
-        const couponCodeRaw = body.couponCode ?? body.coupon_code;
         const couponDisc = parseFloat(String(couponDiscountRaw ?? ''));
         if (Number.isFinite(couponDisc) && couponDisc > 0) {
           bookingData.discount_amount = Math.round(couponDisc * 100) / 100;
+        } else if (resolvedBookingPromotions && resolvedBookingPromotions.totalSavings > 0) {
+          bookingData.discount_amount =
+            Math.round(resolvedBookingPromotions.totalSavings * 100) / 100;
         }
+
+        if (resolvedBookingPromotions && resolvedBookingPromotions.totalSavings > 0) {
+          const promoMeta = buildBookingPromotionNotesMeta({
+            vendorPromotionId: resolvedBookingPromotions.vendorPromotionId,
+            platformPromotionId: resolvedBookingPromotions.platformPromotionId,
+            vendorDiscount: resolvedBookingPromotions.vendorDiscountAmount,
+            platformDiscount: resolvedBookingPromotions.platformDiscountAmount,
+          });
+          bookingData.notes = bookingData.notes
+            ? `${bookingData.notes} | ${promoMeta}`
+            : promoMeta;
+        }
+
+        const couponCodeRaw = body.couponCode ?? body.coupon_code;
         if (couponCodeRaw && typeof couponCodeRaw === 'string' && couponCodeRaw.trim()) {
           bookingData.coupon_code = couponCodeRaw.trim().slice(0, 80);
         }

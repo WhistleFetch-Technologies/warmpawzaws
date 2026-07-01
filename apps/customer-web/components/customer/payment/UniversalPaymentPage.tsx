@@ -419,6 +419,13 @@ export function UniversalPaymentPage({
   // Promotions & Offers
   const [promotions, setPromotions] = useState<PromotionOffer[]>([]);
   const [appliedPromotion, setAppliedPromotion] = useState<PromotionOffer | null>(null);
+  const [bookingPromoStack, setBookingPromoStack] = useState<{
+    vendorPromotionId?: string;
+    platformPromotionId?: string;
+    vendorDiscount?: number;
+    platformDiscount?: number;
+    totalSavings: number;
+  } | null>(null);
   const [razorpayOffers, setRazorpayOffers] = useState<RazorpayOffer[]>([]);
   const [selectedRazorpayOffer, setSelectedRazorpayOffer] = useState<RazorpayOffer | null>(null);
   /** Optional UPI ID (VPA) for collect flow â€” passed as `prefill.vpa` (Razorpay may still show QR-only on desktop web per NPCI/Razorpay). */
@@ -1175,15 +1182,72 @@ export function UniversalPaymentPage({
       const selectedServiceIds = (selectedServices || [])
         .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
         .filter(Boolean);
+
+      if (type === 'booking' && vendorId && baseAmount > 0) {
+        const calcRes = await apiClient.post<any>('/promotions/calculate-booking', {
+          vendorId,
+          customerId: customerId || undefined,
+          amount: baseAmount,
+          serviceStyle,
+          serviceCategory: category || initialPromotionIntent?.serviceCategory,
+          serviceIds: selectedServiceIds.length
+            ? selectedServiceIds
+            : serviceId
+              ? [String(serviceId)]
+              : [],
+        });
+
+        if (calcRes?.success) {
+          const stack = {
+            vendorPromotionId: calcRes.vendorPromotionId,
+            platformPromotionId: calcRes.platformPromotionId,
+            vendorDiscount: calcRes.vendorDiscountAmount ?? 0,
+            platformDiscount: calcRes.platformDiscountAmount ?? 0,
+            totalSavings: calcRes.totalSavings ?? 0,
+          };
+          setBookingPromoStack(stack.totalSavings > 0 ? stack : null);
+
+          const applicablePromos = (calcRes.applied || []).map((a: any) => ({
+            id: a.id,
+            type: a.source === 'platform' ? 'spotlight' : 'vendor',
+            title: a.name,
+            description: a.name,
+            discountType: 'percentage' as const,
+            discountValue: 0,
+            discountAmount: a.discountAmount ?? 0,
+            applicable: true,
+          }));
+          setPromotions(applicablePromos);
+
+          if (stack.totalSavings > 0) {
+            setAppliedPromotion({
+              id: calcRes.vendorPromotionId || calcRes.platformPromotionId || 'auto',
+              type: 'spotlight',
+              title: 'Promotion applied',
+              description: applicablePromos.map((p: PromotionOffer) => p.title).join(' + '),
+              discountType: 'percentage',
+              discountValue: 0,
+              discountAmount: stack.totalSavings,
+              applicable: true,
+            });
+            toast.success(`You save ₹${stack.totalSavings.toFixed(0)} on this booking`);
+          } else if (initialPromotionId) {
+            toast.info('The selected special offer is not eligible for this service/amount.');
+          }
+        }
+        return;
+      }
+
       const params = new URLSearchParams({
         category: String(category || initialPromotionIntent?.serviceCategory || ''),
         serviceStyle: String(serviceStyle || initialPromotionIntent?.serviceStyle || ''),
         amount: String(baseAmount || 0),
       });
       if (serviceId) params.set('serviceId', String(serviceId));
+      if (vendorId) params.set('vendorId', String(vendorId));
+      if (customerId) params.set('customerId', String(customerId));
       if (selectedServiceIds.length > 0) params.set('selectedServiceIds', selectedServiceIds.join(','));
 
-      // Load applicable promotions (public endpoint â€“ no admin auth required)
       const promoRes = await apiClient.get<any>(`/promotions/applicable?${params.toString()}`);
 
       if (promoRes.success && promoRes.promotions) {
@@ -1489,8 +1553,11 @@ export function UniversalPaymentPage({
   };
 
   // Calculate final amounts
-  const promotionDiscount = appliedPromotion?.discountAmount || 0;
-  const couponDiscount = appliedCoupon?.discountAmount || 0;
+  const promotionDiscount =
+    type === 'booking'
+      ? bookingPromoStack?.totalSavings ?? appliedPromotion?.discountAmount ?? 0
+      : appliedPromotion?.discountAmount || 0;
+  const couponDiscount = type === 'booking' ? 0 : appliedCoupon?.discountAmount || 0;
   const razorpayOfferDiscount = selectedRazorpayOffer?.discountValue || 0;
 
   // Apply discounts to subtotal (before tax for some, after tax for others - following standard practice)
@@ -2120,9 +2187,15 @@ export function UniversalPaymentPage({
           bookingTime: normalizedBookingTime, // âœ… Format: HH:MM or HH:MM:SS
           serviceType: serviceTypeValue, // âœ… Required enum
           amount: taxBreakdown.total, // âœ… Number (schema allows >= 0)
-          ...(couponDiscount + (appliedPromotion?.discountAmount || 0) > 0
+          ...(promotionDiscount > 0
             ? {
-                discountAmount: couponDiscount + (appliedPromotion?.discountAmount || 0),
+                discountAmount: promotionDiscount,
+                ...(bookingPromoStack?.vendorPromotionId
+                  ? { vendorPromotionId: bookingPromoStack.vendorPromotionId }
+                  : {}),
+                ...(bookingPromoStack?.platformPromotionId
+                  ? { platformPromotionId: bookingPromoStack.platformPromotionId }
+                  : {}),
                 ...(appliedCoupon?.code ? { couponCode: appliedCoupon.code } : {}),
               }
             : {}),
@@ -2343,9 +2416,18 @@ export function UniversalPaymentPage({
         paymentPayload.couponCode = appliedCoupon.code;
         paymentPayload.couponDiscount = couponDiscount || 0;
       }
-      if (appliedPromotion?.id) {
-        paymentPayload.promotionId = appliedPromotion.id;
+      if (appliedPromotion?.id || bookingPromoStack?.totalSavings) {
         paymentPayload.promotionDiscount = promotionDiscount || 0;
+        if (type === 'booking' && bookingPromoStack) {
+          if (bookingPromoStack.vendorPromotionId) {
+            paymentPayload.vendorPromotionId = bookingPromoStack.vendorPromotionId;
+          }
+          if (bookingPromoStack.platformPromotionId) {
+            paymentPayload.platformPromotionId = bookingPromoStack.platformPromotionId;
+          }
+        } else if (appliedPromotion?.id && appliedPromotion.id !== 'auto') {
+          paymentPayload.promotionId = appliedPromotion.id;
+        }
       }
       if (selectedRazorpayOffer?.id) {
         paymentPayload.razorpayOfferId = selectedRazorpayOffer.id;
@@ -2535,7 +2617,7 @@ export function UniversalPaymentPage({
           });
         }
 
-        if (appliedPromotion) {
+        if (appliedPromotion && type !== 'booking') {
           await apiClient.post('/promotions/apply', {
             promotionId: appliedPromotion.id,
             bookingId: currentBookingId,
@@ -3300,16 +3382,37 @@ export function UniversalPaymentPage({
           </div>
         )}
 
-        {/* Promotions & Spotlight Offers */}
+        {/* Promotions & Spotlight Offers — bookings auto-apply (read-only) */}
         {type !== 'meal_subscription' && type !== 'meal_one_time' && promotions.length > 0 && (
           <div className={paymentSecondaryCardClass}>
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
-              <h2 className="font-semibold text-gray-900">Available Offers</h2>
+              <h2 className="font-semibold text-gray-900">
+                {type === 'booking' ? 'Applied Offers' : 'Available Offers'}
+              </h2>
             </div>
 
             <div className="space-y-2">
               {promotions.map((promo) => (
+                type === 'booking' ? (
+                  <div
+                    key={promo.id}
+                    className="w-full text-left p-3 rounded-xl border-2 border-green-500 bg-green-50"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-medium text-gray-900">{promo.title}</h3>
+                          <Badge className="bg-green-600 text-white text-xs">Auto-applied</Badge>
+                        </div>
+                        <p className="text-sm font-medium text-green-600 mt-1">
+                          Save ₹{promo.discountAmount.toFixed(2)}
+                        </p>
+                      </div>
+                      <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+                    </div>
+                  </div>
+                ) : (
                 <button
                   key={promo.id}
                   onClick={() => applyPromotion(promo)}
@@ -3336,13 +3439,14 @@ export function UniversalPaymentPage({
                     )}
                   </div>
                 </button>
+                )
               ))}
             </div>
           </div>
         )}
 
-        {/* Coupon Section */}
-        {type !== 'meal_subscription' && type !== 'meal_one_time' && (
+        {/* Coupon Section — orders only (bookings use auto-apply promotions) */}
+        {type !== 'meal_subscription' && type !== 'meal_one_time' && type !== 'booking' && (
         <div className={paymentSecondaryCardClass}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">

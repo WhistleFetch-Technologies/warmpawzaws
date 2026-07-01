@@ -1127,6 +1127,17 @@ class VerifyPaymentHandler extends BaseHandler {
 
         console.log('[PAYMENT-VERIFY] ✅ Payment verified and booking confirmed:', bookingId);
 
+        Promise.resolve()
+          .then(async () => {
+            const { recordBookingPromotionUsageFromBooking } = await import(
+              '../../../lib/services/booking-promotion-service'
+            );
+            await recordBookingPromotionUsageFromBooking(String(bookingId));
+          })
+          .catch((err) => {
+            console.warn('[PAYMENT-VERIFY] promotion usage record failed:', err);
+          });
+
         // ✅ AUTO-GENERATE OTP for in-person services when booking transitions to confirmed
         try {
           const { rows: bookingDetails } = await client.query(

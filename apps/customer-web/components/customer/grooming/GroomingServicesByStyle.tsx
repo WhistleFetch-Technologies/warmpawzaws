@@ -21,6 +21,8 @@ import {
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
+import { PromotionBanner } from '../shared/PromotionBanner';
+import { VendorServicePromotions } from '../services/VendorServicePromotions';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
@@ -709,6 +711,7 @@ export function GroomingServicesByStyle({
         )}
 
         <div className="mx-auto w-full max-w-customer px-4 cw-scroll-pad-tabbar-sticky-cta">
+          <VendorServicePromotions vendorId={profileVendorId} vendorName={salonName} className="mb-4" />
           {/* Salon Header Info - Grooming-Focused */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4 -mt-6 relative z-10">
             <div className="mb-4">
@@ -1139,6 +1142,10 @@ export function GroomingServicesByStyle({
         headerColor="bg-[#FF8C42]"
         sheetToneClass="bg-white"
       />
+
+      <div className="px-4 sm:px-6">
+        <PromotionBanner service="grooming" maxPromotions={2} onNavigate={onNavigate} />
+      </div>
 
       {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
       <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">

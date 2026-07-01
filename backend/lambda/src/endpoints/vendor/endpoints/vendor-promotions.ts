@@ -506,7 +506,7 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
       // Fetch product promotions
       if (category !== 'service') {
         let productQuery = `
-          SELECT vp.*, v.name as vendor_name, v.phone as vendor_phone, 'product' as promo_category
+          SELECT vp.*, COALESCE(v.business_name, v.owner_name) as vendor_name, v.phone as vendor_phone, 'product' as promo_category
           FROM vendor_promotions vp
           LEFT JOIN vendors v ON vp.vendor_id = v.id
           WHERE 1=1
@@ -544,7 +544,7 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
       // Fetch service promotions
       if (category !== 'product') {
         let serviceQuery = `
-          SELECT vsp.*, v.name as vendor_name, v.phone as vendor_phone, 'service' as promo_category
+          SELECT vsp.*, COALESCE(v.business_name, v.owner_name) as vendor_name, v.phone as vendor_phone, 'service' as promo_category
           FROM vendor_service_promotions vsp
           LEFT JOIN vendors v ON vsp.vendor_id = v.id
           WHERE 1=1

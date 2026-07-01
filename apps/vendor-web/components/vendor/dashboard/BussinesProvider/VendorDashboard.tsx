@@ -47,6 +47,7 @@ import {
   Shield,
   Truck,
   MapPin,
+  Tag,
   Navigation,
   HelpCircle,
   CheckCircle2,
@@ -160,6 +161,7 @@ export function VendorDashboard({
   onNavigateToDistancePricing,
   onNavigateToMultiDoctorManagement,
   onNavigateToPolicyManagement,
+  onNavigateToServicePromotions,
   onNavigateToSupport,
   onNavigateToDashboard
 }: VendorDashboardProps) {
@@ -1379,6 +1381,17 @@ export function VendorDashboard({
                       <span className="text-xs font-medium text-gray-900">Policies</span>
                     </button>
                   )}
+
+                {onNavigateToServicePromotions && CapabilityHelper.hasBooking(capabilities) && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToServicePromotions}
+                    className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-rose-100 transition-colors"
+                  >
+                    <Tag className="w-6 h-6 text-rose-600 mb-1" />
+                    <span className="text-xs font-medium text-gray-900">Promotions</span>
+                  </button>
+                )}
 
                 {/* ✅ NEW: Distance Pricing */}
                 {onNavigateToDistancePricing && capabilities.distance_pricing && (

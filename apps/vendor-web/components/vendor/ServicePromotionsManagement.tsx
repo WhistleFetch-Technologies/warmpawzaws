@@ -224,7 +224,7 @@ export function ServicePromotionsManagement({ vendorId, vendorRole, onBack }: Se
           )}
           <div className="flex-1">
             <h1 className="text-lg font-bold">Service Promotions</h1>
-            <p className="text-sm text-white/80">Create discounts and offers for your services</p>
+            <p className="text-sm text-white/80">Active offers auto-apply for customers at booking</p>
           </div>
           <button
             onClick={() => {

@@ -37,6 +37,7 @@ import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_TRAINING } from '@/lib/service-hub-discovery-config';
+import { PromotionBanner } from './shared/PromotionBanner';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
@@ -247,6 +248,10 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         headerTrailingImageClassName="pointer-events-none absolute bottom-0 right-0 top-[2.75rem] z-[5] flex w-[80%] max-w-[460px] items-end justify-end sm:top-12"
         headerTrailingImageImgClassName="block h-full w-auto max-w-full origin-bottom-right scale-[1.5] object-contain object-right object-bottom drop-shadow-lg"
       />
+
+      <div className="px-4 sm:px-6">
+        <PromotionBanner service="training" maxPromotions={2} onNavigate={onNavigate} />
+      </div>
 
       {/* Main Content */}
       <div className="mx-auto w-full max-w-customer -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 sm:rounded-t-[2rem]">

@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
+import { ServiceBookingPromoSummary } from '../booking/ServiceBookingPromoSummary';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { PaymentSourcesDisplay } from '../payment/PaymentSourcesDisplay';
@@ -1664,7 +1665,21 @@ export function VetBookingRouter({
               <div className="flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-gray-400" /><span>{selectedDate && new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {formatTime12Hour(selectedTime)}</span></div>
               <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-gray-400" /><span>{selectedPet?.name} ({selectedPet?.breed})</span></div>
               {selectedServiceType === 'at_home' && selectedAddress && <div className="flex items-center gap-2 text-sm"><MapPin className="w-4 h-4 text-gray-400" /><span>{selectedAddress.street || selectedAddress.address || 'Address'}</span></div>}
-              <div className="pt-2 flex justify-between font-semibold"><span>Total</span><span className="text-orange-600">{formatPriceWithSymbol(selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0) : (selectedServiceOption?.price ?? 0)))}</span></div>
+              <div className="pt-2 flex justify-between font-semibold"><span>Subtotal</span><span className="text-orange-600">{formatPriceWithSymbol(selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0) : (selectedServiceOption?.price ?? 0)))}</span></div>
+              {!selectedPackageForSwitch && (vendorId || doctorId) ? (
+                <ServiceBookingPromoSummary
+                  vendorId={vendorId || doctorId}
+                  customerId={customerId}
+                  serviceIds={(allSelectedServices?.length ? allSelectedServices : [selectedServiceOption])
+                    .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+                    .filter(Boolean)}
+                  baseAmount={allSelectedServices?.length
+                    ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0)
+                    : (selectedServiceOption?.price ?? 0)}
+                  serviceStyle={selectedServiceType}
+                  serviceCategory="vet"
+                />
+              ) : null}
               {selectedPackageForSwitch && (
                 <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700 flex items-center gap-2">
                   <Package className="w-4 h-4" />

@@ -16,6 +16,7 @@ import {
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
+import { VendorServicePromotions } from '../services/VendorServicePromotions';
 
 interface ClinicProfileViewProps {
   phone: string;
@@ -269,6 +270,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
 
       {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
       <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 pb-40 sm:rounded-t-[2rem]">
+        <VendorServicePromotions vendorId={clinic.id} vendorName={clinic.name} className="mb-4" />
         {/* Clinic Card */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-4">
           <div className="flex items-start gap-4">

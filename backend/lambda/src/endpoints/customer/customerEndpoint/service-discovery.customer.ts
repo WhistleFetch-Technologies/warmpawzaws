@@ -7359,8 +7359,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         serviceIds: [serviceId],
         originalAmount: basePrice,
         customerId,
-        couponCode,
         serviceCategory: category,
+        serviceStyle: body.serviceStyle || body.service_style || undefined,
       });
 
       const amountAfterDiscount = discountResult.finalAmount;
@@ -7401,14 +7401,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         amount: h.totalTax,
       }));
 
-      const couponInfo = discountResult.appliedDiscounts.find((d: any) => d.type === 'coupon')
-        ? {
-          code: couponCode,
-          type: discountResult.appliedDiscounts.find((d: any) => d.type === 'coupon')?.discountType || 'percent',
-          value: discountResult.appliedDiscounts.find((d: any) => d.type === 'coupon')?.discountValue || 0,
-          applied: true,
-        }
-        : { applied: false };
+      const couponInfo = { applied: false };
 
       return c.json({
         success: true,
@@ -7418,6 +7411,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         finalPrice,
         taxBreakdown,
         coupon: couponInfo,
+        appliedPromotions: discountResult.appliedDiscounts,
+        vendorPromotionId: discountResult.vendorPromotionId,
+        platformPromotionId: discountResult.platformPromotionId,
       });
     } catch (error: any) {
       console.error('Error in /customer/pricing/quote:', error);
