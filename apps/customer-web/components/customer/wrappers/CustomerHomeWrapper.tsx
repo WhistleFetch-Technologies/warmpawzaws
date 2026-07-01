@@ -2981,7 +2981,7 @@ export function CustomerHomeWrapper({
     );
   }
   if (currentScreen === 'walk-live-tracking') return <WalkLiveTrackingView bookingId={walkerServiceData?.bookingId || walkerServiceData?.sessionId || ''} onBack={handleBack} />;
-  if (currentScreen === 'schedule-walk') return <CreateBookingPage phone={phone} vendorId={walkerServiceData?.vendorId} serviceId={walkerServiceData?.packageId} onBack={handleBack} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
+  if (currentScreen === 'schedule-walk') return <CreateBookingPage phone={phone} vendorId={walkerServiceData?.vendorId} serviceId={walkerServiceData?.packageId} serviceStyle="at_home" onBack={handleBack} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
   // ✅ FIX: Vet Service with Frame UI (ServiceDashboardHeader)
   if (currentScreen === 'vet') {
     return renderScreenWithLayout('vet',
@@ -4997,7 +4997,21 @@ export function CustomerHomeWrapper({
   }
 
   // ✅ NEW: Create Booking
-  if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService || vetServiceData?.serviceId} vendorId={selectedVendorId} onBack={() => backFromBannerOr(handleBack, vetServiceData)} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
+  if (currentScreen === 'create-booking') return (
+    <CreateBookingPage
+      phone={phone}
+      serviceId={selectedService || vetServiceData?.serviceId}
+      vendorId={selectedVendorId || vetServiceData?.vendorId}
+      serviceStyle={vetServiceData?.serviceStyle}
+      vendorName={vetServiceData?.vendorName || vetServiceData?.providerName}
+      serviceName={vetServiceData?.serviceName || vetServiceData?.service?.name}
+      price={vetServiceData?.price}
+      duration={vetServiceData?.duration}
+      groomer={vetServiceData?.groomer}
+      onBack={() => backFromBannerOr(handleBack, vetServiceData)}
+      onSuccess={(bookingId) => handleViewBooking(bookingId)}
+    />
+  );
 
   // ✅ NEW: Pets
   if (currentScreen === 'pets') return <CustomerPetsPage 

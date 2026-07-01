@@ -24,6 +24,9 @@ import { toast } from 'sonner';
 import { Package, Check, ChevronRight, Info, Star, Users, Dog, Footprints, Receipt } from 'lucide-react';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
 
+const scheduleFieldInputClassName =
+  'w-full min-w-0 max-w-full box-border rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500';
+
 function parseServiceMetadata(m: unknown): Record<string, unknown> {
   if (m == null) return {};
   if (typeof m === 'string') {
@@ -1068,7 +1071,7 @@ export function PackageBookingPage({
   }
 
   return (
-    <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto bg-gray-50 cw-header-safe-top cw-header-safe-x pb-24">
+    <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto overflow-x-hidden bg-gray-50 cw-header-safe-top cw-header-safe-x pb-24">
       {/* Header */}
       <div className="bg-white rounded-xl p-4 shadow-sm mb-6">
         {onBack && (
@@ -1240,7 +1243,7 @@ export function PackageBookingPage({
 
       {/* Schedule Sessions View */}
       {view === 'schedule' && selectedPackage && (
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6 overflow-x-hidden">
           {/* Package Summary */}
           <div className="bg-white rounded-xl p-4 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-3">{selectedPackage.name}</h3>
@@ -1352,75 +1355,81 @@ export function PackageBookingPage({
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-4 shadow-sm space-y-4">
-            <div>
-              <h3 className="font-semibold text-gray-900 mb-1">
+          <div className="min-w-0 space-y-4 overflow-hidden rounded-xl bg-white p-4 shadow-sm">
+            <div className="min-w-0">
+              <h3 className="mb-1 font-semibold text-gray-900">
                 {selectedPackage.vendorServiceId ? 'First session date' : 'First session date (optional)'}
               </h3>
-              <p className="text-xs text-gray-500 mb-3">
+              <p className="mb-3 text-xs text-gray-500">
                 {selectedPackage.vendorServiceId
                   ? (Number(selectedPackage.sessionsPerDay) || 1) > 1
                     ? 'Required — first calendar day for sessions 1–N; later sessions move forward one day per block with the same daily times.'
                     : 'Required — later sessions repeat every calendar interval (e.g. weekly) at the same time.'
                   : 'Optional for some package types.'}
               </p>
-              <input
-                type="date"
-                min={getMinDate()}
-                value={startingSessionDate}
-                onChange={(e) => {
-                  setStartingSessionDate(e.target.value);
-                  setError(null);
-                }}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              />
+              <div className="warmpawz-date-field-wrap">
+                <input
+                  type="date"
+                  min={getMinDate()}
+                  value={startingSessionDate}
+                  onChange={(e) => {
+                    setStartingSessionDate(e.target.value);
+                    setError(null);
+                  }}
+                  className={scheduleFieldInputClassName}
+                />
+              </div>
             </div>
             {selectedPackage.vendorServiceId ? (
               (Number(selectedPackage.sessionsPerDay) || 1) > 1 ? (
-                <div className="space-y-3">
-                  <h3 className="font-semibold text-gray-900 mb-1">
+                <div className="min-w-0 space-y-3">
+                  <h3 className="mb-1 font-semibold text-gray-900">
                     Times on the first day ({Number(selectedPackage.sessionsPerDay) || 1} slots)
                   </h3>
-                  <p className="text-xs text-gray-500 mb-2">
+                  <p className="mb-2 text-xs text-gray-500">
                     Each group of {Number(selectedPackage.sessionsPerDay) || 1} sessions stays on one calendar day;
                     the next group is the <strong>next day</strong>, until all {selectedPackage.totalSessions} sessions
                     are scheduled.
                   </p>
                   {perDaySessionTimes.slice(0, Number(selectedPackage.sessionsPerDay) || 1).map((t, idx) => (
-                    <div key={idx}>
-                      <label className="text-xs text-gray-600 mb-1 block">Session slot {idx + 1}</label>
-                      <input
-                        type="time"
-                        value={t}
-                        onChange={(e) => {
-                          const next = [...perDaySessionTimes];
-                          next[idx] = e.target.value;
-                          setPerDaySessionTimes(next);
-                          setError(null);
-                        }}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                        required
-                      />
+                    <div key={idx} className="min-w-0">
+                      <label className="mb-1 block text-xs text-gray-600">Session slot {idx + 1}</label>
+                      <div className="warmpawz-time-field-wrap">
+                        <input
+                          type="time"
+                          value={t}
+                          onChange={(e) => {
+                            const next = [...perDaySessionTimes];
+                            next[idx] = e.target.value;
+                            setPerDaySessionTimes(next);
+                            setError(null);
+                          }}
+                          className={scheduleFieldInputClassName}
+                          required
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-1">Time for every session</h3>
-                  <p className="text-xs text-gray-500 mb-3">
+                <div className="min-w-0">
+                  <h3 className="mb-1 font-semibold text-gray-900">Time for every session</h3>
+                  <p className="mb-3 text-xs text-gray-500">
                     Same clock time every {Number(selectedPackage.sessionIntervalDays) || 7} days for all{' '}
                     {selectedPackage.totalSessions} sessions.
                   </p>
-                  <input
-                    type="time"
-                    value={startingSessionTime}
-                    onChange={(e) => {
-                      setStartingSessionTime(e.target.value);
-                      setError(null);
-                    }}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    required
-                  />
+                  <div className="warmpawz-time-field-wrap">
+                    <input
+                      type="time"
+                      value={startingSessionTime}
+                      onChange={(e) => {
+                        setStartingSessionTime(e.target.value);
+                        setError(null);
+                      }}
+                      className={scheduleFieldInputClassName}
+                      required
+                    />
+                  </div>
                 </div>
               )
             ) : null}
