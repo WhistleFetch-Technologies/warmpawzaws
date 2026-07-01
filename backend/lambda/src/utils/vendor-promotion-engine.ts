@@ -3,6 +3,12 @@
  */
 
 import { isPromotionLiveInIst } from './promotion-date-bounds';
+import { applyMaximumDiscount } from '../discount-engine/benefits/math';
+import {
+  computeVendorBogoDiscountAmount,
+  computeVendorBundleDiscountAmount,
+  computeVendorStandardDiscountAmount,
+} from '../discount-engine/benefits/adapters/vendor-product-benefit.adapter';
 
 export type CartLineItem = {
   productId: string;
@@ -183,11 +189,7 @@ export function promotionAppliesToLine(promo: PromotionRow, item: CartLineItem):
 }
 
 function capDiscount(amount: number, promo: PromotionRow, maxBase: number): number {
-  let d = amount;
-  if (promo.max_discount_amount != null && d > promo.max_discount_amount) {
-    d = promo.max_discount_amount;
-  }
-  return Math.min(Math.max(0, d), maxBase);
+  return applyMaximumDiscount(amount, promo.max_discount_amount, maxBase);
 }
 
 function calculateBogo(promo: PromotionRow, items: CartLineItem[]): PromotionEvaluation | null {
@@ -214,7 +216,16 @@ function calculateBogo(promo: PromotionRow, items: CartLineItem[]): PromotionEva
   }
   if (discountAmount <= 0) return null;
   const subtotal = cartLineSubtotal(items);
-  discountAmount = capDiscount(discountAmount, promo, subtotal);
+  const legacyDiscount = capDiscount(discountAmount, promo, subtotal);
+  discountAmount = computeVendorBogoDiscountAmount({
+    items,
+    buyQuantity: promo.buy_quantity,
+    getQuantity: promo.get_quantity,
+    getDiscountPercent: promo.get_discount_percent,
+    maxDiscountAmount: promo.max_discount_amount,
+    originalAmount: subtotal,
+    legacyAmount: legacyDiscount,
+  });
   const desc =
     discountPercent === 100
       ? `Buy ${buyQty} Get ${getQty} FREE!`
@@ -243,7 +254,15 @@ function calculateBundle(promo: PromotionRow, items: CartLineItem[]): PromotionE
   const pct = promo.bundle_discount ?? 15;
   let discountAmount = (bundleTotal * pct) / 100;
   if (discountAmount <= 0) return null;
-  discountAmount = capDiscount(discountAmount, promo, cartLineSubtotal(items));
+  const legacyDiscount = capDiscount(discountAmount, promo, cartLineSubtotal(items));
+  discountAmount = computeVendorBundleDiscountAmount({
+    items,
+    bundleProductIds: bundleIds,
+    bundleDiscountPercent: pct,
+    maxDiscountAmount: promo.max_discount_amount,
+    originalAmount: cartLineSubtotal(items),
+    legacyAmount: legacyDiscount,
+  });
   return {
     discountAmount,
     promotionId: promo.id,
@@ -265,14 +284,23 @@ function calculateStandard(promo: PromotionRow, items: CartLineItem[]): Promotio
   if (applicable.length === 0) return null;
 
   const applicableTotal = applicable.reduce((s, i) => s + i.price * i.quantity, 0);
-  let discountAmount = 0;
+  let legacyDiscount = 0;
   if (promo.discount_type === 'percentage') {
-    discountAmount = (applicableTotal * promo.discount_value) / 100;
+    legacyDiscount = (applicableTotal * promo.discount_value) / 100;
   } else {
-    discountAmount = promo.discount_value;
+    legacyDiscount = promo.discount_value;
   }
+  if (legacyDiscount <= 0) return null;
+  const legacyCapped = capDiscount(legacyDiscount, promo, applicableTotal);
+  const discountAmount = computeVendorStandardDiscountAmount({
+    discountType: promo.discount_type,
+    discountValue: promo.discount_value,
+    applicableTotal,
+    maxDiscountAmount: promo.max_discount_amount,
+    originalAmount: cartTotal,
+    legacyAmount: legacyCapped,
+  });
   if (discountAmount <= 0) return null;
-  discountAmount = capDiscount(discountAmount, promo, applicableTotal);
 
   const desc =
     promo.discount_type === 'percentage'

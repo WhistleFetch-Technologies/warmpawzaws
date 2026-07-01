@@ -4,6 +4,13 @@
 
 import { isPromotionLiveInIst } from './promotion-date-bounds';
 import { parseJsonbStringArray } from './vendor-promotion-engine';
+import { applyMaximumDiscount } from '../discount-engine/benefits/math';
+import {
+  computePlatformPromotionDiscountAmount,
+  computeServiceComboDiscountAmount,
+  computeServiceLoyaltyDiscountAmount,
+  computeServiceStandardDiscountAmount,
+} from '../discount-engine/benefits/adapters/service-booking-benefit.adapter';
 
 export type ServicePromotionRow = {
   id: string;
@@ -90,11 +97,7 @@ function normalizeStyle(raw: unknown): string {
 }
 
 function capDiscount(amount: number, promo: ServicePromotionRow, maxBase: number): number {
-  let d = amount;
-  if (promo.max_discount_amount != null && d > promo.max_discount_amount) {
-    d = promo.max_discount_amount;
-  }
-  return Math.min(Math.max(0, d), maxBase);
+  return applyMaximumDiscount(amount, promo.max_discount_amount, maxBase);
 }
 
 export function isServicePromotionEligible(
@@ -156,9 +159,16 @@ function calculateCombo(
   if (!comboIds.every((id) => selected.includes(id))) return null;
 
   const pct = promo.combo_discount ?? promo.discount_value ?? 0;
-  let discountAmount = (ctx.bookingAmount * pct) / 100;
+  let legacyDiscount = (ctx.bookingAmount * pct) / 100;
+  if (legacyDiscount <= 0) return null;
+  const legacyCapped = capDiscount(legacyDiscount, promo, ctx.bookingAmount);
+  const discountAmount = computeServiceComboDiscountAmount({
+    bookingAmount: ctx.bookingAmount,
+    comboDiscountPercent: pct,
+    maxDiscountAmount: promo.max_discount_amount,
+    legacyAmount: legacyCapped,
+  });
   if (discountAmount <= 0) return null;
-  discountAmount = capDiscount(discountAmount, promo, ctx.bookingAmount);
 
   return {
     discountAmount,
@@ -181,10 +191,18 @@ function calculateLoyalty(
   if (required <= 0 || prior + 1 < required) return null;
 
   const pct = promo.loyalty_discount ?? promo.discount_value ?? 0;
-  let discountAmount =
+  let legacyDiscount =
     promo.discount_type === 'fixed' ? pct : (ctx.bookingAmount * pct) / 100;
+  if (legacyDiscount <= 0) return null;
+  const legacyCapped = capDiscount(legacyDiscount, promo, ctx.bookingAmount);
+  const discountAmount = computeServiceLoyaltyDiscountAmount({
+    discountType: promo.discount_type,
+    discountValue: pct,
+    bookingAmount: ctx.bookingAmount,
+    maxDiscountAmount: promo.max_discount_amount,
+    legacyAmount: legacyCapped,
+  });
   if (discountAmount <= 0) return null;
-  discountAmount = capDiscount(discountAmount, promo, ctx.bookingAmount);
 
   return {
     discountAmount,
@@ -203,14 +221,22 @@ function calculateStandardService(
 ): ServicePromotionEvaluation | null {
   if (promo.promotion_type === 'combo' || promo.promotion_type === 'loyalty') return null;
 
-  let discountAmount = 0;
+  let legacyDiscount = 0;
   if (promo.discount_type === 'percentage') {
-    discountAmount = (ctx.bookingAmount * promo.discount_value) / 100;
+    legacyDiscount = (ctx.bookingAmount * promo.discount_value) / 100;
   } else {
-    discountAmount = promo.discount_value;
+    legacyDiscount = promo.discount_value;
   }
+  if (legacyDiscount <= 0) return null;
+  const legacyCapped = capDiscount(legacyDiscount, promo, ctx.bookingAmount);
+  const discountAmount = computeServiceStandardDiscountAmount({
+    discountType: promo.discount_type,
+    discountValue: promo.discount_value,
+    bookingAmount: ctx.bookingAmount,
+    maxDiscountAmount: promo.max_discount_amount,
+    legacyAmount: legacyCapped,
+  });
   if (discountAmount <= 0) return null;
-  discountAmount = capDiscount(discountAmount, promo, ctx.bookingAmount);
 
   const desc =
     promo.discount_type === 'percentage'
@@ -302,16 +328,25 @@ export function calculatePlatformDiscount(
   const min = promo.min_order_amount != null ? parseFloat(String(promo.min_order_amount)) : 0;
   if (min > 0 && amount < min) return 0;
 
-  let discount = 0;
+  let legacyDiscount = 0;
   if (promo.discount_type === 'percentage') {
-    discount = (amount * parseFloat(String(promo.discount_value || 0))) / 100;
+    legacyDiscount = (amount * parseFloat(String(promo.discount_value || 0))) / 100;
   } else {
-    discount = parseFloat(String(promo.discount_value || 0));
+    legacyDiscount = parseFloat(String(promo.discount_value || 0));
   }
   if (promo.max_discount_amount != null) {
-    discount = Math.min(discount, parseFloat(String(promo.max_discount_amount)));
+    legacyDiscount = Math.min(legacyDiscount, parseFloat(String(promo.max_discount_amount)));
   }
-  return Math.min(Math.max(0, discount), amount);
+  const legacyCapped = Math.min(Math.max(0, legacyDiscount), amount);
+
+  return computePlatformPromotionDiscountAmount({
+    discountType: promo.discount_type,
+    discountValue: promo.discount_value,
+    amount,
+    maxDiscountAmount: promo.max_discount_amount,
+    minOrderAmount: promo.min_order_amount,
+    legacyAmount: legacyCapped,
+  });
 }
 
 export type AppliedBookingPromotion = {

@@ -22,6 +22,7 @@ import {
   listApplicableBookingPromotions,
   resolveBookingPromotions,
 } from '../lib/services/booking-promotion-service';
+import { computeCouponDiscountAmount } from '../discount-engine/benefits/adapters/coupon-benefit.adapter';
 
 export function registerPromotionEndpoints(app: Hono) {
   const normalizePromotionDiscountType = (raw: unknown): 'percentage' | 'fixed' => {
@@ -679,15 +680,26 @@ export function registerPromotionEndpoints(app: Hono) {
       }
 
       // Calculate discount
-      let discountAmount = 0;
+      let legacyDiscountAmount = 0;
       if (coupon.discount_type === 'percentage') {
-        discountAmount = (amount * parseFloat(coupon.discount_value || '0')) / 100;
+        legacyDiscountAmount = (amount * parseFloat(coupon.discount_value || '0')) / 100;
         if (coupon.max_discount_amount) {
-          discountAmount = Math.min(discountAmount, parseFloat(coupon.max_discount_amount));
+          legacyDiscountAmount = Math.min(
+            legacyDiscountAmount,
+            parseFloat(coupon.max_discount_amount)
+          );
         }
       } else if (coupon.discount_type === 'fixed') {
-        discountAmount = parseFloat(coupon.discount_value || '0');
+        legacyDiscountAmount = parseFloat(coupon.discount_value || '0');
       }
+
+      const discountAmount = computeCouponDiscountAmount({
+        discountType: coupon.discount_type,
+        discountValue: coupon.discount_value,
+        amount,
+        maxDiscountAmount: coupon.max_discount_amount,
+        legacyAmount: legacyDiscountAmount,
+      });
 
       return {
         success: true,
