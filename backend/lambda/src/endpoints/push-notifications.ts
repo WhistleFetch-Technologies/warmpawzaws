@@ -23,6 +23,7 @@ import {
 } from '../utils/firebase-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { capActiveDeviceTokens } from '../utils/device-token-hygiene';
 
 const registerDeviceSchema = z.object({
   userId: z.string().uuid(),
@@ -69,6 +70,12 @@ export function registerPushNotificationEndpoints(app: Hono) {
         isNew,
         deviceId: truncatedDeviceId,
       }));
+
+      if (platform !== 'unknown') {
+        await capActiveDeviceTokens({ userId, userType, platform }).catch((err) => {
+          console.warn('[push] device token cap failed (non-fatal):', err?.message || err);
+        });
+      }
 
       // Subscribe to relevant topics
       const topics = [

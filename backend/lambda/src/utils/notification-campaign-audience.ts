@@ -19,6 +19,10 @@ export interface AudienceFilters {
   loyalty_tier?: string;
   vendor_type?: string;
   vendor_status?: string;
+  /** When true, only users/vendors with at least one active FCM token. */
+  has_push_token?: boolean;
+  /** Optional: ios | android | web */
+  push_platform?: string;
 }
 
 export interface AudienceEstimateResult {
@@ -96,6 +100,30 @@ interface SqlParts {
   params: unknown[];
 }
 
+function appendPushTokenFilter(
+  filters: AudienceFilters,
+  conditions: string[],
+  params: unknown[],
+  userType: 'customer' | 'vendor',
+  idColumn: string
+): void {
+  if (!filters.has_push_token) return;
+  let platformClause = '';
+  if (filters.push_platform) {
+    params.push(filters.push_platform.toLowerCase());
+    platformClause = ` AND dt.platform = $${params.length}`;
+  }
+  params.push(userType);
+  conditions.push(`EXISTS (
+    SELECT 1 FROM device_tokens dt
+    WHERE dt.user_id = ${idColumn}
+      AND dt.user_type = $${params.length}
+      AND dt.is_active = true
+      AND dt.fcm_token IS NOT NULL
+      ${platformClause}
+  )`);
+}
+
 function buildCustomerSqlParts(filters: AudienceFilters): SqlParts {
   const params: unknown[] = [];
   const conditions: string[] = ['c.id IS NOT NULL', 'COALESCE(c.is_active, true) = true'];
@@ -152,6 +180,8 @@ function buildCustomerSqlParts(filters: AudienceFilters): SqlParts {
     ), 0) >= $${params.length}`);
   }
 
+  appendPushTokenFilter(filters, conditions, params, 'customer', 'c.id');
+
   return { conditions, params };
 }
 
@@ -188,6 +218,8 @@ function buildVendorSqlParts(filters: AudienceFilters): SqlParts {
     params.push(filters.vendor_status.toLowerCase());
     conditions.push(`LOWER(COALESCE(v.status, '')) = $${params.length}`);
   }
+
+  appendPushTokenFilter(filters, conditions, params, 'vendor', 'v.id');
 
   return { conditions, params };
 }
@@ -247,6 +279,14 @@ export async function estimateCampaignAudience(
     delete enriched.loyalty_tier;
   }
 
+  if (enriched.has_push_token && enriched.push_platform) {
+    const p = enriched.push_platform.toLowerCase();
+    if (!['ios', 'android', 'web'].includes(p)) {
+      warnings.push('push_platform must be ios, android, or web — filter ignored.');
+      delete enriched.push_platform;
+    }
+  }
+
   const parts = targetApp === 'CUSTOMER'
     ? buildCustomerSqlParts(enriched)
     : buildVendorSqlParts(enriched);
@@ -296,6 +336,8 @@ export function parseAudienceFilters(raw: unknown): AudienceFilters {
     loyalty_tier: obj.loyalty_tier ? String(obj.loyalty_tier) : undefined,
     vendor_type: obj.vendor_type ? String(obj.vendor_type) : undefined,
     vendor_status: obj.vendor_status ? String(obj.vendor_status) : undefined,
+    has_push_token: obj.has_push_token === true || obj.has_push_token === 'true',
+    push_platform: obj.push_platform ? String(obj.push_platform) : undefined,
   };
 }
 
@@ -308,6 +350,11 @@ export function buildAudienceFiltersPayload(body: Record<string, unknown>): Audi
     loyalty_tier: body.loyalty_tier ? String(body.loyalty_tier) : undefined,
     vendor_type: body.vendor_type ? String(body.vendor_type) : undefined,
     vendor_status: body.vendor_status ? String(body.vendor_status) : undefined,
+    has_push_token:
+      body.has_push_token === true ||
+      body.has_push_token === 'true' ||
+      body.has_push_token === 'on',
+    push_platform: body.push_platform ? String(body.push_platform) : undefined,
   });
 }
 
@@ -319,6 +366,8 @@ export function serializeAudienceFilters(filters: AudienceFilters): Record<strin
     loyalty_tier: filters.loyalty_tier || null,
     vendor_type: filters.vendor_type || null,
     vendor_status: filters.vendor_status || null,
+    has_push_token: filters.has_push_token === true,
+    push_platform: filters.push_platform || null,
   };
 }
 

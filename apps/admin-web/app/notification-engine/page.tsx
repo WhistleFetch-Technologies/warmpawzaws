@@ -55,9 +55,10 @@ const emptyForm = {
   pet_type: '',
   activity: '',
   wallet_min: '',
-  loyalty_tier: '',
   vendor_type: '',
   vendor_status: '',
+  has_push_token: false,
+  push_platform: '',
   scheduled_at_utc: '',
   timezone: 'Asia/Kolkata',
   region_ids: [] as string[],
@@ -158,9 +159,10 @@ export default function NotificationEnginePage() {
     pet_type: form.pet_type || undefined,
     activity: form.activity || undefined,
     wallet_min: form.wallet_min ? Number(form.wallet_min) : undefined,
-    loyalty_tier: form.loyalty_tier || undefined,
     vendor_type: form.vendor_type || undefined,
     vendor_status: form.vendor_status || undefined,
+    has_push_token: form.has_push_token || undefined,
+    push_platform: form.push_platform || undefined,
   });
 
   const toggleArrayValue = (key: 'region_ids' | 'city_names' | 'segment_ids', value: string) => {
@@ -494,13 +496,33 @@ export default function NotificationEnginePage() {
                       <input type="number" className="mt-1 w-full border rounded-lg px-3 py-2" value={form.wallet_min}
                         onChange={(e) => setForm({ ...form, wallet_min: e.target.value })} />
                     </div>
-                    <div>
-                      <label className="text-sm text-gray-600">Loyalty Tier</label>
-                      <input className="mt-1 w-full border rounded-lg px-3 py-2" value={form.loyalty_tier}
-                        onChange={(e) => setForm({ ...form, loyalty_tier: e.target.value })} placeholder="gold" />
-                    </div>
                   </div>
                 )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+                  <label className="flex items-center gap-2 text-sm text-gray-700 md:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={form.has_push_token}
+                      onChange={(e) => setForm({ ...form, has_push_token: e.target.checked })}
+                    />
+                    Only users with an active push token (recommended for push campaigns)
+                  </label>
+                  <div>
+                    <label className="text-sm text-gray-600">Push platform (optional)</label>
+                    <select
+                      className="mt-1 w-full border rounded-lg px-3 py-2"
+                      value={form.push_platform}
+                      onChange={(e) => setForm({ ...form, push_platform: e.target.value })}
+                      disabled={!form.has_push_token}
+                    >
+                      <option value="">Any platform</option>
+                      <option value="ios">iOS</option>
+                      <option value="android">Android</option>
+                      <option value="web">Web</option>
+                    </select>
+                  </div>
+                </div>
 
                 {form.target_app === 'VENDOR' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
