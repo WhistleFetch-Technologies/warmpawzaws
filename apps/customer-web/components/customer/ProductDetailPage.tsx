@@ -34,6 +34,13 @@ import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
 import { resolveVendorIdFromProduct } from '@/lib/ecommerce/seller-promotions';
 import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import { toast } from 'sonner';
+import {
+  ECOMMERCE_RECOMMENDATIONS_LIMIT,
+  loadProductRecommendations,
+} from '@/lib/ecommerce/load-ecommerce-recommendations';
+import { RecommendationProductScroller } from '@/components/ecommerce/shared/RecommendationProductScroller';
+import type { ShopProduct } from '@/components/shop/shop-types';
+import { shopProductToCartItem } from '@/lib/ecommerce/cart-product-helpers';
 
 interface ProductDetailPageProps {
   phone?: string;
@@ -57,7 +64,8 @@ export function ProductDetailPage({
   const [quantity, setQuantity] = useState(1);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [isWishlisted, setIsWishlisted] = useState(false);
-  const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
+  const [relatedProducts, setRelatedProducts] = useState<ShopProduct[]>([]);
+  const [recsLoading, setRecsLoading] = useState(false);
   const { addToCart, cart } = useCart();
   const router = useRouter();
 
@@ -105,19 +113,18 @@ export function ProductDetailPage({
         canonicalProductId(initialProduct) ||
         (initialProduct?.productId as string | undefined) ||
         (initialProduct?.id as string | undefined);
-      const category = initialProduct?.category || initialProduct?.category_name;
-      
-      if (category) {
-        const response = await apiClient.get<any>(`/ecommerce/products?category=${category}&limit=4`);
-        const products = response.products || response || [];
-        // Filter out current product
-        const filtered = products.filter((p: any) => 
-          (p.id || p.product_id) !== productId
-        ).slice(0, 4);
-        setRelatedProducts(filtered);
-      }
+      if (!productId) return;
+      setRecsLoading(true);
+      const products = await loadProductRecommendations(
+        productId,
+        ECOMMERCE_RECOMMENDATIONS_LIMIT,
+      );
+      setRelatedProducts(products.filter((p) => p.id !== productId));
     } catch (error) {
       console.error('Error loading related products:', error);
+      setRelatedProducts([]);
+    } finally {
+      setRecsLoading(false);
     }
   };
 
@@ -587,36 +594,19 @@ export function ProductDetailPage({
             </>
           )}
 
-          {/* Related Products */}
-          {relatedProducts.length > 0 && (
-            <>
-              <Separator />
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-3">You May Also Like</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {relatedProducts.map((relatedProduct: any) => (
-                    <Card
-                      key={relatedProduct.id || relatedProduct.product_id}
-                      onClick={() => onNavigate?.('product_detail', { product: relatedProduct })}
-                      className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-                    >
-                      <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-4xl">
-                        {relatedProduct.image || relatedProduct.image_url || '🐾'}
-                      </div>
-                      <div className="p-3">
-                        <h4 className="font-semibold text-sm text-gray-900 line-clamp-2 mb-1">
-                          {relatedProduct.name || relatedProduct.product_name}
-                        </h4>
-                        <p className="text-[#FF8C42] font-bold text-sm">
-                          ₹{parseFloat(relatedProduct.price || relatedProduct.unit_price || 0).toLocaleString()}
-                        </p>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
+          <RecommendationProductScroller
+            products={relatedProducts}
+            loading={recsLoading}
+            className="border-0 shadow-none p-0"
+            onAdd={(p) => addToCart(shopProductToCartItem(p))}
+            onProductClick={(p) => {
+              if (onNavigate) {
+                onNavigate('product_detail', { product: p });
+              } else {
+                router.push(`/shop/${encodeURIComponent(p.id)}`);
+              }
+            }}
+          />
         </div>
         </div>
       </div>
