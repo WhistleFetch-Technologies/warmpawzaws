@@ -5,9 +5,9 @@
 import { query } from '../database/rds-connection';
 import {
   normalizeDeliveryRegionsList,
-  normalizePetType,
   parseOptionalPositiveNumber,
   parseSpecificationsCsv,
+  resolveVendorPetTypeInput,
   RESERVED_SPEC_KEYS,
 } from '@warmpawz/shared-types';
 
@@ -80,14 +80,26 @@ export function buildSpecificationsFromVendorInput(
     base.key_features = String(input.key_features).trim();
   }
 
-  const petType = normalizePetType(input.pet_type);
-  if (petType) {
-    base.pet_type = petType;
-    if (petType === 'other' && input.pet_type_other != null && String(input.pet_type_other).trim()) {
-      base.pet_type_other = String(input.pet_type_other).trim();
-    } else if (petType !== 'other') {
+  const nestedSpecs =
+    input.specifications != null &&
+    typeof input.specifications === 'object' &&
+    !Array.isArray(input.specifications)
+      ? (input.specifications as Record<string, unknown>)
+      : null;
+  const resolvedPet = resolveVendorPetTypeInput(
+    input.pet_type ?? nestedSpecs?.pet_type,
+    input.pet_type_other ?? nestedSpecs?.pet_type_other,
+  );
+  if (resolvedPet.pet_type) {
+    base.pet_type = resolvedPet.pet_type;
+    if (resolvedPet.pet_type === 'other' && resolvedPet.pet_type_other) {
+      base.pet_type_other = resolvedPet.pet_type_other;
+    } else {
       delete base.pet_type_other;
     }
+  } else {
+    delete base.pet_type;
+    delete base.pet_type_other;
   }
 
   if (input.manufacturing_details != null && String(input.manufacturing_details).trim()) {

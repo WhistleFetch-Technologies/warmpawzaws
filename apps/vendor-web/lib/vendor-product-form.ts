@@ -5,7 +5,9 @@
 
 import {
   normalizeDeliveryRegionsList,
-  normalizePetType,
+  formatPetTypeForVendor,
+  resolveVendorPetTypeInput,
+  PET_TYPE_CUSTOMER_LABEL_ALL_PETS,
   RESERVED_SPEC_KEYS,
   MAX_VARIANT_ATTRIBUTES,
   MAX_SKUS_PER_PRODUCT,
@@ -13,7 +15,9 @@ import {
 } from '@warmpawz/shared-types';
 
 export type ProductMode = 'simple' | 'multi';
-export type PetTypeOption = '' | 'dog' | 'cat' | 'other';
+
+/** Suggested values for vendor pet type combobox (datalist). */
+export const VENDOR_PET_TYPE_SUGGESTIONS = ['Dog', 'Cat', PET_TYPE_CUSTOMER_LABEL_ALL_PETS] as const;
 
 export type SpecKvRow = { id: string; key: string; value: string };
 export type VariantAxisPreset = 'size' | 'color' | 'weight' | 'pack' | 'custom';
@@ -58,8 +62,7 @@ export type ProductFormState = {
   lengthCm: string;
   breadthCm: string;
   heightCm: string;
-  petType: PetTypeOption;
-  petTypeOther: string;
+  petTypeInput: string;
   manufacturingDetails: string;
 };
 
@@ -172,9 +175,12 @@ export function specificationsObjectFromForm(
     out[k] = v;
   }
   if (form.keyFeatures.trim()) out.key_features = form.keyFeatures.trim();
-  if (form.petType) out.pet_type = form.petType;
-  if (form.petType === 'other' && form.petTypeOther.trim()) {
-    out.pet_type_other = form.petTypeOther.trim();
+  const resolvedPet = resolveVendorPetTypeInput(form.petTypeInput);
+  if (resolvedPet.pet_type) {
+    out.pet_type = resolvedPet.pet_type;
+    if (resolvedPet.pet_type === 'other' && resolvedPet.pet_type_other) {
+      out.pet_type_other = resolvedPet.pet_type_other;
+    }
   }
   if (form.manufacturingDetails.trim()) {
     out.manufacturing_details = form.manufacturingDetails.trim();
@@ -478,7 +484,6 @@ export function initialProductFormState(
   product: Record<string, unknown> | null | undefined,
 ): ProductFormState {
   const specs = parseSpecificationsObject(product?.specifications);
-  const petRaw = normalizePetType(specs.pet_type ?? product?.pet_type);
   return {
     name: String(product?.name ?? ''),
     description: String(product?.description ?? ''),
@@ -502,8 +507,10 @@ export function initialProductFormState(
     lengthCm: specs.length_cm != null ? String(specs.length_cm) : '',
     breadthCm: specs.breadth_cm != null ? String(specs.breadth_cm) : '',
     heightCm: specs.height_cm != null ? String(specs.height_cm) : '',
-    petType: (petRaw || '') as PetTypeOption,
-    petTypeOther: String(specs.pet_type_other ?? product?.pet_type_other ?? ''),
+    petTypeInput: formatPetTypeForVendor(
+      specs.pet_type ?? product?.pet_type,
+      specs.pet_type_other ?? product?.pet_type_other,
+    ),
     manufacturingDetails: String(
       specs.manufacturing_details ?? product?.manufacturing_details ?? '',
     ),
@@ -621,10 +628,6 @@ export function validateProductForm(input: ValidateProductFormInput): string | n
 
   if (!form.name?.trim()) return 'Product name is required';
   if (!form.category_id) return 'Category is required';
-
-  if (form.petType === 'other' && !form.petTypeOther.trim()) {
-    return 'Please specify pet type when Other is selected';
-  }
 
   for (const field of [
     { label: 'Weight', val: form.weightKg },

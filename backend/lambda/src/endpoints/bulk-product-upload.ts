@@ -34,6 +34,7 @@ import {
   validateEcommerceProductInput,
 } from '../utils/product-ecommerce-validation';
 import { syncProductSkus } from '../utils/product-sku-service';
+import { resolveVendorPetTypeInput } from '@warmpawz/shared-types';
 import {
   groupBulkRows,
   buildSkuInputsFromGroup,
@@ -235,8 +236,16 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             length_cm: product.length_cm ?? null,
             breadth_cm: product.breadth_cm ?? null,
             height_cm: product.height_cm ?? null,
-            pet_type: product.pet_type?.trim() || null,
-            pet_type_other: product.pet_type_other?.trim() || null,
+            ...(() => {
+              const resolved = resolveVendorPetTypeInput(
+                product.pet_type,
+                product.pet_type_other,
+              );
+              return {
+                pet_type: resolved.pet_type,
+                pet_type_other: resolved.pet_type_other,
+              };
+            })(),
             manufacturing_details: product.manufacturing_details?.trim() || null,
             delivery_regions: product.delivery_regions ?? null,
           });
@@ -637,6 +646,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'imageurls': 'images',
         'image': 'images',
         'image1000x1000px': 'images',
+        'pettype': 'pet_type',
+        'pettypeother': 'pet_type_other',
         'isactive': 'is_active',
         'active': 'is_active',
         'status': 'is_active',
@@ -665,6 +676,12 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         });
 
         if (getBulkProductTitle(product)) {
+          const resolvedPet = resolveVendorPetTypeInput(
+            product.pet_type,
+            product.pet_type_other,
+          );
+          product.pet_type = resolvedPet.pet_type;
+          product.pet_type_other = resolvedPet.pet_type_other;
           products.push(product);
         }
       }

@@ -97,6 +97,7 @@ interface Product {
   delivery_regions?: string[];
   key_features?: string;
   pet_type?: string;
+  pet_type_display?: string;
   manufacturing_details?: string;
   has_variants?: boolean;
   price_from?: boolean;
@@ -1164,10 +1165,12 @@ export default function ProductDetailClient() {
                   </span>
                 </div>
               )}
-              {product.pet_type && (
+              {(product.pet_type_display || product.pet_type) && (
                 <div className="flex justify-between py-2 border-b border-slate-100">
                   <span className="text-slate-600">Pet Type</span>
-                  <span className="font-medium text-slate-900 capitalize">{product.pet_type}</span>
+                  <span className="font-medium text-slate-900">
+                    {product.pet_type_display ?? product.pet_type}
+                  </span>
                 </div>
               )}
               {product.manufacturing_details && (
