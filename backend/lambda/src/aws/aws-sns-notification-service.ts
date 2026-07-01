@@ -14,6 +14,7 @@ import { SNSClient, PublishCommand, CreatePlatformEndpointCommand } from '@aws-s
 import { query, insert, update } from '../database/rds-connection';
 import { NOTIFICATION_TEMPLATES, NotificationEvent, NotificationRecipient, PushNotificationPayload } from './constatns/interface';
 import { dispatchNotification } from '../utils/notification-dispatch';
+import { enrichTemplateDataWithIstDisplay } from '../utils/notification-display-format';
 
 
 
@@ -44,7 +45,10 @@ class PushNotificationServiceImpl {
         return false;
       }
 
-      const payload = this.buildPayloadFromTemplate(template, event.data || {});
+      const payload = this.buildPayloadFromTemplate(
+        template,
+        enrichTemplateDataWithIstDisplay(event.data || {})
+      );
       const bookingId = event.data?.bookingId || event.data?.booking_id || event.relatedId;
       const orderId = event.data?.orderId || event.data?.order_id;
 
