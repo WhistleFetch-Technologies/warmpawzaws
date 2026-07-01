@@ -32,7 +32,11 @@ import {
   writeCheckoutAddressId,
 } from '@/lib/ecommerce/checkout-address-storage';
 import { CheckoutPriceBreakdown } from '@/components/ecommerce/checkout/CheckoutPriceBreakdown';
-import { mapApiProductsList } from '@/components/shop/map-shop-product';
+import {
+  ECOMMERCE_RECOMMENDATIONS_LIMIT,
+  loadCartRecommendations,
+} from '@/lib/ecommerce/load-ecommerce-recommendations';
+import { RecommendationProductScroller } from '@/components/ecommerce/shared/RecommendationProductScroller';
 import type { ShopProduct } from '@/components/shop/shop-types';
 import {
   formatSelectedVariations,
@@ -40,7 +44,6 @@ import {
   computeCartMrpTotal,
 } from '@/lib/ecommerce/cart-product-helpers';
 import type { CheckoutAddress } from '@/components/customer/ecommerce/useEcommerceCheckout';
-import { ApiError } from '@/lib/error-handling';
 import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
 import {
   deliveryBlockMessage,
@@ -58,55 +61,6 @@ function resolveCustomerPhone(): string {
     localStorage.getItem('customerPhone') ||
     localStorage.getItem('customer_phone') ||
     ''
-  );
-}
-
-function CartRecommendationTile({
-  product,
-  onAdd,
-}: {
-  product: ShopProduct;
-  onAdd: () => void;
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const primaryImage =
-    product.images?.length && product.images[0] && !imageFailed
-      ? String(product.images[0]).trim()
-      : '';
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [product.id, product.images?.[0]]);
-
-  return (
-    <div className="snap-start shrink-0 w-36 rounded-xl border border-slate-100 p-2">
-      <div className="w-full aspect-square rounded-lg bg-slate-50 flex items-center justify-center text-2xl mb-2 overflow-hidden">
-        {primaryImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={primaryImage}
-            alt={product.name}
-            className="w-full h-full object-cover rounded-lg"
-            loading="lazy"
-            decoding="async"
-            onError={() => setImageFailed(true)}
-          />
-        ) : (
-          <span className="text-2xl">{product.emoji || '🐾'}</span>
-        )}
-      </div>
-      <p className="text-xs font-medium text-slate-900 line-clamp-2 min-h-[2.5rem]">
-        {product.name}
-      </p>
-      <p className="text-sm font-bold text-[#FF8C42] mt-1">₹{product.price}</p>
-      <button
-        type="button"
-        onClick={onAdd}
-        className="mt-2 w-full text-xs font-semibold py-1.5 rounded-lg border border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
-      >
-        Add
-      </button>
-    </div>
   );
 }
 
@@ -268,35 +222,18 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     async function loadRecommendations() {
       setRecsLoading(true);
       try {
-        let products: ShopProduct[] = [];
-        try {
-          const res = await apiClient.post<{ products?: unknown[] }>(
-            '/ecommerce/cart/recommendations',
-            {
-              items: cart.map((item) => ({
-                productId: item.id,
-                categoryId: item.categoryId || item.category,
-                quantity: item.quantity,
-                price: item.price,
-              })),
-              limit: 5,
-            }
-          );
-          products = mapApiProductsList(res?.products ?? []);
-        } catch (err) {
-          const is404 = err instanceof ApiError && err.statusCode === 404;
-          if (!is404) throw err;
-          const anchorId = cart[0]?.id;
-          if (anchorId) {
-            const fallback = await apiClient.get<{ products?: unknown[] }>(
-              `/products/${anchorId}/also-bought?limit=5`
-            );
-            products = mapApiProductsList(fallback?.products ?? []);
-          }
-        }
+        const products = await loadCartRecommendations(
+          cart.map((item) => ({
+            productId: item.id,
+            categoryId: item.categoryId || item.category,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+          ECOMMERCE_RECOMMENDATIONS_LIMIT,
+        );
         if (cancelled) return;
         const filtered = products.filter((p) => !cart.some((c) => c.id === p.id));
-        setRecommendations(filtered.slice(0, 5));
+        setRecommendations(filtered);
       } catch {
         if (!cancelled) setRecommendations([]);
       } finally {
@@ -576,24 +513,11 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               })}
             </section>
 
-            {(recsLoading || recommendations.length > 0) && (
-              <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-                <h2 className="font-semibold text-slate-900 mb-3">You may also like</h2>
-                {recsLoading ? (
-                  <p className="text-sm text-slate-400">Loading suggestions…</p>
-                ) : (
-                  <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
-                    {recommendations.map((product) => (
-                      <CartRecommendationTile
-                        key={product.id}
-                        product={product}
-                        onAdd={() => addToCart(shopProductToCartItem(product))}
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
-            )}
+            <RecommendationProductScroller
+              products={recommendations}
+              loading={recsLoading}
+              onAdd={(product) => addToCart(shopProductToCartItem(product))}
+            />
 
             <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm lg:hidden">
               <CheckoutPriceBreakdown cart={cart} pricing={pricing} showItems={false} />
