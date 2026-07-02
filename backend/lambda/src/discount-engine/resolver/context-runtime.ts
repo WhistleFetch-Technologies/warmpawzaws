@@ -4,10 +4,12 @@ import { DiscountTrigger } from '../enums/discount-trigger';
 import type { CandidateLoadContext } from '../candidates/providers/types';
 import type { CandidateRuleRuntimeContext } from '../candidates/bridges/candidate-to-rule-context';
 import type { BenefitLineItem } from '../benefits/types';
-import { contextItemsToCartLines } from '../adapters/context-mappers';
+import {
+  contextItemsToCartLines,
+  METADATA_PRIOR_VENDOR_ORDER_COUNT,
+} from '../adapters/context-mappers';
 
 export const METADATA_PRELOADED_ROWS = 'preloadedRows';
-export const METADATA_PRIOR_VENDOR_ORDER_COUNT = 'priorVendorOrderCount';
 export const METADATA_PRIOR_VENDOR_BOOKING_COUNT = 'priorVendorBookingCount';
 export const METADATA_COUPON_USAGE_COUNT = 'couponUsageCount';
 export const METADATA_EVALUATION_MODE = 'evaluationMode';

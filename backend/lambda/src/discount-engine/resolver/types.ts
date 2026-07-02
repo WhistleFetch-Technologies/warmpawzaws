@@ -35,7 +35,7 @@ export interface ResolverDiagnostics {
   usagePrepared: UsagePreparedEntry[];
 }
 
-/** Unified resolver output — no settlement, no priority, no stacking in Phase 4. */
+/** Unified resolver output — Phase 5A adds priority shadow diagnostics in metadata. */
 export interface ResolverResult extends DiscountEngineResult {
   eligibleCandidates: DiscountCandidate[];
   rejectedCandidates: DiscountCandidate[];

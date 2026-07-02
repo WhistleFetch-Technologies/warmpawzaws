@@ -17,6 +17,10 @@ import {
   discountContextToRuleRuntime,
 } from './context-runtime';
 import { prepareUsageEntries } from './usage-preparation';
+import {
+  logPriorityShadowDiagnostics,
+  runPriorityShadow,
+} from './priority-shadow';
 import type {
   CandidateBenefitOutcome,
   CandidateRuleOutcome,
@@ -25,7 +29,7 @@ import type {
 } from './types';
 import type { EligibilityResult } from '../rules/types';
 
-const RESOLVER_VERSION = 'phase-4.0';
+const RESOLVER_VERSION = 'phase-5a.0';
 
 export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
   constructor(
@@ -63,6 +67,7 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
     }
 
     const usagePrepared = prepareUsageEntries(benefitResults);
+    const priorityShadow = runPriorityShadow(context, benefitResults);
     const pipelineTimeMs = Date.now() - started;
     const totalSavings = benefitResults.reduce((s, o) => s + o.discountAmount, 0);
 
@@ -110,6 +115,7 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
         usagePrepared,
         domain: context.domain,
         trigger: context.trigger,
+        priorityShadow,
       },
     };
   }

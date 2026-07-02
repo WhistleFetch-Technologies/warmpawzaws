@@ -50,6 +50,3 @@ export interface BenefitCalculator {
   calculate(context: BenefitContext): BenefitResult;
   calculateWithStrategy(context: BenefitContext, benefitType: string): BenefitResult;
 }
-
-/** Phase 2 contract alias — calculation-only benefit. */
-export type DiscountBenefit = BenefitStrategy;

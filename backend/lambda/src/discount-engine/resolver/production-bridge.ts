@@ -1,6 +1,7 @@
 import type { DiscountContext } from '../models/discount-context';
 import type { ResolverResult } from './types';
 import { getUnifiedDiscountResolver } from './unified-discount-resolver';
+import { logPriorityShadowDiagnostics } from './priority-shadow';
 
 /**
  * Runs the unified resolver pipeline for diagnostics.
@@ -33,7 +34,12 @@ export function logResolverDiagnostics(
     rejectedCount: result.metadata?.rejectedCount,
     pipelineTimeMs: result.executionTimeMs,
     providerBreakdown: result.metadata?.providerBreakdown,
+    resolverVersion: result.resolverVersion,
   });
+  const priorityShadow = result.metadata?.priorityShadow as
+    | import('./priority-shadow').PriorityShadowDiagnostics
+    | undefined;
+  logPriorityShadowDiagnostics(label, priorityShadow ?? null);
 }
 
 /** Fire-and-forget resolver invocation alongside legacy production path. */
