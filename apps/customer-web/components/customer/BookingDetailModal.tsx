@@ -1103,17 +1103,17 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               </div>
             </div>
 
-            {/* Payment breakdown */}
-            {/* Payment breakdown — financial truth from stored booking fields */}
-            {bookingFinancial &&
-              (booking.paymentStatus === 'paid' ||
-                booking.payment_status === 'paid' ||
-                booking.paymentStatus === 'completed' ||
-                booking.payment_status === 'completed') && (
+            {/* Payment breakdown — financial truth from stored booking + payment fields */}
+            {bookingFinancial && bookingFinancial.servicePrice > 0 && (
               <BookingPricingSummary
                 financial={bookingFinancial}
                 title="Price breakdown"
-                showSavingsBanner
+                showSavingsBanner={
+                  booking.paymentStatus === 'paid' ||
+                  booking.payment_status === 'paid' ||
+                  booking.paymentStatus === 'completed' ||
+                  booking.payment_status === 'completed'
+                }
               />
             )}
 

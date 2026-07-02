@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Sparkles, Ticket } from 'lucide-react';
 import type {
   CreateKind,
@@ -30,6 +30,9 @@ const STEPS = [
 ];
 
 function enabledScopes(scope: PromotionManagementScope): TargetScopeId[] {
+  if (scope.enabledTargetScopes?.length) {
+    return scope.enabledTargetScopes;
+  }
   if (scope.mode === 'platform') {
     return [
       'entire_platform',
@@ -79,6 +82,12 @@ export function PromotionWizard({
 }) {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<PromotionWizardForm>(initial ?? DEFAULT_WIZARD_FORM());
+
+  useEffect(() => {
+    if (!open) return;
+    setStep(0);
+    setForm(initial ?? DEFAULT_WIZARD_FORM());
+  }, [open, initial]);
 
   const issues = useMemo(
     () => validatePromotionWizard(form, { existingCodes }),

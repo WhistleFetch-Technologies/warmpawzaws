@@ -78,7 +78,7 @@ export function VendorServicePromotions({
       <PromoOffersSection
         icon={Gift}
         title={vendorName ? `Offers from ${vendorName}` : 'Service offers'}
-        subtitle="Auto-applied when you book"
+        subtitle="Applied automatically on eligible services at checkout"
         offers={headlines}
       />
     </div>

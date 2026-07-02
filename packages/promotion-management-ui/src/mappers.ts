@@ -78,6 +78,17 @@ export function wizardToAdminCouponPayload(form: PromotionWizardForm) {
 
 /** Vendor service promotions */
 export function wizardToVendorServicePayload(form: PromotionWizardForm, vendorId: string) {
+  const applicableServices = [
+    ...new Set([
+      ...(form.selectedTargets.services ?? []),
+      ...(form.selectedTargets.packages ?? []),
+      ...(form.selectedTargets.meal_plans ?? []),
+    ]),
+  ];
+  const applicableStyles = form.selectedTargets.styles?.length
+    ? form.selectedTargets.styles
+    : ['all'];
+
   return {
     name: form.name.trim(),
     description: form.description.trim(),
@@ -92,8 +103,8 @@ export function wizardToVendorServicePayload(form: PromotionWizardForm, vendorId
     is_active: form.uiStatus !== 'draft' && form.uiStatus !== 'paused',
     usage_limit: form.usageLimit ?? 0,
     target_audience: form.audience,
-    applicable_services: form.selectedTargets.services ?? [],
-    applicable_service_styles: form.selectedTargets.styles ?? ['all'],
+    applicable_services: applicableServices,
+    applicable_service_styles: applicableStyles,
     combo_services: form.bundleItemIds ?? [],
     combo_discount: form.bundleDiscount,
     visits_required: form.promotionType === 'loyalty' ? 5 : undefined,

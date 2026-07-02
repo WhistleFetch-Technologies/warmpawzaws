@@ -58,6 +58,7 @@ export function PromotionDashboard({
   const [typeFilter, setTypeFilter] = useState('');
   const [domainFilter, setDomainFilter] = useState('');
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardSessionKey, setWizardSessionKey] = useState(0);
   const [editForm, setEditForm] = useState<PromotionWizardForm | undefined>();
   const [editingId, setEditingId] = useState<string | undefined>();
   const [saving, setSaving] = useState(false);
@@ -120,11 +121,12 @@ export function PromotionDashboard({
   const openCreate = () => {
     setEditForm(undefined);
     setEditingId(undefined);
+    setWizardSessionKey((k) => k + 1);
     setWizardOpen(true);
   };
 
   const openEdit = (p: NormalizedPromotionItem) => {
-    setEditForm(promotionToWizardForm(p));
+    setEditForm(promotionToWizardForm(p, catalog));
     setEditingId(p.id);
     setWizardOpen(true);
   };
@@ -134,8 +136,11 @@ export function PromotionDashboard({
     try {
       await onSave(form, publish, editingId);
       setWizardOpen(false);
+      setEditForm(undefined);
       setEditingId(undefined);
-      onRefresh();
+      setWizardSessionKey((k) => k + 1);
+      setDetailPromo(null);
+      await onRefresh();
     } finally {
       setSaving(false);
     }
@@ -276,9 +281,16 @@ export function PromotionDashboard({
                     setDetailCoupon(null);
                   }}
                   onEdit={() => openEdit(p)}
-                  onToggle={() => onTogglePromotion(p.id, !p.isActive)}
-                  onDelete={() => {
-                    if (confirm('Delete promotion?')) onDeletePromotion(p.id);
+                  onToggle={async () => {
+                    await onTogglePromotion(p.id, !p.isActive);
+                    setDetailPromo((prev) => (prev?.id === p.id ? null : prev));
+                    await onRefresh();
+                  }}
+                  onDelete={async () => {
+                    if (!confirm('Delete promotion?')) return;
+                    await onDeletePromotion(p.id);
+                    setDetailPromo((prev) => (prev?.id === p.id ? null : prev));
+                    await onRefresh();
                   }}
                 />
               ))
@@ -288,8 +300,13 @@ export function PromotionDashboard({
       </div>
 
       <PromotionWizard
+        key={editingId ?? `create-${wizardSessionKey}`}
         open={wizardOpen}
-        onClose={() => setWizardOpen(false)}
+        onClose={() => {
+          setWizardOpen(false);
+          setEditForm(undefined);
+          setEditingId(undefined);
+        }}
         scope={scope}
         catalog={catalog}
         initial={editForm}

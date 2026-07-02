@@ -50,6 +50,39 @@ function parseServicesList(raw: unknown): string[] {
   return [];
 }
 
+/**
+ * Vendor promotions store vendor_services.id in applicable_services.
+ * Callers may send either vendor_services.id or catalog services.service_id — normalize to vendor_services.id.
+ */
+export async function normalizeBookingServiceIds(
+  vendorId: string,
+  serviceIds: string[]
+): Promise<string[]> {
+  const unique = [...new Set(serviceIds.map((x) => String(x).trim()).filter(Boolean))];
+  if (!vendorId || unique.length === 0) return unique;
+
+  try {
+    const res = await query(
+      `SELECT id::text AS vendor_service_id, service_id::text AS catalog_service_id
+       FROM vendor_services
+       WHERE vendor_id = $1::uuid
+         AND (id::text = ANY($2::text[]) OR service_id::text = ANY($2::text[]))`,
+      [vendorId, unique]
+    );
+    const idMap = new Map<string, string>();
+    for (const row of (res as { rows?: Record<string, unknown>[] }).rows || []) {
+      const vsId = String(row.vendor_service_id || '');
+      if (!vsId) continue;
+      idMap.set(vsId, vsId);
+      const catalogId = row.catalog_service_id ? String(row.catalog_service_id) : '';
+      if (catalogId) idMap.set(catalogId, vsId);
+    }
+    return unique.map((id) => idMap.get(id) || id);
+  } catch {
+    return unique;
+  }
+}
+
 function platformPromoMatchesContext(
   row: Record<string, unknown>,
   params: { category?: string; serviceStyle?: string; serviceIds: string[]; amount: number }
@@ -166,30 +199,36 @@ async function loadPlatformPromotions(
 export async function resolveBookingPromotions(
   params: ResolveBookingPromotionsParams
 ): Promise<BookingPromotionResult> {
+  const normalizedServiceIds = await normalizeBookingServiceIds(
+    params.vendorId,
+    params.serviceIds
+  );
+  const resolvedParams = { ...params, serviceIds: normalizedServiceIds };
+
   const priorVendorBookingCount =
-    params.customerId && params.vendorId
-      ? await countPriorVendorBookings(params.customerId, params.vendorId)
+    resolvedParams.customerId && resolvedParams.vendorId
+      ? await countPriorVendorBookings(resolvedParams.customerId, resolvedParams.vendorId)
       : 0;
 
-  const vendorPromotions = await loadVendorServicePromotions(params.vendorId);
-  const platformPromotions = await loadPlatformPromotions(params);
+  const vendorPromotions = await loadVendorServicePromotions(resolvedParams.vendorId);
+  const platformPromotions = await loadPlatformPromotions(resolvedParams);
 
   const legacy = calculateBookingPromotionsStack({
     vendorPromotions,
     platformPromotions,
     ctx: {
-      vendorId: params.vendorId,
-      customerId: params.customerId,
-      serviceIds: params.serviceIds,
-      serviceStyle: params.serviceStyle,
-      bookingAmount: params.amount,
+      vendorId: resolvedParams.vendorId,
+      customerId: resolvedParams.customerId,
+      serviceIds: resolvedParams.serviceIds,
+      serviceStyle: resolvedParams.serviceStyle,
+      bookingAmount: resolvedParams.amount,
       priorVendorBookingCount,
     },
   });
 
   invokeResolverAlongsideLegacy(
     'resolveBookingPromotions',
-    resolveBookingParamsToDiscountContext(params, {
+    resolveBookingParamsToDiscountContext(resolvedParams, {
       metadata: {
         [METADATA_PRIOR_VENDOR_BOOKING_COUNT]: priorVendorBookingCount,
       },
@@ -215,23 +254,29 @@ export type ApplicablePromotionOffer = {
 export async function listApplicableBookingPromotions(
   params: ResolveBookingPromotionsParams
 ): Promise<ApplicablePromotionOffer[]> {
+  const normalizedServiceIds = await normalizeBookingServiceIds(
+    params.vendorId,
+    params.serviceIds
+  );
+  const resolvedParams = { ...params, serviceIds: normalizedServiceIds };
+
   const priorVendorBookingCount =
-    params.customerId && params.vendorId
-      ? await countPriorVendorBookings(params.customerId, params.vendorId)
+    resolvedParams.customerId && resolvedParams.vendorId
+      ? await countPriorVendorBookings(resolvedParams.customerId, resolvedParams.vendorId)
       : 0;
 
-  const vendorPromotions = await loadVendorServicePromotions(params.vendorId);
-  const platformPromotions = await loadPlatformPromotions(params);
+  const vendorPromotions = await loadVendorServicePromotions(resolvedParams.vendorId);
+  const platformPromotions = await loadPlatformPromotions(resolvedParams);
 
   const { evaluateAllServicePromotions, calculatePlatformDiscount } = await import(
     '../../utils/service-promotion-engine'
   );
   const ctx = {
-    vendorId: params.vendorId,
-    customerId: params.customerId,
-    serviceIds: params.serviceIds,
-    serviceStyle: params.serviceStyle,
-    bookingAmount: params.amount,
+    vendorId: resolvedParams.vendorId,
+    customerId: resolvedParams.customerId,
+    serviceIds: resolvedParams.serviceIds,
+    serviceStyle: resolvedParams.serviceStyle,
+    bookingAmount: resolvedParams.amount,
     priorVendorBookingCount,
   };
 
@@ -253,7 +298,7 @@ export async function listApplicableBookingPromotions(
     }));
 
   const afterVendor =
-    params.amount - (vendorOffers[0]?.discountAmount ?? 0);
+    resolvedParams.amount - (vendorOffers[0]?.discountAmount ?? 0);
 
   const platformOffers: ApplicablePromotionOffer[] = platformPromotions
     .map((p) => ({
@@ -273,7 +318,7 @@ export async function listApplicableBookingPromotions(
       isSpotlight: promo.is_spotlight === true,
     }));
 
-  invokeListApplicableResolver(params, priorVendorBookingCount);
+  invokeListApplicableResolver(resolvedParams, priorVendorBookingCount);
 
   return [...vendorOffers, ...platformOffers];
 }

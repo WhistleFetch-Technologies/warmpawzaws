@@ -138,6 +138,8 @@ export type PromotionManagementScope = {
   canManageCoupons: boolean;
   canManagePlatformTargets: boolean;
   domains: PromotionDomain[];
+  /** When set, limits target tabs in the wizard (vendor business type / capabilities). */
+  enabledTargetScopes?: TargetScopeId[];
 };
 
 export const DEFAULT_WIZARD_FORM = (): PromotionWizardForm => ({

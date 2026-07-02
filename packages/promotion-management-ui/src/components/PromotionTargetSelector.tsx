@@ -191,7 +191,9 @@ export function PromotionTargetSelector({
                     className="rounded text-orange-500"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-slate-900 truncate">{o.label}</p>
+                    <p className="font-medium text-slate-900 truncate">
+                      {o.label?.trim() ? o.label : 'Unnamed item'}
+                    </p>
                     {o.subtitle ? (
                       <p className="text-xs text-slate-500 truncate">{o.subtitle}</p>
                     ) : null}

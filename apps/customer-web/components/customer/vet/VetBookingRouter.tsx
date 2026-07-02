@@ -1671,7 +1671,9 @@ export function VetBookingRouter({
                   vendorId={vendorId || doctorId}
                   customerId={customerId}
                   serviceIds={(allSelectedServices?.length ? allSelectedServices : [selectedServiceOption])
-                    .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+                    .map((s: any) =>
+                      String(s?.id || s?.vendorServiceId || s?.serviceId || s?.service_id || '').trim()
+                    )
                     .filter(Boolean)}
                   baseAmount={allSelectedServices?.length
                     ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0)

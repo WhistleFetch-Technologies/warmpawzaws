@@ -31,6 +31,8 @@ export type BuildCheckoutPriceLinesParams = {
   razorpayOffer?: { title: string; amount: number };
   walletAmount?: number;
   finalAmount: number;
+  /** When set and discounts apply, inserts a subtotal row after discounts and before taxes/fees. */
+  subtotalAfterDiscounts?: number;
 };
 
 export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): PriceBreakdownLine[] {
@@ -48,6 +50,7 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
     razorpayOffer,
     walletAmount = 0,
     finalAmount,
+    subtotalAfterDiscounts,
   } = params;
 
   const lines: PriceBreakdownLine[] = [
@@ -90,6 +93,20 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
     });
   }
 
+  if (
+    subtotalAfterDiscounts != null &&
+    subtotalAfterDiscounts > 0 &&
+    promoSavings > 0 &&
+    subtotalAfterDiscounts < subtotal
+  ) {
+    lines.push({
+      kind: 'subtotal',
+      label: 'Subtotal',
+      amount: subtotalAfterDiscounts,
+      emphasis: 'default',
+    });
+  }
+
   if (taxBreakdown.isInterState) {
     lines.push({
       kind: 'tax',
@@ -114,6 +131,24 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
         emphasis: 'muted',
       });
     }
+  }
+
+  const splitTax = taxBreakdown.cgst + taxBreakdown.sgst + taxBreakdown.igst;
+  if (taxBreakdown.totalTax > 0 && splitTax <= 0) {
+    lines.push({
+      kind: 'tax',
+      label: 'Total tax',
+      amount: taxBreakdown.totalTax,
+      emphasis: 'muted',
+    });
+  } else if (taxBreakdown.totalTax > 0 && splitTax > 0 && splitTax !== taxBreakdown.totalTax) {
+    lines.push({
+      kind: 'tax',
+      label: 'Total tax',
+      amount: taxBreakdown.totalTax,
+      emphasis: 'muted',
+      indent: true,
+    });
   }
 
   if (platformFees.platformFee > 0) {

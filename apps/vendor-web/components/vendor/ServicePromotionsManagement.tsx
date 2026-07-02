@@ -5,6 +5,7 @@ import { ServicePromotionsHub } from './promotions/ServicePromotionsHub';
 interface ServicePromotionsManagementProps {
   vendorId: string;
   vendorRole?: string;
+  roleId?: string;
   onBack?: () => void;
 }
 

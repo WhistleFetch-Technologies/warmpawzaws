@@ -26,10 +26,49 @@ import {
   ensureDedicatedEndSessionOtp,
 } from '../../../lib/booking-dedicated-end-otp';
 import {
+  breakdownFromFeeBreakdownJson,
+  breakdownFromPaymentColumns,
+  hasMeaningfulCustomerPaidBreakdown,
+} from '../../../utils/vendor-accrual-fee-breakdown';
+import {
   packageFieldsFromBookingRow,
   SQL_PACKAGE_PURCHASE_JOIN,
   SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../utils/customer-booking-package-fields';
+
+async function loadCustomerPaymentFeeFields(bookingId: string): Promise<Record<string, number>> {
+  try {
+    const pr = await query(
+      `SELECT platform_fee, convenience_fee, delivery_fee, cgst_amount, sgst_amount, igst_amount, gst_amount, fee_breakdown
+       FROM payments
+       WHERE booking_id = $1::uuid
+         AND LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', 'paid', 'success')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [bookingId]
+    );
+    const row = pr.rows?.[0];
+    if (!row) return {};
+
+    let breakdown = breakdownFromPaymentColumns(row);
+    if (!hasMeaningfulCustomerPaidBreakdown(breakdown)) {
+      breakdown = breakdownFromFeeBreakdownJson(row.fee_breakdown);
+    }
+    if (!hasMeaningfulCustomerPaidBreakdown(breakdown)) return {};
+
+    return {
+      platform_fee: breakdown.platformFee,
+      convenience_fee: breakdown.convenienceFee,
+      delivery_fee: breakdown.deliveryFee,
+      cgst_amount: breakdown.cgstAmount,
+      sgst_amount: breakdown.sgstAmount,
+      igst_amount: breakdown.igstAmount,
+      gst_amount: breakdown.gstTotal,
+    };
+  } catch {
+    return {};
+  }
+}
 
 /**
  * bookings.service_id usually references vendor_services.id (FK).
@@ -346,6 +385,7 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
       const totalAmountNum =
         booking.total_amount != null ? parseFloat(String(booking.total_amount)) : undefined;
       const paymentSources = await resolveBookingPaymentSources(bookingId, totalAmountNum);
+      const paymentFeeFields = await loadCustomerPaymentFeeFields(bookingId);
 
       return c.json({
         success: true,
@@ -442,6 +482,14 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           totalAmount: booking.total_amount != null ? parseFloat(booking.total_amount) : undefined,
           price: booking.total_amount != null ? parseFloat(booking.total_amount) : (booking.base_price != null ? parseFloat(booking.base_price) : undefined),
           base_price: booking.base_price != null ? parseFloat(booking.base_price) : undefined,
+          basePrice: booking.base_price != null ? parseFloat(booking.base_price) : undefined,
+          discount_amount: booking.discount_amount != null ? parseFloat(booking.discount_amount) : undefined,
+          discountAmount: booking.discount_amount != null ? parseFloat(booking.discount_amount) : undefined,
+          tax_amount: booking.tax_amount != null ? parseFloat(booking.tax_amount) : undefined,
+          taxAmount: booking.tax_amount != null ? parseFloat(booking.tax_amount) : undefined,
+          coupon_code: booking.coupon_code ?? undefined,
+          couponCode: booking.coupon_code ?? undefined,
+          ...paymentFeeFields,
           paymentSources,
           ...packageFieldsFromBookingRow(booking),
         }
@@ -529,6 +577,8 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         [bookingId, customerId]
       );
 
+      const paymentFeeFields = await loadCustomerPaymentFeeFields(bookingId);
+
       return c.json({
         success: true,
         booking: {
@@ -605,6 +655,7 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           loyaltyPointsUsed: booking.loyalty_points_used,
           couponCode: booking.coupon_code,
           notes: booking.notes,
+          ...paymentFeeFields,
           cancellationReason: booking.cancellation_reason,
           createdAt: booking.created_at,
           completedAt: booking.completed_at,

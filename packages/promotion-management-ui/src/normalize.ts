@@ -1,4 +1,10 @@
-import type { NormalizedCouponItem, NormalizedPromotionItem, PromotionWizardForm } from './types';
+import type {
+  NormalizedCouponItem,
+  NormalizedPromotionItem,
+  PromotionTargetCatalog,
+  PromotionWizardForm,
+  TargetScopeId,
+} from './types';
 import { DEFAULT_WIZARD_FORM } from './types';
 
 function pickDate(...vals: unknown[]): string {
@@ -6,6 +12,28 @@ function pickDate(...vals: unknown[]): string {
     if (v && typeof v === 'string') return v.split('T')[0];
   }
   return new Date().toISOString().split('T')[0];
+}
+
+function parseJsonArray(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function uiStatusFromPromotion(p: NormalizedPromotionItem): PromotionWizardForm['uiStatus'] {
+  if (!p.isActive) return 'paused';
+  const today = new Date().toISOString().split('T')[0];
+  if (p.startDate > today) return 'scheduled';
+  if (p.endDate < today) return 'expired';
+  return 'active';
 }
 
 export function normalizePromotionRow(row: Record<string, unknown>): NormalizedPromotionItem {
@@ -75,14 +103,45 @@ function summarizeTargets(row: Record<string, unknown>): string {
   return parts.length ? parts.join(' · ') : 'Custom targets';
 }
 
-export function promotionToWizardForm(p: NormalizedPromotionItem): PromotionWizardForm {
+export function promotionToWizardForm(
+  p: NormalizedPromotionItem,
+  catalog?: PromotionTargetCatalog
+): PromotionWizardForm {
   const base = DEFAULT_WIZARD_FORM();
   const raw = p.raw ?? {};
+
+  const applicableIds = parseJsonArray(raw.applicable_services ?? raw.applicableServices);
+  const packageIdSet = new Set((catalog?.packages ?? []).map((x) => x.id));
+  const serviceIdSet = new Set((catalog?.services ?? []).map((x) => x.id));
+  const mealPlanIdSet = new Set((catalog?.mealPlans ?? []).map((x) => x.id));
+
+  const packages = applicableIds.filter((id) => packageIdSet.has(id));
+  const mealPlans = applicableIds.filter((id) => mealPlanIdSet.has(id));
+  const services = applicableIds.filter(
+    (id) => !packageIdSet.has(id) && !mealPlanIdSet.has(id)
+  );
+
+  const styleIds = parseJsonArray(raw.applicable_service_styles ?? raw.applicableServiceStyles).filter(
+    (id) => id !== 'all'
+  );
+
+  const targetScopes: TargetScopeId[] = [];
+  if (applicableIds.length === 0 && styleIds.length === 0) {
+    targetScopes.push('services');
+  } else {
+    if (services.length > 0) targetScopes.push('services');
+    if (packages.length > 0) targetScopes.push('packages');
+    if (mealPlans.length > 0) targetScopes.push('meal_plans');
+    if (styleIds.length > 0) targetScopes.push('styles');
+  }
+  if (targetScopes.length === 0) targetScopes.push('services');
+
   return {
     ...base,
     createKind: p.kind,
     name: p.name,
     description: p.description ?? '',
+    uiStatus: uiStatusFromPromotion(p),
     promotionType: (p.promotionType as PromotionWizardForm['promotionType']) || 'percentage',
     audience: (p.audience as PromotionWizardForm['audience']) || 'all',
     discountType: p.discountType,
@@ -95,11 +154,12 @@ export function promotionToWizardForm(p: NormalizedPromotionItem): PromotionWiza
     startDate: p.startDate,
     endDate: p.endDate,
     autoApply: p.kind === 'promotion',
-    targetScopes: raw.applicable_to ? [String(raw.applicable_to) as PromotionWizardForm['targetScopes'][0]] : ['entire_platform'],
+    targetScopes,
     selectedTargets: {
-      services: Array.isArray(raw.applicable_services) ? raw.applicable_services.map(String) : undefined,
-      products: Array.isArray(raw.applicable_products) ? raw.applicable_products.map(String) : undefined,
-      categories: Array.isArray(raw.applicable_categories) ? raw.applicable_categories.map(String) : undefined,
+      services: services.length ? services : undefined,
+      packages: packages.length ? packages : undefined,
+      meal_plans: mealPlans.length ? mealPlans : undefined,
+      styles: styleIds.length ? styleIds : undefined,
     },
   };
 }
