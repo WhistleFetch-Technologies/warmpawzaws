@@ -23,6 +23,10 @@ import {
   formatPriceWithSymbol,
   customerBookingStatusShowsCheckInOtp,
 } from '@/lib/booking-display-utils';
+import {
+  formatIstBookingCompletedLine,
+  formatIstBookingWhen,
+} from '@/lib/ist-display-format';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 import { useRouter } from 'next/navigation';
@@ -734,8 +738,14 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                     {booking.status === 'completed' &&
                     isTeleBookingRowAlt(booking) &&
                     booking.completedAt
-                      ? `${new Date(booking.bookingDate).toLocaleDateString()} · Completed ${new Date(booking.completedAt).toLocaleString()}`
-                      : `${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.bookingTime}`}
+                      ? formatIstBookingCompletedLine(
+                          String(booking.bookingDate || '').slice(0, 10),
+                          booking.completedAt,
+                        )
+                      : formatIstBookingWhen(
+                          String(booking.bookingDate || '').slice(0, 10),
+                          String(booking.bookingTime || ''),
+                        )}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1350,8 +1360,14 @@ function RescheduleModal({
               {booking.status === 'completed' &&
               isTeleBookingRowAlt(booking) &&
               booking.completedAt
-                ? `${new Date(booking.bookingDate).toLocaleDateString()} · Completed ${new Date(booking.completedAt).toLocaleString()}`
-                : `${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.bookingTime}`}
+                ? formatIstBookingCompletedLine(
+                    String(booking.bookingDate || '').slice(0, 10),
+                    booking.completedAt,
+                  )
+                : formatIstBookingWhen(
+                    String(booking.bookingDate || '').slice(0, 10),
+                    String(booking.bookingTime || ''),
+                  )}
             </p>
           </div>
 
