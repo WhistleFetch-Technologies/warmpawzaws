@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   CreditCard, Wallet, Tag, ChevronRight,
   CheckCircle2, Shield, X, Percent, Info, MapPin,
@@ -26,6 +26,11 @@ import { PaymentPageHeader } from './PaymentPageHeader';
 import { PaymentProviderSection } from './PaymentProviderSection';
 import { PaymentBookingSummarySection } from './PaymentBookingSummarySection';
 import { paymentPageBgClass, paymentSecondaryCardClass } from './payment-page-styles';
+import { PriceBreakdown } from '@/components/customer/pricing/PriceBreakdown';
+import {
+  buildCheckoutPriceLines,
+  checkoutTotalSavings,
+} from '@/lib/pricing/checkout-price-breakdown';
 import {
   digitsToRazorpayContactE164,
   RAZORPAY_PREFILL_EMAIL_FALLBACK,
@@ -1588,6 +1593,59 @@ export function UniversalPaymentPage({
     : isMealPay
       ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount - walletAmount)
       : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
+
+  const checkoutVendorDiscount =
+    type === 'booking' && bookingPromoStack
+      ? bookingPromoStack.vendorDiscount ?? 0
+      : promotionDiscount;
+  const checkoutPlatformDiscount =
+    type === 'booking' && bookingPromoStack ? bookingPromoStack.platformDiscount ?? 0 : 0;
+
+  const checkoutPriceLines = useMemo(
+    () =>
+      buildCheckoutPriceLines({
+        subtotalLabel: priceIncludesTax ? 'Taxable value (excl. GST)' : 'Service price',
+        subtotal: taxBreakdown.subtotal,
+        vendorDiscount: checkoutVendorDiscount,
+        vendorDiscountLabel: appliedPromotion?.title
+          ? `Vendor promotion · ${appliedPromotion.title}`
+          : 'Vendor promotion',
+        platformDiscount: checkoutPlatformDiscount,
+        couponDiscount,
+        couponCode: appliedCoupon?.code,
+        taxBreakdown,
+        platformFees,
+        includeDeliveryFee: type !== 'meal_subscription' && type !== 'meal_one_time',
+        razorpayOffer: selectedRazorpayOffer
+          ? { title: selectedRazorpayOffer.title, amount: razorpayOfferDiscount }
+          : undefined,
+        walletAmount,
+        finalAmount,
+      }),
+    [
+      priceIncludesTax,
+      taxBreakdown,
+      checkoutVendorDiscount,
+      checkoutPlatformDiscount,
+      appliedPromotion?.title,
+      couponDiscount,
+      appliedCoupon?.code,
+      platformFees,
+      type,
+      selectedRazorpayOffer,
+      razorpayOfferDiscount,
+      walletAmount,
+      finalAmount,
+    ]
+  );
+
+  const checkoutSavingsTotal = checkoutTotalSavings({
+    vendorDiscount: checkoutVendorDiscount,
+    platformDiscount: checkoutPlatformDiscount,
+    couponDiscount,
+    walletAmount,
+    razorpayOfferAmount: razorpayOfferDiscount,
+  });
 
   const getPaymentSuccessMeta = (gatewayMethod?: string | null) => {
     const paymentSources = buildCheckoutPaymentSources({
@@ -3569,156 +3627,17 @@ export function UniversalPaymentPage({
 
         {/* Price Breakdown */}
         <div className={paymentSecondaryCardClass}>
-          <h2 className="font-semibold text-gray-900 mb-4">Price Details</h2>
           {priceIncludesTax && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
               List price includes GST. Taxable value and GST below add up to the amount you pay (before coupons/wallet).
             </p>
           )}
-
-          <div className="space-y-3">
-            <div className="flex justify-between text-gray-600">
-              <span>{priceIncludesTax ? 'Taxable value (excl. GST)' : 'Subtotal'}</span>
-              <span>₹{taxBreakdown.subtotal.toFixed(2)}</span>
-            </div>
-
-            {/* âœ… FIX: Vendor Discount - Applied directly by vendor at service level */}
-            {appliedPromotion && (
-              <div className="flex justify-between text-green-600">
-                <span className="flex items-center gap-1">
-                  <Sparkles className="w-4 h-4" />
-                  <span className="font-medium">Vendor Offer:</span> {appliedPromotion.title}
-                </span>
-                <span className="font-medium">-₹{promotionDiscount.toFixed(2)}</span>
-              </div>
-            )}
-
-            {/* âœ… FIX: Platform Coupon - Applied at checkout level by platform */}
-            {appliedCoupon && (
-              <div className="flex justify-between text-blue-600">
-                <span className="flex items-center gap-1">
-                  <Percent className="w-4 h-4" />
-                  <span className="font-medium">Platform Coupon:</span> {appliedCoupon.code}
-                </span>
-                <span className="font-medium">-₹{couponDiscount.toFixed(2)}</span>
-              </div>
-            )}
-
-            {/* GST Breakdown */}
-            {taxBreakdown.isInterState ? (
-              <div className="flex justify-between text-gray-600">
-                <span className="flex items-center gap-1">
-                  IGST ({taxBreakdown.taxRate}%)
-                  <Info className="w-3 h-3 text-gray-400" />
-                </span>
-                <span>₹{taxBreakdown.igst.toFixed(2)}</span>
-              </div>
-            ) : (
-              <>
-                <div className="flex justify-between text-gray-600">
-                  <span className="flex items-center gap-1">
-                    CGST ({taxBreakdown.taxRate / 2}%)
-                  </span>
-                  <span>₹{taxBreakdown.cgst.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-gray-600">
-                  <span className="flex items-center gap-1">
-                    SGST ({taxBreakdown.taxRate / 2}%)
-                  </span>
-                  <span>₹{taxBreakdown.sgst.toFixed(2)}</span>
-                </div>
-              </>
-            )}
-
-            {/* âœ… FIX GAP-7.1: Platform Discount (shown separately from vendor discount) */}
-            {appliedPromotion && promotionDiscount > 0 && (
-              <div className="flex justify-between text-blue-600">
-                <span className="flex items-center gap-1">
-                  <Gift className="w-4 h-4" />
-                  Platform Discount
-                </span>
-                <span>-₹{promotionDiscount.toFixed(2)}</span>
-              </div>
-            )}
-
-            {/* Platform Fees */}
-            {platformFees.platformFee > 0 && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-gray-600">
-                  <span className="flex items-center gap-1">
-                    Platform Fee
-                    <Info className="w-3 h-3 text-gray-400 cursor-help" aria-label="Platform service charge" />
-                  </span>
-                  <span>₹{platformFees.platformFee.toFixed(2)}</span>
-                </div>
-                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
-                  Platform fee is not refundable.
-                </p>
-              </div>
-            )}
-
-            {platformFees.convenienceFee > 0 && (
-              <div className="flex justify-between text-gray-600">
-                <span className="flex items-center gap-1">
-                  Convenience Fee
-                  <Info className="w-3 h-3 text-gray-400 cursor-help" aria-label="Online booking convenience charge" />
-                </span>
-                <span>₹{platformFees.convenienceFee.toFixed(2)}</span>
-              </div>
-            )}
-
-            {platformFees.deliveryFee > 0 && type !== 'meal_subscription' && type !== 'meal_one_time' && (
-              <div className="flex justify-between text-gray-600">
-                <span className="flex items-center gap-1">
-                  Delivery Fee
-                </span>
-                <span>₹{platformFees.deliveryFee.toFixed(2)}</span>
-              </div>
-            )}
-
-            {platformFees.packagingFee > 0 && (
-              <div className="flex justify-between text-gray-600">
-                <span className="flex items-center gap-1">
-                  Packaging Fee
-                </span>
-                <span>₹{platformFees.packagingFee.toFixed(2)}</span>
-              </div>
-            )}
-
-            {/* Razorpay Offer Discount */}
-            {selectedRazorpayOffer && (
-              <div className="flex justify-between text-blue-600">
-                <span className="flex items-center gap-1">
-                  <Gift className="w-4 h-4" />
-                  {selectedRazorpayOffer.title}
-                </span>
-                <span>-₹{razorpayOfferDiscount.toFixed(2)}</span>
-              </div>
-            )}
-
-            {/* Wallet */}
-            {useWallet && walletAmount > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span className="flex items-center gap-1">
-                  <Wallet className="w-4 h-4" />
-                  Wallet
-                </span>
-                <span>-₹{walletAmount.toFixed(2)}</span>
-              </div>
-            )}
-
-            <div className="mt-4 border-t border-[#EDE9E3] pt-4">
-              <div className="flex justify-between text-lg font-bold">
-                <span className="text-gray-900">Total Amount</span>
-                <span className="text-[#FF8C42]">₹{finalAmount.toFixed(2)}</span>
-              </div>
-              {(promotionDiscount > 0 || couponDiscount > 0 || walletAmount > 0 || razorpayOfferDiscount > 0) && (
-                <p className="text-sm text-green-600 mt-1">
-                  You save ₹{(promotionDiscount + couponDiscount + walletAmount + razorpayOfferDiscount).toFixed(2)} on this {type}!
-                </p>
-              )}
-            </div>
-          </div>
+          <PriceBreakdown lines={checkoutPriceLines} title="Price details" />
+          {checkoutSavingsTotal > 0 && (
+            <p className="text-sm text-green-600 mt-3 px-1">
+              You save ₹{checkoutSavingsTotal.toFixed(2)} on this {type}!
+            </p>
+          )}
         </div>
 
         {/* Payment & refund policy summary (dynamic from backend) */}

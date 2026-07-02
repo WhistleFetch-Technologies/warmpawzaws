@@ -1,0 +1,19 @@
+{
+  "name": "@warmpawz/promotion-management-ui",
+  "version": "1.0.0",
+  "description": "Shared promotion management UI for admin and vendor portals",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "lucide-react": ">=0.400.0",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "typescript": "^5.0.0"
+  }
+}

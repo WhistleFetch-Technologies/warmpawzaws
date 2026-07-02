@@ -1,0 +1,46 @@
+'use client';
+
+import type { PromotionWizardForm } from '../types';
+
+function row(label: string, value: string) {
+  return (
+    <div className="flex justify-between gap-4 text-sm py-1.5 border-b border-slate-50 last:border-0">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-medium text-slate-900 text-right">{value}</span>
+    </div>
+  );
+}
+
+export function PromotionSummary({ form }: { form: PromotionWizardForm }) {
+  const discount =
+    form.discountType === 'percentage'
+      ? `${form.discountValue}%${form.maxDiscount ? ` (max ₹${form.maxDiscount})` : ''}`
+      : `₹${form.discountValue}`;
+
+  const targets =
+    form.targetScopes.includes('entire_platform')
+      ? 'Entire platform'
+      : form.targetScopes
+          .map((s) => {
+            const n = form.selectedTargets[s]?.length ?? 0;
+            return n > 0 ? `${n} ${s.replace('_', ' ')}` : s;
+          })
+          .join(', ');
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-1">
+      <h4 className="text-sm font-semibold text-slate-900 mb-2">Summary</h4>
+      {row('Type', form.createKind === 'coupon' ? 'Coupon' : 'Promotion (auto-applied)')}
+      {row('Name', form.name || '—')}
+      {form.createKind === 'coupon' ? row('Code', form.code || '—') : null}
+      {row('Offer', form.promotionType.replace(/_/g, ' '))}
+      {row('Discount', discount)}
+      {row('Audience', form.audience.replace(/_/g, ' '))}
+      {row('Targets', targets)}
+      {form.minAmount ? row('Min amount', `₹${form.minAmount}`) : null}
+      {form.usageLimit ? row('Usage limit', String(form.usageLimit)) : null}
+      {row('Schedule', `${form.startDate} → ${form.endDate}`)}
+      {row('Status', form.uiStatus)}
+    </div>
+  );
+}

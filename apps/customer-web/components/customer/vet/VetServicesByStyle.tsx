@@ -829,6 +829,11 @@ export function VetServicesByStyle({
                               <ServicePricingDisplay
                                 basePrice={service.originalPrice || service.price}
                                 vendorDiscount={service.vendorDiscount}
+                                usePromoQuote
+                                vendorId={vendorId || undefined}
+                                serviceId={String(service.id || service.serviceId || '')}
+                                customerId={phone}
+                                serviceStyle={serviceStyle}
                                 className="mb-1"
                               />
                               <p className="mt-0.5 w-full text-[11px] leading-4 text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
@@ -1210,6 +1215,11 @@ export function VetServicesByStyle({
                             <ServicePricingDisplay
                               basePrice={service.originalPrice || service.price}
                               vendorDiscount={service.vendorDiscount}
+                              usePromoQuote
+                              vendorId={String(provider.vendorId || vendorId || '')}
+                              serviceId={String(service.id || service.serviceId || '')}
+                              customerId={phone}
+                              serviceStyle={serviceStyle}
                               className="mb-1"
                             />
                             <p className="mb-2 text-[11px] leading-4 text-gray-500 break-words">

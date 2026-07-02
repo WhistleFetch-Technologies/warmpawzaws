@@ -17,6 +17,10 @@ import {
   formatPriceWithSymbol,
   customerBookingStatusShowsCheckInOtp,
 } from '@/lib/booking-display-utils';
+import { PriceDisplay } from '@/components/customer/pricing/PriceDisplay';
+import { SavingsBadge } from '@/components/customer/pricing/SavingsBadge';
+import { MarketplaceStatus } from '@/components/customer/marketplace/MarketplaceStatus';
+import { mapBookingStatusTone } from '@/lib/marketplace/map-status';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import {
   derivePaymentSourcesFromBooking,
@@ -92,6 +96,10 @@ interface Booking {
   bookingTime: string;
   duration: number;
   price: number;
+  basePrice?: number;
+  discountAmount?: number;
+  paidAmount?: number;
+  couponCode?: string;
   status: 'pending' | 'pending_payment' | 'confirmed' | 'in_progress' | 'arrived' | 'completed' | 'cancelled';
   completionOTP?: string;
   isPackage: boolean;
@@ -432,6 +440,11 @@ export function MyBookings({
           bookingTime: b.booking_time || b.bookingTime || b.scheduled_time || '',
           duration: b.duration || 30,
           price: parseFloat(b.total_amount || b.totalAmount || b.price || 0),
+          paidAmount: parseFloat(b.total_amount || b.totalAmount || b.price || 0),
+          basePrice: parseFloat(b.base_price || b.basePrice || 0) || undefined,
+          discountAmount:
+            parseFloat(b.discount_amount || b.discountAmount || 0) || undefined,
+          couponCode: b.coupon_code || b.couponCode,
           status: b.status || 'pending',
           completionOTP: b.completion_otp || b.completionOTP,
           isPackage: Boolean(
@@ -659,14 +672,6 @@ export function MyBookings({
     return ['pending', 'pending_payment', 'confirmed'].includes(booking.status);
   };
 
-  const getBookingStatusColor = (booking: Booking): string => {
-    if (isPaymentHoldExpired(booking)) return 'bg-red-100 text-red-800';
-    if (booking.status === 'pending_payment') {
-      return 'bg-gradient-to-r from-amber-50 to-orange-50 text-orange-800 border border-orange-100/80';
-    }
-    return getStatusColor(booking.status);
-  };
-
   const getBookingStatusText = (booking: Booking): string => {
     if (isPaymentHoldExpired(booking)) return 'Cancelled';
     return getStatusText(booking.status);
@@ -691,23 +696,6 @@ export function MyBookings({
     }
     return true;
   });
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'bg-gradient-to-r from-amber-50 to-orange-50 text-orange-800 border border-orange-100/80';
-      case 'confirmed':
-        return 'bg-gradient-to-r from-blue-50 to-sky-50 text-blue-800 border border-blue-100/80';
-      case 'in_progress':
-        return 'bg-gradient-to-r from-orange-50 to-amber-50 text-orange-800 border border-orange-100/80';
-      case 'completed':
-        return 'bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-800 border border-emerald-100/80';
-      case 'cancelled':
-        return 'bg-gradient-to-r from-red-50 to-rose-50 text-red-800 border border-red-100/80';
-      default:
-        return 'bg-gray-50 text-gray-700 border border-gray-100';
-    }
-  };
 
   const getStatusText = (status: string) => {
     if (status === 'pending_payment') return 'Pending payment';
@@ -871,9 +859,12 @@ export function MyBookings({
                     )}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${getBookingStatusColor(booking)}`}>
-                      {getBookingStatusText(booking)}
-                    </span>
+                    <MarketplaceStatus
+                      label={getBookingStatusText(booking)}
+                      tone={mapBookingStatusTone(booking.status, {
+                        paymentHoldExpired: isPaymentHoldExpired(booking),
+                      })}
+                    />
                     {booking.paymentStatus === 'paid' && (
                       <>
                         <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
@@ -1221,7 +1212,38 @@ export function MyBookings({
 
                 <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between gap-2">
                   <div>
-                    <span className="text-base font-bold text-gray-900">{formatPriceWithSymbol(booking.price)}</span>
+                    {(() => {
+                      const paid = booking.paidAmount ?? booking.price;
+                      const original =
+                        booking.basePrice && booking.basePrice > paid
+                          ? booking.basePrice
+                          : booking.discountAmount && booking.discountAmount > 0
+                            ? paid + booking.discountAmount
+                            : paid;
+                      const hasSavings = original > paid;
+                      return hasSavings ? (
+                        <div className="space-y-1">
+                          <PriceDisplay
+                            originalPrice={original}
+                            currentPrice={paid}
+                            size="sm"
+                            showSavings
+                          />
+                          <div className="flex flex-wrap gap-1">
+                            {booking.discountAmount != null && booking.discountAmount > 0 && (
+                              <SavingsBadge variant="save_amount" amount={booking.discountAmount} />
+                            )}
+                            {booking.couponCode ? (
+                              <SavingsBadge variant="coupon_applied" label={`Coupon: ${booking.couponCode}`} />
+                            ) : booking.discountAmount != null && booking.discountAmount > 0 ? (
+                              <SavingsBadge variant="auto_applied" />
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-base font-bold text-gray-900">{formatPriceWithSymbol(paid)}</span>
+                      );
+                    })()}
                     {booking.paymentStatus === 'paid' &&
                       booking.paymentSources &&
                       booking.paymentSources.length > 0 && (

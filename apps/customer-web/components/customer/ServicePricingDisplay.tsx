@@ -1,29 +1,28 @@
 'use client';
 
 /**
- * ============================================================================
- * SERVICE PRICING DISPLAY COMPONENT
- * ============================================================================
- * 
- * Displays service pricing with vendor and platform discount distinction
- * - Vendor discounts shown at service listing level
- * - Platform discounts shown only at payment page
- * 
- * Fixes GAP-7.1: Vendor Discount vs Platform Discount Distinction
- * Date: 2026-01-28
- * ============================================================================
+ * Service pricing display — delegates to unified PriceDisplay / ServiceListingPrice.
+ * Preserves legacy props for existing call sites.
  */
 
+import { PriceDisplay } from '@/components/customer/pricing/PriceDisplay';
+import { ServiceListingPrice } from '@/components/customer/pricing/ServiceListingPrice';
+import { SavingsBadge } from '@/components/customer/pricing/SavingsBadge';
 import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
-import { Badge } from '@/components/ui/badge';
 
 interface ServicePricingDisplayProps {
   basePrice: number;
-  vendorDiscount?: number; // Percentage discount from vendor
-  vendorDiscountAmount?: number; // Fixed discount amount
-  discountedPrice?: number; // Price after vendor discount
-  platformDiscount?: number; // Platform discount (only shown at payment)
-  showPlatformDiscount?: boolean; // Whether to show platform discount (default: false)
+  vendorDiscount?: number;
+  vendorDiscountAmount?: number;
+  discountedPrice?: number;
+  platformDiscount?: number;
+  showPlatformDiscount?: boolean;
+  vendorId?: string;
+  serviceId?: string;
+  customerId?: string;
+  serviceStyle?: string;
+  serviceCategory?: string;
+  usePromoQuote?: boolean;
   currency?: string;
   className?: string;
 }
@@ -35,61 +34,57 @@ export function ServicePricingDisplay({
   discountedPrice,
   platformDiscount,
   showPlatformDiscount = false,
-  currency = '₹',
+  vendorId,
+  serviceId,
+  customerId,
+  serviceStyle,
+  serviceCategory,
+  usePromoQuote = false,
   className = '',
 }: ServicePricingDisplayProps) {
-  // Calculate final price
-  const finalVendorPrice = discountedPrice || 
-    (vendorDiscount 
+  if (usePromoQuote && vendorId) {
+    return (
+      <ServiceListingPrice
+        basePrice={basePrice}
+        vendorId={vendorId}
+        serviceId={serviceId}
+        customerId={customerId}
+        serviceStyle={serviceStyle}
+        serviceCategory={serviceCategory}
+        vendorDiscount={vendorDiscount}
+        vendorDiscountAmount={vendorDiscountAmount}
+        className={className}
+      />
+    );
+  }
+
+  const finalVendorPrice =
+    discountedPrice ??
+    (vendorDiscount
       ? basePrice * (1 - vendorDiscount / 100)
       : vendorDiscountAmount
         ? basePrice - vendorDiscountAmount
         : basePrice);
 
   const showVendorDiscountChrome = hasEffectivePriceReduction(basePrice, finalVendorPrice);
-  const finalPrice = showPlatformDiscount && platformDiscount
-    ? finalVendorPrice * (1 - platformDiscount / 100)
-    : finalVendorPrice;
+  const finalPrice =
+    showPlatformDiscount && platformDiscount
+      ? finalVendorPrice * (1 - platformDiscount / 100)
+      : finalVendorPrice;
 
   return (
     <div className={`flex min-w-0 max-w-full flex-col gap-1 ${className}`}>
-      {/* Price Display — flex-wrap so strike + sale price never push past narrow columns */}
-      <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-        {showVendorDiscountChrome && (
-          <>
-            {/* Original Price - Strikethrough */}
-            <span className="line-through text-gray-400 text-sm">
-              {currency}{basePrice.toFixed(0)}
-            </span>
-            {/* Discounted Price */}
-            <span className="text-[#FF8C42] font-bold text-lg">
-              {currency}{finalVendorPrice.toFixed(0)}
-            </span>
-          </>
-        )}
-        {!showVendorDiscountChrome && (
-          <span className="text-gray-900 font-semibold text-lg">
-            {currency}{finalVendorPrice.toFixed(0)}
-          </span>
-        )}
-      </div>
-
-      {/* Vendor Discount Badge */}
+      <PriceDisplay
+        originalPrice={basePrice}
+        currentPrice={finalPrice}
+        size="md"
+        showSavings={false}
+      />
       {showVendorDiscountChrome && (
-        <Badge className="bg-orange-100 text-orange-700 rounded-full px-2 py-1 text-xs w-fit">
-          {vendorDiscount 
-            ? `Vendor Discount ${vendorDiscount}%`
-            : vendorDiscountAmount
-              ? `Vendor Discount ${currency}${vendorDiscountAmount}`
-              : 'Vendor Discount'}
-        </Badge>
+        <SavingsBadge variant="vendor_offer" className="w-fit" />
       )}
-
-      {/* Platform Discount (only shown at payment page) */}
-      {showPlatformDiscount && platformDiscount && (
-        <div className="text-blue-600 text-sm mt-1">
-          Platform Discount: -{currency}{((finalVendorPrice * platformDiscount) / 100).toFixed(0)}
-        </div>
+      {showPlatformDiscount && platformDiscount != null && platformDiscount > 0 && (
+        <SavingsBadge variant="platform_offer" className="w-fit" />
       )}
     </div>
   );

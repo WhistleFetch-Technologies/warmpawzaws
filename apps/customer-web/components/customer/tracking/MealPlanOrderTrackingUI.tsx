@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { MarketplaceTracking } from '@/components/customer/marketplace/MarketplaceTracking';
 import { MealTrackingHeader } from '@/components/customer/tracking/MealTrackingHeader';
 
 export { mealKitchenProgress, mealHeroHeadline, type MealKitchenProgressOptions } from '@/lib/meal-kitchen-progress';
@@ -55,28 +56,28 @@ export function MealPlanOrderTrackingUI({
   ratingFooter,
 }: MealPlanOrderTrackingUIProps) {
   return (
-    <div className="mx-auto flex min-h-[100dvh] w-full max-w-customer flex-col overflow-x-hidden bg-[var(--color-primary-50,#FFF5EE)] pb-[max(1rem,env(safe-area-inset-bottom))]">
-      <MealTrackingHeader
-        orderDisplayId={orderDisplayId}
-        backSlot={backSlot}
-        onSupport={onSupport}
-        onShare={onShare}
-        headerExtra={headerExtra}
-      />
-
-      <main className="flex-1 space-y-4 px-4 pt-4">
-        {statusHero}
-        {refundReviewCard}
-        {deliveryOtpBanner}
-        {liveTrackingMap}
-        {deliveryProgressTimeline}
-        {deliveryPartnerCard}
-        {deliveryAddressCard}
-        {orderDetailsCard}
-        {paymentSummaryCard}
-        {supportCard}
-        {ratingFooter}
-      </main>
-    </div>
+    <MarketplaceTracking
+      header={
+        <MealTrackingHeader
+          orderDisplayId={orderDisplayId}
+          backSlot={backSlot}
+          onSupport={onSupport}
+          onShare={onShare}
+          headerExtra={headerExtra}
+        />
+      }
+      statusHero={statusHero}
+      timeline={deliveryProgressTimeline}
+      footer={ratingFooter}
+    >
+      {refundReviewCard}
+      {deliveryOtpBanner}
+      {liveTrackingMap}
+      {deliveryPartnerCard}
+      {deliveryAddressCard}
+      {orderDetailsCard}
+      {paymentSummaryCard}
+      {supportCard}
+    </MarketplaceTracking>
   );
 }

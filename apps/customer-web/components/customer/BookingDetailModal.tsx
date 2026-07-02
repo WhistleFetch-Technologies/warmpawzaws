@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, Download, Share2, Star, Navigation, Key, Eye, EyeOff, HelpCircle } from 'lucide-react';
 import { navigateToBookingSupport } from '@/lib/support-contact';
@@ -25,6 +25,9 @@ import {
   PaymentHoldBanner,
   resolvePaymentHoldExpiresAt,
 } from '@/lib/payment-hold-ui';
+import { BookingPricingSummary } from '@/components/customer/pricing/BookingPricingSummary';
+import { PriceDisplay } from '@/components/customer/pricing/PriceDisplay';
+import { extractBookingFinancial } from '@/lib/pricing/booking-financial';
 
 interface BookingDetailModalProps {
   bookingId: string;
@@ -512,6 +515,10 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           : (rawBooking.selectedServices ?? (Array.isArray(rawBooking.selected_services) ? rawBooking.selected_services : [])),
         totalDurationMinutes: rawBooking.totalDurationMinutes ?? rawBooking.total_duration_minutes,
         totalAmount: rawBooking.totalAmount ?? rawBooking.total_amount ?? rawBooking.amount,
+        basePrice: parseFloat(String(rawBooking.base_price ?? rawBooking.basePrice ?? 0)) || 0,
+        discountAmount:
+          parseFloat(String(rawBooking.discount_amount ?? rawBooking.discountAmount ?? 0)) || 0,
+        couponCode: rawBooking.coupon_code ?? rawBooking.couponCode,
         paymentSources: normalizePaymentSources(
           rawBooking.paymentSources ?? rawBooking.payment_sources
         ),
@@ -642,6 +649,11 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
     
     return false;
   };
+
+  const bookingFinancial = useMemo(() => {
+    if (!booking) return null;
+    return extractBookingFinancial(booking as Record<string, unknown>);
+  }, [booking]);
 
   const handleCopyOtp = () => {
     if (booking?.completionOTP) {
@@ -1075,7 +1087,16 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-[#FF8C42]">₹{booking.totalAmount ?? booking.price ?? 0}</p>
+                      {bookingFinancial ? (
+                        <PriceDisplay
+                          originalPrice={bookingFinancial.servicePrice}
+                          currentPrice={bookingFinancial.finalPaid}
+                          size="sm"
+                          showSavings={bookingFinancial.totalSavings > 0}
+                        />
+                      ) : (
+                        <p className="font-bold text-[#FF8C42]">₹{booking.totalAmount ?? booking.price ?? 0}</p>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1083,6 +1104,19 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
             </div>
 
             {/* Payment breakdown */}
+            {/* Payment breakdown — financial truth from stored booking fields */}
+            {bookingFinancial &&
+              (booking.paymentStatus === 'paid' ||
+                booking.payment_status === 'paid' ||
+                booking.paymentStatus === 'completed' ||
+                booking.payment_status === 'completed') && (
+              <BookingPricingSummary
+                financial={bookingFinancial}
+                title="Price breakdown"
+                showSavingsBanner
+              />
+            )}
+
             {booking.paymentSources?.length > 0 &&
               (booking.paymentStatus === 'paid' ||
                 booking.payment_status === 'paid' ||

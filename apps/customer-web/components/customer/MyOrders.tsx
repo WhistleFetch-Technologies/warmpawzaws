@@ -2,8 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { MarketplacePageHeader } from '@/components/customer/marketplace/MarketplacePageHeader';
+import { MarketplaceHistoryCard } from '@/components/customer/marketplace/MarketplaceHistoryCard';
+import { mapOrderStatusTone } from '@/lib/marketplace/map-status';
+import { Button } from '@/components/ui/button';
 
 interface Order {
   id: string;
@@ -120,21 +123,8 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header */}
-      <header className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md sticky top-0 z-40 rounded-b-2xl">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="w-9 h-9 flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="w-4 h-4 text-white" />
-          </button>
-          <h1 className="text-xl font-bold text-white">My Orders</h1>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#F2F4F7]">
+      <MarketplacePageHeader title="My Orders" subtitle="Shop purchases" onBack={() => router.back()} />
 
       {/* Filter Tabs */}
       <div className="max-w-4xl mx-auto px-4 py-4">
@@ -179,64 +169,55 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
         ) : (
           <div className="space-y-4">
             {orders.map((order) => (
-              <div key={order.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                {/* Order Header */}
-                <div className="p-4 border-b flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500">Order #{order.order_number}</p>
-                    <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleDateString()}</p>
-                  </div>
-                  <span className={`text-xs px-0 py-0 rounded-full flex items-center gap-3 ${getStatusColor(order.status)}`}>
-                    {getStatusIcon(order.status)} {order.status.replace(/_/g, ' ')}
-                  </span>
-                </div>
-
-                {/* Order Items */}
-                <div className="p-4 space-y-3">
-                  {order.items.slice(0, 2).map((item) => (
-                    <div key={item.id} className="flex items-center gap-3">
-                      <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center">
-                        {item.product_image ? (
-                          <img src={item.product_image} alt={item.product_name} className="w-full h-full object-cover rounded-lg" />
-                        ) : (
-                          <span className="text-2xl">📦</span>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-900">{item.product_name}</p>
-                        <p className="text-sm text-gray-500">Qty: {item.quantity} × ₹{item.price}</p>
-                      </div>
-                    </div>
-                  ))}
-                  {order.items.length > 2 && (
-                    <p className="text-sm text-gray-500">+{order.items.length - 2} more items</p>
-                  )}
-                </div>
-
-                {/* Order Footer */}
-                <div className="p-4 bg-gray-50 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500">Total</p>
-                    <p className="text-lg font-bold text-gray-900">₹{order.total_amount.toLocaleString()}</p>
-                  </div>
-                  <div className="flex gap-3">
-                    {order.awb_number && order.status !== 'delivered' && order.status !== 'cancelled' && (
-                      <button
-                        onClick={() => handleTrackOrder(order.awb_number!)}
-                        className="px-4 py-0 bg-blue-100 text-blue-600 rounded-full text-sm font-medium"
+              <MarketplaceHistoryCard
+                key={order.id}
+                item={{
+                  domain: 'product',
+                  id: order.id,
+                  displayId: `#${order.order_number}`,
+                  title: order.items[0]?.product_name ?? 'Shop order',
+                  statusLabel: order.status.replace(/_/g, ' '),
+                  statusTone: mapOrderStatusTone(order.status),
+                  imageUrl: order.items[0]?.product_image,
+                  imageFallback: '📦',
+                  paidAmount: order.total_amount,
+                  dateLabel: new Date(order.created_at).toLocaleDateString('en-IN'),
+                  subtitle:
+                    order.items.length > 1
+                      ? `+${order.items.length - 1} more items`
+                      : `Qty ${order.items[0]?.quantity ?? 1}`,
+                }}
+                onClick={() => setSelectedOrder(order)}
+                actions={
+                  <>
+                    {order.awb_number && order.status !== 'delivered' && order.status !== 'cancelled' ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="rounded-xl"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTrackOrder(order.awb_number!);
+                        }}
                       >
-                        🔍 Track
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setSelectedOrder(order)}
-                      className="px-4 py-0 bg-gray-100 text-gray-600 rounded-full text-sm font-medium"
+                        Track
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="rounded-xl bg-orange-500"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedOrder(order);
+                      }}
                     >
-                      View Details
-                    </button>
-                  </div>
-                </div>
-              </div>
+                      Details
+                    </Button>
+                  </>
+                }
+              />
             ))}
           </div>
         )}

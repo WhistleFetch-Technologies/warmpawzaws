@@ -26,6 +26,8 @@ import {
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { BookingConfirmationSavings } from '../pricing/BookingConfirmationSavings';
+import { MarketplaceReview } from '../marketplace/MarketplaceReview';
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -1451,6 +1453,30 @@ export function GroomingBookingRouter({
                 </div>
               </div>
             </div>
+
+            {!usePackageSession && (
+              <BookingConfirmationSavings
+                bookingId={bookingId}
+                fallbackBasePrice={reviewTotal}
+                className="mb-4 text-left"
+              />
+            )}
+
+            {!usePackageSession && bookingId && (
+              <div className="mb-4 text-left">
+                <MarketplaceReview
+                  vendorName={groomer?.name}
+                  onRate={() => {
+                    setRatingModalData({
+                      bookingId: bookingId,
+                      vendorId: vendorId || '',
+                      vendorName: groomer?.name || 'Service Provider',
+                    });
+                    setShowRatingModal(true);
+                  }}
+                />
+              </div>
+            )}
 
             {/* Package upsell offer - show if this was a single booking (not using package) */}
             {!usePackageSession && !showPackageOffer && (

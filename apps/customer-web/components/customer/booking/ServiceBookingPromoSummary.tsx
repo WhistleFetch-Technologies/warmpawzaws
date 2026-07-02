@@ -1,9 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Tag } from 'lucide-react';
-import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { useEffect, useMemo, useState } from 'react';
 import { fetchBookingPromotionStack } from '@/lib/service-booking-pricing';
+import { PriceDisplay } from '@/components/customer/pricing/PriceDisplay';
+import { PromotionCard } from '@/components/customer/pricing/PromotionCard';
+import { SavingsBadge } from '@/components/customer/pricing/SavingsBadge';
+import { formatInr } from '@/lib/pricing/format';
+import type { AppliedPromotionOffer } from '@/lib/pricing/types';
 
 type ServiceBookingPromoSummaryProps = {
   vendorId?: string;
@@ -29,14 +32,14 @@ export function ServiceBookingPromoSummary({
 }: ServiceBookingPromoSummaryProps) {
   const [discount, setDiscount] = useState(0);
   const [finalAmount, setFinalAmount] = useState(baseAmount);
-  const [labels, setLabels] = useState<string[]>([]);
+  const [offers, setOffers] = useState<AppliedPromotionOffer[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!vendorId || baseAmount <= 0) {
       setDiscount(0);
       setFinalAmount(baseAmount);
-      setLabels([]);
+      setOffers([]);
       return;
     }
 
@@ -56,13 +59,21 @@ export function ServiceBookingPromoSummary({
         const savings = res?.totalSavings ?? 0;
         setDiscount(savings);
         setFinalAmount(res?.finalAmount ?? Math.max(0, baseAmount - savings));
-        setLabels((res?.applied || []).map((a) => a.name).filter(Boolean));
+        setOffers(
+          (res?.applied || []).map((a) => ({
+            id: a.id,
+            name: a.name,
+            source: a.source === 'platform' ? 'platform' : 'vendor',
+            discountAmount: a.discountAmount,
+            autoApply: true,
+          }))
+        );
       })
       .catch(() => {
         if (!cancelled) {
           setDiscount(0);
           setFinalAmount(baseAmount);
-          setLabels([]);
+          setOffers([]);
         }
       })
       .finally(() => {
@@ -74,33 +85,36 @@ export function ServiceBookingPromoSummary({
     };
   }, [vendorId, customerId, serviceIds.join(','), baseAmount, serviceStyle, serviceCategory]);
 
+  const hasPromo = useMemo(() => discount > 0, [discount]);
+
   if (!vendorId || baseAmount <= 0) return null;
 
   return (
-    <div className={`space-y-2 border-t border-gray-100 pt-3 ${className}`}>
+    <div className={`space-y-3 border-t border-gray-100 pt-3 ${className}`}>
       {loading ? (
         <p className="text-xs text-gray-500">Checking offers…</p>
-      ) : discount > 0 ? (
+      ) : hasPromo ? (
         <>
-          {labels.map((label) => (
-            <div key={label} className="flex items-center justify-between text-sm text-green-700">
-              <span className="flex items-center gap-1.5">
-                <Tag className="h-3.5 w-3.5" />
-                {label}
-              </span>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <SavingsBadge variant="save_amount" amount={discount} />
+            <SavingsBadge variant="auto_applied" />
+          </div>
+          {offers.map((offer) => (
+            <PromotionCard key={offer.id} offer={offer} compact />
           ))}
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-500">Promotion savings</span>
-            <span className="font-medium text-green-600">-{formatPriceWithSymbol(discount)}</span>
-          </div>
-          <div className="flex items-center justify-between font-semibold">
-            <span>You pay</span>
-            <span className="text-orange-600">{formatPriceWithSymbol(finalAmount)}</span>
-          </div>
-          <p className="text-xs text-gray-500">Taxes and fees calculated at payment.</p>
+          <PriceDisplay
+            originalPrice={baseAmount}
+            currentPrice={finalAmount}
+            size="md"
+            showDiscountPercent
+          />
+          <p className="text-xs text-gray-500">
+            Estimated savings {formatInr(discount)} · Taxes and fees at payment
+          </p>
         </>
-      ) : null}
+      ) : (
+        <p className="text-xs text-gray-500">Fees & taxes calculated at payment</p>
+      )}
     </div>
   );
 }

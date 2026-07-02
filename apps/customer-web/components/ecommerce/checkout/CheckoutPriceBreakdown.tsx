@@ -2,6 +2,8 @@
 
 import type { CartPricingBreakdown } from '@/lib/ecommerce/cart-pricing';
 import type { CartItem } from '@/context/CartContext';
+import { PriceBreakdown } from '@/components/customer/pricing/PriceBreakdown';
+import { buildEcommerceCheckoutPriceLines } from '@/lib/pricing/ecommerce-checkout-price-breakdown';
 
 type CheckoutPriceBreakdownProps = {
   cart: CartItem[];
@@ -16,6 +18,8 @@ export function CheckoutPriceBreakdown({
   compact = false,
   showItems = true,
 }: CheckoutPriceBreakdownProps) {
+  const lines = buildEcommerceCheckoutPriceLines(pricing);
+
   return (
     <div className="space-y-3">
       {showItems && !compact && (
@@ -34,40 +38,7 @@ export function CheckoutPriceBreakdown({
         </div>
       )}
 
-      <div className="space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span className="text-slate-600">Subtotal</span>
-          <span className="text-slate-900">₹{pricing.lineSubtotal.toFixed(0)}</span>
-        </div>
-        {(pricing.couponDiscount ?? 0) > 0 && (
-          <div className="flex justify-between text-emerald-600">
-            <span>Coupon discount</span>
-            <span>-₹{(pricing.couponDiscount ?? 0).toFixed(0)}</span>
-          </div>
-        )}
-        {(pricing.sellerPromotionDiscount ?? 0) > 0 && (
-          <div className="flex justify-between text-emerald-600">
-            <span>Store offer</span>
-            <span>-₹{(pricing.sellerPromotionDiscount ?? 0).toFixed(0)}</span>
-          </div>
-        )}
-        {pricing.deliveryFees > 0 && (
-          <div className="flex justify-between">
-            <span className="text-slate-600">Delivery</span>
-            <span className="text-slate-900">₹{pricing.deliveryFees.toFixed(0)}</span>
-          </div>
-        )}
-        {pricing.taxAmount > 0 && (
-          <div className="flex justify-between">
-            <span className="text-slate-600">Tax</span>
-            <span className="text-slate-900">₹{pricing.taxAmount.toFixed(0)}</span>
-          </div>
-        )}
-        <div className="flex justify-between border-t border-slate-100 pt-2 text-base font-bold">
-          <span className="text-slate-900">Total</span>
-          <span className="text-[#FF8C42]">₹{pricing.total.toFixed(0)}</span>
-        </div>
-      </div>
+      <PriceBreakdown lines={lines} title="" compact={compact} className="border-0 shadow-none" />
     </div>
   );
 }
