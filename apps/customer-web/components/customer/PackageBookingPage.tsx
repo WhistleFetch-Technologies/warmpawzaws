@@ -23,6 +23,11 @@ import {
 import { toast } from 'sonner';
 import { Package, Check, ChevronRight, Info, Star, Users, Dog, Footprints, Receipt } from 'lucide-react';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
+import {
+  findDuplicateSlotIndices,
+  hasDuplicatePackageSlotTimes,
+  isTimeTakenByOtherSlot,
+} from '@/lib/ecommerce/package-slot-times';
 
 const scheduleFieldInputClassName =
   'w-full min-w-0 max-w-full box-border rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500';
@@ -209,6 +214,8 @@ export function PackageBookingPage({
   const [startingSessionTime, setStartingSessionTime] = useState('');
   /** When package has N sessions per day: N time values for the first calendar day (same order repeats each block). */
   const [perDaySessionTimes, setPerDaySessionTimes] = useState<string[]>(['']);
+  /** Inline hint when user tries to pick a time already used by another first-day slot. */
+  const [slotFieldHints, setSlotFieldHints] = useState<Record<number, string>>({});
   const [schedulePets, setSchedulePets] = useState<PetUi[]>([]);
   const [petsLoading, setPetsLoading] = useState(false);
   const [localPetId, setLocalPetId] = useState<string | null>(null);
@@ -761,6 +768,7 @@ export function PackageBookingPage({
     setStartingSessionTime('');
     const spd = Math.max(1, Math.min(24, Number(pkg.sessionsPerDay) || 1));
     setPerDaySessionTimes(Array.from({ length: spd }, () => ''));
+    setSlotFieldHints({});
     setPriceQuote(null);
     purchaseAttemptKeyRef.current = null;
     setView('schedule');
@@ -797,9 +805,13 @@ export function PackageBookingPage({
       if (sessionsPerDay === 1) {
         if (!startingSessionTime.trim()) return 'Please choose a time for your sessions.';
       } else {
-        const missing = perDaySessionTimes.slice(0, sessionsPerDay).some((t) => !String(t || '').trim());
+        const firstDayTimes = perDaySessionTimes.slice(0, sessionsPerDay);
+        const missing = firstDayTimes.some((t) => !String(t || '').trim());
         if (missing) {
           return `This package has ${sessionsPerDay} sessions per day — please choose a time for each slot on the first day.`;
+        }
+        if (hasDuplicatePackageSlotTimes(firstDayTimes)) {
+          return 'Each slot on the first day must use a different time.';
         }
       }
     } else if (!startingSessionDate.trim()) {
@@ -815,7 +827,9 @@ export function PackageBookingPage({
       if (!startingSessionDate.trim()) return false;
       const spd = Math.max(1, Math.min(24, Number(selectedPackage.sessionsPerDay) || 1));
       if (spd === 1) return !!startingSessionTime.trim();
-      return !perDaySessionTimes.slice(0, spd).some((t) => !String(t || '').trim());
+      const firstDayTimes = perDaySessionTimes.slice(0, spd);
+      if (firstDayTimes.some((t) => !String(t || '').trim())) return false;
+      return !hasDuplicatePackageSlotTimes(firstDayTimes);
     }
     return !!startingSessionDate.trim();
   };
@@ -841,6 +855,31 @@ export function PackageBookingPage({
     const dt = new Date();
     dt.setHours(h, m, 0, 0);
     return dt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
+  const handlePerDaySlotTimeChange = (idx: number, rawValue: string) => {
+    const spd = Math.max(1, Math.min(24, Number(selectedPackage?.sessionsPerDay) || 1));
+    const currentTimes = perDaySessionTimes.slice(0, spd);
+    if (rawValue.trim() && isTimeTakenByOtherSlot(currentTimes, idx, rawValue)) {
+      setSlotFieldHints((prev) => ({
+        ...prev,
+        [idx]: 'This time is already used for another slot today. Pick a different time.',
+      }));
+      return;
+    }
+    const next = [...perDaySessionTimes];
+    next[idx] = rawValue;
+    setPerDaySessionTimes(next);
+    setSlotFieldHints((prev) => {
+      const updated = { ...prev };
+      delete updated[idx];
+      const dupes = findDuplicateSlotIndices(next.slice(0, spd));
+      for (const i of Object.keys(updated).map(Number)) {
+        if (!dupes.has(i)) delete updated[i];
+      }
+      return updated;
+    });
+    setError(null);
   };
 
   const continueToReview = () => {
@@ -1389,7 +1428,7 @@ export function PackageBookingPage({
                   <p className="mb-2 text-xs text-gray-500">
                     Each group of {Number(selectedPackage.sessionsPerDay) || 1} sessions stays on one calendar day;
                     the next group is the <strong>next day</strong>, until all {selectedPackage.totalSessions} sessions
-                    are scheduled.
+                    are scheduled. Each slot on the first day must be a <strong>different time</strong>.
                   </p>
                   {perDaySessionTimes.slice(0, Number(selectedPackage.sessionsPerDay) || 1).map((t, idx) => (
                     <div key={idx} className="min-w-0">
@@ -1398,16 +1437,16 @@ export function PackageBookingPage({
                         <input
                           type="time"
                           value={t}
-                          onChange={(e) => {
-                            const next = [...perDaySessionTimes];
-                            next[idx] = e.target.value;
-                            setPerDaySessionTimes(next);
-                            setError(null);
-                          }}
-                          className={scheduleFieldInputClassName}
+                          onChange={(e) => handlePerDaySlotTimeChange(idx, e.target.value)}
+                          className={`${scheduleFieldInputClassName}${
+                            slotFieldHints[idx] ? ' border-red-400 focus:border-red-500 focus:ring-red-500' : ''
+                          }`}
                           required
                         />
                       </div>
+                      {slotFieldHints[idx] ? (
+                        <p className="mt-1 text-xs text-red-600">{slotFieldHints[idx]}</p>
+                      ) : null}
                     </div>
                   ))}
                 </div>

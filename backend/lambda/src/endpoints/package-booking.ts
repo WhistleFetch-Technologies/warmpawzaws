@@ -54,6 +54,12 @@ import { quotePackagePricing, resolvePackagePolicySnapshot } from '../utils/pack
 import { createPackageBookingsAfterPayment } from '../utils/package-bookings';
 import { fireVendorAppointmentScheduledSms } from '../lib/vendor-appointment-sms';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
+import {
+  assertDistinctScheduleSlots,
+  assertNoVendorSlotConflicts,
+  isPackageSlotUniqueViolation,
+  validatePackagePurchaseSchedule,
+} from '../utils/package-slot-validation';
 
 function parseJsonObject(raw: unknown): Record<string, unknown> | null {
   if (!raw) return null;
@@ -1717,6 +1723,21 @@ export function registerPackageBookingEndpoints(app: Hono) {
             );
           }
         }
+
+        const scheduleCheck = await validatePackagePurchaseSchedule({
+          vendorId: comp.vendorId,
+          sessionSchedule,
+          unlimitedPurchase: comp.unlimitedPurchase,
+          totalSessionsForPurchase: comp.totalSessionsForPurchase,
+          sessionsPerDay: comp.sessionsPerDay,
+          sessionIntervalDays: comp.sessionIntervalDays,
+        });
+        if (!scheduleCheck.ok) {
+          return c.json(
+            { error: scheduleCheck.message, code: scheduleCheck.code },
+            scheduleCheck.status
+          );
+        }
       }
 
       const razorpayOrderId = String(razorpayOrderIdRaw || '').trim();
@@ -2126,6 +2147,12 @@ export function registerPackageBookingEndpoints(app: Hono) {
       );
     } catch (error: any) {
       console.error('Error in purchase-from-vendor-service:', error);
+      if (isPackageSlotUniqueViolation(error)) {
+        return c.json(
+          { error: 'This time slot is already booked', code: 'SLOT_CONFLICT' },
+          409
+        );
+      }
       return c.json({ error: error.message }, 500);
     }
   });
@@ -2222,6 +2249,30 @@ export function registerPackageBookingEndpoints(app: Hono) {
           effectiveSessions = normalizedInput;
         }
       }
+
+      const scheduleSlots = effectiveSessions.map((s) => ({
+        date: s.date,
+        time: s.time,
+        sessionNumber: s.sessionNumber,
+      }));
+      const distinctCheck = assertDistinctScheduleSlots(scheduleSlots);
+      if (!distinctCheck.ok) {
+        return c.json(
+          { error: distinctCheck.message, code: distinctCheck.code },
+          distinctCheck.status
+        );
+      }
+      const vendorIdForSchedule = String(pkg.vendor_id || '');
+      if (vendorIdForSchedule) {
+        const conflictCheck = await assertNoVendorSlotConflicts(vendorIdForSchedule, scheduleSlots);
+        if (!conflictCheck.ok) {
+          return c.json(
+            { error: conflictCheck.message, code: conflictCheck.code },
+            conflictCheck.status
+          );
+        }
+      }
+
       const firstIncoming = (sessions as Array<Record<string, unknown>>)
         .map((s) => ({
           scheduled_date: normalizeScheduleDateInput(s?.date),
