@@ -384,7 +384,7 @@ describe('Discount Engine Phase 4 — Unified Discount Resolver', () => {
         [staticProvider(DiscountSource.VENDOR_PROMOTION, [serviceRow])]
       );
 
-      expect(result.resolverVersion).toMatch(/phase-5b/);
+      expect(result.resolverVersion).toMatch(/phase-6/);
       expect(result.metadata?.pipelineTimeMs).toBeGreaterThanOrEqual(0);
       expect(result.metadata?.candidateCount).toBe(1);
       expect(typeof result.metadata?.eligibleCount).toBe('number');

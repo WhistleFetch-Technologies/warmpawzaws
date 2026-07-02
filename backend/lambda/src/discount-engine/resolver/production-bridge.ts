@@ -2,7 +2,7 @@ import type { DiscountContext } from '../models/discount-context';
 import type { ResolverResult } from './types';
 import { getUnifiedDiscountResolver } from './unified-discount-resolver';
 import { logPriorityPipelineDiagnostics } from './priority-pipeline';
-import type { PriorityDiagnostics } from './types';
+import type { PriorityDiagnostics, StackDiagnostics } from './types';
 
 /**
  * Runs the unified resolver pipeline for diagnostics.
@@ -29,6 +29,7 @@ export function logResolverDiagnostics(
 ): void {
   if (!result) return;
   const priority = result.metadata?.priority as PriorityDiagnostics | undefined;
+  const stack = result.metadata?.stack as StackDiagnostics | undefined;
   console.info('[discount-resolver] pipeline complete', {
     label,
     candidateCount: result.metadata?.candidateCount,
@@ -41,6 +42,10 @@ export function logResolverDiagnostics(
     priorityAuthoritative: priority?.authoritative,
     selectedCount: priority?.selectedCount,
     policyFingerprint: priority?.policyFingerprint,
+    stackMode: stack?.stackMode,
+    stackAuthoritative: stack?.authoritative,
+    stackAppliedCount: stack?.appliedCount,
+    stackRejectedCount: stack?.rejectedCount,
   });
   if (priority) {
     logPriorityPipelineDiagnostics(label, {

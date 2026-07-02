@@ -26,16 +26,25 @@ import {
 } from './legacy-stack-adapter';
 import { runPriorityPipeline } from './priority-pipeline';
 import { prepareUsageEntries } from './usage-preparation';
+import {
+  getStackEngine,
+  getStackMode,
+  isStackAuthoritative,
+  isStackEnabled,
+  mapStackAppliedToBenefitOutcomes,
+} from '../stack';
+import type { StackDecision } from '../stack/types';
 import type {
   CandidateBenefitOutcome,
   CandidateRuleOutcome,
   PriorityDiagnostics,
   ResolverResult,
+  StackDiagnostics,
   UnifiedDiscountResolver,
 } from './types';
 import type { EligibilityResult } from '../rules/types';
 
-const RESOLVER_VERSION = 'phase-5b.0';
+const RESOLVER_VERSION = 'phase-6.0';
 const PRIORITY_VERSION = '1.0.0';
 
 export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
@@ -77,19 +86,44 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
     let stackBenefitResults = benefitResults;
     let appliedCandidates: DiscountCandidate[] = [...eligibleCandidates];
     let authoritative = false;
+    let stackAuthoritative = false;
     let fallbackReason: string | undefined;
+    let stackDecision: StackDecision | undefined;
+    const stackMode = getStackMode();
 
     if (isPriorityAuthoritative() && priorityPipeline.success) {
       const runtimePolicy = loadRuntimePolicy(context.domain);
-      const stackedSelected = applyLegacyStackToSelected(
+      const legacyStacked = applyLegacyStackToSelected(
         priorityPipeline.mergedSelected,
         runtimePolicy,
         context
       );
-      const mapped = mapSelectedToBenefitOutcomes(stackedSelected, benefitResults);
-      if (mapped.length > 0 || benefitResults.length === 0) {
-        stackBenefitResults = mapped;
-        appliedCandidates = mapped.map((o) => o.candidate);
+      const legacyMapped = mapSelectedToBenefitOutcomes(legacyStacked, benefitResults);
+
+      if (isStackEnabled()) {
+        stackDecision = getStackEngine().stack({
+          context,
+          selectedCandidates: priorityPipeline.mergedSelected,
+          benefitResults,
+          runtimePolicy,
+          policyFingerprint: runtimePolicy.policyFingerprint,
+        });
+      }
+
+      if (isStackAuthoritative() && stackDecision) {
+        const mapped = mapStackAppliedToBenefitOutcomes(
+          stackDecision.applied,
+          benefitResults
+        );
+        if (mapped.length > 0 || benefitResults.length === 0) {
+          stackBenefitResults = mapped;
+          appliedCandidates = mapped.map((o) => o.candidate);
+          authoritative = true;
+          stackAuthoritative = true;
+        }
+      } else if (legacyMapped.length > 0 || benefitResults.length === 0) {
+        stackBenefitResults = legacyMapped;
+        appliedCandidates = legacyMapped.map((o) => o.candidate);
         authoritative = true;
       }
     } else if (isPriorityAuthoritative() && !priorityPipeline.success) {
@@ -104,7 +138,12 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
 
     const usagePrepared = prepareUsageEntries(stackBenefitResults);
     const pipelineTimeMs = Date.now() - started;
-    const totalSavings = stackBenefitResults.reduce((s, o) => s + o.discountAmount, 0);
+    const totalSavings = stackAuthoritative && stackDecision
+      ? stackDecision.totalSavings
+      : stackBenefitResults.reduce((s, o) => s + o.discountAmount, 0);
+    const finalAmount = stackAuthoritative && stackDecision
+      ? stackDecision.runningAmount
+      : Math.max(0, context.amount - totalSavings);
 
     const applied: AppliedDiscount[] = stackBenefitResults.map((o, idx) => ({
       id: o.candidate.id,
@@ -148,12 +187,25 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
       validation: priorityPipeline.validation,
     };
 
+    const stackDiagnostics: StackDiagnostics = {
+      stackMode,
+      stackVersion: stackDecision?.audit.stackVersion ?? 'legacy-adapter',
+      policyFingerprint: stackDecision?.audit.policyFingerprint ?? priorityPipeline.policyFingerprint,
+      authoritative: stackAuthoritative,
+      appliedCount: stackDecision?.applied.length ?? (authoritative ? appliedCandidates.length : 0),
+      rejectedCount: stackDecision?.rejected.length ?? 0,
+      executionTimeMs: stackDecision?.audit.executionTimeMs ?? 0,
+      totalSavings: stackAuthoritative && stackDecision ? stackDecision.totalSavings : totalSavings,
+      finalAmount: stackAuthoritative && stackDecision ? stackDecision.runningAmount : finalAmount,
+      audit: stackDecision?.audit,
+    };
+
     const base = emptyDiscountEngineResult(context.amount);
 
     return {
       ...base,
       totalSavings,
-      finalAmount: Math.max(0, context.amount - totalSavings),
+      finalAmount,
       applied,
       benefits,
       warnings: [],
@@ -174,6 +226,7 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
         domain: context.domain,
         trigger: context.trigger,
         priority: priorityDiagnostics,
+        stack: stackDiagnostics,
       },
     };
   }

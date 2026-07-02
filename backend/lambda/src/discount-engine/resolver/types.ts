@@ -7,6 +7,20 @@ import type { CandidateProvider } from '../candidates/providers/types';
 import type { PriorityMode } from '../policy/priority-mode';
 import type { ValidationResult } from '../policy/validation-result';
 import type { PriorityResult } from '../priority/priority-types';
+import type { StackAudit, StackMode } from '../stack/types';
+
+export interface StackDiagnostics {
+  stackMode: StackMode;
+  stackVersion: string;
+  policyFingerprint?: string;
+  authoritative: boolean;
+  appliedCount: number;
+  rejectedCount: number;
+  executionTimeMs: number;
+  totalSavings: number;
+  finalAmount: number;
+  audit?: StackAudit;
+}
 
 export interface PriorityDiagnostics {
   priorityMode: PriorityMode;
@@ -59,7 +73,7 @@ export interface ResolverDiagnostics {
 export interface ResolverResult extends DiscountEngineResult {
   eligibleCandidates: DiscountCandidate[];
   rejectedCandidates: DiscountCandidate[];
-  /** Priority-selected candidates after legacy stack (authoritative mode). */
+  /** Priority-selected candidates after stack (authoritative mode). */
   appliedCandidates: DiscountCandidate[];
   benefitResults: CandidateBenefitOutcome[];
   ruleResults: CandidateRuleOutcome[];
