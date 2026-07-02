@@ -11,25 +11,32 @@ import type { DiscountCandidate } from '../candidates/types';
 import type { DiscountContext } from '../models/discount-context';
 import type { AppliedDiscount, DiscountBenefitLine } from '../models/discount-result';
 import { emptyDiscountEngineResult } from '../models/discount-result';
+import {
+  isPriorityAuthoritative,
+  loadRuntimePolicy,
+} from '../policy/runtime-policy-loader';
 import { getCandidateRepository, type DefaultCandidateRepository } from './candidate-repository';
 import {
   discountContextToBenefitRuntime,
   discountContextToRuleRuntime,
 } from './context-runtime';
-import { prepareUsageEntries } from './usage-preparation';
 import {
-  logPriorityShadowDiagnostics,
-  runPriorityShadow,
-} from './priority-shadow';
+  applyLegacyStackToSelected,
+  mapSelectedToBenefitOutcomes,
+} from './legacy-stack-adapter';
+import { runPriorityPipeline } from './priority-pipeline';
+import { prepareUsageEntries } from './usage-preparation';
 import type {
   CandidateBenefitOutcome,
   CandidateRuleOutcome,
+  PriorityDiagnostics,
   ResolverResult,
   UnifiedDiscountResolver,
 } from './types';
 import type { EligibilityResult } from '../rules/types';
 
-const RESOLVER_VERSION = 'phase-5a.0';
+const RESOLVER_VERSION = 'phase-5b.0';
+const PRIORITY_VERSION = '1.0.0';
 
 export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
   constructor(
@@ -66,12 +73,40 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
       });
     }
 
-    const usagePrepared = prepareUsageEntries(benefitResults);
-    const priorityShadow = runPriorityShadow(context, benefitResults);
-    const pipelineTimeMs = Date.now() - started;
-    const totalSavings = benefitResults.reduce((s, o) => s + o.discountAmount, 0);
+    const priorityPipeline = runPriorityPipeline(context, benefitResults);
+    let stackBenefitResults = benefitResults;
+    let appliedCandidates: DiscountCandidate[] = [...eligibleCandidates];
+    let authoritative = false;
+    let fallbackReason: string | undefined;
 
-    const applied: AppliedDiscount[] = benefitResults.map((o, idx) => ({
+    if (isPriorityAuthoritative() && priorityPipeline.success) {
+      const runtimePolicy = loadRuntimePolicy(context.domain);
+      const stackedSelected = applyLegacyStackToSelected(
+        priorityPipeline.mergedSelected,
+        runtimePolicy,
+        context
+      );
+      const mapped = mapSelectedToBenefitOutcomes(stackedSelected, benefitResults);
+      if (mapped.length > 0 || benefitResults.length === 0) {
+        stackBenefitResults = mapped;
+        appliedCandidates = mapped.map((o) => o.candidate);
+        authoritative = true;
+      }
+    } else if (isPriorityAuthoritative() && !priorityPipeline.success) {
+      fallbackReason = priorityPipeline.fallbackReason;
+      console.warn('[discount-priority] authoritative fallback to legacy eligible set', {
+        domain: context.domain,
+        trigger: context.trigger,
+        fallbackReason,
+        errorMessage: priorityPipeline.errorMessage,
+      });
+    }
+
+    const usagePrepared = prepareUsageEntries(stackBenefitResults);
+    const pipelineTimeMs = Date.now() - started;
+    const totalSavings = stackBenefitResults.reduce((s, o) => s + o.discountAmount, 0);
+
+    const applied: AppliedDiscount[] = stackBenefitResults.map((o, idx) => ({
       id: o.candidate.id,
       name: o.candidate.name,
       owner: o.candidate.owner,
@@ -84,11 +119,34 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
       metadata: { source: o.candidate.source },
     }));
 
-    const benefits: DiscountBenefitLine[] = benefitResults.map((o) => ({
+    const benefits: DiscountBenefitLine[] = stackBenefitResults.map((o) => ({
       type: o.benefit.appliedBenefit,
       amount: o.discountAmount,
       description: o.candidate.name,
     }));
+
+    const rejectedByLimit =
+      (priorityPipeline.autoPhase?.rejectedByLimit.length ?? 0) +
+      (priorityPipeline.couponPhase?.rejectedByLimit.length ?? 0);
+
+    const priorityDiagnostics: PriorityDiagnostics = {
+      priorityMode: priorityPipeline.mode,
+      priorityVersion: PRIORITY_VERSION,
+      policyFingerprint: priorityPipeline.policyFingerprint,
+      strategy: priorityPipeline.autoPhase?.strategy,
+      selectedCount: authoritative
+        ? appliedCandidates.length
+        : priorityPipeline.mergedSelected.length,
+      rejectedCount: rejectedByLimit,
+      executionTimeMs: priorityPipeline.executionTimeMs,
+      validationWarnings: priorityPipeline.validation?.warnings.length ?? 0,
+      validationErrors: priorityPipeline.validation?.errors.length ?? 0,
+      authoritative,
+      fallbackReason,
+      autoPhase: priorityPipeline.autoPhase,
+      couponPhase: priorityPipeline.couponPhase,
+      validation: priorityPipeline.validation,
+    };
 
     const base = emptyDiscountEngineResult(context.amount);
 
@@ -101,7 +159,7 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
       warnings: [],
       eligibleCandidates,
       rejectedCandidates,
-      appliedCandidates: [...eligibleCandidates],
+      appliedCandidates,
       benefitResults,
       ruleResults,
       executionTimeMs: pipelineTimeMs,
@@ -115,7 +173,7 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
         usagePrepared,
         domain: context.domain,
         trigger: context.trigger,
-        priorityShadow,
+        priority: priorityDiagnostics,
       },
     };
   }

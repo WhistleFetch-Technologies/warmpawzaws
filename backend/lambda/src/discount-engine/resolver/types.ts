@@ -4,6 +4,26 @@ import type { AppliedDiscount, DiscountBenefitLine, DiscountEngineResult } from 
 import type { EligibilityResult } from '../rules/types';
 import type { DiscountCandidate } from '../candidates/types';
 import type { CandidateProvider } from '../candidates/providers/types';
+import type { PriorityMode } from '../policy/priority-mode';
+import type { ValidationResult } from '../policy/validation-result';
+import type { PriorityResult } from '../priority/priority-types';
+
+export interface PriorityDiagnostics {
+  priorityMode: PriorityMode;
+  priorityVersion: string;
+  policyFingerprint?: string;
+  strategy?: string;
+  selectedCount: number;
+  rejectedCount: number;
+  executionTimeMs: number;
+  validationWarnings: number;
+  validationErrors: number;
+  authoritative: boolean;
+  fallbackReason?: string;
+  autoPhase?: PriorityResult;
+  couponPhase?: PriorityResult;
+  validation?: ValidationResult;
+}
 
 export interface CandidateRuleOutcome {
   candidate: DiscountCandidate;
@@ -35,11 +55,11 @@ export interface ResolverDiagnostics {
   usagePrepared: UsagePreparedEntry[];
 }
 
-/** Unified resolver output — Phase 5A adds priority shadow diagnostics in metadata. */
+/** Unified resolver output — Phase 5B adds priority diagnostics in metadata. */
 export interface ResolverResult extends DiscountEngineResult {
   eligibleCandidates: DiscountCandidate[];
   rejectedCandidates: DiscountCandidate[];
-  /** Phase 4: all eligible candidates (no winner selection). */
+  /** Priority-selected candidates after legacy stack (authoritative mode). */
   appliedCandidates: DiscountCandidate[];
   benefitResults: CandidateBenefitOutcome[];
   ruleResults: CandidateRuleOutcome[];

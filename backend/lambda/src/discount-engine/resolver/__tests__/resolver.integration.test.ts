@@ -151,7 +151,10 @@ describe('Discount Engine Phase 4 — Unified Discount Resolver', () => {
       expect(result.metadata?.candidateCount).toBe(1);
       expect(result.eligibleCandidates.length).toBeGreaterThanOrEqual(1);
       expect(result.benefitResults.length).toBe(result.eligibleCandidates.length);
-      expect(result.appliedCandidates).toEqual(result.eligibleCandidates);
+      expect(result.appliedCandidates.length).toBeLessThanOrEqual(result.eligibleCandidates.length);
+      if (result.eligibleCandidates.length === 1) {
+        expect(result.appliedCandidates).toEqual(result.eligibleCandidates);
+      }
       expect(result.executionTimeMs).toBeGreaterThanOrEqual(0);
     });
 
@@ -381,13 +384,16 @@ describe('Discount Engine Phase 4 — Unified Discount Resolver', () => {
         [staticProvider(DiscountSource.VENDOR_PROMOTION, [serviceRow])]
       );
 
-      expect(result.resolverVersion).toMatch(/phase-5a/);
+      expect(result.resolverVersion).toMatch(/phase-5b/);
       expect(result.metadata?.pipelineTimeMs).toBeGreaterThanOrEqual(0);
       expect(result.metadata?.candidateCount).toBe(1);
       expect(typeof result.metadata?.eligibleCount).toBe('number');
       expect(typeof result.metadata?.rejectedCount).toBe('number');
       expect(result.metadata?.usagePrepared).toBeDefined();
-      expect(result.appliedCandidates).toEqual(result.eligibleCandidates);
+      expect(result.appliedCandidates.length).toBeLessThanOrEqual(result.eligibleCandidates.length);
+      if (result.eligibleCandidates.length === 1) {
+        expect(result.appliedCandidates).toEqual(result.eligibleCandidates);
+      }
       expect(result).not.toHaveProperty('settlement');
       expect(result).not.toHaveProperty('stackedAmount');
     });

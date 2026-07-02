@@ -105,6 +105,10 @@ export function loadRuntimePolicy(
   return attachPolicyFingerprint(buildRuntimePolicy(sources));
 }
 
-export function isPriorityShadowEnabled(): boolean {
-  return process.env.DISCOUNT_ENGINE_V2_PRIORITY_SHADOW !== 'false';
-}
+export {
+  getPriorityMode,
+  isPriorityAuthoritative,
+  isPriorityEnabled,
+  isPriorityShadowEnabled,
+  type PriorityMode,
+} from './priority-mode';

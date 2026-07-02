@@ -1,7 +1,8 @@
 import type { DiscountContext } from '../models/discount-context';
 import type { ResolverResult } from './types';
 import { getUnifiedDiscountResolver } from './unified-discount-resolver';
-import { logPriorityShadowDiagnostics } from './priority-shadow';
+import { logPriorityPipelineDiagnostics } from './priority-pipeline';
+import type { PriorityDiagnostics } from './types';
 
 /**
  * Runs the unified resolver pipeline for diagnostics.
@@ -27,6 +28,7 @@ export function logResolverDiagnostics(
   result: ResolverResult | null
 ): void {
   if (!result) return;
+  const priority = result.metadata?.priority as PriorityDiagnostics | undefined;
   console.info('[discount-resolver] pipeline complete', {
     label,
     candidateCount: result.metadata?.candidateCount,
@@ -35,11 +37,29 @@ export function logResolverDiagnostics(
     pipelineTimeMs: result.executionTimeMs,
     providerBreakdown: result.metadata?.providerBreakdown,
     resolverVersion: result.resolverVersion,
+    priorityMode: priority?.priorityMode,
+    priorityAuthoritative: priority?.authoritative,
+    selectedCount: priority?.selectedCount,
+    policyFingerprint: priority?.policyFingerprint,
   });
-  const priorityShadow = result.metadata?.priorityShadow as
-    | import('./priority-shadow').PriorityShadowDiagnostics
-    | undefined;
-  logPriorityShadowDiagnostics(label, priorityShadow ?? null);
+  if (priority) {
+    logPriorityPipelineDiagnostics(label, {
+      mode: priority.priorityMode,
+      success: !priority.fallbackReason,
+      fallbackReason: priority.fallbackReason as
+        | import('./priority-pipeline').PriorityPipelineResult['fallbackReason']
+        | undefined,
+      policyFingerprint: priority.policyFingerprint,
+      validation: priority.validation,
+      autoPhase: priority.autoPhase,
+      couponPhase: priority.couponPhase,
+      mergedSelected: [
+        ...(priority.autoPhase?.selectedCandidates ?? []),
+        ...(priority.couponPhase?.selectedCandidates ?? []),
+      ],
+      executionTimeMs: priority.executionTimeMs,
+    });
+  }
 }
 
 /** Fire-and-forget resolver invocation alongside legacy production path. */
