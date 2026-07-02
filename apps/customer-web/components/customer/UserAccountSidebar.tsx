@@ -30,6 +30,7 @@ import {
   consumeAccountSidebarActiveView,
   rememberAccountSidebarActiveView,
 } from '@/lib/go-back-or-replace';
+import { formatIstInstantDisplay } from '@/lib/ist-display-format';
 import { invalidateCustomerLocationCache } from '@/lib/customer-location';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 const CUSTOMER_SUPPORT_EMAIL = 'support@warmpawz.com';
@@ -1516,12 +1517,7 @@ export function UserAccountSidebar({
                           {booking.status === 'completed' && booking.otpVerifiedAt && (
                             <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg">
                               <p className="text-xs text-center text-green-700">
-                                ✓ Service completed on {new Date(booking.otpVerifiedAt).toLocaleString('en-IN', { 
-                                  day: 'numeric', 
-                                  month: 'short', 
-                                  hour: '2-digit', 
-                                  minute: '2-digit' 
-                                })}
+                                ✓ Service completed on {formatIstInstantDisplay(booking.otpVerifiedAt)}
                               </p>
                             </div>
                           )}

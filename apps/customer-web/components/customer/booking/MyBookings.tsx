@@ -17,6 +17,10 @@ import {
   formatPriceWithSymbol,
   customerBookingStatusShowsCheckInOtp,
 } from '@/lib/booking-display-utils';
+import {
+  formatIstBookingCompletedLine,
+  formatIstBookingWhen,
+} from '@/lib/ist-display-format';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import {
   derivePaymentSourcesFromBooking,
@@ -897,8 +901,14 @@ export function MyBookings({
                     {booking.status === 'completed' &&
                     isTeleBookingRow(booking) &&
                     booking.completedAt
-                      ? `${new Date(booking.bookingDate).toLocaleDateString()} · Completed ${new Date(booking.completedAt).toLocaleString()}`
-                      : `${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.bookingTime}`}
+                      ? formatIstBookingCompletedLine(
+                          String(booking.bookingDate || '').slice(0, 10),
+                          booking.completedAt,
+                        )
+                      : formatIstBookingWhen(
+                          String(booking.bookingDate || '').slice(0, 10),
+                          String(booking.bookingTime || ''),
+                        )}
                   </MyBookingsMetaRow>
                   <MyBookingsMetaRow icon={MapPin}>
                     {getServiceStyleDisplayLabel(booking.serviceStyle, booking.serviceType, booking.serviceName)}
@@ -1557,8 +1567,14 @@ function RescheduleModal({
               {booking.status === 'completed' &&
               isTeleBookingRow(booking) &&
               booking.completedAt
-                ? `${new Date(booking.bookingDate).toLocaleDateString()} · Completed ${new Date(booking.completedAt).toLocaleString()}`
-                : `${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.bookingTime}`}
+                ? formatIstBookingCompletedLine(
+                    String(booking.bookingDate || '').slice(0, 10),
+                    booking.completedAt,
+                  )
+                : formatIstBookingWhen(
+                    String(booking.bookingDate || '').slice(0, 10),
+                    String(booking.bookingTime || ''),
+                  )}
             </p>
           </div>
 
