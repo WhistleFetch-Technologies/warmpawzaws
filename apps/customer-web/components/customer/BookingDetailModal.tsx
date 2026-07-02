@@ -1124,7 +1124,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 booking.payment_status === 'completed') && (
               <PaymentSourcesDisplay
                 sources={booking.paymentSources}
-                totalPaid={booking.totalAmount ?? booking.price}
+                totalPaid={bookingFinancial?.finalPaid ?? booking.totalAmount ?? booking.price}
               />
             )}
 

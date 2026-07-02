@@ -2253,6 +2253,11 @@ export function UniversalPaymentPage({
           }
         }
 
+        const bookingPayAmount =
+          type === 'booking'
+            ? Math.round(finalAmount * 100) / 100
+            : Math.round(taxBreakdown.total * 100) / 100;
+
         const bookingPayload: Record<string, unknown> = {
           customerId: resolvedCustomerId, // âœ… Required UUID (resolved above)
           vendorId: vendorId, // âœ… Required UUID
@@ -2261,7 +2266,27 @@ export function UniversalPaymentPage({
           bookingDate: bookingDate, // âœ… Format: YYYY-MM-DD
           bookingTime: normalizedBookingTime, // âœ… Format: HH:MM or HH:MM:SS
           serviceType: serviceTypeValue, // âœ… Required enum
-          amount: taxBreakdown.total, // âœ… Number (schema allows >= 0)
+          amount: bookingPayAmount,
+          ...(type === 'booking'
+            ? {
+                financialMeta: {
+                  servicePrice: taxBreakdown.subtotal,
+                  vendorDiscount: checkoutVendorDiscount,
+                  platformDiscount: checkoutPlatformDiscount,
+                  couponDiscount,
+                  subtotalAfterDiscounts,
+                  cgst: taxBreakdown.cgst,
+                  sgst: taxBreakdown.sgst,
+                  igst: taxBreakdown.igst,
+                  totalTax: taxBreakdown.totalTax,
+                  platformFee: platformFees.platformFee,
+                  convenienceFee: platformFees.convenienceFee,
+                  deliveryFee: platformFees.deliveryFee,
+                  walletAmount,
+                  finalPaid: bookingPayAmount,
+                },
+              }
+            : {}),
           ...(promotionDiscount > 0
             ? {
                 discountAmount: promotionDiscount,
@@ -2467,7 +2492,10 @@ export function UniversalPaymentPage({
       }
 
       const paymentPayload: any = {
-        amount: taxBreakdown.total, // âœ… Required: positive number
+        amount:
+          type === 'booking'
+            ? Math.round(finalAmount * 100) / 100
+            : taxBreakdown.total,
         paymentMethod: selectedMethod === 'razorpay' ? 'razorpay' : (selectedMethod || 'razorpay'), // âœ… Optional enum
         bookingId: currentBookingId, // âœ… Required UUID (booking should already exist)
       };

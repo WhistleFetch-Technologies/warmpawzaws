@@ -23,6 +23,31 @@ export type BookingFinancialSnapshot = {
   lines: PriceBreakdownLine[];
 };
 
+function parseJsonMetaFromNotes(prefix: string, notes: unknown): Record<string, unknown> | null {
+  if (!notes || typeof notes !== 'string') return null;
+  const marker = `${prefix}:`;
+  const idx = notes.indexOf(marker);
+  if (idx < 0) return null;
+  const slice = notes.slice(idx + marker.length);
+  const brace = slice.indexOf('{');
+  if (brace < 0) return null;
+  let depth = 0;
+  for (let i = brace; i < slice.length; i++) {
+    if (slice[i] === '{') depth++;
+    else if (slice[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(slice.slice(brace, i + 1)) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function parsePromoMetaFromNotes(notes: unknown): {
   vendorDiscount?: number;
   platformDiscount?: number;
@@ -30,10 +55,9 @@ function parsePromoMetaFromNotes(notes: unknown): {
   platformPromotionId?: string;
 } {
   if (!notes || typeof notes !== 'string') return {};
-  const match = notes.match(/wp_promo_meta:(\{[^}]+\})/);
-  if (!match) return {};
+  const meta = parseJsonMetaFromNotes('wp_promo_meta', notes);
+  if (!meta) return {};
   try {
-    const meta = JSON.parse(match[1]) as Record<string, unknown>;
     return {
       vendorDiscount: Number(meta.vendorDiscount) || 0,
       platformDiscount: Number(meta.platformDiscount) || 0,
@@ -43,6 +67,10 @@ function parsePromoMetaFromNotes(notes: unknown): {
   } catch {
     return {};
   }
+}
+
+function parseFinancialMetaFromNotes(notes: unknown): Record<string, unknown> | null {
+  return parseJsonMetaFromNotes('wp_financial_meta', notes);
 }
 
 function num(raw: unknown): number {
@@ -117,16 +145,29 @@ function buildTaxBreakdown(fees: ReturnType<typeof parseFeeBreakdown>): Checkout
 
 /** Build financial snapshot from existing booking API fields — no duplicate pricing logic. */
 export function extractBookingFinancial(raw: Record<string, unknown>): BookingFinancialSnapshot {
+  const finMeta = parseFinancialMetaFromNotes(raw.notes);
+  const paidFromPayment = num(raw.paid_amount ?? raw.paidAmount);
+
   const basePrice = num(raw.base_price ?? raw.basePrice);
-  const finalPaid = num(raw.total_amount ?? raw.totalAmount ?? raw.amount ?? raw.price);
+  const rowTotal = num(raw.total_amount ?? raw.totalAmount ?? raw.amount ?? raw.price);
+  const finalPaid =
+    finMeta && finMeta.finalPaid != null
+      ? num(finMeta.finalPaid)
+      : paidFromPayment > 0
+        ? paidFromPayment
+        : rowTotal;
   const discountFromRow = num(raw.discount_amount ?? raw.discountAmount);
   const couponCode = raw.coupon_code ?? raw.couponCode;
   const couponCodeStr = couponCode ? String(couponCode).trim() : undefined;
 
   const meta = parsePromoMetaFromNotes(raw.notes);
-  let vendorDiscount = roundMoney(meta.vendorDiscount ?? 0);
-  let platformDiscount = roundMoney(meta.platformDiscount ?? 0);
-  let couponDiscount = 0;
+  let vendorDiscount = roundMoney(
+    finMeta ? num(finMeta.vendorDiscount) : num(meta.vendorDiscount ?? 0)
+  );
+  let platformDiscount = roundMoney(
+    finMeta ? num(finMeta.platformDiscount) : num(meta.platformDiscount ?? 0)
+  );
+  let couponDiscount = roundMoney(finMeta ? num(finMeta.couponDiscount) : 0);
 
   if (vendorDiscount <= 0 && platformDiscount <= 0 && discountFromRow > 0) {
     if (couponCodeStr) {
@@ -148,7 +189,13 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
   }, 0);
 
   const servicePrice =
-    basePrice > 0 ? basePrice : servicesSum > 0 ? roundMoney(servicesSum) : roundMoney(finalPaid + discountFromRow);
+    finMeta && finMeta.servicePrice != null
+      ? num(finMeta.servicePrice)
+      : basePrice > 0
+        ? basePrice
+        : servicesSum > 0
+          ? roundMoney(servicesSum)
+          : roundMoney(finalPaid + discountFromRow);
 
   const totalSavings = roundMoney(vendorDiscount + platformDiscount + couponDiscount);
   const computedSavings =
@@ -169,9 +216,23 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
 
   const promoTotal =
     effectiveVendorDiscount + effectivePlatformDiscount + effectiveCouponDiscount;
-  const subtotalAfterDiscounts = Math.max(0, roundMoney(servicePrice - promoTotal));
+  const subtotalAfterDiscounts =
+    finMeta && finMeta.subtotalAfterDiscounts != null
+      ? num(finMeta.subtotalAfterDiscounts)
+      : Math.max(0, roundMoney(servicePrice - promoTotal));
 
-  const feeFields = parseFeeBreakdown(raw);
+  const feeFields = finMeta
+    ? {
+        platformFee: num(finMeta.platformFee),
+        convenienceFee: num(finMeta.convenienceFee),
+        deliveryFee: num(finMeta.deliveryFee),
+        packagingFee: 0,
+        cgst: num(finMeta.cgst),
+        sgst: num(finMeta.sgst),
+        igst: num(finMeta.igst),
+        totalTax: num(finMeta.totalTax),
+      }
+    : parseFeeBreakdown(raw);
   const taxBreakdown = buildTaxBreakdown(feeFields);
   taxBreakdown.subtotal = subtotalAfterDiscounts;
 

@@ -36,6 +36,7 @@ import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import {
+  buildBookingFinancialNotesMeta,
   buildBookingPromotionNotesMeta,
   resolveBookingPromotions,
 } from '../../../lib/services/booking-promotion-service';
@@ -1527,6 +1528,39 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         const couponCodeRaw = body.couponCode ?? body.coupon_code;
         if (couponCodeRaw && typeof couponCodeRaw === 'string' && couponCodeRaw.trim()) {
           bookingData.coupon_code = couponCodeRaw.trim().slice(0, 80);
+        }
+
+        const financialMetaRaw = body.financialMeta ?? body.financial_meta;
+        if (financialMetaRaw && typeof financialMetaRaw === 'object') {
+          const fm = financialMetaRaw as Record<string, unknown>;
+          const finalPaid = parseFloat(String(fm.finalPaid ?? fm.final_paid ?? ''));
+          const servicePrice = parseFloat(String(fm.servicePrice ?? fm.service_price ?? ''));
+          if (Number.isFinite(finalPaid) && finalPaid >= 0) {
+            bookingData.total_amount = Math.round(finalPaid * 100) / 100;
+          }
+          if (Number.isFinite(servicePrice) && servicePrice >= 0) {
+            bookingData.base_price = Math.round(servicePrice * 100) / 100;
+          }
+          const finNotes = buildBookingFinancialNotesMeta({
+            servicePrice: Number.isFinite(servicePrice) ? servicePrice : calculatedBasePrice,
+            vendorDiscount: parseFloat(String(fm.vendorDiscount ?? fm.vendor_discount ?? 0)) || 0,
+            platformDiscount: parseFloat(String(fm.platformDiscount ?? fm.platform_discount ?? 0)) || 0,
+            couponDiscount: parseFloat(String(fm.couponDiscount ?? fm.coupon_discount ?? 0)) || 0,
+            subtotalAfterDiscounts:
+              parseFloat(String(fm.subtotalAfterDiscounts ?? fm.subtotal_after_discounts ?? 0)) || undefined,
+            cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
+            sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
+            igst: parseFloat(String(fm.igst ?? 0)) || 0,
+            totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+            platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
+            convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
+            deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
+            walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
+            finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
+          });
+          bookingData.notes = bookingData.notes
+            ? `${bookingData.notes} | ${finNotes}`
+            : finNotes;
         }
 
         if (packagePurchaseIdToUse != null && packageSessionNumberToUse != null) {

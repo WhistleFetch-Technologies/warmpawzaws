@@ -39,7 +39,7 @@ import {
 async function loadCustomerPaymentFeeFields(bookingId: string): Promise<Record<string, number>> {
   try {
     const pr = await query(
-      `SELECT platform_fee, convenience_fee, delivery_fee, cgst_amount, sgst_amount, igst_amount, gst_amount, fee_breakdown
+      `SELECT amount, total_amount, platform_fee, convenience_fee, delivery_fee, cgst_amount, sgst_amount, igst_amount, gst_amount, fee_breakdown
        FROM payments
        WHERE booking_id = $1::uuid
          AND LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', 'paid', 'success')
@@ -54,9 +54,15 @@ async function loadCustomerPaymentFeeFields(bookingId: string): Promise<Record<s
     if (!hasMeaningfulCustomerPaidBreakdown(breakdown)) {
       breakdown = breakdownFromFeeBreakdownJson(row.fee_breakdown);
     }
-    if (!hasMeaningfulCustomerPaidBreakdown(breakdown)) return {};
+
+    const paidAmount = parseFloat(String(row.total_amount ?? row.amount ?? 0)) || 0;
+    const out: Record<string, number> = {};
+    if (paidAmount > 0) out.paid_amount = paidAmount;
+
+    if (!hasMeaningfulCustomerPaidBreakdown(breakdown)) return out;
 
     return {
+      ...out,
       platform_fee: breakdown.platformFee,
       convenience_fee: breakdown.convenienceFee,
       delivery_fee: breakdown.deliveryFee,

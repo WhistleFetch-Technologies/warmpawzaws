@@ -29,6 +29,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { ServicePricingDisplay } from '../ServicePricingDisplay';
 import { pickProviderDistanceKm } from '@/lib/distance-display';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
@@ -775,9 +776,15 @@ export function ClinicListView({
                                   </div>
 
                                   <div className="shrink-0 text-right">
-                                    <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
-                                      {formatPriceWithSymbol(service.price)}
-                                    </div>
+                                    <ServicePricingDisplay
+                                      basePrice={service.price}
+                                      usePromoQuote
+                                      vendorId={String(clinic.id)}
+                                      serviceId={String(service.vendorServiceId)}
+                                      customerId={phone}
+                                      serviceStyle="at_center"
+                                      serviceCategory="vet"
+                                    />
                                     <p className="mt-0.5 text-[11px] leading-4 text-gray-500 max-w-[9rem]">{INDICATIVE_PRICING_NOTE}</p>
                                   </div>
                                 </div>

@@ -422,3 +422,24 @@ export function buildBookingPromotionNotesMeta(meta: {
 }): string {
   return `wp_promo_meta:${JSON.stringify(meta)}`;
 }
+
+export type BookingFinancialNotesMeta = {
+  servicePrice: number;
+  vendorDiscount?: number;
+  platformDiscount?: number;
+  couponDiscount?: number;
+  subtotalAfterDiscounts?: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  totalTax?: number;
+  platformFee?: number;
+  convenienceFee?: number;
+  deliveryFee?: number;
+  walletAmount?: number;
+  finalPaid: number;
+};
+
+export function buildBookingFinancialNotesMeta(meta: BookingFinancialNotesMeta): string {
+  return `wp_financial_meta:${JSON.stringify(meta)}`;
+}

@@ -1113,9 +1113,10 @@ class VerifyPaymentHandler extends BaseHandler {
           `UPDATE bookings SET 
             payment_status = 'paid',
             status = 'confirmed',
+            total_amount = COALESCE($2::numeric, total_amount),
             updated_at = NOW()
           WHERE id = $1`,
-          [bookingId]
+          [bookingId, payment.amount ?? null]
         );
 
         if (previousStatus !== 'confirmed') {
