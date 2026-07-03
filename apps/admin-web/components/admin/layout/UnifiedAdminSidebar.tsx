@@ -71,6 +71,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   marketing: Megaphone,
   promotions: Tag,
   'policy-center': Scale,
+  'marketing-analytics': BarChart3,
+  'marketing-campaigns': Megaphone,
   'notification-engine': Bell,
   reports: BarChart3,
   'platform-settings': Settings,
@@ -107,6 +109,16 @@ function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void
       window.location.href = '/policy-center';
     };
   }
+  if (item.id === 'marketing-analytics') {
+    return () => {
+      window.location.href = '/marketing/analytics';
+    };
+  }
+  if (item.id === 'marketing-campaigns') {
+    return () => {
+      window.location.href = '/marketing/campaigns';
+    };
+  }
   return () => onNavigate(item.id);
 }
 
@@ -132,6 +144,12 @@ function isNavItemActive(item: AdminPortalNavItem, activeView: string, pathname:
   }
   if (item.id === 'policy-center') {
     return pathname?.startsWith('/policy-center') ?? false;
+  }
+  if (item.id === 'marketing-analytics') {
+    return pathname?.startsWith('/marketing/analytics') ?? false;
+  }
+  if (item.id === 'marketing-campaigns') {
+    return pathname?.startsWith('/marketing/campaigns') ?? false;
   }
   if (item.id === 'notification-engine') {
     return pathname?.startsWith('/notification-engine') ?? false;
@@ -162,7 +180,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
   }, []);
 
   useEffect(() => {
-    if (pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine') || pathname?.startsWith('/promotions') || pathname?.startsWith('/policy-center')) {
+    if (pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine') || pathname?.startsWith('/promotions') || pathname?.startsWith('/policy-center') || pathname?.startsWith('/marketing/analytics') || pathname?.startsWith('/marketing/campaigns')) {
       setMarketingOpen(true);
     }
   }, [pathname]);
@@ -281,7 +299,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                     type="button"
                     onClick={() => setMarketingOpen((v) => !v)}
                     className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors rounded-lg ${
-                      pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine') || pathname?.startsWith('/promotions') || pathname?.startsWith('/policy-center')
+                      pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine') || pathname?.startsWith('/promotions') || pathname?.startsWith('/policy-center') || pathname?.startsWith('/marketing/analytics') || pathname?.startsWith('/marketing/campaigns')
                         ? 'text-[#FF8C42] bg-orange-50 font-medium'
                         : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                     }`}
