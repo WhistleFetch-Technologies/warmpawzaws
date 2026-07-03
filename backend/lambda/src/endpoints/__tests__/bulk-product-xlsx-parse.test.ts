@@ -42,15 +42,21 @@ describe('parseBulkProductXlsxBuffer', () => {
     expect(BULK_HEADER_FIELD_MAP.image1000x1000px).toBe('images');
   });
 
-  it('template has 27 unified columns', () => {
-    expect(BULK_TEMPLATE_COLUMN_HEADERS).toHaveLength(27);
+  it('template has 28 unified columns', () => {
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toHaveLength(28);
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Delivery Regions');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Product Group ID');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Pet Type');
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Listing Ownership*');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).not.toContain('Pet Type Other');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Variant Attribute 1');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Variant Attribute 3');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).not.toContain('Is Default');
+  });
+
+  it('maps listing ownership column for bulk upload', () => {
+    expect(BULK_HEADER_FIELD_MAP.listingownership).toBe('listing_ownership');
+    expect(BULK_HEADER_FIELD_MAP.productownership).toBe('listing_ownership');
   });
 
   it('maps variant attribute columns for bulk upload', () => {

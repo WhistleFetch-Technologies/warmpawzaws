@@ -97,21 +97,24 @@ export async function issuePlatformTaxInvoice(
 
   let taxableAmount = await aggregateCommissionForPeriod(vendorId, periodFrom, periodTo);
   if (taxableAmount <= 0) {
-    const { rate } = await resolveSellerCommissionRate(vendorId);
-    const revenueRes = await query(
-      `SELECT COALESCE(SUM(COALESCE(subtotal, total_amount - COALESCE(tax_amount, 0))), 0) AS base
-       FROM orders
-       WHERE vendor_id = $1::uuid
-         AND order_status = 'delivered'
-         AND created_at >= $2::timestamptz
-         AND created_at < ($3::date + INTERVAL '1 day')`,
-      [vendorId, periodFrom, periodTo]
-    );
-    const base = parseFloat(String(revenueRes.rows?.[0]?.base ?? 0));
-    taxableAmount = round2(base * (rate / 100));
+    const { rate, configured } = await resolveSellerCommissionRate(vendorId);
+    if (configured && rate != null) {
+      const revenueRes = await query(
+        `SELECT COALESCE(SUM(COALESCE(subtotal, total_amount - COALESCE(tax_amount, 0))), 0) AS base
+         FROM orders
+         WHERE vendor_id = $1::uuid
+           AND order_status = 'delivered'
+           AND created_at >= $2::timestamptz
+           AND created_at < ($3::date + INTERVAL '1 day')`,
+        [vendorId, periodFrom, periodTo]
+      );
+      const base = parseFloat(String(revenueRes.rows?.[0]?.base ?? 0));
+      taxableAmount = round2(base * (rate / 100));
+    }
   }
 
-  const { rate: commissionRate } = await resolveSellerCommissionRate(vendorId);
+  const { rate: commissionRate, configured: commissionConfigured } =
+    await resolveSellerCommissionRate(vendorId);
   const gstAmount = round2(taxableAmount * (gstRate / 100));
   const totalAmount = round2(taxableAmount + gstAmount);
   const invoiceNumber = await nextInvoiceNumber();
@@ -147,7 +150,7 @@ export async function issuePlatformTaxInvoice(
       state: vendor.state,
       pincode: vendor.pincode,
     }),
-    metadata: JSON.stringify({ commissionRate, gstRate, productCode: PRODUCT_CODE }),
+    metadata: JSON.stringify({ commissionRate: commissionRate ?? null, gstRate, productCode: PRODUCT_CODE }),
     issued_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -155,7 +158,7 @@ export async function issuePlatformTaxInvoice(
 
   const description =
     product?.name ??
-    `Platform commission (${commissionRate}% on eligible sales, ${periodFrom} to ${periodTo})`;
+    `Platform commission (${commissionConfigured && commissionRate != null ? commissionRate : '—'}% on eligible sales, ${periodFrom} to ${periodTo})`;
 
   await insert('platform_tax_document_lines', {
     tax_document_id: doc.id,
@@ -166,7 +169,7 @@ export async function issuePlatformTaxInvoice(
     taxable_amount: taxableAmount,
     gst_amount: gstAmount,
     total_amount: totalAmount,
-    metadata: JSON.stringify({ commissionRate }),
+    metadata: JSON.stringify({ commissionRate: commissionRate ?? null }),
     created_at: new Date().toISOString(),
   });
 
@@ -177,7 +180,7 @@ export async function issuePlatformTaxInvoice(
     gstAmount,
     totalAmount,
     gstRate,
-    commissionRate,
+    commissionRate: commissionRate ?? 0,
   };
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle, X, Loader2 } from 'lucide-react';
 import { apiClient as vendorApiClient } from '@/lib/api-client';
 import { downloadBlob } from '@/lib/download-file';
@@ -135,8 +135,29 @@ export function BulkProductUpload({
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [hintCategory, setHintCategory] = useState('Pet Food');
+  const [commissionModel, setCommissionModel] = useState<'category' | 'ownership' | null>(null);
 
   const bulkVariantHints = getBulkVariantHintsForCategory('', hintCategory);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const vendorId = resolveVendorId();
+    if (!vendorId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await vendorApiClient.get<{ commissionModel?: 'category' | 'ownership' | null }>(
+          `/vendor/${vendorId}/ecommerce/commission-model`
+        );
+        if (!cancelled) setCommissionModel(data.commissionModel ?? null);
+      } catch {
+        if (!cancelled) setCommissionModel(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, vendorIdOverride]);
 
   async function blobLooksLikeXlsx(blob: Blob): Promise<boolean> {
     if (!blob || blob.size < 64) return false;
@@ -150,9 +171,9 @@ export function BulkProductUpload({
     setTemplateOkMessage('');
     // Compulsory headers carry `*` so the parser still maps them after
     // normalization (`*` is stripped). Order matches the XLSX template.
-    const headers = ['name*', 'description', 'key_features', 'brand', 'category*', 'product_specifications', 'weight', 'length_cm', 'breadth_cm', 'height_cm', 'barcode', 'stock_quantity*', 'images*', 'selling_price', 'mrp*', 'pet_type', 'tax*', 'hsn_code*', 'manufacturing_details', 'delivery_regions', 'product_group_id', 'variant_attr_1', 'variant_value_1', 'variant_attr_2', 'variant_value_2', 'variant_attr_3', 'variant_value_3'];
+    const headers = ['name*', 'description', 'key_features', 'brand', 'category*', 'product_specifications', 'weight', 'length_cm', 'breadth_cm', 'height_cm', 'barcode', 'stock_quantity*', 'images*', 'selling_price', 'mrp*', 'pet_type', 'tax*', 'hsn_code*', 'manufacturing_details', 'delivery_regions', 'product_group_id', 'variant_attr_1', 'variant_value_1', 'variant_attr_2', 'variant_value_2', 'variant_attr_3', 'variant_value_3', 'listing_ownership*'];
     const sample = [
-      '"Smiling Sunflower Dog Dress"', '"Bright, happy, full of joy."', '"Design: Smiling Flower"', '"15 FURRIES"', '"Pet Accessories"', '"Material:Cotton"', '0.15', '35', '25', '1', '', '100', '"https://example.com/your-product-image-1000x1000.jpg"', '799', '1598', 'Dog', '5%', '62052000', '"Made in India"', '"Mumbai, Pune"', '', '', '', '', '', ''
+      '"Smiling Sunflower Dog Dress"', '"Bright, happy, full of joy."', '"Design: Smiling Flower"', '"15 FURRIES"', '"Pet Accessories"', '"Material:Cotton"', '0.15', '35', '25', '1', '', '100', '"https://example.com/your-product-image-1000x1000.jpg"', '799', '1598', 'Dog', '5%', '62052000', '"Made in India"', '"Mumbai, Pune"', '', '', '', '', '', '', '"Third party"'
     ];
     const csv = headers.join(',') + '\n' + sample.join(',');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -460,6 +481,14 @@ export function BulkProductUpload({
                   ))}
                 </ul>
               </div>
+
+              {commissionModel === 'ownership' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900">
+                  <strong>Listing Ownership*</strong> column is required for your seller account. Use{' '}
+                  <em>Own brand</em> or <em>Third party</em> on each product row (column AB in the
+                  Excel template).
+                </div>
+              )}
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <h4 className="font-semibold text-amber-800 mb-2">Required fields (marked <span className="font-mono">*</span> in the template)</h4>

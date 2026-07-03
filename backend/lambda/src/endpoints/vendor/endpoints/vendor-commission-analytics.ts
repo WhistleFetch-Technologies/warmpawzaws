@@ -138,8 +138,11 @@ class GetVendorCommissionAnalyticsHandler extends BaseHandler {
         return this.success(EMPTY_RESPONSE);
       }
 
-      const { rate: commissionRate, source: commissionRateSource, monthlyRevenue } =
+      const { rate: commissionRate, source: commissionRateSource, monthlyRevenue, configured, missing } =
         await resolveSellerCommissionRate(vendorId);
+
+      const effectiveRate = configured && commissionRate != null ? commissionRate : 0;
+      const rateFrac = effectiveRate / 100;
 
       const [statsRes, gstRate, vendorRes] = await Promise.all([
         query(
@@ -157,7 +160,7 @@ class GetVendorCommissionAnalyticsHandler extends BaseHandler {
              ), 0) AS pending_payout
            FROM orders o
            WHERE o.vendor_id = $1`,
-          [vendorId, commissionRate]
+          [vendorId, effectiveRate]
         ),
         resolveSellerGstRate(vendorId),
         query(`SELECT commission_tier_id FROM vendors WHERE id = $1 LIMIT 1`, [vendorId]).catch(
@@ -169,7 +172,6 @@ class GetVendorCommissionAnalyticsHandler extends BaseHandler {
       const totalRevenue = parseFloat(String(stats.total_revenue ?? 0));
       const totalBase = parseFloat(String(stats.total_base ?? 0));
       const pendingPayout = parseFloat(String(stats.pending_payout ?? 0));
-      const rateFrac = commissionRate / 100;
       const totalCommission = totalBase * rateFrac;
       const netEarnings = totalBase * (1 - rateFrac);
 
@@ -180,8 +182,10 @@ class GetVendorCommissionAnalyticsHandler extends BaseHandler {
       const currentTier = tiers.find((t) => t.isCurrent) ?? null;
 
       return this.success({
-        commissionRate,
-        commissionRateSource,
+        commissionRate: configured ? commissionRate : null,
+        commissionRateSource: configured ? commissionRateSource : null,
+        commissionConfigured: configured,
+        commissionMissing: missing ?? [],
         gstRate,
         totalRevenue,
         totalCommission,

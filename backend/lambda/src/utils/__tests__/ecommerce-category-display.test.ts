@@ -36,5 +36,21 @@ describe('ecommerce-category-display', () => {
       });
       expect(item.is_active).toBe(true);
     });
+
+    it('maps default_commission_rate from payload', () => {
+      const item = parseAdminCategoryPayloadItem({
+        name: 'Pet Food',
+        default_commission_rate: 12,
+      });
+      expect(item.default_commission_rate).toBe(12);
+    });
+
+    it('maps commissionRate alias to default_commission_rate', () => {
+      const item = parseAdminCategoryPayloadItem({
+        name: 'Pet Food',
+        commissionRate: 15,
+      });
+      expect(item.default_commission_rate).toBe(15);
+    });
   });
 });

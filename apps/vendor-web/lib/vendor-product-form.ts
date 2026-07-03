@@ -57,6 +57,7 @@ export type ProductFormState = {
   baseMrp: string;
   basePrice: string;
   brand: string;
+  listingOwnership: '' | 'own_brand' | 'third_party';
   keyFeatures: string;
   weightKg: string;
   lengthCm: string;
@@ -101,6 +102,7 @@ export type VendorProductPayload = {
     barcode?: string | null;
   }>;
   delivery_regions: string[] | null;
+  listing_ownership?: 'own_brand' | 'third_party';
   metadata?: {
     variant_axes?: Array<{ key: string; label: string; preset?: VariantAxisPreset }>;
     product_group_id?: string;
@@ -199,6 +201,15 @@ function parseOptionalNum(raw: string): number | null {
   if (!t) return null;
   const n = parseFloat(t);
   return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function appendListingOwnershipToPayload(
+  payload: VendorProductPayload,
+  form: ProductFormState,
+): void {
+  if (form.listingOwnership === 'own_brand' || form.listingOwnership === 'third_party') {
+    payload.listing_ownership = form.listingOwnership;
+  }
 }
 
 function appendProductExtrasToPayload(
@@ -502,6 +513,10 @@ export function initialProductFormState(
       product as { price?: number; original_price?: number; compare_at_price?: number },
     ),
     brand: String(product?.brand ?? ''),
+    listingOwnership:
+      product?.listing_ownership === 'own_brand' || product?.listing_ownership === 'third_party'
+        ? product.listing_ownership
+        : '',
     keyFeatures: String(specs.key_features ?? product?.key_features ?? ''),
     weightKg: product?.weight != null && product.weight !== '' ? String(product.weight) : '',
     lengthCm: specs.length_cm != null ? String(specs.length_cm) : '',
@@ -621,6 +636,7 @@ export type ValidateProductFormInput = {
   variantAxes: VariantAxisConfig[];
   deliveryRegions?: string[];
   customSpecs?: SpecKvRow[];
+  requiresListingOwnership?: boolean;
 };
 
 export function validateProductForm(input: ValidateProductFormInput): string | null {
@@ -628,6 +644,10 @@ export function validateProductForm(input: ValidateProductFormInput): string | n
 
   if (!form.name?.trim()) return 'Product name is required';
   if (!form.category_id) return 'Category is required';
+
+  if (input.requiresListingOwnership && !form.listingOwnership) {
+    return 'Listing ownership is required — select Own brand or Third party';
+  }
 
   for (const field of [
     { label: 'Weight', val: form.weightKg },
@@ -745,6 +765,7 @@ export function buildVendorProductPayload(
           : null,
     };
     appendProductExtrasToPayload(payload, form, customSpecs, simpleSku.barcode);
+    appendListingOwnershipToPayload(payload, form);
     return payload;
   }
 
@@ -789,6 +810,7 @@ export function buildVendorProductPayload(
         : null,
   };
   appendProductExtrasToPayload(payload, form, customSpecs);
+  appendListingOwnershipToPayload(payload, form);
   return payload;
 }
 

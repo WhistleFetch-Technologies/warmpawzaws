@@ -3,6 +3,7 @@
  */
 
 import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from './s3-media-presign';
+import { parseCategoryCommissionRate } from './ecommerce-commission-settings';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,6 +25,7 @@ export type EcommerceCategoryPublicRow = {
   display_order: number;
   is_active: boolean;
   image_url: string | null;
+  default_commission_rate: number | null;
   created_at?: string;
 };
 
@@ -40,6 +42,12 @@ export async function mapCategoryRowForPublic(
 
   const isActive = row.is_active !== false && row.is_active !== 'false';
 
+  const commissionRaw = row.default_commission_rate ?? row.defaultCommissionRate;
+  const defaultCommissionRate =
+    commissionRaw != null && commissionRaw !== '' && !Number.isNaN(Number(commissionRaw))
+      ? Number(commissionRaw)
+      : null;
+
   return {
     id: String(row.id ?? ''),
     name: String(row.name ?? '').trim(),
@@ -47,6 +55,7 @@ export async function mapCategoryRowForPublic(
     display_order: parseInt(String(row.display_order ?? row.displayOrder ?? 0), 10) || 0,
     is_active: opts?.includeInactive ? isActive : true,
     image_url: imageUrl,
+    default_commission_rate: defaultCommissionRate,
     created_at: row.created_at != null ? String(row.created_at) : undefined,
   };
 }
@@ -66,6 +75,7 @@ export function parseAdminCategoryPayloadItem(item: Record<string, unknown>): {
   display_order: number;
   is_active: boolean;
   image_url: string | null;
+  default_commission_rate: number | null;
 } {
   const name = String(item.name ?? '').trim();
   const rawId = item.id != null ? String(item.id).trim() : '';
@@ -92,5 +102,6 @@ export function parseAdminCategoryPayloadItem(item: Record<string, unknown>): {
     display_order,
     is_active: enabled,
     image_url,
+    default_commission_rate: parseCategoryCommissionRate(item),
   };
 }
