@@ -16,6 +16,8 @@ export interface ServiceCategoryRowProps {
   /** Optional label overrides keyed by categoryId/screen (same as CustomerHomeComplete). */
   serviceLabelOverride?: Record<string, string>;
   className?: string;
+  /** When true, coming-soon tiles are removed entirely (not shown as Soon). */
+  reviewDemoAccount?: boolean;
 }
 
 function isSoonService(service: QuickServiceTile): boolean {
@@ -62,6 +64,7 @@ function ServiceCategoryRowComponent({
   onNavigate,
   serviceLabelOverride,
   className = '',
+  reviewDemoAccount = false,
 }: ServiceCategoryRowProps) {
   const handleTileClick = useCallback(
     (service: QuickServiceTile) => {
@@ -75,10 +78,20 @@ function ServiceCategoryRowComponent({
     [onNavigate]
   );
 
-  const sortedServices = useMemo(
-    () => sortServicesAvailableFirst(services),
-    [services]
-  );
+  const sortedServices = useMemo(() => {
+    const sorted = sortServicesAvailableFirst(services);
+    if (!reviewDemoAccount) return sorted;
+    return sorted.filter((service) => {
+      const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
+      const serviceComingSoon =
+        Boolean(service.isComingSoon) ||
+        COMING_SOON_HOME_SERVICE_SCREENS.has(String(service.screen || '').toLowerCase()) ||
+        COMING_SOON_HOME_SERVICE_SCREENS.has(key);
+      return !serviceComingSoon;
+    });
+  }, [services, reviewDemoAccount]);
+
+  if (sortedServices.length === 0) return null;
 
   return (
     <div className={`mb-4 w-full min-w-0 ${className}`}>

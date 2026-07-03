@@ -59,6 +59,13 @@ import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '
 import { toast } from 'sonner';
 import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import {
+  filterComingSoonBannersForReviewAccount,
+  filterHomeServiceTilesForReviewAccount,
+  filterWhatsNewAnnouncementsForReviewAccount,
+  isAppReviewDemoAccount,
+  isShopUiVisibleForAccount,
+} from '@/lib/app-review-demo-account';
 import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
 import { CustomerHomePageContent, CustomerHomePageHeader } from '../home/CustomerHomePage';
 import { MoreServicesSection } from '../home/sections/MoreServicesSection';
@@ -556,6 +563,8 @@ export function CustomerHomeComplete({
   >([]);
   // Evaluated lazily so runtime-config.js (which runs before hydration) is already applied.
   const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
+  const shopUiVisible = isShopUiVisibleForAccount(phone);
+  const reviewDemoAccount = isAppReviewDemoAccount(phone);
   const [newHomeUi] = useState<boolean>(() => isNewHomeUiEnabled());
 
   useEffect(() => {
@@ -741,8 +750,12 @@ export function CustomerHomeComplete({
   );
 
   const whatsNewAnnouncements = useMemo(
-    () => buildWhatsNewAnnouncements(dynamicAnnouncements),
-    [dynamicAnnouncements]
+    () =>
+      filterWhatsNewAnnouncementsForReviewAccount(
+        buildWhatsNewAnnouncements(dynamicAnnouncements),
+        phone
+      ),
+    [dynamicAnnouncements, phone]
   );
 
   // ✅ GPS Tracking Hook - Polls for active vendor tracking sessions
@@ -1461,6 +1474,20 @@ export function CustomerHomeComplete({
       };
     });
   }, [dynamicLowerBanners]);
+
+  const reviewSafeFeaturedLowerBanners = useMemo(
+    () => filterComingSoonBannersForReviewAccount(featuredLowerBanners, phone),
+    [featuredLowerBanners, phone]
+  );
+
+  const newHomeServiceTiles = useMemo(
+    () =>
+      filterHomeServiceTilesForReviewAccount(
+        serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices,
+        phone
+      ) as QuickServiceTile[],
+    [serviceLaunchTilesResolved, filteredQuickServices, sourceQuickServices, phone]
+  );
 
   const homeBannerCount = homeCarouselBanners.length;
   const middleBannerCount = featuredMiddleCarouselBanners.length;
@@ -2227,9 +2254,7 @@ export function CustomerHomeComplete({
             customerId={customerId || undefined}
             onSearch={handleSearchSubmit}
             onSearchResultSelect={handleSearchResultSelect}
-            services={
-              (serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices) as QuickServiceTile[]
-            }
+            services={newHomeServiceTiles}
             serviceLabelOverride={{}}
             onNavigate={handleNavigation}
             homeCarouselBanners={homeCarouselBanners}
@@ -2238,9 +2263,10 @@ export function CustomerHomeComplete({
             phone={phone}
             hotDeals={hotDeals}
             ecommerceShopCategories={ecommerceShopCategories}
-            customerCommerceEnabled={customerCommerceEnabled}
-            featuredLowerBanners={featuredLowerBanners}
+            customerCommerceEnabled={shopUiVisible && customerCommerceEnabled}
+            featuredLowerBanners={reviewSafeFeaturedLowerBanners}
             whatsNewAnnouncements={whatsNewAnnouncements}
+            reviewDemoAccount={reviewDemoAccount}
             onWhatsNewSeeAll={() => handleNavigation('whats-new')}
             onWhatsNewRowPress={(a) => {
               if (a.announcementType === 'emergency') return;
@@ -2425,7 +2451,7 @@ export function CustomerHomeComplete({
         ) : null}
 
         {/* Shop — gated until customerEcommerceEnabled / NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED */}
-        {!newHomeUi ? (
+        {!newHomeUi && shopUiVisible ? (
         <div className="mb-4">
           <div className="flex items-center gap-3 px-4 mb-2">
             <div className="flex items-center gap-2">
@@ -2469,12 +2495,18 @@ export function CustomerHomeComplete({
             </span>
           </div>
           <div className="grid grid-cols-5 gap-2">
-            {(serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices).map((service, index) => {
+            {filterHomeServiceTilesForReviewAccount(
+              serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices,
+              phone
+            ).map((service, index) => {
               const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
               const displayLabel = service.label;
               const serviceComingSoon =
                 COMING_SOON_HOME_SERVICE_SCREENS.has(String(service.screen || '').toLowerCase()) ||
                 COMING_SOON_HOME_SERVICE_SCREENS.has(key);
+              if (reviewDemoAccount && serviceComingSoon) {
+                return null;
+              }
               if (serviceComingSoon) {
                 return (
                   <div
@@ -2866,6 +2898,7 @@ export function CustomerHomeComplete({
             </button>
 
             {/* Insurance — coming soon (not launched) */}
+            {!reviewDemoAccount ? (
             <div
               className="relative bg-gradient-to-br from-green-50/90 to-emerald-50/90 rounded-2xl p-4 border border-green-100/80 text-left opacity-[0.88] pointer-events-none select-none grayscale-[0.15]"
               aria-label="Insurance — coming soon"
@@ -2878,6 +2911,7 @@ export function CustomerHomeComplete({
               <p className="text-xs text-gray-600 mb-2">Full coverage</p>
               <span className="text-green-700 font-bold text-sm">Coming soon</span>
             </div>
+            ) : null}
 
             {/* Walker */}
             <button
@@ -2966,7 +3000,7 @@ export function CustomerHomeComplete({
         </div>
         ) : null}
 
-        {!newHomeUi ? (
+        {!newHomeUi && !reviewDemoAccount ? (
         <>
         {/* Adoption — full section coming soon (not launched) */}
         <div className="mb-6" aria-label="Adoption — coming soon">
@@ -3096,9 +3130,9 @@ export function CustomerHomeComplete({
         </>
         ) : null}
 
-        {!newHomeUi && featuredLowerBanners.length > 0 ? (
+        {!newHomeUi && reviewSafeFeaturedLowerBanners.length > 0 ? (
           <div className="px-6 mb-6 space-y-4">
-            {featuredLowerBanners.map((banner, index) => {
+            {reviewSafeFeaturedLowerBanners.map((banner, index) => {
               const slotComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
               const slotNonClickable =
                 slotComingSoon || Boolean((banner as { isInformational?: boolean }).isInformational);

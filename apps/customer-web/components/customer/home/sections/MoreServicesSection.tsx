@@ -1,8 +1,9 @@
 'use client';
 
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import Image from 'next/image';
 import { Users, Shield, Dog, Coffee, ChevronRight, PawPrint, Heart, MapPin, Sparkles } from 'lucide-react';
+import { isAppReviewDemoAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
 const MORE_SERVICES_IMAGES = {
@@ -80,6 +81,8 @@ const MORE_SERVICES_CARDS = [
 export interface MoreServicesSectionProps {
   onNavigate: HomeNavigateFn;
   className?: string;
+  /** When true, under-build cards are removed entirely (not shown as Soon). */
+  reviewDemoAccount?: boolean;
 }
 
 function MoreServiceCard({
@@ -168,7 +171,23 @@ function MoreServiceCard({
   );
 }
 
-function MoreServicesSectionComponent({ onNavigate, className = '' }: MoreServicesSectionProps) {
+function MoreServicesSectionComponent({
+  onNavigate,
+  className = '',
+  reviewDemoAccount: reviewDemoAccountProp,
+}: MoreServicesSectionProps) {
+  const reviewDemoAccount =
+    reviewDemoAccountProp ?? isAppReviewDemoAccount(readStoredCustomerPhone());
+  const visibleCards = useMemo(
+    () =>
+      reviewDemoAccount
+        ? MORE_SERVICES_CARDS.filter((card) => !card.comingSoon)
+        : MORE_SERVICES_CARDS,
+    [reviewDemoAccount]
+  );
+
+  if (visibleCards.length === 0) return null;
+
   return (
     <div className={`mb-6 px-4 ${className}`} aria-label="More Services">
       <div className="mb-4 flex items-start gap-3">
@@ -185,7 +204,7 @@ function MoreServicesSectionComponent({ onNavigate, className = '' }: MoreServic
 
       {/* Single column on mobile — 2-up grid squeezes text and images on narrow viewports */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {MORE_SERVICES_CARDS.map((card) => (
+        {visibleCards.map((card) => (
           <MoreServiceCard key={card.id} card={card} onNavigate={onNavigate} />
         ))}
       </div>

@@ -39,6 +39,7 @@ import {
   PaymentHoldBanner,
   resolvePaymentHoldExpiresAt,
 } from '@/lib/payment-hold-ui';
+import { isAppReviewDemoAccount } from '@/lib/app-review-demo-account';
 
 import { useRouter } from 'next/navigation';
 import { BookingDetailModal } from '../BookingDetailModal';
@@ -194,6 +195,7 @@ export function MyBookings({
   onNavigate,
 }: MyBookingsProps) {
   const router = useRouter();
+  const reviewDemoAccount = isAppReviewDemoAccount(phone);
 
   const [mealPlanOrdersEnabled, setMealPlanOrdersEnabled] = useState(false);
   useEffect(() => {
@@ -772,6 +774,7 @@ export function MyBookings({
         className={`${MY_BOOKINGS_CONTENT_SHELL_CLASS} mx-auto max-w-customer space-y-4 px-4 pb-4 sm:px-5`}
         style={{ paddingBottom: 'max(1.25rem, var(--customer-tabbar-content-pad))' }}
       >
+        {!reviewDemoAccount ? (
         <MyBookingsTrackingRow
           tone="emerald"
           icon={UtensilsCrossed}
@@ -789,7 +792,9 @@ export function MyBookings({
               : 'Meal plan orders and tracking — coming soon'
           }
         />
+        ) : null}
 
+        {!reviewDemoAccount ? (
         <MyBookingsTrackingRow
           tone="blue"
           icon={Package}
@@ -808,6 +813,7 @@ export function MyBookings({
               : 'Pharmacy orders and tracking — coming soon'
           }
         />
+        ) : null}
 
         <MyBookingsFilterTabs
           activeFilter={activeFilter}

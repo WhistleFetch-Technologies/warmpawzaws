@@ -3,6 +3,7 @@
 import { Suspense } from 'react';
 import { EcommerceOrderSuccessScreen } from '@/components/ecommerce/success/EcommerceOrderSuccessScreen';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 
 function SuccessFallback() {
   return (
@@ -29,8 +30,10 @@ function SuccessContent() {
 
 export default function CheckoutSuccessPage() {
   return (
-    <Suspense fallback={<SuccessFallback />}>
-      <SuccessContent />
-    </Suspense>
+    <AppReviewDemoRouteGuard>
+      <Suspense fallback={<SuccessFallback />}>
+        <SuccessContent />
+      </Suspense>
+    </AppReviewDemoRouteGuard>
   );
 }

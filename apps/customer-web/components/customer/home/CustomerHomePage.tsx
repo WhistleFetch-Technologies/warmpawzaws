@@ -79,6 +79,8 @@ export interface CustomerHomePageContentProps {
   petCareArticles?: PetCareArticleItem[];
   onPetCareArticleClick?: (article: PetCareArticleItem) => void;
   onPetCareArticlesSeeAll?: () => void;
+  /** App Store review demo account — hides under-build sections entirely. */
+  reviewDemoAccount?: boolean;
 }
 
 function CustomerHomePageHeaderComponent({
@@ -144,6 +146,7 @@ function CustomerHomePageContentComponent({
   petCareArticles = [],
   onPetCareArticleClick,
   onPetCareArticlesSeeAll,
+  reviewDemoAccount = false,
 }: CustomerHomePageContentProps) {
   return (
     <>
@@ -156,22 +159,26 @@ function CustomerHomePageContentComponent({
         services={services}
         onNavigate={onNavigate}
         serviceLabelOverride={serviceLabelOverride}
+        reviewDemoAccount={reviewDemoAccount}
       />
       <HeroBannerSection banners={homeCarouselBanners} onNavigate={onNavigate} />
       <TrustFeatureBar onNavigate={onNavigate} />
       <ActiveBookingsSection activeBookings={activeBookings} onViewBooking={onViewBooking} />
-      <ShopProductsSection
-        hotDeals={hotDeals}
-        categories={ecommerceShopCategories}
-        ecommerceEnabled={customerCommerceEnabled}
-        onNavigate={onNavigate}
-      />
+      {!reviewDemoAccount ? (
+        <ShopProductsSection
+          hotDeals={hotDeals}
+          categories={ecommerceShopCategories}
+          ecommerceEnabled={customerCommerceEnabled}
+          onNavigate={onNavigate}
+        />
+      ) : null}
       <PopularServicesSection phone={phone} onNavigate={onNavigate} />
       <OffersForYouSection lowerBanners={featuredLowerBanners} onNavigate={onNavigate} />
       <HelpWaysSection
         services={services}
         customerCommerceEnabled={customerCommerceEnabled}
         onNavigate={onNavigate}
+        reviewDemoAccount={reviewDemoAccount}
       />
       <DiscoverMoreSection phone={phone} onNavigate={onNavigate} />
       <WhatsNewSection
@@ -180,17 +187,19 @@ function CustomerHomePageContentComponent({
         onRowPress={onWhatsNewRowPress}
         onSosPress={onWhatsNewSosPress}
       />
-      <AdoptionSection
-        adoptablePets={adoptionStats?.adoptablePets}
-        rehomingListings={adoptionStats?.rehomingListings}
-      />
-      <PremiumPetFoodSection />
+      {!reviewDemoAccount ? (
+        <AdoptionSection
+          adoptablePets={adoptionStats?.adoptablePets}
+          rehomingListings={adoptionStats?.rehomingListings}
+        />
+      ) : null}
+      {!reviewDemoAccount ? <PremiumPetFoodSection /> : null}
       <PetCareArticlesSection
         articles={petCareArticles}
         onArticleClick={onPetCareArticleClick}
         onSeeAll={onPetCareArticlesSeeAll}
       />
-      <MoreServicesSection onNavigate={onNavigate} />
+      <MoreServicesSection onNavigate={onNavigate} reviewDemoAccount={reviewDemoAccount} />
       <HomeLowerBannersSection lowerBanners={featuredLowerBanners.slice(1)} onNavigate={onNavigate} />
       <NeedHelpSection onNavigate={onNavigate} />
     </>

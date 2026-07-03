@@ -5,6 +5,7 @@ import { apiClient } from '@/lib/api-client';
 import {
   rememberHelpBackFromCurrentUrl,
 } from '@/lib/go-back-or-replace';
+import { isAppReviewDemoAccount, isLoyaltyUiVisibleForAccount } from '@/lib/app-review-demo-account';
 import {
   fetchCustomerUuidByPhone,
   formatWalletTopUpError,
@@ -54,6 +55,8 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
   const [topUpAmount, setTopUpAmount] = useState<string>('');
   const [processingTopUp, setProcessingTopUp] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  const reviewDemoAccount = isAppReviewDemoAccount(customerPhone);
+  const loyaltyUiVisible = isLoyaltyUiVisibleForAccount(customerPhone);
 
   useEffect(() => {
     loadWalletData();
@@ -432,53 +435,61 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
       {/* Quick Actions — 3-column mobile grid (no wide horizontal strip) */}
       <div className="mb-4">
         <div className="bg-white rounded-2xl border border-stone-200/90 shadow-sm p-3">
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              disabled
-              aria-disabled="true"
-              aria-label="Add money (unavailable)"
-              className={`${gridTileClass} bg-white border-2 border-stone-200 opacity-60 cursor-not-allowed shadow-sm disabled:pointer-events-none disabled:active:scale-100`}
-            >
-              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-2xl leading-none grayscale">
-                💳
-              </span>
-              <span className="text-[10px] text-center text-gray-500 font-semibold leading-tight px-0.5">
-                Add Money
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                onNavigate ? onNavigate('rewards-loyalty') : (window.location.href = '/rewards')
-              }
-              className={`${gridTileClass} bg-stone-50/80 hover:bg-stone-100/90`}
-            >
-              <span className="text-2xl">⭐</span>
-              <span className="text-[10px] text-center text-gray-600 leading-tight px-0.5">Rewards & Points</span>
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                onNavigate ? onNavigate('referral-system') : (window.location.href = '/referrals')
-              }
-              className={`${gridTileClass} bg-stone-50/80 hover:bg-stone-100/90`}
-            >
-              <span className="text-2xl">👥</span>
-              <span className="text-[10px] text-center text-gray-600 leading-tight px-0.5">Refer & Earn</span>
-            </button>
+          <div className={`grid gap-2 ${reviewDemoAccount ? 'grid-cols-1' : 'grid-cols-3'}`}>
+            {!reviewDemoAccount ? (
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                aria-label="Add money (unavailable)"
+                className={`${gridTileClass} bg-white border-2 border-stone-200 opacity-60 cursor-not-allowed shadow-sm disabled:pointer-events-none disabled:active:scale-100`}
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-2xl leading-none grayscale">
+                  💳
+                </span>
+                <span className="text-[10px] text-center text-gray-500 font-semibold leading-tight px-0.5">
+                  Add Money
+                </span>
+              </button>
+            ) : null}
+            {loyaltyUiVisible ? (
+              <button
+                type="button"
+                onClick={() =>
+                  onNavigate ? onNavigate('rewards-loyalty') : (window.location.href = '/rewards')
+                }
+                className={`${gridTileClass} bg-stone-50/80 hover:bg-stone-100/90`}
+              >
+                <span className="text-2xl">⭐</span>
+                <span className="text-[10px] text-center text-gray-600 leading-tight px-0.5">Rewards & Points</span>
+              </button>
+            ) : null}
+            {loyaltyUiVisible ? (
+              <button
+                type="button"
+                onClick={() =>
+                  onNavigate ? onNavigate('referral-system') : (window.location.href = '/referrals')
+                }
+                className={`${gridTileClass} bg-stone-50/80 hover:bg-stone-100/90`}
+              >
+                <span className="text-2xl">👥</span>
+                <span className="text-[10px] text-center text-gray-600 leading-tight px-0.5">Refer & Earn</span>
+              </button>
+            ) : null}
           </div>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled
-              aria-disabled="true"
-              aria-label="Offers (unavailable)"
-              className={`${gridTileClass} bg-white border-2 border-stone-200 opacity-60 cursor-not-allowed shadow-sm disabled:pointer-events-none disabled:active:scale-100`}
-            >
-              <span className="text-2xl">🎁</span>
-              <span className="text-[10px] text-center text-gray-600 leading-tight px-0.5">Offers</span>
-            </button>
+          <div className={`mt-2 grid gap-2 ${reviewDemoAccount ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            {!reviewDemoAccount ? (
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                aria-label="Offers (unavailable)"
+                className={`${gridTileClass} bg-white border-2 border-stone-200 opacity-60 cursor-not-allowed shadow-sm disabled:pointer-events-none disabled:active:scale-100`}
+              >
+                <span className="text-2xl">🎁</span>
+                <span className="text-[10px] text-center text-gray-600 leading-tight px-0.5">Offers</span>
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => {
