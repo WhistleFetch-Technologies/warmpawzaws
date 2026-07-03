@@ -6,6 +6,7 @@ import { mapCatalogSlugToLaunchServiceId } from '@warmpawz/service-launch-mappin
 import { useCustomerCategories } from '@/hooks/useCustomerCategories';
 import { apiClient } from '@/lib/api-client';
 import { buildCustomerLaunchTiles } from '@/lib/customer-launch-tiles';
+import { filterHomeServiceTilesForReviewAccount } from '@/lib/app-review-demo-account';
 import { serviceBaseOnpincode } from '../../homepage/constants/helpers';
 import { quickServices, serviceScreenMap } from '../../homepage/constants';
 import type { QuickServiceTile } from '../types';
@@ -412,12 +413,13 @@ export function useAllServicesData({ phone }: UseAllServicesDataOptions) {
 
   const allServices = useMemo((): AllServicesTile[] => {
     const list = resolved ? filteredServices : sourceQuickServices;
-    return list.map((service) => ({
+    const mapped = list.map((service) => ({
       ...service,
       displayLabel: displayLabelForService(service),
       description: descriptionForService(service),
     }));
-  }, [resolved, filteredServices, sourceQuickServices]);
+    return filterHomeServiceTilesForReviewAccount(mapped, phone) as AllServicesTile[];
+  }, [resolved, filteredServices, sourceQuickServices, phone]);
 
   const petFilteredServices = useMemo(
     () => allServices.filter((s) => serviceMatchesPetFilter(s, petFilter)),

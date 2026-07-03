@@ -164,12 +164,14 @@ function CustomerHomePageContentComponent({
       <HeroBannerSection banners={homeCarouselBanners} onNavigate={onNavigate} />
       <TrustFeatureBar onNavigate={onNavigate} />
       <ActiveBookingsSection activeBookings={activeBookings} onViewBooking={onViewBooking} />
-      <ShopProductsSection
-        hotDeals={hotDeals}
-        categories={ecommerceShopCategories}
-        ecommerceEnabled={customerCommerceEnabled}
-        onNavigate={onNavigate}
-      />
+      {!reviewDemoAccount ? (
+        <ShopProductsSection
+          hotDeals={hotDeals}
+          categories={ecommerceShopCategories}
+          ecommerceEnabled={customerCommerceEnabled}
+          onNavigate={onNavigate}
+        />
+      ) : null}
       <PopularServicesSection phone={phone} onNavigate={onNavigate} />
       <OffersForYouSection lowerBanners={featuredLowerBanners} onNavigate={onNavigate} />
       <HelpWaysSection
