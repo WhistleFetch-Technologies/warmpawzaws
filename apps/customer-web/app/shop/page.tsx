@@ -24,6 +24,8 @@ import { apiClient } from '@/lib/api-client';
 import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
 import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { isShopUiVisibleForAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
+import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { handleShopPageBack } from '@/lib/go-back-or-replace';
 import { emitWarmpawzCartUpdated, CART_UPDATED_EVENT, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
 import {
@@ -353,6 +355,10 @@ export default function ShopPage() {
     });
     return sortShopProducts(filtered, sortBy);
   }, [products, searchTerm, priceRange, sortBy]);
+
+  if (typeof window !== 'undefined' && !isShopUiVisibleForAccount(readStoredCustomerPhone())) {
+    return <AppReviewDemoRouteGuard>{null}</AppReviewDemoRouteGuard>;
+  }
 
   if (!isCustomerEcommerceEnabled()) {
     return (

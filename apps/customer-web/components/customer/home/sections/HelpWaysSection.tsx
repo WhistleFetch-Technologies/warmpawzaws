@@ -85,6 +85,8 @@ export interface HelpWaysSectionProps {
   customerCommerceEnabled: boolean;
   onNavigate: HomeNavigateFn;
   className?: string;
+  /** When true, under-build cards are removed entirely (not shown as Soon). */
+  reviewDemoAccount?: boolean;
 }
 
 function HelpWaysSectionComponent({
@@ -92,6 +94,7 @@ function HelpWaysSectionComponent({
   customerCommerceEnabled,
   onNavigate,
   className = '',
+  reviewDemoAccount = false,
 }: HelpWaysSectionProps) {
   const launchByScreen = useMemo(() => {
     const map = new Map<string, QuickServiceTile>();
@@ -157,6 +160,7 @@ function HelpWaysSectionComponent({
       <HorizontalScrollRow gapClassName="gap-3">
         {HELP_WAYS_CATALOG.map((way) => {
           const comingSoon = resolveComingSoon(way.screen, way.categoryId);
+          if (reviewDemoAccount && comingSoon) return null;
           const showSoonBadge = HELP_WAY_SOON_IDS.has(way.id) && comingSoon;
           const theme = getHelpWayTheme(way.id);
           const BadgeIcon = theme.badgeIcon;

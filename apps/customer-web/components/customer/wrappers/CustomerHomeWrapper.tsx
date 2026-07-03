@@ -115,6 +115,12 @@ import {
   isCustomerEcommerceEnabled,
   isCustomerEcommerceScreen,
 } from '@/lib/customer-ecommerce-flag';
+import {
+  isLoyaltyUiVisibleForAccount,
+  isReviewBlockedScreen,
+  isShopUiVisibleForAccount,
+} from '@/lib/app-review-demo-account';
+import { ReviewDemoShellRedirect } from '@/lib/app-review-demo-route-guard';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { useCart } from '@/context/CartContext';
 import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
@@ -1217,6 +1223,9 @@ export function CustomerHomeWrapper({
   };
 
   const goToShopFromParent = (opts?: { category?: string }) => {
+    if (!isShopUiVisibleForAccount(phone)) {
+      return;
+    }
     if (!isCustomerEcommerceEnabled()) {
       toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
       return;
@@ -1265,6 +1274,9 @@ export function CustomerHomeWrapper({
 
   const handleNavigateToService = (service: string, _data?: any) => {
     const data = _data;
+    if (isReviewBlockedScreen(service, phone)) {
+      return;
+    }
     captureBannerNavigationOrigin(data);
     const vendorRow: Record<string, unknown> =
       data && typeof data === 'object' ? { ...(data as Record<string, unknown>) } : {};
@@ -1955,6 +1967,23 @@ export function CustomerHomeWrapper({
 
   const handleAccountNavigate = (path: string) => {
     setUserSidebarOpen(false);
+    if (
+      !isShopUiVisibleForAccount(phone) &&
+      (path === 'shop' ||
+        path === 'cart' ||
+        path === 'account/orders' ||
+        path === 'orders' ||
+        path === 'promotions' ||
+        path === 'offers')
+    ) {
+      return;
+    }
+    if (
+      !isLoyaltyUiVisibleForAccount(phone) &&
+      (path === 'rewards-loyalty' || path === 'referral-system')
+    ) {
+      return;
+    }
     if (path === 'home') goToHome();
     else if (path === 'shop') goToShopFromParent();
     else if (path === 'cart') {
@@ -4390,7 +4419,10 @@ export function CustomerHomeWrapper({
     onComplete={() => { toast.success('Sample collection completed'); navigateToScreen('lab-diagnostics'); }}
   />;
 
-  // Shop & Orders (marketplace gated by isCustomerEcommerceEnabled)
+  // Shop & Orders (marketplace gated by isCustomerEcommerceEnabled; demo account → home)
+  if (!isShopUiVisibleForAccount(phone) && isCustomerEcommerceScreen(currentScreen)) {
+    return <ReviewDemoShellRedirect onHome={goToHome} />;
+  }
   if (!isCustomerEcommerceEnabled() && isCustomerEcommerceScreen(currentScreen)) {
     return <NotAvailable label="Shop" onBack={handleBack} />;
   }
@@ -5065,7 +5097,10 @@ export function CustomerHomeWrapper({
   />;
 
   // Rewards & Points
-  if (currentScreen === 'rewards-loyalty')
+  if (currentScreen === 'rewards-loyalty') {
+    if (!isLoyaltyUiVisibleForAccount(phone)) {
+      return <ReviewDemoShellRedirect onHome={goToHome} />;
+    }
     return (
       <RewardsLoyaltyPage
         customerPhone={phone}
@@ -5073,9 +5108,13 @@ export function CustomerHomeWrapper({
         onCloseToHome={goToHome}
       />
     );
+  }
 
   // Referral System
-  if (currentScreen === 'referral-system')
+  if (currentScreen === 'referral-system') {
+    if (!isLoyaltyUiVisibleForAccount(phone)) {
+      return <ReviewDemoShellRedirect onHome={goToHome} />;
+    }
     return (
       <ReferralSystemPage
         customerPhone={phone}
@@ -5084,6 +5123,7 @@ export function CustomerHomeWrapper({
         onCloseToHome={goToHome}
       />
     );
+  }
 
   // Legacy: deep links that still set `package-tracking` → My Bookings (package progress uses `/packages/:id`).
   if (currentScreen === 'package-tracking') {

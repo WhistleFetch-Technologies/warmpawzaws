@@ -9,6 +9,7 @@ import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { goBackOrHome, consumeWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import {
   readWishlistIds,
   setWishlistIds,
@@ -75,6 +76,14 @@ async function fetchProductSummary(storageKey: string): Promise<WishlistRow> {
 }
 
 export default function WishlistPage() {
+  return (
+    <AppReviewDemoRouteGuard>
+      <WishlistPageContent />
+    </AppReviewDemoRouteGuard>
+  );
+}
+
+function WishlistPageContent() {
   const router = useRouter();
   const shopEnabled = isCustomerEcommerceEnabled();
   const [loading, setLoading] = useState(true);

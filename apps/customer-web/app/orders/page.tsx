@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, Package } from 'lucide-react';
 import { CustomerShopOrdersScreen } from '@/components/customer/CustomerShopOrdersScreen';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { handleOrdersPageBack } from '@/lib/go-back-or-replace';
 import {
   BACK_HANDLER_PRIORITY,
@@ -72,7 +73,8 @@ function OrdersPageContent() {
 
 export default function OrdersPage() {
   return (
-    <Suspense
+    <AppReviewDemoRouteGuard>
+      <Suspense
       fallback={
         <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-[#FAF6F0]">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-orange-200 border-t-orange-500" />
@@ -81,5 +83,6 @@ export default function OrdersPage() {
     >
       <OrdersPageContent />
     </Suspense>
+    </AppReviewDemoRouteGuard>
   );
 }
