@@ -26,6 +26,7 @@ import {
   resolveProductCompareAtPrice,
   resolveProductSellingPrice,
 } from '@/lib/shop-product-pricing';
+import { PriceDisplay } from '@/components/customer/pricing/PriceDisplay';
 import {
   type ClientProductSku,
   resolveSkuFromSelection,
@@ -895,17 +896,13 @@ export default function ProductDetailClient() {
 
             {/* Price */}
             <div className="flex items-center gap-4 flex-wrap">
-              <span className="text-3xl font-bold text-slate-900">
-                {showFromPrice ? 'From ' : ''}₹{headerPrice.toLocaleString()}
-              </span>
-              {!showFromPrice && displayOriginalPrice && displayOriginalPrice > displayPrice && (
-                <>
-                  <span className="text-lg text-slate-400 line-through">₹{displayOriginalPrice.toLocaleString()}</span>
-                  <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-sm font-semibold rounded-lg">
-                    Save ₹{(displayOriginalPrice - displayPrice).toLocaleString()}
-                  </span>
-                </>
-              )}
+              <PriceDisplay
+                originalPrice={displayOriginalPrice && displayOriginalPrice > displayPrice ? displayOriginalPrice : displayPrice}
+                currentPrice={displayPrice}
+                size="lg"
+                prefix={showFromPrice ? 'From ' : undefined}
+                showSavings={Boolean(displayOriginalPrice && displayOriginalPrice > displayPrice)}
+              />
             </div>
 
             <SellerProductPromotions vendorId={product.vendor_id} />

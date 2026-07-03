@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 import { Calendar, Clock } from 'lucide-react';
 import { PriceDisplay } from '@/components/customer/pricing/PriceDisplay';
 import { SavingsBadge } from '@/components/customer/pricing/SavingsBadge';
+import { formatInr } from '@/lib/pricing/format';
+import { offerSourceLabel, offerSourceToBadgeVariant } from '@/lib/pricing/promotion-display';
 import type { MarketplaceHistoryItem } from '@/lib/marketplace/types';
 import { DOMAIN_LABELS, MARKETPLACE_CARD_CLASS } from '@/lib/marketplace/types';
 import { MarketplaceStatus } from './MarketplaceStatus';
@@ -38,11 +40,14 @@ export function MarketplaceHistoryCard({
   return (
     <article
       className={`${MARKETPLACE_CARD_CLASS} overflow-hidden p-4 ${
-        onClick ? 'cursor-pointer hover:border-orange-200 transition-colors' : ''
+        onClick
+          ? 'cursor-pointer hover:border-orange-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-400'
+          : ''
       }`}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => e.key === 'Enter' && onClick() : undefined}
     >
       <div className="flex gap-3">
         <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-orange-50 flex items-center justify-center text-xl">
@@ -82,9 +87,7 @@ export function MarketplaceHistoryCard({
                   showSavings={false}
                 />
               ) : (
-                <p className="text-sm font-bold text-orange-600 tabular-nums">
-                  ₹{item.paidAmount.toLocaleString('en-IN')}
-                </p>
+                <p className="text-sm font-bold text-orange-600 tabular-nums">{formatInr(item.paidAmount)}</p>
               )}
             </div>
           </div>
@@ -92,26 +95,38 @@ export function MarketplaceHistoryCard({
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
             {item.dateLabel ? (
               <span className="inline-flex items-center gap-1">
-                <Calendar className="h-3 w-3" />
+                <Calendar className="h-3 w-3" aria-hidden />
                 {item.dateLabel}
               </span>
             ) : null}
             {item.timeLabel ? (
               <span className="inline-flex items-center gap-1">
-                <Clock className="h-3 w-3" />
+                <Clock className="h-3 w-3" aria-hidden />
                 {item.timeLabel}
               </span>
             ) : null}
             {item.displayId ? <span className="font-mono">{item.displayId}</span> : null}
           </div>
 
-          {(item.savingsAmount != null && item.savingsAmount > 0) || item.promotionLabel ? (
+          {(item.savingsAmount != null && item.savingsAmount > 0) ||
+          item.promotionLabel ||
+          item.couponCode ||
+          item.offerSource ? (
             <div className="mt-2 flex flex-wrap gap-1">
               {item.savingsAmount != null && item.savingsAmount > 0 ? (
                 <SavingsBadge variant="save_amount" amount={item.savingsAmount} />
               ) : null}
               {item.promotionLabel ? (
                 <SavingsBadge variant="auto_applied" label={item.promotionLabel} />
+              ) : null}
+              {item.couponCode ? (
+                <SavingsBadge variant="coupon_applied" label={`Coupon: ${item.couponCode}`} />
+              ) : null}
+              {item.offerSource ? (
+                <SavingsBadge
+                  variant={offerSourceToBadgeVariant(item.offerSource)}
+                  label={offerSourceLabel(item.offerSource)}
+                />
               ) : null}
             </div>
           ) : null}

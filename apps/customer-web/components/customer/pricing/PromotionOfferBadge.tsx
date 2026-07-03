@@ -1,5 +1,7 @@
 'use client';
 
+import { formatInr } from '@/lib/pricing/format';
+
 export type PromotionOfferBadgeProps = {
   variant: 'percent' | 'flat' | 'bogo' | 'bundle';
   value?: number;
@@ -21,7 +23,7 @@ export function PromotionOfferBadge({
       label = value != null && value > 0 ? `${value}% OFF` : 'OFF';
       break;
     case 'flat':
-      label = value != null && value > 0 ? `₹${value} OFF` : 'OFF';
+      label = value != null && value > 0 ? `${formatInr(value)} OFF` : 'OFF';
       break;
     case 'bogo':
       label = 'BOGO';
@@ -34,6 +36,8 @@ export function PromotionOfferBadge({
   return (
     <span
       className={`inline-flex items-center rounded-md bg-[#FF8C42] font-bold uppercase tracking-wide text-white ${sizeClass} ${className}`}
+      role="status"
+      aria-label={label}
     >
       {label}
     </span>

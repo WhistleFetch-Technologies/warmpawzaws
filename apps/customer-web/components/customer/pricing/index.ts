@@ -14,3 +14,5 @@ export { BookingPricingSummary } from './BookingPricingSummary';
 export type { BookingPricingSummaryProps } from './BookingPricingSummary';
 export { BookingConfirmationSavings } from './BookingConfirmationSavings';
 export type { BookingConfirmationSavingsProps } from './BookingConfirmationSavings';
+export { FinancialInvoiceSummary } from './FinancialInvoiceSummary';
+export type { FinancialInvoiceSummaryProps } from './FinancialInvoiceSummary';

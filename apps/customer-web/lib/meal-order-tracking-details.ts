@@ -319,9 +319,12 @@ export function buildMealOrderTrackingSummary(order: Record<string, unknown>): {
   };
 }
 
+import { formatInr as formatInrShared } from '@/lib/pricing/format';
+
+/** @deprecated Prefer `@/lib/pricing/format` formatInr — kept for meal tracking numeric strings. */
 export function formatInr(value: unknown): string {
   if (value == null) return '—';
   const n = typeof value === 'number' ? value : parseFloat(String(value).replace(/,/g, ''));
   if (!Number.isFinite(n)) return '—';
-  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatInrShared(n, { decimals: 2 }).replace(/^₹/, '');
 }

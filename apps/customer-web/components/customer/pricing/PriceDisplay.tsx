@@ -60,7 +60,7 @@ export function PriceDisplay({
   }
 
   return (
-    <div className={`flex flex-col gap-1 ${className}`}>
+    <div className={`flex flex-col gap-1 ${className}`} aria-label="Price">
       <div className="flex flex-wrap items-center gap-2">
         {hasReduction && (
           <span className={`text-slate-400 line-through ${styles.original}`}>

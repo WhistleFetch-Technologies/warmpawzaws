@@ -14,6 +14,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { ServicePricingDisplay } from '@/components/customer/ServicePricingDisplay';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
@@ -1418,25 +1419,12 @@ export function GroomingServicesByStyle({
                                 )}
                               </div>
                               <div className="shrink-0 text-right">
-                                {service.originalPrice && service.originalPrice > service.price ? (
-                                  <>
-                                    <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
-                                      {formatPriceWithSymbol(service.price)}
-                                    </div>
-                                    <div className="text-sm text-gray-400 line-through">
-                                      {formatPriceWithSymbol(service.originalPrice)}
-                                    </div>
-                                    {service.discountPercentage && (
-                                      <Badge className="bg-green-500 text-white text-xs mt-1">
-                                        {service.discountPercentage}% OFF
-                                      </Badge>
-                                    )}
-                                  </>
-                                ) : (
-                                  <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
-                                    {formatPriceWithSymbol(service.price)}
-                                  </div>
-                                )}
+                                <ServicePricingDisplay
+                                  basePrice={service.originalPrice ?? service.price}
+                                  discountedPrice={service.price}
+                                  vendorDiscount={service.discountPercentage}
+                                  className="items-end"
+                                />
                               </div>
                             </div>
 

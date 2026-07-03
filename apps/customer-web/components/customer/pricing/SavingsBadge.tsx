@@ -54,6 +54,8 @@ export function SavingsBadge({ variant, amount, label, className = '' }: Savings
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${config.className} ${className}`}
+      role="status"
+      aria-label={text}
     >
       <Icon className="h-3 w-3 shrink-0" />
       {text}

@@ -4,6 +4,11 @@ import { SavingsBadge } from './SavingsBadge';
 import { PromotionOfferBadge } from './PromotionOfferBadge';
 import { PriceDisplay } from './PriceDisplay';
 import { formatInr } from '@/lib/pricing/format';
+import {
+  formatPromotionTypeName,
+  offerSourceLabel,
+  offerSourceToBadgeVariant,
+} from '@/lib/pricing/promotion-display';
 import type { AppliedPromotionOffer } from '@/lib/pricing/types';
 
 export type PromotionCardProps = {
@@ -49,11 +54,16 @@ export function PromotionCard({
         ? offer.discountValue ?? offer.discountAmount
         : undefined;
 
+  const typeName = formatPromotionTypeName(offer.promotionType);
+  const sourceLabel = offer.source ? offerSourceLabel(offer.source) : undefined;
+
   return (
     <div
-      className={`rounded-xl border border-orange-100 bg-gradient-to-br from-orange-50/80 to-white p-3 ${
+      className={`rounded-xl border border-orange-100 bg-gradient-to-br from-orange-50/80 to-white ${
         compact ? 'p-2.5' : 'p-3'
       } ${className}`}
+      role="region"
+      aria-label={`Promotion: ${offer.name}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -70,10 +80,17 @@ export function PromotionCard({
                     : undefined
               }
             />
+            {sourceLabel ? (
+              <SavingsBadge
+                variant={offerSourceToBadgeVariant(offer.source)}
+                label={sourceLabel}
+              />
+            ) : null}
           </div>
           <p className={`font-semibold text-slate-900 ${compact ? 'text-sm' : 'text-base'}`}>
             {offer.name}
           </p>
+          <p className="text-[11px] font-medium text-slate-500 mt-0.5">{typeName}</p>
           {offer.description ? (
             <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">{offer.description}</p>
           ) : null}

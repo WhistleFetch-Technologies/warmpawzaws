@@ -14,6 +14,8 @@ export type MarketplaceLifecycleStage =
 
 export type MarketplaceAvailability = 'available' | 'limited' | 'unavailable' | 'scheduled';
 
+export type MarketplaceOfferSource = 'platform' | 'vendor';
+
 export type MarketplaceCardData = {
   domain: MarketplaceDomain;
   id: string;
@@ -27,6 +29,10 @@ export type MarketplaceCardData = {
   currentPrice: number;
   savingsAmount?: number;
   promotionLabel?: string;
+  /** e.g. percentage, flash_sale */
+  promotionTypeName?: string;
+  offerSource?: MarketplaceOfferSource;
+  couponCode?: string;
   availability?: MarketplaceAvailability;
   availabilityLabel?: string;
   subtitle?: string;
@@ -47,6 +53,9 @@ export type MarketplaceHistoryItem = {
   paidAmount: number;
   savingsAmount?: number;
   promotionLabel?: string;
+  promotionTypeName?: string;
+  offerSource?: MarketplaceOfferSource;
+  couponCode?: string;
   dateLabel?: string;
   timeLabel?: string;
   subtitle?: string;
@@ -68,6 +77,9 @@ export type MarketplaceConfirmationData = {
   paidAmount: number;
   savingsAmount?: number;
   promotionLabel?: string;
+  promotionTypeName?: string;
+  offerSource?: MarketplaceOfferSource;
+  couponCode?: string;
   summaryLines?: { label: string; value: string }[];
 };
 

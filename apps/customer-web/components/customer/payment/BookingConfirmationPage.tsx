@@ -14,6 +14,7 @@ import type { PaymentSource } from '@/lib/payment-display-utils';
 import { normalizePaymentSources } from '@/lib/payment-display-utils';
 import { downloadFromApi, getDownloadMessage } from '@/lib/download-file';
 import { MarketplaceConfirmation } from '@/components/customer/marketplace/MarketplaceConfirmation';
+import { BookingConfirmationSavings } from '@/components/customer/pricing/BookingConfirmationSavings';
 import type { MarketplaceAction } from '@/lib/marketplace/types';
 
 interface BookingConfirmationPageProps {
@@ -200,8 +201,10 @@ export function BookingConfirmationPage({
       : undefined;
   const couponLabel =
     bookingDetails?.couponCode || bookingDetails?.coupon_code
-      ? `Coupon: ${bookingDetails.couponCode || bookingDetails.coupon_code}`
+      ? String(bookingDetails.couponCode || bookingDetails.coupon_code)
       : undefined;
+
+  const couponCodeForConfirmation = couponLabel;
 
   const summaryLines: { label: string; value: string }[] = [];
   if (type === 'booking' && (bookingDate || bookingTime)) {
@@ -403,11 +406,15 @@ export function BookingConfirmationPage({
             vendorName,
             paidAmount: totalAmount,
             savingsAmount,
-            promotionLabel: couponLabel,
+            promotionLabel: savingsAmount ? 'Promotion applied' : undefined,
+            couponCode: couponCodeForConfirmation,
             summaryLines,
           }}
           actions={confirmationActions}
         >
+          {type === 'booking' ? (
+            <BookingConfirmationSavings bookingId={bookingId} fallbackBasePrice={totalAmount} />
+          ) : null}
           {resolvedPaymentSources.length > 0 ? (
             <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
               <PaymentSourcesDisplay
