@@ -5,6 +5,10 @@ import type { NormalizedPromotionItem } from '../types';
 import { lifecycleFromPromotion } from '../lifecycle';
 import { PromotionStatusBadge } from './PromotionStatusBadge';
 
+function formatPromotionType(type: string): string {
+  return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export function PromotionCard({
   item,
   onClick,
@@ -47,6 +51,9 @@ export function PromotionCard({
                   <Tag className="h-3 w-3" /> Coupon
                 </span>
               )}
+              <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                {formatPromotionType(item.promotionType)}
+              </span>
             </div>
             <h3 className="font-semibold text-slate-900 truncate">{item.name}</h3>
             {item.description ? (
@@ -64,7 +71,9 @@ export function PromotionCard({
             {new Date(item.startDate).toLocaleDateString('en-IN')} –{' '}
             {new Date(item.endDate).toLocaleDateString('en-IN')}
           </span>
-          {item.targetSummary ? <span>{item.targetSummary}</span> : null}
+          {item.targetSummary ? (
+            <span className="text-slate-600 font-medium">{item.targetSummary}</span>
+          ) : null}
           {item.usageLimit != null ? (
             <span>
               Used {item.usageCount ?? 0}/{item.usageLimit}
@@ -76,7 +85,7 @@ export function PromotionCard({
           <div className="flex gap-2 pt-1 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
             {onToggle ? (
               <button type="button" onClick={onToggle} className="text-xs font-medium text-slate-600">
-                {item.isActive ? 'Pause' : 'Activate'}
+                {item.isActive ? 'Deactivate' : 'Activate'}
               </button>
             ) : null}
             {onEdit ? (

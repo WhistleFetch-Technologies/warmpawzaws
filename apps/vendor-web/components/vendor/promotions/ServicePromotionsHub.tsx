@@ -7,8 +7,11 @@ import CapabilityHelper from '@/lib/capability-helper';
 import { useVendorCapabilities } from '@/components/vendor/hooks/useVendorCapabilities';
 import {
   PromotionDashboard,
-  normalizePromotionRow,
+  enrichPromotionRow,
+  splitVendorPromotionRows,
   wizardToVendorServicePayload,
+  type NormalizedCouponItem,
+  type NormalizedPromotionItem,
   type PromotionTargetCatalog,
   type PromotionWizardForm,
   type TargetScopeId,
@@ -71,16 +74,18 @@ export function ServicePromotionsHub({
   roleId,
   onBack,
 }: ServicePromotionsHubProps) {
-  const [promotions, setPromotions] = useState<ReturnType<typeof normalizePromotionRow>[]>([]);
+  const [promotions, setPromotions] = useState<NormalizedPromotionItem[]>([]);
+  const [coupons, setCoupons] = useState<NormalizedCouponItem[]>([]);
   const [catalog, setCatalog] = useState<PromotionTargetCatalog>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { capabilities } = useVendorCapabilities(roleId);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const hasMealPlans =
-        CapabilityHelper.hasCapability(capabilities, 'meal_plans');
+      const hasMealPlans = CapabilityHelper.hasCapability(capabilities, 'meal_plans');
 
       const requests: Promise<unknown>[] = [
         apiClient.get<any>(`/vendor/${vendorId}/service-promotions`),
@@ -101,8 +106,6 @@ export function ServicePromotionsHub({
       const mealPlansRes = hasMealPlans ? (results[2] as any) : null;
 
       const rows = promosRes?.promotions || [];
-      setPromotions(rows.map((r: Record<string, unknown>) => normalizePromotionRow(r)));
-
       const services = (servicesRes?.services || []) as Record<string, unknown>[];
       const nonPackageServices = services.filter((s) => !s.isPackage && !s.is_package);
       const packageServices = services.filter((s) => s.isPackage || s.is_package);
@@ -112,7 +115,7 @@ export function ServicePromotionsHub({
         unknown
       >[];
 
-      setCatalog({
+      const nextCatalog: PromotionTargetCatalog = {
         services: dedupeOptions(
           nonPackageServices.map((s) => {
             const price = serviceDisplayPrice(s);
@@ -148,7 +151,18 @@ export function ServicePromotionsHub({
           { id: 'at_center', label: 'At center' },
           { id: 'tele', label: 'Tele' },
         ],
-      });
+      };
+
+      setCatalog(nextCatalog);
+
+      const enriched = rows.map((r: Record<string, unknown>) =>
+        enrichPromotionRow(r, nextCatalog, { vendorMode: true })
+      );
+      const split = splitVendorPromotionRows(enriched);
+      setPromotions(split.promotions);
+      setCoupons(split.coupons);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load promotions');
     } finally {
       setLoading(false);
     }
@@ -163,18 +177,32 @@ export function ServicePromotionsHub({
     [capabilities, catalog]
   );
 
+  const existingCodes = useMemo(
+    () => [...promotions, ...coupons.map((c) => ({ code: c.code }))].map((p) => p.code).filter(Boolean) as string[],
+    [promotions, coupons]
+  );
+
   const scope = useMemo(
     () => ({
       mode: 'vendor_services' as const,
       title: 'Service Promotions',
-      subtitle: `Auto-applied offers for ${vendorRole ?? 'service'} bookings`,
-      canManageCoupons: false,
+      subtitle: `Auto-applied offers and coupon codes for ${vendorRole ?? 'service'} bookings`,
+      canManageCoupons: true,
       canManagePlatformTargets: false,
       domains: ['service', 'package'] as const,
       enabledTargetScopes,
     }),
     [vendorRole, enabledTargetScopes]
   );
+
+  const savePromotion = async (form: PromotionWizardForm, _publish: boolean, editingId?: string) => {
+    const payload = wizardToVendorServicePayload(form, vendorId);
+    if (editingId) {
+      await apiClient.put(`/vendor/${vendorId}/service-promotions/${editingId}`, payload);
+    } else {
+      await apiClient.post(`/vendor/${vendorId}/service-promotions`, payload);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -192,21 +220,23 @@ export function ServicePromotionsHub({
       <PromotionDashboard
         scope={scope}
         promotions={promotions}
+        coupons={coupons}
         catalog={catalog}
         loading={loading}
+        error={error}
+        existingCodes={existingCodes}
         onRefresh={load}
-        onSave={async (form: PromotionWizardForm, _publish, editingId) => {
-          const payload = wizardToVendorServicePayload(form, vendorId);
-          if (editingId) {
-            await apiClient.put(`/vendor/${vendorId}/service-promotions/${editingId}`, payload);
-          } else {
-            await apiClient.post(`/vendor/${vendorId}/service-promotions`, payload);
-          }
-        }}
+        onSave={savePromotion}
         onDeletePromotion={async (id) => {
           await apiClient.delete(`/vendor/${vendorId}/service-promotions/${id}`);
         }}
         onTogglePromotion={async (id, active) => {
+          await apiClient.put(`/vendor/${vendorId}/service-promotions/${id}`, { is_active: active });
+        }}
+        onDeleteCoupon={async (id) => {
+          await apiClient.delete(`/vendor/${vendorId}/service-promotions/${id}`);
+        }}
+        onToggleCoupon={async (id, active) => {
           await apiClient.put(`/vendor/${vendorId}/service-promotions/${id}`, { is_active: active });
         }}
       />

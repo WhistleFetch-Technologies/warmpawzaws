@@ -29,7 +29,7 @@ export function normalizePromotionRow(row: Record<string, unknown>): NormalizedP
     'percentage';
   return {
     id: String(row.id ?? ''),
-    kind: row.code && !row.auto_apply ? 'coupon' : 'promotion',
+    kind: row.code ? 'coupon' : 'promotion',
     name: String(row.name ?? row.title ?? 'Promotion'),
     description: row.description ? String(row.description) : undefined,
     code: row.code ? String(row.code) : undefined,
@@ -72,6 +72,73 @@ export function normalizeCouponRow(row: Record<string, unknown>): NormalizedCoup
     raw: row,
     createdAt: row.created_at ? String(row.created_at) : undefined,
   };
+}
+
+export function enrichPromotionRow(
+  row: Record<string, unknown>,
+  catalog?: PromotionTargetCatalog,
+  options?: { vendorMode?: boolean }
+): NormalizedPromotionItem {
+  const item = normalizePromotionRow(row);
+  return {
+    ...item,
+    targetSummary: summarizeTargetsFromRow(row, catalog, options),
+  };
+}
+
+export function promotionItemToCoupon(item: NormalizedPromotionItem): NormalizedCouponItem {
+  return {
+    id: item.id,
+    code: item.code ?? item.name,
+    discountType: item.discountType,
+    discountValue: item.discountValue,
+    maxDiscount: item.maxDiscount,
+    minAmount: item.minAmount,
+    usageLimit: item.usageLimit,
+    usageCount: item.usageCount,
+    startDate: item.startDate,
+    endDate: item.endDate,
+    isActive: item.isActive,
+    raw: item.raw,
+    createdAt: item.createdAt,
+  };
+}
+
+export function splitVendorPromotionRows(
+  rows: NormalizedPromotionItem[]
+): { promotions: NormalizedPromotionItem[]; coupons: NormalizedCouponItem[] } {
+  const promotions: NormalizedPromotionItem[] = [];
+  const coupons: NormalizedCouponItem[] = [];
+  for (const row of rows) {
+    if (row.kind === 'coupon' && row.code) {
+      coupons.push(promotionItemToCoupon(row));
+    } else {
+      promotions.push(row);
+    }
+  }
+  return { promotions, coupons };
+}
+
+export function couponToWizardForm(c: NormalizedCouponItem, catalog?: PromotionTargetCatalog): PromotionWizardForm {
+  const asPromo: NormalizedPromotionItem = {
+    id: c.id,
+    kind: 'coupon',
+    name: c.code,
+    code: c.code,
+    promotionType: 'percentage',
+    discountType: c.discountType,
+    discountValue: c.discountValue,
+    maxDiscount: c.maxDiscount,
+    minAmount: c.minAmount,
+    usageLimit: c.usageLimit,
+    usageCount: c.usageCount,
+    startDate: c.startDate,
+    endDate: c.endDate,
+    isActive: c.isActive,
+    raw: c.raw,
+    createdAt: c.createdAt,
+  };
+  return promotionToWizardForm(asPromo, catalog);
 }
 
 export function promotionToWizardForm(

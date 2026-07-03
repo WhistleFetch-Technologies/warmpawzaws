@@ -5,31 +5,37 @@ import { apiClient } from '@/lib/api-client';
 import { parseJsonbArray } from '@/lib/promotion-form-utils';
 import {
   PromotionDashboard,
-  normalizePromotionRow,
+  enrichPromotionRow,
+  splitVendorPromotionRows,
   wizardToVendorSellerPayload,
+  type NormalizedCouponItem,
+  type NormalizedPromotionItem,
   type PromotionTargetCatalog,
   type PromotionWizardForm,
 } from '@warmpawz/promotion-management-ui';
 
 export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
-  const [promotions, setPromotions] = useState<ReturnType<typeof normalizePromotionRow>[]>([]);
+  const [promotions, setPromotions] = useState<NormalizedPromotionItem[]>([]);
+  const [coupons, setCoupons] = useState<NormalizedCouponItem[]>([]);
   const [catalog, setCatalog] = useState<PromotionTargetCatalog>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const [promosRes, productsRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${sellerId}/promotions`),
         apiClient.get<any>(`/vendor/${sellerId}/products`).catch(() => ({ products: [] })),
       ]);
       const rows = promosRes?.promotions || [];
-      setPromotions(rows.map((r: Record<string, unknown>) => normalizePromotionRow(r)));
       const products = (productsRes as any)?.products || [];
       const categories = [
         ...new Set(products.map((p: any) => p.category).filter(Boolean)),
       ] as string[];
-      setCatalog({
+
+      const nextCatalog: PromotionTargetCatalog = {
         products: products.map((p: any) => ({
           id: String(p.id),
           label: String(p.name),
@@ -39,7 +45,18 @@ export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
         categories: categories.map((c) => ({ id: c, label: c })),
         mealPlans: [],
         packages: [],
-      });
+      };
+
+      setCatalog(nextCatalog);
+
+      const enriched = rows.map((r: Record<string, unknown>) =>
+        enrichPromotionRow(r, nextCatalog, { vendorMode: true })
+      );
+      const split = splitVendorPromotionRows(enriched);
+      setPromotions(split.promotions);
+      setCoupons(split.coupons);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load promotions');
     } finally {
       setLoading(false);
     }
@@ -53,7 +70,7 @@ export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
     () => ({
       mode: 'vendor_seller' as const,
       title: 'Seller Promotions',
-      subtitle: 'Shop offers and product targeting',
+      subtitle: 'Shop offers, coupon codes, and product targeting',
       canManageCoupons: true,
       canManagePlatformTargets: false,
       domains: ['product'] as const,
@@ -62,33 +79,41 @@ export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
   );
 
   const existingCodes = useMemo(
-    () => promotions.map((p) => p.code).filter(Boolean) as string[],
-    [promotions]
+    () => [...promotions, ...coupons.map((c) => ({ code: c.code }))].map((p) => p.code).filter(Boolean) as string[],
+    [promotions, coupons]
   );
+
+  const savePromotion = async (form: PromotionWizardForm, _publish: boolean, editingId?: string) => {
+    const payload = wizardToVendorSellerPayload(form, sellerId);
+    if (editingId) {
+      await apiClient.put(`/vendor/${sellerId}/promotions/${editingId}`, payload);
+    } else {
+      await apiClient.post(`/vendor/${sellerId}/promotions`, payload);
+    }
+  };
 
   return (
     <PromotionDashboard
       scope={scope}
       promotions={promotions}
+      coupons={coupons}
       catalog={catalog}
       loading={loading}
+      error={error}
       existingCodes={existingCodes}
       onRefresh={load}
-      onSave={async (form, _publish, editingId) => {
-        const payload = wizardToVendorSellerPayload(form, sellerId);
-        if (editingId) {
-          await apiClient.put(`/vendor/${sellerId}/promotions/${editingId}`, payload);
-        } else {
-          await apiClient.post(`/vendor/${sellerId}/promotions`, payload);
-        }
-      }}
+      onSave={savePromotion}
       onDeletePromotion={async (id) => {
         await apiClient.delete(`/vendor/${sellerId}/promotions/${id}`);
-        load();
       }}
       onTogglePromotion={async (id, active) => {
         await apiClient.put(`/vendor/${sellerId}/promotions/${id}`, { is_active: active });
-        load();
+      }}
+      onDeleteCoupon={async (id) => {
+        await apiClient.delete(`/vendor/${sellerId}/promotions/${id}`);
+      }}
+      onToggleCoupon={async (id, active) => {
+        await apiClient.put(`/vendor/${sellerId}/promotions/${id}`, { is_active: active });
       }}
     />
   );

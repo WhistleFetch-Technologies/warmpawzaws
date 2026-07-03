@@ -201,16 +201,40 @@ function inferScopesFromSelectedTargets(
   return scopes;
 }
 
-export function summarizeTargetsFromRow(row: Record<string, unknown>, catalog?: PromotionTargetCatalog): string {
-  if (row.applicable_to === 'all') return 'Entire platform';
+export function summarizeTargetsFromRow(
+  row: Record<string, unknown>,
+  catalog?: PromotionTargetCatalog,
+  options?: { vendorMode?: boolean }
+): string {
+  if (row.applicable_to === 'all') {
+    return options?.vendorMode ? 'All services' : 'Entire marketplace';
+  }
 
   const parsed = parseApplicableServicesToTargets(row, catalog);
-  if (parsed.targetScopes.includes('entire_platform')) return 'Entire platform';
+  if (parsed.targetScopes.includes('entire_platform')) {
+    return options?.vendorMode ? 'All services' : 'Entire marketplace';
+  }
 
   const parts: string[] = [];
-  const labels = (scope: TargetScopeId, ids?: string[]) => {
+  const scopeLabels: Record<TargetScopeId, string> = {
+    entire_platform: 'Entire marketplace',
+    categories: 'categories',
+    services: 'services',
+    packages: 'packages',
+    meal_plans: 'meal plans',
+    products: 'products',
+    vendors: 'vendors',
+    styles: 'service styles',
+  };
+
+  const labelIds = (scope: TargetScopeId, ids?: string[]) => {
     if (!ids?.length) return;
-    const options =
+    if (scope === 'categories' && ids.length === 1) {
+      const name = catalog?.categories?.find((o) => o.id === ids[0])?.label ?? ids[0];
+      parts.push(`Entire ${name} category`);
+      return;
+    }
+    const catalogOptions =
       scope === 'categories'
         ? catalog?.categories
         : scope === 'services'
@@ -226,26 +250,28 @@ export function summarizeTargetsFromRow(row: Record<string, unknown>, catalog?: 
                   : scope === 'styles'
                     ? catalog?.styles
                     : undefined;
-    if (options?.length) {
+    if (catalogOptions?.length) {
       const names = ids
-        .map((id) => options.find((o) => o.id === id)?.label)
+        .map((id) => catalogOptions.find((o) => o.id === id)?.label)
         .filter(Boolean)
         .slice(0, 2);
       if (names.length) {
-        parts.push(`${names.join(', ')}${ids.length > names.length ? ` +${ids.length - names.length}` : ''}`);
+        parts.push(
+          `${ids.length} ${scopeLabels[scope]} (${names.join(', ')}${ids.length > names.length ? ` +${ids.length - names.length}` : ''})`
+        );
         return;
       }
     }
-    parts.push(`${ids.length} ${scope.replace('_', ' ')}`);
+    parts.push(`${ids.length} ${scopeLabels[scope]}`);
   };
 
-  labels('categories', parsed.selectedTargets.categories);
-  labels('services', parsed.selectedTargets.services);
-  labels('packages', parsed.selectedTargets.packages);
-  labels('meal_plans', parsed.selectedTargets.meal_plans);
-  labels('products', parsed.selectedTargets.products);
-  labels('vendors', parsed.selectedTargets.vendors);
-  labels('styles', parsed.selectedTargets.styles);
+  labelIds('categories', parsed.selectedTargets.categories);
+  labelIds('services', parsed.selectedTargets.services);
+  labelIds('packages', parsed.selectedTargets.packages);
+  labelIds('meal_plans', parsed.selectedTargets.meal_plans);
+  labelIds('products', parsed.selectedTargets.products);
+  labelIds('vendors', parsed.selectedTargets.vendors);
+  labelIds('styles', parsed.selectedTargets.styles);
 
   return parts.length ? parts.join(' · ') : 'Custom targets';
 }

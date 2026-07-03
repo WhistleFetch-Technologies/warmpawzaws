@@ -131,7 +131,7 @@ export function wizardToVendorSellerPayload(form: PromotionWizardForm, sellerId:
   return {
     name: form.name.trim(),
     description: form.description.trim(),
-    code: form.createKind === 'coupon' ? form.code?.trim().toUpperCase() : form.code || autoCode(form),
+    code: form.createKind === 'coupon' ? form.code?.trim().toUpperCase() : undefined,
     promotion_type: mapPromotionTypeToLegacy(form.promotionType),
     discount_type: form.discountType,
     discount_value:

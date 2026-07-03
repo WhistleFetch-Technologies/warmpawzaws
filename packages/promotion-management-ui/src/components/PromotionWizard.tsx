@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Sparkles, Ticket } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Sparkles, Ticket, X } from 'lucide-react';
 import type {
   CreateKind,
   PromotionManagementScope,
@@ -12,27 +12,17 @@ import type {
 } from '../types';
 import { DEFAULT_WIZARD_FORM } from '../types';
 import { validatePromotionWizard, hasValidationErrors } from '../validation';
+import { WIZARD_STEP_LABELS, wizardProgressPercent } from '../wizard-steps';
 import { PromotionTypeSelector } from './PromotionTypeSelector';
 import { PromotionTriggerSelector } from './PromotionTriggerSelector';
 import { PromotionTargetSelector } from './PromotionTargetSelector';
 import { PromotionSummary } from './PromotionSummary';
 import { PromotionPreview } from './PromotionPreview';
 
-const STEPS = [
-  'Create type',
-  'Basic info',
-  'Promotion type',
-  'Audience',
-  'Targets',
-  'Discount',
-  'Schedule',
-  'Review',
-];
+const LAST_STEP = WIZARD_STEP_LABELS.length - 1;
 
 function enabledScopes(scope: PromotionManagementScope): TargetScopeId[] {
-  if (scope.enabledTargetScopes?.length) {
-    return scope.enabledTargetScopes;
-  }
+  if (scope.enabledTargetScopes?.length) return scope.enabledTargetScopes;
   if (scope.mode === 'platform') {
     return [
       'entire_platform',
@@ -61,6 +51,10 @@ function allowedTypes(scope: PromotionManagementScope): PromotionTypeId[] | unde
   return undefined;
 }
 
+function snapshotForm(form: PromotionWizardForm): string {
+  return JSON.stringify(form);
+}
+
 export function PromotionWizard({
   open,
   onClose,
@@ -70,6 +64,7 @@ export function PromotionWizard({
   existingCodes,
   onSave,
   saving,
+  initialStep = 0,
 }: {
   open: boolean;
   onClose: () => void;
@@ -79,15 +74,19 @@ export function PromotionWizard({
   existingCodes?: string[];
   onSave: (form: PromotionWizardForm, publish: boolean) => Promise<void>;
   saving?: boolean;
+  initialStep?: number;
 }) {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<PromotionWizardForm>(initial ?? DEFAULT_WIZARD_FORM());
+  const baselineRef = useRef('');
 
   useEffect(() => {
     if (!open) return;
-    setStep(0);
-    setForm(initial ?? DEFAULT_WIZARD_FORM());
-  }, [open, initial]);
+    const next = initial ?? DEFAULT_WIZARD_FORM();
+    setStep(Math.min(LAST_STEP, Math.max(0, initialStep)));
+    setForm(next);
+    baselineRef.current = snapshotForm(next);
+  }, [open, initial, initialStep]);
 
   const issues = useMemo(
     () => validatePromotionWizard(form, { existingCodes }),
@@ -107,31 +106,72 @@ export function PromotionWizard({
     setStep(1);
   };
 
-  const next = () => setStep((s) => Math.min(STEPS.length - 1, s + 1));
-  const back = () => (step === 0 ? onClose() : setStep((s) => Math.max(0, s - 1)));
+  const requestClose = () => {
+    const dirty = snapshotForm(form) !== baselineRef.current;
+    if (dirty && step > 0) {
+      if (!window.confirm('Discard unsaved changes?')) return;
+    }
+    onClose();
+  };
+
+  const next = () => setStep((s) => Math.min(LAST_STEP, s + 1));
+  const back = () => (step === 0 ? requestClose() : setStep((s) => Math.max(0, s - 1)));
 
   const handlePublish = async (asDraft: boolean) => {
     const payload = { ...form, uiStatus: asDraft ? ('draft' as const) : ('active' as const) };
     if (hasValidationErrors(validatePromotionWizard(payload, { existingCodes }))) return;
     await onSave(payload, !asDraft);
+    baselineRef.current = snapshotForm(payload);
+    setStep(0);
   };
+
+  const progress = wizardProgressPercent(step);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">
-              {initial ? 'Edit' : 'Create'}{' '}
-              {form.createKind === 'coupon' ? 'coupon' : 'promotion'}
-            </h2>
-            <p className="text-xs text-slate-500">
-              Step {step + 1} of {STEPS.length}: {STEPS[step]}
-            </p>
+        <div className="border-b border-slate-100 px-5 py-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                {initial ? 'Edit' : 'Create'}{' '}
+                {form.createKind === 'coupon' ? 'coupon' : 'promotion'}
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Step {step + 1} of {WIZARD_STEP_LABELS.length}: {WIZARD_STEP_LABELS[step]}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={requestClose}
+              aria-label="Close"
+              className="rounded-lg p-2 hover:bg-slate-100"
+            >
+              <X className="h-5 w-5 text-slate-500" />
+            </button>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-slate-100">
-            <X className="h-5 w-5 text-slate-500" />
-          </button>
+          <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-orange-500 transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <div className="hidden sm:flex flex-wrap gap-1">
+            {WIZARD_STEP_LABELS.map((label, i) => (
+              <span
+                key={label}
+                className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                  i === step
+                    ? 'bg-orange-100 text-orange-800'
+                    : i < step
+                      ? 'text-slate-500'
+                      : 'text-slate-300'
+                }`}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -144,7 +184,7 @@ export function PromotionWizard({
               >
                 <Sparkles className="h-8 w-8 text-violet-600 mb-3" />
                 <h3 className="font-bold text-slate-900">Promotion</h3>
-                <p className="text-sm text-slate-500 mt-1">Auto applied at checkout — no code needed</p>
+                <p className="text-sm text-slate-500 mt-1">Auto-applied at checkout — no code needed</p>
               </button>
               {scope.canManageCoupons ? (
                 <button
@@ -165,181 +205,189 @@ export function PromotionWizard({
           )}
 
           {step === 1 && (
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Name *</label>
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  value={form.name}
-                  onChange={(e) => patch({ name: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Description</label>
-                <textarea
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  rows={3}
-                  value={form.description}
-                  onChange={(e) => patch({ description: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Status (visual)</label>
-                <select
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  value={form.uiStatus}
-                  onChange={(e) => patch({ uiStatus: e.target.value as PromotionWizardForm['uiStatus'] })}
-                >
-                  <option value="draft">Draft</option>
-                  <option value="scheduled">Scheduled</option>
-                  <option value="active">Active</option>
-                  <option value="paused">Paused</option>
-                </select>
-              </div>
-              {form.createKind === 'coupon' && (
+            <div className="space-y-6">
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-slate-800">Basic information</h3>
                 <div>
-                  <label className="text-sm font-medium text-slate-700">Coupon code *</label>
+                  <label className="text-sm font-medium text-slate-700">Name *</label>
                   <input
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono uppercase"
-                    value={form.code ?? ''}
-                    onChange={(e) => patch({ code: e.target.value.toUpperCase() })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    value={form.name}
+                    onChange={(e) => patch({ name: e.target.value })}
                   />
                 </div>
-              )}
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Description</label>
+                  <textarea
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    rows={2}
+                    value={form.description}
+                    onChange={(e) => patch({ description: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Status</label>
+                  <select
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    value={form.uiStatus}
+                    onChange={(e) =>
+                      patch({ uiStatus: e.target.value as PromotionWizardForm['uiStatus'] })
+                    }
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="scheduled">Scheduled</option>
+                    <option value="active">Active</option>
+                    <option value="paused">Paused</option>
+                  </select>
+                </div>
+                {form.createKind === 'coupon' && (
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Coupon code *</label>
+                    <input
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono uppercase"
+                      value={form.code ?? ''}
+                      onChange={(e) => patch({ code: e.target.value.toUpperCase() })}
+                    />
+                  </div>
+                )}
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800 mb-2">Offer type</h3>
+                <PromotionTypeSelector
+                  value={form.promotionType}
+                  onChange={(promotionType) => patch({ promotionType })}
+                  allowed={allowedTypes(scope)}
+                />
+              </div>
             </div>
           )}
 
           {step === 2 && (
-            <PromotionTypeSelector
-              value={form.promotionType}
-              onChange={(promotionType) => patch({ promotionType })}
-              allowed={allowedTypes(scope)}
-            />
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800 mb-2">Who is eligible?</h3>
+                <PromotionTriggerSelector value={form.audience} onChange={(audience) => patch({ audience })} />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800 mb-2">What does this apply to?</h3>
+                <PromotionTargetSelector
+                  enabledScopes={enabledScopes(scope)}
+                  catalog={catalog}
+                  selectedScopes={form.targetScopes}
+                  selectedTargets={form.selectedTargets}
+                  onScopesChange={(targetScopes) => patch({ targetScopes })}
+                  onTargetsChange={(selectedTargets) => patch({ selectedTargets })}
+                />
+              </div>
+            </div>
           )}
 
           {step === 3 && (
-            <PromotionTriggerSelector value={form.audience} onChange={(audience) => patch({ audience })} />
-          )}
-
-          {step === 4 && (
-            <PromotionTargetSelector
-              enabledScopes={enabledScopes(scope)}
-              catalog={catalog}
-              selectedScopes={form.targetScopes}
-              selectedTargets={form.selectedTargets}
-              onScopesChange={(targetScopes) => patch({ targetScopes })}
-              onTargetsChange={(selectedTargets) => patch({ selectedTargets })}
-            />
-          )}
-
-          {step === 5 && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Discount type</label>
-                <select
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  value={form.discountType}
-                  onChange={(e) =>
-                    patch({ discountType: e.target.value as 'percentage' | 'fixed' })
-                  }
-                >
-                  <option value="percentage">Percentage</option>
-                  <option value="fixed">Flat amount</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Value *</label>
-                <input
-                  type="number"
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  value={form.discountValue}
-                  onChange={(e) => patch({ discountValue: Number(e.target.value) })}
-                />
-              </div>
-              {form.discountType === 'percentage' && (
+            <div className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="text-sm font-medium text-slate-700">Max discount (₹)</label>
+                  <label className="text-sm font-medium text-slate-700">Discount type</label>
+                  <select
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    value={form.discountType}
+                    onChange={(e) =>
+                      patch({ discountType: e.target.value as 'percentage' | 'fixed' })
+                    }
+                  >
+                    <option value="percentage">Percentage</option>
+                    <option value="fixed">Flat amount</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Value *</label>
                   <input
                     type="number"
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                    value={form.maxDiscount ?? ''}
+                    value={form.discountValue}
+                    onChange={(e) => patch({ discountValue: Number(e.target.value) })}
+                  />
+                </div>
+                {form.discountType === 'percentage' && (
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Max discount (₹)</label>
+                    <input
+                      type="number"
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      value={form.maxDiscount ?? ''}
+                      onChange={(e) =>
+                        patch({ maxDiscount: e.target.value ? Number(e.target.value) : undefined })
+                      }
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Minimum amount (₹)</label>
+                  <input
+                    type="number"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    value={form.minAmount ?? ''}
                     onChange={(e) =>
-                      patch({ maxDiscount: e.target.value ? Number(e.target.value) : undefined })
+                      patch({ minAmount: e.target.value ? Number(e.target.value) : undefined })
                     }
                   />
                 </div>
-              )}
-              <div>
-                <label className="text-sm font-medium text-slate-700">Minimum amount (₹)</label>
-                <input
-                  type="number"
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  value={form.minAmount ?? ''}
-                  onChange={(e) =>
-                    patch({ minAmount: e.target.value ? Number(e.target.value) : undefined })
-                  }
-                />
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Total usage limit</label>
+                  <input
+                    type="number"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    value={form.usageLimit ?? ''}
+                    onChange={(e) =>
+                      patch({ usageLimit: e.target.value ? Number(e.target.value) : undefined })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Per customer limit</label>
+                  <input
+                    type="number"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    value={form.usageLimitPerUser ?? ''}
+                    onChange={(e) =>
+                      patch({
+                        usageLimitPerUser: e.target.value ? Number(e.target.value) : undefined,
+                      })
+                    }
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Total usage limit</label>
-                <input
-                  type="number"
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  value={form.usageLimit ?? ''}
-                  onChange={(e) =>
-                    patch({ usageLimit: e.target.value ? Number(e.target.value) : undefined })
-                  }
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Per customer limit</label>
-                <input
-                  type="number"
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  value={form.usageLimitPerUser ?? ''}
-                  onChange={(e) =>
-                    patch({
-                      usageLimitPerUser: e.target.value ? Number(e.target.value) : undefined,
-                    })
-                  }
-                />
-              </div>
-            </div>
-          )}
-
-          {step === 6 && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Start date *</label>
-                <input
-                  type="date"
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  value={form.startDate}
-                  onChange={(e) => patch({ startDate: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">End date *</label>
-                <input
-                  type="date"
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  value={form.endDate}
-                  onChange={(e) => patch({ endDate: e.target.value })}
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="text-sm font-medium text-slate-700">Timezone</label>
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-50"
-                  value={form.timezone}
-                  readOnly
-                />
-                <p className="text-xs text-slate-400 mt-1">Recurring schedules — coming soon</p>
+              <div className="grid gap-4 sm:grid-cols-2 border-t border-slate-100 pt-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Start date *</label>
+                  <input
+                    type="date"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    value={form.startDate}
+                    onChange={(e) => patch({ startDate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700">End date *</label>
+                  <input
+                    type="date"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    value={form.endDate}
+                    onChange={(e) => patch({ endDate: e.target.value })}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-sm font-medium text-slate-700">Timezone</label>
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-50"
+                    value={form.timezone}
+                    readOnly
+                  />
+                </div>
               </div>
             </div>
           )}
 
-          {step === 7 && (
+          {step === 4 && (
             <div className="space-y-4">
               <PromotionPreview form={form} />
               <PromotionSummary form={form} />
@@ -363,10 +411,10 @@ export function PromotionWizard({
             className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200"
           >
             <ChevronLeft className="h-4 w-4" />
-            {step === 0 ? 'Cancel' : 'Back'}
+            {step === 0 ? 'Close' : 'Back'}
           </button>
           <div className="flex gap-2">
-            {step === 7 ? (
+            {step === LAST_STEP ? (
               <>
                 <button
                   type="button"
@@ -382,7 +430,7 @@ export function PromotionWizard({
                   onClick={() => handlePublish(false)}
                   className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
-                  {saving ? 'Publishing…' : 'Publish'}
+                  {saving ? 'Saving…' : initial ? 'Update' : 'Publish'}
                 </button>
               </>
             ) : step > 0 ? (
