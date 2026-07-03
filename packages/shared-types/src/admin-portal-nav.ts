@@ -311,6 +311,16 @@ export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
     description: 'Platform promotions and coupons (Promotion Hub)',
   },
   {
+    id: 'policy-center',
+    label: 'Policy Center',
+    permissionId: 'admin.integrations',
+    permissionsAny: ['admin.integrations', 'admin.notifications.view'],
+    pathPrefixes: ['/policy-center'],
+    section: 'marketing-child',
+    sortOrder: 197,
+    description: 'Discount engine priority, stack, funding, and limit configuration',
+  },
+  {
     id: 'notification-engine',
     label: 'Notification Engine',
     permissionId: 'admin.notifications.view',

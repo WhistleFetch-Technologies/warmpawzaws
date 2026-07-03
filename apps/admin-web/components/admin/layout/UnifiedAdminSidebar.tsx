@@ -27,6 +27,7 @@ import {
   ChevronRight,
   RefreshCw,
   Tag,
+  Scale,
   type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
@@ -69,6 +70,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   roles: UserCog,
   marketing: Megaphone,
   promotions: Tag,
+  'policy-center': Scale,
   'notification-engine': Bell,
   reports: BarChart3,
   'platform-settings': Settings,
@@ -100,6 +102,11 @@ function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void
       window.location.href = '/promotions';
     };
   }
+  if (item.id === 'policy-center') {
+    return () => {
+      window.location.href = '/policy-center';
+    };
+  }
   return () => onNavigate(item.id);
 }
 
@@ -122,6 +129,9 @@ function isNavItemActive(item: AdminPortalNavItem, activeView: string, pathname:
   }
   if (item.id === 'promotions') {
     return pathname?.startsWith('/promotions') ?? false;
+  }
+  if (item.id === 'policy-center') {
+    return pathname?.startsWith('/policy-center') ?? false;
   }
   if (item.id === 'notification-engine') {
     return pathname?.startsWith('/notification-engine') ?? false;
@@ -152,7 +162,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
   }, []);
 
   useEffect(() => {
-    if (pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine')) {
+    if (pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine') || pathname?.startsWith('/promotions') || pathname?.startsWith('/policy-center')) {
       setMarketingOpen(true);
     }
   }, [pathname]);
@@ -271,7 +281,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                     type="button"
                     onClick={() => setMarketingOpen((v) => !v)}
                     className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors rounded-lg ${
-                      pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine')
+                      pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine') || pathname?.startsWith('/promotions') || pathname?.startsWith('/policy-center')
                         ? 'text-[#FF8C42] bg-orange-50 font-medium'
                         : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                     }`}
