@@ -9,6 +9,7 @@ import {
   Truck, AlertCircle, ChevronDown, ChevronUp, Camera, Upload
 } from 'lucide-react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { goBackOrReplace } from '@/lib/go-back-or-replace';
 
 interface ReturnRequest {
@@ -47,6 +48,14 @@ const statusConfig: Record<string, { color: string; icon: any; label: string; de
 };
 
 export default function ReturnsPage() {
+  return (
+    <AppReviewDemoRouteGuard>
+      <ReturnsPageContent />
+    </AppReviewDemoRouteGuard>
+  );
+}
+
+function ReturnsPageContent() {
   const router = useRouter();
   const commerceEnabled = isCustomerEcommerceEnabled();
   const [returns, setReturns] = useState<ReturnRequest[]>([]);

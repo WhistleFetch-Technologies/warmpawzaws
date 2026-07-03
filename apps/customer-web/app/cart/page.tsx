@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { ShoppingCart } from 'lucide-react';
 import { EcommerceCartScreen } from '@/components/ecommerce/cart/EcommerceCartScreen';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 
 function CartPageContent() {
@@ -57,7 +58,8 @@ function CartPageContent() {
 
 export default function CartPage() {
   return (
-    <Suspense
+    <AppReviewDemoRouteGuard>
+      <Suspense
       fallback={
         <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-[#F2F4F7]">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-orange-200 border-t-orange-500" />
@@ -66,5 +68,6 @@ export default function CartPage() {
     >
       <CartPageContent />
     </Suspense>
+    </AppReviewDemoRouteGuard>
   );
 }

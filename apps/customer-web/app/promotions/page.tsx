@@ -9,6 +9,7 @@ import {
   ShoppingCart, Star, Sparkles, AlertCircle, Search
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import {
   CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE,
   isCustomerEcommerceEnabled,
@@ -34,6 +35,14 @@ interface Promotion {
 }
 
 export default function PromotionsPage() {
+  return (
+    <AppReviewDemoRouteGuard>
+      <PromotionsPageContent />
+    </AppReviewDemoRouteGuard>
+  );
+}
+
+function PromotionsPageContent() {
   const router = useRouter();
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);

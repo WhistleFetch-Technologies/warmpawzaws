@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import {
@@ -9,6 +9,7 @@ import {
   navigateWhatsNewFromFullPage,
   type WhatsNewAnnouncement,
 } from '@/lib/whats-new-announcements';
+import { filterWhatsNewAnnouncementsForReviewAccount } from '@/lib/app-review-demo-account';
 
 // Fix: dynamically import to avoid reference errors in certain static bundling orders
 const WhatsNewAnnouncementList = dynamic(
@@ -60,6 +61,11 @@ export default function WhatsNewHubPage() {
     setPhone(storedPhone ?? undefined);
   }, []);
 
+  const visibleItems = useMemo(
+    () => filterWhatsNewAnnouncementsForReviewAccount(items, phone),
+    [items, phone]
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/40 via-white to-slate-50">
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-orange-100 cw-header-safe-top">
@@ -98,7 +104,7 @@ export default function WhatsNewHubPage() {
 
         {!loading && (
           <WhatsNewAnnouncementList
-            announcements={items}
+            announcements={visibleItems}
             interactionMode="hub"
             onRowPress={(a) => {
               if (a.announcementType === 'emergency') return;

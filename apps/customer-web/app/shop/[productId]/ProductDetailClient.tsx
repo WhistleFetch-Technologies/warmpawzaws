@@ -20,6 +20,8 @@ import { WishlistProductHeartButton } from '@/components/customer/WishlistProduc
 import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { isShopUiVisibleForAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
+import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import {
   getProductDiscountPercent,
   listPriceForDiscountDisplay,
@@ -706,6 +708,10 @@ export default function ProductDetailClient() {
   // ============================================================================
   // RENDER
   // ============================================================================
+
+  if (typeof window !== 'undefined' && !isShopUiVisibleForAccount(readStoredCustomerPhone())) {
+    return <AppReviewDemoRouteGuard>{null}</AppReviewDemoRouteGuard>;
+  }
 
   if (!isCustomerEcommerceEnabled()) {
     return (

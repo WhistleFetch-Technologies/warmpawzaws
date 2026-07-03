@@ -9,6 +9,7 @@ import { COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
 import { validateEmail } from '@/lib/validation';
 import { getResolvedCustomerId, persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
+import { isLoyaltyUiVisibleForAccount } from '@/lib/app-review-demo-account';
 
 interface UserProfile {
   firstName: string;
@@ -536,6 +537,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
           </div>
 
           {/* Referral code (optional) */}
+          {isLoyaltyUiVisibleForAccount(profile.phone) ? (
           <div className="mb-6">
             {referralLinked ? (
               <div className="bg-green-50 border border-green-200 rounded-xl p-4">
@@ -583,6 +585,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               </>
             )}
           </div>
+          ) : null}
 
           {/* Info Card */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">

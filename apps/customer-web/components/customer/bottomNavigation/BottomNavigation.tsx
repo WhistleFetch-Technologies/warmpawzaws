@@ -2,6 +2,7 @@
 
 import { Home, ShoppingBag, Calendar, User } from 'lucide-react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { isShopUiVisibleForAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
 import { useProfileMenuOpen } from '@/lib/profile-menu-open-context';
 
 interface BottomNavigationProps {
@@ -17,7 +18,8 @@ export function BottomNavigation({
   onProfileClick,
   profileMenuOpen: profileMenuOpenProp,
 }: BottomNavigationProps) {
-  const commerceEnabled = isCustomerEcommerceEnabled();
+  const shopTabVisible = isShopUiVisibleForAccount(readStoredCustomerPhone());
+  const commerceEnabled = shopTabVisible && isCustomerEcommerceEnabled();
   const profileMenuOpenContext = useProfileMenuOpen();
   const profileMenuOpen = profileMenuOpenProp ?? profileMenuOpenContext;
 
@@ -67,27 +69,29 @@ export function BottomNavigation({
           </span>
         </button>
 
-        {commerceEnabled ? (
-          <button
-            type="button"
-            onClick={() => handleNavClick('shop')}
-            className="flex flex-col items-center gap-1"
-          >
-            <ShoppingBag className={`w-6 h-6 ${isActive('shop') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-            <span className={`text-xs ${isActive('shop') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
-              Shop
-            </span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            disabled
-            className="flex flex-col items-center gap-1 opacity-40 cursor-not-allowed"
-          >
-            <ShoppingBag className="w-6 h-6 text-gray-400" />
-            <span className="text-xs text-gray-400">Soon</span>
-          </button>
-        )}
+        {shopTabVisible ? (
+          commerceEnabled ? (
+            <button
+              type="button"
+              onClick={() => handleNavClick('shop')}
+              className="flex flex-col items-center gap-1"
+            >
+              <ShoppingBag className={`w-6 h-6 ${isActive('shop') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+              <span className={`text-xs ${isActive('shop') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
+                Shop
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="flex flex-col items-center gap-1 opacity-40 cursor-not-allowed"
+            >
+              <ShoppingBag className="w-6 h-6 text-gray-400" />
+              <span className="text-xs text-gray-400">Soon</span>
+            </button>
+          )
+        ) : null}
 
         <button onClick={() => handleNavClick('my-bookings')} className="flex flex-col items-center gap-1">
           <Calendar className={`w-6 h-6 ${isActive('bookings') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />

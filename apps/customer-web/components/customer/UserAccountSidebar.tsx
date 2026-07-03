@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { filterAccountMenuForReviewAccount } from '@/lib/app-review-demo-account';
 import { Button } from '@/components/ui/button';
 import { 
   User, Calendar, Edit2,
@@ -1265,9 +1266,12 @@ export function UserAccountSidebar({
     },
   ];
 
-  const visibleMenuItems = menuItems.filter(
-    (item) =>
-      !(isCustomerEcommerceEnabled() && 'view' in item && item.view === 'cart')
+  const visibleMenuItems = filterAccountMenuForReviewAccount(
+    menuItems.filter(
+      (item) =>
+        !(isCustomerEcommerceEnabled() && 'view' in item && item.view === 'cart')
+    ),
+    phone
   );
 
   const displayName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ').trim() || 'Account';
