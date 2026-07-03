@@ -37,6 +37,10 @@ import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { serviceOptionColorChipClass } from '@/lib/hub-service-option-styles';
+import {
+  boardingSlugMatchesText,
+  serviceNameLooksLikeSwimming,
+} from '@/lib/boarding-service-types';
 
 interface BoardingBookingRouterProps {
   phone: string;
@@ -50,9 +54,11 @@ interface BoardingBookingRouterProps {
   price?: number;
   duration?: number;
   /** When set, loads `sitting` vendor services and uses at-home booking semantics (no facility rooms). */
-  flowVariant?: "boarding" | "pet_sitting";
+  flowVariant?: "boarding" | "pet_sitting" | "swimming";
   /** Hub tile id (`overnight_sitting`, `day_visits`, …) — best-effort match to vendor_services after load. */
   presetSittingOptionId?: string;
+  /** Boarding hub sub-type (`swimming`, `overnight`, …) for keyword match after vendor services load. */
+  presetServiceSlug?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -101,6 +107,11 @@ function matchPresetToVendorServiceRowId(
     {
       preset: "drop_in",
       test: (t) => /drop|quick|feeding|30\s*min|45\s*min/.test(t) || t.includes("drop_in"),
+    },
+    {
+      preset: "swimming",
+      test: (t) =>
+        /swim|pool/.test(t) && !/overnight|night|daycare|boarding\s+stay/.test(t),
     },
   ];
   const rule = tests.find((x) => x.preset === preset)?.test;
@@ -435,14 +446,16 @@ function buildBoardingIntakeNotesPayload(
   return s;
 }
 
-function getBookingSteps(isPetSitting: boolean): BookingStep[] {
-  return isPetSitting
+function getBookingSteps(skipBoardingIntake: boolean): BookingStep[] {
+  return skipBoardingIntake
     ? ['service', 'datetime', 'pet', 'payment', 'confirmation']
     : ['service', 'datetime', 'pet', 'boarding_form', 'payment', 'confirmation'];
 }
 
-/** Matches server pet-sitting pricing (bookings-enhanced). */
+/** Matches server pet-sitting / swimming pricing (bookings-enhanced). */
 const PET_SITTING_BILLING_SLOT_MINUTES = 30;
+const SWIMMING_MIN_SESSION_MINUTES = 30;
+const SWIMMING_MAX_SESSION_MINUTES = 240;
 /** One “night” / 24h billing unit for boarding (matches server). */
 const BOARDING_NIGHT_MINUTES = 24 * 60;
 /** Matches server `booking-stay-wall-time` / Lambda boarding pricing (Asia/Kolkata wall clock). */
@@ -505,16 +518,25 @@ export function BoardingBookingRouter({
   duration,
   flowVariant = "boarding",
   presetSittingOptionId,
+  presetServiceSlug,
   onBack, 
   onNavigate, 
   onViewBooking,
   onInternalBackReady,
 }: BoardingBookingRouterProps) {
   const isPetSitting = flowVariant === "pet_sitting";
+  const isSwimmingSession =
+    flowVariant === "swimming" ||
+    serviceType === "swimming" ||
+    presetServiceSlug === "swimming" ||
+    serviceNameLooksLikeSwimming(serviceName) ||
+    boardingSlugMatchesText("swimming", String(serviceName || ""));
+  const swimmingSameDay = isSwimmingSession;
+  const skipBoardingIntake = isPetSitting || isSwimmingSession;
   const apiCategory = isPetSitting ? "sitting" : "boarding";
   const packageServiceType = isPetSitting ? "sitting" : "boarding";
-  const flowTitle = isPetSitting ? "Pet Sitting" : "Pet Boarding";
-  const priceSuffix = isPetSitting ? "/visit" : "/night";
+  const flowTitle = isPetSitting ? "Pet Sitting" : isSwimmingSession ? "Pet Swimming" : "Pet Boarding";
+  const priceSuffix = isPetSitting || isSwimmingSession ? "/session" : "/night";
 
   // Service context logic
   const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService);
@@ -541,6 +563,9 @@ export function BoardingBookingRouter({
     if (isPetSitting) {
       const fromHub = mapHubSittingPresetToDefaultSlug(presetSittingOptionId);
       return fromHub || "overnight_sitting";
+    }
+    if (isSwimmingSession || serviceType === "swimming" || presetServiceSlug === "swimming") {
+      return "swimming";
     }
     if (serviceType === "daycare" || serviceType === "full-day") return "full-day";
     return "overnight";
@@ -723,6 +748,7 @@ export function BoardingBookingRouter({
    * Checkout can be the same calendar day as check-in; not overnight/extended.
    */
   const sittingSameDay = isPetSitting && !sittingMultiNight;
+  const sameDayTimedSession = sittingSameDay || swimmingSameDay;
 
   const generateDates = () => {
     const dates = [];
@@ -805,8 +831,19 @@ export function BoardingBookingRouter({
       }
     }
 
+    if (isSwimmingSession && (presetServiceSlug === 'swimming' || presetServiceSlug === undefined)) {
+      const matched = matchPresetToVendorServiceRowId(
+        'swimming',
+        vendorServices as Record<string, unknown>[]
+      );
+      if (matched && ids.includes(matched)) {
+        setSelectedServiceType(matched);
+        return;
+      }
+    }
+
     setSelectedServiceType((prev) => (ids.includes(prev) ? prev : ids[0]));
-  }, [vendorServices, isPetSitting, presetSittingOptionId]);
+  }, [vendorServices, isPetSitting, isSwimmingSession, presetSittingOptionId, presetServiceSlug]);
 
   useEffect(() => {
     if (!vendorId || loading) return;
@@ -828,6 +865,12 @@ export function BoardingBookingRouter({
     if (!isPetSitting || !sittingSameDay || !checkInDate) return;
     setCheckOutDate(checkInDate);
   }, [isPetSitting, sittingSameDay, checkInDate]);
+
+  /** Same-day swimming: checkout stays on the selected calendar day. */
+  useEffect(() => {
+    if (!swimmingSameDay || !checkInDate) return;
+    setCheckOutDate(checkInDate);
+  }, [swimmingSameDay, checkInDate]);
 
   /** Profile/deep link: preselected vendor_services row is a multi-session package → purchase flow. */
   useEffect(() => {
@@ -1050,7 +1093,7 @@ export function BoardingBookingRouter({
     const start = parseLocalDateTime(checkInDate, checkInTime);
     let end = parseLocalDateTime(checkOutDate, checkOutTime);
     if (end <= start) {
-      if (sittingSameDay && checkInDate === checkOutDate) return 0;
+      if (sameDayTimedSession && checkInDate === checkOutDate) return 0;
       end += 24 * 60 * 60 * 1000;
     }
     return Math.round((end - start) / 60000);
@@ -1068,9 +1111,15 @@ export function BoardingBookingRouter({
     return 1440;
   };
 
+  const getSwimmingPricingBaseMinutes = (): number => {
+    const optDur = Number(selectedServiceOption?.duration);
+    if (Number.isFinite(optDur) && optDur >= SWIMMING_MIN_SESSION_MINUTES) return optDur;
+    return 60;
+  };
+
   const calculateNights = () => {
     if (!checkInDate || !checkOutDate) return 0;
-    if (isPetSitting && sittingSameDay && checkInDate === checkOutDate) return 0;
+    if (sameDayTimedSession && checkInDate === checkOutDate) return 0;
     const start = new Date(checkInDate);
     const end = new Date(checkOutDate);
     const diffTime = Math.abs(end.getTime() - start.getTime());
@@ -1088,9 +1137,11 @@ export function BoardingBookingRouter({
     const opt = selectedServiceOption;
     const unitPrice = Number(opt?.price ?? price ?? 0);
 
-    /** Pet sitting: price uses 30-minute billing slots; list price applies to the sitter’s base duration. */
-    if (isPetSitting) {
-      const baseMins = getPetSittingPricingBaseMinutes();
+    /** Pet sitting / swimming: price uses 30-minute billing slots. */
+    if (isPetSitting || isSwimmingSession) {
+      const baseMins = isSwimmingSession
+        ? getSwimmingPricingBaseMinutes()
+        : getPetSittingPricingBaseMinutes();
       const mins = getBilledMinutes();
       if (mins < 1) return unitPrice;
       const slots = Math.max(1, Math.ceil(mins / PET_SITTING_BILLING_SLOT_MINUTES));
@@ -1106,11 +1157,11 @@ export function BoardingBookingRouter({
   };
 
   const handleNext = () => {
-    const steps = getBookingSteps(isPetSitting);
+    const steps = getBookingSteps(skipBoardingIntake);
     const currentIdx = steps.indexOf(step);
 
     if (step === 'pet') {
-      if (!isPetSitting) {
+      if (!skipBoardingIntake) {
         if (!selectedPet) {
           toast.error('Please select a pet');
           return;
@@ -1168,13 +1219,22 @@ export function BoardingBookingRouter({
       return;
     }
 
-    if (isPetSitting) {
+    if (isPetSitting || isSwimmingSession) {
       const bm = getBilledMinutes();
-      if (bm < 15) {
+      const minMins = isSwimmingSession ? SWIMMING_MIN_SESSION_MINUTES : 15;
+      if (bm < minMins) {
         toast.error(
-          sittingSameDay
-            ? 'This visit could not be priced. Pick another check-in date or a different sitting service.'
+          sameDayTimedSession
+            ? isSwimmingSession
+              ? `Swimming session must be at least ${SWIMMING_MIN_SESSION_MINUTES} minutes. Adjust start and end time.`
+              : 'This visit could not be priced. Pick another check-in date or a different sitting service.'
             : 'Stay must be at least 15 minutes. Adjust check-in and check-out date & time.'
+        );
+        return;
+      }
+      if (isSwimmingSession && bm > SWIMMING_MAX_SESSION_MINUTES) {
+        toast.error(
+          `Swimming session cannot exceed ${SWIMMING_MAX_SESSION_MINUTES / 60} hours. Shorten your end time.`
         );
         return;
       }
@@ -1196,7 +1256,7 @@ export function BoardingBookingRouter({
       return;
     }
 
-    if (!isPetSitting) {
+    if (!isPetSitting && !isSwimmingSession) {
       if (!boardingIntake.ownerFullName.trim() || !boardingIntake.ownerPhone.trim()) {
         toast.error('Please add your name and phone on the intake form.');
         setStep('boarding_form');
@@ -1325,7 +1385,7 @@ export function BoardingBookingRouter({
         petId: selectedPet?.id,
         customerPhone: phone || undefined,
         notes:
-          !isPetSitting
+          !isPetSitting && !isSwimmingSession
             ? buildBoardingIntakeNotesPayload(boardingIntake, {
                 checkInDate,
                 checkOutDate,
@@ -1350,7 +1410,7 @@ export function BoardingBookingRouter({
         checkInTime,
         checkOutTime,
         numberOfNights:
-          isPetSitting && sittingSameDay
+          sameDayTimedSession
             ? 0
             : isPetSitting
               ? Math.max(1, Math.ceil(getBilledMinutes() / 1440))
@@ -1360,6 +1420,9 @@ export function BoardingBookingRouter({
       if (isPetSitting) {
         bookingData.totalDurationMinutes = getBilledMinutes();
         bookingData.flowVariant = 'pet_sitting';
+      } else if (isSwimmingSession) {
+        bookingData.totalDurationMinutes = getBilledMinutes();
+        bookingData.flowVariant = 'swimming';
       } else {
         bookingData.flowVariant = 'boarding';
       }
@@ -1425,7 +1488,7 @@ export function BoardingBookingRouter({
       onBack();
       return;
     }
-    const steps = getBookingSteps(isPetSitting);
+    const steps = getBookingSteps(skipBoardingIntake);
     const currentIdx = steps.indexOf(step);
 
     if (currentIdx <= 0) {
@@ -1437,7 +1500,7 @@ export function BoardingBookingRouter({
     }
 
     setStep(steps[currentIdx - 1]);
-  }, [step, isPetSitting, onBack, vendorId, serviceId]);
+  }, [step, skipBoardingIntake, onBack, vendorId, serviceId]);
 
   useEffect(() => {
     onInternalBackReady?.(handleBack);
@@ -1446,14 +1509,20 @@ export function BoardingBookingRouter({
   const handlePaymentSuccess = (paidBookingId: string) => {
     setBookingId(paidBookingId);
     setStep('confirmation');
-    toast.success(isPetSitting ? 'Pet sitting booked successfully!' : 'Boarding booked successfully!');
+    toast.success(
+      isPetSitting
+        ? 'Pet sitting booked successfully!'
+        : isSwimmingSession
+          ? 'Swimming session booked successfully!'
+          : 'Boarding booked successfully!'
+    );
   };
 
   const renderStepIndicator = () => {
-    const stepLabels = isPetSitting
+    const stepLabels = skipBoardingIntake
       ? ['Service', 'Dates', 'Pet', 'Payment']
       : ['Service', 'Dates', 'Pet', 'Intake', 'Payment'];
-    const currentStepMap: Record<BookingStep, number> = isPetSitting
+    const currentStepMap: Record<BookingStep, number> = skipBoardingIntake
       ? { service: 0, datetime: 1, pet: 2, boarding_form: 2, payment: 3, confirmation: 4 }
       : { service: 0, datetime: 1, pet: 2, boarding_form: 3, payment: 4, confirmation: 5 };
     const currentIdx = currentStepMap[step];
@@ -1529,10 +1598,10 @@ export function BoardingBookingRouter({
   }
 
   const boardingStats = EMPTY_SERVICE_HEADER_STATS;
-  const stepLabels = isPetSitting
+  const stepLabels = skipBoardingIntake
     ? ['Service', 'Dates', 'Pet', 'Payment']
     : ['Service', 'Dates', 'Pet', 'Intake', 'Payment'];
-  const stepSequenceForHeader = isPetSitting
+  const stepSequenceForHeader = skipBoardingIntake
     ? (['service', 'datetime', 'pet', 'payment'] as const)
     : (['service', 'datetime', 'pet', 'boarding_form', 'payment'] as const);
   const stepIdx = stepSequenceForHeader.findIndex((s) => s === step);
@@ -1644,14 +1713,16 @@ export function BoardingBookingRouter({
         {/* Date Selection */}
         {step === 'datetime' && (
           <div className="space-y-6">
-            {isPetSitting && sittingSameDay ? (
+            {sameDayTimedSession ? (
               <>
                 <div>
-                  <h2 className="mb-3 text-lg font-bold text-gray-900">Visit date</h2>
+                  <h2 className="mb-3 text-lg font-bold text-gray-900">
+                    {isSwimmingSession ? 'Session date' : 'Visit date'}
+                  </h2>
                   <p className="mb-2 text-xs text-gray-500">
-                    Pick the day, then choose start and end time. Price is based on 30-minute blocks; your
-                    sitter’s listed rate applies to their base visit length (
-                    {getPetSittingPricingBaseMinutes()} minutes).
+                    {isSwimmingSession
+                      ? `Pick the day, then choose pool start and end time. Price is based on ${PET_SITTING_BILLING_SLOT_MINUTES}-minute blocks; your listed rate applies to a ${getSwimmingPricingBaseMinutes()}-minute base session.`
+                      : `Pick the day, then choose start and end time. Price is based on 30-minute blocks; your sitter’s listed rate applies to their base visit length (${getPetSittingPricingBaseMinutes()} minutes).`}
                   </p>
                   <div className="flex gap-2 overflow-x-auto pb-2">
                     {dates.map((d) => (
@@ -1751,7 +1822,7 @@ export function BoardingBookingRouter({
                   </div>
                 )}
 
-                {checkInDate && checkOutDate && getBilledMinutes() >= 15 && (
+                {checkInDate && checkOutDate && getBilledMinutes() >= (isSwimmingSession ? SWIMMING_MIN_SESSION_MINUTES : 15) && (
                   <div className="rounded-xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50 p-4">
                     <div className="flex items-center justify-between">
                       <div>

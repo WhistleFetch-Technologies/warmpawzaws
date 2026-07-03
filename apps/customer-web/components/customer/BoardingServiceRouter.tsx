@@ -21,6 +21,7 @@ import {
   Sparkles,
   Home,
   type LucideIcon,
+  Waves,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -143,6 +144,15 @@ const BOARDING_CARD_LINKS: {
     cardBg: 'bg-rose-50',
   },
   {
+    slug: 'swimming',
+    title: 'Swimming',
+    subtitle: 'Same-day pool sessions',
+    Icon: Waves,
+    iconWrap: HUB_SERVICE_ICON_WRAP.clockFlexible,
+    image: `${BOARDING_IMG}/half-day.webp`,
+    cardBg: 'bg-cyan-50',
+  },
+  {
     slug: 'weekend',
     title: 'Weekend',
     subtitle: 'Fri–Sun stays',
@@ -202,6 +212,14 @@ const BOARDING_CARD_BACKGROUNDS: Record<
       { Icon: Clock, className: 'absolute -left-0.5 top-8 h-12 w-12 -rotate-[6deg] opacity-[0.22]' },
       { Icon: PawPrint, className: 'absolute left-[18%] bottom-1 h-9 w-9 rotate-[22deg] opacity-[0.17]' },
       { Icon: Sparkles, className: 'absolute left-[36%] top-2 h-6 w-6 -rotate-12 opacity-[0.14]' },
+    ],
+  },
+  swimming: {
+    tint: 'text-cyan-400',
+    icons: [
+      { Icon: Waves, className: 'absolute -left-0.5 top-7 h-12 w-12 rotate-[8deg] opacity-[0.22]' },
+      { Icon: PawPrint, className: 'absolute left-[16%] bottom-2 h-9 w-9 -rotate-[14deg] opacity-[0.17]' },
+      { Icon: Sun, className: 'absolute left-[34%] top-1 h-7 w-7 rotate-[12deg] opacity-[0.15]' },
     ],
   },
   weekend: {

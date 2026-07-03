@@ -1,6 +1,7 @@
 import {
   type BoardingServiceSlug,
   boardingSlugMatchesText,
+  serviceNameLooksLikeSwimming,
 } from '@/lib/boarding-service-types';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import {
@@ -102,16 +103,21 @@ export function buildBoardingBookPlanPayload(
   price: number;
   duration: number;
   serviceStyle: string;
+  flowVariant?: 'boarding' | 'swimming';
   facility: ReturnType<typeof buildFacilityPayload>;
 } {
+  const isSwimming =
+    boardingSlugMatchesText('swimming', plan.name) ||
+    serviceNameLooksLikeSwimming(plan.name);
   return {
     vendorId: v.id,
-    serviceType: 'boarding',
+    serviceType: isSwimming ? 'swimming' : 'boarding',
     serviceId: plan.rowId,
     serviceName: plan.name,
     price: plan.price,
-    duration: plan.duration || 1440,
+    duration: plan.duration || (isSwimming ? 60 : 1440),
     serviceStyle: plan.serviceStyle || 'at_center',
+    ...(isSwimming ? { flowVariant: 'swimming' as const } : {}),
     facility: buildFacilityPayload(v),
   };
 }

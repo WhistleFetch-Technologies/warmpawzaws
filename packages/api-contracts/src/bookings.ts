@@ -63,10 +63,10 @@ const CreateBookingRequestSchemaBase = z.object({
   /** Client-computed stay length; server recomputes for pet sitting when checkout times are sent. */
   totalDurationMinutes: z.coerce.number().int().positive().optional(),
   numberOfNights: z.coerce.number().int().min(0).optional(),
-  /** Customer app: drives timed pet-sitting / boarding pricing on the API. */
-  flowVariant: z.enum(['pet_sitting', 'boarding']).optional(),
+  /** Customer app: drives timed pet-sitting / boarding / swimming pricing on the API. */
+  flowVariant: z.enum(['pet_sitting', 'boarding', 'swimming']).optional(),
   /** Snake_case alias for `flowVariant` (merged during parse). */
-  flow_variant: z.enum(['pet_sitting', 'boarding']).optional(),
+  flow_variant: z.enum(['pet_sitting', 'boarding', 'swimming']).optional(),
   /** When true, server debits `customer_wallets` at booking create (wallet-only or split with Razorpay). */
   useWallet: z.boolean().optional(),
   /** Max INR to take from wallet; server clamps to balance and list price. */
@@ -96,6 +96,30 @@ export const CreateBookingRequestSchema = CreateBookingRequestSchemaBase.transfo
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'checkOutTime is required when flowVariant is boarding',
+        path: ['checkOutTime'],
+      });
+    }
+  }
+  if (data.flowVariant === 'swimming') {
+    const cod = data.checkOutDate;
+    const cot = data.checkOutTime;
+    if (cod == null || String(cod).trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'checkOutDate is required when flowVariant is swimming',
+        path: ['checkOutDate'],
+      });
+    } else if (String(cod).trim() !== String(data.bookingDate).trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Swimming sessions must check out on the same day as check-in',
+        path: ['checkOutDate'],
+      });
+    }
+    if (cot == null || String(cot).trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'checkOutTime is required when flowVariant is swimming',
         path: ['checkOutTime'],
       });
     }
