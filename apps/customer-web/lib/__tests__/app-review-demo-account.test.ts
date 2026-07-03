@@ -3,6 +3,7 @@ import {
   filterAccountMenuForReviewAccount,
   filterComingSoonBannersForReviewAccount,
   filterHomeServiceTilesForReviewAccount,
+  filterPopularServicesForReviewAccount,
   filterWhatsNewAnnouncementsForReviewAccount,
   isAppReviewDemoAccount,
   isLoyaltyUiVisibleForAccount,
@@ -48,9 +49,22 @@ describe('app-review-demo-account', () => {
       { screen: 'vet', label: 'Vet' },
       { screen: 'insurance', label: 'Insurance', isComingSoon: true },
       { screen: 'cafes', label: 'Cafes' },
+      { screen: 'pharmacy', label: 'Pharmacy', isComingSoon: true },
+      { screen: 'pet-sitter', label: 'Pet Sitter' },
     ];
     const filtered = filterHomeServiceTilesForReviewAccount(tiles, APP_REVIEW_DEMO_PHONE);
     expect(filtered.map((t) => t.screen)).toEqual(['vet']);
+  });
+
+  it('filters pet sitting from popular services for demo account only', () => {
+    const popular = [
+      { id: 'vet', screen: 'vet', title: 'Vet' },
+      { id: 'pet-sitter', screen: 'pet-sitter', title: 'Pet Sitting' },
+    ];
+    expect(filterPopularServicesForReviewAccount(popular, APP_REVIEW_DEMO_PHONE).map((s) => s.id)).toEqual([
+      'vet',
+    ]);
+    expect(filterPopularServicesForReviewAccount(popular, '9845299005')).toEqual(popular);
   });
 
   it('blocks marketplace URL paths for demo account', () => {

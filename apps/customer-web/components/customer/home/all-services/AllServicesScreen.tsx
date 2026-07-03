@@ -3,6 +3,7 @@
 import React, { memo, useCallback, type ReactNode } from 'react';
 import { ArrowLeft, PawPrint, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+import { isAppReviewDemoAccount } from '@/lib/app-review-demo-account';
 import { AllServicesFeaturedBanner } from './AllServicesFeaturedBanner';
 import { AllServicesTrustBar } from './AllServicesTrustBar';
 import { CategoryFilterChips } from './CategoryFilterChips';
@@ -68,6 +69,10 @@ function AllServicesScreenComponent({
         COMING_SOON_HOME_SERVICE_SCREENS.has(screen) ||
         COMING_SOON_HOME_SERVICE_SCREENS.has(key);
 
+      if (isAppReviewDemoAccount(phone) && (isComingSoon || screen === 'shop')) {
+        return;
+      }
+
       if (isComingSoon) {
         toast.info('This service is coming soon in your area.');
         return;
@@ -80,7 +85,7 @@ function AllServicesScreenComponent({
 
       onNavigate(service.screen);
     },
-    [onNavigate]
+    [onNavigate, phone]
   );
 
   const showEmptyState = !loading && petFilteredServices.length === 0;

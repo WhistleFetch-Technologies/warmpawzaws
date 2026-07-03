@@ -1,8 +1,9 @@
 'use client';
 
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import Image from 'next/image';
 import { Sparkles } from 'lucide-react';
+import { filterPopularServicesForReviewAccount } from '@/lib/app-review-demo-account';
 import { HorizontalScrollRow } from '../shared/HorizontalScrollRow';
 import { usePopularServiceCatalog } from '../hooks/usePopularServiceCatalog';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
@@ -18,7 +19,11 @@ function PopularServicesSectionComponent({
   onNavigate,
   className = '',
 }: PopularServicesSectionProps) {
-  const { items } = usePopularServiceCatalog(phone);
+  const { items: catalogItems } = usePopularServiceCatalog(phone);
+  const items = useMemo(
+    () => filterPopularServicesForReviewAccount(catalogItems, phone),
+    [catalogItems, phone]
+  );
 
   if (items.length === 0) return null;
 

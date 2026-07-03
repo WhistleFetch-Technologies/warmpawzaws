@@ -39,6 +39,9 @@ export const REVIEW_HIDDEN_SCREENS = new Set([
   'meal-plan',
   'ambulance',
   'premium-pet-food',
+  'pet-sitter',
+  'pet_sitter',
+  'sitting',
 ]);
 
 /** Home service tile screen/category ids to remove entirely (not show as "Soon"). */
@@ -53,6 +56,13 @@ export const REVIEW_HIDDEN_HOME_TILE_KEYS = new Set([
   'meal-plans',
   'premium-pet-food',
   'shop',
+  'marketplace',
+  'pet-sitter',
+  'pet_sitter',
+  'sitting',
+  'physio',
+  'physiotherapy',
+  'physio-therapy',
 ]);
 
 export function normalizePhoneForGate(phone: string | null | undefined): string {
@@ -164,6 +174,27 @@ export function filterHomeServiceTilesForReviewAccount<T extends ServiceTileLike
     if (tile.isComingSoon || tile.comingSoon) return false;
     return true;
   });
+}
+
+type PopularServiceLike = {
+  id?: string;
+  screen?: string;
+};
+
+function popularServiceKey(item: PopularServiceLike): string {
+  return String(item.id || item.screen || '')
+    .toLowerCase()
+    .trim();
+}
+
+/** Popular Services home row — hide under-build cards (e.g. Pet Sitting) for demo account. */
+export function filterPopularServicesForReviewAccount<T extends PopularServiceLike>(
+  items: T[],
+  phone?: string | null
+): T[] {
+  const p = phone ?? readStoredCustomerPhone();
+  if (!isAppReviewDemoAccount(p)) return items;
+  return items.filter((item) => !REVIEW_HIDDEN_HOME_TILE_KEYS.has(popularServiceKey(item)));
 }
 
 /** URL path prefixes blocked for demo account (redirect to home). */
