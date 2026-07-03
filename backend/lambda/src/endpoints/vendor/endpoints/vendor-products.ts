@@ -64,6 +64,11 @@ import {
   buildMetadataWithDeliveryRegions,
 } from '../../../utils/product-vendor-persist';
 import {
+  validateAndApplyVendorDeclaredOwnership,
+  isListingOwnershipRequiredError,
+  getVendorCommissionModel,
+} from '../../../utils/compute-listing-ownership';
+import {
   generateProductGroupId,
   parseProductMetadata,
 } from '../../../utils/product-group-identity';
@@ -795,6 +800,20 @@ class CreateVendorProductHandler extends BaseHandler {
         (productData.metadata as Record<string, unknown> | undefined) ?? null,
       );
 
+      try {
+        await validateAndApplyVendorDeclaredOwnership(
+          resolvedVendorId,
+          productData,
+          cols,
+          body.listing_ownership ?? body.listingOwnership
+        );
+      } catch (ownershipErr) {
+        if (isListingOwnershipRequiredError(ownershipErr)) {
+          return this.error(ownershipErr.message, 400);
+        }
+        throw ownershipErr;
+      }
+
       const skuInputsPreview = parseSkuInputsFromBody(
         body as Record<string, unknown>,
         normalized.sellingPrice,
@@ -1068,6 +1087,24 @@ class UpdateVendorProductHandler extends BaseHandler {
         existingMetaForExtras,
         { partial: true },
       );
+
+      try {
+        const declaredOwnership =
+          body.listing_ownership ??
+          body.listingOwnership ??
+          (prevRow.listing_ownership != null ? prevRow.listing_ownership : undefined);
+        await validateAndApplyVendorDeclaredOwnership(
+          resolvedVendorId,
+          updateData,
+          cols,
+          declaredOwnership
+        );
+      } catch (ownershipErr) {
+        if (isListingOwnershipRequiredError(ownershipErr)) {
+          return this.error(ownershipErr.message, 400);
+        }
+        throw ownershipErr;
+      }
 
       let normalizedImages: unknown | undefined;
       if (body.images !== undefined) {
@@ -1364,6 +1401,20 @@ export function registerVendorProductsEndpoints(app: Hono) {
   const updateProductHandler = new UpdateVendorProductHandler();
   const patchSkuStockHandler = new PatchVendorProductSkuStockHandler();
   const deleteProductHandler = new DeleteVendorProductHandler();
+
+  app.get('/vendor/:vendorId/ecommerce/commission-model', async (c) => {
+    try {
+      const vendorId = c.req.param('vendorId');
+      if (!isValidUUID(vendorId)) {
+        return c.json({ success: false, error: 'Invalid vendor ID' }, 400);
+      }
+      const commissionModel = await getVendorCommissionModel(vendorId);
+      return c.json({ success: true, commissionModel });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return c.json({ success: false, error: msg }, 500);
+    }
+  });
 
   app.get('/vendor/:vendorId/ecommerce/categories/:categoryId/variant-presets', async (c) => {
     try {

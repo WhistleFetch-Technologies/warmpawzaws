@@ -1,5 +1,5 @@
 /**
- * XLSX bulk product template — unified 27-column layout for vendor product upload.
+ * XLSX bulk product template — unified 28-column layout for vendor product upload.
  * Single sheet (NPI), inline dropdowns, one demo row.
  *
  * Required (`*`): Title, Category, Quantity, Image, MRP, Tax, HSN
@@ -22,7 +22,7 @@ export { getBulkProductTitle };
 export const SHEET_NAME = 'NPI';
 export const VARIANT_GUIDE_SHEET_NAME = 'Variant Guide';
 
-/** 27 columns. Compulsory ones carry a `*` suffix. */
+/** 28 columns. Compulsory ones carry a `*` suffix. */
 export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Title*',
   'Description',
@@ -51,6 +51,7 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Variant Value 2',
   'Variant Attribute 3',
   'Variant Value 3',
+  'Listing Ownership*',
 ];
 
 const REQUIRED_COL_LETTERS = {
@@ -98,8 +99,8 @@ const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill
   },
   {
     start: 21,
-    end: 27,
-    title: 'Same Product Group ID = one product (variants). Each row: one SKU with its own MRP & SP.',
+    end: 28,
+    title: 'Same Product Group ID = one product (variants). Listing Ownership required for ownership-model sellers.',
     fill: TAN,
   },
 ];
@@ -151,6 +152,7 @@ function buildSampleRow(sampleCategory: string): string[] {
     '',
     '',
     '',
+    'Third party',
   ];
 }
 
@@ -223,6 +225,10 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
       cell.note =
         'Dog, Cat, All pets, or type a specific pet (e.g. Birds). Leave blank = All pets.';
     }
+    if (h === 'Listing Ownership*') {
+      cell.note =
+        'Required for ownership-model sellers: Own brand or Third party. Optional for category-model sellers.';
+    }
     cell.font = { bold: true, size: 10, color: h.includes('*') ? { argb: 'FFFFFFFF' } : undefined };
     cell.fill = (h.includes('*') ? HEADER_REQUIRED_FILL : HEADER_ROW_FILL) as ExcelJS.Fill;
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
@@ -248,6 +254,7 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
   addInlineDropdown(ws, `${CATEGORY}3:${CATEGORY}500`, categories);
   addInlineDropdown(ws, `${PET_TYPE}3:${PET_TYPE}500`, STATIC_PET_TYPES);
   addInlineDropdown(ws, `${TAX}3:${TAX}500`, STATIC_TAX_LABELS);
+  addInlineDropdown(ws, `${colLetter(28)}3:${colLetter(28)}500`, ['Own brand', 'Third party']);
 
   addVariantGuideSheet(wb);
 
@@ -373,6 +380,8 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   variantvalue2: 'variant_value_2',
   variantattribute3: 'variant_attr_3',
   variantvalue3: 'variant_value_3',
+  listingownership: 'listing_ownership',
+  productownership: 'listing_ownership',
   // Legacy 52-column aliases (backward compat for old files)
   benefits: 'benefits',
   uniquesellingpropositions: 'usp',

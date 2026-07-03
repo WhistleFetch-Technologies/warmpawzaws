@@ -52,6 +52,58 @@ import {
   mapCategoryRowsForPublic,
   parseAdminCategoryPayloadItem,
 } from '../../../utils/ecommerce-category-display';
+import {
+  buildCommissionSettingsResponse,
+  normalizeCommissionRate,
+  normalizeSellerRatesForResponse,
+  parseSellerRateOverride,
+} from '../../../utils/ecommerce-commission-settings';
+import {
+  getVendorCommissionConfigResponse,
+  upsertVendorCommissionConfig,
+} from '../../../utils/ecommerce-commission-admin';
+
+const ADMIN_CATEGORY_SELECT = `
+  SELECT id::text AS id, name, description, display_order, is_active, image_url,
+         default_commission_rate, created_at
+  FROM ecommerce_categories
+  ORDER BY display_order ASC, name ASC`;
+
+const ADMIN_CATEGORY_SELECT_NO_IMAGE = `
+  SELECT id::text AS id, name, description, display_order, is_active, created_at,
+         default_commission_rate
+  FROM ecommerce_categories
+  ORDER BY display_order ASC, name ASC`;
+
+const ADMIN_CATEGORY_SELECT_LEGACY = `
+  SELECT id::text AS id, name, description, display_order, is_active, image_url, created_at
+  FROM ecommerce_categories
+  ORDER BY display_order ASC, name ASC`;
+
+async function queryAdminCategories() {
+  try {
+    return await query(ADMIN_CATEGORY_SELECT);
+  } catch (dbError: any) {
+    if (dbError.message?.includes('default_commission_rate') || dbError.code === '42703') {
+      try {
+        return await query(ADMIN_CATEGORY_SELECT_NO_IMAGE);
+      } catch (inner: any) {
+        if (inner.message?.includes('column "image_url"') || inner.code === '42703') {
+          return await query(
+            `SELECT id::text AS id, name, description, display_order, is_active, created_at
+             FROM ecommerce_categories
+             ORDER BY display_order ASC, name ASC`
+          );
+        }
+        throw inner;
+      }
+    }
+    if (dbError.message?.includes('column "image_url"') || dbError.code === '42703') {
+      return await query(ADMIN_CATEGORY_SELECT_LEGACY);
+    }
+    throw dbError;
+  }
+}
 
 /** Only admin-approved products appear on the public storefront (see products.status + is_active). */
 const STOREFRONT_PRODUCT_SQL = `
@@ -1352,9 +1404,24 @@ export function registerEcommerceEndpoints(app: Hono) {
         })(),
       ]);
 
-      // Get commission (assuming 10% default)
+      // Aggregate commission from paid orders (fallback to platform default when column absent)
+      let totalCommission = 0;
+      try {
+        const commissionAgg = await query(
+          `SELECT COALESCE(SUM(commission_amount), 0) AS total_commission
+           FROM orders
+           WHERE payment_status = 'paid' AND commission_amount IS NOT NULL`
+        );
+        totalCommission = parseFloat(String(commissionAgg.rows[0]?.total_commission ?? 0)) || 0;
+      } catch {
+        const totalRevenue = parseFloat(revenueStats.rows[0]?.total_revenue || '0');
+        const settingsRes = await query(
+          `SELECT default_rate FROM ecommerce_commission_settings WHERE setting_key = 'default' LIMIT 1`
+        ).catch(() => ({ rows: [{ default_rate: 10 }] }));
+        const fallbackRate = parseFloat(String(settingsRes.rows[0]?.default_rate ?? 10)) || 10;
+        totalCommission = totalRevenue * (fallbackRate / 100);
+      }
       const totalRevenue = parseFloat(revenueStats.rows[0]?.total_revenue || '0');
-      const totalCommission = totalRevenue * 0.1;
       const activeProducts = parseInt(String(activeProductsRow.rows[0]?.c ?? '0'), 10) || 0;
       const pendingApprovals = parseInt(String(pendingApprovalsRow.rows[0]?.c ?? '0'), 10) || 0;
       const processingOrders = parseInt(String(processingOrdersRow.rows[0]?.c ?? '0'), 10) || 0;
@@ -1665,25 +1732,7 @@ export function registerEcommerceEndpoints(app: Hono) {
    */
   app.get("/admin/ecommerce/categories", async (c) => {
     try {
-      let categories;
-      try {
-        categories = await query(
-          `SELECT id::text AS id, name, description, display_order, is_active, image_url, created_at
-           FROM ecommerce_categories
-           ORDER BY display_order ASC, name ASC`
-        );
-      } catch (dbError: any) {
-        if (dbError.message?.includes('column "image_url"') || dbError.code === '42703') {
-          categories = await query(
-            `SELECT id::text AS id, name, description, display_order, is_active, created_at
-             FROM ecommerce_categories
-             ORDER BY display_order ASC, name ASC`
-          );
-        } else {
-          throw dbError;
-        }
-      }
-
+      const categories = await queryAdminCategories();
       const rows = (categories?.rows || []) as Record<string, unknown>[];
       const mapped = await mapCategoryRowsForPublic(rows, { includeInactive: true });
 
@@ -1719,13 +1768,16 @@ export function registerEcommerceEndpoints(app: Hono) {
           return c.json({ error: 'Category name is required' }, 400);
         }
 
-        const row = {
+        const row: Record<string, unknown> = {
           name: item.name,
           description: item.description,
           display_order: item.display_order,
           is_active: item.is_active,
           image_url: item.image_url,
         };
+        if (item.default_commission_rate != null) {
+          row.default_commission_rate = item.default_commission_rate;
+        }
 
         try {
           if (item.id && isEcommerceCategoryUuid(item.id)) {
@@ -1746,7 +1798,14 @@ export function registerEcommerceEndpoints(app: Hono) {
               409
             );
           }
-          if (dbErr.message?.includes('column "image_url"') || dbErr.code === '42703') {
+          if (dbErr.message?.includes('default_commission_rate') || dbErr.code === '42703') {
+            const { default_commission_rate: _c, ...rowWithoutCommission } = row;
+            if (item.id && isEcommerceCategoryUuid(item.id)) {
+              await update('ecommerce_categories', { id: item.id }, rowWithoutCommission);
+            } else {
+              await insert('ecommerce_categories', rowWithoutCommission);
+            }
+          } else if (dbErr.message?.includes('column "image_url"') || dbErr.code === '42703') {
             const { image_url: _img, ...rowWithoutImage } = row;
             if (item.id && isEcommerceCategoryUuid(item.id)) {
               await update('ecommerce_categories', { id: item.id }, rowWithoutImage);
@@ -1759,20 +1818,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
-      let refreshed;
-      try {
-        refreshed = await query(
-          `SELECT id::text AS id, name, description, display_order, is_active, image_url, created_at
-           FROM ecommerce_categories
-           ORDER BY display_order ASC, name ASC`
-        );
-      } catch {
-        refreshed = await query(
-          `SELECT id::text AS id, name, description, display_order, is_active, created_at
-           FROM ecommerce_categories
-           ORDER BY display_order ASC, name ASC`
-        );
-      }
+      const refreshed = await queryAdminCategories();
 
       const rows = (refreshed?.rows || []) as Record<string, unknown>[];
       const mapped = await mapCategoryRowsForPublic(rows, { includeInactive: true });
@@ -1903,12 +1949,7 @@ export function registerEcommerceEndpoints(app: Hono) {
           const row = settings.rows[0];
           return c.json({
             success: true,
-            settings: {
-              defaultRate: parseFloat(row.default_rate) || 15,
-              rules: row.rules || [],
-              vendorTiers: row.vendor_tiers || [],
-              sellerRates: row.seller_rates || {},
-            },
+            settings: buildCommissionSettingsResponse(row),
           });
         }
       } catch (tableError: any) {
@@ -1954,21 +1995,90 @@ export function registerEcommerceEndpoints(app: Hono) {
   app.put("/admin/ecommerce/commission/settings", async (c) => {
     try {
       const body = await c.req.json();
-      const { commissionRate, minCommission, maxCommission } = body;
+      const defaultRate =
+        normalizeCommissionRate(body.defaultRate ?? body.commissionRate) ?? 15;
+      const rules = Array.isArray(body.rules) ? body.rules : [];
+      const sellerRates = normalizeSellerRatesForResponse(
+        body.sellerRates ?? body.seller_rates ?? {}
+      );
 
-      // Update platform_settings (simplified - should use upsert)
+      const existing = await query(
+        `SELECT id FROM ecommerce_commission_settings WHERE setting_key = 'default' LIMIT 1`
+      );
+
+      if (existing.rows.length > 0) {
+        await query(
+          `UPDATE ecommerce_commission_settings
+           SET default_rate = $1, rules = $2::jsonb, seller_rates = $3::jsonb, updated_at = NOW()
+           WHERE setting_key = 'default'`,
+          [defaultRate, JSON.stringify(rules), JSON.stringify(sellerRates)]
+        );
+      } else {
+        await insert('ecommerce_commission_settings', {
+          setting_key: 'default',
+          default_rate: defaultRate,
+          rules: JSON.stringify(rules),
+          seller_rates: JSON.stringify(sellerRates),
+        });
+      }
+
+      const refreshed = await query(
+        `SELECT * FROM ecommerce_commission_settings WHERE setting_key = 'default' LIMIT 1`
+      );
+      const row = refreshed.rows[0] || {
+        default_rate: defaultRate,
+        rules,
+        seller_rates: sellerRates,
+      };
+
       return c.json({
         success: true,
         message: 'Commission settings updated',
-        settings: {
-          commissionRate: commissionRate || 10,
-          minCommission: minCommission || 0,
-          maxCommission: maxCommission || null,
-        },
+        settings: buildCommissionSettingsResponse(row),
       });
     } catch (error: any) {
       console.error('Error updating commission settings:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/ecommerce/commission/vendors/:vendorId
+   * Vendor commission V2 config (model, rates, category matrix)
+   */
+  app.get("/admin/ecommerce/commission/vendors/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID' }, 400);
+      }
+
+      const config = await getVendorCommissionConfigResponse(vendorId);
+      return c.json({ success: true, ...config });
+    } catch (error: any) {
+      console.error('Error fetching vendor commission:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /admin/ecommerce/commission/vendors/:vendorId
+   * Update vendor commission model, rates, and category matrix
+   */
+  app.put("/admin/ecommerce/commission/vendors/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID' }, 400);
+      }
+
+      const body = await c.req.json();
+      const config = await upsertVendorCommissionConfig(vendorId, body);
+      return c.json({ success: true, message: 'Vendor commission updated', ...config });
+    } catch (error: any) {
+      console.error('Error updating vendor commission:', error);
+      const status = error.message?.includes('commissionModel') ? 400 : 500;
+      return c.json({ error: error.message }, status);
     }
   });
 

@@ -1,327 +1,245 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import {
-  Percent,
-  Save,
-  Plus,
-  Trash2,
-  Edit2,
-  TrendingUp,
-  IndianRupee,
-  Layers,
-  Users,
-  Check,
-  X,
-  ChevronDown,
-  ChevronUp,
-  Eye,
-  EyeOff,
-  BarChart3,
-} from 'lucide-react';
-import { Button, Badge } from '@warmpawz/ui';
+import { useState, useEffect, useMemo } from 'react';
+import { Percent, Save, Search, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { toast, Toaster } from 'sonner';
 
-interface CommissionRule {
+type CommissionModel = 'category' | 'ownership';
+
+interface SellerOption {
   id: string;
   name: string;
-  type: 'category' | 'value_tier' | 'vendor_tier' | 'product_specific' | 'hybrid';
-  priority: number;
-  enabled: boolean;
-  conditions: {
-    categories?: string[];
-    minOrderValue?: number;
-    maxOrderValue?: number;
-    vendorTier?: string;
-    productIds?: string[];
-    minQuantity?: number;
-    dateRange?: { start: string; end: string };
-  };
-  commission: {
-    type: 'percentage' | 'fixed' | 'tiered';
-    value?: number;
-    tiers?: Array<{
-      min: number;
-      max: number | null;
-      rate: number;
-      fixedAmount?: number;
-    }>;
-    minAmount?: number;
-    maxAmount?: number;
-  };
-  description?: string;
-  createdAt: string;
-  updatedAt: string;
 }
 
-interface VendorTier {
+interface CategoryOption {
   id: string;
   name: string;
-  commissionRate: number;
-  requirements: {
-    minMonthlyOrders?: number;
-    minRating?: number;
-    minRevenue?: number;
-    verificationRequired?: boolean;
-  };
-  benefits: string[];
-  color: string;
+  defaultCommissionRate: number | null;
+}
+
+interface CategoryRateRow {
+  categoryId: string;
+  categoryName: string;
+  categoryDefault: number | null;
+  rate: string;
 }
 
 export function CommissionSettings() {
-  const [defaultRate, setDefaultRate] = useState(15);
-  const [rules, setRules] = useState<CommissionRule[]>([]);
-  const [vendorTiers, setVendorTiers] = useState<VendorTier[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [showRuleModal, setShowRuleModal] = useState(false);
-  const [showTierModal, setShowTierModal] = useState(false);
-  const [editingRule, setEditingRule] = useState<CommissionRule | null>(null);
-  const [editingTier, setEditingTier] = useState<VendorTier | null>(null);
-  const [expandedRules, setExpandedRules] = useState<Set<string>>(new Set());
+  const [savingVendor, setSavingVendor] = useState(false);
+
+  const [sellers, setSellers] = useState<SellerOption[]>([]);
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [sellerSearch, setSellerSearch] = useState('');
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [loadingVendor, setLoadingVendor] = useState(false);
+
+  const [commissionModel, setCommissionModel] = useState<CommissionModel>('category');
+  const [vendorDefaultRate, setVendorDefaultRate] = useState('');
+  const [ownBrandRate, setOwnBrandRate] = useState('');
+  const [thirdPartyRate, setThirdPartyRate] = useState('');
+  const [categoryRows, setCategoryRows] = useState<CategoryRateRow[]>([]);
+  const [removedCategoryIds, setRemovedCategoryIds] = useState<string[]>([]);
+
+  const [addCategoryId, setAddCategoryId] = useState('');
+  const [addCategoryRate, setAddCategoryRate] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
-    loadSettings();
+    void loadInitial();
   }, []);
 
-  const getDefaultVendorTiers = (): VendorTier[] => [
-    {
-      id: 'bronze',
-      name: 'Bronze',
-      commissionRate: 20,
-      requirements: {},
-      benefits: ['Basic support', 'Standard listing'],
-      color: 'bg-orange-100 text-orange-700',
-    },
-    {
-      id: 'silver',
-      name: 'Silver',
-      commissionRate: 15,
-      requirements: { minMonthlyOrders: 50, minRating: 4.0 },
-      benefits: ['Priority support', 'Featured listing', 'Analytics access'],
-      color: 'bg-gray-100 text-gray-700',
-    },
-    {
-      id: 'gold',
-      name: 'Gold',
-      commissionRate: 12,
-      requirements: {
-        minMonthlyOrders: 200,
-        minRating: 4.5,
-        minRevenue: 100000,
-      },
-      benefits: [
-        '24/7 support',
-        'Premium listing',
-        'Advanced analytics',
-        'Marketing support',
-      ],
-      color: 'bg-yellow-100 text-yellow-700',
-    },
-    {
-      id: 'platinum',
-      name: 'Platinum',
-      commissionRate: 8,
-      requirements: {
-        minMonthlyOrders: 500,
-        minRating: 4.8,
-        minRevenue: 500000,
-        verificationRequired: true,
-      },
-      benefits: [
-        'Dedicated manager',
-        'Top placement',
-        'Full analytics suite',
-        'Co-marketing',
-        'Custom support',
-      ],
-      color: 'bg-purple-100 text-purple-700',
-    },
-  ];
+  useEffect(() => {
+    if (selectedVendorId) {
+      void loadVendorCommission(selectedVendorId);
+    }
+  }, [selectedVendorId, categories]);
 
-  const loadSettings = async () => {
+  const loadInitial = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get<any>('/admin/ecommerce/commission/settings');
-      const settings = (data as any).data?.settings || (data as any).settings || {};
-      setDefaultRate(settings.defaultRate || 15);
-      setRules(settings.rules || []);
-      setVendorTiers(settings.vendorTiers || getDefaultVendorTiers());
-    } catch (error) {
-      console.error('Error loading settings:', error);
-      setVendorTiers(getDefaultVendorTiers());
+      await Promise.all([loadSellers(), loadCategories()]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSave = async () => {
+  const loadSellers = async () => {
     try {
-      setSaving(true);
-      await apiClient.put('/admin/ecommerce/commission/settings', {
-        defaultRate,
-        rules,
-        vendorTiers,
-      });
-      toast.success('Commission settings updated successfully');
-    } catch (error) {
-      console.error('Error updating settings:', error);
-      toast.error('Error updating settings');
+      const data = await apiClient.get<any>('/admin/vendor/list');
+      const vendors =
+        (data as any).data?.vendors || (data as any).vendors || (data as any).data || [];
+      const list = (Array.isArray(vendors) ? vendors : []).map((v: Record<string, unknown>) => ({
+        id: String(v.id ?? ''),
+        name: String(v.business_name ?? v.name ?? v.vendor_name ?? 'Unnamed seller'),
+      }));
+      setSellers(list.filter((s) => s.id));
+    } catch {
+      setSellers([]);
+    }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const data = await apiClient.get<any>('/admin/ecommerce/categories');
+      const raw = (data as any).categories || (data as any).data?.categories || [];
+      setCategories(
+        raw.map((c: Record<string, unknown>) => ({
+          id: String(c.id ?? ''),
+          name: String(c.name ?? ''),
+          defaultCommissionRate:
+            c.default_commission_rate != null && c.default_commission_rate !== ''
+              ? Number(c.default_commission_rate)
+              : null,
+        }))
+      );
+    } catch {
+      setCategories([]);
+    }
+  };
+
+  const loadVendorCommission = async (vendorId: string) => {
+    try {
+      setLoadingVendor(true);
+      setRemovedCategoryIds([]);
+      setAddCategoryId('');
+      setAddCategoryRate('');
+
+      const data = await apiClient.get<any>(`/admin/ecommerce/commission/vendors/${vendorId}`);
+      const payload = (data as any).data || data;
+
+      setCommissionModel(payload.commissionModel === 'ownership' ? 'ownership' : 'category');
+      setVendorDefaultRate(
+        payload.defaultCommissionRate != null ? String(payload.defaultCommissionRate) : ''
+      );
+      setOwnBrandRate(
+        payload.ownBrandCommissionRate != null ? String(payload.ownBrandCommissionRate) : ''
+      );
+      setThirdPartyRate(
+        payload.thirdPartyCommissionRate != null ? String(payload.thirdPartyCommissionRate) : ''
+      );
+      setShowAdvanced(payload.defaultCommissionRate != null);
+
+      const overrides = new Map<string, { rate: number; name: string }>();
+      for (const row of payload.categoryRates || []) {
+        overrides.set(String(row.categoryId), {
+          rate: Number(row.rate),
+          name: String(row.categoryName ?? ''),
+        });
+      }
+
+      const rows: CategoryRateRow[] = [];
+      for (const [categoryId, entry] of overrides) {
+        const cat = categories.find((c) => c.id === categoryId);
+        rows.push({
+          categoryId,
+          categoryName: entry.name || cat?.name || 'Category',
+          categoryDefault: cat?.defaultCommissionRate ?? null,
+          rate: String(entry.rate),
+        });
+      }
+      setCategoryRows(rows);
+    } catch {
+      toast.error('Failed to load vendor commission');
     } finally {
-      setSaving(false);
+      setLoadingVendor(false);
     }
   };
 
-  const addRule = () => {
-    const newRule: CommissionRule = {
-      id: `rule_${Date.now()}`,
-      name: 'New Commission Rule',
-      type: 'category',
-      priority: rules.length + 1,
-      enabled: true,
-      conditions: {},
-      commission: {
-        type: 'percentage',
-        value: 15,
+  const filteredSellers = useMemo(() => {
+    const q = sellerSearch.trim().toLowerCase();
+    if (!q) return sellers;
+    return sellers.filter((s) => s.name.toLowerCase().includes(q));
+  }, [sellers, sellerSearch]);
+
+  const selectedSeller = sellers.find((s) => s.id === selectedVendorId);
+
+  const availableCategories = useMemo(() => {
+    const configured = new Set(categoryRows.map((r) => r.categoryId));
+    return categories.filter((c) => !configured.has(c.id));
+  }, [categories, categoryRows]);
+
+  const handleAddCategoryRate = () => {
+    if (!addCategoryId || addCategoryRate.trim() === '') {
+      toast.error('Select a category and enter a commission rate');
+      return;
+    }
+    const rate = parseFloat(addCategoryRate);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+      toast.error('Commission rate must be between 0 and 100');
+      return;
+    }
+    const cat = categories.find((c) => c.id === addCategoryId);
+    if (!cat) return;
+
+    setCategoryRows((prev) => [
+      ...prev.filter((r) => r.categoryId !== addCategoryId),
+      {
+        categoryId: cat.id,
+        categoryName: cat.name,
+        categoryDefault: cat.defaultCommissionRate,
+        rate: String(rate),
       },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setEditingRule(newRule);
-    setShowRuleModal(true);
+    ]);
+    setRemovedCategoryIds((ids) => ids.filter((id) => id !== addCategoryId));
+    setAddCategoryId('');
+    setAddCategoryRate('');
   };
 
-  const saveRule = (rule: CommissionRule) => {
-    if (rule.id.startsWith('rule_')) {
-      const existing = rules.find((r) => r.id === rule.id);
-      if (existing) {
-        setRules(
-          rules.map((r) =>
-            r.id === rule.id ? { ...rule, updatedAt: new Date().toISOString() } : r
-          )
-        );
-      } else {
-        setRules([...rules, rule]);
-      }
-    }
-    setShowRuleModal(false);
-    setEditingRule(null);
+  const handleRemoveCategoryRate = (categoryId: string) => {
+    setCategoryRows((prev) => prev.filter((r) => r.categoryId !== categoryId));
+    setRemovedCategoryIds((ids) => (ids.includes(categoryId) ? ids : [...ids, categoryId]));
   };
 
-  const deleteRule = (ruleId: string) => {
-    if (confirm('Are you sure you want to delete this rule?')) {
-      setRules(rules.filter((r) => r.id !== ruleId));
-      toast.success('Rule deleted');
-    }
-  };
+  const handleSaveVendor = async () => {
+    if (!selectedVendorId) return;
 
-  const addTier = () => {
-    console.log('addTier called');
-    const newTier: VendorTier = {
-      id: `tier_${Date.now()}`,
-      name: 'New Tier',
-      commissionRate: 15,
-      requirements: {},
-      benefits: ['Standard benefits'],
-      color: 'bg-gray-100 text-gray-700',
-    };
-    console.log('Setting editingTier and showTierModal', newTier);
-    setEditingTier(newTier);
-    setShowTierModal(true);
-  };
-
-  const saveTier = (tier: VendorTier) => {
-    if (tier.id.startsWith('tier_')) {
-      const existing = vendorTiers.find((t) => t.id === tier.id);
-      if (existing) {
-        setVendorTiers(
-          vendorTiers.map((t) =>
-            t.id === tier.id ? tier : t
-          )
-        );
-      } else {
-        setVendorTiers([...vendorTiers, tier]);
-      }
-    }
-    setShowTierModal(false);
-    setEditingTier(null);
-  };
-
-  const deleteTier = (tierId: string) => {
-    if (confirm('Are you sure you want to delete this tier?')) {
-      setVendorTiers(vendorTiers.filter((t) => t.id !== tierId));
-      toast.success('Tier deleted');
-    }
-  };
-
-  const toggleRuleExpanded = (ruleId: string) => {
-    const newExpanded = new Set(expandedRules);
-    if (newExpanded.has(ruleId)) {
-      newExpanded.delete(ruleId);
-    } else {
-      newExpanded.add(ruleId);
-    }
-    setExpandedRules(newExpanded);
-  };
-
-  const calculateCommission = (
-    orderValue: number,
-    category?: string,
-    vendorTier?: string
-  ): number => {
-    // Find applicable rules in priority order
-    const applicableRules = rules
-      .filter((r) => r.enabled)
-      .sort((a, b) => a.priority - b.priority);
-
-    for (const rule of applicableRules) {
-      const { conditions, commission } = rule;
-
-      // Check conditions
-      let matches = true;
-      if (conditions.categories && category) {
-        matches = matches && conditions.categories.includes(category);
-      }
-      if (conditions.minOrderValue) {
-        matches = matches && orderValue >= conditions.minOrderValue;
-      }
-      if (conditions.maxOrderValue) {
-        matches = matches && orderValue <= conditions.maxOrderValue;
-      }
-      if (conditions.vendorTier && vendorTier) {
-        matches = matches && conditions.vendorTier === vendorTier;
-      }
-
-      if (matches) {
-        if (commission.type === 'percentage') {
-          let amount = (orderValue * (commission.value || 0)) / 100;
-          if (commission.minAmount) amount = Math.max(amount, commission.minAmount);
-          if (commission.maxAmount) amount = Math.min(amount, commission.maxAmount);
-          return amount;
-        } else if (commission.type === 'fixed') {
-          return commission.value || 0;
-        } else if (commission.type === 'tiered' && commission.tiers) {
-          const tier = commission.tiers.find(
-            (t) => orderValue >= t.min && (t.max === null || orderValue < t.max)
-          );
-          if (tier) {
-            const amount = (orderValue * tier.rate) / 100;
-            return tier.fixedAmount ? amount + tier.fixedAmount : amount;
-          }
-        }
+    if (commissionModel === 'ownership') {
+      if (ownBrandRate.trim() === '' || thirdPartyRate.trim() === '') {
+        toast.error('Own brand and Third party commission rates are required');
+        return;
       }
     }
 
-    // Default commission
-    return (orderValue * defaultRate) / 100;
+    try {
+      setSavingVendor(true);
+      const categoryRates = categoryRows
+        .filter((row) => row.rate.trim() !== '')
+        .map((row) => ({
+          categoryId: row.categoryId,
+          rate: parseFloat(row.rate),
+        }));
+
+      await apiClient.put(`/admin/ecommerce/commission/vendors/${selectedVendorId}`, {
+        commissionModel,
+        defaultRate: vendorDefaultRate.trim() === '' ? null : parseFloat(vendorDefaultRate),
+        ownBrandCommissionRate:
+          commissionModel === 'ownership' && ownBrandRate.trim() !== ''
+            ? parseFloat(ownBrandRate)
+            : null,
+        thirdPartyCommissionRate:
+          commissionModel === 'ownership' && thirdPartyRate.trim() !== ''
+            ? parseFloat(thirdPartyRate)
+            : null,
+        categoryRates: commissionModel === 'category' ? categoryRates : [],
+        removedCategoryIds,
+      });
+      toast.success(`Commission saved for ${selectedSeller?.name ?? 'vendor'}`);
+      await loadVendorCommission(selectedVendorId);
+    } catch {
+      toast.error('Failed to save vendor commission');
+    } finally {
+      setSavingVendor(false);
+    }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Toaster position="top-right" richColors />
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]" />
       </div>
     );
   }
@@ -330,836 +248,269 @@ export function CommissionSettings() {
     <div className="p-6 space-y-6">
       <Toaster position="top-right" richColors />
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-black text-xl font-semibold">
-            Enterprise Commission Management
-          </h2>
-          <p className="text-gray-500 text-sm mt-1">
-            Multi-tier commission rules for marketplace optimization
-          </p>
-        </div>
-        <Button
-          onClick={handleSave}
-          disabled={saving}
-          className="bg-[#FF8C42] text-white hover:bg-[#E67A32] disabled:opacity-50"
-        >
-          <Save className="w-4 h-4 mr-2" />
-          {saving ? 'Saving...' : 'Save All Changes'}
-        </Button>
+      <div>
+        <h2 className="text-black text-xl font-semibold flex items-center gap-2">
+          <Percent className="w-5 h-5 text-[#FF8C42]" />
+          Seller Commission
+        </h2>
+        <p className="text-gray-500 text-sm mt-1">
+          One commission model per seller. Category defaults are set under Categories.
+        </p>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Percent className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Default Rate</p>
-              <p className="text-2xl font-bold text-gray-900">{defaultRate}%</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <Layers className="w-6 h-6 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Active Rules</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {rules.filter((r) => r.enabled).length}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <Users className="w-6 h-6 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Vendor Tiers</p>
-              <p className="text-2xl font-bold text-gray-900">{vendorTiers.length}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-              <TrendingUp className="w-6 h-6 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Total Rules</p>
-              <p className="text-2xl font-bold text-gray-900">{rules.length}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Default Commission Rate */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <IndianRupee className="w-5 h-5 text-[#FF8C42]" />
-          <h3 className="font-semibold text-gray-900">Default Commission Rate</h3>
-        </div>
-        <div className="max-w-md">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Default Rate (%)
-          </label>
-          <input
-            type="number"
-            min="0"
-            max="100"
-            step="0.1"
-            value={defaultRate}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDefaultRate(parseFloat(e.target.value))}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-          />
-          <p className="text-xs text-gray-500 mt-2">
-            Applied when no specific rule matches. This is the fallback commission rate.
-          </p>
-        </div>
-      </div>
-
-      {/* Vendor Tiers */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-[#FF8C42]" />
-            <h3 className="font-semibold text-gray-900">Vendor Tier System</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Select Seller</label>
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search sellers..."
+                value={sellerSearch}
+                onChange={(e) => setSellerSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+            <div className="border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
+              {filteredSellers.map((seller) => (
+                <button
+                  key={seller.id}
+                  type="button"
+                  onClick={() => setSelectedVendorId(seller.id)}
+                  className={`w-full text-left px-4 py-3 text-sm border-b border-gray-100 hover:bg-orange-50 ${
+                    selectedVendorId === seller.id
+                      ? 'bg-orange-50 text-[#FF8C42] font-medium'
+                      : 'text-gray-700'
+                  }`}
+                >
+                  {seller.name}
+                </button>
+              ))}
+            </div>
           </div>
-          <Button 
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              addTier();
-            }} 
-            variant="outline" 
-            size="sm"
-            type="button"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Tier
-          </Button>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {vendorTiers.map((tier) => (
-            <div key={tier.id} className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <Badge className={tier.color}>{tier.name}</Badge>
-                <span className="text-2xl font-bold text-gray-900">
-                  {tier.commissionRate}%
-                </span>
+          <div>
+            {!selectedVendorId ? (
+              <div className="flex items-center justify-center h-48 text-gray-500 text-sm border border-dashed rounded-lg">
+                Select a seller to configure commission
               </div>
+            ) : loadingVendor ? (
+              <div className="flex items-center justify-center h-48">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]" />
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="font-medium text-gray-900">{selectedSeller?.name}</p>
+                  <Button
+                    onClick={handleSaveVendor}
+                    disabled={savingVendor}
+                    className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {savingVendor ? 'Saving...' : 'Save Commission'}
+                  </Button>
+                </div>
 
-              {Object.keys(tier.requirements).length > 0 && (
-                <div className="mb-3 pb-3 border-b border-gray-200">
-                  <p className="text-xs font-medium text-gray-700 mb-2">Requirements:</p>
-                  <div className="space-y-1 text-xs text-gray-600">
-                    {tier.requirements.minMonthlyOrders && (
-                      <div className="flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        <span>{tier.requirements.minMonthlyOrders}+ orders/month</span>
-                      </div>
-                    )}
-                    {tier.requirements.minRating && (
-                      <div className="flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        <span>{tier.requirements.minRating}+ rating</span>
-                      </div>
-                    )}
-                    {tier.requirements.minRevenue && (
-                      <div className="flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        <span>₹{tier.requirements.minRevenue.toLocaleString()}+ revenue</span>
-                      </div>
-                    )}
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-2">Commission Model</p>
+                  <div className="flex gap-6">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={commissionModel === 'category'}
+                        onChange={() => setCommissionModel('category')}
+                      />
+                      Category
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={commissionModel === 'ownership'}
+                        onChange={() => setCommissionModel('ownership')}
+                      />
+                      Ownership
+                    </label>
                   </div>
                 </div>
-              )}
 
-              <div>
-                <p className="text-xs font-medium text-gray-700 mb-2">Benefits:</p>
-                <div className="space-y-1">
-                  {tier.benefits.slice(0, 3).map((benefit, idx) => (
-                    <div key={idx} className="flex items-start gap-1 text-xs text-gray-600">
-                      <Check className="w-3 h-3 text-green-600 mt-0.5 flex-shrink-0" />
-                      <span>{benefit}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Commission Rules */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Layers className="w-5 h-5 text-[#FF8C42]" />
-            <h3 className="font-semibold text-gray-900">Commission Rules</h3>
-            <Badge variant="outline">{rules.length} rules</Badge>
-          </div>
-          <Button
-            onClick={addRule}
-            className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
-            size="sm"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Rule
-          </Button>
-        </div>
-
-        {rules.length === 0 ? (
-          <div className="text-center py-12">
-            <Layers className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500 mb-4">No commission rules configured</p>
-            <Button onClick={addRule} variant="outline">
-              Create First Rule
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {rules
-              .sort((a, b) => a.priority - b.priority)
-              .map((rule) => (
-                <div key={rule.id} className="border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="p-4 bg-gray-50 flex items-center justify-between">
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-sm font-bold text-gray-700">
-                          {rule.priority}
-                        </span>
-                        <button
-                          onClick={() => toggleRuleExpanded(rule.id)}
-                          className="p-1 hover:bg-gray-200 rounded"
+                {commissionModel === 'category' && (
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray-600">
+                      Set commission % per ecommerce category for this seller.
+                    </p>
+                    <div className="flex flex-wrap gap-2 items-end">
+                      <div className="flex-1 min-w-[160px]">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Category
+                        </label>
+                        <select
+                          value={addCategoryId}
+                          onChange={(e) => setAddCategoryId(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
                         >
-                          {expandedRules.has(rule.id) ? (
-                            <ChevronUp className="w-4 h-4" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4" />
-                          )}
-                        </button>
+                          <option value="">Select category</option>
+                          {availableCategories.map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.name}
+                              {cat.defaultCommissionRate != null
+                                ? ` (default ${cat.defaultCommissionRate}%)`
+                                : ''}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-semibold text-gray-900">{rule.name}</h4>
-                          <Badge variant={rule.enabled ? 'default' : 'outline'}>
-                            {rule.enabled ? 'Active' : 'Disabled'}
-                          </Badge>
-                          <Badge variant="outline" className="bg-blue-50">
-                            {rule.type.replace('_', ' ')}
-                          </Badge>
-                        </div>
-                        {rule.description && (
-                          <p className="text-sm text-gray-500 mt-1">{rule.description}</p>
-                        )}
+                      <div className="w-28">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Rate %
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={addCategoryRate}
+                          onChange={(e) => setAddCategoryRate(e.target.value)}
+                          placeholder="e.g. 12"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
                       </div>
-
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <p className="text-sm text-gray-500">Commission</p>
-                          <p className="font-bold text-gray-900">
-                            {rule.commission.type === 'percentage' &&
-                              `${rule.commission.value}%`}
-                            {rule.commission.type === 'fixed' && `₹${rule.commission.value}`}
-                            {rule.commission.type === 'tiered' && 'Tiered'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 ml-4">
-                      <Button
-                        onClick={() => {
-                          setEditingRule(rule);
-                          setShowRuleModal(true);
-                        }}
-                        variant="ghost"
-                        size="sm"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          const updatedRules = rules.map((r) =>
-                            r.id === rule.id ? { ...r, enabled: !r.enabled } : r
-                          );
-                          setRules(updatedRules);
-                        }}
-                        variant="ghost"
-                        size="sm"
-                      >
-                        {rule.enabled ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </Button>
-                      <Button
-                        onClick={() => deleteRule(rule.id)}
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4" />
+                      <Button type="button" variant="outline" size="sm" onClick={handleAddCategoryRate}>
+                        Add
                       </Button>
                     </div>
+
+                    {categoryRows.length === 0 ? (
+                      <p className="text-sm text-gray-500 py-4 border border-dashed rounded-lg text-center">
+                        No category rates configured yet
+                      </p>
+                    ) : (
+                      <ul className="border border-gray-200 rounded-lg divide-y">
+                        {categoryRows.map((row) => (
+                          <li
+                            key={row.categoryId}
+                            className="flex items-center gap-3 px-4 py-3 text-sm"
+                          >
+                            <span className="flex-1 font-medium">{row.categoryName}</span>
+                            <span className="text-gray-500 text-xs">
+                              default{' '}
+                              {row.categoryDefault != null ? `${row.categoryDefault}%` : '—'}
+                            </span>
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.1"
+                              value={row.rate}
+                              onChange={(e) =>
+                                setCategoryRows((prev) =>
+                                  prev.map((r) =>
+                                    r.categoryId === row.categoryId
+                                      ? { ...r, rate: e.target.value }
+                                      : r
+                                  )
+                                )
+                              }
+                              className="w-20 px-2 py-1 border rounded text-sm"
+                            />
+                            <span className="text-gray-500">%</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCategoryRate(row.categoryId)}
+                              className="p-1 text-red-600 hover:bg-red-50 rounded"
+                              aria-label={`Remove ${row.categoryName}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
+                )}
 
-                  {expandedRules.has(rule.id) && (
-                    <div className="p-4 border-t border-gray-200 bg-white">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <h5 className="text-sm font-semibold text-gray-700 mb-2">Conditions</h5>
-                          <div className="space-y-2 text-sm">
-                            {rule.conditions.categories && (
-                              <div>
-                                <span className="text-gray-500">Categories:</span>{' '}
-                                <span className="font-medium">
-                                  {rule.conditions.categories.join(', ')}
-                                </span>
-                              </div>
-                            )}
-                            {rule.conditions.minOrderValue !== undefined && (
-                              <div>
-                                <span className="text-gray-500">Min Order:</span>{' '}
-                                <span className="font-medium">
-                                  ₹{rule.conditions.minOrderValue}
-                                </span>
-                              </div>
-                            )}
-                            {rule.conditions.maxOrderValue !== undefined && (
-                              <div>
-                                <span className="text-gray-500">Max Order:</span>{' '}
-                                <span className="font-medium">
-                                  ₹{rule.conditions.maxOrderValue}
-                                </span>
-                              </div>
-                            )}
-                            {rule.conditions.vendorTier && (
-                              <div>
-                                <span className="text-gray-500">Vendor Tier:</span>{' '}
-                                <span className="font-medium">{rule.conditions.vendorTier}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div>
-                          <h5 className="text-sm font-semibold text-gray-700 mb-2">
-                            Commission Details
-                          </h5>
-                          <div className="space-y-2 text-sm">
-                            {rule.commission.type === 'tiered' && rule.commission.tiers && (
-                              <div>
-                                {rule.commission.tiers.map((tier, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="flex justify-between py-1 border-b border-gray-100"
-                                  >
-                                    <span className="text-gray-500">
-                                      ₹{tier.min} - {tier.max ? `₹${tier.max}` : '∞'}
-                                    </span>
-                                    <span className="font-medium">{tier.rate}%</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {rule.commission.minAmount !== undefined && (
-                              <div>
-                                <span className="text-gray-500">Min Amount:</span>{' '}
-                                <span className="font-medium">₹{rule.commission.minAmount}</span>
-                              </div>
-                            )}
-                            {rule.commission.maxAmount !== undefined && (
-                              <div>
-                                <span className="text-gray-500">Max Amount:</span>{' '}
-                                <span className="font-medium">₹{rule.commission.maxAmount}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                {commissionModel === 'ownership' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Own Brand %
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        required
+                        value={ownBrandRate}
+                        onChange={(e) => setOwnBrandRate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Third Party %
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        required
+                        value={thirdPartyRate}
+                        onChange={(e) => setThirdPartyRate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                    <p className="sm:col-span-2 text-xs text-gray-500">
+                      Vendors on this model declare Own brand or Third party on each product at
+                      upload.
+                    </p>
+                  </div>
+                )}
+
+                <div className="border-t pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvanced((v) => !v)}
+                    className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+                  >
+                    {showAdvanced ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                    Advanced: optional vendor default rate
+                  </button>
+                  {showAdvanced && (
+                    <div className="mt-3 max-w-xs">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Vendor Default Rate (%)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={vendorDefaultRate}
+                        onChange={(e) => setVendorDefaultRate(e.target.value)}
+                        placeholder="Fallback before category default"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
                     </div>
                   )}
                 </div>
-              ))}
-          </div>
-        )}
-      </div>
-
-      {/* Commission Calculator */}
-      <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl border border-blue-200 p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <BarChart3 className="w-5 h-5 text-blue-600" />
-          <h3 className="font-semibold text-gray-900">Commission Calculator</h3>
-        </div>
-        <CommissionCalculator
-          defaultRate={defaultRate}
-          rules={rules}
-          vendorTiers={vendorTiers}
-          calculateCommission={calculateCommission}
-        />
-      </div>
-
-      {/* Rule Modal */}
-      {showRuleModal && editingRule && (
-        <RuleEditorModal
-          rule={editingRule}
-          onSave={saveRule}
-          onClose={() => {
-            setShowRuleModal(false);
-            setEditingRule(null);
-          }}
-        />
-      )}
-
-      {/* Tier Modal */}
-      {showTierModal && editingTier && (
-        <TierEditorModal
-          tier={editingTier}
-          onSave={saveTier}
-          onClose={() => {
-            console.log('Closing tier modal');
-            setShowTierModal(false);
-            setEditingTier(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-// Commission Calculator Component
-function CommissionCalculator({
-  defaultRate,
-  rules,
-  vendorTiers,
-  calculateCommission,
-}: {
-  defaultRate: number;
-  rules: CommissionRule[];
-  vendorTiers: VendorTier[];
-  calculateCommission: (orderValue: number, category?: string, vendorTier?: string) => number;
-}) {
-  const [orderValue, setOrderValue] = useState(1000);
-  const [category, setCategory] = useState('');
-  const [vendorTier, setVendorTier] = useState('');
-  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
-  const [loadingCategories, setLoadingCategories] = useState(false);
-
-  useEffect(() => {
-    loadCategories();
-  }, []);
-
-  const loadCategories = async () => {
-    try {
-      setLoadingCategories(true);
-      const data = await apiClient.get<any>('/admin/catalog/categories?type=ecommerce');
-      const cats = (data as any).categories || (data as any).data?.categories || [];
-      setCategories(cats.map((c: any) => ({
-        id: c.id || c.category_id || '',
-        name: c.name || c.category_name || 'Unnamed',
-      })));
-    } catch (error) {
-      console.error('Error loading categories:', error);
-      // Fallback to empty array
-      setCategories([]);
-    } finally {
-      setLoadingCategories(false);
-    }
-  };
-
-  const commission = calculateCommission(orderValue, category, vendorTier);
-  const commissionRate = (commission / orderValue) * 100;
-  const vendorEarnings = orderValue - commission;
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Order Value (₹)
-          </label>
-          <input
-            type="number"
-            value={orderValue}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderValue(parseFloat(e.target.value) || 0)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Category (optional)
-          </label>
-          <select
-            value={category}
-            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCategory(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={loadingCategories}
-          >
-            <option value="">Select category</option>
-            {categories.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
-            {categories.length === 0 && !loadingCategories && (
-              <option value="" disabled>No categories available</option>
-            )}
-            {loadingCategories && (
-              <option value="" disabled>Loading categories...</option>
-            )}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Vendor Tier (optional)
-          </label>
-          <select
-            value={vendorTier}
-            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setVendorTier(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select tier</option>
-            {vendorTiers && vendorTiers.length > 0 ? (
-              vendorTiers.map((tier) => (
-                <option key={tier.id} value={tier.id}>
-                  {tier.name}
-                </option>
-              ))
-            ) : (
-              <option value="" disabled>No tiers available</option>
-            )}
-          </select>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg p-6 space-y-4">
-        <h4 className="font-semibold text-gray-900 mb-4">Calculation Result</h4>
-        <div className="space-y-3">
-          <div className="flex justify-between items-center pb-3 border-b border-gray-200">
-            <span className="text-gray-600">Order Value</span>
-            <span className="font-bold text-gray-900">₹{orderValue.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between items-center pb-3 border-b border-gray-200">
-            <span className="text-gray-600">Commission Rate</span>
-            <span className="font-bold text-orange-600">{commissionRate.toFixed(2)}%</span>
-          </div>
-          <div className="flex justify-between items-center pb-3 border-b border-gray-200">
-            <span className="text-gray-600">Platform Commission</span>
-            <span className="font-bold text-red-600">-₹{commission.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between items-center pt-2">
-            <span className="text-gray-900 font-semibold">Vendor Earnings</span>
-            <span className="font-bold text-green-600 text-xl">
-              ₹{vendorEarnings.toFixed(2)}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Rule Editor Modal Component
-function RuleEditorModal({
-  rule,
-  onSave,
-  onClose,
-}: {
-  rule: CommissionRule;
-  onSave: (rule: CommissionRule) => void;
-  onClose: () => void;
-}) {
-  const [editedRule, setEditedRule] = useState<CommissionRule>(rule);
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
-          <h3 className="text-xl font-bold text-gray-900">
-            {rule.id.startsWith('rule_') ? 'Edit' : 'New'} Commission Rule
-          </h3>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {/* Basic Info */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Rule Name</label>
-            <input
-              type="text"
-              value={editedRule.name}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditedRule({ ...editedRule, name: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-              placeholder="e.g., Premium Category High Value"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-            <textarea
-              value={editedRule.description || ''}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditedRule({ ...editedRule, description: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-              rows={2}
-              placeholder="Brief description of this rule"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Rule Type</label>
-              <select
-                value={editedRule.type}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setEditedRule({ ...editedRule, type: e.target.value as any })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-              >
-                <option value="category">Category-based</option>
-                <option value="value_tier">Value Tier-based</option>
-                <option value="vendor_tier">Vendor Tier-based</option>
-                <option value="product_specific">Product-specific</option>
-                <option value="hybrid">Hybrid (Multiple conditions)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
-              <input
-                type="number"
-                value={editedRule.priority}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setEditedRule({
-                    ...editedRule,
-                    priority: parseInt(e.target.value),
-                  })
-                }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                min="1"
-              />
-            </div>
-          </div>
-
-          {/* Commission Settings */}
-          <div className="border-t border-gray-200 pt-6">
-            <h4 className="font-semibold text-gray-900 mb-4">Commission Settings</h4>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Commission Type
-              </label>
-              <select
-                value={editedRule.commission.type}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                  setEditedRule({
-                    ...editedRule,
-                    commission: {
-                      ...editedRule.commission,
-                      type: e.target.value as any,
-                    },
-                  })
-                }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-              >
-                <option value="percentage">Percentage</option>
-                <option value="fixed">Fixed Amount</option>
-                <option value="tiered">Tiered (Based on value range)</option>
-              </select>
-            </div>
-
-            {(editedRule.commission.type === 'percentage' ||
-              editedRule.commission.type === 'fixed') && (
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {editedRule.commission.type === 'percentage'
-                    ? 'Percentage (%)'
-                    : 'Fixed Amount (₹)'}
-                </label>
-                <input
-                  type="number"
-                  value={editedRule.commission.value || 0}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setEditedRule({
-                      ...editedRule,
-                      commission: {
-                        ...editedRule.commission,
-                        value: parseFloat(e.target.value),
-                      },
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                  step="0.1"
-                />
               </div>
             )}
           </div>
-
-          {/* Conditions */}
-          <div className="border-t border-gray-200 pt-6">
-            <h4 className="font-semibold text-gray-900 mb-4">Rule Conditions</h4>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Min Order Value (₹)
-                  </label>
-                  <input
-                    type="number"
-                    value={editedRule.conditions.minOrderValue || ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setEditedRule({
-                        ...editedRule,
-                        conditions: {
-                          ...editedRule.conditions,
-                          minOrderValue: e.target.value
-                            ? parseFloat(e.target.value)
-                            : undefined,
-                        },
-                      })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                    placeholder="Optional"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Max Order Value (₹)
-                  </label>
-                  <input
-                    type="number"
-                    value={editedRule.conditions.maxOrderValue || ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setEditedRule({
-                        ...editedRule,
-                        conditions: {
-                          ...editedRule.conditions,
-                          maxOrderValue: e.target.value
-                            ? parseFloat(e.target.value)
-                            : undefined,
-                        },
-                      })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                    placeholder="Optional"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-6 border-t border-gray-200 flex items-center justify-end gap-3 bg-gray-50">
-          <Button onClick={onClose} variant="outline">
-            Cancel
-          </Button>
-          <Button
-            onClick={() => onSave(editedRule)}
-            className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
-          >
-            <Save className="w-4 h-4 mr-2" />
-            Save Rule
-          </Button>
         </div>
       </div>
-    </div>
-  );
-}
 
-// Tier Editor Modal Component
-function TierEditorModal({
-  tier,
-  onSave,
-  onClose,
-}: {
-  tier: VendorTier;
-  onSave: (tier: VendorTier) => void;
-  onClose: () => void;
-}) {
-  const [editedTier, setEditedTier] = useState<VendorTier>(tier);
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
-          <h3 className="text-xl font-bold text-gray-900">
-            {tier.id.startsWith('tier_') ? 'Edit' : 'New'} Vendor Tier
-          </h3>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Tier Name *</label>
-            <input
-              type="text"
-              value={editedTier.name}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditedTier({ ...editedTier, name: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-              placeholder="e.g., Bronze, Silver, Gold"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Commission Rate (%) *</label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              step="0.1"
-              value={editedTier.commissionRate}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditedTier({ ...editedTier, commissionRate: parseFloat(e.target.value) || 0 })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Color Class</label>
-            <select
-              value={editedTier.color}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setEditedTier({ ...editedTier, color: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-            >
-              <option value="bg-orange-100 text-orange-700">Orange (Bronze)</option>
-              <option value="bg-gray-100 text-gray-700">Gray (Silver)</option>
-              <option value="bg-yellow-100 text-yellow-700">Yellow (Gold)</option>
-              <option value="bg-purple-100 text-purple-700">Purple (Platinum)</option>
-              <option value="bg-blue-100 text-blue-700">Blue</option>
-              <option value="bg-green-100 text-green-700">Green</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Benefits (one per line)</label>
-            <textarea
-              value={editedTier.benefits.join('\n')}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditedTier({ ...editedTier, benefits: e.target.value.split('\n').filter(b => b.trim()) })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-              rows={4}
-              placeholder="Basic support&#10;Standard listing"
-            />
-          </div>
-        </div>
-
-        <div className="p-6 border-t border-gray-200 flex items-center justify-end gap-3 bg-gray-50">
-          <Button onClick={onClose} variant="outline">
-            Cancel
-          </Button>
-          <Button
-            onClick={() => onSave(editedTier)}
-            className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
-          >
-            <Save className="w-4 h-4 mr-2" />
-            Save Tier
-          </Button>
-        </div>
+      <div className="bg-stone-50 rounded-xl border border-stone-200 p-4">
+        <p className="text-xs text-gray-500">
+          Priority: vendor model (category or ownership) → optional vendor default → category
+          default → configuration error. No subscription tier or platform fallback for shop orders.
+        </p>
       </div>
     </div>
   );
