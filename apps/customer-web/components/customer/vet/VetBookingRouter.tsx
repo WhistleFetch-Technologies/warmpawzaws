@@ -12,6 +12,8 @@ import { toast } from 'sonner';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceBookingPromoSummary } from '../booking/ServiceBookingPromoSummary';
+import { CheckoutCouponPanel } from '@/components/customer/pricing/CheckoutCouponPanel';
+import type { AppliedCheckoutCoupon } from '@/lib/pricing/coupon-validation';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { PaymentSourcesDisplay } from '../payment/PaymentSourcesDisplay';
@@ -178,6 +180,8 @@ export function VetBookingRouter({
     totalPaid?: number;
   } | null>(null);
   const [selectedPackageForSwitch, setSelectedPackageForSwitch] = useState<any | null>(null); // Phase 1: Package switch
+  const [summaryPromoSavings, setSummaryPromoSavings] = useState(0);
+  const [appliedBookingCoupon, setAppliedBookingCoupon] = useState<AppliedCheckoutCoupon | null>(null);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
   // ✅ NEW: Store all selected services for multi-service booking
   const [allSelectedServices, setAllSelectedServices] = useState<any[]>(() => {
@@ -1089,6 +1093,7 @@ export function VetBookingRouter({
                 }
                 customerPhone={phone}
                 customerId={customerId || undefined}
+                initialAppliedCoupon={appliedBookingCoupon}
                 flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
                 onBack={() => {
                   setShowPaymentPage(false);
@@ -1542,6 +1547,23 @@ export function VetBookingRouter({
                     : (selectedServiceOption?.price ?? 0)}
                   serviceStyle={selectedServiceType}
                   serviceCategory="vet"
+                  onQuote={({ totalSavings }) => setSummaryPromoSavings(totalSavings)}
+                />
+              ) : null}
+              {!selectedPackageForSwitch && (vendorId || doctorId) ? (
+                <CheckoutCouponPanel
+                  kind="service_booking"
+                  vendorId={vendorId || doctorId}
+                  customerId={customerId || undefined}
+                  orderAmount={Math.max(
+                    0,
+                    (allSelectedServices?.length
+                      ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0)
+                      : (selectedServiceOption?.price ?? 0)) - summaryPromoSavings
+                  )}
+                  appliedCoupon={appliedBookingCoupon}
+                  onApplyCoupon={setAppliedBookingCoupon}
+                  onRemoveCoupon={() => setAppliedBookingCoupon(null)}
                 />
               ) : null}
               {selectedPackageForSwitch && (

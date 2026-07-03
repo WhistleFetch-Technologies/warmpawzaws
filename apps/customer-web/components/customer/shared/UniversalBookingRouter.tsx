@@ -21,6 +21,8 @@ import {
   normalizeAvailableSlotsResponse,
 } from '@/lib/available-slots-response';
 import { ServiceBookingPromoSummary } from '../booking/ServiceBookingPromoSummary';
+import { CheckoutCouponPanel } from '@/components/customer/pricing/CheckoutCouponPanel';
+import type { AppliedCheckoutCoupon } from '@/lib/pricing/coupon-validation';
 
 interface UniversalBookingRouterProps {
   roleId: RoleId; // ✅ NEW: Role ID for universal component
@@ -133,6 +135,8 @@ export function UniversalBookingRouter({
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [selectedPackageForSwitch, setSelectedPackageForSwitch] = useState<any | null>(null); // Phase 1: Package switch
+  const [summaryPromoSavings, setSummaryPromoSavings] = useState(0);
+  const [appliedBookingCoupon, setAppliedBookingCoupon] = useState<AppliedCheckoutCoupon | null>(null);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
   // ✅ NEW: Staff selection for center bookings
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
@@ -1128,6 +1132,7 @@ export function UniversalBookingRouter({
               selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
               customerPhone={phone}
               customerId={customerId || undefined}
+              initialAppliedCoupon={appliedBookingCoupon}
               onBack={() => setShowPaymentPage(false)}
               onPaymentAbandoned={() => {
                 if (selectedDate) void loadTimeSlots(selectedDate);
@@ -1469,6 +1474,24 @@ export function UniversalBookingRouter({
                   })()}
                   serviceStyle={selectedServiceType}
                   serviceCategory={config.category}
+                  onQuote={({ totalSavings }) => setSummaryPromoSavings(totalSavings)}
+                />
+              ) : null}
+              {!selectedPackageForSwitch && (vendorId || doctorId) ? (
+                <CheckoutCouponPanel
+                  kind="service_booking"
+                  vendorId={vendorId || doctorId}
+                  customerId={customerId || undefined}
+                  orderAmount={Math.max(
+                    0,
+                    (() => {
+                      const services = allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption];
+                      return services.reduce((sum: number, s: any) => sum + safeNumber(s?.price ?? selectedServiceOption?.price ?? 0, 0), 0);
+                    })() - summaryPromoSavings
+                  )}
+                  appliedCoupon={appliedBookingCoupon}
+                  onApplyCoupon={setAppliedBookingCoupon}
+                  onRemoveCoupon={() => setAppliedBookingCoupon(null)}
                 />
               ) : null}
               {selectedPackageForSwitch && (

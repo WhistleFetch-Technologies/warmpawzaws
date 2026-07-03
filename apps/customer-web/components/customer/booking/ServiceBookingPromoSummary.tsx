@@ -16,6 +16,7 @@ type ServiceBookingPromoSummaryProps = {
   serviceStyle?: string;
   serviceCategory?: string;
   className?: string;
+  onQuote?: (quote: { totalSavings: number; finalAmount: number }) => void;
 };
 
 /**
@@ -29,6 +30,7 @@ export function ServiceBookingPromoSummary({
   serviceStyle,
   serviceCategory,
   className = '',
+  onQuote,
 }: ServiceBookingPromoSummaryProps) {
   const [discount, setDiscount] = useState(0);
   const [finalAmount, setFinalAmount] = useState(baseAmount);
@@ -68,12 +70,17 @@ export function ServiceBookingPromoSummary({
             autoApply: true,
           }))
         );
+        onQuote?.({
+          totalSavings: savings,
+          finalAmount: res?.finalAmount ?? Math.max(0, baseAmount - savings),
+        });
       })
       .catch(() => {
         if (!cancelled) {
           setDiscount(0);
           setFinalAmount(baseAmount);
           setOffers([]);
+          onQuote?.({ totalSavings: 0, finalAmount: baseAmount });
         }
       })
       .finally(() => {
@@ -83,7 +90,7 @@ export function ServiceBookingPromoSummary({
     return () => {
       cancelled = true;
     };
-  }, [vendorId, customerId, serviceIds.join(','), baseAmount, serviceStyle, serviceCategory]);
+  }, [vendorId, customerId, serviceIds.join(','), baseAmount, serviceStyle, serviceCategory, onQuote]);
 
   const hasPromo = useMemo(() => discount > 0, [discount]);
 

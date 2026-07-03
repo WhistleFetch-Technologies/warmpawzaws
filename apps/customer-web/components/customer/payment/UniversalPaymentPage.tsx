@@ -31,6 +31,13 @@ import {
   buildCheckoutPriceLines,
   checkoutTotalSavings,
 } from '@/lib/pricing/checkout-price-breakdown';
+import { CheckoutCouponPanel } from '@/components/customer/pricing/CheckoutCouponPanel';
+import {
+  validateCouponCode,
+  couponValidateOrderTypeForCheckout,
+  type AppliedCheckoutCoupon,
+} from '@/lib/pricing/coupon-validation';
+import type { CouponCheckoutKind } from '@/lib/pricing/coupon-capability';
 import {
   digitsToRazorpayContactE164,
   RAZORPAY_PREFILL_EMAIL_FALLBACK,
@@ -176,6 +183,8 @@ interface UniversalPaymentPageProps {
     clickedAt?: number;
     source?: string;
   };
+  /** Coupon applied on an earlier review step (booking summary). */
+  initialAppliedCoupon?: AppliedCheckoutCoupon | null;
 
   /**
    * fullscreen: default; CTA hugs bottom (overlays, dedicated routes).
@@ -204,12 +213,8 @@ interface UniversalPaymentPageProps {
   onPaymentAbandoned?: () => void;
 }
 
-interface CouponResult {
-  valid: boolean;
-  code: string;
-  discountType: 'percentage' | 'fixed';
-  discountValue: number;
-  discountAmount: number;
+interface CouponResult extends AppliedCheckoutCoupon {
+  valid?: boolean;
   message?: string;
   minAmount?: number;
   maxDiscount?: number;
@@ -394,6 +399,7 @@ export function UniversalPaymentPage({
   prepaidBookingPayload,
   initialPromotionId,
   initialPromotionIntent,
+  initialAppliedCoupon,
   layoutVariant = 'fullscreen',
   fillViewport = true,
   onBack,
@@ -419,10 +425,9 @@ export function UniversalPaymentPage({
   const [serviceIdResolving, setServiceIdResolving] = useState(false);
 
   // Coupon state
-  const [couponCode, setCouponCode] = useState('');
-  const [couponLoading, setCouponLoading] = useState(false);
-  const [appliedCoupon, setAppliedCoupon] = useState<CouponResult | null>(null);
-  const [showCouponInput, setShowCouponInput] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponResult | null>(
+    initialAppliedCoupon ?? null
+  );
 
   // Promotions & Offers
   const [promotions, setPromotions] = useState<PromotionOffer[]>([]);
@@ -1437,108 +1442,80 @@ export function UniversalPaymentPage({
     }
   };
 
-  const calculateDiscountAmount = (
-    type: 'percentage' | 'fixed',
-    value: number,
-    amount: number,
-    minAmount?: number,
-    maxDiscount?: number
-  ): number => {
-    if (minAmount && amount < minAmount) return 0;
+  const promotionDiscount =
+    type === 'booking'
+      ? bookingPromoStack?.totalSavings ?? appliedPromotion?.discountAmount ?? 0
+      : appliedPromotion?.discountAmount || 0;
 
-    let discount = type === 'percentage'
-      ? (amount * value) / 100
-      : value;
+  const couponCheckoutKind: CouponCheckoutKind = useMemo(() => {
+    if (type === 'order') return 'product_order';
+    if (type === 'meal_subscription' || type === 'meal_one_time') return 'meal';
+    return 'service_booking';
+  }, [type]);
 
-    if (maxDiscount && discount > maxDiscount) {
-      discount = maxDiscount;
+  /** Coupon validates on subtotal after auto-promotions (stack order). */
+  const couponValidationBase = useMemo(() => {
+    if (type === 'meal_subscription' || type === 'meal_one_time') {
+      const foodBase =
+        mealOneTimeDraft?.foodSubtotalInr ??
+        mealPlanFoodTaxableInr ??
+        taxBreakdown.subtotal ??
+        baseAmount;
+      return Math.max(0, foodBase - promotionDiscount);
     }
+    return Math.max(0, taxBreakdown.subtotal - promotionDiscount);
+  }, [
+    type,
+    mealOneTimeDraft?.foodSubtotalInr,
+    mealPlanFoodTaxableInr,
+    taxBreakdown.subtotal,
+    baseAmount,
+    promotionDiscount,
+  ]);
 
-    return Math.min(discount, amount);
-  };
+  const handleApplyCheckoutCoupon = useCallback(
+    (coupon: AppliedCheckoutCoupon) => {
+      setAppliedCoupon(coupon);
+    },
+    []
+  );
 
-  const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) {
-      toast.error('Please enter a coupon code');
-      return;
-    }
-
-    setCouponLoading(true);
-    try {
-      // First try the unified promotion validation (includes vendor promotions)
-      const promoRes = await apiClient.post<any>('/promotions/validate-code', {
-        code: couponCode.toUpperCase(),
-        vendorId: vendorId,
-        orderAmount: type === 'order' ? taxBreakdown.total : undefined,
-        bookingAmount: type === 'booking' ? taxBreakdown.total : undefined,
-        orderType: type === 'booking' ? 'service' : 'product'
-      });
-
-      if (promoRes.valid) {
-        const discountAmount = promoRes.discount_amount || calculateDiscountAmount(
-          promoRes.promotion?.discount_type,
-          promoRes.promotion?.discount_value,
-          taxBreakdown.total,
-          promoRes.promotion?.min_order_value || promoRes.promotion?.min_booking_value,
-          promoRes.promotion?.max_discount_amount
-        );
-
-        setAppliedCoupon({
-          valid: true,
-          code: couponCode.toUpperCase(),
-          discountType: promoRes.promotion?.discount_type || 'percentage',
-          discountValue: promoRes.promotion?.discount_value || 0,
-          discountAmount,
-          message: promoRes.promotion?.description || `You save ₹${discountAmount}!`,
-          minAmount: promoRes.promotion?.min_order_value || promoRes.promotion?.min_booking_value,
-          maxDiscount: promoRes.promotion?.max_discount_amount,
-        });
-        toast.success(`Coupon applied! You save ₹${discountAmount.toFixed(2)}`);
-        setShowCouponInput(false);
-        return;
-      }
-
-      // Fallback to legacy coupon validation
-      const res = await apiClient.get<any>(
-        `/coupons/validate/${couponCode.toUpperCase()}?amount=${taxBreakdown.total}`
-      );
-
-      if (res.valid) {
-        const discountAmount = calculateDiscountAmount(
-          res.coupon.discount_type,
-          res.coupon.discount_value,
-          taxBreakdown.total,
-          res.coupon.min_amount,
-          res.coupon.max_discount
-        );
-
-        setAppliedCoupon({
-          valid: true,
-          code: couponCode.toUpperCase(),
-          discountType: res.coupon.discount_type,
-          discountValue: res.coupon.discount_value,
-          discountAmount,
-          message: res.message,
-          minAmount: res.coupon.min_amount,
-          maxDiscount: res.coupon.max_discount,
-        });
-        toast.success(`Coupon applied! You save ₹${discountAmount.toFixed(2)}`);
-        setShowCouponInput(false);
-      } else {
-        toast.error(promoRes.message || res.error || 'Invalid coupon code');
-      }
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to validate coupon');
-    } finally {
-      setCouponLoading(false);
-    }
-  };
-
-  const removeCoupon = () => {
+  const removeCoupon = useCallback(() => {
     setAppliedCoupon(null);
-    setCouponCode('');
     toast.info('Coupon removed');
-  };
+  }, []);
+
+  // Re-validate coupon when promotions or base amount change
+  useEffect(() => {
+    if (!appliedCoupon?.code || couponValidationBase <= 0) return;
+
+    let cancelled = false;
+    void validateCouponCode({
+      code: appliedCoupon.code,
+      vendorId,
+      customerId,
+      orderType: couponValidateOrderTypeForCheckout(couponCheckoutKind),
+      amount: couponValidationBase,
+    }).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setAppliedCoupon((prev) =>
+          prev && prev.code === result.coupon.code
+            ? { ...prev, ...result.coupon }
+            : result.coupon
+        );
+      } else {
+        setAppliedCoupon(null);
+        toast.error(result.message || 'Coupon is no longer valid for this amount');
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appliedCoupon?.code, couponValidationBase, vendorId, customerId, couponCheckoutKind]);
+
+  const couponDiscount = appliedCoupon?.discountAmount || 0;
 
   const applyPromotion = (promotion: PromotionOffer) => {
     if (appliedPromotion?.id === promotion.id) {
@@ -1561,14 +1538,9 @@ export function UniversalPaymentPage({
   };
 
   // Calculate final amounts
-  const promotionDiscount =
-    type === 'booking'
-      ? bookingPromoStack?.totalSavings ?? appliedPromotion?.discountAmount ?? 0
-      : appliedPromotion?.discountAmount || 0;
-  const couponDiscount = type === 'booking' ? 0 : appliedCoupon?.discountAmount || 0;
   const razorpayOfferDiscount = selectedRazorpayOffer?.discountValue || 0;
 
-  // Apply discounts to subtotal (before tax for some, after tax for others - following standard practice)
+  // Apply discounts to subtotal (auto-promotions first, then coupon — stack order)
   const subtotalAfterDiscounts = Math.max(0, taxBreakdown.subtotal - promotionDiscount - couponDiscount);
 
   // Recalculate tax on discounted amount if needed (or keep original tax - business logic)
@@ -1583,7 +1555,7 @@ export function UniversalPaymentPage({
       : Number(baseAmount)
     : NaN;
   const walletCapBase = isMealPay
-    ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount)
+    ? Math.max(0, resolvedMealPayTotal - couponDiscount - razorpayOfferDiscount)
     : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount);
   const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
 
@@ -1591,7 +1563,7 @@ export function UniversalPaymentPage({
   const finalAmount = subscriptionCovered
     ? 0
     : isMealPay
-      ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount - walletAmount)
+      ? Math.max(0, resolvedMealPayTotal - couponDiscount - razorpayOfferDiscount - walletAmount)
       : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
   const checkoutVendorDiscount =
@@ -3555,65 +3527,17 @@ export function UniversalPaymentPage({
           </div>
         )}
 
-        {/* Coupon Section — orders only (bookings use auto-apply promotions) */}
-        {type !== 'meal_subscription' && type !== 'meal_one_time' && type !== 'booking' && (
-        <div className={paymentSecondaryCardClass}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Tag className="w-5 h-5 text-[#FF8C42]" />
-              <h2 className="font-semibold text-gray-900">Coupons & Discounts</h2>
-            </div>
-          </div>
-
-          {appliedCoupon ? (
-            <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-green-500" />
-                <div>
-                  <p className="font-medium text-green-700">{appliedCoupon.code}</p>
-                  <p className="text-sm text-green-600">You save ₹{appliedCoupon.discountAmount.toFixed(2)}</p>
-                </div>
-              </div>
-              <button onClick={removeCoupon} className="text-red-500 hover:text-red-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          ) : showCouponInput ? (
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                  placeholder="Enter coupon code"
-                  className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none uppercase"
-                />
-                <Button
-                  onClick={handleApplyCoupon}
-                  disabled={couponLoading}
-                  className="bg-[#FF8C42] hover:bg-[#E67A35] text-white px-6"
-                >
-                  {couponLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
-                </Button>
-              </div>
-              <button
-                onClick={() => setShowCouponInput(false)}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowCouponInput(true)}
-              className="w-full flex items-center justify-between p-3 border-2 border-dashed border-gray-200 rounded-xl hover:border-[#FF8C42] transition-all duration-150 active:scale-[0.98] touch-manipulation"
-            >
-              <span className="text-gray-600">Have a coupon code?</span>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </button>
-          )}
-        </div>
-        )}
+        {/* Coupon — shared CheckoutCouponPanel (booking, meals, orders) */}
+        <CheckoutCouponPanel
+          kind={couponCheckoutKind}
+          vendorId={vendorId}
+          customerId={customerId}
+          orderAmount={couponValidationBase}
+          appliedCoupon={appliedCoupon}
+          onApplyCoupon={handleApplyCheckoutCoupon}
+          onRemoveCoupon={removeCoupon}
+          className={paymentSecondaryCardClass}
+        />
 
         {/* Razorpay Offers */}
         {type !== 'meal_subscription' && type !== 'meal_one_time' && razorpayOffers.length > 0 && (

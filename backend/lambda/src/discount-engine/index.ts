@@ -27,3 +27,4 @@ export type {
 export type { DiscountRule as ContractDiscountRule } from './contracts/discount-rule';
 export type { DiscountBenefit as ContractDiscountBenefit } from './contracts/discount-benefit';
 export type { PriorityEngine as PriorityEngineContract } from './contracts/priority-engine';
+export * from './analytics';

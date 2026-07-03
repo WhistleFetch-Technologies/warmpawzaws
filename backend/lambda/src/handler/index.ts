@@ -75,6 +75,7 @@ import { registerTrainingProgressEndpoints } from '../endpoints/training-progres
 import { registerPackageBookingEndpoints } from '../endpoints/package-booking';
 import { registerWalkerGPSEndpoints } from '../endpoints/walker-gps';
 import { registerPromotionEndpoints } from '../endpoints/promotions';
+import { registerDiscountAnalyticsEndpoints } from '../endpoints/discount-analytics.endpoints';
 import { registerVendorPromotionsEndpoints } from '../endpoints/vendor/endpoints/vendor-promotions';
 import { registerAdsRecommendationEndpoints } from '../endpoints/ads-recommendations';
 import { registerEventEndpoints } from '../endpoints/events';
@@ -692,6 +693,7 @@ registerMedicalRecordsEndpoints(app);
 registerAdsRecommendationEndpoints(app); // Before ecommerce — /products/similar must register before /products/:productId
 registerEcommerceEndpoints(app);
 registerAnalyticsEndpoints(app);
+registerDiscountAnalyticsEndpoints(app);
 registerProductAnalyticsEndpoints(app);
 registerLoyaltyEndpoints(app);
 registerPackageEndpoints(app);

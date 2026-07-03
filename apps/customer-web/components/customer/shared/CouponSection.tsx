@@ -7,6 +7,11 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import {
+  validateCouponCode,
+  couponValidateOrderTypeForCheckout,
+  type AppliedCheckoutCoupon,
+} from '@/lib/pricing/coupon-validation';
 
 interface Promotion {
   id: string;
@@ -23,19 +28,14 @@ interface Promotion {
   promo_category?: 'product' | 'service' | 'platform';
 }
 
-interface AppliedCoupon {
-  code: string;
-  discountType: 'percentage' | 'fixed';
-  discountValue: number;
-  discountAmount: number;
-  promotionId?: string;
-  promoCategory?: string;
-}
+export type AppliedCoupon = AppliedCheckoutCoupon;
 
 interface CouponSectionProps {
   vendorId?: string;
+  customerId?: string;
   orderAmount: number;
-  orderType: 'booking' | 'order'; // booking = service, order = product
+  /** booking = service, order = product, meal = service validation */
+  orderType: 'booking' | 'order' | 'meal';
   appliedCoupon: AppliedCoupon | null;
   onApplyCoupon: (coupon: AppliedCoupon) => void;
   onRemoveCoupon: () => void;
@@ -44,12 +44,13 @@ interface CouponSectionProps {
 
 export function CouponSection({
   vendorId,
+  customerId,
   orderAmount,
   orderType,
   appliedCoupon,
   onApplyCoupon,
   onRemoveCoupon,
-  className = ''
+  className = '',
 }: CouponSectionProps) {
   const [couponCode, setCouponCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -78,40 +79,28 @@ export function CouponSection({
     }
   };
 
-  const validateCoupon = async (code: string) => {
-    if (!code.trim()) {
-      toast.error('Please enter a coupon code');
-      return;
-    }
+  const checkoutKind =
+    orderType === 'order' ? 'product_order' : orderType === 'meal' ? 'meal' : 'service_booking';
 
+  const validateCoupon = async (code: string) => {
     setLoading(true);
     try {
-      const res = await apiClient.post<any>('/promotions/validate-code', {
-        code: code.toUpperCase(),
-        vendorId: vendorId,
-        orderAmount: orderType === 'order' ? orderAmount : undefined,
-        bookingAmount: orderType === 'booking' ? orderAmount : undefined,
-        orderType: orderType === 'booking' ? 'service' : 'product'
+      const result = await validateCouponCode({
+        code,
+        vendorId,
+        customerId,
+        orderType: couponValidateOrderTypeForCheckout(checkoutKind),
+        amount: orderAmount,
       });
 
-      if (res.valid) {
-        const discountAmount = res.discount_amount || 0;
-        onApplyCoupon({
-          code: code.toUpperCase(),
-          discountType: res.promotion?.discount_type || 'percentage',
-          discountValue: res.promotion?.discount_value || 0,
-          discountAmount,
-          promotionId: res.promotion?.id,
-          promoCategory: res.promo_category
-        });
-        toast.success(`Coupon applied! You save ₹${discountAmount.toFixed(0)}`);
+      if (result.ok) {
+        onApplyCoupon(result.coupon);
+        toast.success(`Coupon applied! You save ₹${result.coupon.discountAmount.toFixed(0)}`);
         setCouponCode('');
         setExpanded(false);
       } else {
-        toast.error(res.message || 'Invalid coupon code');
+        toast.error(result.message);
       }
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to validate coupon');
     } finally {
       setLoading(false);
     }

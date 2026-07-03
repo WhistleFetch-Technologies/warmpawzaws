@@ -27,6 +27,11 @@ import { couponValidateToDiscountContext } from '../discount-engine/adapters/con
 import { DiscountDomain } from '../discount-engine/enums/discount-domain';
 import { invokeResolverAlongsideLegacy } from '../discount-engine/resolver/production-bridge';
 import {
+  getAnalyticsEngine,
+  isAnalyticsAuthoritative,
+  isAnalyticsEnabled,
+} from '../discount-engine/analytics';
+import {
   shadowCouponEligibility,
   shadowPlatformInlineEligibility,
 } from '../discount-engine/rules/adapters/shadow-adapters';
@@ -1095,6 +1100,12 @@ export function registerPromotionEndpoints(app: Hono) {
           totalRevenue: parseFloat(totalRevenue.rows[0]?.total || '0'),
           avgDiscountGiven: parseFloat(avgDiscount.rows[0]?.avg || '0'),
         },
+        ...(isAnalyticsEnabled() && isAnalyticsAuthoritative()
+          ? {
+              engineStats: (await getAnalyticsEngine().generateReport({ domain: 'ALL' }))?.promotions
+                ?.totals,
+            }
+          : {}),
       });
     } catch (error: any) {
       console.error('Error fetching promotion stats:', error);
