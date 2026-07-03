@@ -254,6 +254,14 @@ export async function loadPromotionTargetCatalogWithErrors(
     .map(mapMealPlanOption)
     .filter(Boolean) as TargetOption[];
 
+  // Optional catalog slices — API may fail on dev or when tables are empty; fallbacks cover styles.
+  const userFacingErrors = errors.filter((label) => {
+    if (label === 'service-styles') return false;
+    if (label === 'packages') return false;
+    if (label === 'meal-plans' && mealPlans.length === 0) return false;
+    return true;
+  });
+
   return {
     catalog: {
       categories: uniqueCategories,
@@ -264,6 +272,6 @@ export async function loadPromotionTargetCatalogWithErrors(
       styles,
       mealPlans,
     },
-    errors,
+    errors: userFacingErrors,
   };
 }

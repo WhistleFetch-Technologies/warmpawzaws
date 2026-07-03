@@ -18,8 +18,14 @@ export function offerSourceToBadgeVariant(source?: OfferSource | string | null):
 
 export function offerSourceLabel(source?: OfferSource | string | null): string {
   if (source === 'platform') return 'Platform promotion';
-  if (source === 'vendor') return 'Vendor promotion';
+  if (source === 'vendor') return 'Promotion';
   return 'Promotion';
+}
+
+/** Customer-facing discount line — never expose vendor/platform sourcing on shop surfaces. */
+export function customerDiscountLabel(name?: string | null): string {
+  const trimmed = name?.trim();
+  return trimmed || 'Discount';
 }
 
 /** Build short promotion detail lines for confirmation / invoice surfaces. */

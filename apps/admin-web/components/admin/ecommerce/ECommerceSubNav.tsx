@@ -12,7 +12,6 @@ import {
   Settings,
   FileText,
   Tag,
-  Ticket,
   Megaphone,
   LineChart,
 } from 'lucide-react';
@@ -34,8 +33,7 @@ const NAV: ECommerceNavItem[] = [
   { id: 'commission', label: 'Commission', href: '/ecommerce?tab=commission', icon: Percent },
   { id: 'categories', label: 'Categories', href: '/ecommerce?tab=categories', icon: FileText },
   { id: 'marketplace-analytics', label: 'Marketplace Analytics', href: '/ecommerce?tab=analytics', icon: BarChart3 },
-  { id: 'promotions', label: 'Seller Promotions', href: '/ecommerce/promotions', icon: Tag, matchPrefix: '/ecommerce/promotions' },
-  { id: 'coupons', label: 'Seller Coupons', href: '/ecommerce/coupons', icon: Ticket, matchPrefix: '/ecommerce/coupons' },
+  { id: 'promotions', label: 'Promotions & Coupons', href: '/ecommerce/promotions', icon: Tag, matchPrefix: '/ecommerce/promotions' },
   { id: 'campaigns', label: 'Seller Campaigns', href: '/ecommerce/campaigns', icon: Megaphone, matchPrefix: '/ecommerce/campaigns' },
   { id: 'promotion-analytics', label: 'Promotion Analytics', href: '/ecommerce/analytics', icon: LineChart, matchPrefix: '/ecommerce/analytics' },
   { id: 'policies', label: 'Policies', href: '/ecommerce?tab=policies', icon: Settings },
@@ -45,6 +43,9 @@ function isActive(pathname: string | null, item: ECommerceNavItem): boolean {
   if (!pathname) return false;
   if (item.matchPrefix && item.matchPrefix !== '/ecommerce') {
     return pathname === item.matchPrefix || pathname.startsWith(`${item.matchPrefix}/`);
+  }
+  if (item.id === 'promotions' && pathname?.startsWith('/ecommerce/coupons')) {
+    return true;
   }
   if (item.href.startsWith('/ecommerce/')) {
     return pathname === item.href || pathname.startsWith(`${item.href}/`);

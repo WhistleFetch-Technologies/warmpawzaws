@@ -40,7 +40,7 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
     subtotalLabel,
     subtotal,
     vendorDiscount = 0,
-    vendorDiscountLabel = 'Vendor promotion',
+    vendorDiscountLabel = 'Discount',
     platformDiscount = 0,
     couponDiscount = 0,
     couponCode,

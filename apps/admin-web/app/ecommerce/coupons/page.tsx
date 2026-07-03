@@ -1,15 +1,13 @@
 'use client';
 
-import { ECommercePromoLayout } from '@/components/admin/ecommerce/ECommercePromoLayout';
-import { AdminPromotionHub } from '@/components/admin/marketing/AdminPromotionHub';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
-export default function ECommerceCouponsPage() {
-  return (
-    <ECommercePromoLayout
-      title="Seller Coupons"
-      subtitle="Product and cart coupons for marketplace sellers"
-    >
-      <AdminPromotionHub surface="ecommerce" initialTab="coupons" hideLegacyLink />
-    </ECommercePromoLayout>
-  );
+/** Legacy route — merged into /ecommerce/promotions (Coupons tab). */
+export default function ECommerceCouponsRedirectPage() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace('/ecommerce/promotions');
+  }, [router]);
+  return null;
 }

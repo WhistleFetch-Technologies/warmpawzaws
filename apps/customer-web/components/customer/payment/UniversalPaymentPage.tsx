@@ -1579,9 +1579,7 @@ export function UniversalPaymentPage({
         subtotalLabel: priceIncludesTax ? 'Taxable value (excl. GST)' : 'Service price',
         subtotal: taxBreakdown.subtotal,
         vendorDiscount: checkoutVendorDiscount,
-        vendorDiscountLabel: appliedPromotion?.title
-          ? `Vendor promotion · ${appliedPromotion.title}`
-          : 'Vendor promotion',
+        vendorDiscountLabel: appliedPromotion?.title?.trim() || 'Discount',
         platformDiscount: checkoutPlatformDiscount,
         couponDiscount,
         couponCode: appliedCoupon?.code,

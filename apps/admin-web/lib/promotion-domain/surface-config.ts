@@ -99,8 +99,8 @@ export const MARKETING_PROMOTION_SCOPE: PromotionManagementScope = {
 
 export const ECOMMERCE_PROMOTION_SCOPE: PromotionManagementScope = {
   mode: 'platform',
-  title: 'Seller & Product Promotions',
-  subtitle: 'Marketplace sellers, products, categories & collections',
+  title: 'Seller Promotions & Coupons',
+  subtitle: 'Marketplace sellers, products, categories & cart coupons',
   canManageCoupons: true,
   canManagePlatformTargets: true,
   domains: ['product'],

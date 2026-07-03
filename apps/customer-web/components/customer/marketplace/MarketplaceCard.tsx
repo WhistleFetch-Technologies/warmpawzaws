@@ -78,7 +78,7 @@ export function MarketplaceCard({
             {discountPct ? (
               <PromotionOfferBadge variant="percent" value={discountPct} size="sm" />
             ) : null}
-            {data.promotionLabel ? (
+            {data.promotionLabel && data.domain !== 'product' ? (
               <SavingsBadge variant="auto_applied" label={data.promotionLabel} />
             ) : null}
             {data.couponCode ? (
@@ -111,7 +111,7 @@ export function MarketplaceCard({
 
         {data.subtitle ? <p className="text-xs text-slate-500 line-clamp-2">{data.subtitle}</p> : null}
 
-        {(data.offerSource || data.promotionTypeName) && (
+        {(data.offerSource || data.promotionTypeName) && data.domain !== 'product' && (
           <div className="flex flex-wrap gap-1">
             {data.offerSource ? (
               <SavingsBadge

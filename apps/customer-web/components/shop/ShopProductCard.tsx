@@ -93,8 +93,6 @@ export function ShopProductCard({
       originalPrice={hasDiscount ? product.original_price : undefined}
       currentPrice={product.price}
       savingsAmount={savingsAmount}
-      promotionLabel={hasDiscount ? 'Vendor promotion' : undefined}
-      offerSource={hasDiscount ? 'vendor' : undefined}
       availability={outOfStock ? 'unavailable' : product.stock <= 5 && product.stock > 0 ? 'limited' : 'available'}
       availabilityLabel={
         outOfStock

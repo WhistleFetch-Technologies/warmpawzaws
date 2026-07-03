@@ -6,8 +6,8 @@ import { AdminPromotionHub } from '@/components/admin/marketing/AdminPromotionHu
 export default function ECommercePromotionsPage() {
   return (
     <ECommercePromoLayout
-      title="Seller Promotions"
-      subtitle="Product and seller promotions for the marketplace"
+      title="Promotions & Coupons"
+      subtitle="Seller and product promotions, cart coupons, and marketplace offers"
     >
       <AdminPromotionHub surface="ecommerce" hideLegacyLink />
     </ECommercePromoLayout>
