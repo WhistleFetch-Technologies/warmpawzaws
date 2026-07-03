@@ -6,7 +6,7 @@ import { AdminPromotionHub } from '@/components/admin/marketing/AdminPromotionHu
 export default function PromotionsPage() {
   return (
     <AdminLayout>
-      <AdminPromotionHub />
+      <AdminPromotionHub surface="marketing" />
     </AdminLayout>
   );
 }

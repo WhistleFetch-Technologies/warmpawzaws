@@ -6,6 +6,13 @@ import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { loadPromotionTargetCatalogWithErrors } from '@/lib/promotion-catalog-loader';
 import {
+  type AdminPromoSurface,
+  catalogForSurface,
+  filterCouponRows,
+  filterPromotionRows,
+  scopeForSurface,
+} from '@/lib/promotion-domain/surface-config';
+import {
   PromotionDashboard,
   normalizeCouponRow,
   normalizePromotionRow,
@@ -15,16 +22,15 @@ import {
   type PromotionWizardForm,
 } from '@warmpawz/promotion-management-ui';
 
-const PLATFORM_SCOPE = {
-  mode: 'platform' as const,
-  title: 'Promotion Management',
-  subtitle: 'Platform promotions and coupons — unified dashboard',
-  canManageCoupons: true,
-  canManagePlatformTargets: true,
-  domains: ['platform', 'service', 'product', 'package', 'meal', 'booking'] as const,
-};
-
-export function AdminPromotionHub() {
+export function AdminPromotionHub({
+  surface = 'marketing',
+  initialTab,
+  hideLegacyLink = false,
+}: {
+  surface?: AdminPromoSurface;
+  initialTab?: 'active' | 'scheduled' | 'expired' | 'draft' | 'coupons' | 'recent';
+  hideLegacyLink?: boolean;
+}) {
   const [promotions, setPromotions] = useState<ReturnType<typeof normalizePromotionRow>[]>([]);
   const [coupons, setCoupons] = useState<ReturnType<typeof normalizeCouponRow>[]>([]);
   const [catalog, setCatalog] = useState<PromotionTargetCatalog>({});
@@ -32,31 +38,32 @@ export function AdminPromotionHub() {
   const [catalogWarnings, setCatalogWarnings] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const scope = useMemo(() => scopeForSurface(surface), [surface]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
       const [catalogResult, promotionsRes, couponsRes] = await Promise.all([
         loadPromotionTargetCatalogWithErrors(apiClient),
-        apiClient.get<any>('/admin/promotions'),
-        apiClient.get<any>('/admin/coupons?limit=100'),
+        apiClient.get<{ promotions?: unknown[] }>('/admin/promotions'),
+        apiClient.get<{ coupons?: unknown[] }>('/admin/coupons?limit=200'),
       ]);
 
-      setCatalog(catalogResult.catalog);
+      setCatalog(catalogForSurface(catalogResult.catalog, surface));
       setCatalogWarnings(catalogResult.errors);
 
-      const promoRows = promotionsRes.promotions || promotionsRes || [];
-      const couponRows = couponsRes.coupons || couponsRes || [];
-      setPromotions(
-        (Array.isArray(promoRows) ? promoRows : []).map((r: Record<string, unknown>) =>
-          normalizePromotionRow(r)
-        )
+      const promoRows = promotionsRes.promotions ?? [];
+      const couponRows = couponsRes.coupons ?? [];
+      const normalizedPromos = (Array.isArray(promoRows) ? promoRows : []).map((r) =>
+        normalizePromotionRow(r as Record<string, unknown>)
       );
-      setCoupons(
-        (Array.isArray(couponRows) ? couponRows : []).map((r: Record<string, unknown>) =>
-          normalizeCouponRow(r)
-        )
+      const normalizedCoupons = (Array.isArray(couponRows) ? couponRows : []).map((r) =>
+        normalizeCouponRow(r as Record<string, unknown>)
       );
+
+      setPromotions(filterPromotionRows(normalizedPromos, surface));
+      setCoupons(filterCouponRows(normalizedCoupons, surface));
     } catch (e) {
       console.error(e);
       setLoadError('Failed to load promotions. Check your connection and try again.');
@@ -65,10 +72,10 @@ export function AdminPromotionHub() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [surface]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   const existingCodes = useMemo(
@@ -107,6 +114,8 @@ export function AdminPromotionHub() {
     }
   };
 
+  const legacyHref = surface === 'ecommerce' ? '/ecommerce' : '/marketing';
+
   return (
     <div className="space-y-3">
       {loadError ? (
@@ -127,14 +136,15 @@ export function AdminPromotionHub() {
       ) : null}
 
       <PromotionDashboard
-        scope={PLATFORM_SCOPE}
-        promotions={promotions}
+        scope={scope}
+        promotions={initialTab === 'coupons' ? [] : promotions}
         coupons={coupons}
         catalog={catalog}
         loading={loading}
         existingCodes={existingCodes}
         onRefresh={load}
         onSave={handleSave}
+        initialTab={initialTab}
         onDeletePromotion={async (id) => {
           try {
             await apiClient.delete(`/admin/promotions/${id}`);
@@ -165,12 +175,14 @@ export function AdminPromotionHub() {
           }
         }}
         headerActions={
-          <Link
-            href="/marketing"
-            className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-          >
-            Legacy Marketing Hub
-          </Link>
+          hideLegacyLink ? undefined : (
+            <Link
+              href={legacyHref}
+              className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+            >
+              {surface === 'ecommerce' ? 'E-Commerce Hub' : 'Legacy Marketing Hub'}
+            </Link>
+          )
         }
       />
     </div>

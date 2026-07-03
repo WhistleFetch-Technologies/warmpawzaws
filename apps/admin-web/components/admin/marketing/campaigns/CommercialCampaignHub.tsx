@@ -1,12 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Button, Badge, Tabs, TabsContent, TabsList, TabsTrigger } from '@warmpawz/ui';
 import { Megaphone, Plus, RefreshCw } from 'lucide-react';
 import { useCommercialCampaigns } from '@/hooks/marketing/useCommercialCampaigns';
 import { transitionCampaignLifecycle } from '@/lib/commercial-campaign/commercial-campaign-api';
 import type { CommercialCampaignRecord } from '@/lib/commercial-campaign/types';
+import {
+  ECOMMERCE_CAMPAIGN_TITLE,
+  MARKETING_CAMPAIGN_TITLE,
+  filterCampaigns,
+  type AdminPromoSurface,
+} from '@/lib/promotion-domain/surface-config';
 import { CampaignDashboard } from './CampaignDashboard';
 import { CampaignList } from './CampaignList';
 import { CampaignBuilderDialog } from './CampaignBuilderDialog';
@@ -14,8 +20,9 @@ import { CampaignDetailsDrawer } from './CampaignDetailsDrawer';
 import { CampaignTemplateGrid } from './CampaignTemplateGrid';
 import { ComingSoonPanel } from '../policyCenter/shared/ApiPendingBanner';
 
-export function CommercialCampaignHub() {
-  const { campaigns, mode, registry, loading, error, reload } = useCommercialCampaigns();
+export function CommercialCampaignHub({ surface = 'marketing' }: { surface?: AdminPromoSurface }) {
+  const { campaigns: allCampaigns, mode, registry, loading, error, reload } = useCommercialCampaigns();
+  const campaigns = useMemo(() => filterCampaigns(allCampaigns, surface), [allCampaigns, surface]);
   const [tab, setTab] = useState('dashboard');
   const [builderOpen, setBuilderOpen] = useState(false);
   const [templateSeed, setTemplateSeed] = useState<string | undefined>();
@@ -60,9 +67,13 @@ export function CommercialCampaignHub() {
               <Megaphone className="h-6 w-6 text-orange-600" aria-hidden />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Commercial Campaigns</h1>
+              <h1 className="text-2xl font-bold text-slate-900">
+                {surface === 'ecommerce' ? ECOMMERCE_CAMPAIGN_TITLE : MARKETING_CAMPAIGN_TITLE}
+              </h1>
               <p className="text-sm text-slate-500">
-                Orchestration layer over promotions, coupons, notifications & analytics — Phase 10
+                {surface === 'ecommerce'
+                  ? 'Marketplace campaign orchestration over seller promotions & coupons — Phase 10'
+                  : 'Service campaign orchestration over promotions, coupons, notifications & analytics — Phase 10'}
               </p>
             </div>
           </div>
@@ -136,6 +147,7 @@ export function CommercialCampaignHub() {
         initialTemplateId={templateSeed}
         cloneFrom={cloneFrom}
         onSuccess={() => void reload()}
+        surface={surface}
       />
 
       <CampaignDetailsDrawer

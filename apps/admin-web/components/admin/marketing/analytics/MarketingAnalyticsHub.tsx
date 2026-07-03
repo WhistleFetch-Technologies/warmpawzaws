@@ -1,9 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger, Badge } from '@warmpawz/ui';
 import { BarChart3 } from 'lucide-react';
 import { useDiscountAnalytics } from '@/hooks/marketing/useDiscountAnalytics';
+import {
+  analyticsDomainOptions,
+  ECOMMERCE_ANALYTICS_TITLE,
+  MARKETING_ANALYTICS_TITLE,
+  type AdminPromoSurface,
+} from '@/lib/promotion-domain/surface-config';
 import { DiscountAnalyticsFilters } from './DiscountAnalyticsFilters';
 import {
   AnalyticsErrorState,
@@ -17,7 +23,7 @@ import { SavingsAnalyticsTab } from './SavingsAnalyticsTab';
 import { SettlementAnalyticsTab } from './SettlementAnalyticsTab';
 import { CampaignAnalyticsTab } from './CampaignAnalyticsTab';
 
-const TABS = [
+const ALL_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'promotions', label: 'Promotions' },
   { id: 'coupons', label: 'Coupons' },
@@ -27,7 +33,8 @@ const TABS = [
   { id: 'campaigns', label: 'Campaigns' },
 ] as const;
 
-export function MarketingAnalyticsHub() {
+export function MarketingAnalyticsHub({ surface = 'marketing' }: { surface?: AdminPromoSurface }) {
+  const lockedDomain = surface === 'ecommerce' ? 'PRODUCT' : undefined;
   const [tab, setTab] = useState<string>('overview');
   const {
     preset,
@@ -42,7 +49,23 @@ export function MarketingAnalyticsHub() {
     loading,
     error,
     reload,
-  } = useDiscountAnalytics();
+    domainLocked,
+  } = useDiscountAnalytics({ surface, lockedDomain });
+
+  const title = surface === 'ecommerce' ? ECOMMERCE_ANALYTICS_TITLE : MARKETING_ANALYTICS_TITLE;
+  const subtitle =
+    surface === 'ecommerce'
+      ? 'Product sales, seller promotions, cart coupons & marketplace savings (Phase 9)'
+      : 'Service bookings, vendor savings, service promotions & coupons (Phase 9)';
+
+  const tabs = useMemo(() => {
+    if (surface === 'ecommerce') {
+      return ALL_TABS.filter((t) => t.id !== 'vendors');
+    }
+    return ALL_TABS;
+  }, [surface]);
+
+  const domainOptions = analyticsDomainOptions(surface);
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/50">
@@ -53,8 +76,8 @@ export function MarketingAnalyticsHub() {
               <BarChart3 className="h-6 w-6 text-orange-600" aria-hidden />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Marketing Analytics</h1>
-              <p className="text-sm text-slate-500">Promotion & coupon insights via Discount Engine Phase 9</p>
+              <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
+              <p className="text-sm text-slate-500">{subtitle}</p>
             </div>
           </div>
           {mode ? (
@@ -75,6 +98,8 @@ export function MarketingAnalyticsHub() {
           onVendorIdChange={setVendorId}
           onRefresh={() => void reload()}
           loading={loading}
+          domainOptions={domainOptions}
+          domainLocked={domainLocked}
         />
 
         {loading ? <AnalyticsLoadingState /> : null}
@@ -82,7 +107,7 @@ export function MarketingAnalyticsHub() {
         {!loading && !error && report ? (
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList className="flex h-auto flex-wrap justify-start gap-1 bg-white p-1">
-              {TABS.map((t) => (
+              {tabs.map((t) => (
                 <TabsTrigger key={t.id} value={t.id} className="text-xs sm:text-sm">
                   {t.label}
                 </TabsTrigger>
@@ -98,9 +123,11 @@ export function MarketingAnalyticsHub() {
             <TabsContent value="coupons" className="mt-6">
               <CouponsAnalyticsTab report={report} />
             </TabsContent>
-            <TabsContent value="vendors" className="mt-6">
-              <VendorsAnalyticsTab report={report} />
-            </TabsContent>
+            {surface === 'marketing' ? (
+              <TabsContent value="vendors" className="mt-6">
+                <VendorsAnalyticsTab report={report} />
+              </TabsContent>
+            ) : null}
             <TabsContent value="savings" className="mt-6">
               <SavingsAnalyticsTab report={report} />
             </TabsContent>

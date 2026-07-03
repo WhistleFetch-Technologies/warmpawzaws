@@ -39,6 +39,7 @@ import { CampaignFundingEditor } from './CampaignFundingEditor';
 import { CampaignNotificationEditor } from './CampaignNotificationEditor';
 import { CampaignOrchestrationPanel } from './CampaignOrchestrationPanel';
 import { CampaignTemplateGrid } from './CampaignTemplateGrid';
+import type { AdminPromoSurface } from '@/lib/promotion-domain/surface-config';
 
 const STEPS = [
   'General',
@@ -84,6 +85,7 @@ export function CampaignBuilderDialog({
   initialTemplateId,
   cloneFrom,
   onSuccess,
+  surface = 'marketing',
 }: {
   open: boolean;
   onClose: () => void;
@@ -91,6 +93,7 @@ export function CampaignBuilderDialog({
   initialTemplateId?: string;
   cloneFrom?: CommercialCampaignRecord | null;
   onSuccess: () => void;
+  surface?: AdminPromoSurface;
 }) {
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<CampaignBuilderDraft>(DEFAULT_DRAFT);
@@ -158,6 +161,7 @@ export function CampaignBuilderDialog({
     audience: draft.audience,
     notificationMode: draft.notificationMode,
     notificationCampaignId: draft.notificationCampaignId ?? undefined,
+    metadata: { domain: surface === 'ecommerce' ? 'ecommerce' : 'service', surface },
   });
 
   const handlePublish = async () => {
@@ -307,8 +311,7 @@ export function CampaignBuilderDialog({
           ) : null}
 
           {step === 5 ? (
-            <CampaignOrchestrationPanel
-              pendingPromotions={draft.pendingPromotions}
+            <CampaignOrchestrationPanel surface={surface} pendingPromotions={draft.pendingPromotions}
               pendingCoupons={draft.pendingCoupons}
               onPromotionsChange={(rows) => patch({ pendingPromotions: rows })}
               onCouponsChange={(rows) => patch({ pendingCoupons: rows })}

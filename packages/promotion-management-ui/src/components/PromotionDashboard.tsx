@@ -33,6 +33,8 @@ export type PromotionDashboardProps = {
   onDeleteCoupon?: (id: string) => Promise<void>;
   onToggleCoupon?: (id: string, active: boolean) => Promise<void>;
   headerActions?: React.ReactNode;
+  /** When set, opens on coupons tab (e.g. E-Commerce coupons route). */
+  initialTab?: TabId;
 };
 
 type TabId = 'active' | 'scheduled' | 'expired' | 'draft' | 'coupons' | 'recent';
@@ -82,8 +84,9 @@ export function PromotionDashboard({
   onDeleteCoupon,
   onToggleCoupon,
   headerActions,
+  initialTab = 'active',
 }: PromotionDashboardProps) {
-  const [tab, setTab] = useState<TabId>('active');
+  const [tab, setTab] = useState<TabId>(initialTab);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [kindFilter, setKindFilter] = useState<KindFilter>('');

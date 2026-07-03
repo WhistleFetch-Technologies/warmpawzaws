@@ -22,6 +22,8 @@ export function DiscountAnalyticsFilters({
   onVendorIdChange,
   onRefresh,
   loading,
+  domainOptions,
+  domainLocked = false,
 }: {
   preset: AnalyticsPreset;
   domain: AnalyticsDomainFilter;
@@ -31,7 +33,20 @@ export function DiscountAnalyticsFilters({
   onVendorIdChange: (v: string) => void;
   onRefresh: () => void;
   loading?: boolean;
+  domainOptions?: AnalyticsDomainFilter[];
+  domainLocked?: boolean;
 }) {
+  const allOptions: { value: AnalyticsDomainFilter; label: string }[] = [
+    { value: 'ALL', label: 'All domains' },
+    { value: 'SERVICE', label: 'Service' },
+    { value: 'MEAL', label: 'Meal' },
+    { value: 'PRODUCT', label: 'Product / shop' },
+    { value: 'PHARMACY', label: 'Pharmacy' },
+    { value: 'PACKAGE', label: 'Package' },
+  ];
+  const visible = domainOptions?.length
+    ? allOptions.filter((o) => domainOptions.includes(o.value))
+    : allOptions;
   return (
     <div className="flex flex-col gap-4 rounded-xl border bg-white p-4 sm:flex-row sm:flex-wrap sm:items-end">
       <div className="space-y-2">
@@ -51,17 +66,20 @@ export function DiscountAnalyticsFilters({
 
       <div className="space-y-2">
         <Label htmlFor="analytics-domain">Domain</Label>
-        <Select value={domain} onValueChange={(v) => onDomainChange(v as AnalyticsDomainFilter)}>
+        <Select
+          value={domain}
+          disabled={domainLocked}
+          onValueChange={(v) => onDomainChange(v as AnalyticsDomainFilter)}
+        >
           <SelectTrigger id="analytics-domain" className="w-full sm:w-44 bg-white">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">All domains</SelectItem>
-            <SelectItem value="SERVICE">Service</SelectItem>
-            <SelectItem value="MEAL">Meal</SelectItem>
-            <SelectItem value="PRODUCT">Product / shop</SelectItem>
-            <SelectItem value="PHARMACY">Pharmacy</SelectItem>
-            <SelectItem value="PACKAGE">Package</SelectItem>
+            {visible.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

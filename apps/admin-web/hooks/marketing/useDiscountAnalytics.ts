@@ -15,11 +15,20 @@ import type {
   PromotionStatsLegacy,
 } from '@/lib/marketing-analytics/types';
 
-const FILTERS_KEY = 'warmpawz.marketing-analytics.filters';
+const FILTERS_KEY_MARKETING = 'warmpawz.marketing-analytics.filters';
+const FILTERS_KEY_ECOMMERCE = 'warmpawz.ecommerce-analytics.filters';
 
-export function useDiscountAnalytics() {
+export function useDiscountAnalytics(options?: {
+  surface?: 'marketing' | 'ecommerce';
+  lockedDomain?: AnalyticsDomainFilter;
+}) {
+  const surface = options?.surface ?? 'marketing';
+  const filtersKey = surface === 'ecommerce' ? FILTERS_KEY_ECOMMERCE : FILTERS_KEY_MARKETING;
+  const defaultDomain =
+    options?.lockedDomain ?? (surface === 'ecommerce' ? 'PRODUCT' : 'SERVICE');
+
   const [preset, setPreset] = useState<AnalyticsPreset>('30d');
-  const [domain, setDomain] = useState<AnalyticsDomainFilter>('ALL');
+  const [domain, setDomain] = useState<AnalyticsDomainFilter>(defaultDomain);
   const [vendorId, setVendorId] = useState('');
   const [report, setReport] = useState<AnalyticsReport | null>(null);
   const [legacyStats, setLegacyStats] = useState<PromotionStatsLegacy | null>(null);
@@ -29,20 +38,20 @@ export function useDiscountAnalytics() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(FILTERS_KEY);
+      const raw = localStorage.getItem(filtersKey);
       if (!raw) return;
       const saved = JSON.parse(raw) as { preset?: AnalyticsPreset; domain?: AnalyticsDomainFilter; vendorId?: string };
       if (saved.preset) setPreset(saved.preset);
-      if (saved.domain) setDomain(saved.domain);
+      if (saved.domain && !options?.lockedDomain) setDomain(saved.domain);
       if (saved.vendorId) setVendorId(saved.vendorId);
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [filtersKey, options?.lockedDomain]);
 
   useEffect(() => {
-    localStorage.setItem(FILTERS_KEY, JSON.stringify({ preset, domain, vendorId }));
-  }, [preset, domain, vendorId]);
+    localStorage.setItem(filtersKey, JSON.stringify({ preset, domain, vendorId }));
+  }, [preset, domain, vendorId, filtersKey]);
 
   const filters = useMemo(() => {
     const { start, end } = isoRangeFromPreset(preset);
@@ -112,5 +121,7 @@ export function useDiscountAnalytics() {
     loading,
     error,
     reload,
+    surface,
+    domainLocked: Boolean(options?.lockedDomain),
   };
 }

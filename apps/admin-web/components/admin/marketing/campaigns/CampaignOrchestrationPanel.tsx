@@ -8,6 +8,13 @@ import { ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { loadPromotionTargetCatalogWithErrors } from '@/lib/promotion-catalog-loader';
 import {
+  catalogForSurface,
+  filterCouponRows,
+  filterPromotionRows,
+  scopeForSurface,
+  type AdminPromoSurface,
+} from '@/lib/promotion-domain/surface-config';
+import {
   PromotionWizard,
   PromotionCard,
   CouponCard,
@@ -20,28 +27,23 @@ import {
   type PromotionWizardForm,
 } from '@warmpawz/promotion-management-ui';
 
-const PLATFORM_SCOPE = {
-  mode: 'platform' as const,
-  title: 'Campaign promotion',
-  subtitle: 'Queued for orchestration — not saved to Promotion Hub until publish',
-  canManageCoupons: true,
-  canManagePlatformTargets: true,
-  domains: ['platform', 'service', 'product', 'package', 'meal', 'booking'] as const,
-};
-
 export function CampaignOrchestrationPanel({
+  surface = 'marketing',
   pendingPromotions,
   pendingCoupons,
   onPromotionsChange,
   onCouponsChange,
   readOnly = false,
 }: {
+  surface?: AdminPromoSurface;
   pendingPromotions: Array<Record<string, unknown>>;
   pendingCoupons: Array<Record<string, unknown>>;
   onPromotionsChange: (rows: Array<Record<string, unknown>>) => void;
   onCouponsChange: (rows: Array<Record<string, unknown>>) => void;
   readOnly?: boolean;
 }) {
+  const scope = scopeForSurface(surface);
+  const promoHubHref = surface === 'ecommerce' ? '/ecommerce/promotions' : '/promotions';
   const [catalog, setCatalog] = useState<PromotionTargetCatalog>({});
   const [existingPromotions, setExistingPromotions] = useState<ReturnType<typeof normalizePromotionRow>[]>([]);
   const [existingCoupons, setExistingCoupons] = useState<ReturnType<typeof normalizeCouponRow>[]>([]);
@@ -54,16 +56,18 @@ export function CampaignOrchestrationPanel({
       apiClient.get<{ promotions?: unknown[] }>('/admin/promotions'),
       apiClient.get<{ coupons?: unknown[] }>('/admin/coupons?limit=100'),
     ]);
-    setCatalog(catalogResult.catalog);
+    setCatalog(catalogForSurface(catalogResult.catalog, surface));
     const promoRows = promotionsRes.promotions ?? [];
     const couponRows = couponsRes.coupons ?? [];
-    setExistingPromotions(
-      (Array.isArray(promoRows) ? promoRows : []).map((r) => normalizePromotionRow(r as Record<string, unknown>))
+    const normalizedPromos = (Array.isArray(promoRows) ? promoRows : []).map((r) =>
+      normalizePromotionRow(r as Record<string, unknown>)
     );
-    setExistingCoupons(
-      (Array.isArray(couponRows) ? couponRows : []).map((r) => normalizeCouponRow(r as Record<string, unknown>))
+    const normalizedCoupons = (Array.isArray(couponRows) ? couponRows : []).map((r) =>
+      normalizeCouponRow(r as Record<string, unknown>)
     );
-  }, []);
+    setExistingPromotions(filterPromotionRows(normalizedPromos, surface));
+    setExistingCoupons(filterCouponRows(normalizedCoupons, surface));
+  }, [surface]);
 
   useEffect(() => {
     void loadCatalog();
@@ -112,8 +116,8 @@ export function CampaignOrchestrationPanel({
           <h3 className="text-base font-semibold text-slate-900">Promotions & coupons</h3>
           <p className="text-sm text-slate-500">
             Create via Promotion Wizard or manage existing in{' '}
-            <Link href="/promotions" className="text-orange-600 underline">
-              Promotion Management
+            <Link href={promoHubHref} className="text-orange-600 underline">
+              {surface === 'ecommerce' ? 'Seller Promotion Management' : 'Promotion Management'}
             </Link>
             .
           </p>
@@ -181,7 +185,7 @@ export function CampaignOrchestrationPanel({
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-slate-700">Existing promotions (reference)</p>
-          <Link href="/promotions" className="inline-flex items-center text-xs text-orange-600">
+          <Link href={promoHubHref} className="inline-flex items-center text-xs text-orange-600">
             Open hub <ExternalLink className="ml-1 h-3 w-3" />
           </Link>
         </div>
@@ -208,7 +212,7 @@ export function CampaignOrchestrationPanel({
       <PromotionWizard
         open={wizardOpen}
         onClose={() => setWizardOpen(false)}
-        scope={PLATFORM_SCOPE}
+        scope={scope}
         catalog={catalog}
         existingCodes={existingCodes}
         onSave={async (form) => handleWizardSave(form)}

@@ -8,6 +8,10 @@ import { useDiscountPolicyDraft } from '@/lib/discount-policy/useDiscountPolicyD
 import { POLICY_CENTER_TABS, type PolicyCenterTabId } from '@/lib/discount-policy/option-registry';
 import { ApiPendingBanner } from './shared/ApiPendingBanner';
 import { PolicyStickySaveBar } from './shared/PolicyStickySaveBar';
+import {
+  PolicyCenterDomainView,
+  type PolicyViewDomain,
+} from './shared/PolicyCenterDomainView';
 import { PriorityConfigSection } from './sections/PriorityConfigSection';
 import { StackConfigSection } from './sections/StackConfigSection';
 import { FundingConfigSection } from './sections/FundingConfigSection';
@@ -21,6 +25,7 @@ import { AuditViewerSection } from './sections/AuditViewerSection';
 
 export function PolicyCenter() {
   const [activeTab, setActiveTab] = useState<PolicyCenterTabId>('priority');
+  const [viewDomain, setViewDomain] = useState<PolicyViewDomain>('services');
   const {
     draft,
     capabilities,
@@ -94,6 +99,8 @@ export function PolicyCenter() {
             <ApiPendingBanner />
           </div>
         ) : null}
+
+        <PolicyCenterDomainView value={viewDomain} onChange={setViewDomain} />
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as PolicyCenterTabId)}>
           <TabsList className="mb-6 flex h-auto flex-wrap justify-start gap-1 bg-white p-1">

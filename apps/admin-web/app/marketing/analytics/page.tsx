@@ -6,7 +6,7 @@ import { MarketingAnalyticsHub } from '@/components/admin/marketing/analytics/Ma
 export default function MarketingAnalyticsPage() {
   return (
     <AdminLayout>
-      <MarketingAnalyticsHub />
+      <MarketingAnalyticsHub surface="marketing" />
     </AdminLayout>
   );
 }

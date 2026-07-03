@@ -6,7 +6,7 @@ import { CommercialCampaignHub } from '@/components/admin/marketing/campaigns/Co
 export default function CommercialCampaignsPage() {
   return (
     <AdminLayout>
-      <CommercialCampaignHub />
+      <CommercialCampaignHub surface="marketing" />
     </AdminLayout>
   );
 }
