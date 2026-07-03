@@ -123,7 +123,7 @@ describe('Phase 6 — stack engine resolver integration', () => {
       ]),
     ]);
 
-    expect(result.resolverVersion).toBe('phase-6.0');
+    expect(result.resolverVersion).toBe('phase-7.0');
     expect(stackMeta(result).stackMode).toBe('AUTHORITATIVE');
     expect(stackMeta(result).authoritative).toBe(true);
     expect(result.appliedCandidates.length).toBe(2);

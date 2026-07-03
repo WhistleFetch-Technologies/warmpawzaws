@@ -28,6 +28,10 @@ import { uuidSchema } from '../../../middleware/validation-middleware';
 import { verifyPayment, requiresPayment } from '../../../utils/payments/payment-verification-service';
 import { getFeeGlobalsMap } from '../../../utils/admin-fee-settings-db';
 import { computePolicyDeliveryFeeForOrder } from '../../../utils/customer-delivery-fee-quote';
+import {
+  applySettlementPreviewToCommissionableGross,
+  readSettlementPreviewFromMetadata,
+} from '../../../discount-engine/settlement/settlement-hook-bridge';
 
 // Haversine formula to calculate distance between two points
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -1523,7 +1527,12 @@ async function createSettlementRecord(orderId: string, orderType: 'pharmacy' | '
     const logisticsCost = order.logistics_type === 'warmpawz' ? parseFloat(order.logistics_cost || '0') : 0;
 
     // Commission applies on base order amount (excluding delivery, platform, convenience fees)
-    const commissionableAmount = orderAmount - deliveryFee - platformFee - convenienceFee;
+    let commissionableAmount = orderAmount - deliveryFee - platformFee - convenienceFee;
+    const settlementPreview = readSettlementPreviewFromMetadata(order.metadata ?? order.purchase_snapshot);
+    commissionableAmount = applySettlementPreviewToCommissionableGross(
+      commissionableAmount,
+      settlementPreview
+    );
     const commissionAmount = Math.round(commissionableAmount * commissionRate / 100);
     const netPayout = orderAmount - commissionAmount - platformFee - convenienceFee - logisticsCost;
 

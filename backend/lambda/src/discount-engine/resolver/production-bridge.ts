@@ -2,7 +2,7 @@ import type { DiscountContext } from '../models/discount-context';
 import type { ResolverResult } from './types';
 import { getUnifiedDiscountResolver } from './unified-discount-resolver';
 import { logPriorityPipelineDiagnostics } from './priority-pipeline';
-import type { PriorityDiagnostics, StackDiagnostics } from './types';
+import type { PriorityDiagnostics, SettlementDiagnostics, StackDiagnostics } from './types';
 
 /**
  * Runs the unified resolver pipeline for diagnostics.
@@ -30,6 +30,7 @@ export function logResolverDiagnostics(
   if (!result) return;
   const priority = result.metadata?.priority as PriorityDiagnostics | undefined;
   const stack = result.metadata?.stack as StackDiagnostics | undefined;
+  const settlement = result.metadata?.settlement as SettlementDiagnostics | undefined;
   console.info('[discount-resolver] pipeline complete', {
     label,
     candidateCount: result.metadata?.candidateCount,
@@ -46,6 +47,10 @@ export function logResolverDiagnostics(
     stackAuthoritative: stack?.authoritative,
     stackAppliedCount: stack?.appliedCount,
     stackRejectedCount: stack?.rejectedCount,
+    settlementMode: settlement?.settlementMode,
+    settlementAuthoritative: settlement?.authoritative,
+    vendorReceivable: settlement?.vendorReceivable,
+    platformCost: settlement?.platformCost,
   });
   if (priority) {
     logPriorityPipelineDiagnostics(label, {

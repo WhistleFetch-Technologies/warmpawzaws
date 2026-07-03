@@ -4,6 +4,10 @@
  */
 import { insert, query } from '../database/rds-connection';
 import { syncCanonicalMealSubscriptionDeliveryWhenMealOrderDelivered } from './sync-canonical-delivery-from-meal-order';
+import {
+  applySettlementPreviewToCommissionableGross,
+  readSettlementPreviewFromMetadata,
+} from '../discount-engine/settlement/settlement-hook-bridge';
 
 function safeMoney(raw: unknown): number {
   if (raw === null || raw === undefined || raw === '') return 0;
@@ -30,16 +34,21 @@ export function resolveVendorMealListingAmount(order: Record<string, unknown>): 
   const snap = parseMealOrderPurchaseSnapshot(order.purchase_snapshot);
   const isVendorSubscriptionParent = snap.subscriptionVendorBookingRole === 'parent';
 
+  let vendorMealAmount = 0;
   if (isVendorSubscriptionParent) {
     const sessions = Math.max(1, Number(snap.subscriptionTotalSessions) || 1);
     const foodUpfront = safeMoney(order.subtotal ?? order.total_amount);
     if (foodUpfront <= 0) return 0;
-    return Math.round((foodUpfront / sessions) * 100) / 100;
+    vendorMealAmount = Math.round((foodUpfront / sessions) * 100) / 100;
+  } else {
+    vendorMealAmount = safeMoney(order.subtotal);
+    if (vendorMealAmount <= 0) vendorMealAmount = safeMoney(order.total_amount);
   }
 
-  let vendorMealAmount = safeMoney(order.subtotal);
-  if (vendorMealAmount <= 0) vendorMealAmount = safeMoney(order.total_amount);
-  return vendorMealAmount;
+  const preview =
+    readSettlementPreviewFromMetadata(order.metadata ?? order.purchase_snapshot) ??
+    readSettlementPreviewFromMetadata(snap);
+  return applySettlementPreviewToCommissionableGross(vendorMealAmount, preview);
 }
 
 export function computeMealVendorSettlementAmounts(

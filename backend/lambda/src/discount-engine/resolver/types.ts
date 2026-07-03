@@ -8,6 +8,21 @@ import type { PriorityMode } from '../policy/priority-mode';
 import type { ValidationResult } from '../policy/validation-result';
 import type { PriorityResult } from '../priority/priority-types';
 import type { StackAudit, StackMode } from '../stack/types';
+import type { SettlementAudit, SettlementMode } from '../settlement/types';
+
+export interface SettlementDiagnostics {
+  settlementMode: SettlementMode;
+  settlementVersion: string;
+  policyFingerprint?: string;
+  authoritative: boolean;
+  executionTimeMs: number;
+  customerPayable: number;
+  vendorReceivable: number;
+  platformCost: number;
+  vendorCost: number;
+  netSettlement: number;
+  audit?: SettlementAudit;
+}
 
 export interface StackDiagnostics {
   stackMode: StackMode;

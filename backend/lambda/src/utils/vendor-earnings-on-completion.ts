@@ -24,6 +24,8 @@ import { resolveVendorId } from './vendor-resolve';
 
 import { getVendorCommissionRate, isCanonicalPackageParentBooking } from './vendor-commission-rate';
 
+import { applySettlementPreviewToCommissionableGross, extractSettlementPreviewFromBooking } from '../discount-engine/settlement/settlement-hook-bridge';
+
 import { loadBookingServiceSnapshot } from './booking-service-snapshot';
 
 import { resolveVendorVisibleBookingAmount } from './entity-extractor';
@@ -224,7 +226,9 @@ export async function ensureVendorEarningsForCompletedBooking(
 
     const commissionRate = await getVendorCommissionRate(earningsVendorId);
 
-    const totalAmount = await resolveLedgerGrossForVendorCommission(booking, bookingId);
+    let totalAmount = await resolveLedgerGrossForVendorCommission(booking, bookingId);
+    const settlementPreview = extractSettlementPreviewFromBooking(booking);
+    totalAmount = applySettlementPreviewToCommissionableGross(totalAmount, settlementPreview);
 
     const commissionAmount = Math.round((totalAmount * commissionRate) / 100 * 100) / 100;
 

@@ -34,17 +34,26 @@ import {
   mapStackAppliedToBenefitOutcomes,
 } from '../stack';
 import type { StackDecision } from '../stack/types';
+import {
+  getSettlementEngine,
+  getSettlementMode,
+  isSettlementAuthoritative,
+  isSettlementEnabled,
+  toDiscountSettlementPreview,
+} from '../settlement';
+import type { SettlementDecision } from '../settlement/types';
 import type {
   CandidateBenefitOutcome,
   CandidateRuleOutcome,
   PriorityDiagnostics,
   ResolverResult,
+  SettlementDiagnostics,
   StackDiagnostics,
   UnifiedDiscountResolver,
 } from './types';
 import type { EligibilityResult } from '../rules/types';
 
-const RESOLVER_VERSION = 'phase-6.0';
+const RESOLVER_VERSION = 'phase-7.0';
 const PRIORITY_VERSION = '1.0.0';
 
 export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
@@ -200,6 +209,44 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
       audit: stackDecision?.audit,
     };
 
+    let settlementDecision: SettlementDecision | undefined;
+    let settlementPreview = undefined;
+    const settlementMode = getSettlementMode();
+    let settlementAuthoritative = false;
+
+    if (isSettlementEnabled() && applied.length >= 0) {
+      const runtimePolicy =
+        isPriorityAuthoritative() && priorityPipeline.success
+          ? loadRuntimePolicy(context.domain)
+          : loadRuntimePolicy(context.domain);
+
+      settlementDecision = getSettlementEngine().settle({
+        context,
+        applied,
+        originalAmount: context.amount,
+        customerPayable: finalAmount,
+        totalSavings,
+        runtimePolicy,
+        policyFingerprint: runtimePolicy.policyFingerprint,
+      });
+      settlementPreview = toDiscountSettlementPreview(settlementDecision.preview);
+      settlementAuthoritative = isSettlementAuthoritative();
+    }
+
+    const settlementDiagnostics: SettlementDiagnostics = {
+      settlementMode,
+      settlementVersion: settlementDecision?.audit.settlementVersion ?? 'none',
+      policyFingerprint: settlementDecision?.audit.policyFingerprint,
+      authoritative: settlementAuthoritative,
+      executionTimeMs: settlementDecision?.audit.executionTimeMs ?? 0,
+      customerPayable: settlementDecision?.preview.customerPayable ?? finalAmount,
+      vendorReceivable: settlementDecision?.preview.vendorReceivable ?? context.amount,
+      platformCost: settlementDecision?.preview.platformCost ?? 0,
+      vendorCost: settlementDecision?.preview.vendorCost ?? 0,
+      netSettlement: settlementDecision?.preview.netSettlement ?? finalAmount,
+      audit: settlementDecision?.audit,
+    };
+
     const base = emptyDiscountEngineResult(context.amount);
 
     return {
@@ -208,6 +255,7 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
       finalAmount,
       applied,
       benefits,
+      settlement: settlementPreview,
       warnings: [],
       eligibleCandidates,
       rejectedCandidates,
@@ -227,6 +275,7 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
         trigger: context.trigger,
         priority: priorityDiagnostics,
         stack: stackDiagnostics,
+        settlement: settlementDiagnostics,
       },
     };
   }

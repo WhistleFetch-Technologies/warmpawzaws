@@ -1,6 +1,10 @@
 import { query } from '../database/rds-connection';
 import { getVendorTierCommission } from '../endpoints/razorpay/endpoints/razorpay.razorpay';
 import { DEFAULT_COMMISSION_RATE } from '../lib/constants/commission';
+import {
+  applySettlementPreviewToCommissionableGross,
+  readSettlementPreviewFromMetadata,
+} from '../discount-engine/settlement/settlement-hook-bridge';
 
 export interface SellerCommissionRateResult {
   rate: number;
@@ -163,4 +167,13 @@ export async function resolveSellerCommissionRate(
   }
 
   return { rate: DEFAULT_COMMISSION_RATE, source: 'platform_default', monthlyRevenue };
+}
+
+/** Apply settlement preview to seller order subtotal when AUTHORITATIVE. */
+export function resolveSellerCommissionableAmount(
+  orderSubtotal: number,
+  orderMetadata?: unknown
+): number {
+  const preview = readSettlementPreviewFromMetadata(orderMetadata);
+  return applySettlementPreviewToCommissionableGross(orderSubtotal, preview);
 }

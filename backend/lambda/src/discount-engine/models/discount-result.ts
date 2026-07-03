@@ -26,19 +26,43 @@ export interface DiscountBenefitLine {
 }
 
 /**
- * Settlement preview placeholder — populated in Phase 7.
- * Phase 1 defines shape only; adapters do not compute settlement.
+ * Settlement preview — populated by Settlement Engine (Phase 7).
+ * Single source of truth for funding split at checkout/resolver time.
  */
 export interface DiscountSettlementPreview {
   customerPayable?: number;
   vendorReceivable?: number;
   platformCost?: number;
   vendorCost?: number;
+  platformReceivable?: number;
+  vendorDiscountShare?: number;
+  platformDiscountShare?: number;
+  sharedDiscountShare?: { platform: number; vendor: number; total?: number };
+  platformFees?: number;
+  convenienceFees?: number;
+  deliveryFees?: number;
+  packagingFees?: number;
+  taxes?: number;
+  netSettlement?: number;
+  grossBeforeDiscount?: number;
+  totalDiscount?: number;
+  appliedFunding?: Array<{
+    discountId: string;
+    name?: string;
+    funding: string;
+    discountAmount: number;
+    platformShare: number;
+    vendorShare: number;
+    order?: number;
+  }>;
+  policyFingerprint?: string;
+  settlementVersion?: string;
   entries?: Array<{
     party: 'PLATFORM' | 'VENDOR' | 'CUSTOMER';
     role: string;
     amount: number;
   }>;
+  audit?: import('../settlement/types').SettlementAudit;
 }
 
 /**

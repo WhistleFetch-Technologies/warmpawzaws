@@ -384,7 +384,7 @@ describe('Discount Engine Phase 4 — Unified Discount Resolver', () => {
         [staticProvider(DiscountSource.VENDOR_PROMOTION, [serviceRow])]
       );
 
-      expect(result.resolverVersion).toMatch(/phase-6/);
+      expect(result.resolverVersion).toMatch(/phase-7/);
       expect(result.metadata?.pipelineTimeMs).toBeGreaterThanOrEqual(0);
       expect(result.metadata?.candidateCount).toBe(1);
       expect(typeof result.metadata?.eligibleCount).toBe('number');
@@ -394,7 +394,8 @@ describe('Discount Engine Phase 4 — Unified Discount Resolver', () => {
       if (result.eligibleCandidates.length === 1) {
         expect(result.appliedCandidates).toEqual(result.eligibleCandidates);
       }
-      expect(result).not.toHaveProperty('settlement');
+      expect(result.settlement).toBeDefined();
+      expect(result.metadata?.settlement).toBeDefined();
       expect(result).not.toHaveProperty('stackedAmount');
     });
   });
