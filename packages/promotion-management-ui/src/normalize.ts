@@ -3,29 +3,15 @@ import type {
   NormalizedPromotionItem,
   PromotionTargetCatalog,
   PromotionWizardForm,
-  TargetScopeId,
 } from './types';
 import { DEFAULT_WIZARD_FORM } from './types';
+import { parseApplicableServicesToTargets, summarizeTargetsFromRow } from './targeting';
 
 function pickDate(...vals: unknown[]): string {
   for (const v of vals) {
     if (v && typeof v === 'string') return v.split('T')[0];
   }
   return new Date().toISOString().split('T')[0];
-}
-
-function parseJsonArray(raw: unknown): string[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
 }
 
 function uiStatusFromPromotion(p: NormalizedPromotionItem): PromotionWizardForm['uiStatus'] {
@@ -64,7 +50,7 @@ export function normalizePromotionRow(row: Record<string, unknown>): NormalizedP
     published: row.published != null ? Boolean(row.published) : undefined,
     audience: row.target_audience ? String(row.target_audience) : row.targetAudience ? String(row.targetAudience) : undefined,
     owner: row.vendor_id ? 'vendor' : 'platform',
-    targetSummary: summarizeTargets(row),
+    targetSummary: summarizeTargetsFromRow(row),
     raw: row,
     createdAt: row.created_at ? String(row.created_at) : row.createdAt ? String(row.createdAt) : undefined,
   };
@@ -88,53 +74,13 @@ export function normalizeCouponRow(row: Record<string, unknown>): NormalizedCoup
   };
 }
 
-function summarizeTargets(row: Record<string, unknown>): string {
-  if (row.applicable_to === 'all' || (Array.isArray(row.applicableTo) && row.applicableTo.includes('all'))) {
-    return 'Entire platform';
-  }
-  const parts: string[] = [];
-  const services = row.applicable_services ?? row.applicableServices;
-  if (Array.isArray(services) && services.length) parts.push(`${services.length} services`);
-  const products = row.applicable_products ?? row.applicableProducts;
-  if (Array.isArray(products) && products.length) parts.push(`${products.length} products`);
-  const cats = row.applicable_categories ?? row.applicableCategories;
-  if (Array.isArray(cats) && cats.length) parts.push(`${cats.length} categories`);
-  if (row.applicable_to) parts.push(String(row.applicable_to));
-  return parts.length ? parts.join(' · ') : 'Custom targets';
-}
-
 export function promotionToWizardForm(
   p: NormalizedPromotionItem,
   catalog?: PromotionTargetCatalog
 ): PromotionWizardForm {
   const base = DEFAULT_WIZARD_FORM();
   const raw = p.raw ?? {};
-
-  const applicableIds = parseJsonArray(raw.applicable_services ?? raw.applicableServices);
-  const packageIdSet = new Set((catalog?.packages ?? []).map((x) => x.id));
-  const serviceIdSet = new Set((catalog?.services ?? []).map((x) => x.id));
-  const mealPlanIdSet = new Set((catalog?.mealPlans ?? []).map((x) => x.id));
-
-  const packages = applicableIds.filter((id) => packageIdSet.has(id));
-  const mealPlans = applicableIds.filter((id) => mealPlanIdSet.has(id));
-  const services = applicableIds.filter(
-    (id) => !packageIdSet.has(id) && !mealPlanIdSet.has(id)
-  );
-
-  const styleIds = parseJsonArray(raw.applicable_service_styles ?? raw.applicableServiceStyles).filter(
-    (id) => id !== 'all'
-  );
-
-  const targetScopes: TargetScopeId[] = [];
-  if (applicableIds.length === 0 && styleIds.length === 0) {
-    targetScopes.push('services');
-  } else {
-    if (services.length > 0) targetScopes.push('services');
-    if (packages.length > 0) targetScopes.push('packages');
-    if (mealPlans.length > 0) targetScopes.push('meal_plans');
-    if (styleIds.length > 0) targetScopes.push('styles');
-  }
-  if (targetScopes.length === 0) targetScopes.push('services');
+  const parsed = parseApplicableServicesToTargets(raw, catalog);
 
   return {
     ...base,
@@ -154,12 +100,7 @@ export function promotionToWizardForm(
     startDate: p.startDate,
     endDate: p.endDate,
     autoApply: p.kind === 'promotion',
-    targetScopes,
-    selectedTargets: {
-      services: services.length ? services : undefined,
-      packages: packages.length ? packages : undefined,
-      meal_plans: mealPlans.length ? mealPlans : undefined,
-      styles: styleIds.length ? styleIds : undefined,
-    },
+    targetScopes: parsed.targetScopes,
+    selectedTargets: parsed.selectedTargets,
   };
 }

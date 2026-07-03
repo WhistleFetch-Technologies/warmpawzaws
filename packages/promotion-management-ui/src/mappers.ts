@@ -1,4 +1,5 @@
 import type { PromotionWizardForm } from './types';
+import { buildApplicableServicesFromForm, normalizeStyleToken } from './targeting';
 
 function autoCode(form: PromotionWizardForm): string {
   if (form.code?.trim()) return form.code.trim().toUpperCase();
@@ -29,9 +30,13 @@ function applicableTo(form: PromotionWizardForm): string {
   return 'bookings';
 }
 
-/** Admin `/admin/promotions` payload */
+/** Admin `/admin/promotions` payload — canonical create/update shape for Sprint A. */
 export function wizardToAdminPromotionPayload(form: PromotionWizardForm) {
   const isCoupon = form.createKind === 'coupon';
+  const applicableServices = buildApplicableServicesFromForm(form);
+  const primaryCategory = form.selectedTargets.categories?.[0];
+  const primaryStyle = form.selectedTargets.styles?.[0];
+
   return {
     code: isCoupon ? form.code!.trim().toUpperCase() : autoCode(form),
     name: form.name.trim(),
@@ -47,8 +52,15 @@ export function wizardToAdminPromotionPayload(form: PromotionWizardForm) {
     applicable_to: applicableTo(form),
     applicable_service_ids: form.selectedTargets.services ?? [],
     applicable_category_ids: form.selectedTargets.categories ?? [],
+    applicable_products: form.selectedTargets.products ?? [],
+    vendor_ids: form.selectedTargets.vendors ?? [],
+    target_scopes: form.targetScopes,
+    selected_targets: form.selectedTargets,
+    service_category: primaryCategory && primaryCategory !== 'all' ? primaryCategory : undefined,
+    service_style: primaryStyle ? normalizeStyleToken(primaryStyle) : undefined,
     is_active: form.uiStatus !== 'draft' && form.uiStatus !== 'paused',
     type: mapPromotionTypeToLegacy(form.promotionType),
+    promotionType: mapPromotionTypeToLegacy(form.promotionType),
     discountType: form.discountType,
     discountValue: form.discountValue,
     validFrom: form.startDate,
@@ -56,8 +68,9 @@ export function wizardToAdminPromotionPayload(form: PromotionWizardForm) {
     targetAudience: form.audience,
     active: form.uiStatus === 'active' || form.uiStatus === 'scheduled',
     published: form.uiStatus !== 'draft',
-    applicable_services: form.selectedTargets.services ?? [],
+    applicable_services: applicableServices,
     is_spotlight: form.audience === 'vip',
+    priority: 0,
   };
 }
 

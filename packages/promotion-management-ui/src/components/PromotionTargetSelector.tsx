@@ -175,7 +175,7 @@ export function PromotionTargetSelector({
 
           {pageItems.length === 0 ? (
             <p className="text-sm text-slate-500 rounded-xl border border-dashed border-slate-200 p-4 text-center">
-              No items loaded. Target selection is saved in UI; connect catalog data from your vendor or admin APIs.
+              No matching items in this catalog. Try another scope or refresh the dashboard.
             </p>
           ) : (
             <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-100 divide-y">

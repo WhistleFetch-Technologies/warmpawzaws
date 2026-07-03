@@ -1,7 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { loadPromotionTargetCatalogWithErrors } from '@/lib/promotion-catalog-loader';
 import {
   PromotionDashboard,
   normalizeCouponRow,
@@ -26,15 +29,22 @@ export function AdminPromotionHub() {
   const [coupons, setCoupons] = useState<ReturnType<typeof normalizeCouponRow>[]>([]);
   const [catalog, setCatalog] = useState<PromotionTargetCatalog>({});
   const [loading, setLoading] = useState(true);
+  const [catalogWarnings, setCatalogWarnings] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const [promotionsRes, couponsRes, vendorsRes] = await Promise.all([
+      const [catalogResult, promotionsRes, couponsRes] = await Promise.all([
+        loadPromotionTargetCatalogWithErrors(apiClient),
         apiClient.get<any>('/admin/promotions'),
         apiClient.get<any>('/admin/coupons?limit=100'),
-        apiClient.get<any>('/admin/vendors?limit=50').catch(() => ({ vendors: [] })),
       ]);
+
+      setCatalog(catalogResult.catalog);
+      setCatalogWarnings(catalogResult.errors);
+
       const promoRows = promotionsRes.promotions || promotionsRes || [];
       const couponRows = couponsRes.coupons || couponsRes || [];
       setPromotions(
@@ -47,23 +57,9 @@ export function AdminPromotionHub() {
           normalizeCouponRow(r)
         )
       );
-      const vendors = vendorsRes.vendors || vendorsRes.data || [];
-      setCatalog({
-        vendors: (Array.isArray(vendors) ? vendors : []).slice(0, 100).map((v: any) => ({
-          id: String(v.id ?? v.vendor_id),
-          label: String(v.business_name ?? v.name ?? v.id),
-          subtitle: v.city ? String(v.city) : undefined,
-        })),
-        packages: [],
-        mealPlans: [],
-        styles: [
-          { id: 'at_home', label: 'At home' },
-          { id: 'at_center', label: 'At center' },
-          { id: 'tele', label: 'Tele consult' },
-        ],
-      });
     } catch (e) {
       console.error(e);
+      setLoadError('Failed to load promotions. Check your connection and try again.');
       setPromotions([]);
       setCoupons([]);
     } finally {
@@ -84,47 +80,99 @@ export function AdminPromotionHub() {
   );
 
   const handleSave = async (form: PromotionWizardForm, _publish: boolean, editingId?: string) => {
-    if (form.createKind === 'coupon') {
-      const payload = wizardToAdminCouponPayload(form);
-      if (editingId) {
-        await apiClient.put(`/admin/coupons/${editingId}`, payload);
-      } else {
-        await apiClient.post('/admin/coupons/create', payload);
+    try {
+      if (form.createKind === 'coupon') {
+        const payload = wizardToAdminCouponPayload(form);
+        if (editingId) {
+          await apiClient.put(`/admin/coupons/${editingId}`, payload);
+          toast.success('Coupon updated');
+        } else {
+          await apiClient.post('/admin/coupons/create', payload);
+          toast.success('Coupon created');
+        }
+        return;
       }
-      return;
-    }
-    const payload = wizardToAdminPromotionPayload(form);
-    if (editingId) {
-      await apiClient.put(`/admin/promotions/${editingId}`, payload);
-    } else {
-      await apiClient.post('/admin/promotions', payload);
+      const payload = wizardToAdminPromotionPayload(form);
+      if (editingId) {
+        await apiClient.put(`/admin/promotions/${editingId}`, payload);
+        toast.success('Promotion updated');
+      } else {
+        await apiClient.post('/admin/promotions', payload);
+        toast.success('Promotion created');
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Save failed';
+      toast.error(message);
+      throw e;
     }
   };
 
   return (
-    <PromotionDashboard
-      scope={PLATFORM_SCOPE}
-      promotions={promotions}
-      coupons={coupons}
-      catalog={catalog}
-      loading={loading}
-      existingCodes={existingCodes}
-      onRefresh={load}
-      onSave={handleSave}
-      onDeletePromotion={async (id) => {
-        await apiClient.delete(`/admin/promotions/${id}`);
-        load();
-      }}
-      onTogglePromotion={async (id, active) => {
-        await apiClient.put(`/admin/promotions/${id}`, { is_active: active });
-        load();
-      }}
-      onDeleteCoupon={async (id) => {
-        await apiClient.delete(`/admin/coupons/${id}`).catch(() =>
-          apiClient.put(`/admin/coupons/${id}`, { isActive: false })
-        );
-        load();
-      }}
-    />
+    <div className="space-y-3">
+      {loadError ? (
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {loadError}
+          </div>
+        </div>
+      ) : null}
+
+      {catalogWarnings.length > 0 && !loading ? (
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Some catalog sources could not be loaded ({catalogWarnings.join(', ')}). Target
+            selection may be incomplete until those services are available.
+          </div>
+        </div>
+      ) : null}
+
+      <PromotionDashboard
+        scope={PLATFORM_SCOPE}
+        promotions={promotions}
+        coupons={coupons}
+        catalog={catalog}
+        loading={loading}
+        existingCodes={existingCodes}
+        onRefresh={load}
+        onSave={handleSave}
+        onDeletePromotion={async (id) => {
+          try {
+            await apiClient.delete(`/admin/promotions/${id}`);
+            toast.success('Promotion deactivated');
+            load();
+          } catch {
+            toast.error('Failed to delete promotion');
+          }
+        }}
+        onTogglePromotion={async (id, active) => {
+          try {
+            await apiClient.put(`/admin/promotions/${id}`, { is_active: active });
+            toast.success(active ? 'Promotion activated' : 'Promotion paused');
+            load();
+          } catch {
+            toast.error('Failed to update promotion status');
+          }
+        }}
+        onDeleteCoupon={async (id) => {
+          try {
+            await apiClient.delete(`/admin/coupons/${id}`).catch(() =>
+              apiClient.put(`/admin/coupons/${id}`, { isActive: false })
+            );
+            toast.success('Coupon removed');
+            load();
+          } catch {
+            toast.error('Failed to delete coupon');
+          }
+        }}
+        headerActions={
+          <Link
+            href="/marketing"
+            className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+          >
+            Legacy Marketing Hub
+          </Link>
+        }
+      />
+    </div>
   );
 }

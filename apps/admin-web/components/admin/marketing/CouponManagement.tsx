@@ -137,14 +137,19 @@ export function CouponManagement() {
 			);
 
 			if (res.success) {
-				toast.success(res.message);
+				toast.success(res.message || "Coupons generated");
 				setShowBulkModal(false);
 				fetchCoupons();
 			} else {
 				toast.error(res.error || "Failed to generate coupons");
 			}
-		} catch (error) {
-			toast.error("Error generating coupons");
+		} catch (error: unknown) {
+			const status = (error as { status?: number })?.status;
+			if (status === 404) {
+				toast.error("Bulk generate is not available on this environment yet");
+			} else {
+				toast.error("Error generating coupons");
+			}
 		} finally {
 			setSubmitting(false);
 		}

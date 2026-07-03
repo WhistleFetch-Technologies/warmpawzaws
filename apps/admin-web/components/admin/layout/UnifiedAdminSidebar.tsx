@@ -26,6 +26,7 @@ import {
   ChevronDown,
   ChevronRight,
   RefreshCw,
+  Tag,
   type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
@@ -67,6 +68,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   refunds: RefreshCw,
   roles: UserCog,
   marketing: Megaphone,
+  promotions: Tag,
   'notification-engine': Bell,
   reports: BarChart3,
   'platform-settings': Settings,
@@ -93,6 +95,11 @@ function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void
       window.location.href = '/notification-engine';
     };
   }
+  if (item.id === 'promotions') {
+    return () => {
+      window.location.href = '/promotions';
+    };
+  }
   return () => onNavigate(item.id);
 }
 
@@ -112,6 +119,9 @@ function isNavItemActive(item: AdminPortalNavItem, activeView: string, pathname:
   }
   if (item.id === 'marketing') {
     return pathname?.startsWith('/marketing') ?? false;
+  }
+  if (item.id === 'promotions') {
+    return pathname?.startsWith('/promotions') ?? false;
   }
   if (item.id === 'notification-engine') {
     return pathname?.startsWith('/notification-engine') ?? false;

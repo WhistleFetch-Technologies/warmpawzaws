@@ -242,11 +242,17 @@ export function PromotionDashboard({
         </div>
 
         {loading ? (
-          <p className="text-center text-slate-500 py-12">Loading…</p>
+          <div className="rounded-xl border border-slate-200 bg-white py-16 text-center">
+            <p className="text-slate-600 font-medium">Loading promotions and catalog…</p>
+            <p className="text-sm text-slate-400 mt-1">Fetching platform data from admin APIs</p>
+          </div>
         ) : tab === 'coupons' ? (
           <div className="grid gap-3 md:grid-cols-2">
             {buckets.coupons.length === 0 ? (
-              <p className="text-slate-500 col-span-full text-center py-8">No coupons</p>
+              <div className="col-span-full rounded-xl border border-dashed border-slate-200 bg-white py-12 text-center">
+                <p className="text-slate-600 font-medium">No coupons yet</p>
+                <p className="text-sm text-slate-400 mt-1">Create a coupon from the Create button above</p>
+              </div>
             ) : (
               buckets.coupons.map((c) => (
                 <CouponCard
@@ -270,7 +276,12 @@ export function PromotionDashboard({
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
             {list.length === 0 ? (
-              <p className="text-slate-500 col-span-full text-center py-8">No promotions in this view</p>
+              <div className="col-span-full rounded-xl border border-dashed border-slate-200 bg-white py-12 text-center">
+                <p className="text-slate-600 font-medium">No promotions in this view</p>
+                <p className="text-sm text-slate-400 mt-1">
+                  Try another lifecycle tab or create a new promotion
+                </p>
+              </div>
             ) : (
               list.map((p) => (
                 <PromotionCard

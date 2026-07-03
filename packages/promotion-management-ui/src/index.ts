@@ -3,6 +3,7 @@ export * from './lifecycle';
 export * from './validation';
 export * from './normalize';
 export * from './mappers';
+export * from './targeting';
 export { PromotionStatusBadge } from './components/PromotionStatusBadge';
 export { PromotionTypeSelector } from './components/PromotionTypeSelector';
 export { PromotionTriggerSelector } from './components/PromotionTriggerSelector';

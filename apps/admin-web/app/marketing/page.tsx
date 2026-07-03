@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 
 import {
 	Dialog,
@@ -193,6 +194,16 @@ export default function MarketingPromotionsTab() {
 
 	// Promotions State
 	const [promotions, setPromotions] = useState<any[]>([]);
+	const [promoCategoryOptions, setPromoCategoryOptions] = useState<
+		{ id: string; label: string }[]
+	>([]);
+	const [promoStyleOptions, setPromoStyleOptions] = useState<
+		{ id: string; label: string }[]
+	>([
+		{ id: "at_home", label: "At home" },
+		{ id: "at_center", label: "At center" },
+		{ id: "tele", label: "Tele consult" },
+	]);
 	const [showPromoModal, setShowPromoModal] = useState(false);
 	const [editingPromo, setEditingPromo] = useState<any>(null);
 	const [promoForm, setPromoForm] = useState({
@@ -228,6 +239,7 @@ export default function MarketingPromotionsTab() {
 		if (activeTab === "promotions") {
 			loadPromotions();
 			loadRoles();
+			void loadPromoCatalogOptions();
 		} else if (activeTab === "spotlight") {
 			loadSpotlights();
 			loadVendors();
@@ -258,6 +270,52 @@ export default function MarketingPromotionsTab() {
 			bannerCtaPersona && needsCategoryOptions ? bannerCtaPersona : bannerCtaPersona || undefined
 		);
 	}, [showBannerModal, bannerCtaPersona, bannerCtaTargetMode]);
+
+	const loadPromoCatalogOptions = async () => {
+		try {
+			const [categoriesRes, stylesRes] = await Promise.all([
+				apiClient.get<any>("/admin/catalog/categories"),
+				apiClient.get<any>("/admin/catalog/service-styles").catch(() => null),
+			]);
+			const categories = Array.isArray(categoriesRes?.categories)
+				? categoriesRes.categories
+				: [];
+			setPromoCategoryOptions(
+				categories
+					.map((cat: Record<string, unknown>) => {
+						const id = String(
+							cat.category_id ?? cat.categoryId ?? cat.slug ?? cat.id ?? ""
+						).trim();
+						if (!id) return null;
+						return {
+							id,
+							label: String(cat.name ?? cat.label ?? id),
+						};
+					})
+					.filter(Boolean) as { id: string; label: string }[]
+			);
+			const styleRows =
+				stylesRes?.serviceStyles ?? stylesRes?.service_styles ?? [];
+			if (Array.isArray(styleRows) && styleRows.length > 0) {
+				setPromoStyleOptions(
+					styleRows
+						.map((s: Record<string, unknown>) => {
+							const id = String(
+								s.value ?? s.id ?? s.service_style ?? s.style ?? ""
+							).trim();
+							if (!id) return null;
+							return {
+								id,
+								label: String(s.label ?? s.name ?? s.display_name ?? id),
+							};
+						})
+						.filter(Boolean) as { id: string; label: string }[]
+				);
+			}
+		} catch (error) {
+			console.error("Error loading promotion catalog options:", error);
+		}
+	};
 
 	const loadBannerDestinationOptions = async (categoryId?: string) => {
 		setBannerDestinationLoading(true);
@@ -1708,6 +1766,20 @@ export default function MarketingPromotionsTab() {
 						{/* PROMOTIONS TAB */}
 						{activeTab === "promotions" && (
 							<Card className="p-6">
+								<div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+									<div className="text-sm text-orange-900">
+										<strong>New Promotion Hub.</strong> Create and manage platform
+										promotions and coupons from the unified dashboard at{" "}
+										<code className="text-xs bg-white/70 px-1 rounded">/promotions</code>.
+										This legacy list remains available for reference.
+									</div>
+									<Link
+										href="/promotions"
+										className="inline-flex items-center rounded-lg bg-[#FF8C42] px-4 py-2 text-sm font-semibold text-white hover:bg-[#FF7A2E]"
+									>
+										Open Promotion Hub
+									</Link>
+								</div>
 								<div className="flex justify-between items-center mb-6">
 						<div className="relative w-64">
 							<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -2181,7 +2253,23 @@ export default function MarketingPromotionsTab() {
 						)}
 
 						{/* COUPONS TAB */}
-						{activeTab === "coupons" && <CouponManagement />}
+						{activeTab === "coupons" && (
+							<div className="space-y-4">
+								<div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+									<p className="text-sm text-orange-900">
+										Coupon management has moved to the{" "}
+										<strong>Promotion Hub</strong> for a unified experience.
+									</p>
+									<Link
+										href="/promotions"
+										className="inline-flex items-center rounded-lg bg-[#FF8C42] px-4 py-2 text-sm font-semibold text-white hover:bg-[#FF7A2E]"
+									>
+										Open Promotion Hub
+									</Link>
+								</div>
+								<CouponManagement />
+							</div>
+						)}
 
 						{/* BANNERS TAB */}
 						{activeTab === "banners" && (
@@ -2588,11 +2676,11 @@ export default function MarketingPromotionsTab() {
 									</SelectTrigger>
 									<SelectContent>
 										<SelectItem value="all">All Categories</SelectItem>
-										<SelectItem value="vet">Veterinary</SelectItem>
-										<SelectItem value="grooming">Grooming</SelectItem>
-										<SelectItem value="walking">Walking</SelectItem>
-										<SelectItem value="training">Training</SelectItem>
-										<SelectItem value="boarding">Boarding</SelectItem>
+										{promoCategoryOptions.map((cat) => (
+											<SelectItem key={cat.id} value={cat.id}>
+												{cat.label}
+											</SelectItem>
+										))}
 									</SelectContent>
 								</Select>
 							</div>
@@ -2609,9 +2697,11 @@ export default function MarketingPromotionsTab() {
 									</SelectTrigger>
 									<SelectContent>
 										<SelectItem value="all">All Styles</SelectItem>
-										<SelectItem value="home_visit">Home Visit</SelectItem>
-										<SelectItem value="clinic">Clinic</SelectItem>
-										<SelectItem value="online">Online</SelectItem>
+										{promoStyleOptions.map((style) => (
+											<SelectItem key={style.id} value={style.id}>
+												{style.label}
+											</SelectItem>
+										))}
 									</SelectContent>
 								</Select>
 							</div>
