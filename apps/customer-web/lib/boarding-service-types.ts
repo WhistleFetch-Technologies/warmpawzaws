@@ -1,11 +1,20 @@
 /**
  * Pet Boarding sub-service slugs (URL ?service= values and in-app filtering).
+ *
+ * ## Vendor setup — Swimming (same-day pool sessions)
+ * 1. Publish a `vendor_services` row under **category = boarding**, **service_style = at_center**.
+ * 2. Name the service with swimming keywords (e.g. "Pet Swimming", "Swimming Pool Session").
+ * 3. Set **duration_minutes** to the base session length used for pricing (e.g. 60).
+ * 4. Set **price** / **custom_price** to the list price for that base duration (INR).
+ * 5. Optional: add "Swimming Pool" in facility amenities for discovery trust signals.
+ * Customers book via the Boarding hub **Swimming** tile or the vendor profile plan list.
  */
 export const BOARDING_SERVICE_SLUGS = [
   'all',
   'overnight',
   'full-day',
   'half-day',
+  'swimming',
   'weekend',
   'weekly',
 ] as const;
@@ -17,6 +26,7 @@ export const BOARDING_SERVICE_LABELS: Record<BoardingServiceSlug, string> = {
   overnight: 'Overnight Boarding',
   'full-day': 'Full Day Boarding',
   'half-day': 'Half Day Boarding',
+  swimming: 'Pet Swimming',
   weekend: 'Weekend Boarding',
   weekly: 'Weekly Boarding',
 };
@@ -37,6 +47,7 @@ export const BOARDING_SERVICE_KEYWORDS: Record<BoardingServiceSlug, string[]> = 
   ],
   'full-day': ['full day', 'fullday', 'full-day', 'daycare', 'day care', 'day boarding', 'full day boarding'],
   'half-day': ['half day', 'half-day', 'halfday', 'partial day'],
+  swimming: ['swimming', 'swim', 'pool', 'pet swimming', 'swimming pool', 'swim session'],
   weekend: ['weekend', 'sat-sun', 'saturday', 'sunday package'],
   weekly: ['weekly', 'week pack', '7 day', '7-day', 'seven day'],
 };
@@ -55,6 +66,11 @@ export function normalizeBoardingServiceSlug(raw: string | null | undefined): Bo
 export function boardingSlugMatchesText(slug: BoardingServiceSlug, text: string): boolean {
   const t = text.toLowerCase();
   return BOARDING_SERVICE_KEYWORDS[slug].some((k) => t.includes(k.toLowerCase()));
+}
+
+export function serviceNameLooksLikeSwimming(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return boardingSlugMatchesText('swimming', name);
 }
 
 export function collectVendorServiceHaystack(vendor: Record<string, unknown>): string {

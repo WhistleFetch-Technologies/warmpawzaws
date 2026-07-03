@@ -76,6 +76,13 @@ import {
   computeBoardingStayPriceRupeesPublic,
   computeStayBilledMinutes,
 } from '../../../lib/booking-stay-wall-time';
+import {
+  computeDurationSessionPriceRupees,
+  computeSameDaySessionBilledMinutes,
+  DURATION_SESSION_BILLING_SLOT_MINUTES,
+  SWIMMING_MAX_SESSION_MINUTES,
+  SWIMMING_MIN_SESSION_MINUTES,
+} from '../../../lib/duration-session-pricing';
 
 // ============================================================================
 // CONFIGURATION
@@ -198,24 +205,15 @@ function validateMultiDayStayCheckInDates(
   return { valid: true };
 }
 
-/** Pet sitting: bill in 30-minute increments; list price applies to `baseMinutes` from vendor service. */
-const PET_SITTING_BILLING_SLOT_MINUTES = 30;
+/** Pet sitting / swimming: bill in 30-minute increments; list price applies to `baseMinutes` from vendor service. */
+const PET_SITTING_BILLING_SLOT_MINUTES = DURATION_SESSION_BILLING_SLOT_MINUTES;
 
 function computePetSittingPriceRupees(
   unitPrice: number,
   baseMinutes: number,
   billedMinutes: number
 ): number {
-  const up = Number.isFinite(unitPrice) ? Math.max(0, unitPrice) : 0;
-  let bm = Number.isFinite(baseMinutes) ? baseMinutes : 60;
-  if (bm < 15) bm = 60;
-  const mins = Math.max(0, billedMinutes);
-  if (mins < 1) return up;
-  const slots = Math.max(1, Math.ceil(mins / PET_SITTING_BILLING_SLOT_MINUTES));
-  const pricePerSlot = (up * PET_SITTING_BILLING_SLOT_MINUTES) / bm;
-  const proportional = Math.round(slots * pricePerSlot);
-  const floor = Math.min(up, Math.max(49, Math.round(up * 0.3)));
-  return Math.max(proportional, floor);
+  return computeDurationSessionPriceRupees(unitPrice, baseMinutes, billedMinutes);
 }
 
 /** Boarding list price uses computeBoardingStayPriceRupeesPublic (ceil stay / 24h in Asia/Kolkata wall time). */
@@ -380,9 +378,17 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       serviceType === 'at_home' &&
       (flowVariantNorm === 'pet_sitting' || hasTimedAtHomeVisit);
 
+    const isSwimmingFlow = flowVariantNorm === 'swimming';
+    const swimmingSameDayCheckout =
+      isSwimmingFlow &&
+      typeof checkOutRaw === 'string' &&
+      /^\d{4}-\d{2}-\d{2}$/.test(String(checkOutRaw)) &&
+      String(checkOutRaw) === String(bookingDate);
+
     const useMultiDayStayRules =
       (isMultiDayStay && (serviceType === 'at_home' || serviceType === 'at_center')) ||
-      useRelaxedAtHomeTimedBooking;
+      useRelaxedAtHomeTimedBooking ||
+      swimmingSameDayCheckout;
 
     const checkoutDateForRule =
       typeof checkOutRaw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(String(checkOutRaw))
@@ -402,6 +408,44 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     const isBoardingFlow = flowVariantNorm === 'boarding';
+    if (isSwimmingFlow) {
+      const cod =
+        reqCheckOutDate != null && String(reqCheckOutDate).trim() !== ''
+          ? String(reqCheckOutDate).trim()
+          : '';
+      const cot =
+        reqCheckOutTime != null && String(reqCheckOutTime).trim() !== ''
+          ? String(reqCheckOutTime).trim()
+          : '';
+      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+      if (!cod || !/^\d{4}-\d{2}-\d{2}$/.test(cod)) {
+        return this.error(
+          'Check-out date is required for swimming sessions (YYYY-MM-DD).',
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+      if (cod !== String(bookingDate)) {
+        return this.error(
+          'Swimming sessions must check out on the same day as check-in.',
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+      if (!cot || !timeRegex.test(cot)) {
+        return this.error(
+          'Check-out time is required for swimming sessions (use HH:MM).',
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+    }
     if (isBoardingFlow && isMultiDayStay && reqCheckOutDate) {
       const cot =
         reqCheckOutTime != null && String(reqCheckOutTime).trim() !== ''
@@ -641,6 +685,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
     let petSittingServerBilledMinutes: number | null = null;
     let petSittingServerTotalRupee: number | null = null;
+    let swimmingServerBilledMinutes: number | null = null;
+    let swimmingServerTotalRupee: number | null = null;
     let boardingServerBilledMinutes: number | null = null;
     let boardingServerTotalRupee: number | null = null;
 
@@ -678,6 +724,58 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       petSittingServerTotalRupee = computePetSittingPriceRupees(unitPrice, baseMins, billed);
       console.log(
         `[BOOKING] Pet sitting priced on server: ${billed} min → ₹${petSittingServerTotalRupee} (list ₹${unitPrice} per ${baseMins} min, ${PET_SITTING_BILLING_SLOT_MINUTES}-min slots)`
+      );
+    } else if (
+      service &&
+      isSwimmingFlow &&
+      (!selectedServices || selectedServices.length === 0) &&
+      reqCheckOutDate &&
+      reqCheckOutTime
+    ) {
+      const billed = computeSameDaySessionBilledMinutes(
+        bookingDate,
+        bookingTime,
+        reqCheckOutDate,
+        reqCheckOutTime
+      );
+      if (billed < 0) {
+        return this.error(
+          'Swimming sessions must check out on the same day as check-in.',
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+      if (billed < SWIMMING_MIN_SESSION_MINUTES) {
+        return this.error(
+          `Swimming session must be at least ${SWIMMING_MIN_SESSION_MINUTES} minutes. Adjust your start and end time.`,
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+      if (billed > SWIMMING_MAX_SESSION_MINUTES) {
+        return this.error(
+          `Swimming session cannot exceed ${SWIMMING_MAX_SESSION_MINUTES} minutes (${SWIMMING_MAX_SESSION_MINUTES / 60} hours).`,
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+      const unitPrice = Number(service.custom_price != null ? service.custom_price : service.price ?? 0);
+      let baseMins = Number(
+        service.custom_duration != null ? service.custom_duration : service.duration_minutes ?? 60
+      );
+      if (!Number.isFinite(baseMins) || baseMins < 15) {
+        baseMins = 60;
+      }
+      swimmingServerBilledMinutes = billed;
+      swimmingServerTotalRupee = computeDurationSessionPriceRupees(unitPrice, baseMins, billed);
+      console.log(
+        `[BOOKING] Swimming priced on server: ${billed} min → ₹${swimmingServerTotalRupee} (list ₹${unitPrice} per ${baseMins} min, ${PET_SITTING_BILLING_SLOT_MINUTES}-min slots)`
       );
     } else if (
       service &&
@@ -856,9 +954,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         // Buffer is informational (travel/prep/setup) and should NOT block adjacent slots
         // Get booking duration (pet sitting: exact visit length from check-in → check-out)
         const bookingDuration =
-          petSittingServerBilledMinutes != null
-            ? petSittingServerBilledMinutes
-            : totalDurationMinutes || service?.duration_minutes || service?.custom_duration || 30;
+          swimmingServerBilledMinutes != null
+            ? swimmingServerBilledMinutes
+            : petSittingServerBilledMinutes != null
+              ? petSittingServerBilledMinutes
+              : totalDurationMinutes || service?.duration_minutes || service?.custom_duration || 30;
         
         // Convert booking time to minutes
         const [bookingHour, bookingMin] = bookingTime.split(':').map(Number);
@@ -999,9 +1099,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         let finalAmount =
           boardingServerTotalRupee != null
             ? boardingServerTotalRupee
-            : petSittingServerTotalRupee != null
-              ? petSittingServerTotalRupee
-              : (amount || 0);
+            : swimmingServerTotalRupee != null
+              ? swimmingServerTotalRupee
+              : petSittingServerTotalRupee != null
+                ? petSittingServerTotalRupee
+                : (amount || 0);
         // ✅ Package booking: when packagePurchaseId provided, use package credit (0 payment)
         let isPackageBooking = false;
         let packagePurchaseIdToUse: string | null = null;
@@ -1124,12 +1226,15 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             ? totalSelectedServicesAmount
             : boardingServerTotalRupee != null
               ? boardingServerTotalRupee
-              : petSittingServerTotalRupee != null
-                ? petSittingServerTotalRupee
-                : (amount || 0);
+              : swimmingServerTotalRupee != null
+                ? swimmingServerTotalRupee
+                : petSittingServerTotalRupee != null
+                  ? petSittingServerTotalRupee
+                  : (amount || 0);
         const listedServerPrice =
           (!selectedServices || selectedServices.length === 0) &&
           petSittingServerTotalRupee == null &&
+          swimmingServerTotalRupee == null &&
           boardingServerTotalRupee == null
             ? Number((service as any)?.custom_price ?? (service as any)?.price ?? 0) || 0
             : 0;
@@ -1460,9 +1565,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           total_duration_minutes:
             boardingServerBilledMinutes != null
               ? boardingServerBilledMinutes
-              : petSittingServerBilledMinutes != null
-                ? petSittingServerBilledMinutes
-                : totalDurationMinutes || null,
+              : swimmingServerBilledMinutes != null
+                ? swimmingServerBilledMinutes
+                : petSittingServerBilledMinutes != null
+                  ? petSittingServerBilledMinutes
+                  : totalDurationMinutes || null,
           duration_minutes: bookingDuration,
           customer_phone: customerPhone || null,
           // address_id, delivery_latitude, delivery_longitude may not exist in prod
@@ -1479,6 +1586,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                   ? { check_out_time: String(reqCheckOutTime) }
                   : {}),
               }
+            : {}),
+          ...(flowVariantNorm === 'swimming' ||
+          flowVariantNorm === 'pet_sitting' ||
+          flowVariantNorm === 'boarding'
+            ? { flow_variant: flowVariantNorm }
             : {}),
         };
         

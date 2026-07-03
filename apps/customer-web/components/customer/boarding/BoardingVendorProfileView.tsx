@@ -27,6 +27,7 @@ import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
 import {
   normalizeBoardingServiceSlug,
   boardingSlugMatchesText,
+  serviceNameLooksLikeSwimming,
   BOARDING_SERVICE_LABELS,
 } from '@/lib/boarding-service-types';
 import {
@@ -302,14 +303,19 @@ export function BoardingVendorProfileView({
         return;
       }
     }
+    const isSwimming =
+      boardingSlugMatchesText('swimming', selectedOffer.name) ||
+      serviceNameLooksLikeSwimming(selectedOffer.name);
     onNavigate('boarding-booking', {
       vendorId: vendor?.id || vendorId,
-      serviceType: 'boarding',
+      serviceType: isSwimming ? 'swimming' : 'boarding',
+      flowVariant: isSwimming ? 'swimming' : 'boarding',
       serviceId: selectedOffer.rowId,
       serviceName: selectedOffer.name,
       price: selectedOffer.price,
-      duration: selectedOffer.duration || 1440,
+      duration: selectedOffer.duration || (isSwimming ? 60 : 1440),
       serviceStyle: selectedOffer.serviceStyle || 'at_center',
+      serviceSlug: isSwimming ? 'swimming' : contextSlug !== 'all' ? contextSlug : undefined,
       facility: vendor,
     });
   };

@@ -3119,12 +3119,16 @@ export function CustomerHomeWrapper({
           if (screen === 'boarding-booking') {
             setVetServiceData({
               vendorId: data?.vendorId as string | undefined,
-              serviceType: 'boarding',
+              serviceType: (data?.flowVariant === 'swimming' || data?.serviceType === 'swimming'
+                ? 'swimming'
+                : 'boarding') as string,
+              flowVariant: data?.flowVariant as string | undefined,
               serviceId: data?.serviceId as string | undefined,
               serviceName: data?.serviceName as string | undefined,
               price: data?.price as number | undefined,
               duration: data?.duration as number | undefined,
               serviceStyle: data?.serviceStyle as string | undefined,
+              serviceSlug: data?.serviceSlug as string | undefined,
               facility: data?.facility,
             });
             navigateToScreen('boarding-booking');
@@ -4947,7 +4951,13 @@ export function CustomerHomeWrapper({
       >
         <div className="min-h-0 w-full bg-gray-50">
           <BoardingBookingRouter
-            flowVariant={sittingBooking ? 'pet_sitting' : 'boarding'}
+            flowVariant={
+              sittingBooking
+                ? 'pet_sitting'
+                : vetServiceData?.flowVariant === 'swimming' || vetServiceData?.serviceType === 'swimming'
+                  ? 'swimming'
+                  : 'boarding'
+            }
             phone={phone}
             vendorId={vetServiceData?.vendorId}
             facility={vetServiceData?.facility}
@@ -4959,6 +4969,13 @@ export function CustomerHomeWrapper({
             price={vetServiceData?.price}
             duration={vetServiceData?.duration}
             presetSittingOptionId={sittingBooking ? vetServiceData?.sittingOptionId : undefined}
+            presetServiceSlug={
+              !sittingBooking && vetServiceData?.serviceSlug
+                ? String(vetServiceData.serviceSlug)
+                : vetServiceData?.serviceType === 'swimming'
+                  ? 'swimming'
+                  : undefined
+            }
             onBack={() => backFromBannerOr(handleBack, vetServiceData)}
             onInternalBackReady={(fn) => { boardingBookingInternalBackRef.current = fn; }}
             onNavigate={(screen, data) => {
