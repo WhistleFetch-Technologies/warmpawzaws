@@ -1,143 +1,228 @@
 # Warmpawz Analytics — Current State
 
-**Phase:** 9 Discovery  
-**Date:** 2026-07-03  
-**Scope:** Read-only inventory of dashboards, reports, APIs, and reuse opportunities for Discount Engine V2 Analytics.
+**Sprint:** E — Analysis (updated 2026-07-03)  
+**Prior:** Phase 9 discovery doc (2026-07-03)  
+**Scope:** Dashboards, reports, APIs, components, UX, reuse, limitations.
 
 ---
 
 ## Executive summary
 
-Warmpawz has **general platform analytics** (bookings, revenue, vendor KPIs) and **basic promotion stats**, but **no unified discount-engine analytics module** until Phase 9. Settlement batch jobs and finance reports exist separately. Product telemetry (`analytics_events`) is a different domain and must not be conflated with promotion analytics.
+Warmpawz operates **four analytics domains** that must stay separate:
 
-Phase 9 adds `discount-engine/analytics/` as a **read-only** layer that aggregates existing usage tables and consumes settlement **previews** without recalculating discounts or settlement.
+| Domain | Primary UI | Data source |
+|--------|------------|-------------|
+| **Platform business** | Admin `/analytics`, finance hub | Bookings, orders, `vendor_earnings`, settlements |
+| **Product telemetry** | Admin `/product-analytics` | `analytics_events`, Allyticas ingest |
+| **Promotions & discounts** | Admin `/promotions`, `/marketing` (stats only) | `promotion_usages`, `coupon_usages`, Phase 9 engine |
+| **Push campaigns** | Admin `/notification-engine` | `notification_campaigns` |
 
----
-
-## Current dashboards
-
-| Surface | Path | What it shows | Promo/coupon depth |
-|---------|------|---------------|-------------------|
-| Admin Marketing Hub | `apps/admin-web/app/marketing/page.tsx` | Promotions, coupons, banners | Basic stats via `/admin/promotions/stats` |
-| Advanced Promotions Engine | `apps/admin-web/components/admin/marketing/AdvancedPromotionsEngine.tsx` | Promo cards + stats | Calls `/admin/promotions/stats` |
-| Admin Finance Hub | `apps/admin-web/app/finance/page.tsx` | Settlement, accrual, earnings | No promo funding breakdown |
-| Settlement Dashboard | `apps/admin-web/components/admin/finance/settlements/SettlementDashboard.tsx` | Batch settlements, payouts | No discount funding |
-| Admin platform analytics | `apps/admin-web` (via API) | Bookings, revenue KPIs | Not promo-specific |
-| Vendor analytics page | `apps/vendor-web/app/analytics/page.tsx` | Bookings, revenue | Not promo-specific |
-| Vendor promo hub | `apps/vendor-web` Seller/Service promotions | CRUD + inline counts | Vendor table counters only |
-| Customer promotions | `apps/customer-web/app/promotions` | Discover offers | No admin analytics |
-
-**Reuse decision:** Extend existing admin marketing stats and finance reports — **do not** create parallel dashboard apps.
+The **Discount Engine backend is complete through Phase 7**; **Phase 9 read-only analytics** adds API aggregation (feature-flagged). **No unified promo analytics dashboard exists yet.** Finance/settlement reporting is mature but **lacks promotion funding breakdown**.
 
 ---
 
-## Current reports
+## Architecture
 
-| Report | API / generator | Tables | Notes |
-|--------|-----------------|--------|-------|
-| Promotion stats | `GET /admin/promotions/stats` | `promotion_usages`, `promotions` | `totalRevenue` field is actually sum of discounts |
-| Promotion click analytics | `GET /admin/promotions/analytics` | `promotions`, `promotion_clicks` | Click schema may be incomplete |
-| Admin report templates | `GET/POST /admin/reports/*` | `reports.ts` | Revenue, bookings, **settlements**, vendors |
-| Vendor daily accrual | `GET /admin/finance/vendor-daily-accrual` | `vendor_daily_accrual` | IST rollups — no promo columns yet |
-| Vendor booking earnings | `GET /admin/finance/vendor-booking-earnings` | `vendor_earnings` | Waterfall CSV |
-| Settlement batch report | `reports.ts` → `generateSettlementsReport` | `settlements` | Production payout ledger |
-| E-commerce analytics | `GET /admin/ecommerce/analytics` | Orders/products | Seller stats |
-| Vendor commission analytics | `GET /vendor/:vendorId/commission-analytics` | Commission tiers | Not promo-specific |
-
-**Gap:** No coupon-specific report API. No promotion **funding liability** report tied to Phase 7 settlement preview.
-
----
-
-## Current APIs (reuse map)
-
-### Reuse as-is
-
-| API | Reuse for Phase 9 |
-|-----|-------------------|
-| `GET /admin/promotions/stats` | Same data source; extended with `engineStats` when analytics AUTHORITATIVE |
-| `GET /admin/reports/*` | Add promo report templates later — same CSV patterns |
-| `GET /admin/finance/vendor-daily-accrual` | Optional future promo columns |
-| Phase 7 `SettlementPreview` / audit | Settlement analytics input — **never recalculate** |
-
-### Extend (Phase 9)
-
-| New API | Purpose |
-|---------|---------|
-| `GET /admin/analytics/discount-engine/overview` | Full analytics report |
-| `GET /admin/analytics/discount-engine/promotions` | Promotion performance |
-| `GET /admin/analytics/discount-engine/coupons` | Coupon performance |
-| `GET /admin/analytics/discount-engine/vendors/:vendorId?` | Vendor promo analytics |
-| `GET /admin/analytics/discount-engine/savings` | Customer savings |
-| `GET /admin/analytics/discount-engine/mode` | Feature flag diagnostics |
-
-All gated by `DISCOUNT_ENGINE_V2_ANALYTICS_MODE`.
-
-### Do not duplicate
-
-| Component | Reason |
-|-----------|--------|
-| `reports.ts` settlement generators | Production source of truth |
-| `settlements.ts` batch math | Payout pipeline |
-| `analytics.admin.ts` booking KPIs | General metrics — add dimensions, don't fork |
-| `product-analytics/` Allyticas | UX telemetry, different domain |
-| `feeCalculator.ts` | Fees not recomputed in analytics |
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Admin / Vendor UI                        │
+│  /analytics  /finance  /promotions  /marketing  /product-*   │
+└───────────────┬─────────────────────────────────────────────┘
+                │
+    ┌───────────┼───────────┬──────────────┬─────────────────┐
+    ▼           ▼           ▼              ▼                 ▼
+ analytics   reports    promotions   product-analytics   notification
+  .admin.ts    .ts         .ts           routes           -campaigns
+    │           │           │              │                 │
+    ▼           ▼           ▼              ▼                 ▼
+ Bookings/    Settlement   promotion_    analytics_      notification_
+ Orders       tables       usages        events          campaigns
+ vendor_                   coupon_usages
+ earnings
+                │
+                ▼
+     discount-engine/analytics/  (Phase 9 — read-only)
+                │
+                ▼
+     SettlementPreview aggregate (no recalculation)
+```
 
 ---
 
-## Data sources
+## Dashboards
 
-| Table | Analytics use |
-|-------|---------------|
-| `promotion_usages` | Redemptions, savings, AOV proxy (`original_amount`) |
-| `coupon_usages` | Redemption counts (no `discount_amount` column — join gap) |
-| `promotions`, `coupons`, `vendor_promotions`, `vendor_service_promotions` | Dimensions |
-| `vendor_earnings`, `delivery_settlements` | Future funding reconciliation (Phase 9+ read joins) |
-| Resolver shadow logs | CloudWatch only today — not RDS |
+See **`docs/ANALYTICS_DASHBOARD_INVENTORY.md`** for full route/component/API tables.
+
+### Admin (canonical)
+
+| Route | Purpose | Promo relevance |
+|-------|---------|-----------------|
+| `/analytics` | Platform KPIs, revenue, vendors, behavioral | None today |
+| `/product-analytics` | Mobile/web telemetry | Separate domain |
+| `/finance` | Settlements, accrual, earnings, GST | No promo columns |
+| `/ecommerce` | Marketplace + seller analytics | Product discounts only |
+| `/promotions` | Promotion hub (CRUD + lifecycle) | Stats cards only |
+| `/marketing` | Legacy marketing monolith | Coupons, banners, spotlight |
+| `/notification-engine` | Push campaign builder | Not commercial promos |
+| `/settlements` | Standalone settlement ops | — |
+| `/enterprise` | B2B revenue | — |
+
+**Nav gap:** `/reports` in sidebar — **no page implemented**.
+
+### Vendor
+
+| Route | Purpose |
+|-------|---------|
+| `/operations/analytics` | Performance + earnings |
+| `/analytics` | Alternate metrics screen (overlap) |
+| `/seller` | E-com seller analytics |
+| Earnings/settlements dashboards | Finance |
+| Promo hubs | CRUD only — no performance charts |
+
+### Customer
+
+No analytics dashboards. Telemetry ingest only.
+
+---
+
+## Reports
+
+| Report | API / generator | UI |
+|--------|-----------------|-----|
+| Revenue, bookings, vendors, customers | `POST /admin/reports/generate` | **No dedicated page** |
+| Financial summary | `/admin/reports/financial/summary` | Finance tabs (partial) |
+| Settlements | `generateSettlementsReport` | Finance + `/settlements` |
+| Vendor daily accrual CSV | `/admin/finance/vendor-daily-accrual/export.csv` | Finance tab |
+| Booking earnings CSV | `/admin/finance/vendor-booking-earnings/export.csv` | Finance tab |
+| Promotion stats | `/admin/promotions/stats` | Marketing + `/promotions` |
+| Phase 9 discount analytics | `/admin/analytics/discount-engine/*` | **None** |
+| E-commerce analytics | `/admin/ecommerce/analytics` | E-commerce tab |
+| Notification campaign analytics | `/campaigns/:id/analytics` | **None** |
+
+---
+
+## Current APIs
+
+### Platform analytics
+`GET /admin/analytics/overview|kpis|revenue|categories|vendors|customers|peak-times|funnel|sales-by-role`
+
+### Finance & settlement
+`/admin/finance/*`, `/settlements/*`, `/admin/settlements/*`, accrual + earnings exports
+
+### Promotions
+`/admin/promotions/*`, `/admin/coupons/*`, `/admin/promotions/stats`, `/admin/promotions/analytics` (clicks)
+
+### Phase 9 discount engine (local, committed)
+`GET /admin/analytics/discount-engine/overview|promotions|coupons|vendors|savings|mode`  
+Flag: `DISCOUNT_ENGINE_V2_ANALYTICS_MODE` = OFF | SHADOW | AUTHORITATIVE
+
+### Vendor
+`/vendor/:id/analytics`, `/vendor/analytics/*`, commission analytics
+
+### Product
+`/admin/analytics/product/*`, `POST /analytics/v1/events`
 
 ---
 
 ## Scheduled jobs
 
-| Job | Schedule | Promo analytics? |
-|-----|----------|------------------|
-| `POST /settlements/calculate-daily` | EventBridge daily | No |
-| `settlement-processor.ts` | SQS | No |
-| `analytics-retention.ts` | EventBridge | Product events only |
+| Job | Trigger | Promo analytics? |
+|-----|---------|------------------|
+| Settlement calculate-daily | EventBridge | No |
+| Analytics retention | EventBridge | Product events only |
+| Notification process-scheduled | EventBridge/cron | Push campaigns |
+| Settlement SQS processor | SQS | No |
 
-**No promotion aggregation cron exists.** Phase 9 uses on-demand SQL via `RdsUsageReadRepository`. Future rollups should extend `vendor-daily-accrual` compute — not a duplicate scheduler.
-
----
-
-## Current gaps
-
-1. No unified analytics engine module (addressed in Phase 9).
-2. Coupon analytics lacks discount amounts in `coupon_usages` — savings may be understated until schema/join enrichment.
-3. No ROI / conversion funnel wired (placeholder `null` in engine).
-4. Settlement analytics requires supplied previews — historical settlement audit table not yet persisted.
-5. `promotion_clicks` table referenced but migration unclear.
-6. Admin/vendor/customer UI **not modified** in Phase 9 — dashboards consume APIs when AUTHORITATIVE.
+**No promotion aggregation cron.**
 
 ---
 
-## Reuse opportunities (priority)
+## Current components
 
-| Priority | Action |
-|----------|--------|
-| P0 | Read `promotion_usages` / `coupon_usages` via single repository |
-| P0 | Aggregate settlement from `SettlementPreview` only |
-| P1 | Extend `/admin/promotions/stats` with engine totals |
-| P1 | Add promo columns to vendor accrual report |
-| P2 | Persist resolver audit to RDS for historical settlement analytics |
-| P2 | Wire admin marketing hub to `/admin/analytics/discount-engine/*` when AUTHORITATIVE |
+| Pattern | Location | Reuse |
+|---------|----------|-------|
+| KPI cards + tabs | `app/analytics/page.tsx` | **Extend** for promos |
+| `RevenueChart` | admin analytics components | **Reuse** |
+| `VendorPerformanceTable` | admin analytics | **Extend** |
+| Finance CSV reports | `VendorDailyAccrualReport` etc. | **Reuse** pattern |
+| `PromotionDashboard` | promotion-management-ui | **Extend** |
+| Recharts | Inline | No shared package |
 
 ---
 
-## Feature flag (Phase 9)
+## Current UX
 
-| Mode | Behaviour |
-|------|-----------|
-| `OFF` (default) | No generation; APIs return 503 |
-| `SHADOW` | Generate + CloudWatch log; HTTP returns 403 (not public) |
-| `AUTHORITATIVE` | HTTP exposes analytics; `/admin/promotions/stats` includes `engineStats` |
+| Area | Assessment |
+|------|------------|
+| Dashboard navigation | **Good** — role-based admin nav; vendor capability routes |
+| Charts | **Good** on `/analytics`; **missing** on promos |
+| Filtering | **Good** date presets on platform analytics; **missing** on promos |
+| Export | **Good** on finance; **missing** on promos |
+| Loading / empty / error | **Mixed** — finance better than marketing |
+| Responsiveness | **Good** on main admin routes |
+| Accessibility | **Needs improvement** — charts lack consistent a11y labels |
 
-Env: `DISCOUNT_ENGINE_V2_ANALYTICS_MODE`
+See **`docs/ANALYTICS_GAP_ANALYSIS.md`** for UX gap IDs.
+
+---
+
+## Reuse opportunities
+
+1. Phase 9 discount-engine APIs — single read path for promo metrics  
+2. `/analytics` tab layout — add Promotions & Discounts  
+3. Finance CSV pattern — promo funding columns  
+4. `PromotionDashboard` — performance sub-tab  
+5. `reports.ts` — new `/reports` page (nav already exists)  
+6. Notification campaign analytics API — tab on notification-engine  
+
+See **`docs/ANALYTICS_REUSE_PLAN.md`**.
+
+---
+
+## Campaign state
+
+Three campaign types: commercial promos, push notifications, content/banners.  
+No unified builder. Flash sale / seasonal = promotion types.  
+See **`docs/CAMPAIGN_CURRENT_STATE.md`**.
+
+---
+
+## Limitations
+
+1. Promo analytics UI absent despite Phase 9 backend  
+2. `coupon_usages` lacks discount amounts  
+3. Settlement/promo funding not in finance reports  
+4. `/reports` nav without page  
+5. Duplicate vendor analytics routes  
+6. `totalRevenue` in promo stats = discount sum (mislabel)  
+7. ROI/conversion not implemented  
+8. Resolver audit not in RDS  
+
+---
+
+## Related documents
+
+| Doc | Purpose |
+|-----|---------|
+| `ANALYTICS_DASHBOARD_INVENTORY.md` | Full dashboard catalog |
+| `ANALYTICS_GAP_ANALYSIS.md` | Gaps + sprint plan |
+| `ANALYTICS_REUSE_PLAN.md` | Component/API reuse matrix |
+| `CAMPAIGN_CURRENT_STATE.md` | Campaign/marketing analysis |
+| `backend/.../PHASE9_MIGRATION_REPORT.md` | Phase 9 engine details |
+| `PROMOTION_SYSTEM_STATUS.md` | Engine + promo system map |
+| `SETTLEMENT_CURRENT_STATE.md` | Settlement architecture |
+| `SETTLEMENT_REUSE_MAP.md` | Phase 7+ reuse matrix |
+
+---
+
+## Sprint E success criteria
+
+- [x] Every dashboard identified  
+- [x] Every reporting API identified  
+- [x] Existing analytics documented  
+- [x] Campaign capabilities documented  
+- [x] Reuse opportunities identified  
+- [x] Functional / UX / architecture gaps documented  
+- [x] Blueprint for Sprint E implementation produced  
+
+**Analysis docs are local only — not committed per Sprint E constraints.**
