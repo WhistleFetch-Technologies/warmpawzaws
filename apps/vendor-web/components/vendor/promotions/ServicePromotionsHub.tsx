@@ -7,6 +7,7 @@ import CapabilityHelper from '@/lib/capability-helper';
 import { useVendorCapabilities } from '@/components/vendor/hooks/useVendorCapabilities';
 import {
   PromotionDashboard,
+  type PromotionDomain,
   enrichPromotionRow,
   splitVendorPromotionRows,
   wizardToVendorServicePayload,
@@ -24,6 +25,8 @@ interface ServicePromotionsHubProps {
   onBack?: () => void;
 }
 
+const SERVICE_PROMOTION_DOMAINS: PromotionDomain[] = ['service', 'package'];
+
 function serviceDisplayName(s: Record<string, unknown>): string {
   const raw = s.serviceName ?? s.name ?? s.service_name;
   if (raw == null || raw === '') return 'Unnamed service';
@@ -36,6 +39,40 @@ function serviceDisplayPrice(s: Record<string, unknown>): number | undefined {
   if (raw == null || raw === '') return undefined;
   const n = Number(raw);
   return Number.isFinite(n) ? n : undefined;
+}
+
+function packageDisplayName(p: Record<string, unknown>): string {
+  const raw = p.packageName ?? p.package_name ?? p.name;
+  if (raw == null || raw === '') return 'Unnamed package';
+  const label = String(raw).trim();
+  return label === 'undefined' ? 'Unnamed package' : label;
+}
+
+function packageDisplayPrice(p: Record<string, unknown>): number | undefined {
+  const raw = p.packagePrice ?? p.package_price ?? p.price;
+  if (raw == null || raw === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function isActiveLike(row: Record<string, unknown>): boolean {
+  const raw = row.isActive ?? row.is_active ?? row.isAvailable ?? row.is_available;
+  if (raw == null || raw === '') return true;
+  if (typeof raw === 'boolean') return raw;
+  const normalized = String(raw).trim().toLowerCase();
+  return !['false', '0', 'inactive', 'disabled', 'deleted'].includes(normalized);
+}
+
+function isApprovedOrUnversioned(row: Record<string, unknown>): boolean {
+  const raw =
+    row.status ??
+    row.approvalStatus ??
+    row.approval_status ??
+    row.publishStatus ??
+    row.publish_status;
+  if (raw == null || raw === '') return true;
+  const normalized = String(raw).trim().toLowerCase();
+  return ['approved', 'active', 'published', 'live'].includes(normalized);
 }
 
 function dedupeOptions<T extends { id: string }>(items: T[]): T[] {
@@ -87,30 +124,24 @@ export function ServicePromotionsHub({
     try {
       const hasMealPlans = CapabilityHelper.hasCapability(capabilities, 'meal_plans');
 
-      const requests: Promise<unknown>[] = [
+      const [promosRes, servicesRes, packagesRes, mealPlansRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${vendorId}/service-promotions`),
         apiClient.get<any>(`/vendor/${vendorId}/services/enabled`),
-      ];
-
-      if (hasMealPlans) {
-        requests.push(
-          apiClient
-            .get<any>(`/vendor/${vendorId}/nutritionist/meal-plans`)
-            .catch(() => ({ mealPlans: [], plans: [] }))
-        );
-      }
-
-      const results = await Promise.all(requests);
-      const promosRes = results[0] as any;
-      const servicesRes = results[1] as any;
-      const mealPlansRes = hasMealPlans ? (results[2] as any) : null;
+        apiClient.get<any>(`/vendor/${vendorId}/packages`).catch(() => ({ packages: [] })),
+        hasMealPlans
+          ? apiClient
+              .get<any>(`/vendor/${vendorId}/nutritionist/meal-plans`)
+              .catch(() => ({ mealPlans: [], plans: [] }))
+          : Promise.resolve({ mealPlans: [], plans: [] }),
+      ]);
 
       const rows = promosRes?.promotions || [];
       const services = (servicesRes?.services || []) as Record<string, unknown>[];
       const nonPackageServices = services.filter((s) => !s.isPackage && !s.is_package);
       const packageServices = services.filter((s) => s.isPackage || s.is_package);
+      const standalonePackages = ((packagesRes as any)?.packages || []) as Record<string, unknown>[];
 
-      const mealPlanRows = (mealPlansRes?.mealPlans ?? mealPlansRes?.plans ?? []) as Record<
+      const mealPlanRows = ((mealPlansRes as any)?.mealPlans ?? (mealPlansRes as any)?.plans ?? []) as Record<
         string,
         unknown
       >[];
@@ -127,24 +158,44 @@ export function ServicePromotionsHub({
           })
         ),
         packages: dedupeOptions(
-          packageServices.map((s) => {
-            const price = serviceDisplayPrice(s);
-            return {
-              id: String(s.id),
-              label: serviceDisplayName(s),
-              subtitle: price != null ? `₹${price}` : undefined,
-            };
-          })
+          [
+            ...packageServices.filter(isActiveLike).filter(isApprovedOrUnversioned).map((s) => {
+              const price = serviceDisplayPrice(s);
+              return {
+                id: String(s.id),
+                label: serviceDisplayName(s),
+                subtitle: price != null ? `₹${price}` : undefined,
+              };
+            }),
+            ...standalonePackages.filter(isActiveLike).filter(isApprovedOrUnversioned).map((p) => {
+              const price = packageDisplayPrice(p);
+              const sessionCount = p.sessionCount ?? p.session_count ?? p.totalSessions ?? p.total_sessions;
+              return {
+                id: String(p.id),
+                label: packageDisplayName(p),
+                subtitle:
+                  price != null
+                    ? `₹${price}${sessionCount ? ` - ${sessionCount} sessions` : ''}`
+                    : sessionCount
+                      ? `${sessionCount} sessions`
+                      : undefined,
+              };
+            }),
+          ].filter((p) => p.id && p.id !== 'undefined')
         ),
         mealPlans: dedupeOptions(
-          mealPlanRows.map((p) => ({
-            id: String(p.id),
-            label: String(p.name ?? p.plan_name ?? p.planName ?? 'Meal plan'),
-            subtitle:
-              p.price != null || p.price_per_meal != null
-                ? `₹${p.price_per_meal ?? p.price}`
-                : undefined,
-          }))
+          mealPlanRows
+            .filter(isActiveLike)
+            .filter(isApprovedOrUnversioned)
+            .map((p) => ({
+              id: String(p.id),
+              label: String(p.name ?? p.plan_name ?? p.planName ?? 'Meal plan'),
+              subtitle:
+                p.price != null || p.price_per_meal != null
+                  ? `₹${p.price_per_meal ?? p.price}`
+                  : undefined,
+            }))
+            .filter((p) => p.id && p.id !== 'undefined')
         ),
         styles: [
           { id: 'at_home', label: 'At home' },
@@ -189,7 +240,7 @@ export function ServicePromotionsHub({
       subtitle: `Auto-applied offers and coupon codes for ${vendorRole ?? 'service'} bookings`,
       canManageCoupons: true,
       canManagePlatformTargets: false,
-      domains: ['service', 'package'] as const,
+      domains: SERVICE_PROMOTION_DOMAINS,
       enabledTargetScopes,
     }),
     [vendorRole, enabledTargetScopes]

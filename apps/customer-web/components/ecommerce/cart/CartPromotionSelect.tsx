@@ -44,6 +44,12 @@ type CartPromotionSelectProps = {
   className?: string;
 };
 
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  if (value == null || value === '') return fallback;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function formatPromoLabel(p: PromoOption): string {
   const off =
     p.discount_type === 'percentage'
@@ -91,9 +97,16 @@ export function CartPromotionSelect({
         }
       }
 
-      const deduped = merged.filter(
-        (p, i, arr) => arr.findIndex((x) => x.id === p.id) === i
-      );
+      const deduped = merged
+        .filter((p) => Boolean(p.code?.trim()))
+        .filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i)
+        .map((p) => ({
+          ...p,
+          discount_value: toFiniteNumber(p.discount_value),
+          min_order_value: toFiniteNumber(p.min_order_value),
+          min_booking_value: toFiniteNumber(p.min_booking_value),
+          max_discount_amount: toFiniteNumber(p.max_discount_amount),
+        }));
       setOptions(deduped);
     } catch {
       setOptions([]);
@@ -124,9 +137,9 @@ export function CartPromotionSelect({
     const promo = options.find((p) => p.id === promoId);
     if (!promo) return;
 
-    const code = (promo.code || promo.name || '').trim();
+    const code = promo.code?.trim() ?? '';
     if (!code) {
-      toast.error('This promotion has no code');
+      toast.error('This coupon has no code');
       return;
     }
 
@@ -160,11 +173,11 @@ export function CartPromotionSelect({
 
       onApply({
         code: code.toUpperCase(),
-        discountAmount: res.discount_amount ?? 0,
+        discountAmount: toFiniteNumber(res.discount_amount),
         promotionId: res.promotion?.id ?? promo.id,
         label: promo.name,
       });
-      toast.success('Promotion applied');
+      toast.success('Coupon applied');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Could not apply promotion';
       setError(msg);
@@ -184,7 +197,7 @@ export function CartPromotionSelect({
             <div className="min-w-0">
               <p className="text-sm font-semibold text-emerald-900">{selected.label}</p>
               <p className="text-xs text-emerald-700 mt-0.5">
-                −₹{selected.discountAmount.toFixed(0)} applied
+                −₹{toFiniteNumber(selected.discountAmount).toFixed(0)} applied
               </p>
             </div>
           </div>
@@ -192,7 +205,7 @@ export function CartPromotionSelect({
             type="button"
             onClick={onRemove}
             className="p-1 text-emerald-700 hover:text-emerald-900 rounded-lg"
-            aria-label="Remove promotion"
+            aria-label="Remove coupon"
           >
             <X className="w-4 h-4" />
           </button>
@@ -205,7 +218,7 @@ export function CartPromotionSelect({
     <section className={`rounded-2xl border border-slate-100 bg-white p-4 shadow-sm ${className}`}>
       <label htmlFor="cart-promo-select" className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-2">
         <Tag className="w-4 h-4 text-[#FF8C42]" />
-        Apply promotion
+        Apply coupon
       </label>
       <div className="relative">
         <select
@@ -221,10 +234,10 @@ export function CartPromotionSelect({
         >
           <option value="">
             {loading
-              ? 'Loading promotions…'
+              ? 'Loading coupons…'
               : selectableOptions.length === 0
-                ? 'No promotions available'
-                : 'Select a promotion'}
+                ? 'No coupons available'
+                : 'Select a coupon'}
           </option>
           {selectableOptions.map((p) => (
             <option key={p.id} value={p.id}>
@@ -240,7 +253,7 @@ export function CartPromotionSelect({
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
       {!loading && options.length > 0 && selectableOptions.length === 0 && (
         <p className="mt-2 text-xs text-slate-500">
-          Promotions require a higher order value for your current cart.
+          Coupons require a higher order value for your current cart.
         </p>
       )}
     </section>

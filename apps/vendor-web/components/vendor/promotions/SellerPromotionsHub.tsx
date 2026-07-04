@@ -5,6 +5,7 @@ import { apiClient } from '@/lib/api-client';
 import { parseJsonbArray } from '@/lib/promotion-form-utils';
 import {
   PromotionDashboard,
+  type PromotionDomain,
   enrichPromotionRow,
   splitVendorPromotionRows,
   wizardToVendorSellerPayload,
@@ -13,6 +14,8 @@ import {
   type PromotionTargetCatalog,
   type PromotionWizardForm,
 } from '@warmpawz/promotion-management-ui';
+
+const SELLER_PROMOTION_DOMAINS: PromotionDomain[] = ['product'];
 
 export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
   const [promotions, setPromotions] = useState<NormalizedPromotionItem[]>([]);
@@ -73,7 +76,7 @@ export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
       subtitle: 'Shop offers, coupon codes, and product targeting',
       canManageCoupons: true,
       canManagePlatformTargets: false,
-      domains: ['product'] as const,
+      domains: SELLER_PROMOTION_DOMAINS,
     }),
     []
   );

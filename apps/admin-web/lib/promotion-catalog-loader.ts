@@ -65,10 +65,20 @@ function mapMealPlanOption(mp: Record<string, unknown>): TargetOption | null {
 function mapVendorOption(v: Record<string, unknown>): TargetOption | null {
   const id = String(v.id ?? v.vendor_id ?? '').trim();
   if (!id) return null;
+  const label = String(
+    v.business_name ??
+      v.businessName ??
+      v.full_name ??
+      v.fullName ??
+      v.owner_name ??
+      v.ownerName ??
+      v.name ??
+      id
+  ).trim();
   return {
     id,
-    label: String(v.business_name ?? v.name ?? id),
-    subtitle: v.city ? String(v.city) : undefined,
+    label: label || id,
+    subtitle: v.city ? String(v.city) : v.roleDisplayName ? String(v.roleDisplayName) : undefined,
   };
 }
 

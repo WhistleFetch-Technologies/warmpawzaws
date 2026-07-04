@@ -42,6 +42,16 @@ interface CouponSectionProps {
   className?: string;
 }
 
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  if (value == null || value === '') return fallback;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function formatAmount(value: unknown): string {
+  return toFiniteNumber(value).toFixed(0);
+}
+
 export function CouponSection({
   vendorId,
   customerId,
@@ -71,7 +81,20 @@ export function CouponSection({
     setLoadingPromotions(true);
     try {
       const res = await apiClient.get<any>(`/vendors/${vendorId}/active-promotions?type=${orderType === 'booking' ? 'service' : 'product'}`);
-      setAvailablePromotions((res as any)?.promotions || []);
+      const promotions = Array.isArray((res as any)?.promotions) ? (res as any).promotions : [];
+      // Coupon picker should only show manually entered/copyable codes.
+      // No-code promotions are auto-applied by pricing and should not appear as coupon options.
+      setAvailablePromotions(
+        promotions
+          .filter((promo: Promotion) => Boolean(promo.code?.trim()))
+          .map((promo: Promotion) => ({
+            ...promo,
+            discount_value: toFiniteNumber(promo.discount_value),
+            min_order_value: toFiniteNumber(promo.min_order_value),
+            min_booking_value: toFiniteNumber(promo.min_booking_value),
+            max_discount_amount: toFiniteNumber(promo.max_discount_amount),
+          }))
+      );
     } catch (error) {
       console.error('Error fetching promotions:', error);
     } finally {
@@ -95,7 +118,7 @@ export function CouponSection({
 
       if (result.ok) {
         onApplyCoupon(result.coupon);
-        toast.success(`Coupon applied! You save ₹${result.coupon.discountAmount.toFixed(0)}`);
+        toast.success(`Coupon applied! You save ₹${formatAmount(result.coupon.discountAmount)}`);
         setCouponCode('');
         setExpanded(false);
       } else {
@@ -107,31 +130,8 @@ export function CouponSection({
   };
 
   const applyPromotion = async (promo: Promotion) => {
-    if (promo.code) {
-      await validateCoupon(promo.code);
-    } else {
-      // Auto-apply promotion without code
-      let discountAmount = 0;
-      if (promo.discount_type === 'percentage') {
-        discountAmount = (orderAmount * promo.discount_value) / 100;
-        if (promo.max_discount_amount) {
-          discountAmount = Math.min(discountAmount, promo.max_discount_amount);
-        }
-      } else {
-        discountAmount = promo.discount_value;
-      }
-
-      onApplyCoupon({
-        code: promo.name,
-        discountType: promo.discount_type,
-        discountValue: promo.discount_value,
-        discountAmount,
-        promotionId: promo.id,
-        promoCategory: promo.promo_category
-      });
-      toast.success(`Offer applied! You save ₹${discountAmount.toFixed(0)}`);
-      setExpanded(false);
-    }
+    if (!promo.code?.trim()) return;
+    await validateCoupon(promo.code);
   };
 
   const copyCode = (code: string) => {
@@ -173,7 +173,7 @@ export function CouponSection({
             <div>
               <p className="font-semibold text-emerald-800">{appliedCoupon.code}</p>
               <p className="text-xs text-emerald-600">
-                You save ₹{appliedCoupon.discountAmount.toFixed(0)}
+                You save ₹{formatAmount(appliedCoupon.discountAmount)}
               </p>
             </div>
           </div>
@@ -244,7 +244,7 @@ export function CouponSection({
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5" />
-                Available Offers
+                Available Coupons
               </h4>
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {availablePromotions.map((promo) => {

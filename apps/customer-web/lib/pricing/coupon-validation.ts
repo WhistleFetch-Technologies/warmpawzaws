@@ -29,18 +29,29 @@ export type ValidateCouponCodeParams = {
   }>;
 };
 
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  if (value == null || value === '') return fallback;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function calculateDiscountAmount(
   type: 'percentage' | 'fixed',
-  value: number,
-  amount: number,
-  minAmount?: number,
-  maxDiscount?: number
+  value: unknown,
+  amount: unknown,
+  minAmount?: unknown,
+  maxDiscount?: unknown
 ): number {
-  if (minAmount && amount < minAmount) return 0;
+  const numericValue = toFiniteNumber(value);
+  const numericAmount = toFiniteNumber(amount);
+  const numericMin = toFiniteNumber(minAmount);
+  const numericMax = toFiniteNumber(maxDiscount);
 
-  let discount = type === 'percentage' ? (amount * value) / 100 : value;
-  if (maxDiscount && discount > maxDiscount) discount = maxDiscount;
-  return Math.min(discount, amount);
+  if (numericMin > 0 && numericAmount < numericMin) return 0;
+
+  let discount = type === 'percentage' ? (numericAmount * numericValue) / 100 : numericValue;
+  if (numericMax > 0 && discount > numericMax) discount = numericMax;
+  return Math.max(0, Math.min(discount, numericAmount));
 }
 
 /**
@@ -54,7 +65,7 @@ export async function validateCouponCode(
     return { ok: false, message: 'Please enter a coupon code' };
   }
 
-  const amount = Math.max(0, params.amount);
+  const amount = Math.max(0, toFiniteNumber(params.amount));
 
   try {
     const promoRes = await apiClient.post<any>('/promotions/validate-code', {
@@ -68,11 +79,16 @@ export async function validateCouponCode(
     });
 
     if (promoRes?.valid) {
+      const discountType =
+        promoRes.promotion?.discount_type === 'fixed' ? 'fixed' : 'percentage';
+      const discountValue = toFiniteNumber(promoRes.promotion?.discount_value);
       const discountAmount =
-        promoRes.discount_amount ??
+        promoRes.discount_amount != null
+          ? Math.max(0, Math.min(toFiniteNumber(promoRes.discount_amount), amount))
+          :
         calculateDiscountAmount(
-          promoRes.promotion?.discount_type || 'percentage',
-          promoRes.promotion?.discount_value || 0,
+          discountType,
+          discountValue,
           amount,
           promoRes.promotion?.min_order_value || promoRes.promotion?.min_booking_value,
           promoRes.promotion?.max_discount_amount
@@ -82,8 +98,8 @@ export async function validateCouponCode(
         ok: true,
         coupon: {
           code,
-          discountType: promoRes.promotion?.discount_type || 'percentage',
-          discountValue: promoRes.promotion?.discount_value || 0,
+          discountType,
+          discountValue,
           discountAmount,
           promotionId: promoRes.promotion?.id,
           promoCategory: promoRes.promo_category,
@@ -94,9 +110,12 @@ export async function validateCouponCode(
 
     const legacy = await apiClient.get<any>(`/coupons/validate/${code}?amount=${amount}`);
     if (legacy?.valid && legacy.coupon) {
+      const discountType =
+        legacy.coupon.discount_type === 'fixed' ? 'fixed' : 'percentage';
+      const discountValue = toFiniteNumber(legacy.coupon.discount_value);
       const discountAmount = calculateDiscountAmount(
-        legacy.coupon.discount_type,
-        legacy.coupon.discount_value,
+        discountType,
+        discountValue,
         amount,
         legacy.coupon.min_amount,
         legacy.coupon.max_discount
@@ -106,8 +125,8 @@ export async function validateCouponCode(
         ok: true,
         coupon: {
           code,
-          discountType: legacy.coupon.discount_type,
-          discountValue: legacy.coupon.discount_value,
+          discountType,
+          discountValue,
           discountAmount,
           promotionId: legacy.coupon.id,
           promoCategory: 'platform',
