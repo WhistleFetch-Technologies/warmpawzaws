@@ -33,27 +33,8 @@ import { getShopCategoryStaticImageUrl } from '@/lib/shop-category-static-images
 import { toast, Toaster } from 'sonner';
 
 interface Category extends EcommerceCategoryForm {
-  icon?: string;
-  color?: string;
-  parentId?: string;
-  order: number;
-  enabled: boolean;
-  featured: boolean;
-  metadata?: {
-    commissionRate?: number;
-    gstRate?: number;
-    allowReturns?: boolean;
-    returnWindow?: number;
-    shippingCategory?: string;
-    requiresPrescription?: boolean;
-  };
-  stats?: {
-    productCount?: number;
-    totalSales?: number;
-    totalRevenue?: number;
-  };
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export function CategoryManagement() {
@@ -131,23 +112,6 @@ export function CategoryManagement() {
     }
   };
 
-  const handleSave = async () => {
-    try {
-      setSaving(true);
-      await persistCategories(categories);
-      toast.success('Categories updated successfully');
-    } catch (error: unknown) {
-      console.error('Error updating categories:', error);
-      const msg =
-        error instanceof Error
-          ? error.message
-          : (error as { error?: string })?.error || 'Error updating categories';
-      toast.error(msg);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const addCategory = () => {
     const newCategory: Category = {
       id: `cat_${Date.now()}`,
@@ -155,17 +119,7 @@ export function CategoryManagement() {
       slug: `new-category-${Date.now()}`,
       order: categories.length + 1,
       enabled: true,
-      featured: false,
-      metadata: {
-        commissionRate: 15,
-        gstRate: 18,
-        allowReturns: true,
-        returnWindow: 14,
-        shippingCategory: 'standard',
-      },
-      stats: { productCount: 0, totalSales: 0, totalRevenue: 0 },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      commissionRate: null,
     };
     setEditingCategory(newCategory);
     setShowModal(true);
@@ -301,10 +255,6 @@ export function CategoryManagement() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button onClick={handleSave} disabled={saving} variant="outline">
-            <Save className="w-4 h-4 mr-2" />
-            {saving ? 'Saving...' : 'Save All'}
-          </Button>
           <Button onClick={addCategory} className="bg-[#FF8C42] text-white hover:bg-[#E67A32]">
             <Plus className="w-4 h-4 mr-2" />
             Add Category
@@ -344,9 +294,9 @@ export function CategoryManagement() {
               <Tag className="w-6 h-6 text-purple-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Featured</p>
+              <p className="text-sm text-gray-500">With Commission Set</p>
               <p className="text-2xl font-bold text-gray-900">
-                {categories.filter((c) => c.featured).length}
+                {categories.filter((c) => c.commissionRate != null && c.commissionRate > 0).length}
               </p>
             </div>
           </div>
@@ -362,7 +312,7 @@ export function CategoryManagement() {
                 {categories.length > 0
                   ? (
                       categories.reduce(
-                        (sum, c) => sum + (c.metadata?.commissionRate || 0),
+                        (sum, c) => sum + (c.commissionRate ?? 0),
                         0
                       ) / categories.length
                     ).toFixed(1)
@@ -462,13 +412,6 @@ export function CategoryManagement() {
                   onToggleEnabled={() => {
                     void handleToggleEnabled(category.id);
                   }}
-                  onToggleFeatured={() => {
-                    setCategories(
-                      categories.map((c) =>
-                        c.id === category.id ? { ...c, featured: !c.featured } : c
-                      )
-                    );
-                  }}
                 />
               ))}
             </div>
@@ -517,8 +460,15 @@ function CategoryTreeItem({
   onEdit,
   onDelete,
   onToggleEnabled,
-  onToggleFeatured,
-}: any) {
+}: {
+  category: Category;
+  expanded: boolean;
+  children: Category[];
+  onToggleExpanded: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onToggleEnabled: () => void;
+}) {
   return (
     <div>
       <div className="p-4 hover:bg-gray-50 transition-colors">
@@ -538,9 +488,6 @@ function CategoryTreeItem({
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <h4 className="font-semibold text-gray-900">{category.name}</h4>
-                {category.featured && (
-                  <Badge className="bg-yellow-100 text-yellow-700">Featured</Badge>
-                )}
                 <Badge variant={category.enabled ? 'default' : 'outline'}>
                   {category.enabled ? 'Active' : 'Disabled'}
                 </Badge>
@@ -549,18 +496,14 @@ function CategoryTreeItem({
                 <p className="text-sm text-gray-500 mt-1">{category.description}</p>
               )}
               <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                <span>Commission: {category.metadata?.commissionRate || 0}%</span>
-                <span>GST: {category.metadata?.gstRate || 0}%</span>
-                {category.metadata?.allowReturns && (
-                  <span>Returns: {category.metadata?.returnWindow || 0} days</span>
-                )}
+                <span>
+                  Commission:{' '}
+                  {category.commissionRate != null ? `${category.commissionRate}%` : 'Not set'}
+                </span>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <Button onClick={onToggleFeatured} variant="ghost" size="sm">
-                <Tag className="w-4 h-4" />
-              </Button>
               <Button onClick={onToggleEnabled} variant="ghost" size="sm">
                 {category.enabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
               </Button>
@@ -587,7 +530,6 @@ function CategoryTreeItem({
               onEdit={onEdit}
               onDelete={onDelete}
               onToggleEnabled={onToggleEnabled}
-              onToggleFeatured={onToggleFeatured}
             />
           ))}
         </div>
@@ -618,7 +560,6 @@ function CategoryGridItem({ category, onEdit, onDelete, onToggleEnabled }: any) 
       )}
 
       <div className="flex items-center gap-2 mb-3">
-        {category.featured && <Badge className="bg-yellow-100 text-yellow-700">Featured</Badge>}
         <Badge variant={category.enabled ? 'default' : 'outline'}>
           {category.enabled ? 'Active' : 'Disabled'}
         </Badge>
@@ -627,18 +568,10 @@ function CategoryGridItem({ category, onEdit, onDelete, onToggleEnabled }: any) 
       <div className="space-y-2 text-xs text-gray-600 border-t border-gray-200 pt-3">
         <div className="flex justify-between">
           <span>Commission:</span>
-          <span className="font-semibold">{category.metadata?.commissionRate || 0}%</span>
+          <span className="font-semibold">
+            {category.commissionRate != null ? `${category.commissionRate}%` : 'Not set'}
+          </span>
         </div>
-        <div className="flex justify-between">
-          <span>GST Rate:</span>
-          <span className="font-semibold">{category.metadata?.gstRate || 0}%</span>
-        </div>
-        {category.metadata?.allowReturns && (
-          <div className="flex justify-between">
-            <span>Return Window:</span>
-            <span className="font-semibold">{category.metadata?.returnWindow || 0} days</span>
-          </div>
-        )}
       </div>
 
       <Button onClick={onToggleEnabled} variant="outline" className="w-full mt-4" size="sm">
@@ -732,18 +665,16 @@ function ShopCategoryGridPreview({ name }: { name: string }) {
 }
 
 // Category Editor Modal Component
-function CategoryEditorModal({ category, onSave, onClose }: any) {
-  const [editedCategory, setEditedCategory] = useState<Category>(() => ({
-    ...category,
-    metadata: category.metadata || {
-      commissionRate: 0,
-      gstRate: 0,
-      allowReturns: false,
-      returnWindow: 0,
-      shippingCategory: 'standard',
-      requiresPrescription: false,
-    },
-  }));
+function CategoryEditorModal({
+  category,
+  onSave,
+  onClose,
+}: {
+  category: Category;
+  onSave: (category: Category) => void;
+  onClose: () => void;
+}) {
+  const [editedCategory, setEditedCategory] = useState<Category>(() => ({ ...category }));
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -816,110 +747,32 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
             </div>
           </div>
 
-          {/* Metadata */}
           <div className="border-t border-gray-200 pt-6">
-            <h4 className="font-semibold text-gray-900 mb-4">Category Metadata</h4>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Commission Rate (%)
-                </label>
-                <input
-                  type="number"
-                  value={editedCategory.metadata?.commissionRate || 0}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setEditedCategory({
-                      ...editedCategory,
-                      metadata: {
-                        ...editedCategory.metadata,
-                        commissionRate: parseFloat(e.target.value),
-                      },
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                  step="0.1"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">GST Rate (%)</label>
-                <input
-                  type="number"
-                  value={editedCategory.metadata?.gstRate || 0}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setEditedCategory({
-                      ...editedCategory,
-                      metadata: {
-                        ...editedCategory.metadata,
-                        gstRate: parseFloat(e.target.value),
-                      },
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                  step="0.1"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Return Window (days)
-                </label>
-                <input
-                  type="number"
-                  value={editedCategory.metadata?.returnWindow || 0}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setEditedCategory({
-                      ...editedCategory,
-                      metadata: {
-                        ...editedCategory.metadata,
-                        returnWindow: parseInt(e.target.value),
-                      },
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Shipping Category
-                </label>
-                <select
-                  value={editedCategory.metadata?.shippingCategory || 'standard'}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                    setEditedCategory({
-                      ...editedCategory,
-                      metadata: {
-                        ...editedCategory.metadata,
-                        shippingCategory: e.target.value as any,
-                      },
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                >
-                  <option value="standard">Standard</option>
-                  <option value="fragile">Fragile</option>
-                  <option value="refrigerated">Refrigerated</option>
-                  <option value="hazardous">Hazardous</option>
-                </select>
-              </div>
-              <div className="flex items-center gap-2 mt-8">
-                <input
-                  type="checkbox"
-                  checked={editedCategory.metadata?.allowReturns || false}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setEditedCategory({
-                      ...editedCategory,
-                      metadata: {
-                        ...editedCategory.metadata,
-                        allowReturns: e.target.checked,
-                      },
-                    })
-                  }
-                  className="w-4 h-4"
-                />
-                <label className="text-sm">Allow Returns</label>
-              </div>
+            <h4 className="font-semibold text-gray-900 mb-4">Default Commission</h4>
+            <p className="text-xs text-gray-500 mb-3">
+              Platform-wide default rate for this category. Vendor-specific overrides are managed
+              under E-Commerce → Commission.
+            </p>
+            <div className="max-w-xs">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Commission Rate (%)
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={editedCategory.commissionRate ?? ''}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const val = e.target.value;
+                  setEditedCategory({
+                    ...editedCategory,
+                    commissionRate: val === '' ? null : parseFloat(val),
+                  });
+                }}
+                placeholder="Leave empty for platform default"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+              />
             </div>
           </div>
             </div>

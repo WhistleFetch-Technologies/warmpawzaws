@@ -57,6 +57,7 @@ import {
   vendorExtrasFromBulkRow,
   getProductsColumnSet,
 } from '../utils/product-vendor-persist';
+import { validateAndApplyVendorDeclaredOwnership } from '../utils/compute-listing-ownership';
 
 interface BulkProductRow {
   name: string;
@@ -96,6 +97,7 @@ interface BulkProductRow {
   pet_type_other?: string | null;
   manufacturing_details?: string | null;
   delivery_regions?: string[] | string | null;
+  listing_ownership?: string | null;
 }
 
 interface ValidationError {
@@ -439,6 +441,13 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             productData,
             vendorExtrasFromBulkRow(bulkGroupExtrasSource(group)),
             productCols,
+          );
+
+          await validateAndApplyVendorDeclaredOwnership(
+            vendorId,
+            productData,
+            productCols,
+            group.parent.listing_ownership ?? null
           );
 
           if (!productData.metadata) {

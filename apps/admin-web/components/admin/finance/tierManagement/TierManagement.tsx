@@ -1,5 +1,11 @@
 'use client';
 
+/**
+ * Finance → Tier Management: subscription tiers (Bronze/Silver/Gold) and payout periods.
+ * Vendor/category commission overrides for ecommerce shop orders are managed under
+ * E-Commerce → Commission (not here).
+ */
+
 import { useState, useEffect } from 'react';
 import {
   Dialog,

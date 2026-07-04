@@ -109,6 +109,9 @@ export function ProductApproval() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Price
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Ownership
+                </th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">
                   Actions
                 </th>
@@ -117,7 +120,7 @@ export function ProductApproval() {
             <tbody className="divide-y divide-gray-200">
               {products.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
                     <Package className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                     <p>No pending products</p>
                   </td>
@@ -135,6 +138,15 @@ export function ProductApproval() {
                       {product.sellerName || product.vendor_name || '-'}
                     </td>
                     <td className="px-6 py-4 text-gray-600">₹{product.price || 0}</td>
+                    <td className="px-6 py-4 text-gray-600 text-sm">
+                      {product.listing_ownership === 'own_brand'
+                        ? 'Own brand'
+                        : product.listing_ownership === 'third_party'
+                          ? 'Third party'
+                          : product.brand
+                            ? '—'
+                            : '—'}
+                    </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <button

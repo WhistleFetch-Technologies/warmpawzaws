@@ -26,6 +26,14 @@ import { getRazorpayConfig, getRazorpayAuthHeader, getRazorpayClient, razorpayRe
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { DEFAULT_COMMISSION_RATE } from '../../../lib/constants/commission';
+import { getVendorTierCommission } from '../../../utils/vendor-tier-commission';
+import {
+  resolveOrderCommissionByOrderId,
+  buildCommissionSnapshot,
+  applyOrderCommissionAudit,
+} from '../../../utils/resolve-ecommerce-commission-rate';
+import { isCommissionConfigurationError } from '../../../utils/commission-configuration-error';
+export { getVendorTierCommission } from '../../../utils/vendor-tier-commission';
 import { logBookingStatusChange } from '../../../utils/audit-log';
 import { notifyBookingCreated } from '../../../utils/booking-notifications';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
@@ -671,18 +679,42 @@ class CreateRazorpayOrderHandler extends BaseHandler {
 
       // If vendor has linked account and marketplace mode enabled, add transfers
       if (vendor?.razorpay_account_id && vendor.bank_verified) {
-        let tierCommission = DEFAULT_COMMISSION_RATE;
-        try {
-          tierCommission = await Promise.race([
-            getVendorTierCommission(vendorIdFinal),
-            new Promise<number>((resolve) => setTimeout(() => resolve(DEFAULT_COMMISSION_RATE), 2000))
-          ]);
-        } catch (error) {
-          tierCommission = DEFAULT_COMMISSION_RATE;
-        }
         const amt = Number(chargeAmount);
-        const commissionAmount = Math.round((amt * tierCommission / 100) * 100);
-        const vendorShare = Math.round(amt * 100) - commissionAmount;
+        let tierCommission = DEFAULT_COMMISSION_RATE;
+        let commissionAmountPaise: number;
+
+        if (isEcommerceOrder && ecommerceOrderId) {
+          const resolved = await resolveOrderCommissionByOrderId(
+            vendorIdFinal,
+            String(ecommerceOrderId)
+          );
+          tierCommission = resolved.effectiveRate;
+          commissionAmountPaise = Math.round(resolved.commissionAmount * 100);
+
+          const snapshot = buildCommissionSnapshot(resolved);
+          try {
+            await query(
+              `UPDATE orders SET commission_snapshot = $2::jsonb, updated_at = NOW() WHERE id = $1::uuid`,
+              [ecommerceOrderId, JSON.stringify(snapshot)]
+            );
+          } catch (snapErr) {
+            console.warn('[RAZORPAY-CREATE-ORDER] commission_snapshot update skipped:', snapErr);
+          }
+        } else {
+          try {
+            tierCommission = await Promise.race([
+              getVendorTierCommission(vendorIdFinal),
+              new Promise<number>((resolve) =>
+                setTimeout(() => resolve(DEFAULT_COMMISSION_RATE), 2000)
+              ),
+            ]);
+          } catch {
+            tierCommission = DEFAULT_COMMISSION_RATE;
+          }
+          commissionAmountPaise = Math.round((amt * tierCommission / 100) * 100);
+        }
+
+        const vendorShare = Math.round(amt * 100) - commissionAmountPaise;
         const transferNotes = isPharmacyOrder
           ? { pharmacy_order_id: String(pharmacyOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
           : isEcommerceOrder
@@ -833,6 +865,9 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         keyId: config.keyId,
       });
     } catch (error: any) {
+      if (isCommissionConfigurationError(error)) {
+        return this.error(error.message, 422);
+      }
       console.error('[RAZORPAY-CREATE-ORDER] Error:', {
         message: error?.message,
         name: error?.name,
@@ -1050,16 +1085,60 @@ class VerifyPaymentHandler extends BaseHandler {
             orderId: razorpay_order_id,
           });
 
-          const updateResult = await client.query(
-            `UPDATE orders SET
-              payment_status = 'paid',
-              payment_method = COALESCE($3, payment_method),
-              payment_id = COALESCE(payment_id, $2),
-              updated_at = NOW()
-            WHERE id = $1::uuid
-            RETURNING id, payment_status, order_status`,
-            [ecommerceOrderId, payment.id, resolvedPaymentMethod]
-          );
+          let commissionRate: number | null = null;
+          let commissionAmount: number | null = null;
+          const vendorIdForCommission = payment.vendor_id ? String(payment.vendor_id) : null;
+
+          if (vendorIdForCommission) {
+            const snap = await applyOrderCommissionAudit(
+              String(ecommerceOrderId),
+              vendorIdForCommission
+            );
+            if (snap) {
+              commissionRate = snap.effectiveRate;
+              commissionAmount = snap.commissionAmount;
+            }
+          }
+
+          let updateResult;
+          try {
+            updateResult = await client.query(
+              `UPDATE orders SET
+                payment_status = 'paid',
+                payment_method = COALESCE($3, payment_method),
+                payment_id = COALESCE(payment_id, $2),
+                commission_rate = COALESCE($4, commission_rate),
+                commission_amount = COALESCE($5, commission_amount),
+                updated_at = NOW()
+              WHERE id = $1::uuid
+              RETURNING id, payment_status, order_status`,
+              [
+                ecommerceOrderId,
+                payment.id,
+                resolvedPaymentMethod,
+                commissionRate,
+                commissionAmount,
+              ]
+            );
+          } catch (updateErr: any) {
+            if (
+              String(updateErr.message || '').includes('commission_rate') ||
+              updateErr.code === '42703'
+            ) {
+              updateResult = await client.query(
+                `UPDATE orders SET
+                  payment_status = 'paid',
+                  payment_method = COALESCE($3, payment_method),
+                  payment_id = COALESCE(payment_id, $2),
+                  updated_at = NOW()
+                WHERE id = $1::uuid
+                RETURNING id, payment_status, order_status`,
+                [ecommerceOrderId, payment.id, resolvedPaymentMethod]
+              );
+            } else {
+              throw updateErr;
+            }
+          }
 
           if (updateResult.rows.length === 0) {
             const { rows: existing } = await client.query(
@@ -1507,12 +1586,21 @@ class RazorpayWebhookHandler extends BaseHandler {
               payment_id = COALESCE(payment_id, $2),
               updated_at = NOW()
             WHERE id = $1::uuid AND payment_status != 'paid'
-            RETURNING id`,
+            RETURNING id, vendor_id`,
             [paymentRecord.order_id, paymentRecord.id]
           );
           if (orderUpdate.rows.length > 0) {
-            ecommerceOrderForShipment = String(paymentRecord.order_id);
-            ecommerceOrderToNotify = String(paymentRecord.order_id);
+            const orderId = String(paymentRecord.order_id);
+            const vendorId = String(
+              orderUpdate.rows[0].vendor_id ?? paymentRecord.vendor_id ?? ''
+            );
+            ecommerceOrderForShipment = orderId;
+            ecommerceOrderToNotify = orderId;
+            if (vendorId) {
+              void applyOrderCommissionAudit(orderId, vendorId).catch((e) =>
+                console.warn('[RAZORPAY-WEBHOOK] Commission audit failed:', e)
+              );
+            }
           }
         }
       });
@@ -2400,66 +2488,4 @@ function createLambdaContext(): any {
 // HELPER FUNCTIONS
 // ============================================================================
 
-/**
- * ✅ FIX: Optimized vendor tier commission lookup - single query instead of multiple
- * Get vendor tier commission rate from database with optimized query
- * @exported - Used by vendor-booking-actions.ts for earnings calculation
- */
-export async function getVendorTierCommission(vendorId: string): Promise<number> {
-  try {
-    // ✅ FIX: Single optimized query that checks all conditions at once
-    // This reduces database round trips from 3-4 queries to 1 query
-    const result = await query(`
-      WITH vendor_tier_info AS (
-        -- First, try active subscription
-        SELECT vt.commission_rate, 1 as priority
-        FROM vendor_tier_subscriptions vts
-        JOIN vendor_tiers vt ON vts.tier_id = vt.id
-        WHERE vts.vendor_id = $1
-          AND vts.status = 'active'
-          AND vts.expires_at > NOW()
-        ORDER BY vts.created_at DESC
-        LIMIT 1
-        
-        UNION ALL
-        
-        -- Second, try vendor's current tier
-        SELECT vt.commission_rate, 2 as priority
-        FROM vendors v
-        JOIN vendor_tiers vt ON v.tier = vt.tier_name
-        WHERE v.id = $1
-          AND vt.is_active = true
-        LIMIT 1
-        
-        UNION ALL
-        
-        -- Third, get default tier
-        SELECT commission_rate, 3 as priority
-        FROM vendor_tiers
-        WHERE (is_default = true OR tier_name = 'Bronze')
-          AND is_active = true
-        ORDER BY is_default DESC, tier_level ASC
-        LIMIT 1
-      )
-      SELECT commission_rate
-      FROM vendor_tier_info
-      ORDER BY priority ASC
-      LIMIT 1
-    `, [vendorId]);
-
-    const rows = Array.isArray(result) 
-      ? result 
-      : (result as any).rows || [];
-
-    if (rows.length > 0 && rows[0].commission_rate) {
-      return parseFloat(rows[0].commission_rate);
-    }
-
-    // Fallback to default commission rate if no tier found
-    return DEFAULT_COMMISSION_RATE;
-  } catch (error) {
-    console.error('Error getting vendor tier commission:', error);
-    // Fallback to default commission rate on error
-    return DEFAULT_COMMISSION_RATE;
-  }
-}
+// getVendorTierCommission is exported from ../../../utils/vendor-tier-commission

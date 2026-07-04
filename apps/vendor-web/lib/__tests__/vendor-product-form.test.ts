@@ -26,6 +26,7 @@ const baseForm: ProductFormState = {
   baseMrp: '500',
   basePrice: '450',
   brand: '',
+  listingOwnership: '',
   keyFeatures: '',
   weightKg: '',
   lengthCm: '',
