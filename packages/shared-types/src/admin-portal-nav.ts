@@ -311,6 +311,16 @@ export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
     description: 'Platform promotions and coupons (Promotion Hub)',
   },
   {
+    id: 'marketing-vendor-promotions',
+    label: 'Vendor Promotions',
+    permissionId: 'admin.integrations',
+    permissionsAny: ['admin.integrations', 'admin.notifications.view'],
+    pathPrefixes: ['/marketing/vendor-promotions'],
+    section: 'marketing-child',
+    sortOrder: 196,
+    description: 'Service vendor-created promotions and coupons',
+  },
+  {
     id: 'policy-center',
     label: 'Policy Center',
     permissionId: 'admin.integrations',

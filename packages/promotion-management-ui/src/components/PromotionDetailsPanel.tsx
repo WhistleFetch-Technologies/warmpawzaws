@@ -1,5 +1,6 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import type { NormalizedCouponItem, NormalizedPromotionItem } from '../types';
 import { lifecycleFromPromotion, lifecycleFromCoupon } from '../lifecycle';
 import { PromotionStatusBadge } from './PromotionStatusBadge';
@@ -45,10 +46,17 @@ export function PromotionDetailsPanel({
   const end = item?.endDate ?? coupon!.endDate;
   const isCoupon = Boolean(coupon);
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <>
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} aria-hidden />
-      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-white shadow-2xl border-l border-slate-200 flex flex-col">
+      <aside
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl sm:w-[28rem]"
+        role="dialog"
+        aria-modal="true"
+        aria-label={isCoupon ? 'Coupon details' : 'Promotion details'}
+      >
         <div className="flex items-center justify-between border-b px-5 py-4">
           <h2 className="text-lg font-bold text-slate-900">
             {isCoupon ? 'Coupon details' : 'Promotion details'}
@@ -173,7 +181,8 @@ export function PromotionDetailsPanel({
 
           <ComingSoonSection />
         </div>
-      </div>
-    </>
+      </aside>
+    </>,
+    document.body
   );
 }

@@ -34,6 +34,7 @@ const NAV: ECommerceNavItem[] = [
   { id: 'categories', label: 'Categories', href: '/ecommerce?tab=categories', icon: FileText },
   { id: 'marketplace-analytics', label: 'Marketplace Analytics', href: '/ecommerce?tab=analytics', icon: BarChart3 },
   { id: 'promotions', label: 'Promotions & Coupons', href: '/ecommerce/promotions', icon: Tag, matchPrefix: '/ecommerce/promotions' },
+  { id: 'seller-promotions', label: 'Seller Promotions', href: '/ecommerce/seller-promotions', icon: Store, matchPrefix: '/ecommerce/seller-promotions' },
   { id: 'campaigns', label: 'Seller Campaigns', href: '/ecommerce/campaigns', icon: Megaphone, matchPrefix: '/ecommerce/campaigns' },
   { id: 'promotion-analytics', label: 'Promotion Analytics', href: '/ecommerce/analytics', icon: LineChart, matchPrefix: '/ecommerce/analytics' },
   { id: 'policies', label: 'Policies', href: '/ecommerce?tab=policies', icon: Settings },

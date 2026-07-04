@@ -70,6 +70,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   roles: UserCog,
   marketing: Megaphone,
   promotions: Tag,
+  'marketing-vendor-promotions': Users,
   'policy-center': Scale,
   'marketing-analytics': BarChart3,
   'marketing-campaigns': Megaphone,
@@ -102,6 +103,11 @@ function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void
   if (item.id === 'promotions') {
     return () => {
       window.location.href = '/promotions';
+    };
+  }
+  if (item.id === 'marketing-vendor-promotions') {
+    return () => {
+      window.location.href = '/marketing/vendor-promotions';
     };
   }
   if (item.id === 'policy-center') {
@@ -141,6 +147,9 @@ function isNavItemActive(item: AdminPortalNavItem, activeView: string, pathname:
   }
   if (item.id === 'promotions') {
     return pathname?.startsWith('/promotions') ?? false;
+  }
+  if (item.id === 'marketing-vendor-promotions') {
+    return pathname?.startsWith('/marketing/vendor-promotions') ?? false;
   }
   if (item.id === 'policy-center') {
     return pathname?.startsWith('/policy-center') ?? false;

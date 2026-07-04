@@ -128,12 +128,12 @@ export function PromotionWizard({
   const progress = wizardProgressPercent(step);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="border-b border-slate-100 px-5 py-4 space-y-3">
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-0 sm:items-center sm:p-4">
+      <div className="flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden rounded-none bg-white shadow-2xl sm:h-auto sm:max-h-[92dvh] sm:rounded-2xl">
+        <div className="space-y-2 border-b border-slate-100 px-4 py-3 sm:space-y-3 sm:px-5 sm:py-4">
           <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-bold text-slate-900 sm:text-lg">
                 {initial ? 'Edit' : 'Create'}{' '}
                 {form.createKind === 'coupon' ? 'coupon' : 'promotion'}
               </h2>
@@ -156,7 +156,7 @@ export function PromotionWizard({
               style={{ width: `${progress}%` }}
             />
           </div>
-          <div className="hidden sm:flex flex-wrap gap-1">
+          <div className="hidden max-h-12 flex-wrap gap-1 overflow-hidden sm:flex">
             {WIZARD_STEP_LABELS.map((label, i) => (
               <span
                 key={label}
@@ -174,13 +174,13 @@ export function PromotionWizard({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
           {step === 0 && (
             <div className="grid gap-4 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={() => pickKind('promotion')}
-                className="rounded-2xl border-2 border-slate-200 p-6 text-left hover:border-orange-400 hover:bg-orange-50/50"
+                className="rounded-2xl border-2 border-slate-200 p-4 text-left hover:border-orange-400 hover:bg-orange-50/50 sm:p-6"
               >
                 <Sparkles className="h-8 w-8 text-violet-600 mb-3" />
                 <h3 className="font-bold text-slate-900">Promotion</h3>
@@ -190,14 +190,14 @@ export function PromotionWizard({
                 <button
                   type="button"
                   onClick={() => pickKind('coupon')}
-                  className="rounded-2xl border-2 border-slate-200 p-6 text-left hover:border-amber-400 hover:bg-amber-50/50"
+                  className="rounded-2xl border-2 border-slate-200 p-4 text-left hover:border-amber-400 hover:bg-amber-50/50 sm:p-6"
                 >
                   <Ticket className="h-8 w-8 text-amber-600 mb-3" />
                   <h3 className="font-bold text-slate-900">Coupon</h3>
                   <p className="text-sm text-slate-500 mt-1">Customer enters a code at checkout</p>
                 </button>
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">
+                <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500 sm:p-6">
                   Coupons are managed at platform level for this portal.
                 </div>
               )}
@@ -404,16 +404,16 @@ export function PromotionWizard({
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4 bg-slate-50">
+        <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
           <button
             type="button"
             onClick={back}
-            className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200"
+            className="inline-flex items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 sm:justify-start"
           >
             <ChevronLeft className="h-4 w-4" />
             {step === 0 ? 'Close' : 'Back'}
           </button>
-          <div className="flex gap-2">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
             {step === LAST_STEP ? (
               <>
                 <button
@@ -437,7 +437,7 @@ export function PromotionWizard({
               <button
                 type="button"
                 onClick={next}
-                className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white"
+                className="inline-flex items-center justify-center gap-1 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white"
               >
                 Next
                 <ChevronRight className="h-4 w-4" />
