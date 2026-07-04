@@ -29,6 +29,7 @@ interface CategoryRateRow {
 export function CommissionSettings() {
   const [loading, setLoading] = useState(true);
   const [savingVendor, setSavingVendor] = useState(false);
+  const [savingPlatform, setSavingPlatform] = useState(false);
 
   const [sellers, setSellers] = useState<SellerOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
@@ -46,6 +47,7 @@ export function CommissionSettings() {
   const [addCategoryId, setAddCategoryId] = useState('');
   const [addCategoryRate, setAddCategoryRate] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [platformDefaultRate, setPlatformDefaultRate] = useState('');
 
   useEffect(() => {
     void loadInitial();
@@ -60,7 +62,7 @@ export function CommissionSettings() {
   const loadInitial = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadSellers(), loadCategories()]);
+      await Promise.all([loadSellers(), loadCategories(), loadPlatformCommissionSettings()]);
     } finally {
       setLoading(false);
     }
@@ -97,6 +99,17 @@ export function CommissionSettings() {
       );
     } catch {
       setCategories([]);
+    }
+  };
+
+  const loadPlatformCommissionSettings = async () => {
+    try {
+      const data = await apiClient.get<any>('/admin/ecommerce/commission/settings');
+      const settings = (data as any).settings || (data as any).data?.settings || {};
+      const rate = settings.defaultRate ?? settings.commissionRate;
+      setPlatformDefaultRate(rate != null ? String(rate) : '');
+    } catch {
+      setPlatformDefaultRate('');
     }
   };
 
@@ -235,6 +248,29 @@ export function CommissionSettings() {
     }
   };
 
+  const handleSavePlatformDefault = async () => {
+    const rate = parseFloat(platformDefaultRate);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+      toast.error('Platform default commission must be between 0 and 100');
+      return;
+    }
+
+    try {
+      setSavingPlatform(true);
+      const data = await apiClient.put<any>('/admin/ecommerce/commission/settings', {
+        defaultRate: rate,
+      });
+      const settings = (data as any).settings || (data as any).data?.settings || {};
+      const savedRate = settings.defaultRate ?? settings.commissionRate ?? rate;
+      setPlatformDefaultRate(String(savedRate));
+      toast.success('Platform default commission saved');
+    } catch {
+      toast.error('Failed to save platform default commission');
+    } finally {
+      setSavingPlatform(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -256,6 +292,41 @@ export function CommissionSettings() {
         <p className="text-gray-500 text-sm mt-1">
           One commission model per seller. Category defaults are set under Categories.
         </p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex flex-col md:flex-row md:items-end gap-4 justify-between">
+          <div>
+            <h3 className="font-semibold text-gray-900">Platform Default Commission</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Final fallback for ecommerce orders when seller and category rates do not resolve.
+            </p>
+          </div>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Rate %</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={platformDefaultRate}
+                onChange={(e) => setPlatformDefaultRate(e.target.value)}
+                placeholder="e.g. 15"
+                className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSavePlatformDefault}
+              disabled={savingPlatform}
+            >
+              {savingPlatform ? 'Saving...' : 'Save Default'}
+            </Button>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -509,7 +580,8 @@ export function CommissionSettings() {
       <div className="bg-stone-50 rounded-xl border border-stone-200 p-4">
         <p className="text-xs text-gray-500">
           Priority: vendor model (category or ownership) → optional vendor default → category
-          default → configuration error. No subscription tier or platform fallback for shop orders.
+          default → platform default → configuration error. No subscription tier fallback for shop
+          orders.
         </p>
       </div>
     </div>
