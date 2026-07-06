@@ -6,10 +6,9 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useCustomerShellAnalytics } from '@/hooks/useCustomerShellAnalytics';
 import { setClientShellScreenForErrors } from '@/lib/client-error-reporting';
 import dynamic from 'next/dynamic';
-import { UserAccountSidebar } from '../UserAccountSidebar';
 import { NotAvailable } from '../NotAvailable';
 import { CustomerScreenWrapper } from '../CustomerScreenWrapper';
-import { SERVICE_CONFIGS } from '../home-services/UniversalHomeServiceRouter';
+import { SERVICE_CONFIGS } from '@/lib/home/service-configs';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
@@ -141,6 +140,11 @@ const CustomerHome = dynamic(
   () =>
     import('../homepage/CustomerHomeComplete').then((m) => ({ default: m.CustomerHomeComplete })),
   { loading: LoadingSpinner, ssr: false }
+);
+
+const UserAccountSidebar = dynamic(
+  () => import('../UserAccountSidebar').then((m) => ({ default: m.UserAccountSidebar })),
+  { ssr: false }
 );
 
 const CustomerPetDetails = dynamic(() => import('../CustomerPetDetails').then((m) => ({ default: m.CustomerPetDetails })), { loading: LoadingSpinner });
