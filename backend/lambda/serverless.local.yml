@@ -51,6 +51,7 @@ provider:
     
     # Feature Flags
     UAT_MODE: ${env:UAT_MODE, 'true'}
+    PLATFORM_TAX_DOCUMENTS_ENABLED: ${env:PLATFORM_TAX_DOCUMENTS_ENABLED, 'true'}
 
     # Java customer-service (optional). When enabled, GET /customer/by-phone tries the microservice first.
     CUSTOMER_SERVICE_URL: ${env:CUSTOMER_SERVICE_URL, ''}

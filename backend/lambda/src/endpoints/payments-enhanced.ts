@@ -985,20 +985,30 @@ export function registerPaymentEndpointsEnhanced(app: Hono) {
 
   /**
    * POST /payments/verify
-   * Verify a Razorpay payment
+   * Legacy verify stub — does NOT perform HMAC signature verification.
+   *
+   * WARNING: This endpoint must NOT be used for ecommerce or booking checkout flows.
+   * Those flows call POST /razorpay/verify-payment which is handled by VerifyPaymentHandler
+   * in razorpay.razorpay.ts and performs a full HMAC SHA-256 signature check before
+   * updating any order/payment state.
+   *
+   * This stub is retained only for legacy internal tooling that already validates
+   * the Razorpay signature before calling this endpoint. Do not expose this route
+   * to any client-facing checkout flow.
    */
   app.post('/payments/verify', async (c) => {
     try {
       const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = await c.req.json();
 
-      console.log(`🔐 [PAYMENT-VERIFY] Verifying payment ${razorpay_payment_id}`);
+      console.log(`🔐 [PAYMENT-VERIFY-LEGACY] Verifying payment ${razorpay_payment_id} (no HMAC check — use /razorpay/verify-payment for checkout)`);
 
       if (!razorpay_order_id || !razorpay_payment_id) {
         return c.json({ error: 'Missing required payment details' }, 400);
       }
 
-      // In production, verify signature using Razorpay secret
-      // For now, just update the payment status
+      // Signature field is accepted but not verified here — use /razorpay/verify-payment for HMAC validation.
+      void razorpay_signature;
+
       const payment = await query(
         `UPDATE payments SET status = 'success', razorpay_payment_id = $1, updated_at = NOW()
          WHERE razorpay_order_id = $2 RETURNING *`,

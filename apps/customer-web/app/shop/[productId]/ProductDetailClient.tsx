@@ -650,7 +650,7 @@ export default function ProductDetailClient() {
 
   const buyNow = () => {
     if (!mergeLineIntoLocalCart()) return;
-    router.push('/cart?buynow=1');
+    nav.goToCart({ buynow: true });
   };
 
   const shareProduct = async () => {
@@ -750,7 +750,7 @@ export default function ProductDetailClient() {
           <h2 className="text-xl font-bold text-slate-900 mb-2">Product Not Found</h2>
           <p className="text-slate-500 mb-6">{error || 'This product may have been removed'}</p>
           <button
-            onClick={() => router.push('/shop')}
+            onClick={() => nav.goToShop()}
             className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg"
           >
             Back to Shop
@@ -785,7 +785,7 @@ export default function ProductDetailClient() {
                 heartClassName="w-5 h-5"
               />
               <button
-                onClick={() => router.push('/shop')}
+                onClick={() => nav.goToShop()}
                 className="relative p-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl"
               >
                 <ShoppingCart className="w-5 h-5" />
@@ -798,7 +798,7 @@ export default function ProductDetailClient() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm text-slate-500 mb-6">
-          <button onClick={() => router.push('/shop')} className="hover:text-orange-600">Shop</button>
+          <button onClick={() => nav.goToShop()} className="hover:text-orange-600">Shop</button>
           <ChevronRight className="w-4 h-4" />
           {product.category_name && (
             <>
@@ -839,8 +839,8 @@ export default function ProductDetailClient() {
                 </div>
               )}
 
-              {/* Out of Stock Overlay */}
-              {product.stock === 0 && displayStock === 0 && (
+              {/* Out of Stock Overlay — based on selected SKU stock, not aggregate product stock */}
+              {displayStock === 0 && (
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                   <span className="px-6 py-3 bg-white text-slate-900 font-bold rounded-xl text-lg">Out of Stock</span>
                 </div>
@@ -941,6 +941,7 @@ export default function ProductDetailClient() {
                             selectedVariations,
                             selKey,
                             option.value,
+                            product.variations,
                           );
                         const previewSelection = {
                           ...selectedVariations,
@@ -1193,24 +1194,35 @@ export default function ProductDetailClient() {
                   <span className="font-medium text-slate-900">{product.material}</span>
                 </div>
               )}
-              {product.dimensions && (
-                <>
-                  <div className="flex justify-between py-2 border-b border-slate-100">
-                    <span className="text-slate-600">Weight</span>
-                    <span className="font-medium text-slate-900">{product.dimensions.weight} kg</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-slate-100">
-                    <span className="text-slate-600">Dimensions</span>
-                    <span className="font-medium text-slate-900">
-                      {product.dimensions.length} × {product.dimensions.width} × {product.dimensions.height} cm
-                    </span>
-                  </div>
-                </>
+              {product.dimensions && product.dimensions.weight > 0 && (
+                <div className="flex justify-between py-2 border-b border-slate-100">
+                  <span className="text-slate-600">Weight</span>
+                  <span className="font-medium text-slate-900">{product.dimensions.weight} kg</span>
+                </div>
+              )}
+              {product.dimensions &&
+                (product.dimensions.length > 0 ||
+                  product.dimensions.width > 0 ||
+                  product.dimensions.height > 0) && (
+                <div className="flex justify-between py-2 border-b border-slate-100">
+                  <span className="text-slate-600">Dimensions</span>
+                  <span className="font-medium text-slate-900">
+                    {product.dimensions.length} × {product.dimensions.width} × {product.dimensions.height} cm
+                  </span>
+                </div>
               )}
               {product.specifications &&
                 typeof product.specifications === 'object' &&
                 !Array.isArray(product.specifications) &&
-                Object.entries(product.specifications).map(([key, value]) => (
+                Object.entries(product.specifications)
+                  .filter(([key, value]) => {
+                    // Skip dimension fields (shown in the dedicated row above) and zero/empty values.
+                    const dimKeys = new Set(['length_cm', 'breadth_cm', 'height_cm', 'length', 'breadth', 'height', 'width']);
+                    if (dimKeys.has(key)) return false;
+                    if (value == null || String(value).trim() === '' || value === 0) return false;
+                    return true;
+                  })
+                  .map(([key, value]) => (
                 <div key={key} className="flex justify-between py-2 border-b border-slate-100">
                   <span className="text-slate-600">{key}</span>
                   <span className="font-medium text-slate-900">{displaySpecValue(value)}</span>
@@ -1296,9 +1308,7 @@ export default function ProductDetailClient() {
           loading={recsLoading}
           className="mt-12 mb-8"
           onAdd={(p) => addRecommendationToCart(shopProductToCartItem(p))}
-          onProductClick={(p) =>
-            router.push(`/shop/${encodeURIComponent(p.id)}`)
-          }
+          onProductClick={(p) => nav.goToProduct(p.id)}
         />
       </main>
     </div>

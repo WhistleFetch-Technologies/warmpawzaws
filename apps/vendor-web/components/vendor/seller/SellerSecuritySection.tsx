@@ -69,11 +69,13 @@ export function SellerSecuritySection({
   const [phone, setPhone] = useState(initialPhone);
 
   const [phoneModalOpen, setPhoneModalOpen] = useState(false);
-  const [phoneStep, setPhoneStep] = useState<'enter' | 'verify'>('enter');
+  type PhoneChangeStep = 'verify_current' | 'enter_new' | 'verify_new';
+  const [phoneStep, setPhoneStep] = useState<PhoneChangeStep>('verify_current');
   const [newPhone, setNewPhone] = useState('');
   const [phoneOtp, setPhoneOtp] = useState('');
   const [phoneBusy, setPhoneBusy] = useState(false);
   const [phoneError, setPhoneError] = useState('');
+  const [currentPhoneMasked, setCurrentPhoneMasked] = useState('');
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -104,15 +106,54 @@ export function SellerSecuritySection({
     if (initialPhone) setPhone(initialPhone);
   }, [initialPhone]);
 
+  const sendCurrentPhoneOtp = async () => {
+    setPhoneBusy(true);
+    setPhoneError('');
+    try {
+      const res = await apiClient.post<{ maskedPhone?: string; message?: string }>(
+        `/vendor/${sellerId}/security/phone-change/send-current-otp`,
+        {}
+      );
+      if (res.maskedPhone) setCurrentPhoneMasked(res.maskedPhone);
+    } catch (e: any) {
+      setPhoneError(e?.message || 'Failed to send OTP to current number');
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
+
   const openPhoneChange = () => {
-    setPhoneStep('enter');
+    setPhoneStep('verify_current');
     setNewPhone('');
     setPhoneOtp('');
     setPhoneError('');
+    const digits = phone.replace(/\D/g, '').slice(-10);
+    setCurrentPhoneMasked(digits ? `******${digits.slice(-4)}` : '');
     setPhoneModalOpen(true);
+    void sendCurrentPhoneOtp();
   };
 
-  const requestPhoneOtp = async () => {
+  const verifyCurrentPhoneOtp = async () => {
+    if (phoneOtp.length < 6) {
+      setPhoneError('Enter the 6-digit OTP sent to your current number');
+      return;
+    }
+    setPhoneBusy(true);
+    setPhoneError('');
+    try {
+      await apiClient.post(`/vendor/${sellerId}/security/phone-change/verify-current`, {
+        otp: phoneOtp,
+      });
+      setPhoneOtp('');
+      setPhoneStep('enter_new');
+    } catch (e: any) {
+      setPhoneError(e?.message || 'Invalid OTP');
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
+
+  const requestNewPhoneOtp = async () => {
     const digits = newPhone.replace(/\D/g, '').slice(-10);
     if (!/^[6-9]\d{9}$/.test(digits)) {
       setPhoneError('Enter a valid 10-digit mobile number');
@@ -125,7 +166,8 @@ export function SellerSecuritySection({
         newPhone: digits,
       });
       setNewPhone(digits);
-      setPhoneStep('verify');
+      setPhoneOtp('');
+      setPhoneStep('verify_new');
     } catch (e: any) {
       setPhoneError(e?.message || 'Failed to send OTP');
     } finally {
@@ -283,10 +325,34 @@ export function SellerSecuritySection({
           <DialogHeader>
             <DialogTitle>Change phone number</DialogTitle>
           </DialogHeader>
-          {phoneStep === 'enter' ? (
+          {phoneStep === 'verify_current' && (
             <div className="space-y-4">
               <p className="text-sm text-slate-600">
-                We will send an OTP to your new number to confirm the change.
+                For your security, enter the OTP sent to your current number{' '}
+                <strong>{currentPhoneMasked || phone}</strong>.
+              </p>
+              <Input
+                value={phoneOtp}
+                onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="6-digit OTP"
+                maxLength={6}
+              />
+              {phoneError && <p className="text-sm text-red-600">{phoneError}</p>}
+              <button
+                type="button"
+                onClick={() => void sendCurrentPhoneOtp()}
+                disabled={phoneBusy}
+                className="text-sm text-orange-600 hover:underline disabled:opacity-50"
+              >
+                Resend OTP to current number
+              </button>
+            </div>
+          )}
+          {phoneStep === 'enter_new' && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Current number verified. Enter your new mobile number — we will send an OTP to
+                confirm it.
               </p>
               <Input
                 value={newPhone}
@@ -296,10 +362,11 @@ export function SellerSecuritySection({
               />
               {phoneError && <p className="text-sm text-red-600">{phoneError}</p>}
             </div>
-          ) : (
+          )}
+          {phoneStep === 'verify_new' && (
             <div className="space-y-4">
               <p className="text-sm text-slate-600">
-                Enter the OTP sent to <strong>{newPhone}</strong>
+                Enter the OTP sent to your new number <strong>{newPhone}</strong>
               </p>
               <Input
                 value={phoneOtp}
@@ -314,13 +381,19 @@ export function SellerSecuritySection({
             <Button variant="outline" onClick={() => setPhoneModalOpen(false)}>
               Cancel
             </Button>
-            {phoneStep === 'enter' ? (
-              <Button onClick={requestPhoneOtp} disabled={phoneBusy}>
-                {phoneBusy ? 'Sending…' : 'Send OTP'}
+            {phoneStep === 'verify_current' && (
+              <Button onClick={() => void verifyCurrentPhoneOtp()} disabled={phoneBusy}>
+                {phoneBusy ? 'Verifying…' : 'Verify current number'}
               </Button>
-            ) : (
-              <Button onClick={confirmPhoneChange} disabled={phoneBusy}>
-                {phoneBusy ? 'Verifying…' : 'Confirm'}
+            )}
+            {phoneStep === 'enter_new' && (
+              <Button onClick={() => void requestNewPhoneOtp()} disabled={phoneBusy}>
+                {phoneBusy ? 'Sending…' : 'Send OTP to new number'}
+              </Button>
+            )}
+            {phoneStep === 'verify_new' && (
+              <Button onClick={() => void confirmPhoneChange()} disabled={phoneBusy}>
+                {phoneBusy ? 'Updating…' : 'Confirm change'}
               </Button>
             )}
           </DialogFooter>

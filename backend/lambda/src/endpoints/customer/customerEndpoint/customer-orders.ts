@@ -24,6 +24,7 @@ import {
   decrementSkuStock,
 } from '../../../utils/product-sku-order';
 import { assertProductDeliverableToCity } from '../../../utils/product-delivery-regions';
+import { resolveReturnWindowDays, isReturnWindowExpired } from '../../../utils/return-window';
 
 /** Maps checkout address shapes to NOT NULL `orders.shipping_*`; full object also in `metadata.address_snapshot`. */
 function shippingColumnsFromAddress(
@@ -408,7 +409,8 @@ class GetCustomerOrdersHandler extends BaseHandler {
           s.estimated_delivery AS shipment_estimated_delivery,
           v.business_name as vendor_name,
           v.phone as vendor_phone,
-          v.address as vendor_address
+          v.address as vendor_address,
+          v.return_window_days as return_window_days
         FROM orders o
         LEFT JOIN LATERAL (
           SELECT awb_code, logistics_partner, tracking_url, courier_name, shipped_at, estimated_delivery
@@ -860,7 +862,7 @@ class CustomerReturnOrderHandler extends BaseHandler {
       }
 
       const orderResult = await query(
-        'SELECT id, order_status, customer_id FROM orders WHERE id = $1 AND customer_id = $2',
+        'SELECT id, order_status, customer_id, vendor_id, delivered_at FROM orders WHERE id = $1 AND customer_id = $2',
         [orderId, customerId]
       );
 
@@ -875,6 +877,19 @@ class CustomerReturnOrderHandler extends BaseHandler {
           400
         );
       }
+
+      const windowDays = await resolveReturnWindowDays(order.vendor_id);
+      if (isReturnWindowExpired(order.delivered_at, windowDays)) {
+        return this.error(
+          `Return window of ${windowDays} day(s) has expired. Returns must be requested within ${windowDays} day(s) of delivery.`,
+          400
+        );
+      }
+
+      // Cancel any pending loyalty award for this order — customer is initiating a return
+      await import('../../../utils/ecommerce-loyalty')
+        .then(({ cancelPendingLoyaltyAward }) => cancelPendingLoyaltyAward(orderId, 'return_initiated'))
+        .catch((e) => console.warn('[CUSTOMER-ORDERS] cancelPendingLoyaltyAward failed:', e?.message));
 
       const now = new Date().toISOString();
       await query(

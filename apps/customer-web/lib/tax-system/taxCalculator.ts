@@ -78,6 +78,11 @@ function calculateTaxForItem(
   
   // Sort by priority (lower number = higher priority)
   applicableRules.sort((a, b) => a.priority - b.priority);
+
+  // Only apply the single highest-priority base rate rule (plus any compound rules on top of it).
+  // Without this guard, a product matching both a category-specific rule AND the catch-all
+  // 18% default would have both rates stacked, producing an incorrect effective rate.
+  let baseRuleApplied = false;
   
   // Track base taxes for compound tax calculation
   const baseTaxes: Map<string, number> = new Map();
@@ -88,12 +93,20 @@ function calculateTaxForItem(
       continue;
     }
     
+    const isCompoundRule = !!(rule.compoundOnTaxIds || rule.compoundOnTaxType);
+
+    // Skip additional base rules once the first (highest-priority) one has been applied.
+    // Compound/cess rules are always allowed through because they piggyback on the base.
+    if (!isCompoundRule && baseRuleApplied) {
+      continue;
+    }
+
     // Calculate base tax
     let baseTaxAmount = 0;
     let compoundTaxAmount = 0;
     
     if (rule.calculationMethod === 'percentage') {
-      if (rule.compoundOnTaxIds || rule.compoundOnTaxType) {
+      if (isCompoundRule) {
         // Compound tax - calculate on base tax amount
         const baseTaxKey = rule.compoundOnTaxIds?.[0] || rule.compoundOnTaxType || '';
         const baseTax = baseTaxes.get(baseTaxKey) || 0;
@@ -108,10 +121,12 @@ function calculateTaxForItem(
         // Base tax - calculate on item amount
         baseTaxAmount = (item.amount * (item.quantity || 1) * rule.rate) / 100;
         baseTaxes.set(rule.id, baseTaxAmount);
+        baseRuleApplied = true;
       }
     } else if (rule.calculationMethod === 'fixed') {
       baseTaxAmount = rule.rate * (item.quantity || 1);
       baseTaxes.set(rule.id, baseTaxAmount);
+      baseRuleApplied = true;
     }
     
     const taxAmount = baseTaxAmount + compoundTaxAmount;

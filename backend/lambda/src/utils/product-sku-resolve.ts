@@ -77,13 +77,41 @@ export function optionValuesMatch(
 ): boolean {
   const normSku = normalizeOptionValues(skuValues);
   const normSel = normalizeOptionValues(selected);
+  if (Object.keys(normSku).length === 0) {
+    return Object.keys(normSel).length === 0;
+  }
   if (requireAllAxes) {
-    const skuKeys = Object.keys(normSku);
-    if (skuKeys.length === 0) return Object.keys(normSel).length === 0;
-    if (Object.keys(normSel).length !== skuKeys.length) return false;
-    return skuKeys.every((k) => normSel[k] === normSku[k]);
+    const selKeys = Object.keys(normSel);
+    if (selKeys.length === 0) return false;
+    // Exact match: every selected axis must match the SKU (SKU may carry extra correlated axes).
+    return selKeys.every((k) => normSku[k] === normSel[k]);
   }
   return Object.entries(normSel).every(([k, v]) => normSku[k] === v);
+}
+
+const REDUNDANT_AXIS_KEEP_PRIORITY = ['size', 'pack', 'color', 'colour', 'weight'];
+
+/** Drop axes whose option sets are identical (e.g. size + weight both 800g/2.5kg/7kg). */
+export function collapseRedundantVariationAxes(axes: VariationAxis[]): VariationAxis[] {
+  if (axes.length <= 1) return axes;
+  const ordered = [...axes].sort((a, b) => {
+    const pa = REDUNDANT_AXIS_KEEP_PRIORITY.indexOf(a.key);
+    const pb = REDUNDANT_AXIS_KEEP_PRIORITY.indexOf(b.key);
+    const scoreA = pa >= 0 ? pa : 100;
+    const scoreB = pb >= 0 ? pb : 100;
+    if (scoreA !== scoreB) return scoreA - scoreB;
+    return a.key.localeCompare(b.key);
+  });
+  const kept: VariationAxis[] = [];
+  for (const axis of ordered) {
+    const duplicate = kept.some(
+      (existing) =>
+        existing.values.length === axis.values.length &&
+        existing.values.every((v, i) => v === axis.values[i]),
+    );
+    if (!duplicate) kept.push(axis);
+  }
+  return kept.sort((a, b) => a.key.localeCompare(b.key));
 }
 
 export function resolveSkuFromSelection(
@@ -227,11 +255,6 @@ export function deriveParentFromListingSku(skus: ProductSkuRow[]): {
   if (listing) {
     const sp = Number(listing.price);
     if (Number.isFinite(sp) && sp > 0) out.price = sp;
-    const mrp =
-      listing.compare_at_price != null && Number(listing.compare_at_price) > 0
-        ? Number(listing.compare_at_price)
-        : NaN;
-    if (Number.isFinite(mrp) && mrp > 0) out.compare_at_price = mrp;
     const images = normalizeImagesArray(listing.images);
     if (images.length > 0) out.images = images;
   }
@@ -256,10 +279,6 @@ export function applyStorefrontSkuPricingFields(
   const aggStock = aggregateParentStock(skus);
 
   const listingSp = listingSku ? Number(listingSku.price) : NaN;
-  const listingCompare =
-    listingSku?.compare_at_price != null && Number(listingSku.compare_at_price) > 0
-      ? Number(listingSku.compare_at_price)
-      : null;
 
   out.has_variants = true;
   out.stock = aggStock;
@@ -270,20 +289,16 @@ export function applyStorefrontSkuPricingFields(
     out.price = minPrice;
   }
 
-  if (listingCompare != null) {
-    out.compare_at_price = listingCompare;
-    out.original_price = listingCompare;
-  }
-
   if (minInStock != null) {
     out.min_price = minInStock;
   } else if (minPrice != null) {
     out.min_price = minPrice;
   }
 
-  if (listingCompare != null) {
-    out.min_compare_at_price = listingCompare;
-  }
+  // Single-price model: never leak parent/SKU compare_at to storefront (promotions TBD at read time).
+  delete out.compare_at_price;
+  delete out.original_price;
+  delete out.min_compare_at_price;
 
   if (listingSku?.id) {
     const listingId = String(listingSku.id);
@@ -321,7 +336,7 @@ export function mapSkusToCustomerVariations(
   skus: ProductSkuRow[],
   axes?: VariationAxis[],
 ): CustomerVariation[] {
-  const variationAxes = axes ?? buildVariationAxes(skus);
+  const variationAxes = collapseRedundantVariationAxes(axes ?? buildVariationAxes(skus));
   const active = skus.filter((s) => s.is_active !== false);
   const listingSku = getListingProductSku(active);
   const refPrice = listingSku ? Number(listingSku.price) : 0;

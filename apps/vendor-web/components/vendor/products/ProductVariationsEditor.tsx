@@ -61,6 +61,14 @@ export default function ProductVariationsEditor({
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
+    // warn in dev if this deprecated component is accidentally mounted
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        '[ProductVariationsEditor] This component is deprecated. ' +
+        'Use ProductFormModal (Seller Hub) for variant editing. ' +
+        'The backend variations endpoint it calls has a known stock double-count bug for multi-axis products.',
+      );
+    }
     loadVariations();
   }, [productId]);
 

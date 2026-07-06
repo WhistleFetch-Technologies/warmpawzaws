@@ -149,10 +149,7 @@ export async function syncProductSkus(
       throw new Error('Each SKU must have a selling price greater than 0');
     }
     const price = priceNum;
-    const compare_at_price =
-      input.compare_at_price != null && Number(input.compare_at_price) > 0
-        ? Number(input.compare_at_price)
-        : null;
+    const compare_at_price = null;
     const stock = Math.max(0, Math.floor(Number(input.stock) || 0));
     let imagesNorm = normalizeImagesArray(input.images);
     const targetId = await resolveSyncTargetSkuId(input, existingIds, productId, option_values);
@@ -328,10 +325,7 @@ export async function upsertProductSkuRow(
     throw new Error('SKU selling price must be greater than 0');
   }
   const price = priceNum;
-  const compare_at_price =
-    input.compare_at_price != null && Number(input.compare_at_price) > 0
-      ? Number(input.compare_at_price)
-      : null;
+  const compare_at_price = null;
   const stock = Math.max(0, Math.floor(Number(input.stock) || 0));
   let imagesNorm = normalizeImagesArray(input.images);
   if (imagesNorm.length > 0) {

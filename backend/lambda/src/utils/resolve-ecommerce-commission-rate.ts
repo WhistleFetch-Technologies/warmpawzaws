@@ -122,12 +122,28 @@ async function getPlatformDefaultRate(): Promise<number | null> {
 
 /**
  * Resolve commission for a single product line.
+ * Priority: product override → vendor model (category | ownership) → vendor default → category default → platform default.
  */
 export async function resolveProductCommission(
   ctx: EcommerceCommissionContext
 ): Promise<EcommerceCommissionResult> {
   const { vendorId, productId, categoryId } = ctx;
   const missing: string[] = [];
+
+  // Step 0: product-level override (highest priority — set by admin per product)
+  if (productId) {
+    try {
+      const override = await query(
+        `SELECT commission_rate FROM product_commission_overrides
+         WHERE product_id = $1::uuid AND is_active = true LIMIT 1`,
+        [productId]
+      );
+      const rate = normalizeCommissionRate(override.rows?.[0]?.commission_rate);
+      if (rate != null) return { rate, source: 'product_override' };
+    } catch {
+      // table may not exist on older schemas — fall through to next level
+    }
+  }
 
   const config = await getVendorCommissionConfig(vendorId);
   if (!config) {
@@ -401,10 +417,19 @@ export async function applyOrderCommissionAudit(
   }
 
   try {
+    // Write commission columns and compute vendor_payout_amount in one atomic UPDATE.
+    // vendor_payout_amount = GREATEST(subtotal - vendor_promotion_amount - commission_amount, 0)
+    // COALESCE(commission_snapshot, ...) is idempotent: a stored snapshot is never overwritten.
     await query(
       `UPDATE orders SET
          commission_rate = $2,
          commission_amount = $3,
+         vendor_payout_amount = GREATEST(
+           COALESCE(subtotal, 0)
+           - COALESCE(vendor_promotion_amount, 0)
+           - $3,
+           0
+         ),
          commission_snapshot = COALESCE(commission_snapshot, $4::jsonb),
          updated_at = NOW()
        WHERE id = $1::uuid`,

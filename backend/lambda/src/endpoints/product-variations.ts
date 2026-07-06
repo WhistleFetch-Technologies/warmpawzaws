@@ -1,5 +1,14 @@
 /**
  * Shim: product variations API backed by product_skus (legacy UI compatibility).
+ *
+ * @legacy This file exists only to support the deprecated ProductVariationsEditor component.
+ * New product/variant management uses ProductFormModal → syncProductSkus directly.
+ *
+ * DO NOT add new business logic here. See product-sku-service.ts for the canonical path.
+ *
+ * Safe to de-register the vendor POST/GET /variations routes once ProductVariationsEditor
+ * is confirmed removed from all rendered pages. The public GET /products/:id/variations
+ * route must be kept — it populates variation axes on the customer PDP.
  */
 
 import { Hono } from 'hono';
@@ -12,6 +21,16 @@ import {
 } from '../utils/product-sku-resolve';
 import { presignProductSkusForDisplay } from '../utils/s3-media-presign';
 
+/**
+ * @legacy Called only by the deprecated vendor POST /variations endpoint.
+ *
+ * KNOWN BUG (multi-axis): stock is calculated by summing stock_quantity from every option
+ * whose value appears anywhere in the combo. For products with two or more axes (e.g. size +
+ * color), the resulting stock is double-counted — adding size-option stock + color-option stock
+ * instead of per-combo stock. Do not fix; the calling component is deprecated.
+ *
+ * Use syncProductSkus (product-sku-service.ts) for correct per-SKU stock management.
+ */
 function variationsPayloadToSkuInputs(
   variations: Array<{
     name: string;

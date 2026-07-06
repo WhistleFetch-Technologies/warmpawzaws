@@ -20,6 +20,7 @@ import { buildStructuredTracking } from '../utils/logistics/shipment-tracking';
 import { notifyShopOrderStatusChange, type ShopOrderLifecycleStatus } from '../utils/shop-order-notifications';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getRazorpayClient } from '../utils/payments/razorpay-client';
 
 const validTransitions: Record<string, string[]> = {
   'pending': ['confirmed', 'cancelled'],
@@ -121,6 +122,25 @@ export function registerOrderManagementEndpoints(app: Hono) {
         trackingNumber: trackingNumber || undefined,
         cancellationReason: status === 'cancelled' ? notes : undefined,
       }).catch((err) => console.warn('[ORDER-MGMT] Shop notification failed:', err));
+
+      // Deferred loyalty award: insert pending row when delivered; awarded after return window expires
+      if (status === 'delivered' && order.order_status !== 'delivered') {
+        void (async () => {
+          try {
+            const { insertPendingLoyaltyAward } = await import('../utils/ecommerce-loyalty');
+            const { resolveReturnWindowDays } = await import('../utils/return-window');
+            const windowDays = await resolveReturnWindowDays(order.vendor_id ?? null);
+            await insertPendingLoyaltyAward({
+              orderId,
+              customerId: String(order.customer_id),
+              amount: parseFloat(String(order.total_amount || '0')),
+              windowDays,
+            });
+          } catch (e: any) {
+            console.warn('[ORDER-MGMT] Loyalty pending award trigger failed (non-fatal):', e?.message);
+          }
+        })();
+      }
 
       return c.json({
         success: true,
@@ -237,13 +257,15 @@ export function registerOrderManagementEndpoints(app: Hono) {
 
       // Process refund if payment was made
       try {
+        const { insert: dbInsert } = await import('../database/rds-connection');
         const payments = await select('payments', { order_id: orderId, payment_status: 'completed' });
         if (payments.length > 0) {
           const payment = payments[0];
-          
-          // Create refund request (use refund_status field)
-          const { insert, query } = require('../database/rds-connection');
-          await query(
+          const refundAmount = parseFloat(payment.amount || '0');
+          const refundReason = `Order cancelled: ${reason || 'Customer request'}`;
+
+          // Insert a refund tracking row (starts as 'pending')
+          const refundRows = await query(
             `INSERT INTO refunds (
               payment_id,
               order_id,
@@ -254,22 +276,52 @@ export function registerOrderManagementEndpoints(app: Hono) {
               refund_status,
               requested_at
             ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
-            RETURNING *`,
+            RETURNING id`,
             [
               payment.id,
               orderId,
               order.customer_id,
               order.vendor_id || null,
-              payment.amount,
-              `Order cancelled: ${reason || 'Customer request'}`
+              refundAmount,
+              refundReason,
             ]
           );
-          
-          console.log(`✅ Refund request created for cancelled order ${orderId}`);
+          const refundRowId = refundRows.rows[0]?.id;
+
+          // Attempt Razorpay refund if a Razorpay payment ID is available
+          const razorpayPaymentId: string | null = payment.razorpay_payment_id || null;
+          if (razorpayPaymentId && refundAmount > 0) {
+            try {
+              const razorpayClient = await getRazorpayClient();
+              const rzRefund = await razorpayClient.payments.refund({
+                payment_id: razorpayPaymentId,
+                amount: Math.round(refundAmount * 100), // paise
+              });
+              const rzRefundId: string = (rzRefund as any)?.id || '';
+
+              // Update refund row with Razorpay refund ID and mark as initiated
+              if (refundRowId) {
+                await query(
+                  `UPDATE refunds
+                   SET refund_status = 'initiated',
+                       razorpay_refund_id = $1,
+                       updated_at = NOW()
+                   WHERE id = $2`,
+                  [rzRefundId, refundRowId]
+                );
+              }
+              console.log(`[ORDER-MGMT] Razorpay refund initiated: ${rzRefundId} for order ${orderId}`);
+            } catch (rzError: any) {
+              // Razorpay call failed — leave row as 'pending' for manual/retry processing
+              console.error(`[ORDER-MGMT] Razorpay refund call failed for order ${orderId}:`, rzError.message);
+            }
+          } else {
+            console.log(`[ORDER-MGMT] Refund row created (no Razorpay payment ID) for order ${orderId}`);
+          }
         }
       } catch (error: any) {
         console.error('Error processing refund for cancelled order:', error);
-        // Don't fail the cancellation if refund processing fails
+        // Cancellation succeeds even if refund processing fails
       }
 
       void notifyShopOrderStatusChange({

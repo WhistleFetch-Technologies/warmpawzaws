@@ -9,6 +9,7 @@ import {
   RESERVED_SPEC_KEYS,
   type StorefrontDimensions,
 } from '@warmpawz/shared-types';
+import { stripStorefrontListPriceFields } from './product-ecommerce-pricing';
 
 export function parseSpecificationsObject(raw: unknown): Record<string, unknown> {
   if (raw == null) return {};
@@ -48,21 +49,28 @@ export function extractDeliveryRegionsFromRow(
   return [];
 }
 
+/** Parse a dimension value — returns null when the value is missing or 0 (not meaningful). */
+function parseStrictPositiveDim(val: unknown): number | null {
+  const n = parseOptionalPositiveNumber(val);
+  return n != null && n > 0 ? n : null;
+}
+
 export function buildStorefrontDimensions(
   row: Record<string, unknown>,
 ): StorefrontDimensions | null {
   const specs = parseSpecificationsObject(row.specifications);
   const length =
-    parseOptionalPositiveNumber(specs.length_cm) ??
-    parseOptionalPositiveNumber(specs.length);
+    parseStrictPositiveDim(specs.length_cm) ??
+    parseStrictPositiveDim(specs.length);
   const breadth =
-    parseOptionalPositiveNumber(specs.breadth_cm) ??
-    parseOptionalPositiveNumber(specs.breadth);
+    parseStrictPositiveDim(specs.breadth_cm) ??
+    parseStrictPositiveDim(specs.breadth);
   const height =
-    parseOptionalPositiveNumber(specs.height_cm) ??
-    parseOptionalPositiveNumber(specs.height);
-  const weight = parseOptionalPositiveNumber(row.weight);
+    parseStrictPositiveDim(specs.height_cm) ??
+    parseStrictPositiveDim(specs.height);
+  const weight = parseStrictPositiveDim(row.weight);
 
+  // Return null (no dimensions block) when every value is absent or 0.
   if (length == null && breadth == null && height == null && weight == null) {
     return null;
   }
@@ -144,5 +152,5 @@ export function sanitizeStorefrontProductForCustomer(
   const specs = parseSpecificationsObject(out.specifications);
   out.specifications = customerSpecificationsFromRow(specs);
 
-  return out;
+  return stripStorefrontListPriceFields(out);
 }

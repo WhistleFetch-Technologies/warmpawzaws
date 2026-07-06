@@ -23,6 +23,8 @@ interface SellerDashboardProps {
   sellerName: string;
   /** Switches Seller Hub to the Orders tab (no full page reload). */
   onViewAllOrders?: () => void;
+  /** Switches Seller Hub to the Inventory tab (no full page reload). */
+  onNavigateToInventory?: () => void;
 }
 
 /** Normalized dashboard metrics for the seller UI */
@@ -98,7 +100,7 @@ function emptyMetrics(commissionRate = 15): SellerDashboardMetrics {
   };
 }
 
-export function SellerDashboard({ sellerId, sellerName, onViewAllOrders }: SellerDashboardProps) {
+export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavigateToInventory }: SellerDashboardProps) {
   const [metrics, setMetrics] = useState<SellerDashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
@@ -482,7 +484,11 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders }: Selle
                 You have <span className="font-bold">{analytics.lowStockProducts} product(s)</span> running low on
                 stock. Update your inventory to avoid stockouts.
               </p>
-              <button className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors">
+              <button
+                type="button"
+                onClick={onNavigateToInventory}
+                className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+              >
                 Update Inventory →
               </button>
             </div>

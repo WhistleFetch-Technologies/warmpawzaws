@@ -1,7 +1,7 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
-import { Package } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { ChevronDown, Package } from 'lucide-react';
 import type { ShopProduct } from './shop-types';
 import { SHOP_SORT_LABELS } from './shop-types';
 import { ShopProductCard } from './ShopProductCard';
@@ -12,11 +12,16 @@ interface ShopCatalogSectionProps {
   products: ShopProduct[];
   getCartQuantity: (productId: string) => number;
   sortBy: string;
-  cartSubtotal: number;
+  /** Whether more products are available from the server. */
+  hasMore: boolean;
+  /** True while the next page is being fetched (appending). */
+  loadingMore: boolean;
   onRetry: () => void;
   onAddToCart: (product: ShopProduct) => void;
   onQuantityChange: (product: ShopProduct, quantity: number) => void;
   onOpenSort: () => void;
+  /** Called by IntersectionObserver when the bottom sentinel is visible. */
+  onLoadMore: () => void;
 }
 
 export function ShopCatalogSection({
@@ -25,12 +30,33 @@ export function ShopCatalogSection({
   products,
   getCartQuantity,
   sortBy,
-  cartSubtotal,
+  hasMore,
+  loadingMore,
   onRetry,
   onAddToCart,
   onQuantityChange,
   onOpenSort,
+  onLoadMore,
 }: ShopCatalogSectionProps) {
+  /** Sentinel element watched by IntersectionObserver to trigger the next page load. */
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hasMore || loadingMore || loading) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) onLoadMore();
+      },
+      { rootMargin: '200px' },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, loading, onLoadMore]);
+
   return (
     <div id="shop-all-products" className="mt-5 px-4 scroll-mt-4">
       <div className="flex items-center justify-between mb-3">
@@ -38,7 +64,7 @@ export function ShopCatalogSection({
           <h2 className="text-sm font-bold text-slate-900">All Products</h2>
           {!loading && !error && (
             <p className="text-[11px] text-slate-500 mt-0.5">
-              <span className="font-semibold text-slate-700">{products.length}</span> products
+              <span className="font-semibold text-slate-700">{products.length}</span> products loaded
             </p>
           )}
         </div>
@@ -79,19 +105,36 @@ export function ShopCatalogSection({
           <p className="text-xs text-slate-400 mt-1">Try another category or search</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 min-w-0 w-full items-stretch [grid-template-columns:minmax(0,1fr)_minmax(0,1fr)]">
-          {products.map((product) => (
-            <div key={product.id} className="min-w-0 max-w-full flex min-h-0">
-              <ShopProductCard
-                product={product}
-                variant="grid"
-                cartQuantity={getCartQuantity(product.id)}
-                onAddToCart={() => onAddToCart(product)}
-                onQuantityChange={(quantity) => onQuantityChange(product, quantity)}
-              />
+        <>
+          <div className="grid grid-cols-2 gap-3 min-w-0 w-full items-stretch [grid-template-columns:minmax(0,1fr)_minmax(0,1fr)]">
+            {products.map((product) => (
+              <div key={product.id} className="min-w-0 max-w-full flex min-h-0">
+                <ShopProductCard
+                  product={product}
+                  variant="grid"
+                  cartQuantity={getCartQuantity(product.id)}
+                  onAddToCart={() => onAddToCart(product)}
+                  onQuantityChange={(quantity) => onQuantityChange(product, quantity)}
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Sentinel watched by IntersectionObserver — triggers next page load */}
+          <div ref={sentinelRef} className="h-1" />
+
+          {loadingMore && (
+            <div className="flex justify-center py-6">
+              <div className="animate-spin rounded-full h-6 w-6 border-2 border-orange-200 border-t-[#FF8C42]" />
             </div>
-          ))}
-        </div>
+          )}
+
+          {!hasMore && products.length > 0 && (
+            <p className="text-center text-slate-400 text-xs py-6">
+              All {products.length} products loaded
+            </p>
+          )}
+        </>
       )}
     </div>
   );

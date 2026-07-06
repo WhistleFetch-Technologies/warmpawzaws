@@ -36,12 +36,15 @@ export function createCustomerNavigation(router: CoordinatorRouter) {
       router.push(productPath(id));
     },
 
-    goToCart(opts?: { replace?: boolean }) {
+    goToCart(opts?: { replace?: boolean; buynow?: boolean }) {
+      const path = opts?.buynow
+        ? `${CUSTOMER_ROUTES.cart.path}?buynow=1`
+        : CUSTOMER_ROUTES.cart.path;
       if (opts?.replace) {
-        router.replace(CUSTOMER_ROUTES.cart.path);
+        router.replace(path);
         return;
       }
-      router.push(CUSTOMER_ROUTES.cart.path);
+      router.push(path);
     },
 
     goToCheckout(opts?: { step?: 'payment' | 'review' }) {

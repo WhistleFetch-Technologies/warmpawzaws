@@ -16,6 +16,7 @@ const EMPTY_RESPONSE = {
   totalCommission: 0,
   netEarnings: 0,
   pendingPayout: 0,
+  settledPayout: 0,
   monthlyRevenue: 0,
   currentTier: null,
   tiers: [] as CommissionTierRow[],
@@ -152,12 +153,14 @@ class GetVendorCommissionAnalyticsHandler extends BaseHandler {
                COALESCE(o.subtotal, o.total_amount - COALESCE(o.tax_amount, 0))
              ) FILTER (WHERE o.order_status != 'cancelled'), 0) AS total_base,
              COALESCE(SUM(
-               COALESCE(o.subtotal, o.total_amount - COALESCE(o.tax_amount, 0))
+               (COALESCE(o.subtotal, o.total_amount - COALESCE(o.tax_amount, 0))
+                - COALESCE(o.vendor_promotion_amount, 0))
                * (1 - $2::numeric / 100)
              ) FILTER (
                WHERE o.order_status NOT IN ('cancelled', 'delivered', 'returned')
                  AND o.payment_status = 'completed'
-             ), 0) AS pending_payout
+             ), 0) AS pending_payout,
+             COALESCE(SUM(o.vendor_payout_amount) FILTER (WHERE o.order_status = 'delivered'), 0) AS settled_payout
            FROM orders o
            WHERE o.vendor_id = $1`,
           [vendorId, effectiveRate]
@@ -172,6 +175,7 @@ class GetVendorCommissionAnalyticsHandler extends BaseHandler {
       const totalRevenue = parseFloat(String(stats.total_revenue ?? 0));
       const totalBase = parseFloat(String(stats.total_base ?? 0));
       const pendingPayout = parseFloat(String(stats.pending_payout ?? 0));
+      const settledPayout = parseFloat(String(stats.settled_payout ?? 0));
       const totalCommission = totalBase * rateFrac;
       const netEarnings = totalBase * (1 - rateFrac);
 
@@ -191,6 +195,7 @@ class GetVendorCommissionAnalyticsHandler extends BaseHandler {
         totalCommission,
         netEarnings,
         pendingPayout,
+        settledPayout,
         monthlyRevenue,
         currentTier: currentTier
           ? {

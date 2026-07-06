@@ -10,7 +10,14 @@ export function getBulkProductTitle(raw: Record<string, unknown>): string {
   return typeof name === 'string' ? name.trim() : '';
 }
 
-export const MAX_BULK_PRODUCT_ROWS = 500;
+/**
+ * Maximum products per bulk upload file (rows with a non-empty Title/name).
+ * NOTE: at 2000 rows with DB writes + SKU sync, total Lambda execution can approach
+ * the 15-minute hard limit. If timeouts occur, the upload endpoint must be refactored
+ * to process rows in batches (e.g. 100 at a time) rather than all at once.
+ * Keep in sync with apps/vendor-web/lib/bulk-product-limits.ts.
+ */
+export const MAX_BULK_PRODUCT_ROWS = 2000;
 
 const GST_SLABS = [0, 5, 12, 18, 28] as const;
 
@@ -31,8 +38,8 @@ export type NormalizedEcommerceProduct = {
   category: string | null;
   category_id?: string | null;
   stock: number;
-  mrp: number;
-  sellingPrice: number;
+  /** Single canonical price (replaces the old mrp/sellingPrice dual-field model). */
+  price: number;
   hsn_code: string;
   gst_rate: number;
   imageUrls: string[];
@@ -224,8 +231,7 @@ export function validateEcommerceProductInput(
           ? String(record.category_id).trim()
           : null,
       stock: stockNum,
-      mrp: pricingNorm.pricing.mrp,
-      sellingPrice: pricingNorm.pricing.sellingPrice,
+      price: pricingNorm.pricing.price,
       hsn_code: hsnStr,
       gst_rate: gstNum,
       imageUrls,

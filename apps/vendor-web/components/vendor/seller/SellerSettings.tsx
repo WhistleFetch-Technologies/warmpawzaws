@@ -53,6 +53,8 @@ export type SellerSettingsFormData = {
   account_number: string;
   ifsc_code: string;
   upi_id: string;
+  return_window_days: string;
+  return_policy_text: string;
 };
 
 const EMPTY_PAYMENT_FIELDS = {
@@ -60,6 +62,8 @@ const EMPTY_PAYMENT_FIELDS = {
   account_number: '',
   ifsc_code: '',
   upi_id: '',
+  return_window_days: '7',
+  return_policy_text: '',
 };
 
 function mapProfileFieldsFromVendor(
@@ -79,6 +83,8 @@ function mapProfileFieldsFromVendor(
     pincode: String(v?.pincode || ''),
     latitude: v?.latitude != null ? Number(v.latitude) : undefined,
     longitude: v?.longitude != null ? Number(v.longitude) : undefined,
+    return_window_days: String(v?.return_window_days ?? '7'),
+    return_policy_text: String(v?.return_policy_text || ''),
   };
 }
 
@@ -211,6 +217,19 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
   const [hasStoredBankAccount, setHasStoredBankAccount] = useState(false);
   const [storedAccountSuffix, setStoredAccountSuffix] = useState('');
 
+  const DEFAULT_NOTIFICATION_PREFS = {
+    newOrder: true,
+    orderStatusChange: true,
+    lowStock: true,
+    settlementProcessed: true,
+    promotionPerformance: false,
+    weeklyReport: true,
+  };
+  const [notifPrefs, setNotifPrefs] = useState(DEFAULT_NOTIFICATION_PREFS);
+  const [notifSaving, setNotifSaving] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+
   const tabs = [
     { id: 'profile', label: 'Business Profile', icon: Store },
     { id: 'payment', label: 'Payment Settings', icon: CreditCard },
@@ -225,17 +244,23 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
     }
     try {
       setLoading(true);
-      const [profileRes, bankRes, upiRes, kycRes] = await Promise.all([
+      const [profileRes, bankRes, upiRes, kycRes, notifRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${sellerId}/profile`).catch(() => null),
         apiClient.get<any>(`/vendor/${sellerId}/bank-details`).catch(() => null),
         apiClient.get<any>(`/vendor/${sellerId}/upi`).catch(() => null),
         apiClient.get<any>(`/kyc/status/${sellerId}`).catch(() => null),
+        apiClient.get<any>(`/vendor/${sellerId}/notification-preferences`).catch(() => null),
       ]);
 
       const vendor = profileRes?.success ? profileRes.vendor : sellerData;
       const bankDetails = bankRes?.success ? bankRes.bankDetails : null;
       const upi = upiRes?.success ? upiRes.upi : null;
       const kycData = kycRes?.success ? kycRes.data : null;
+      if (notifRes?.success && notifRes.notificationPreferences) {
+        setNotifPrefs((prev) => ({ ...prev, ...notifRes.notificationPreferences }));
+      }
+      const profileImageUrl = profileRes?.vendor?.profile_image || profileRes?.vendor?.logo_url || null;
+      if (profileImageUrl) setLogoUrl(profileImageUrl);
 
       if (vendor) {
         const payment = mapPaymentFieldsFromApi(bankDetails, vendor as Record<string, unknown>, upi);
@@ -374,6 +399,8 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
         ...(gstPayload && { gst_number: gstPayload }),
         ...(formData.latitude != null && { latitude: formData.latitude }),
         ...(formData.longitude != null && { longitude: formData.longitude }),
+        returnWindowDays: formData.return_window_days ? Number(formData.return_window_days) : undefined,
+        returnPolicyText: formData.return_policy_text || undefined,
       });
       const respGst = profileRes?.vendor?.gst_number ?? profileRes?.vendor?.gstin ?? null;
 
@@ -456,12 +483,55 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
       {activeTab === 'profile' && (
         <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-6">
           <div className="flex items-center gap-4 pb-6 border-b border-slate-100">
-            <div className="w-20 h-20 bg-gradient-to-br from-orange-500 to-amber-500 rounded-2xl flex items-center justify-center shadow-lg">
-              <Store className="w-10 h-10 text-white" />
-            </div>
+            <label className="relative cursor-pointer group" title="Upload business logo">
+              <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-lg bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
+                {logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logoUrl} alt="Business logo" className="w-full h-full object-cover" />
+                ) : (
+                  <Store className="w-10 h-10 text-white" />
+                )}
+              </div>
+              <div className="absolute inset-0 rounded-2xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                {logoUploading ? (
+                  <Loader2 className="w-6 h-6 text-white animate-spin" />
+                ) : (
+                  <span className="text-white text-xs font-medium">Change</span>
+                )}
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                disabled={logoUploading}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setLogoUploading(true);
+                  try {
+                    const fd = new FormData();
+                    fd.append('logo', file);
+                    const res = await apiClient.post<{ success: boolean; logo_url: string }>(
+                      `/vendor/${sellerId}/logo`,
+                      fd
+                    );
+                    if (res?.logo_url) {
+                      setLogoUrl(res.logo_url);
+                      toast.success('Logo updated');
+                    }
+                  } catch {
+                    toast.error('Failed to upload logo');
+                  } finally {
+                    setLogoUploading(false);
+                    e.target.value = '';
+                  }
+                }}
+              />
+            </label>
             <div>
               <h3 className="text-xl font-bold text-slate-900">{formData.business_name || 'Your Store'}</h3>
               <p className="text-slate-500">Seller ID: {sellerId?.slice(0, 8)}...</p>
+              <p className="text-xs text-slate-400 mt-1">Click the logo to change it (max 5 MB)</p>
             </div>
           </div>
 
@@ -598,6 +668,39 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
                   value={formData.pincode}
                   onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t border-slate-100 space-y-4">
+            <h4 className="font-semibold text-slate-900">Return Policy</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Return Window (days)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={90}
+                  value={formData.return_window_days}
+                  onChange={(e) => setFormData({ ...formData, return_window_days: e.target.value })}
+                  placeholder="e.g., 7"
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                />
+                <p className="mt-1 text-xs text-slate-400">Number of days customers can request a return after delivery</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Return Policy Description
+                </label>
+                <textarea
+                  rows={3}
+                  value={formData.return_policy_text}
+                  onChange={(e) => setFormData({ ...formData, return_policy_text: e.target.value })}
+                  placeholder="Describe your return policy (e.g., items must be unused and in original packaging)"
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-none"
                 />
               </div>
             </div>
@@ -749,21 +852,42 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
         <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-4">
           <h4 className="font-semibold text-slate-900 mb-4">Notification Preferences</h4>
 
-          {[
-            { label: 'New Order Alerts', description: 'Get notified when you receive a new order' },
-            { label: 'Order Status Updates', description: 'Updates when order status changes' },
-            { label: 'Low Stock Alerts', description: 'Notify when products are running low' },
-            { label: 'Payout Notifications', description: 'Updates about your payouts' },
-            { label: 'Promotional Messages', description: 'Tips and offers from Warmpawz' },
-            { label: 'Weekly Reports', description: 'Weekly sales and performance summary' },
-          ].map((item, index) => (
-            <div key={index} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+          {(
+            [
+              { key: 'newOrder', label: 'New Order Alerts', description: 'Get notified when you receive a new order' },
+              { key: 'orderStatusChange', label: 'Order Status Updates', description: 'Updates when order status changes' },
+              { key: 'lowStock', label: 'Low Stock Alerts', description: 'Notify when products are running low' },
+              { key: 'settlementProcessed', label: 'Payout Notifications', description: 'Updates about your payouts' },
+              { key: 'promotionPerformance', label: 'Promotional Messages', description: 'Tips and offers from Warmpawz' },
+              { key: 'weeklyReport', label: 'Weekly Reports', description: 'Weekly sales and performance summary' },
+            ] as { key: keyof typeof notifPrefs; label: string; description: string }[]
+          ).map((item) => (
+            <div key={item.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
               <div>
                 <p className="font-medium text-slate-900">{item.label}</p>
                 <p className="text-sm text-slate-500">{item.description}</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" defaultChecked className="sr-only peer" />
+                <input
+                  type="checkbox"
+                  checked={notifPrefs[item.key]}
+                  onChange={async (e) => {
+                    const updated = { ...notifPrefs, [item.key]: e.target.checked };
+                    setNotifPrefs(updated);
+                    if (!notifSaving) {
+                      setNotifSaving(true);
+                      try {
+                        await apiClient.put(`/vendor/${sellerId}/notification-preferences`, updated);
+                      } catch {
+                        toast.error('Failed to save notification preference');
+                        setNotifPrefs(notifPrefs);
+                      } finally {
+                        setNotifSaving(false);
+                      }
+                    }
+                  }}
+                  className="sr-only peer"
+                />
                 <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-500/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
               </label>
             </div>

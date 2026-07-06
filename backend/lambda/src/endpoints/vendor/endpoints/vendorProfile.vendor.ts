@@ -956,6 +956,8 @@ export function registerVendorProfileEndpoints(app: Hono) {
         serviceDistanceKm: 'service_distance_km',
         gstNumber: 'gst_number',
         gstin: 'gst_number',
+        returnWindowDays: 'return_window_days',
+        returnPolicyText: 'return_policy_text',
       };
 
       const updates: any = {};
@@ -1011,12 +1013,13 @@ export function registerVendorProfileEndpoints(app: Hono) {
       const safeColumns = [
         'business_name', 'owner_name', 'phone', 'email', 'address', 'city', 'state', 'pincode',
         'gst_number',
-        'description', 'profile_photo_url', 'latitude', 'longitude', 'is_active', 'status',
+        'description', 'profile_photo_url', 'profile_image', 'latitude', 'longitude', 'is_active', 'status',
         'setup_completed', 'services_setup_completed', 'availability_setup_completed', 'metadata',
         'experience_years', 'qualifications', 'service_area', 'specializations', // ✅ Added for solo provider profile
         'service_radius', // km; canonical value updated from Schedule & availability save
         'service_distance_km', // center/business service radius (km) from business location
-        'available_for_instant_tele' // ✅ Added for instant tele availability toggle
+        'available_for_instant_tele', // ✅ Added for instant tele availability toggle
+        'return_window_days', 'return_policy_text', // ✅ Phase 10: return policy settings
       ];
 
       const updateData: any = {};
@@ -2239,6 +2242,132 @@ export function registerVendorProfileEndpoints(app: Hono) {
   
   app.put("/vendor/:vendorId/settings", settingsHandler);
   app.post("/vendor/:vendorId/settings", settingsHandler);
+
+  /**
+   * GET /vendor/:vendorId/notification-preferences
+   * Returns the vendor's notification preference flags.
+   * Stored in vendors.metadata.notificationPreferences (no migration needed).
+   */
+  app.get("/vendor/:vendorId/notification-preferences", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const trimmedId = (vendorId || '').trim();
+      const { query: dbQuery } = await import('../../../database/rds-connection');
+      const res = await dbQuery(
+        `SELECT metadata FROM vendors WHERE id = $1::uuid LIMIT 1`,
+        [trimmedId]
+      ).catch(() => ({ rows: [] }));
+      const rows = Array.isArray(res) ? res : res.rows || [];
+      const metadata = rows[0]?.metadata ?? {};
+      const prefs = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+      const notificationPreferences = prefs?.notificationPreferences ?? {
+        newOrder: true,
+        orderStatusChange: true,
+        paymentReceived: true,
+        lowStock: true,
+        settlementProcessed: true,
+        promotionPerformance: false,
+      };
+      return c.json({ success: true, notificationPreferences });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/notification-preferences
+   * Saves the vendor's notification preference flags into vendors.metadata.
+   */
+  app.put("/vendor/:vendorId/notification-preferences", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const trimmedId = (vendorId || '').trim();
+      const body = await c.req.json();
+      const { query: dbQuery } = await import('../../../database/rds-connection');
+
+      // Merge into existing metadata
+      const existing = await dbQuery(
+        `SELECT metadata FROM vendors WHERE id = $1::uuid LIMIT 1`,
+        [trimmedId]
+      ).catch(() => ({ rows: [] }));
+      const rows = Array.isArray(existing) ? existing : existing.rows || [];
+      const currentMeta = rows[0]?.metadata ?? {};
+      const parsedMeta = typeof currentMeta === 'string' ? JSON.parse(currentMeta) : (currentMeta ?? {});
+
+      const updatedMeta = {
+        ...parsedMeta,
+        notificationPreferences: {
+          newOrder: Boolean(body.newOrder ?? true),
+          orderStatusChange: Boolean(body.orderStatusChange ?? true),
+          paymentReceived: Boolean(body.paymentReceived ?? true),
+          lowStock: Boolean(body.lowStock ?? true),
+          settlementProcessed: Boolean(body.settlementProcessed ?? true),
+          promotionPerformance: Boolean(body.promotionPerformance ?? false),
+        },
+      };
+
+      await dbQuery(
+        `UPDATE vendors SET metadata = $2::jsonb, updated_at = NOW() WHERE id = $1::uuid`,
+        [trimmedId, JSON.stringify(updatedMeta)]
+      );
+
+      return c.json({ success: true, notificationPreferences: updatedMeta.notificationPreferences });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/logo
+   * Upload a business logo image for the vendor.
+   * Stores as vendors.profile_image (S3 key); returns a presigned URL for immediate use.
+   */
+  app.post("/vendor/:vendorId/logo", async (c) => {
+    try {
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendor = await resolveVendorById(paramVendorId);
+      if (!vendor?.id) return c.json({ error: 'Vendor not found' }, 404);
+      const vendorId = vendor.id;
+
+      const fd = await c.req.formData();
+      const logoFile = fd.get('logo') as File | null;
+      if (!logoFile || logoFile.size === 0) return c.json({ error: 'logo file is required' }, 400);
+      const MAX_LOGO_BYTES = 5 * 1024 * 1024;
+      if (logoFile.size > MAX_LOGO_BYTES) return c.json({ error: 'Logo must be 5 MB or smaller' }, 400);
+
+      const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+
+      const ext = (logoFile.name.split('.').pop() || 'jpg').toLowerCase();
+      const fileName = `vendors/${vendorId}/logo/logo_${Date.now()}.${ext}`;
+      const arrayBuffer = await logoFile.arrayBuffer();
+      await s3Client.send(new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: fileName,
+        Body: new Uint8Array(arrayBuffer),
+        ContentType: logoFile.type || 'image/jpeg',
+      }));
+
+      const { query: dbQuery } = await import('../../../database/rds-connection');
+      await dbQuery(
+        `UPDATE vendors SET profile_image = $2, updated_at = NOW() WHERE id = $1::uuid`,
+        [vendorId, fileName]
+      );
+
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({ Bucket: BUCKET_NAME, Key: fileName }),
+        { expiresIn: 604800 }
+      );
+
+      return c.json({ success: true, logo_url: signedUrl, fileKey: fileName });
+    } catch (error: any) {
+      console.error('[VENDOR-LOGO] Error:', error);
+      return c.json({ error: error.message || 'Failed to upload logo' }, 500);
+    }
+  });
 
   /**
    * GET /vendor/:vendorId

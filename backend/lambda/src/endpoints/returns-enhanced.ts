@@ -16,6 +16,7 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import { resolveReturnWindowDays, isReturnWindowExpired } from '../utils/return-window';
 
 const RETURN_REASONS = [
   { id: 'damaged', label: 'Product damaged/defective' },
@@ -184,6 +185,27 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
       if (customerId && order.customer_id !== customerId) {
         return c.json({ success: false, error: 'Order does not belong to this customer' }, 403);
       }
+
+      if (order.order_status !== 'delivered') {
+        return c.json({
+          success: false,
+          error: `Return is only allowed for delivered orders. Current status: ${order.order_status}`,
+        }, 400);
+      }
+
+      // Enforce return window
+      const windowDays = await resolveReturnWindowDays(order.vendor_id);
+      if (isReturnWindowExpired(order.delivered_at, windowDays)) {
+        return c.json({
+          success: false,
+          error: `Return window of ${windowDays} day(s) has expired. Returns must be requested within ${windowDays} day(s) of delivery.`,
+        }, 400);
+      }
+
+      // Cancel any pending loyalty award for this order — return is being initiated
+      await import('../utils/ecommerce-loyalty')
+        .then(({ cancelPendingLoyaltyAward }) => cancelPendingLoyaltyAward(orderId, 'return_initiated'))
+        .catch((e) => console.warn('[RETURNS-ENHANCED] cancelPendingLoyaltyAward failed:', e?.message));
 
       // Validate items
       const orderItems = await query(
@@ -568,6 +590,20 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
         return_status: updateData.status,
         updated_at: new Date().toISOString(),
       });
+
+      // Reverse loyalty points if the return is approved and points were already awarded
+      if (decision === 'approve') {
+        await import('../utils/ecommerce-loyalty')
+          .then(({ reverseLoyaltyAwardForOrder }) =>
+            reverseLoyaltyAwardForOrder(
+              String(returnRequest.order_id),
+              String(returnRequest.customer_id)
+            )
+          )
+          .catch((e) =>
+            console.warn('[RETURNS-ENHANCED] reverseLoyaltyAwardForOrder failed (non-fatal):', e?.message)
+          );
+      }
 
       return c.json({
         success: true,

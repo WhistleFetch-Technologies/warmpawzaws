@@ -47,6 +47,7 @@ import {
   type CartLineItem,
 } from '../../../utils/vendor-promotion-engine';
 import { countPriorVendorOrders, recordVendorPromotionUsage } from '../../../utils/vendor-promotion-usage';
+import { checkIdempotencyKey, storeIdempotencyKey } from '../../../utils/idempotency';
 import {
   isEcommerceCategoryUuid,
   mapCategoryRowsForPublic,
@@ -62,6 +63,12 @@ import {
   getVendorCommissionConfigResponse,
   upsertVendorCommissionConfig,
 } from '../../../utils/ecommerce-commission-admin';
+import {
+  resolveOrderCommission,
+  buildCommissionSnapshot,
+  persistOrderItemCommission,
+  loadOrderItemIds,
+} from '../../../utils/resolve-ecommerce-commission-rate';
 
 const ADMIN_CATEGORY_SELECT = `
   SELECT id::text AS id, name, description, display_order, is_active, image_url,
@@ -361,60 +368,125 @@ export function registerEcommerceEndpoints(app: Hono) {
 
   /**
    * GET /ecommerce/products
-   * Public endpoint for customer shop - alias for /products
+   * Public endpoint for customer shop — supports pagination, server-side sort,
+   * server-side search, and price filtering.
+   *
+   * Query params:
+   *   limit      — page size (default SHOP_DEFAULT_LIMIT, max SHOP_MAX_LIMIT)
+   *   offset     — row offset for pagination (default 0)
+   *   sort       — one of: popular | price_low | price_high | newest | rating
+   *   search     — ILIKE substring filter on name and description
+   *   category   — UUID or name filter
+   *   min_price  — inclusive lower price bound
+   *   max_price  — inclusive upper price bound
+   *   featured   — true/1 to show only featured products
+   *   vendorId   — optional vendor scope
+   *
+   * Response: { success, products, total (COUNT(*)), offset, limit, hasMore }
    */
   app.get("/ecommerce/products", async (c) => {
+    /** Default and max page sizes — keep in sync with SHOP_PAGE_SIZE on the frontend. */
+    const SHOP_DEFAULT_LIMIT = 10;
+    const SHOP_MAX_LIMIT = 50;
+
+    /** Maps sort param values to safe SQL ORDER BY fragments (allowlist — no interpolation). */
+    const SORT_MAP: Record<string, string> = {
+      popular:    'p.review_count DESC NULLS LAST, p.created_at DESC',
+      price_low:  'p.price ASC',
+      price_high: 'p.price DESC',
+      newest:     'p.created_at DESC',
+      rating:     'p.rating DESC NULLS LAST, p.created_at DESC',
+    };
+
     try {
       const vendorId = c.req.query('vendorId');
       const category = c.req.query('category');
       const search = c.req.query('search');
       const featuredOnly =
         c.req.query('featured') === 'true' || c.req.query('featured') === '1';
-      const limit = parseInt(c.req.query('limit') || '50', 10);
-      const offset = parseInt(c.req.query('offset') || '0', 10);
 
-      let productQuery = `
-        SELECT p.*, v.business_name as vendor_name
-        FROM products p
-        LEFT JOIN vendors v ON p.vendor_id = v.id
-        WHERE ${STOREFRONT_PRODUCT_SQL}${STOREFRONT_ACTIVE_CATEGORY_SQL}
-      `;
+      const rawLimit = parseInt(c.req.query('limit') || String(SHOP_DEFAULT_LIMIT), 10);
+      const limit = Number.isFinite(rawLimit) && rawLimit > 0
+        ? Math.min(rawLimit, SHOP_MAX_LIMIT)
+        : SHOP_DEFAULT_LIMIT;
+      const rawOffset = parseInt(c.req.query('offset') || '0', 10);
+      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
 
-      const params: any[] = [];
+      const sortParam = c.req.query('sort') ?? 'popular';
+      const orderBy = SORT_MAP[sortParam] ?? SORT_MAP.popular;
+
+      const minPriceRaw = parseFloat(c.req.query('min_price') ?? '');
+      const maxPriceRaw = parseFloat(c.req.query('max_price') ?? '');
+
+      const baseWhere = `${STOREFRONT_PRODUCT_SQL}${STOREFRONT_ACTIVE_CATEGORY_SQL}`;
+      let whereClause = baseWhere;
+      const filterParams: any[] = [];
       let paramIndex = 1;
 
       if (featuredOnly) {
-        productQuery += ` AND COALESCE(p.is_featured, false) = true`;
+        whereClause += ` AND COALESCE(p.is_featured, false) = true`;
       }
 
       if (vendorId) {
-        productQuery += ` AND p.vendor_id = $${paramIndex}`;
-        params.push(vendorId);
+        whereClause += ` AND p.vendor_id = $${paramIndex}`;
+        filterParams.push(vendorId);
         paramIndex++;
       }
 
       if (category) {
         if (isValidUUID(category)) {
-          productQuery += ` AND p.category_id = $${paramIndex}::uuid`;
+          whereClause += ` AND p.category_id = $${paramIndex}::uuid`;
         } else {
-          productQuery += ` AND LOWER(TRIM(COALESCE(p.category, ''))) = LOWER(TRIM($${paramIndex}))`;
+          whereClause += ` AND LOWER(TRIM(COALESCE(p.category, ''))) = LOWER(TRIM($${paramIndex}))`;
         }
-        params.push(category);
+        filterParams.push(category);
         paramIndex++;
       }
 
       if (search) {
-        productQuery += ` AND (p.name ILIKE $${paramIndex} OR p.description ILIKE $${paramIndex})`;
-        params.push(`%${search}%`);
+        whereClause += ` AND (p.name ILIKE $${paramIndex} OR p.description ILIKE $${paramIndex})`;
+        filterParams.push(`%${search}%`);
         paramIndex++;
       }
 
-      productQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit, offset);
+      if (Number.isFinite(minPriceRaw) && minPriceRaw > 0) {
+        whereClause += ` AND p.price >= $${paramIndex}`;
+        filterParams.push(minPriceRaw);
+        paramIndex++;
+      }
+
+      if (Number.isFinite(maxPriceRaw) && maxPriceRaw < 999999) {
+        whereClause += ` AND p.price <= $${paramIndex}`;
+        filterParams.push(maxPriceRaw);
+        paramIndex++;
+      }
+
+      const productQuery = `
+        SELECT p.*, v.business_name as vendor_name
+        FROM products p
+        LEFT JOIN vendors v ON p.vendor_id = v.id
+        WHERE ${whereClause}
+        ORDER BY ${orderBy}
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `;
+      const paginatedParams = [...filterParams, limit, offset];
+
+      const countQuery = `
+        SELECT COUNT(*) AS count
+        FROM products p
+        LEFT JOIN vendors v ON p.vendor_id = v.id
+        WHERE ${whereClause}
+      `;
 
       let products;
+      let totalCount = 0;
       try {
-        products = await query(productQuery, params);
+        const [productsResult, countResult] = await Promise.all([
+          query(productQuery, paginatedParams),
+          query(countQuery, filterParams),
+        ]);
+        products = productsResult;
+        totalCount = parseInt((countResult?.rows?.[0] as Record<string, string>)?.count ?? '0', 10);
       } catch (error: any) {
         // Handle table not existing, column not existing, or invalid UUID
         if (error.message?.includes('invalid input syntax for type uuid') ||
@@ -426,6 +498,9 @@ export function registerEcommerceEndpoints(app: Hono) {
             success: true,
             products: [],
             total: 0,
+            offset,
+            limit,
+            hasMore: false,
             message: 'No products available yet'
           });
         }
@@ -438,7 +513,10 @@ export function registerEcommerceEndpoints(app: Hono) {
       return c.json({
         success: true,
         products: signedProducts,
-        total: signedProducts.length,
+        total: totalCount,
+        offset,
+        limit,
+        hasMore: offset + signedProducts.length < totalCount,
       });
     } catch (error: any) {
       console.error('Error fetching ecommerce products:', error);
@@ -468,9 +546,21 @@ export function registerEcommerceEndpoints(app: Hono) {
       const shippingAddress = orderData.shipping_address || orderData.shippingAddress || {};
       const paymentMethod = orderData.payment_method || orderData.paymentMethod || 'cod';
       const couponCode = orderData.coupon_code || orderData.couponCode;
+      const walletAmountApplied = Math.max(0, parseFloat(String(orderData.walletAmountApplied || orderData.wallet_amount_applied || '0')) || 0);
 
       if (!customerPhone || !items || items.length === 0) {
         return c.json({ error: 'customer_phone and items are required' }, 400);
+      }
+
+      // Idempotency: client must supply a UUID per checkout attempt (prevents double-tap duplicate orders).
+      // If the same key is replayed within 30 min the first order response is returned unchanged.
+      const idempotencyKey = String(orderData.idempotencyKey || orderData.idempotency_key || '').trim();
+      if (idempotencyKey) {
+        const existing = await checkIdempotencyKey(`ecommerce_order:${idempotencyKey}`);
+        if (existing.exists) {
+          const cached = typeof existing.response === 'string' ? JSON.parse(existing.response) : existing.response;
+          return c.json(cached, existing.httpStatus ?? 201);
+        }
       }
 
       // Get or create customer by phone
@@ -701,25 +791,112 @@ export function registerEcommerceEndpoints(app: Hono) {
             ? Number(bodyDiscount)
             : 0;
       const subtotalAfterDiscount = Math.max(0, subtotal - discountAmount);
-      const shippingAmount =
-        bodyShipping != null && Number.isFinite(Number(bodyShipping))
-          ? Number(bodyShipping)
-          : computeEcommerceDeliveryFee(subtotalAfterDiscount);
-      const taxAmount =
-        bodyTax != null && Number.isFinite(Number(bodyTax)) && Number(bodyTax) >= 0
-          ? Number(bodyTax)
-          : subtotal * 0.18;
-      const cgstAmount =
-        bodyCgst != null && Number.isFinite(Number(bodyCgst)) ? Number(bodyCgst) : null;
-      const sgstAmount =
-        bodySgst != null && Number.isFinite(Number(bodySgst)) ? Number(bodySgst) : null;
-      const igstAmount =
-        bodyIgst != null && Number.isFinite(Number(bodyIgst)) ? Number(bodyIgst) : null;
-      const recomputedTotal = subtotal + shippingAmount + taxAmount - discountAmount;
-      const totalAmount =
-        bodyTotal != null && Number.isFinite(Number(bodyTotal)) && Number(bodyTotal) > 0
-          ? Number(bodyTotal)
-          : recomputedTotal;
+
+      // Fix C: delivery fee is always server-computed; reject if client supplied a different value.
+      const serverShipping = computeEcommerceDeliveryFee(subtotalAfterDiscount);
+      if (bodyShipping != null && Number.isFinite(Number(bodyShipping))) {
+        if (Math.abs(Number(bodyShipping) - serverShipping) > 0.01) {
+          return c.json(
+            { error: `Delivery fee mismatch (expected ₹${serverShipping}, got ₹${Number(bodyShipping)})` },
+            400
+          );
+        }
+      }
+      const shippingAmount = serverShipping;
+
+      // Fix B: tax is backend-authoritative via taxCalculationService (CGST/SGST/IGST, place-of-supply aware).
+      // Load vendor address for inter-state vs intra-state determination.
+      let vendorAddressState: string | undefined;
+      if (firstVendorId) {
+        try {
+          const vendorRows = await query(
+            `SELECT address FROM vendors WHERE id = $1::uuid LIMIT 1`,
+            [firstVendorId]
+          );
+          const rawAddr = vendorRows.rows?.[0]?.address;
+          if (rawAddr) {
+            const parsed = typeof rawAddr === 'string' ? JSON.parse(rawAddr) : rawAddr;
+            if (parsed?.state) vendorAddressState = String(parsed.state);
+          }
+        } catch {
+          // vendor address unavailable; taxCalculationService will default to intra-state
+        }
+      }
+
+      let taxAmount: number;
+      let cgstAmount: number | null;
+      let sgstAmount: number | null;
+      let igstAmount: number | null;
+
+      // GST law: tax applies to transaction value AFTER commercial discount (same base the frontend uses).
+      // Prorate discount across line items proportionally by line total.
+      const discountRatio = subtotal > 0 ? discountAmount / subtotal : 0;
+
+      try {
+        const { taxCalculationService } = await import('../../../lib/services/tax-calculation-service');
+        const backendTaxResult = await taxCalculationService.calculateTax({
+          items: orderItems.map((oi) => ({
+            id: String(oi.product_id),
+            type: 'product' as const,
+            // Apply discount proportionally so tax base = post-discount amount (matching frontend)
+            amount: oi.unit_price * (1 - discountRatio),
+            quantity: oi.quantity,
+          })),
+          customerLocation: {
+            state: shippingAddress.state || '',
+            city: shippingAddress.city || '',
+          },
+          vendorLocation: vendorAddressState ? { state: vendorAddressState } : undefined,
+        });
+        taxAmount = Math.round(backendTaxResult.totalTax * 100) / 100;
+        cgstAmount = Math.round(backendTaxResult.totalCGST * 100) / 100;
+        sgstAmount = Math.round(backendTaxResult.totalSGST * 100) / 100;
+        igstAmount = Math.round(backendTaxResult.totalIGST * 100) / 100;
+        console.log(`[ecommerce/orders] Tax computed: total=₹${taxAmount} CGST=₹${cgstAmount} SGST=₹${sgstAmount} IGST=₹${igstAmount} interstate=${backendTaxResult.isInterstate}`);
+      } catch (taxErr) {
+        console.error('[ecommerce/orders] taxCalculationService failed; using 18% fallback:', taxErr);
+        taxAmount = Math.round(subtotalAfterDiscount * 0.18 * 100) / 100;
+        cgstAmount = null;
+        sgstAmount = null;
+        igstAmount = null;
+      }
+
+      // Fix A: total is always server-computed; reject if client supplied a value that differs by more than ₹1.
+      // Formula: discounted subtotal + shipping + tax (tax base already discounted above).
+      const recomputedTotal = Math.round((subtotalAfterDiscount + shippingAmount + taxAmount) * 100) / 100;
+      if (bodyTotal != null && Number.isFinite(Number(bodyTotal))) {
+        const diff = Math.abs(Number(bodyTotal) - recomputedTotal);
+        if (diff > 1) {
+          return c.json(
+            { error: `Order total mismatch (expected ₹${recomputedTotal}, got ₹${Number(bodyTotal)})` },
+            400
+          );
+        }
+      }
+      const totalAmount = recomputedTotal;
+
+      // Wallet redemption validation
+      let effectiveWalletApplied = 0;
+      if (walletAmountApplied > 0) {
+        if (walletAmountApplied > totalAmount + 0.01) {
+          return c.json({ error: 'wallet_amount_applied exceeds order total' }, 400);
+        }
+        if (!customerId) {
+          return c.json({ error: 'Customer account required to use wallet balance' }, 400);
+        }
+        const walletRow = await query(
+          `SELECT COALESCE(balance, 0)::numeric AS balance FROM customer_wallets WHERE customer_id = $1::uuid`,
+          [customerId]
+        ).catch(() => ({ rows: [] as any[] }));
+        const walletBalance = parseFloat(String(walletRow.rows[0]?.balance ?? '0'));
+        if (walletBalance < walletAmountApplied) {
+          return c.json(
+            { error: `Insufficient wallet balance. Available: ₹${walletBalance.toFixed(2)}` },
+            400
+          );
+        }
+        effectiveWalletApplied = Math.min(walletAmountApplied, totalAmount);
+      }
 
       const normalizedAddress = {
         name: shippingAddress.name || '',
@@ -729,6 +906,13 @@ export function registerEcommerceEndpoints(app: Hono) {
         state: shippingAddress.state || '',
         pincode: shippingAddress.pincode || '',
       };
+
+      // Fix D: record whether the discount was vendor-driven or admin (Warmpawz)-driven.
+      // serverPromoDiscount > 0 means vendor_promotions table matched; otherwise treat as admin promotion.
+      const promotionSource: 'vendor' | 'admin' | null =
+        appliedPromotionId
+          ? (serverPromoDiscount > 0 ? 'vendor' : 'admin')
+          : null;
 
       const orderMetadata = {
         checkoutSnapshot: {
@@ -741,6 +925,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         },
         shippingAddress: normalizedAddress,
         promotionId: appliedPromotionId,
+        promotionSource,
         couponCode: couponCode || null,
       };
 
@@ -776,7 +961,17 @@ export function registerEcommerceEndpoints(app: Hono) {
       if (sgstAmount != null) order.sgst_amount = sgstAmount;
       if (igstAmount != null) order.igst_amount = igstAmount;
 
+      // Fix D: write promotion source and amounts as top-level columns for settlement calculation.
+      // vendor_promotion_amount is deducted from vendor payout; admin_promotion_amount absorbs the cost on Warmpawz side.
+      order.promotion_source = promotionSource ?? null;
+      order.vendor_promotion_amount = promotionSource === 'vendor' ? discountAmount : 0;
+      order.admin_promotion_amount  = promotionSource === 'admin'  ? discountAmount : 0;
+
+      // Wallet redemption: store applied amount on the order row
+      order.wallet_amount_applied = effectiveWalletApplied;
+
       await insert('orders', order);
+      const insertedOrderItemIds: string[] = [];
       for (const item of orderItems) {
         await insert('order_items', {
           order_id: orderId,
@@ -790,6 +985,39 @@ export function registerEcommerceEndpoints(app: Hono) {
         });
         if (item.skuRowIdForStock) {
           await decrementSkuStock(item.skuRowIdForStock, item.quantity);
+        }
+      }
+
+      // Fix B: resolve and store commission immediately at order creation so it is available
+      // before payment verification. applyOrderCommissionAudit serves as a reconcile pass later.
+      if (firstVendorId) {
+        try {
+          const lineItemsForCommission = orderItems.map((item) => ({
+            lineSubtotal: Number(item.total) || 0,
+            productId: item.product_id ?? null,
+            categoryId: (item as Record<string, unknown>).category_id as string | null ?? null,
+          }));
+          const commResult = await resolveOrderCommission(firstVendorId, lineItemsForCommission);
+          const snap = buildCommissionSnapshot(commResult);
+          await query(
+            `UPDATE orders SET
+               commission_rate = $2,
+               commission_amount = $3,
+               vendor_payout_amount = GREATEST(
+                 COALESCE(subtotal, 0)
+                 - COALESCE(vendor_promotion_amount, 0)
+                 - $3,
+                 0
+               ),
+               commission_snapshot = COALESCE(commission_snapshot, $4::jsonb),
+               updated_at = NOW()
+             WHERE id = $1::uuid`,
+            [orderId, snap.effectiveRate, snap.commissionAmount, JSON.stringify(snap)]
+          );
+          const orderItemIds = await loadOrderItemIds(orderId);
+          await persistOrderItemCommission(orderId, snap.lineBreakdown, orderItemIds);
+        } catch (commErr) {
+          console.warn('[COMMISSION] resolution at order creation failed (non-fatal):', commErr);
         }
       }
 
@@ -807,14 +1035,35 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
-      return c.json({
+      // Deduct wallet balance and record transaction (non-fatal if table unavailable)
+      if (effectiveWalletApplied > 0 && customerId) {
+        try {
+          await query(
+            `UPDATE customer_wallets
+             SET balance = GREATEST(0, balance - $1::numeric), updated_at = NOW()
+             WHERE customer_id = $2::uuid`,
+            [effectiveWalletApplied, customerId]
+          );
+          await query(
+            `INSERT INTO wallet_transactions
+               (customer_id, transaction_type, amount, description, reference_type, reference_id, created_at)
+             VALUES ($1::uuid, 'debit', $2, $3, 'order', $4::uuid, NOW())
+             ON CONFLICT DO NOTHING`,
+            [customerId, effectiveWalletApplied, `Applied to order ${orderNumber}`, orderId]
+          );
+        } catch (walletErr: any) {
+          console.warn('[ecommerce/orders] wallet deduction failed (non-fatal):', walletErr?.message);
+        }
+      }
+
+      const successResponse = {
         success: true,
         customerId,
         totalAmount,
         isFirstPlatformProductOrder: priorOrderCount === 0,
         containsPetFood,
         appliedPromotion: appliedPromotionId
-          ? { id: appliedPromotionId, discountAmount, type: 'vendor' }
+          ? { id: appliedPromotionId, discountAmount, type: promotionSource ?? 'vendor' }
           : undefined,
         order: {
           id: orderId,
@@ -827,7 +1076,25 @@ export function registerEcommerceEndpoints(app: Hono) {
           created_at: order.created_at,
         },
         message: 'Order placed successfully!',
-      });
+      };
+
+      // Persist idempotency key so a replayed checkout attempt returns the same order (30 min TTL).
+      if (idempotencyKey) {
+        try {
+          await storeIdempotencyKey(
+            `ecommerce_order:${idempotencyKey}`,
+            'order',
+            orderId,
+            JSON.stringify(successResponse),
+            201,
+            0.5 // 30 minutes
+          );
+        } catch (idemErr) {
+          console.warn('[ecommerce/orders] idempotency key store failed (non-fatal):', idemErr);
+        }
+      }
+
+      return c.json(successResponse, 201);
     } catch (error: any) {
       console.error('Error creating ecommerce order:', error);
       return c.json({ error: error.message || 'Failed to create order' }, 500);
@@ -2093,6 +2360,107 @@ export function registerEcommerceEndpoints(app: Hono) {
       console.error('Error updating vendor commission:', error);
       const status = error.message?.includes('commissionModel') ? 400 : 500;
       return c.json({ error: error.message }, status);
+    }
+  });
+
+  /**
+   * GET /admin/ecommerce/commission/products/:productId
+   * Read product-level commission override (highest priority in resolution chain).
+   */
+  app.get('/admin/ecommerce/commission/products/:productId', async (c) => {
+    try {
+      const { productId } = c.req.param();
+      if (!isValidUUID(productId)) {
+        return c.json({ error: 'Invalid product ID' }, 400);
+      }
+      const result = await query(
+        `SELECT product_id::text, commission_rate, is_active, created_at, updated_at
+         FROM product_commission_overrides WHERE product_id = $1::uuid LIMIT 1`,
+        [productId]
+      );
+      return c.json({ success: true, override: result.rows[0] ?? null });
+    } catch (error: any) {
+      console.error('Error fetching product commission override:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /admin/ecommerce/commission/products/:productId
+   * Set or update product-level commission override.
+   * Pass { commissionRate: number } — a value of null or omission disables the override.
+   */
+  app.put('/admin/ecommerce/commission/products/:productId', async (c) => {
+    try {
+      const { productId } = c.req.param();
+      if (!isValidUUID(productId)) {
+        return c.json({ error: 'Invalid product ID' }, 400);
+      }
+      const body = await c.req.json();
+
+      if (body.commissionRate === null || body.commission_rate === null) {
+        // Disable the override (soft delete — keeps audit trail)
+        await query(
+          `UPDATE product_commission_overrides
+           SET is_active = false, updated_at = NOW()
+           WHERE product_id = $1::uuid`,
+          [productId]
+        );
+        return c.json({ success: true, message: 'Product commission override disabled' });
+      }
+
+      const rate = normalizeCommissionRate(body.commissionRate ?? body.commission_rate);
+      if (rate == null) {
+        return c.json({ error: 'commissionRate must be a number between 0 and 100' }, 400);
+      }
+
+      await query(
+        `INSERT INTO product_commission_overrides
+           (product_id, commission_rate, is_active, created_at, updated_at)
+         VALUES ($1::uuid, $2, true, NOW(), NOW())
+         ON CONFLICT (product_id) DO UPDATE
+           SET commission_rate = EXCLUDED.commission_rate,
+               is_active = true,
+               updated_at = NOW()`,
+        [productId, rate]
+      );
+      return c.json({ success: true, message: 'Product commission override saved', commissionRate: rate });
+    } catch (error: any) {
+      console.error('Error updating product commission override:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /admin/ecommerce/categories/:categoryId/commission
+   * Update the default commission rate for an ecommerce category.
+   * This is the fallback rate used when no vendor-level or product-level override exists.
+   */
+  app.put('/admin/ecommerce/categories/:categoryId/commission', async (c) => {
+    try {
+      const { categoryId } = c.req.param();
+      if (!isValidUUID(categoryId)) {
+        return c.json({ error: 'Invalid category ID' }, 400);
+      }
+      const body = await c.req.json();
+      const rate = normalizeCommissionRate(body.commissionRate ?? body.commission_rate);
+      if (rate == null) {
+        return c.json({ error: 'commissionRate must be a number between 0 and 100' }, 400);
+      }
+      const result = await query(
+        `UPDATE ecommerce_categories
+         SET default_commission_rate = $1, updated_at = NOW()
+         WHERE id = $2::uuid
+         RETURNING id::text, name, default_commission_rate`,
+        [rate, categoryId]
+      );
+      if (!result.rows.length) {
+        return c.json({ error: 'Category not found' }, 404);
+      }
+      return c.json({ success: true, message: 'Category commission rate updated', category: result.rows[0] });
+    } catch (error: any) {
+      console.error('Error updating category commission rate:', error);
+      return c.json({ error: error.message }, 500);
     }
   });
 

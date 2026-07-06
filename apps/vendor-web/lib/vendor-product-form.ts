@@ -16,8 +16,45 @@ import {
 
 export type ProductMode = 'simple' | 'multi';
 
-/** Suggested values for vendor pet type combobox (datalist). */
+/** Standard pet type options in the vendor product form select. */
 export const VENDOR_PET_TYPE_SUGGESTIONS = ['Dog', 'Cat', PET_TYPE_CUSTOMER_LABEL_ALL_PETS] as const;
+
+/** Select value when vendor enters a custom pet type (not Dog/Cat/All pets). */
+export const PET_TYPE_SELECT_OTHER = '__other__';
+
+export function isStandardVendorPetTypeInput(input: string): boolean {
+  const trimmed = input.trim();
+  return trimmed !== '' && (VENDOR_PET_TYPE_SUGGESTIONS as readonly string[]).includes(trimmed);
+}
+
+/** Map stored petTypeInput → `<select>` value (native select avoids datalist prefill bugs). */
+export function petTypeSelectValueFromInput(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  if (isStandardVendorPetTypeInput(trimmed)) return trimmed;
+  return PET_TYPE_SELECT_OTHER;
+}
+
+export type VendorCategoryOption = { id: string; name: string };
+
+/** Resolve category_id for form select (trim UUID, fallback from legacy name fields). */
+export function categoryIdForForm(
+  product: Record<string, unknown> | null | undefined,
+  categories: VendorCategoryOption[] = [],
+): string {
+  const rawId = String(product?.category_id ?? '').trim();
+  if (rawId && categories.some((c) => String(c.id) === rawId)) {
+    return rawId;
+  }
+  const nameHint = String(product?.category_name ?? product?.category ?? '')
+    .trim()
+    .toLowerCase();
+  if (nameHint) {
+    const match = categories.find((c) => c.name.trim().toLowerCase() === nameHint);
+    if (match) return String(match.id);
+  }
+  return rawId;
+}
 
 export type SpecKvRow = { id: string; key: string; value: string };
 export type VariantAxisPreset = 'size' | 'color' | 'weight' | 'pack' | 'custom';
@@ -37,7 +74,7 @@ export type VariantRow = {
   size?: string;
   /** @deprecated synced from optionValues.color */
   color?: string;
-  mrp: string;
+  /** Single canonical price for this variant (no separate MRP field). */
   price: string;
   stock: string;
   images: string[];
@@ -54,7 +91,7 @@ export type ProductFormState = {
   gst_rate: string;
   emoji: string;
   status: string;
-  baseMrp: string;
+  /** Single canonical price (replaces the old baseMrp / basePrice dual-field). */
   basePrice: string;
   brand: string;
   listingOwnership: '' | 'own_brand' | 'third_party';
@@ -68,7 +105,7 @@ export type ProductFormState = {
 };
 
 export type SimpleSkuDraft = {
-  mrp: string;
+  /** Single canonical price (replaces the old mrp / price dual-field). */
   price: string;
   stock: string;
   images: string[];
@@ -81,8 +118,8 @@ export type VendorProductPayload = {
   category_id: string;
   emoji: string;
   status: string;
+  /** Single canonical price — the only price field vendors set. */
   price: number;
-  original_price: number;
   stock?: number;
   hsn_code: string;
   gst_rate: number;
@@ -95,8 +132,8 @@ export type VendorProductPayload = {
   skus: Array<{
     id?: string;
     option_values: Record<string, string>;
-    price?: number | null;
-    compare_at_price?: number | null;
+    /** Per-SKU price (single canonical). */
+    price: number;
     stock: number;
     images: string[];
     barcode?: string | null;
@@ -113,6 +150,20 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const GST_SLABS = [0, 5, 12, 18, 28] as const;
+
+/** Map stored/API gst_rate to a select option value (handles 18.00, gstRate alias). */
+export function gstRateForForm(product: Record<string, unknown> | null | undefined): string {
+  if (!product) return '';
+  const raw = product.gst_rate ?? product.gstRate;
+  if (raw === undefined || raw === null || raw === '') return '';
+  const n = parseFloat(String(raw).replace(/,/g, '').trim());
+  if (!Number.isFinite(n)) return '';
+  const exact = GST_SLABS.find((slab) => Math.abs(slab - n) < 0.001);
+  if (exact !== undefined) return String(exact);
+  const rounded = Math.round(n);
+  if (GST_SLABS.includes(rounded as (typeof GST_SLABS)[number])) return String(rounded);
+  return '';
+}
 
 function parseSpecificationsObject(raw: unknown): Record<string, unknown> {
   if (raw == null) return {};
@@ -187,9 +238,9 @@ export function specificationsObjectFromForm(
   if (form.manufacturingDetails.trim()) {
     out.manufacturing_details = form.manufacturingDetails.trim();
   }
-  const length = parseOptionalNum(form.lengthCm);
-  const breadth = parseOptionalNum(form.breadthCm);
-  const height = parseOptionalNum(form.heightCm);
+  const length = parsePositiveDimension(form.lengthCm);
+  const breadth = parsePositiveDimension(form.breadthCm);
+  const height = parsePositiveDimension(form.heightCm);
   if (length != null) out.length_cm = length;
   if (breadth != null) out.breadth_cm = breadth;
   if (height != null) out.height_cm = height;
@@ -201,6 +252,14 @@ function parseOptionalNum(raw: string): number | null {
   if (!t) return null;
   const n = parseFloat(t);
   return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** Dimensions must be strictly positive — 0 means "not provided". */
+function parsePositiveDimension(raw: string): number | null {
+  const t = String(raw ?? '').trim();
+  if (!t) return null;
+  const n = parseFloat(t);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 function appendListingOwnershipToPayload(
@@ -413,13 +472,8 @@ export function inferVariantAxes(variants: VariantRow[]): VariantAxisConfig[] {
 
 export function variantsFromProduct(
   product: Record<string, unknown> | null | undefined,
-  baseMrp?: string,
-  basePrice?: string,
 ): VariantRow[] {
   if (!product) return [];
-  const baseM = baseMrp ?? String(product.original_price ?? product.compare_at_price ?? product.price ?? '');
-  const baseP =
-    basePrice ?? (sellingPriceForForm(product as { price?: number; original_price?: number }) || baseM);
 
   const mapSkuRow = (
     s: Record<string, unknown>,
@@ -433,15 +487,14 @@ export function variantsFromProduct(
       optionValues[key] = String(val).trim();
     }
     const rawSkuId = s.id != null ? String(s.id) : '';
-    const rowMrp = String(s.compare_at_price ?? s.original_price ?? s.price ?? '');
-    const rowPrice = String(s.price ?? '');
+    // Single-price model: prefer `price`; fall back to compare_at_price for legacy rows.
+    const rowPrice = String(s.price ?? s.compare_at_price ?? '');
     return {
       id: isSkuUuid(rawSkuId) ? rawSkuId : `sku-${idx}`,
       skuRowId: isSkuUuid(rawSkuId) ? rawSkuId : undefined,
       optionValues,
       size: optionValues.size ?? '',
       color: optionValues.color ?? '',
-      mrp: rowMrp,
       price: rowPrice,
       stock: String(s.stock ?? ''),
       images: skuImageUrlsFromApi(s.images),
@@ -479,11 +532,10 @@ export function variantsFromProduct(
         optionValues,
         size,
         color,
-      mrp: '',
-      price: '',
-      stock: String(v.stock ?? ''),
-      images: skuImageUrlsFromApi(v.images),
-      isDefault: idx === 0,
+        price: '',
+        stock: String(v.stock ?? ''),
+        images: skuImageUrlsFromApi(v.images),
+        isDefault: idx === 0,
         systemSku: v.sku ? String(v.sku) : undefined,
       };
     });
@@ -498,17 +550,11 @@ export function initialProductFormState(
   return {
     name: String(product?.name ?? ''),
     description: String(product?.description ?? ''),
-    category_id: String(product?.category_id ?? ''),
-    hsn_code: String(product?.hsn_code ?? ''),
-    gst_rate:
-      product?.gst_rate !== undefined && product?.gst_rate !== null
-        ? String(product.gst_rate)
-        : '',
+    category_id: String(product?.category_id ?? '').trim(),
+    hsn_code: String(product?.hsn_code ?? product?.hsnCode ?? ''),
+    gst_rate: gstRateForForm(product),
     emoji: String(product?.emoji ?? '📦'),
     status: String(product?.status ?? 'pending'),
-    baseMrp: String(
-      product?.original_price ?? product?.compare_at_price ?? product?.price ?? '',
-    ),
     basePrice: sellingPriceForForm(
       product as { price?: number; original_price?: number; compare_at_price?: number },
     ),
@@ -518,10 +564,16 @@ export function initialProductFormState(
         ? product.listing_ownership
         : '',
     keyFeatures: String(specs.key_features ?? product?.key_features ?? ''),
-    weightKg: product?.weight != null && product.weight !== '' ? String(product.weight) : '',
-    lengthCm: specs.length_cm != null ? String(specs.length_cm) : '',
-    breadthCm: specs.breadth_cm != null ? String(specs.breadth_cm) : '',
-    heightCm: specs.height_cm != null ? String(specs.height_cm) : '',
+    weightKg:
+      product?.weight != null && product.weight !== '' && Number(product.weight) > 0
+        ? String(product.weight)
+        : '',
+    lengthCm:
+      specs.length_cm != null && Number(specs.length_cm) > 0 ? String(specs.length_cm) : '',
+    breadthCm:
+      specs.breadth_cm != null && Number(specs.breadth_cm) > 0 ? String(specs.breadth_cm) : '',
+    heightCm:
+      specs.height_cm != null && Number(specs.height_cm) > 0 ? String(specs.height_cm) : '',
     petTypeInput: formatPetTypeForVendor(
       specs.pet_type ?? product?.pet_type,
       specs.pet_type_other ?? product?.pet_type_other,
@@ -536,9 +588,6 @@ export function initialSimpleSkuFromProduct(
   product: Record<string, unknown> | null | undefined,
 ): SimpleSkuDraft {
   return {
-    mrp: String(
-      product?.original_price ?? product?.compare_at_price ?? product?.price ?? '',
-    ),
     price: sellingPriceForForm(
       product as { price?: number; original_price?: number; compare_at_price?: number },
     ),
@@ -571,15 +620,17 @@ export function detectProductMode(product: Record<string, unknown> | null | unde
   return 'simple';
 }
 
+/**
+ * @deprecated — kept only for computeListingPreviewFromVariants backward compatibility.
+ * In the single-price model, there is no separate MRP. Returns the variant price.
+ */
 export function effectiveVariantMrp(row: VariantRow): number {
-  const parsed = parseFloat(String(row.mrp ?? '').trim());
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  return effectiveVariantPrice(row);
 }
 
 export function effectiveVariantPrice(row: VariantRow): number {
-  const mrp = effectiveVariantMrp(row);
   const parsed = parseFloat(String(row.price ?? '').trim());
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : mrp;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 export function pickListingVariantRow(
@@ -670,9 +721,7 @@ export function validateProductForm(input: ValidateProductFormInput): string | n
     return 'Tax (GST %) is required — choose 0, 5, 12, 18, or 28';
   }
 
-  const baseMrp = parseFloat(form.baseMrp);
-  const basePriceRaw = String(form.basePrice ?? '').trim();
-  const baseSelling = basePriceRaw ? parseFloat(basePriceRaw) : baseMrp;
+  const basePrice = parseFloat(String(form.basePrice ?? '').trim());
 
   if (mode !== 'simple') {
     if (variants.length === 0) return 'Add at least one variant or switch to single product mode';
@@ -702,23 +751,15 @@ export function validateProductForm(input: ValidateProductFormInput): string | n
       }
       if (v.images.length === 0) return 'Each variant needs at least one image';
 
-      const vMrp = effectiveVariantMrp(v);
-      if (vMrp <= 0) return 'Each variant needs MRP greater than 0';
       const vPrice = effectiveVariantPrice(v);
-      if (vPrice <= 0) return 'Each variant needs selling price greater than 0';
-      if (vPrice > vMrp) return 'Variant selling price cannot exceed variant MRP';
+      if (vPrice <= 0) return 'Each variant needs a price greater than 0';
     }
     return null;
   }
 
-  if (!Number.isFinite(baseMrp) || baseMrp <= 0) {
-    return 'MRP is required and must be greater than 0';
+  if (!Number.isFinite(basePrice) || basePrice <= 0) {
+    return 'Price is required and must be greater than 0';
   }
-
-  if (!Number.isFinite(baseSelling) || baseSelling <= 0) {
-    return 'Selling price must be greater than 0';
-  }
-  if (baseSelling > baseMrp) return 'Selling price cannot exceed MRP';
 
   const stockNum = parseInt(String(simpleSku.stock), 10);
   if (!Number.isInteger(stockNum) || stockNum < 0) {
@@ -738,21 +779,16 @@ export function buildVendorProductPayload(
   const { form, mode, variants, simpleSku, sellerId, stripImageUrl, variantAxes } = input;
   const customSpecs = input.customSpecs ?? [];
 
-  const baseMrp = parseFloat(form.baseMrp);
-  const basePriceRaw = String(form.basePrice ?? '').trim();
-  const baseSelling = basePriceRaw ? parseFloat(basePriceRaw) : baseMrp;
+  const basePriceNum = parseFloat(String(form.basePrice ?? '').trim()) || 0;
 
   if (mode === 'simple') {
-    const mrp = baseMrp;
-    const selling = baseSelling;
     const payload: VendorProductPayload = {
       name: form.name.trim(),
       description: form.description,
       category_id: form.category_id,
       emoji: form.emoji,
       status: form.status,
-      price: selling,
-      original_price: mrp,
+      price: basePriceNum,
       stock: parseInt(String(simpleSku.stock), 10) || 0,
       hsn_code: String(form.hsn_code).trim(),
       gst_rate: parseFloat(form.gst_rate),
@@ -781,20 +817,16 @@ export function buildVendorProductPayload(
     emoji: form.emoji,
     status: form.status,
     price: listingPreview.price,
-    original_price: listingPreview.mrp,
     stock: listingPreview.totalStock,
     hsn_code: String(form.hsn_code).trim(),
     gst_rate: parseFloat(form.gst_rate),
     vendor_id: sellerId,
     images: listingImages,
     skus: variants.map((v) => {
-      const mrp = effectiveVariantMrp(v);
-      const selling = effectiveVariantPrice(v);
       return {
         ...(isSkuUuid(v.skuRowId) ? { id: v.skuRowId } : {}),
         option_values: variantRowOptionValues(v, variantAxes),
-        compare_at_price: mrp,
-        price: selling,
+        price: effectiveVariantPrice(v),
         stock: parseInt(String(v.stock), 10) || 0,
         images: v.images.map(stripImageUrl),
         ...(v.barcode?.trim() ? { barcode: v.barcode.trim() } : {}),
@@ -822,7 +854,6 @@ export function createEmptyVariant(variantAxes: VariantAxisConfig[]): VariantRow
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     optionValues,
-    mrp: '',
     price: '',
     stock: '',
     images: [],
@@ -855,7 +886,6 @@ export function migrateSimpleSkuToFirstVariant(
   return {
     id: `${Date.now()}-migrated`,
     optionValues,
-    mrp: simpleSku.mrp,
     price: simpleSku.price,
     stock: simpleSku.stock,
     images: [...simpleSku.images],
