@@ -3,15 +3,19 @@
 import { Suspense, useEffect, useState } from 'react';
 import { ECommercePromoLayout } from '@/components/admin/ecommerce/ECommercePromoLayout';
 import { AdminPromotionHub } from '@/components/admin/marketing/AdminPromotionHub';
+import type { KindFilter } from '@warmpawz/promotion-management-ui';
 
 function ECommercePromotionsInner() {
-  const [initialTab, setInitialTab] = useState<
-    'active' | 'scheduled' | 'expired' | 'draft' | 'coupons' | 'recent' | undefined
-  >(undefined);
+  const [initialKindFilter, setInitialKindFilter] = useState<KindFilter | undefined>(undefined);
 
   useEffect(() => {
-    const tab = new URLSearchParams(window.location.search).get('tab');
-    if (tab === 'coupons') setInitialTab('coupons');
+    const params = new URLSearchParams(window.location.search);
+    const type = params.get('type') ?? params.get('tab');
+    if (type === 'coupons' || type === 'coupon') {
+      setInitialKindFilter('coupon');
+    } else if (type === 'promotions' || type === 'promotion') {
+      setInitialKindFilter('promotion');
+    }
   }, []);
 
   return (
@@ -19,7 +23,7 @@ function ECommercePromotionsInner() {
       title="Promotions"
       subtitle="Seller and product promotions, cart coupons, and marketplace offers"
     >
-      <AdminPromotionHub surface="ecommerce" initialTab={initialTab} />
+      <AdminPromotionHub surface="ecommerce" initialKindFilter={initialKindFilter} />
     </ECommercePromoLayout>
   );
 }

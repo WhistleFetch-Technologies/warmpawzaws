@@ -17,7 +17,11 @@ export { ComingSoonSection } from './components/ComingSoonSection';
 export { PromotionWizard } from './components/PromotionWizard';
 export { PromotionDetailsPanel } from './components/PromotionDetailsPanel';
 export { PromotionDashboard } from './components/PromotionDashboard';
-export type { PromotionDashboardProps } from './components/PromotionDashboard';
+export type {
+  PromotionDashboardProps,
+  KindFilter,
+  LifecycleTabId,
+} from './components/PromotionDashboard';
 export { DashboardSkeleton } from './components/DashboardSkeleton';
 export * from './smart-target';
 export { TargetContextBar, TargetSelectionSummary } from './components/TargetContextBar';

@@ -147,6 +147,24 @@ export default function NotificationEnginePage() {
     loadInitial();
   }, [loadInitial]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || loading) return;
+    const view = new URLSearchParams(window.location.search).get('view');
+    const scrollToId =
+      view === 'campaigns'
+        ? 'notification-campaigns'
+        : view === 'templates'
+          ? 'notification-templates'
+          : view === 'push'
+            ? 'notification-push-builder'
+            : null;
+    if (scrollToId) {
+      window.requestAnimationFrame(() => {
+        document.getElementById(scrollToId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }, [loading]);
+
   const buildAudiencePayload = () => ({
     targeting_type: form.targeting_type,
     target_app: form.target_app,
@@ -329,7 +347,7 @@ export default function NotificationEnginePage() {
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto p-6 space-y-6 pb-16">
+        <main className="max-w-7xl mx-auto p-6 space-y-6 pb-16" id="notification-push-builder">
           {error && (
             <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex justify-between">
               <span>{error}</span>
@@ -553,7 +571,7 @@ export default function NotificationEnginePage() {
               </section>
 
               {/* 3 Builder + Templates */}
-              <section className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
+              <section id="notification-templates" className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
                 <h2 className="text-lg font-semibold text-gray-900">3. Notification Builder</h2>
                 {templates.length > 0 && (
                   <div>
@@ -703,7 +721,7 @@ export default function NotificationEnginePage() {
           </div>
 
           {/* 9 Recent Campaigns */}
-          <section className="bg-white rounded-2xl border border-gray-200 p-6">
+          <section id="notification-campaigns" className="bg-white rounded-2xl border border-gray-200 p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">9. Recent Campaigns</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

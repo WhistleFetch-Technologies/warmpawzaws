@@ -34,15 +34,33 @@ export type PromotionDashboardProps = {
   onDeleteCoupon?: (id: string) => Promise<void>;
   onToggleCoupon?: (id: string, active: boolean) => Promise<void>;
   headerActions?: React.ReactNode;
-  /** When set, opens on coupons tab (e.g. E-Commerce coupons route). */
-  initialTab?: TabId;
-  /** Lazy catalog adapter for admin Smart Context targeting. */
+  /** Lifecycle tab on first paint. */
+  initialTab?: LifecycleTabId;
+  /** Type filter on first paint (All / Promotions / Coupons). */
+  initialKindFilter?: KindFilter;
+  /** @deprecated Use initialKindFilter="coupon" instead. */
+  initialTabLegacyCoupons?: boolean;
   smartTargetAdapter?: SmartTargetCatalogAdapter;
 };
 
-type TabId = 'active' | 'scheduled' | 'expired' | 'draft' | 'coupons' | 'recent';
+export type LifecycleTabId = 'active' | 'scheduled' | 'expired' | 'draft';
+export type KindFilter = '' | 'promotion' | 'coupon';
+
 type SortId = 'newest' | 'ending_soon' | 'most_used' | 'alphabetical';
-type KindFilter = '' | 'promotion' | 'coupon';
+
+type CouponBuckets = {
+  active: NormalizedCouponItem[];
+  scheduled: NormalizedCouponItem[];
+  expired: NormalizedCouponItem[];
+  draft: NormalizedCouponItem[];
+};
+
+type PromoBuckets = {
+  active: NormalizedPromotionItem[];
+  scheduled: NormalizedPromotionItem[];
+  expired: NormalizedPromotionItem[];
+  draft: NormalizedPromotionItem[];
+};
 
 function sortPromotions(list: NormalizedPromotionItem[], sort: SortId): NormalizedPromotionItem[] {
   const copy = [...list];
@@ -72,6 +90,72 @@ function sortCoupons(list: NormalizedCouponItem[], sort: SortId): NormalizedCoup
   }
 }
 
+function bucketCoupons(filtered: NormalizedCouponItem[], sort: SortId): CouponBuckets {
+  const active: NormalizedCouponItem[] = [];
+  const scheduled: NormalizedCouponItem[] = [];
+  const expired: NormalizedCouponItem[] = [];
+  const draft: NormalizedCouponItem[] = [];
+
+  for (const c of filtered) {
+    const lc = lifecycleFromCoupon(c);
+    if (lc === 'active') active.push(c);
+    else if (lc === 'scheduled') scheduled.push(c);
+    else if (lc === 'expired' || lc === 'archived') expired.push(c);
+    else if (lc === 'draft' || lc === 'paused') draft.push(c);
+    else active.push(c);
+  }
+
+  return {
+    active: sortCoupons(active, sort),
+    scheduled: sortCoupons(scheduled, sort),
+    expired: sortCoupons(expired, sort),
+    draft: sortCoupons(draft, sort),
+  };
+}
+
+function bucketPromotions(filtered: NormalizedPromotionItem[], sort: SortId): PromoBuckets {
+  const active: NormalizedPromotionItem[] = [];
+  const scheduled: NormalizedPromotionItem[] = [];
+  const expired: NormalizedPromotionItem[] = [];
+  const draft: NormalizedPromotionItem[] = [];
+
+  for (const p of filtered) {
+    const lc = lifecycleFromPromotion(p);
+    if (lc === 'active') active.push(p);
+    else if (lc === 'scheduled') scheduled.push(p);
+    else if (lc === 'expired' || lc === 'archived') expired.push(p);
+    else if (lc === 'draft' || lc === 'paused') draft.push(p);
+    else active.push(p);
+  }
+
+  return {
+    active: sortPromotions(active, sort),
+    scheduled: sortPromotions(scheduled, sort),
+    expired: sortPromotions(expired, sort),
+    draft: sortPromotions(draft, sort),
+  };
+}
+
+function couponsForTab(buckets: CouponBuckets, tab: LifecycleTabId): NormalizedCouponItem[] {
+  return buckets[tab];
+}
+
+function promosForTab(buckets: PromoBuckets, tab: LifecycleTabId): NormalizedPromotionItem[] {
+  return buckets[tab];
+}
+
+function tabCount(
+  promos: NormalizedPromotionItem[],
+  coupons: NormalizedCouponItem[],
+  kindFilter: KindFilter,
+  canManageCoupons: boolean
+): number {
+  let n = 0;
+  if (kindFilter !== 'coupon') n += promos.length;
+  if (kindFilter !== 'promotion' && canManageCoupons) n += coupons.length;
+  return n;
+}
+
 export function PromotionDashboard({
   scope,
   promotions,
@@ -88,12 +172,17 @@ export function PromotionDashboard({
   onToggleCoupon,
   headerActions,
   initialTab = 'active',
+  initialKindFilter,
+  initialTabLegacyCoupons,
   smartTargetAdapter,
 }: PromotionDashboardProps) {
-  const [tab, setTab] = useState<TabId>(initialTab);
+  const resolvedInitialKind: KindFilter =
+    initialKindFilter ?? (initialTabLegacyCoupons ? 'coupon' : '');
+
+  const [tab, setTab] = useState<LifecycleTabId>(initialTab);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  const [kindFilter, setKindFilter] = useState<KindFilter>('');
+  const [kindFilter, setKindFilter] = useState<KindFilter>(resolvedInitialKind);
   const [sort, setSort] = useState<SortId>('newest');
   const [domainFilter, setDomainFilter] = useState('');
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -111,7 +200,7 @@ export function PromotionDashboard({
     window.setTimeout(() => setBanner(null), 4000);
   };
 
-  const buckets = useMemo(() => {
+  const { promoBuckets, couponBuckets } = useMemo(() => {
     const q = search.trim().toLowerCase();
     const matchPromo = (p: NormalizedPromotionItem) =>
       !q ||
@@ -120,7 +209,7 @@ export function PromotionDashboard({
       p.promotionType.toLowerCase().includes(q) ||
       p.targetSummary?.toLowerCase().includes(q);
 
-    const filtered = promotions.filter((p) => {
+    const filteredPromos = promotions.filter((p) => {
       if (!matchPromo(p)) return false;
       if (typeFilter && p.promotionType !== typeFilter) return false;
       if (domainFilter && p.domain !== domainFilter) return false;
@@ -128,52 +217,53 @@ export function PromotionDashboard({
       return true;
     });
 
-    const active: NormalizedPromotionItem[] = [];
-    const scheduled: NormalizedPromotionItem[] = [];
-    const expired: NormalizedPromotionItem[] = [];
-    const draft: NormalizedPromotionItem[] = [];
-
-    for (const p of filtered) {
-      const lc = lifecycleFromPromotion(p);
-      if (lc === 'active') active.push(p);
-      else if (lc === 'scheduled') scheduled.push(p);
-      else if (lc === 'expired' || lc === 'archived') expired.push(p);
-      else if (lc === 'draft' || lc === 'paused') draft.push(p);
-      else active.push(p);
-    }
-
-    const recent = sortPromotions(filtered, 'newest');
-
     const couponFiltered = coupons.filter(
       (c) =>
-        (!q ||
-          c.code.toLowerCase().includes(q) ||
-          String(c.discountValue).includes(q)) &&
+        (!q || c.code.toLowerCase().includes(q) || String(c.discountValue).includes(q)) &&
         kindFilter !== 'promotion'
     );
 
     return {
-      active: sortPromotions(active, sort),
-      scheduled: sortPromotions(scheduled, sort),
-      expired: sortPromotions(expired, sort),
-      draft: sortPromotions(draft, sort),
-      recent: sortPromotions(recent, sort),
-      coupons: sortCoupons(couponFiltered, sort),
+      promoBuckets: bucketPromotions(filteredPromos, sort),
+      couponBuckets: bucketCoupons(couponFiltered, sort),
     };
   }, [promotions, coupons, search, typeFilter, domainFilter, kindFilter, sort]);
 
-  const list =
-    tab === 'active'
-      ? buckets.active
-      : tab === 'scheduled'
-        ? buckets.scheduled
-        : tab === 'expired'
-          ? buckets.expired
-          : tab === 'draft'
-            ? buckets.draft
-            : tab === 'recent'
-              ? buckets.recent
-              : [];
+  const tabPromos = promosForTab(promoBuckets, tab);
+  const tabCoupons = couponsForTab(couponBuckets, tab);
+
+  const showPromos = kindFilter !== 'coupon';
+  const showCoupons = scope.canManageCoupons && kindFilter !== 'promotion';
+
+  const gridPromos = showPromos ? tabPromos : [];
+  const gridCoupons = showCoupons ? tabCoupons : [];
+  const gridEmpty = gridPromos.length === 0 && gridCoupons.length === 0;
+
+  const tabs: { id: LifecycleTabId; label: string; count: number }[] = [
+    {
+      id: 'active',
+      label: 'Active',
+      count: tabCount(promoBuckets.active, couponBuckets.active, kindFilter, scope.canManageCoupons),
+    },
+    {
+      id: 'scheduled',
+      label: 'Scheduled',
+      count: tabCount(promoBuckets.scheduled, couponBuckets.scheduled, kindFilter, scope.canManageCoupons),
+    },
+    {
+      id: 'draft',
+      label: 'Draft',
+      count: tabCount(promoBuckets.draft, couponBuckets.draft, kindFilter, scope.canManageCoupons),
+    },
+    {
+      id: 'expired',
+      label: 'Expired',
+      count: tabCount(promoBuckets.expired, couponBuckets.expired, kindFilter, scope.canManageCoupons),
+    },
+  ];
+
+  const hasFilters = Boolean(search || typeFilter || kindFilter || domainFilter);
+  const isEmptySearch = hasFilters && gridEmpty;
 
   const openCreate = (kind?: 'promotion' | 'coupon') => {
     setEditingId(undefined);
@@ -280,19 +370,22 @@ export function PromotionDashboard({
     }
   };
 
-  const tabs: { id: TabId; label: string; count: number }[] = [
-    { id: 'active', label: 'Active', count: buckets.active.length },
-    { id: 'scheduled', label: 'Scheduled', count: buckets.scheduled.length },
-    { id: 'expired', label: 'Expired', count: buckets.expired.length },
-    { id: 'draft', label: 'Draft / Paused', count: buckets.draft.length },
-    ...(scope.canManageCoupons
-      ? [{ id: 'coupons' as TabId, label: 'Coupons', count: buckets.coupons.length }]
-      : []),
-    { id: 'recent', label: 'Recently created', count: buckets.recent.length },
-  ];
+  const emptyTitle =
+    isEmptySearch
+      ? 'No results found'
+      : tab === 'active'
+        ? kindFilter === 'coupon'
+          ? 'No active coupons'
+          : kindFilter === 'promotion'
+            ? 'No active promotions'
+            : 'No active offers'
+        : 'No offers in this view';
 
-  const hasFilters = Boolean(search || typeFilter || kindFilter || domainFilter);
-  const isEmptySearch = hasFilters && list.length === 0 && tab !== 'coupons';
+  const emptyDescription = isEmptySearch
+    ? 'Adjust search or filters'
+    : kindFilter === 'coupon'
+      ? 'Create a coupon code customers can enter at checkout'
+      : 'Create a promotion to offer discounts automatically at checkout';
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -401,10 +494,11 @@ export function PromotionDashboard({
             value={kindFilter}
             onChange={(e) => setKindFilter(e.target.value as KindFilter)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            aria-label="Type filter"
           >
-            <option value="">All kinds</option>
-            <option value="promotion">Promotions only</option>
-            {scope.canManageCoupons ? <option value="coupon">Coupons only</option> : null}
+            <option value="">All</option>
+            <option value="promotion">Promotions</option>
+            {scope.canManageCoupons ? <option value="coupon">Coupons</option> : null}
           </select>
           <select
             value={typeFilter}
@@ -445,77 +539,53 @@ export function PromotionDashboard({
 
         {loading ? (
           <DashboardSkeleton count={6} />
-        ) : tab === 'coupons' ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {buckets.coupons.length === 0 ? (
-              <EmptyState
-                title={hasFilters ? 'No coupons match your filters' : 'No coupons yet'}
-                description={
-                  hasFilters
-                    ? 'Try clearing search or filters'
-                    : 'Create a coupon code customers can enter at checkout'
-                }
-                ctaLabel="Create coupon"
-                onCta={() => openCreate('coupon')}
-              />
-            ) : (
-              buckets.coupons.map((c) => (
-                <CouponCard
-                  key={c.id}
-                  item={c}
-                  onClick={() => {
-                    setDetailCoupon(c);
-                    setDetailPromo(null);
-                  }}
-                  onEdit={() => openEditCoupon(c)}
-                  onToggle={
-                    onToggleCoupon
-                      ? () => handleToggleCoupon(c.id, !c.isActive)
-                      : undefined
-                  }
-                  onDelete={onDeleteCoupon ? () => handleDeleteCoupon(c.id) : undefined}
-                />
-              ))
-            )}
-          </div>
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
-            {list.length === 0 ? (
+            {gridEmpty ? (
               <EmptyState
-                title={
-                  isEmptySearch
-                    ? 'No results found'
-                    : tab === 'active'
-                      ? 'No active promotions'
-                      : 'No promotions in this view'
-                }
-                description={
-                  isEmptySearch
-                    ? 'Adjust search or filters to find promotions'
-                    : 'Create a promotion to offer discounts automatically at checkout'
-                }
-                ctaLabel="Create promotion"
-                onCta={() => openCreate('promotion')}
+                title={emptyTitle}
+                description={emptyDescription}
+                ctaLabel={kindFilter === 'coupon' ? 'Create coupon' : 'Create promotion'}
+                onCta={() => openCreate(kindFilter === 'coupon' ? 'coupon' : 'promotion')}
                 secondaryCta={
-                  scope.canManageCoupons
+                  scope.canManageCoupons && kindFilter !== 'coupon'
                     ? { label: 'Create coupon', onClick: () => openCreate('coupon') }
                     : undefined
                 }
               />
             ) : (
-              list.map((p) => (
-                <PromotionCard
-                  key={p.id}
-                  item={p}
-                  onClick={() => {
-                    setDetailPromo(p);
-                    setDetailCoupon(null);
-                  }}
-                  onEdit={() => openEditPromo(p)}
-                  onToggle={() => handleTogglePromo(p.id, !p.isActive)}
-                  onDelete={() => handleDeletePromo(p.id)}
-                />
-              ))
+              <>
+                {gridPromos.map((p) => (
+                  <PromotionCard
+                    key={`promo-${p.id}`}
+                    item={p}
+                    onClick={() => {
+                      setDetailPromo(p);
+                      setDetailCoupon(null);
+                    }}
+                    onEdit={() => openEditPromo(p)}
+                    onToggle={() => handleTogglePromo(p.id, !p.isActive)}
+                    onDelete={() => handleDeletePromo(p.id)}
+                  />
+                ))}
+                {gridCoupons.map((c) => (
+                  <CouponCard
+                    key={`coupon-${c.id}`}
+                    item={c}
+                    onClick={() => {
+                      setDetailCoupon(c);
+                      setDetailPromo(null);
+                    }}
+                    onEdit={() => openEditCoupon(c)}
+                    onToggle={
+                      onToggleCoupon
+                        ? () => handleToggleCoupon(c.id, !c.isActive)
+                        : undefined
+                    }
+                    onDelete={onDeleteCoupon ? () => handleDeleteCoupon(c.id) : undefined}
+                  />
+                ))}
+              </>
             )}
           </div>
         )}
@@ -550,9 +620,19 @@ export function PromotionDashboard({
           }}
           onEdit={
             detailPromo
-              ? () => openEditPromo(detailPromo)
+              ? () => {
+                  const p = detailPromo;
+                  setDetailPromo(null);
+                  setDetailCoupon(null);
+                  openEditPromo(p);
+                }
               : detailCoupon
-                ? () => openEditCoupon(detailCoupon)
+                ? () => {
+                    const c = detailCoupon;
+                    setDetailPromo(null);
+                    setDetailCoupon(null);
+                    openEditCoupon(c);
+                  }
                 : undefined
           }
         />

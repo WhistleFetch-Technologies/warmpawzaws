@@ -18,6 +18,8 @@ import {
   normalizePromotionRow,
   wizardToAdminCouponPayload,
   wizardToAdminPromotionPayload,
+  type KindFilter,
+  type LifecycleTabId,
   type PromotionTargetCatalog,
   type PromotionWizardForm,
   type SmartTargetCatalogAdapter,
@@ -26,9 +28,11 @@ import {
 export function AdminPromotionHub({
   surface = 'marketing',
   initialTab,
+  initialKindFilter,
 }: {
   surface?: AdminPromoSurface;
-  initialTab?: 'active' | 'scheduled' | 'expired' | 'draft' | 'coupons' | 'recent';
+  initialTab?: LifecycleTabId;
+  initialKindFilter?: KindFilter;
   /** @deprecated Legacy link removed — use ENABLE_LEGACY_PROMOTION_UI for rollback paths */
   hideLegacyLink?: boolean;
 }) {
@@ -141,7 +145,7 @@ export function AdminPromotionHub({
 
       <PromotionDashboard
         scope={scope}
-        promotions={initialTab === 'coupons' ? [] : promotions}
+        promotions={promotions}
         coupons={coupons}
         catalog={catalog}
         loading={loading}
@@ -149,6 +153,7 @@ export function AdminPromotionHub({
         onRefresh={load}
         onSave={handleSave}
         initialTab={initialTab}
+        initialKindFilter={initialKindFilter}
         smartTargetAdapter={smartTargetAdapter}
         onDeletePromotion={async (id) => {
           try {

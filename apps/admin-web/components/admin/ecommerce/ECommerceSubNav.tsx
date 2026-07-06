@@ -33,7 +33,7 @@ const NAV: ECommerceNavItem[] = [
   { id: 'categories', label: 'Categories', href: '/ecommerce?tab=categories', icon: FileText },
   { id: 'promotions', label: 'Promotions', href: '/ecommerce/promotions', icon: Tag, matchPrefix: '/ecommerce/promotions' },
   { id: 'seller-promotions', label: 'Seller Promotions', href: '/ecommerce/seller-promotions', icon: Store, matchPrefix: '/ecommerce/seller-promotions' },
-  { id: 'coupons', label: 'Coupons', href: '/ecommerce/promotions?tab=coupons', icon: Percent, matchPrefix: '/ecommerce/coupons' },
+  { id: 'coupons', label: 'Coupons', href: '/ecommerce/promotions?type=coupons', icon: Percent, matchPrefix: '/ecommerce/coupons' },
   { id: 'campaigns', label: 'Campaigns', href: '/ecommerce/campaigns', icon: Megaphone, matchPrefix: '/ecommerce/campaigns' },
   { id: 'promotion-analytics', label: 'Analytics', href: '/ecommerce/analytics', icon: LineChart, matchPrefix: '/ecommerce/analytics' },
   { id: 'commission', label: 'Commission', href: '/ecommerce?tab=commission', icon: Percent },
@@ -48,15 +48,19 @@ function isActive(
 ): boolean {
   if (!pathname) return false;
   const tab = searchParams.get('tab');
+  const type = searchParams.get('type');
   if (item.id === 'coupons') {
     return (
       pathname.startsWith('/ecommerce/coupons') ||
-      (pathname.startsWith('/ecommerce/promotions') && tab === 'coupons')
+      (pathname.startsWith('/ecommerce/promotions') &&
+        (type === 'coupons' || type === 'coupon' || tab === 'coupons'))
     );
   }
   if (item.id === 'promotions') {
     if (pathname.startsWith('/ecommerce/coupons')) return true;
-    if (pathname.startsWith('/ecommerce/promotions')) return tab !== 'coupons';
+    if (pathname.startsWith('/ecommerce/promotions')) {
+      return type !== 'coupons' && type !== 'coupon' && tab !== 'coupons';
+    }
   }
   if (item.matchPrefix && item.matchPrefix !== '/ecommerce') {
     return pathname === item.matchPrefix || pathname.startsWith(`${item.matchPrefix}/`);

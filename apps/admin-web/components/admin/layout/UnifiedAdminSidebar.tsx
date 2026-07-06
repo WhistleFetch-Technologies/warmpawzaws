@@ -31,8 +31,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { usePathname } from 'next/navigation';
-import { filterMarketingSidebarNavItems } from '@/lib/legacy-promotion-ui';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { filterMarketingSidebarNavItems, isLegacyPromotionUiEnabled } from '@/lib/legacy-promotion-ui';
+import {
+  MARKETING_PORTAL_NAV_GROUPS,
+  type MarketingPortalNavGroup,
+} from '@/lib/marketing-portal-nav';
 import { getStoredAdminPermissions, hasAdminPortalPermission } from '@/lib/admin-permissions';
 import {
   adminPortalNavItemVisible,
@@ -169,6 +173,35 @@ function isNavItemActive(item: AdminPortalNavItem, activeView: string, pathname:
   return false;
 }
 
+function canSeeMarketingLink(permissionNavId: string, hydrated: boolean): boolean {
+  if (!hydrated) return true;
+  const item = getAdminPortalMarketingNavItems().find((i) => i.id === permissionNavId);
+  if (!item) return true;
+  return canSeeNavItem(item, hydrated);
+}
+
+function isMarketingPortalLinkActive(href: string, pathname: string | null, searchParams: URLSearchParams | null): boolean {
+  if (!pathname) return false;
+  const [path, query = ''] = href.split('?');
+  const pathMatches = pathname === path || pathname.startsWith(`${path}/`);
+  if (!pathMatches) return false;
+  if (!query) return true;
+  const expected = new URLSearchParams(query);
+  const actual = searchParams ?? new URLSearchParams();
+  for (const [key, value] of expected.entries()) {
+    if (actual.get(key) !== value) return false;
+  }
+  return true;
+}
+
+function isMarketingPortalGroupActive(
+  group: MarketingPortalNavGroup,
+  pathname: string | null,
+  searchParams: URLSearchParams | null
+): boolean {
+  return group.links.some((link) => isMarketingPortalLinkActive(link.href, pathname, searchParams));
+}
+
 function canSeeNavItem(item: AdminPortalNavItem, hydrated: boolean): boolean {
   if (!hydrated) return true;
   const perms = getStoredAdminPermissions();
@@ -182,17 +215,41 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
   const [open, setOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const legacyMarketingNav = isLegacyPromotionUiEnabled();
   const [marketingOpen, setMarketingOpen] = useState(false);
+  const [openMarketingGroups, setOpenMarketingGroups] = useState<Record<string, boolean>>({
+    'marketing-hub': true,
+    promotions: true,
+    notifications: false,
+  });
 
   useEffect(() => {
     setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine') || pathname?.startsWith('/promotions') || pathname?.startsWith('/policy-center') || pathname?.startsWith('/marketing/analytics') || pathname?.startsWith('/marketing/campaigns')) {
+    const inMarketing =
+      pathname?.startsWith('/marketing') ||
+      pathname?.startsWith('/notification-engine') ||
+      pathname?.startsWith('/notifications') ||
+      pathname?.startsWith('/promotions') ||
+      pathname?.startsWith('/policy-center');
+    if (inMarketing) {
       setMarketingOpen(true);
     }
-  }, [pathname]);
+    if (!legacyMarketingNav && pathname) {
+      setOpenMarketingGroups((prev) => {
+        const next = { ...prev };
+        for (const group of MARKETING_PORTAL_NAV_GROUPS) {
+          if (isMarketingPortalGroupActive(group, pathname, searchParams)) {
+            next[group.id] = true;
+          }
+        }
+        return next;
+      });
+    }
+  }, [pathname, searchParams, legacyMarketingNav]);
 
   useEffect(() => {
     const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
@@ -220,6 +277,21 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
     const permitted = marketingNavItems.filter((item) => canSeeNavItem(item, hydrated));
     return filterMarketingSidebarNavItems(permitted);
   }, [hydrated, marketingNavItems, pathname, activeView]);
+
+  const visibleMarketingPortalGroups = useMemo(() => {
+    return MARKETING_PORTAL_NAV_GROUPS.map((group) => ({
+      ...group,
+      links: group.links.filter((link) => canSeeMarketingLink(link.permissionNavId, hydrated)),
+    })).filter((group) => group.links.length > 0);
+  }, [hydrated]);
+
+  const marketingSectionActive =
+    pathname?.startsWith('/marketing') ||
+    pathname?.startsWith('/notification-engine') ||
+    pathname?.startsWith('/notifications') ||
+    pathname?.startsWith('/promotions') ||
+    pathname?.startsWith('/policy-center') ||
+    false;
 
   const visibleFooterNav = useMemo(() => {
     if (!hydrated) return footerNavItems;
@@ -303,22 +375,22 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                 );
               })}
 
-              {visibleMarketingNav.length > 0 && (
+              {(legacyMarketingNav ? visibleMarketingNav.length > 0 : visibleMarketingPortalGroups.length > 0) && (
                 <div className="pt-1">
                   <button
                     type="button"
                     onClick={() => setMarketingOpen((v) => !v)}
                     className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors rounded-lg ${
-                      pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine') || pathname?.startsWith('/promotions') || pathname?.startsWith('/policy-center') || pathname?.startsWith('/marketing/analytics') || pathname?.startsWith('/marketing/campaigns')
+                      marketingSectionActive
                         ? 'text-[#FF8C42] bg-orange-50 font-medium'
                         : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                     }`}
                   >
                     <Megaphone className="w-4 h-4 shrink-0" />
-                    <span className="truncate flex-1 text-left">Marketing & Promotions</span>
+                    <span className="truncate flex-1 text-left">Marketing</span>
                     {marketingOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </button>
-                  {marketingOpen && (
+                  {marketingOpen && legacyMarketingNav && (
                     <div className="ml-4 mt-1 space-y-1 border-l border-gray-200 pl-2">
                       {visibleMarketingNav.map((item) => {
                         const ChildIcon = NAV_ICONS[item.id] ?? Megaphone;
@@ -339,6 +411,67 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                             <ChildIcon className="w-4 h-4 shrink-0" />
                             <span className="truncate">{item.label}</span>
                           </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {marketingOpen && !legacyMarketingNav && (
+                    <div className="ml-4 mt-1 space-y-2 border-l border-gray-200 pl-2">
+                      {visibleMarketingPortalGroups.map((group) => {
+                        const groupActive = isMarketingPortalGroupActive(group, pathname, searchParams);
+                        const groupOpen = openMarketingGroups[group.id] ?? false;
+                        return (
+                          <div key={group.id}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenMarketingGroups((prev) => ({
+                                  ...prev,
+                                  [group.id]: !groupOpen,
+                                }))
+                              }
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors rounded-lg ${
+                                groupActive
+                                  ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                                  : 'text-gray-700 hover:bg-gray-100'
+                              }`}
+                            >
+                              <span className="truncate flex-1 text-left font-medium">{group.label}</span>
+                              {groupOpen ? (
+                                <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+                              ) : (
+                                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+                              )}
+                            </button>
+                            {groupOpen && (
+                              <div className="ml-3 mt-0.5 space-y-0.5 border-l border-gray-100 pl-2">
+                                {group.links.map((link) => {
+                                  const linkActive = isMarketingPortalLinkActive(
+                                    link.href,
+                                    pathname,
+                                    searchParams
+                                  );
+                                  return (
+                                    <button
+                                      key={link.id}
+                                      type="button"
+                                      onClick={() => {
+                                        window.location.href = link.href;
+                                        setOpen(false);
+                                      }}
+                                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors rounded-lg ${
+                                        linkActive
+                                          ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                                      }`}
+                                    >
+                                      {link.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>

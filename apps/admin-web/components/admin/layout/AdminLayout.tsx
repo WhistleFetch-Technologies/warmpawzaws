@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { UnifiedAdminSidebar } from "@/components/admin/layout/UnifiedAdminSidebar";
 import { AdminRouteGuard } from "@/components/admin/layout/AdminRouteGuard";
 import { Breadcrumbs } from "@/components/admin/shared/Breadcrumbs";
@@ -35,10 +35,12 @@ export function AdminLayout({
 	return (
 		<div className="flex min-h-screen bg-gray-50">
 			<AdminCopilotPanel />
-			<UnifiedAdminSidebar
-				activeView={activeView}
-				onNavigate={handleNavigate}
-			/>
+			<Suspense fallback={null}>
+				<UnifiedAdminSidebar
+					activeView={activeView}
+					onNavigate={handleNavigate}
+				/>
+			</Suspense>
 			{/* ✅ FIX: Improved z-index and structure for better visual hierarchy */}
 			<div className="flex-1 flex flex-col min-h-screen">
 				{/* Header with Breadcrumbs and Search - cleaner, no extra margin */}
