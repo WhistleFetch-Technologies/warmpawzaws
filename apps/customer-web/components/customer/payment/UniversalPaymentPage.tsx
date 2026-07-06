@@ -1594,12 +1594,13 @@ export function UniversalPaymentPage({
         subtotalLabel: priceIncludesTax ? 'Taxable value (excl. GST)' : 'Service price',
         subtotal: taxBreakdown.subtotal,
         vendorDiscount: checkoutVendorDiscount,
-        vendorDiscountLabel: appliedPromotion?.title?.trim() || 'Discount',
+        vendorDiscountLabel: 'Discount',
         platformDiscount: checkoutPlatformDiscount,
         couponDiscount,
         couponCode: appliedCoupon?.code,
         taxBreakdown,
         platformFees,
+        collapseAutoPromotions: type === 'booking',
         includeDeliveryFee: type !== 'meal_subscription' && type !== 'meal_one_time',
         razorpayOffer: selectedRazorpayOffer
           ? { title: selectedRazorpayOffer.title, amount: razorpayOfferDiscount }

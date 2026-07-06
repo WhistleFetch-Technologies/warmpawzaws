@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { DeclineBookingModal } from './DeclineBookingModal';
+import { formatVendorFacingCustomerNotes } from '@/lib/vendor-facing-booking-notes';
 
 interface IncomingBookingsPanelProps {
   vendorId: string;
@@ -252,10 +253,10 @@ function BookingRequestCard({ booking, onDecline }: BookingRequestCardProps) {
         </div>
       )}
 
-      {booking.customerNotes && (
+      {formatVendorFacingCustomerNotes(booking.customerNotes) && (
         <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
           <p className="text-xs text-gray-600 mb-1">Customer Notes</p>
-          <p className="text-sm text-gray-800">{booking.customerNotes}</p>
+          <p className="text-sm text-gray-800">{formatVendorFacingCustomerNotes(booking.customerNotes)}</p>
         </div>
       )}
 

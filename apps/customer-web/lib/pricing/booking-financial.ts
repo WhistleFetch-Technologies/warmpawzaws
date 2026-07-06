@@ -204,14 +204,14 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
   let effectiveVendorDiscount = vendorDiscount;
   let effectivePlatformDiscount = platformDiscount;
   let effectiveCouponDiscount = couponDiscount;
-  let vendorDiscountLabel = 'Vendor promotion';
+  let vendorDiscountLabel = 'Discount';
 
   if (
     effectiveVendorDiscount + effectivePlatformDiscount + effectiveCouponDiscount <= 0 &&
     computedSavings > 0
   ) {
     effectiveVendorDiscount = computedSavings;
-    vendorDiscountLabel = 'Promotion';
+    vendorDiscountLabel = 'Discount';
   }
 
   const promoTotal =
@@ -259,8 +259,6 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
         );
 
   const promotionNames: string[] = [];
-  if (vendorDiscount > 0) promotionNames.push('Vendor promotion');
-  if (platformDiscount > 0) promotionNames.push('Platform offer');
 
   const lines = buildCheckoutPriceLines({
     subtotalLabel: 'Service price',
@@ -275,6 +273,7 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
     includeDeliveryFee: feeFields.deliveryFee > 0,
     subtotalAfterDiscounts,
     finalAmount: resolvedFinal,
+    collapseAutoPromotions: true,
   }).map((line) =>
     line.kind === 'final' ? { ...line, label: 'Final paid' } : line
   );

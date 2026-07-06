@@ -51,15 +51,6 @@ export function FinancialInvoiceSummary({
             {couponCode ? (
               <SavingsBadge variant="coupon_applied" label={`Coupon: ${couponCode}`} />
             ) : null}
-            {promotionLabels.map((name) => (
-              <SavingsBadge
-                key={name}
-                variant={
-                  name.toLowerCase().includes('platform') ? 'platform_offer' : 'vendor_offer'
-                }
-                label={name}
-              />
-            ))}
           </div>
         </div>
       )}

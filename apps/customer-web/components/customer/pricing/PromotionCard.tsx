@@ -4,11 +4,7 @@ import { SavingsBadge } from './SavingsBadge';
 import { PromotionOfferBadge } from './PromotionOfferBadge';
 import { PriceDisplay } from './PriceDisplay';
 import { formatInr } from '@/lib/pricing/format';
-import {
-  formatPromotionTypeName,
-  offerSourceLabel,
-  offerSourceToBadgeVariant,
-} from '@/lib/pricing/promotion-display';
+import { formatPromotionTypeName } from '@/lib/pricing/promotion-display';
 import type { AppliedPromotionOffer } from '@/lib/pricing/types';
 
 export type PromotionCardProps = {
@@ -33,8 +29,6 @@ function badgeVariantForOffer(offer: AppliedPromotionOffer): 'percent' | 'flat' 
 function savingsVariant(offer: AppliedPromotionOffer) {
   if (offer.code) return 'coupon_applied' as const;
   if (offer.autoApply) return 'auto_applied' as const;
-  if (offer.source === 'platform') return 'platform_offer' as const;
-  if (offer.source === 'vendor') return 'vendor_offer' as const;
   return 'save_amount' as const;
 }
 
@@ -55,7 +49,6 @@ export function PromotionCard({
         : undefined;
 
   const typeName = formatPromotionTypeName(offer.promotionType);
-  const sourceLabel = offer.source ? offerSourceLabel(offer.source) : undefined;
 
   return (
     <div
@@ -80,12 +73,6 @@ export function PromotionCard({
                     : undefined
               }
             />
-            {sourceLabel ? (
-              <SavingsBadge
-                variant={offerSourceToBadgeVariant(offer.source)}
-                label={sourceLabel}
-              />
-            ) : null}
           </div>
           <p className={`font-semibold text-slate-900 ${compact ? 'text-sm' : 'text-base'}`}>
             {offer.name}

@@ -33,6 +33,9 @@ export type BuildCheckoutPriceLinesParams = {
   finalAmount: number;
   /** When set and discounts apply, inserts a subtotal row after discounts and before taxes/fees. */
   subtotalAfterDiscounts?: number;
+  /** Customer UI: one combined auto-promo line instead of vendor vs platform rows. */
+  collapseAutoPromotions?: boolean;
+  platformDiscountLabel?: string;
 };
 
 export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): PriceBreakdownLine[] {
@@ -51,27 +54,39 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
     walletAmount = 0,
     finalAmount,
     subtotalAfterDiscounts,
+    collapseAutoPromotions = false,
+    platformDiscountLabel = 'Discount',
   } = params;
 
   const lines: PriceBreakdownLine[] = [
     { kind: 'base', label: subtotalLabel, amount: subtotal, emphasis: 'default' },
   ];
 
-  if (vendorDiscount > 0) {
+  const autoPromoTotal = vendorDiscount + platformDiscount;
+  if (collapseAutoPromotions && autoPromoTotal > 0) {
     lines.push({
       kind: 'vendor_discount',
       label: vendorDiscountLabel,
-      amount: -vendorDiscount,
+      amount: -autoPromoTotal,
       emphasis: 'discount',
     });
-  }
-  if (platformDiscount > 0) {
-    lines.push({
-      kind: 'platform_discount',
-      label: 'Platform offer',
-      amount: -platformDiscount,
-      emphasis: 'discount',
-    });
+  } else {
+    if (vendorDiscount > 0) {
+      lines.push({
+        kind: 'vendor_discount',
+        label: vendorDiscountLabel,
+        amount: -vendorDiscount,
+        emphasis: 'discount',
+      });
+    }
+    if (platformDiscount > 0) {
+      lines.push({
+        kind: 'platform_discount',
+        label: platformDiscountLabel,
+        amount: -platformDiscount,
+        emphasis: 'discount',
+      });
+    }
   }
   if (couponDiscount > 0) {
     lines.push({
