@@ -20,6 +20,7 @@ import {
   buildSupportMealOrderContext,
   navigateToMealOrderSupport,
 } from '@/lib/support-contact';
+import { resolveMealOrderRowId } from '@/lib/meal-order-tracking-nav';
 import {
   MealTrackingHeaderRefreshButton,
   MealTrackingMealView,
@@ -108,6 +109,7 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
   const pathname = usePathname();
   const phone = searchParams.get('phone')?.trim() || undefined;
   const from = searchParams.get('from')?.trim() || undefined;
+  const queryOrderId = searchParams.get('orderId')?.trim() || undefined;
 
   /** Static export only pre-renders `/track/placeholder`; real id must come from the client route or URL. */
   const resolvedOrderId = useMemo(() => {
@@ -121,13 +123,13 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
       typeof pathname === 'string' ? pathname.match(/^\/track\/([^/?#]+)/)?.[1] : undefined;
     const decodedPath = pathSeg ? decodeURIComponent(pathSeg) : '';
 
-    const candidates = [fromDynamicSegment, decodedPath, orderId];
+    const candidates = [queryOrderId, fromDynamicSegment, decodedPath, orderId];
     for (const c of candidates) {
       const s = String(c || '').trim();
       if (s && s !== 'placeholder') return s;
     }
     return String(orderId || '').trim();
-  }, [orderId, routeParams, pathname]);
+  }, [orderId, queryOrderId, routeParams, pathname]);
 
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -272,7 +274,9 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
         toast.error('Invoice is available after payment is confirmed');
         return;
       }
-      const orderIdForInvoice = String(mealOrder.id || resolvedOrderId);
+      const orderIdForInvoice = resolveMealOrderRowId(
+        tracking.order as { id?: string; order_id?: string; orderId?: string },
+      ) || resolvedOrderId;
       try {
         const { saveResult } = await downloadMealOrderInvoice(orderIdForInvoice);
         if (saveResult === 'failed') {
@@ -293,7 +297,9 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
         tracking={(tracking.tracking as Record<string, unknown>) ?? null}
         orderId={resolvedOrderId}
         reassignPending={Boolean(tracking.tracking?.reassignPending)}
-        backSlot={<MealTrackingBackButton href={mealBackHref} />}
+        backSlot={
+          <MealTrackingBackButton onClick={() => router.push(mealBackHref)} />
+        }
         onSupport={openMealOrderHelp}
         headerExtra={
           <>

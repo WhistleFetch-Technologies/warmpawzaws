@@ -49,9 +49,10 @@ async function fetchInvoiceHtml(downloadPath: string, authHeaders: Record<string
 
 export function isMealOrderInvoiceAvailable(order: {
   payment_status?: string | null;
+  paymentStatus?: string | null;
   status?: string | null;
 }): boolean {
-  const ps = String(order.payment_status || '').toLowerCase();
+  const ps = String(order.payment_status ?? order.paymentStatus ?? '').toLowerCase();
   if (ps === 'paid' || ps === 'completed') return true;
   if (ps === 'pending' || ps === 'awaiting_payment') return false;
   const status = String(order.status || '').toLowerCase();

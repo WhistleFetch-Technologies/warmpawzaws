@@ -3,6 +3,7 @@
  * Set NEXT_PUBLIC_SUPPORT_PHONE in env (digits with optional + / spaces), e.g. +91 800 123 4567
  * Optional NEXT_PUBLIC_SUPPORT_PHONE_DISPLAY for UI label only.
  */
+import { rememberHelpBackFromCurrentUrl, rememberHelpBackToPath } from '@/lib/go-back-or-replace';
 import { resolveMealPlanTitle } from '@/lib/meal-order-tracking-details';
 
 const DEFAULT_SUPPORT_DIGITS = '918001234567';
@@ -192,9 +193,31 @@ export function buildSupportMealOrderContext(order: Record<string, unknown>): Su
 
 export function navigateToMealOrderSupport(
   router: { push: (path: string) => void },
-  ctx: SupportMealOrderContext
+  ctx: SupportMealOrderContext,
 ): void {
   storeSupportMealOrderContext(ctx);
+
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname;
+    const search = window.location.search;
+
+    if (path.startsWith('/track/')) {
+      const from = new URLSearchParams(search).get('from');
+      const phone = new URLSearchParams(search).get('phone')?.trim();
+      if (from === 'meal-plans') {
+        rememberHelpBackToPath(
+          phone
+            ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}`
+            : '/orders/meal-plans',
+        );
+      } else {
+        rememberHelpBackFromCurrentUrl();
+      }
+    } else if (path !== '/' && path !== '') {
+      rememberHelpBackFromCurrentUrl();
+    }
+  }
+
   router.push(`/help?orderId=${encodeURIComponent(ctx.orderId)}&orderType=meal`);
 }
 

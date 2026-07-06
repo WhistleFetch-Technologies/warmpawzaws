@@ -14,6 +14,7 @@ import {
   mealFooterSubline,
 } from '@/lib/meal-order-footer-toast';
 import { invokeMealShellTrack } from '@/lib/meal-shell-track-bridge';
+import { navigateToMealOrderTracking } from '@/lib/meal-order-tracking-nav';
 
 function readPhoneFromStorage(): string | null {
   if (typeof window === 'undefined') return null;
@@ -115,8 +116,11 @@ export function MealOrderFooterToast({ customerPhone: customerPhoneProp }: MealO
   const handleTrackOrder = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (invokeMealShellTrack(order.orderId)) return;
-    router.push(`/track/${order.orderId}?from=meal-footer`);
+    if (invokeMealShellTrack(order.orderId, 'home')) return;
+    navigateToMealOrderTracking(router, order.orderId, {
+      from: 'meal-footer',
+      phone: phone ?? undefined,
+    });
   };
   return createPortal(
     <div

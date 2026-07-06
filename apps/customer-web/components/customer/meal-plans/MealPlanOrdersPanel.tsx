@@ -18,7 +18,12 @@ import {
   rememberMealOneTimePayBackFromPath,
   rememberMealOneTimePayBackToSpaScreen,
   goBackOrReplace,
+  rememberHelpBackFromCurrentUrl,
 } from '@/lib/go-back-or-replace';
+import {
+  navigateToMealOrderTracking,
+  resolveMealOrderRowId,
+} from '@/lib/meal-order-tracking-nav';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
 import { isMealPaymentHoldExpired } from '@/lib/payment-hold-ui';
@@ -159,8 +164,10 @@ function extractMealPlanOrdersFromResponse(response: unknown): unknown[] {
 }
 
 function mapRawMealPlanOrderRow(o: Record<string, unknown>): MealPlanOrder {
+  const rowId = String(o.id ?? o.order_id ?? o.orderId ?? '').trim();
   return {
     ...o,
+    id: rowId || String(o.id ?? ''),
     subscription_id: o.subscription_id != null ? String(o.subscription_id) : null,
     meal_plan_name:
       (o.meal_plan_name as string) ||
@@ -171,7 +178,12 @@ function mapRawMealPlanOrderRow(o: Record<string, unknown>): MealPlanOrder {
     pet_name: (o.pet_name as string) || undefined,
     pet_breed: (o.pet_breed as string) || (o.petBreed as string) || undefined,
     quantity: o.quantity != null ? Number(o.quantity) : undefined,
-    payment_status: o.payment_status != null ? String(o.payment_status) : undefined,
+    payment_status:
+      o.payment_status != null
+        ? String(o.payment_status)
+        : o.paymentStatus != null
+          ? String(o.paymentStatus)
+          : undefined,
     paymentHoldExpiresAt:
       (o.paymentHoldExpiresAt as string | null | undefined) ??
       (o.payment_hold_expires_at as string | null | undefined) ??
@@ -394,25 +406,40 @@ function MealPlanOrdersPanelLive({
     }
   };
 
-  const handleTrackClick = (orderId: string, e: React.MouseEvent) => {
+  const handleTrackClick = (order: MealPlanOrder, e: React.MouseEvent) => {
     e.stopPropagation();
+    const orderId = resolveMealOrderRowId(order);
+    if (!orderId) {
+      toast.error('Order ID missing — refresh and try again.');
+      return;
+    }
     if (onTrackOrder) {
       onTrackOrder(orderId);
       return;
     }
-    const q = new URLSearchParams();
-    q.set('from', 'meal-plans');
-    router.push(`/track/${orderId}?${q.toString()}`);
+    const customerPhone =
+      fixedCustomerPhone?.trim() ||
+      searchParams.get('phone')?.trim() ||
+      undefined;
+    navigateToMealOrderTracking(router, orderId, {
+      phone: customerPhone,
+      from: 'meal-plans',
+    });
   };
 
   const handleDownloadInvoice = async (order: MealPlanOrder, e: React.MouseEvent) => {
     e.stopPropagation();
+    const orderId = resolveMealOrderRowId(order);
+    if (!orderId) {
+      toast.error('Order ID missing — refresh and try again.');
+      return;
+    }
     if (!isMealOrderInvoiceAvailable(order)) {
       toast.error('Invoice is available after payment is confirmed');
       return;
     }
     try {
-      const { saveResult } = await downloadMealOrderInvoice(order.id);
+      const { saveResult } = await downloadMealOrderInvoice(orderId);
       if (saveResult === 'failed') {
         toast.error(getMealOrderInvoiceDownloadMessage(saveResult));
       } else {
@@ -463,7 +490,10 @@ function MealPlanOrdersPanelLive({
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-customer flex-col overflow-x-hidden bg-[var(--color-primary-50,#FFF5EE)] pb-[max(1rem,env(safe-area-inset-bottom))]">
       <MealPlanOrdersHeader
         onBack={handleBackClick}
-        onHelp={() => router.push('/help')}
+        onHelp={() => {
+          rememberHelpBackFromCurrentUrl();
+          router.push('/help');
+        }}
         onFilter={scrollToFilters}
       />
 
@@ -510,7 +540,7 @@ function MealPlanOrdersPanelLive({
                   <MealOrderCard
                     key={order.id}
                     order={order}
-                    onTrack={(e) => handleTrackClick(order.id, e)}
+                    onTrack={(e) => handleTrackClick(order, e)}
                     onPayNow={(e) => void handlePayNow(order, e)}
                     onDownloadInvoice={(e) => void handleDownloadInvoice(order, e)}
                     onReorder={(e) => {

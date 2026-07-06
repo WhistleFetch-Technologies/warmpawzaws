@@ -26,6 +26,7 @@ import {
   navigateToMealOrderSupport,
   type SupportMealOrderContext,
 } from '@/lib/support-contact';
+import { resolveMealOrderRowId } from '@/lib/meal-order-tracking-nav';
 
 interface DeliveryPerson {
   name: string;
@@ -183,8 +184,11 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
         toast.error('Invoice is available after payment is confirmed');
         return;
       }
+      const invoiceOrderId =
+        resolveMealOrderRowId(order as { id?: string; order_id?: string; orderId?: string }) ||
+        orderId;
       try {
-        const { saveResult } = await downloadMealOrderInvoice(orderId);
+        const { saveResult } = await downloadMealOrderInvoice(invoiceOrderId);
         if (saveResult === 'failed') {
           toast.error(getMealOrderInvoiceDownloadMessage(saveResult));
         } else {
