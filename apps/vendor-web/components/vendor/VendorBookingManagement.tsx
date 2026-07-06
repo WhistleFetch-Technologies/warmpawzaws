@@ -45,6 +45,7 @@ import {
   resolveVendorBookingId,
 } from '@/lib/vendor-utils';
 import { VendorChatModal } from './VendorChatModal';
+import { DeclineBookingModal } from './DeclineBookingModal';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
