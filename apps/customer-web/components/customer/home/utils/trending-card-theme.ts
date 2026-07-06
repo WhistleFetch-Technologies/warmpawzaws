@@ -106,10 +106,10 @@ export const TRENDING_WEEKLY_GROWTH = [24, 18, 15, 12];
 
 /** Small overlapping pet avatars per card row. */
 export const TRENDING_AVATAR_SETS: [string, string][] = [
-  ['/images/home/vet.jpeg', '/images/home/groomig.jpeg'],
-  ['/images/home/walker.jpeg', '/images/home/training.jpeg'],
-  ['/images/home/boarding.jpeg', '/images/home/sitter.jpeg'],
-  ['/images/home/nutrition.jpeg', '/images/home/vet.jpeg'],
+  ['/images/home/vet.webp', '/images/home/groomig.webp'],
+  ['/images/home/walker.webp', '/images/home/training.webp'],
+  ['/images/home/boarding.webp', '/images/home/sitter.webp'],
+  ['/images/home/nutrition.webp', '/images/home/vet.webp'],
 ];
 
 export { Flame };

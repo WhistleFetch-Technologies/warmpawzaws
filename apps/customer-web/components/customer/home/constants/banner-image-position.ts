@@ -20,12 +20,12 @@ const BANNER_OBJECT_POSITION_BY_TARGET: Record<string, string> = {
 
 const BANNER_OBJECT_POSITION_BY_IMAGE: Array<{ pattern: RegExp; position: string }> = [
   { pattern: /dog-peep/i, position: '38% bottom' },
-  { pattern: /banner-top-01-vet|banner-vet|\/vet\.jpeg/i, position: '72% 28%' },
-  { pattern: /banner-top-02-walk|walker\.jpeg/i, position: '62% 42%' },
-  { pattern: /banner-top-03-groom|groomig\.jpeg|grooming/i, position: '78% 32%' },
-  { pattern: /banner-top-04-shop|nutrition\.jpeg/i, position: '78% 40%' },
-  { pattern: /banner-boarding|boarding\.jpeg/i, position: '70% 35%' },
-  { pattern: /banner.*training|training\.jpeg/i, position: '65% 35%' },
+  { pattern: /banner-top-01-vet|banner-vet|\/vet\.webp/i, position: '72% 28%' },
+  { pattern: /banner-top-02-walk|walker\.webp/i, position: '62% 42%' },
+  { pattern: /banner-top-03-groom|groomig\.webp|grooming/i, position: '78% 32%' },
+  { pattern: /banner-top-04-shop|nutrition\.webp/i, position: '78% 40%' },
+  { pattern: /banner-boarding|boarding\.webp/i, position: '70% 35%' },
+  { pattern: /banner.*training|training\.webp/i, position: '65% 35%' },
 ];
 
 /** Resolve CSS object-position for hero banner images (presentation only). */

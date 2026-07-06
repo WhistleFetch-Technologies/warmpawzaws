@@ -1,14 +1,17 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import * as LucideIcons from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { 
   Stethoscope, Scissors, GraduationCap, Home as HomeIcon, 
   Bone, Heart, Pill, Users, TrendingUp, ChevronRight,
   Footprints, Bath, Brush, Hand, Dog, Sparkles, Plus,
   PawPrint, AlertTriangle, Trophy, Mountain,
   Frown, Volume2, Bomb, Ghost, Shield,
-  Hotel, Sun, Star, Activity, FileText, Eye, Siren, Package
+  Hotel, Sun, Star, Activity, FileText, Eye, Siren, Package,
+  ShoppingBag, Bike, Wheat, Coffee, Camera, Phone, Truck,
+  FlaskConical, Brain, Folder, Moon, Clock, Calendar, Microscope, Flower2,
+  Home,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
@@ -62,11 +65,32 @@ const CATEGORY_ID_TO_SLUG: Record<string, { category: string; roleId: string }> 
   adoption: { category: 'adoption', roleId: 'pet_shelter' },
 };
 
+/** Admin catalog icons + known specialization_master values (avoids lucide namespace import). */
+const PROBLEM_GRID_DYNAMIC_ICON_MAP: Record<string, LucideIcon> = {
+  Stethoscope, Scissors, ShoppingBag, GraduationCap, Bike, Home, Heart, Wheat,
+  Coffee, Camera, Shield, PawPrint, Phone, Truck, Sparkles, Sun, Pill,
+  FlaskConical, Package, Eye, Activity, FileText, Siren, Hand, Brush, Dog,
+  Bath, Trophy, AlertTriangle, Footprints, Mountain, Bone, Hotel, Star,
+  Frown, Volume2, Ghost, Bomb, Brain, Folder, Moon, Clock, Calendar,
+  Microscope, Flower2,
+};
+
+function resolveProblemGridIconName(raw?: string): string | undefined {
+  if (!raw || typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  if (PROBLEM_GRID_DYNAMIC_ICON_MAP[trimmed]) return trimmed;
+  const pascal = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  if (PROBLEM_GRID_DYNAMIC_ICON_MAP[pascal]) return pascal;
+  return undefined;
+}
+
 function DynamicProblemIcon({ iconName, iconColor }: { iconName?: string; iconColor?: string }) {
-  if (!iconName || !(LucideIcons as any)[iconName]) {
+  const resolved = resolveProblemGridIconName(iconName);
+  if (!resolved) {
     return <Package className="w-6 h-6 text-gray-500" />;
   }
-  const Icon = (LucideIcons as any)[iconName];
+  const Icon = PROBLEM_GRID_DYNAMIC_ICON_MAP[resolved];
   return <Icon className={`w-6 h-6 ${iconColor || 'text-gray-600'}`} />;
 }
 

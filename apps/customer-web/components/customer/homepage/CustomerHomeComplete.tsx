@@ -30,7 +30,6 @@ import { ForYouSection } from '../ForYouSection';
 import { ServicesByProblem } from '../ServicesByProblem';
 import { TrendingProblems, type TrendingProblem } from '../TrendingProblems';
 import { CustomerNotificationModal } from '../CustomerNotificationModal';
-import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { getServiceStyleIcon, getPetIcon } from '@/lib/icon-utils';
 import { Dog, Cat, UtensilsCrossed, Shirt, Watch, Bed, Store } from 'lucide-react';
 import { useActiveGpsTracking, ActiveTrackingSession } from '@/hooks/useActiveGpsTracking';
@@ -161,6 +160,12 @@ const TeleCallNotification = dynamic(
 
 const TeleTracker = dynamic(
   () => import('./TeleTracker').then(mod => ({ default: mod.default })),
+  { ssr: false }
+);
+
+// Add pet modal - only loaded when user taps Add Pet
+const EnhancedAddPetModal = dynamic(
+  () => import('../EnhancedAddPetModal').then(mod => ({ default: mod.EnhancedAddPetModal })),
   { ssr: false }
 );
 
@@ -3337,15 +3342,17 @@ export function CustomerHomeComplete({
       )}
 
       {/* Add Pet Modal - Enhanced with Photo & Vaccinations */}
-      <EnhancedAddPetModal
-        phone={phone}
-        isOpen={showAddPetModal}
-        onClose={() => setShowAddPetModal(false)}
-        onSuccess={() => {
-          loadUserData();
-          setShowAddPetModal(false);
-        }}
-      />
+      {showAddPetModal && (
+        <EnhancedAddPetModal
+          phone={phone}
+          isOpen={showAddPetModal}
+          onClose={() => setShowAddPetModal(false)}
+          onSuccess={() => {
+            loadUserData();
+            setShowAddPetModal(false);
+          }}
+        />
+      )}
 
       {/* ✅ Live Tracking Widget - Shows when vendor is on the way */}
       {showTrackingWidget && trackingBooking && (
