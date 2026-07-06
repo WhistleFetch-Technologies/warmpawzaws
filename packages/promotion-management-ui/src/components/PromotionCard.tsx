@@ -81,8 +81,13 @@ export function PromotionCard({
           ) : null}
         </div>
 
-        {(onEdit || onDelete || onToggle) && (
+        {(onClick || onEdit || onDelete || onToggle) && (
           <div className="flex gap-2 pt-1 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+            {onClick ? (
+              <button type="button" onClick={onClick} className="text-xs font-medium text-slate-700">
+                Details
+              </button>
+            ) : null}
             {onToggle ? (
               <button type="button" onClick={onToggle} className="text-xs font-medium text-slate-600">
                 {item.isActive ? 'Deactivate' : 'Activate'}

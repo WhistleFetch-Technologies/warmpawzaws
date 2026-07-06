@@ -959,13 +959,13 @@ export function VendorDashboard({
         )}
 
         {/* 🧱 DYNAMIC QUICK ACTIONS */}
-        <div className="p-4 border-b border-gray-100">
-          <div className="flex flex-wrap gap-3">
+        <div className="border-b border-gray-100 p-4 min-[480px]:p-5 lg:p-6">
+          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-3">
             {/* ✅ PHARMA: Pharmacy vendors get Orders (accept orders, prescriptions, proforma) — NOT Service Management */}
             {isPharmacy && (
               <button
                 onClick={() => router.push('/pharmacy/orders')}
-                className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
+                className="flex min-h-[84px] flex-col items-center justify-center rounded-xl border-2 border-[#FF8C42] bg-white p-4 text-center text-[#FF8C42] transition-colors hover:bg-[#FF8C42] hover:text-white"
               >
                 <ClipboardList className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Orders</span>
@@ -976,7 +976,7 @@ export function VendorDashboard({
             {!isPharmacy && (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities) || CapabilityHelper.hasCapability(capabilities, 'services') || hasVendorRole(vendorData, ['pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance'])) && (
               <button
                 onClick={() => vendorNavigate('/services', router)}
-                className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
+                className="flex min-h-[84px] flex-col items-center justify-center rounded-xl border-2 border-[#FF8C42] bg-white p-4 text-center text-[#FF8C42] transition-colors hover:bg-[#FF8C42] hover:text-white"
               >
                 <Activity className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Service Management</span>
@@ -987,7 +987,7 @@ export function VendorDashboard({
             {onNavigateToProfile && (
               <button
                 onClick={onNavigateToProfile}
-                className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
+                className="flex min-h-[84px] flex-col items-center justify-center rounded-xl border-2 border-purple-500 bg-white p-4 text-center text-purple-600 transition-colors hover:bg-purple-500 hover:text-white"
               >
                 <Building2 className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Profile</span>
@@ -1013,9 +1013,9 @@ export function VendorDashboard({
                 onClick={() => {
                   router.push(`/profile`);
                 }}
-                className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
-                >
-                  <User className="w-6 h-6 mb-2" />
+                className="flex min-h-[84px] flex-col items-center justify-center rounded-xl border-2 border-blue-500 bg-white p-4 text-center text-blue-600 transition-colors hover:bg-blue-500 hover:text-white"
+              >
+                <User className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Professional Profile</span>
               </button>
             )}
@@ -1026,7 +1026,7 @@ export function VendorDashboard({
                 capabilities.inventory) && (
                 <button
                   onClick={onNavigateToBusinessHub}
-                  className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
+                  className="flex min-h-[84px] flex-col items-center justify-center rounded-xl border-2 border-blue-500 bg-white p-4 text-center text-blue-600 transition-colors hover:bg-blue-500 hover:text-white"
                 >
                   <Package className="w-6 h-6 mb-2" />
                   <span className="font-semibold text-sm">Inventory & Store</span>
@@ -1044,9 +1044,9 @@ export function VendorDashboard({
           vendorData?.roleId?.includes('vet') ||
           vendorData?.serviceCategory === 'veterinary'
         ) && (
-            <div className="p-4 border-b border-gray-100">
+            <div className="border-b border-gray-100 p-4 min-[480px]:p-5 lg:p-6">
               <h2 className="font-semibold text-gray-900 mb-3">Vet Center Services</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-3 min-[480px]:grid-cols-3 lg:grid-cols-4">
                 <button
                   onClick={() => onNavigateToSupport?.()}
                   className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
@@ -1099,9 +1099,9 @@ export function VendorDashboard({
           capabilities.prescription_verification ||
           capabilities.delivery ||
           hasVendorRole(vendorData, ['pet_insurance', 'insurance'])) && (
-            <div className="p-4 border-b border-gray-100">
+            <div className="border-b border-gray-100 p-4 min-[480px]:p-5 lg:p-6">
               <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-3 min-[480px]:grid-cols-3 lg:grid-cols-4">
                 {hasVendorRole(vendorData, ['pet_insurance', 'insurance']) && (
                   <button
                     type="button"

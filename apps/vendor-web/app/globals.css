@@ -183,11 +183,17 @@ body {
   }
 
   /**
-   * Main app content column: same max width family as Login phone shell on small
-   * screens, expands on tablet/desktop so dashboards and services use full width.
+   * Main app content column: phone-sized only on phones. Wider tablet/desktop
+   * shells should not be trapped in the 430px auth-style column.
    */
   .vendor-app-column {
-    @apply w-full max-w-[430px] sm:max-w-2xl md:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto;
+    @apply w-full max-w-[430px] mx-auto;
+  }
+
+  @media (min-width: 480px) {
+    .vendor-app-column {
+      max-width: 100%;
+    }
   }
 
   /** Narrow column for orange OTP / phone Login flows only */
@@ -197,7 +203,13 @@ body {
 
   /** Bottom bars and fixed footers: match .vendor-app-column max-width */
   .vendor-app-column-inner {
-    @apply w-full max-w-[430px] sm:max-w-2xl md:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto;
+    @apply w-full max-w-[430px] mx-auto;
+  }
+
+  @media (min-width: 480px) {
+    .vendor-app-column-inner {
+      max-width: 100%;
+    }
   }
 
   /** Modal / sheet panels that should grow on larger breakpoints */

@@ -50,9 +50,9 @@ export function PromotionDetailsPanel({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} aria-hidden />
+      <div className="fixed inset-0 z-[9998] bg-black/20" onClick={onClose} aria-hidden />
       <aside
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl sm:w-[28rem]"
+        className="fixed inset-y-0 right-0 z-[9999] flex w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl sm:w-[28rem]"
         role="dialog"
         aria-modal="true"
         aria-label={isCoupon ? 'Coupon details' : 'Promotion details'}
@@ -143,7 +143,7 @@ export function PromotionDetailsPanel({
                 month: 'short',
                 year: 'numeric',
               })}{' '}
-              –{' '}
+              -{' '}
               {new Date(end).toLocaleDateString('en-IN', {
                 day: 'numeric',
                 month: 'short',
