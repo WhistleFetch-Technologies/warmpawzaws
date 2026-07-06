@@ -7,7 +7,7 @@ import { apiClient } from '@/lib/api-client';
 import { runInlineAddressDetect, inlineAddressCoordsPayload } from '@/lib/run-inline-address-detect';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
-import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
+import { catalogPriceIncludesTax, formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { formatLocalDateYYYYMMDD, parseYYYYMMDDToLocalDate } from '@/lib/local-calendar-date';
 import { normalizeAvailableSlotsResponse, buildDefaultSlotsWithPastGuard } from '@/lib/available-slots-response';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
@@ -601,6 +601,42 @@ export function TrainingBookingRouter({
     }
   }, [handleBack, onInternalBackReady]);
 
+  const getSelectedServiceOption = () => {
+    const fromOptions = serviceOptions.find((s) => s.id === selectedServiceType);
+    if (fromOptions) return fromOptions;
+
+    if (serviceId) {
+      const fromId = serviceOptions.find(
+        (s) =>
+          String(s.id) === String(serviceId) ||
+          String(s.serviceId) === String(serviceId)
+      );
+      if (fromId) return fromId;
+    }
+
+    if (allSelectedServices?.length) {
+      const first = allSelectedServices[0];
+      return {
+        id: first.id || first.serviceId,
+        name: first.name || first.serviceName || serviceName || 'Training Session',
+        price: first.price ?? price ?? 0,
+        duration: first.duration ?? duration ?? 30,
+      };
+    }
+
+    if (selectedVendorService) {
+      const svc = selectedVendorService;
+      return {
+        id: svc.id || svc.serviceId || serviceId,
+        name: svc.name || svc.serviceName || serviceName || 'Training Session',
+        price: svc.price ?? price ?? 0,
+        duration: svc.duration ?? duration ?? 30,
+      };
+    }
+
+    return defaultServiceTypeOptions.find((s) => s.id === selectedServiceType);
+  };
+
   // ✅ Proceed to UniversalPaymentPage
   const handleProceedToPayment = () => {
     // Show the integrated payment page
@@ -618,8 +654,6 @@ export function TrainingBookingRouter({
   const handleConfirmBooking = async () => {
     setProcessing(true);
     try {
-      const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
-      
       // If using package session, create session instead of booking
       if (usePackageSession && activePackage) {
         try {
@@ -655,7 +689,12 @@ export function TrainingBookingRouter({
     }
   };
 
-  const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
+  const selectedServiceOption = getSelectedServiceOption();
+
+  const reviewTotal =
+    allSelectedServices?.length
+      ? allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0)
+      : selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
 
   const renderStepIndicator = () => {
     // ✅ FIX: Only show steps that are relevant - skip 'Service' if already selected from profile
@@ -762,7 +801,7 @@ export function TrainingBookingRouter({
         addressId={selectedAddress?.id}
         address={selectedAddress}
         showAddressSelection={selectedServiceType === 'at_home'}
-        baseAmount={selectedServiceOption?.price || price || 499}
+        baseAmount={reviewTotal || 499}
         priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
         duration={selectedServiceOption?.duration || duration || 30}
         quantity={1}
@@ -809,11 +848,15 @@ export function TrainingBookingRouter({
                 : selectedServiceType === 'at_home'
                   ? 'bg-green-100 text-green-600'
                   : 'bg-purple-100 text-purple-600',
-            title: String(selectedServiceOption?.name ?? ''),
+            title:
+              selectedServiceOption?.name ||
+              selectedVendorService?.name ||
+              serviceName ||
+              'Training Session',
             subtitle: selectedServiceOption?.duration
               ? `${selectedServiceOption.duration} mins`
               : undefined,
-            trailing: <span>₹{selectedServiceOption?.price}</span>,
+            trailing: formatPriceWithSymbol(reviewTotal),
           }}
           rows={[
             {
@@ -835,7 +878,7 @@ export function TrainingBookingRouter({
             placeholder: 'Any symptoms or concerns...',
             showNotes: true,
           }}
-          total={{ label: 'Total', amountFormatted: `₹${selectedServiceOption?.price}` }}
+          total={{ label: 'Total', amountFormatted: formatPriceWithSymbol(reviewTotal) }}
           totalTextClassName="text-orange-600"
           primaryButton={{
             label: 'Proceed to Payment',
