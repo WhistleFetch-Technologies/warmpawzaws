@@ -721,6 +721,16 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         return;
       }
       const r = res.resume;
+      const payable =
+        typeof r.payableAmount === 'number'
+          ? r.payableAmount
+          : typeof r.amount === 'number'
+            ? r.amount
+            : Number(r.payableAmount ?? r.amount ?? 0);
+      const basePrice =
+        typeof r.basePrice === 'number' && r.basePrice > 0
+          ? r.basePrice
+          : Number(r.basePrice ?? r.base_price ?? 0);
       onClose();
       onNavigate('payment', {
         bookingId: r.bookingId,
@@ -733,8 +743,12 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         bookingDate: r.bookingDate,
         bookingTime: r.bookingTime,
         petId: r.petId,
-        totalAmount: r.amount,
-        price: r.amount,
+        totalAmount: payable,
+        price: basePrice > 0 ? basePrice : payable,
+        basePrice: basePrice > 0 ? basePrice : undefined,
+        lockedPayableAmount: payable,
+        razorpayOrderId: r.razorpayOrderId,
+        selectedServices: Array.isArray(r.selectedServices) ? r.selectedServices : undefined,
         flowType: 'payment-resume',
         returnScreen: 'my-bookings',
       });

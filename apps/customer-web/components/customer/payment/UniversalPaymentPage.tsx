@@ -161,6 +161,10 @@ interface UniversalPaymentPageProps {
    * tele-queue-accepted: queue-first flow; booking already exists with pending_payment; just collect payment and confirm
    */
   flowType?: 'tele-scheduled' | 'tele-instant' | 'tele-queue-accepted' | 'payment-resume' | 'home-visit';
+  /** When resuming pending_payment, charge this exact gross total (avoids re-adding tax/platform fees). */
+  lockedPayableAmount?: number;
+  /** Existing Razorpay order from payment-resume API (optional). */
+  resumeRazorpayOrderId?: string;
   /** Lab diagnostics: pay-first payload from DiagnosticsBookingFlow; booking is created only after payment. */
   prepaidBookingPayload?: Record<string, unknown>;
   initialPromotionId?: string;
@@ -386,6 +390,8 @@ export function UniversalPaymentPage({
   customerEmail,
   customerId,
   flowType,
+  lockedPayableAmount,
+  resumeRazorpayOrderId,
   prepaidBookingPayload,
   initialPromotionId,
   initialPromotionIntent,
@@ -1516,11 +1522,20 @@ export function UniversalPaymentPage({
   const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
 
   // If subscription covers this booking, final amount is 0
-  const finalAmount = subscriptionCovered
+  const computedFinalAmount = subscriptionCovered
     ? 0
     : isMealPay
       ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount - walletAmount)
       : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
+
+  const finalAmount =
+    type === 'booking' &&
+    flowType === 'payment-resume' &&
+    lockedPayableAmount != null &&
+    Number.isFinite(lockedPayableAmount) &&
+    lockedPayableAmount > 0
+      ? Math.max(0, Math.round((lockedPayableAmount - razorpayOfferDiscount - walletAmount) * 100) / 100)
+      : computedFinalAmount;
 
   const getPaymentSuccessMeta = (gatewayMethod?: string | null) => {
     const paymentSources = buildCheckoutPaymentSources({
@@ -2128,6 +2143,8 @@ export function UniversalPaymentPage({
           }
         }
 
+        const bookingGrossAmount = Math.round(totalAfterDiscounts * 100) / 100;
+
         const bookingPayload: Record<string, unknown> = {
           customerId: resolvedCustomerId, // âœ… Required UUID (resolved above)
           vendorId: vendorId, // âœ… Required UUID
@@ -2136,7 +2153,7 @@ export function UniversalPaymentPage({
           bookingDate: bookingDate, // âœ… Format: YYYY-MM-DD
           bookingTime: normalizedBookingTime, // âœ… Format: HH:MM or HH:MM:SS
           serviceType: serviceTypeValue, // âœ… Required enum
-          amount: taxBreakdown.total, // âœ… Number (schema allows >= 0)
+          amount: bookingGrossAmount,
           ...(couponDiscount + (appliedPromotion?.discountAmount || 0) > 0
             ? {
                 discountAmount: couponDiscount + (appliedPromotion?.discountAmount || 0),

@@ -3118,6 +3118,31 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
       }
 
       const booking = bookings[0];
+      const bookingPaidForRefund = await hasCustomerPaidCapture(bookingId, {
+        total_amount: booking.total_amount,
+        discount_amount: booking.discount_amount,
+        payment_status: (booking as any).payment_status ?? (booking as any).paymentStatus,
+      });
+
+      if (!bookingPaidForRefund) {
+        return this.success({
+          refundMethod,
+          refund: {
+            eligible: false,
+            refundAmount: 0,
+            refundPercentage: 0,
+            cancellationFee: 0,
+            source: 'default',
+            policyApplied: false,
+            refundableCustomerPaidBase: 0,
+            platformFeeNonRefundable: 0,
+            platformFeeApplies: false,
+            hoursUntilBooking: 0,
+            message: 'No payment was captured for this booking',
+          },
+        }, requestId);
+      }
+
       const bookingForPolicy = {
         id: bookingId,
         vendor_id: booking.vendor_id,
