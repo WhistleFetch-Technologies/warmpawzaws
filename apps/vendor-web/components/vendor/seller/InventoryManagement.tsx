@@ -1,9 +1,22 @@
 'use client';
 
 import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Package, AlertTriangle, TrendingDown, ArrowUp, ArrowDown, Search } from 'lucide-react';
+import { Package, AlertTriangle, TrendingDown, ArrowUp, ArrowDown, Search, Save, RotateCcw } from 'lucide-react';
+import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { IntegerInput } from '@/components/shared/IntegerInput';
+
+/** Products below this threshold (but above 0) are flagged as low stock. */
+const LOW_STOCK_THRESHOLD = 10;
+
+/**
+ * Key format used in pendingChanges map:
+ *   Simple product → `${productId}:simple`
+ *   Variant SKU   → `${productId}:${skuId}`
+ */
+function makePendingKey(productId: string, skuIdOrSimple: string): string {
+  return `${productId}:${skuIdOrSimple}`;
+}
 
 export type InventoryManagementHandle = {
   refresh: () => Promise<void>;
@@ -47,10 +60,19 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
   function InventoryManagement({ sellerId }, ref) {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
-  const [updating, setUpdating] = useState<string | null>(null);
   const [selectedSkuByProduct, setSelectedSkuByProduct] = useState<Record<string, string>>({});
+
+  /**
+   * Pending unsaved stock changes.
+   * Keys: makePendingKey(productId, skuId) or makePendingKey(productId, 'simple').
+   * Values: new stock number.
+   * Only populated while the vendor is editing; cleared after Save or Discard.
+   */
+  const [pendingChanges, setPendingChanges] = useState<Record<string, number>>({});
+  const isDirty = Object.keys(pendingChanges).length > 0;
 
   const loadInventory = useCallback(async () => {
     try {
@@ -80,72 +102,60 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
     void loadInventory();
   }, [loadInventory]);
 
-  const updateStock = async (productId: string, newStock: number) => {
-    setUpdating(productId);
-    try {
-      await apiClient.put(`/vendor/${sellerId}/products/${productId}`, { stock: newStock });
-      setProducts((prev) =>
-        prev.map((p) => (p.id === productId ? { ...p, stock: newStock } : p)),
-      );
-    } catch (error) {
-      console.error('Error updating stock:', error);
-      alert('Failed to update stock');
-    } finally {
-      setUpdating(null);
-    }
+  /** Stage a stock change locally — no API call yet. */
+  const stageChange = (key: string, newStock: number) => {
+    setPendingChanges((prev) => ({ ...prev, [key]: Math.max(0, newStock) }));
   };
 
-  const updateVariantStock = async (
-    productId: string,
-    skuId: string,
-    newStock: number,
-  ) => {
-    const key = `${productId}:${skuId}`;
-    setUpdating(key);
+  /** Discard all pending changes without saving. */
+  const handleDiscard = () => {
+    setPendingChanges({});
+  };
+
+  /**
+   * Commit all pending changes to the API in parallel.
+   * Simple products use PUT; variant SKUs use PATCH.
+   */
+  const handleSaveChanges = async () => {
+    if (!isDirty) return;
+    setSaving(true);
     try {
-      const res = await apiClient.patch<{
-        sku?: InventorySku;
-        parent_stock?: number;
-      }>(
-        `/vendor/${sellerId}/products/${productId}/skus/${skuId}/stock`,
-        { stock: newStock },
-      );
-      const parentStock = res.parent_stock;
-      const updatedSku = res.sku;
-      setProducts((prev) =>
-        prev.map((p) => {
-          if (p.id !== productId) return p;
-          const skus = (p.skus || []).map((s: InventorySku) => {
-            if (String(s.id) !== skuId) return s;
-            return updatedSku
-              ? { ...s, ...updatedSku, stock: Number(updatedSku.stock ?? newStock) }
-              : { ...s, stock: newStock };
-          });
-          return {
-            ...p,
-            skus,
-            stock: parentStock != null ? parentStock : p.stock,
-          };
+      await Promise.all(
+        Object.entries(pendingChanges).map(([key, stock]) => {
+          const [productId, skuIdOrSimple] = key.split(':');
+          if (skuIdOrSimple === 'simple') {
+            return apiClient.put(`/vendor/${sellerId}/products/${productId}`, { stock });
+          }
+          return apiClient.patch(
+            `/vendor/${sellerId}/products/${productId}/skus/${skuIdOrSimple}/stock`,
+            { stock },
+          );
         }),
       );
+      setPendingChanges({});
+      await loadInventory();
+      toast.success('Stock updated successfully');
     } catch (error) {
-      console.error('Error updating variant stock:', error);
-      alert('Failed to update variant stock');
+      console.error('Error saving stock changes:', error);
+      toast.error('Failed to save stock changes. Please try again.');
     } finally {
-      setUpdating(null);
+      setSaving(false);
     }
   };
 
+  const effectiveStock = (key: string, fallback: number): number =>
+    key in pendingChanges ? pendingChanges[key] : fallback;
+
   const isLowStock = (p: any) => {
-    const threshold = p.min_stock || p.minStock || 10;
+    const threshold = p.min_stock || p.minStock || LOW_STOCK_THRESHOLD;
     return (p.stock ?? p.stock_quantity ?? 0) <= threshold && (p.stock ?? p.stock_quantity ?? 0) > 0;
   };
   const isOutOfStock = (p: any) => (p.stock ?? p.stock_quantity ?? 0) === 0;
-  const isHealthy = (p: any) => (p.stock ?? p.stock_quantity ?? 0) > (p.min_stock || p.minStock || 10);
+  const isHealthy = (p: any) => (p.stock ?? p.stock_quantity ?? 0) > (p.min_stock || p.minStock || LOW_STOCK_THRESHOLD);
 
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = 
+    const matchesFilter =
       filter === 'all' ? true :
       filter === 'low' ? isLowStock(product) :
       filter === 'out' ? isOutOfStock(product) :
@@ -157,7 +167,7 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
     total: products.length,
     lowStock: products.filter(isLowStock).length,
     outOfStock: products.filter(isOutOfStock).length,
-    healthy: products.filter(isHealthy).length
+    healthy: products.filter(isHealthy).length,
   };
 
   const anyHasVariants = products.some(productHasVariants);
@@ -223,7 +233,7 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters + Save/Discard toolbar */}
       <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex flex-col md:flex-row gap-4">
         <div className="flex-1 relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -241,10 +251,34 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
           className="px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white min-w-[180px]"
         >
           <option value="all">All Products</option>
-          <option value="good">Healthy Stock ({'>'}10)</option>
-          <option value="low">Low Stock (1-10)</option>
+          <option value="good">Healthy Stock ({'>'}{LOW_STOCK_THRESHOLD})</option>
+          <option value="low">Low Stock (1–{LOW_STOCK_THRESHOLD})</option>
           <option value="out">Out of Stock (0)</option>
         </select>
+
+        {/* Save / Discard — visible only when there are unsaved edits */}
+        {isDirty && (
+          <div className="flex gap-2 items-center">
+            <button
+              type="button"
+              onClick={handleDiscard}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 text-sm border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Discard
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSaveChanges()}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-orange-500 text-white rounded-xl hover:bg-orange-600 disabled:opacity-60 font-medium"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'Saving…' : `Save Changes (${Object.keys(pendingChanges).length})`}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Inventory Table */}
@@ -277,11 +311,15 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
                 const selectedSku = hasVariants
                   ? (product.skus || []).find((s: InventorySku) => String(s.id) === selectedSkuId)
                   : null;
-                const variantStock = Number(selectedSku?.stock ?? 0);
-                const updatingKey = hasVariants
-                  ? `${product.id}:${selectedSkuId}`
-                  : product.id;
-                const isUpdating = updating === updatingKey;
+
+                const simpleKey = makePendingKey(product.id, 'simple');
+                const variantKey = makePendingKey(product.id, selectedSkuId);
+
+                const displaySimpleStock = effectiveStock(simpleKey, Number(product.stock ?? 0));
+                const displayVariantStock = effectiveStock(variantKey, Number(selectedSku?.stock ?? 0));
+
+                const simpleIsPending = simpleKey in pendingChanges;
+                const variantIsPending = variantKey in pendingChanges;
 
                 return (
                 <tr key={product.id} className="hover:bg-slate-50 transition-colors">
@@ -317,7 +355,7 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
                   <td className="p-4 text-center">
                     <span className={`text-2xl font-bold ${
                       product.stock === 0 ? 'text-red-600' :
-                      product.stock <= 10 ? 'text-amber-600' :
+                      product.stock <= LOW_STOCK_THRESHOLD ? 'text-amber-600' :
                       'text-emerald-600'
                     }`}>
                       {product.stock}
@@ -326,11 +364,11 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
                   <td className="p-4 text-center">
                     <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${
                       product.stock === 0 ? 'bg-red-100 text-red-700' :
-                      product.stock <= 10 ? 'bg-amber-100 text-amber-700' :
+                      product.stock <= LOW_STOCK_THRESHOLD ? 'bg-amber-100 text-amber-700' :
                       'bg-emerald-100 text-emerald-700'
                     }`}>
                       {product.stock === 0 ? '⚠️ Out of Stock' :
-                       product.stock <= 10 ? '⚡ Low Stock' :
+                       product.stock <= LOW_STOCK_THRESHOLD ? '⚡ Low Stock' :
                        '✓ In Stock'}
                     </span>
                   </td>
@@ -356,57 +394,61 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
                         </select>
                         <div className="flex items-center justify-center gap-2">
                           <button
-                            onClick={() =>
-                              updateVariantStock(product.id, selectedSkuId, Math.max(0, variantStock - 1))
-                            }
-                            disabled={isUpdating || variantStock === 0}
+                            onClick={() => stageChange(variantKey, displayVariantStock - 1)}
+                            disabled={saving || displayVariantStock === 0}
                             className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
                           >
                             <ArrowDown className="w-4 h-4" />
                           </button>
-                          <IntegerInput
-                            value={String(variantStock)}
-                            onChange={(v) =>
-                              updateVariantStock(
-                                product.id,
-                                selectedSkuId,
-                                parseInt(v, 10) || 0,
-                              )
-                            }
-                            className="w-16 text-center py-1 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                          />
+                          <div className="relative">
+                            <IntegerInput
+                              value={String(displayVariantStock)}
+                              onChange={(v) => stageChange(variantKey, parseInt(v, 10) || 0)}
+                              className={`w-16 text-center py-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 ${
+                                variantIsPending ? 'border-orange-400 bg-orange-50' : 'border-slate-200'
+                              }`}
+                            />
+                          </div>
                           <button
-                            onClick={() =>
-                              updateVariantStock(product.id, selectedSkuId, variantStock + 1)
-                            }
-                            disabled={isUpdating}
+                            onClick={() => stageChange(variantKey, displayVariantStock + 1)}
+                            disabled={saving}
                             className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
                           >
                             <ArrowUp className="w-4 h-4" />
                           </button>
                         </div>
+                        {variantIsPending && (
+                          <span className="text-xs text-orange-600 font-medium">Unsaved</span>
+                        )}
                       </div>
                     ) : (
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => updateStock(product.id, Math.max(0, product.stock - 1))}
-                          disabled={isUpdating || product.stock === 0}
-                          className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
-                        >
-                          <ArrowDown className="w-4 h-4" />
-                        </button>
-                        <IntegerInput
-                          value={String(product.stock)}
-                          onChange={(v) => updateStock(product.id, parseInt(v, 10) || 0)}
-                          className="w-16 text-center py-1 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                        />
-                        <button
-                          onClick={() => updateStock(product.id, product.stock + 1)}
-                          disabled={isUpdating}
-                          className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
-                        >
-                          <ArrowUp className="w-4 h-4" />
-                        </button>
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => stageChange(simpleKey, displaySimpleStock - 1)}
+                            disabled={saving || displaySimpleStock === 0}
+                            className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                          >
+                            <ArrowDown className="w-4 h-4" />
+                          </button>
+                          <IntegerInput
+                            value={String(displaySimpleStock)}
+                            onChange={(v) => stageChange(simpleKey, parseInt(v, 10) || 0)}
+                            className={`w-16 text-center py-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 ${
+                              simpleIsPending ? 'border-orange-400 bg-orange-50' : 'border-slate-200'
+                            }`}
+                          />
+                          <button
+                            onClick={() => stageChange(simpleKey, displaySimpleStock + 1)}
+                            disabled={saving}
+                            className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                          >
+                            <ArrowUp className="w-4 h-4" />
+                          </button>
+                        </div>
+                        {simpleIsPending && (
+                          <span className="text-xs text-orange-600 font-medium">Unsaved</span>
+                        )}
                       </div>
                     )}
                   </td>

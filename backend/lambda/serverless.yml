@@ -48,6 +48,7 @@ provider:
     
     # Feature Flags
     UAT_MODE: ${ssm:/warmpawz/${self:provider.stage}/features/uatMode, 'false'}
+    PLATFORM_TAX_DOCUMENTS_ENABLED: ${ssm:/warmpawz/${self:provider.stage}/features/platformTaxDocumentsEnabled, 'true'}
 
     # Java customer-service: when CUSTOMER_SERVICE_ENABLED=true and URL is set, GET /customer/by-phone uses it first.
     CUSTOMER_SERVICE_URL: ${env:CUSTOMER_SERVICE_URL, ''}

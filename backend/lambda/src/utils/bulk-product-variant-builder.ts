@@ -148,8 +148,7 @@ function dimVal(v: unknown): string | number | null {
 function parentFieldsFromBulkRow(row: BulkVariantRow): BulkProductGroup['parent'] {
   return {
     description: trimStr(row.description),
-    price: Number(row.price) || 0,
-    compare_at_price: row.compare_at_price != null ? Number(row.compare_at_price) : null,
+    price: Number(row.price) || rowSpFromBulkRow(row) || 0,
     hsn_code: trimStr(row.hsn_code),
     gst_rate: row.gst_rate != null ? Number(row.gst_rate) : null,
     weight: row.weight != null ? Number(row.weight) : null,
@@ -252,13 +251,12 @@ export function buildSkuInputsFromGroup(group: BulkProductGroup): SkuInput[] {
     const { row, option_values } = entry;
     const images = parseProductImageList(row.images ?? row.image_urls);
     const stock = Math.max(0, Math.floor(Number(row.stock_quantity) || 0));
-    const mrp = rowMrpFromBulkRow(row);
     const selling = rowSpFromBulkRow(row);
 
     return {
       option_values,
       price: selling,
-      compare_at_price: mrp > 0 ? mrp : null,
+      compare_at_price: null,
       stock,
       images,
       barcode: row.barcode ? String(row.barcode).trim() : null,
@@ -344,11 +342,8 @@ export function validateVariantGroup(group: BulkProductGroup): VariantGroupValid
       );
     }
     const row = group.variants[0];
-    const mrp = rowMrpFromBulkRow(row);
-    if (mrp <= 0) push('compare_at_price', 'MRP is required and must be greater than 0', row.rowNum);
     const sp = rowSpFromBulkRow(row);
-    if (sp <= 0) push('price', 'Selling price must be greater than 0', row.rowNum);
-    if (sp > mrp) push('price', 'Selling price cannot exceed MRP', row.rowNum);
+    if (sp <= 0) push('price', 'Price must be greater than 0', row.rowNum);
     return errors;
   }
 
@@ -399,16 +394,9 @@ export function validateVariantGroup(group: BulkProductGroup): VariantGroupValid
       push('images', 'Each variant row needs at least one image URL', rowNum);
     }
 
-    const mrp = rowMrpFromBulkRow(row);
-    if (mrp <= 0) {
-      push('compare_at_price', 'MRP is required and must be greater than 0', rowNum);
-    }
     const sp = rowSpFromBulkRow(row);
     if (sp <= 0) {
-      push('price', 'Selling price must be greater than 0 (or leave SP empty to use MRP)', rowNum);
-    }
-    if (sp > mrp) {
-      push('price', 'Selling price cannot exceed MRP', rowNum);
+      push('price', 'Price must be greater than 0', rowNum);
     }
   }
 
@@ -452,5 +440,5 @@ export function listingPriceFromGroup(group: BulkProductGroup): {
   if (!row) return { price: 0, compare_at_price: null };
   const mrp = rowMrpFromBulkRow(row);
   const sp = rowSpFromBulkRow(row);
-  return { price: sp, compare_at_price: mrp > 0 ? mrp : null };
+  return { price: sp, compare_at_price: null };
 }

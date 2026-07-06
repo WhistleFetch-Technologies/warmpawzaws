@@ -419,9 +419,20 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           vendor = null;
         }
 
-        chargeAmount = Math.round((parseFloat(String(shopOrder.total_amount ?? 0)) || 0) * 100) / 100;
+        const walletApplied = Math.round((parseFloat(String(shopOrder.wallet_amount_applied ?? 0)) || 0) * 100) / 100;
+        chargeAmount = Math.round(
+          ((parseFloat(String(shopOrder.total_amount ?? 0)) || 0) - walletApplied) * 100
+        ) / 100;
+        if (chargeAmount < 0) chargeAmount = 0;
+        // Fully covered by wallet — mark order as paid without Razorpay
         if (chargeAmount <= 0) {
-          return this.error('Invalid order total for ecommerce_order', 400);
+          await import('../../database/rds-connection').then(({ query: dbQuery }) =>
+            dbQuery(
+              `UPDATE orders SET payment_status = 'paid', updated_at = NOW() WHERE id = $1`,
+              [shopOrder.id]
+            )
+          ).catch(() => {});
+          return this.success({ fullyCoveredByWallet: true, orderId: shopOrder.id });
         }
         if (amount != null) {
           const clientAmt = Number(amount);

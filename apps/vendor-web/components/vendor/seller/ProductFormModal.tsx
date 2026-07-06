@@ -34,6 +34,10 @@ import {
   isSkuUuid,
   deliveryRegionsFromProduct,
   VENDOR_PET_TYPE_SUGGESTIONS,
+  PET_TYPE_SELECT_OTHER,
+  petTypeSelectValueFromInput,
+  isStandardVendorPetTypeInput,
+  categoryIdForForm,
   customSpecRowsFromProduct,
   type SpecKvRow,
   variantAxesFromPresetSuggestion,
@@ -41,6 +45,9 @@ import {
 import {
   getVariantSuggestionsForCategory,
   MAX_VARIANT_ATTRIBUTES,
+  KNOWN_CANONICAL_CITIES,
+  resolveCityToCanonical,
+  displayCityName,
 } from '@warmpawz/shared-types';
 import {
   discardAllPendingProductImages,
@@ -83,7 +90,7 @@ export function ProductFormModal({
     initialSimpleSkuFromProduct(product),
   );
   const [variants, setVariants] = useState<VariantRow[]>(() =>
-    variantsFromProduct(product, form.baseMrp, form.basePrice),
+    variantsFromProduct(product),
   );
   const [variantAxes, setVariantAxes] = useState<VariantAxisConfig[]>(() =>
     variants.length > 0
@@ -103,6 +110,9 @@ export function ProductFormModal({
   );
   const [deliveryCityInput, setDeliveryCityInput] = useState('');
   const [productGroupId, setProductGroupId] = useState(() => productGroupIdFromProduct(product));
+  const [petTypeSelect, setPetTypeSelect] = useState(() =>
+    petTypeSelectValueFromInput(initialProductFormState(product).petTypeInput),
+  );
   const [commissionModel, setCommissionModel] = useState<'category' | 'ownership' | null>(null);
 
   const requiresListingOwnership = commissionModel === 'ownership';
@@ -122,11 +132,38 @@ export function ProductFormModal({
     [form.category_id, selectedCategoryName],
   );
 
+  const categorySelectOptions = useMemo(() => {
+    const currentId = form.category_id.trim();
+    if (!currentId || categories.some((c) => String(c.id) === currentId)) {
+      return categories;
+    }
+    const fallbackName = String(
+      product?.category_name ?? product?.category ?? 'Current category',
+    ).trim();
+    return [
+      ...categories,
+      { id: currentId, name: fallbackName ? `${fallbackName} (inactive)` : 'Current category (inactive)' },
+    ];
+  }, [categories, form.category_id, product?.category, product?.category_name]);
+
+  const showCustomPetTypeInput = petTypeSelect === PET_TYPE_SELECT_OTHER;
+
+  useEffect(() => {
+    if (!categories.length) return;
+    const resolved = categoryIdForForm(product, categories);
+    if (!resolved) return;
+    setForm((prev) => (prev.category_id === resolved ? prev : { ...prev, category_id: resolved }));
+  }, [categories, product?.id, product?.category_id, product?.category, product?.category_name]);
+
   useEffect(() => {
     if (!product?.id) return;
     const nextForm = initialProductFormState(product);
-    const nextVariants = variantsFromProduct(product, nextForm.baseMrp, nextForm.basePrice);
+    if (categories.length) {
+      nextForm.category_id = categoryIdForForm(product, categories);
+    }
+    const nextVariants = variantsFromProduct(product);
     setForm(nextForm);
+    setPetTypeSelect(petTypeSelectValueFromInput(nextForm.petTypeInput));
     setProductMode(detectProductMode(product));
     setSimpleSku(initialSimpleSkuFromProduct(product));
     setVariants(nextVariants);
@@ -138,7 +175,7 @@ export function ProductFormModal({
     setDeliveryRegions(deliveryRegionsFromProduct(product));
     setCustomSpecs(customSpecRowsFromProduct(product));
     setProductGroupId(productGroupIdFromProduct(product));
-  }, [product?.id]);
+  }, [product?.id, product?.gst_rate, product?.gstRate, product?.updated_at, categories]);
 
   const totalVariantStock = useMemo(
     () =>
@@ -332,6 +369,10 @@ export function ProductFormModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (petTypeSelect === PET_TYPE_SELECT_OTHER && !form.petTypeInput.trim()) {
+      toast.error('Enter the specific pet type (e.g. Birds, Rabbits)');
+      return;
+    }
     const err = validateProductForm({
       form,
       mode: productMode,
@@ -476,11 +517,13 @@ export function ProductFormModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Brand</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Brand <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
                 <input
                   value={form.brand}
                   onChange={(e) => setForm({ ...form, brand: e.target.value })}
-                  placeholder="Brand name"
+                  placeholder="e.g. Royal Canin (leave blank for unbranded)"
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                 />
               </div>
@@ -511,21 +554,45 @@ export function ProductFormModal({
               )}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Pet Type</label>
-                <input
-                  list="vendor-product-pet-type-suggestions"
-                  value={form.petTypeInput}
-                  onChange={(e) => setForm({ ...form, petTypeInput: e.target.value })}
-                  placeholder="Dog, Cat, All pets, or type a specific pet"
+                <select
+                  value={petTypeSelect}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPetTypeSelect(next);
+                    if (next === PET_TYPE_SELECT_OTHER) {
+                      if (isStandardVendorPetTypeInput(form.petTypeInput)) {
+                        setForm({ ...form, petTypeInput: '' });
+                      }
+                      return;
+                    }
+                    setForm({ ...form, petTypeInput: next });
+                  }}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                />
-                <datalist id="vendor-product-pet-type-suggestions">
+                >
+                  <option value="">Select pet type (optional)</option>
                   {VENDOR_PET_TYPE_SUGGESTIONS.map((option) => (
-                    <option key={option} value={option} />
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
                   ))}
-                </datalist>
+                  <option value={PET_TYPE_SELECT_OTHER}>Other (specific pet)</option>
+                </select>
+                {showCustomPetTypeInput ? (
+                  <div className="mt-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Specific pet type *
+                    </label>
+                    <input
+                      required
+                      value={form.petTypeInput}
+                      onChange={(e) => setForm({ ...form, petTypeInput: e.target.value })}
+                      placeholder="e.g. Birds, Rabbits, Hamsters"
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                    />
+                  </div>
+                ) : null}
                 <p className="text-xs text-slate-500 mt-1">
-                  Choose Dog or Cat, All pets if unknown or general, or type a specific pet (e.g.
-                  Birds).
+                  Choose Dog or Cat, All pets if unknown or general, or Other for a specific pet.
                 </p>
               </div>
               <div>
@@ -537,7 +604,7 @@ export function ProductFormModal({
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white"
                 >
                   <option value="">Select Category</option>
-                  {categories.map((cat) => (
+                  {categorySelectOptions.map((cat) => (
                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
                 </select>
@@ -674,11 +741,6 @@ export function ProductFormModal({
               <div className="rounded-xl border border-orange-200 bg-orange-50/60 px-4 py-3 text-sm text-slate-800">
                 <span className="font-medium">Customers see: </span>
                 ₹{listingPreview.price.toLocaleString('en-IN')}
-                {listingPreview.mrp > listingPreview.price && (
-                  <span className="text-slate-500 ml-2 line-through">
-                    ₹{listingPreview.mrp.toLocaleString('en-IN')}
-                  </span>
-                )}
                 <span className="text-slate-500 ml-2">
                   (lowest in-stock variant — set per variant below)
                 </span>
@@ -688,21 +750,12 @@ export function ProductFormModal({
               {productMode === 'simple' && (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">MRP (₹) *</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Price (₹) *</label>
                     <DecimalInput
                       required
-                      value={form.baseMrp}
-                      onChange={(v) => setForm({ ...form, baseMrp: v })}
-                      placeholder="Maximum retail price"
-                      className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Selling price (₹)</label>
-                    <DecimalInput
                       value={form.basePrice}
                       onChange={(v) => setForm({ ...form, basePrice: v })}
-                      placeholder="Optional — same as MRP if empty"
+                      placeholder="Product price"
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                     />
                   </div>
@@ -951,22 +1004,12 @@ export function ProductFormModal({
                           </div>
                         ))}
                         <div>
-                          <label className="block text-xs text-slate-600 mb-1">MRP (₹) *</label>
-                          <DecimalInput
-                            required
-                            value={variant.mrp}
-                            onChange={(v) => updateVariant(variant.id, 'mrp', v)}
-                            placeholder="Maximum retail price"
-                            className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-slate-600 mb-1">Selling price (₹) *</label>
+                          <label className="block text-xs text-slate-600 mb-1">Price (₹) *</label>
                           <DecimalInput
                             required
                             value={variant.price}
                             onChange={(v) => updateVariant(variant.id, 'price', v)}
-                            placeholder="Selling price"
+                            placeholder="Variant price"
                             className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg"
                           />
                         </div>
@@ -1036,39 +1079,59 @@ export function ProductFormModal({
               <MapPin className="w-4 h-4" />
               Delivery Regions (cities)
             </label>
-            <p className="text-xs text-slate-500">Leave empty to ship everywhere.</p>
-            <div className="flex gap-2">
+            <p className="text-xs text-slate-500">
+              Leave empty to ship everywhere. City aliases are resolved automatically (e.g. &quot;Bangalore&quot; → &quot;Bengaluru&quot;).
+            </p>
+            <div className="flex gap-2 flex-wrap">
+              {/* Datalist provides browser autocomplete from canonical city names */}
+              <datalist id="city-suggestions">
+                {KNOWN_CANONICAL_CITIES.map((c) => (
+                  <option key={c} value={displayCityName(c)} />
+                ))}
+              </datalist>
               <input
+                list="city-suggestions"
                 value={deliveryCityInput}
                 onChange={(e) => setDeliveryCityInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    const city = deliveryCityInput.trim();
-                    if (city && !deliveryRegions.some((r) => r.toLowerCase() === city.toLowerCase())) {
-                      setDeliveryRegions([...deliveryRegions, city]);
-                      setDeliveryCityInput('');
+                    const canonical = resolveCityToCanonical(deliveryCityInput.trim());
+                    if (!canonical) return;
+                    if (deliveryRegions.includes(canonical)) {
+                      toast.error('City already added');
+                      return;
                     }
+                    setDeliveryRegions([...deliveryRegions, canonical]);
+                    setDeliveryCityInput('');
                   }
                 }}
-                placeholder="City name, press Enter to add"
-                className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm"
+                placeholder="Type city name, press Enter to add"
+                className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm min-w-[180px]"
               />
               <button
                 type="button"
                 onClick={() => {
-                  const city = deliveryCityInput.trim();
-                  if (!city) return;
-                  if (deliveryRegions.some((r) => r.toLowerCase() === city.toLowerCase())) {
+                  const canonical = resolveCityToCanonical(deliveryCityInput.trim());
+                  if (!canonical) return;
+                  if (deliveryRegions.includes(canonical)) {
                     toast.error('City already added');
                     return;
                   }
-                  setDeliveryRegions([...deliveryRegions, city]);
+                  setDeliveryRegions([...deliveryRegions, canonical]);
                   setDeliveryCityInput('');
                 }}
                 className="px-4 py-2 text-sm bg-orange-50 text-orange-700 rounded-xl"
               >
                 Add
+              </button>
+              <button
+                type="button"
+                title="Clear all restrictions — product ships to every city"
+                onClick={() => setDeliveryRegions([])}
+                className="px-4 py-2 text-sm bg-green-50 text-green-700 rounded-xl whitespace-nowrap"
+              >
+                Ship everywhere
               </button>
             </div>
             {deliveryRegions.length > 0 && (
@@ -1078,7 +1141,7 @@ export function ProductFormModal({
                     key={region}
                     className="inline-flex items-center gap-1 px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-sm"
                   >
-                    {region}
+                    {displayCityName(region)}
                     <button
                       type="button"
                       onClick={() => setDeliveryRegions(deliveryRegions.filter((r) => r !== region))}

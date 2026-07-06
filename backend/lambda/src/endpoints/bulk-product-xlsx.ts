@@ -496,8 +496,12 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
       product.product_specifications = bag.product_specifications.trim();
     }
     if (bag.barcode?.trim()) product.barcode = bag.barcode.trim();
-    if (priceRaw) product.price = parseFloat(String(priceRaw).replace(/,/g, ''));
-    if (compareRaw) product.compare_at_price = parseFloat(String(compareRaw).replace(/,/g, ''));
+    if (priceRaw) {
+      product.price = parseFloat(String(priceRaw).replace(/,/g, ''));
+    } else if (compareRaw) {
+      // Legacy bulk column (mrp/compare) maps to single canonical price — never store compare_at_price.
+      product.price = parseFloat(String(compareRaw).replace(/,/g, ''));
+    }
     if (stockRaw) {
       const s = parseFloat(String(stockRaw).replace(/,/g, ''));
       if (!isNaN(s)) product.stock_quantity = s;

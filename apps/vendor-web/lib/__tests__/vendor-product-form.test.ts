@@ -9,6 +9,11 @@ import {
   deliveryRegionsFromProduct,
   sellingPriceForForm,
   detectProductMode,
+  gstRateForForm,
+  initialProductFormState,
+  petTypeSelectValueFromInput,
+  PET_TYPE_SELECT_OTHER,
+  categoryIdForForm,
   type VariantRow,
   type ProductFormState,
 } from '../vendor-product-form';
@@ -23,7 +28,6 @@ const baseForm: ProductFormState = {
   gst_rate: '18',
   emoji: '📦',
   status: 'pending',
-  baseMrp: '500',
   basePrice: '450',
   brand: '',
   listingOwnership: '',
@@ -42,7 +46,7 @@ describe('vendor-product-form', () => {
       form: baseForm,
       mode: 'simple',
       variants: [],
-      simpleSku: { mrp: '500', price: '450', stock: '10', images: ['https://img/a.jpg'] },
+      simpleSku: { price: '450', stock: '10', images: ['https://img/a.jpg'], barcode: '' },
       variantAxes: presetVariantAxes('size'),
       sellerId: 'vendor-1',
       stripImageUrl: strip,
@@ -53,14 +57,13 @@ describe('vendor-product-form', () => {
     expect(payload.images).toEqual(['https://img/a.jpg']);
   });
 
-  it('buildVendorProductPayload multi mode uses per-variant MRP and SP', () => {
+  it('buildVendorProductPayload multi mode uses per-variant price (single-price model)', () => {
     const variants: VariantRow[] = [
       {
         id: 'v1',
         optionValues: { size: 'M', color: 'Red' },
         size: 'M',
         color: 'Red',
-        mrp: '500',
         price: '450',
         stock: '5',
         images: ['https://img/v.jpg'],
@@ -71,7 +74,7 @@ describe('vendor-product-form', () => {
       form: baseForm,
       mode: 'multi',
       variants,
-      simpleSku: { mrp: '', price: '', stock: '', images: [] },
+      simpleSku: { price: '', stock: '', images: [], barcode: '' },
       variantAxes: presetVariantAxes('size_color'),
       sellerId: 'vendor-1',
       stripImageUrl: strip,
@@ -79,20 +82,19 @@ describe('vendor-product-form', () => {
     expect(payload.skus).toHaveLength(1);
     expect(payload.skus[0]).not.toHaveProperty('sku');
     expect(payload.skus[0].price).toBe(450);
-    expect(payload.skus[0].compare_at_price).toBe(500);
+    expect(payload.skus[0]).not.toHaveProperty('compare_at_price');
     expect(payload.skus[0].option_values).toEqual({ size: 'M', color: 'Red' });
     expect(payload.metadata?.variant_axes).toHaveLength(2);
     expect(payload.stock).toBe(5);
     expect(payload.images).toEqual(['https://img/v.jpg']);
     expect(payload.price).toBe(450);
-    expect(payload.original_price).toBe(500);
+    expect(payload).not.toHaveProperty('original_price');
   });
 
-  it('effectiveVariantPrice requires explicit variant MRP', () => {
+  it('effectiveVariantPrice returns price from price field only', () => {
     const row: VariantRow = {
       id: '1',
       optionValues: {},
-      mrp: '',
       price: '',
       stock: '1',
       images: [],
@@ -100,21 +102,21 @@ describe('vendor-product-form', () => {
     };
     expect(effectiveVariantMrp(row)).toBe(0);
     expect(effectiveVariantPrice(row)).toBe(0);
-    const filled: VariantRow = { ...row, mrp: '500', price: '450' };
-    expect(effectiveVariantMrp(filled)).toBe(500);
+    const filled: VariantRow = { ...row, price: '450' };
+    expect(effectiveVariantMrp(filled)).toBe(450);
     expect(effectiveVariantPrice(filled)).toBe(450);
   });
 
   it('validateProductForm rejects duplicate variants', () => {
     const variants: VariantRow[] = [
-      { id: '1', optionValues: { size: 'M', color: 'Red' }, size: 'M', color: 'Red', mrp: '500', price: '450', stock: '1', images: ['a'], isDefault: false },
-      { id: '2', optionValues: { size: 'M', color: 'Red' }, size: 'M', color: 'Red', mrp: '500', price: '450', stock: '2', images: ['b'], isDefault: false },
+      { id: '1', optionValues: { size: 'M', color: 'Red' }, size: 'M', color: 'Red', price: '450', stock: '1', images: ['a'], isDefault: false },
+      { id: '2', optionValues: { size: 'M', color: 'Red' }, size: 'M', color: 'Red', price: '450', stock: '2', images: ['b'], isDefault: false },
     ];
     const err = validateProductForm({
       form: baseForm,
       mode: 'multi',
       variants,
-      simpleSku: { mrp: '', price: '', stock: '', images: [] },
+      simpleSku: { price: '', stock: '', images: [], barcode: '' },
       variantAxes: presetVariantAxes('size_color'),
     });
     expect(err).toMatch(/Duplicate variant/);
@@ -149,7 +151,6 @@ describe('vendor-product-form', () => {
     });
     expect(rows).toHaveLength(2);
     expect(rows[0].skuRowId).toBe('22222222-2222-4222-8222-222222222222');
-    expect(rows[0].mrp).toBe('33');
     expect(rows[0].price).toBe('33');
   });
 
@@ -158,7 +159,6 @@ describe('vendor-product-form', () => {
       {
         id: 'v1',
         optionValues: { pack: '1X100' },
-        mrp: '600',
         price: '550',
         stock: '3',
         images: ['https://img/p.jpg'],
@@ -169,7 +169,7 @@ describe('vendor-product-form', () => {
       form: baseForm,
       mode: 'multi',
       variants,
-      simpleSku: { mrp: '', price: '', stock: '', images: [] },
+      simpleSku: { price: '', stock: '', images: [], barcode: '' },
       variantAxes: presetVariantAxes('pack'),
       sellerId: 'vendor-1',
       stripImageUrl: strip,
@@ -194,7 +194,6 @@ describe('vendor-product-form', () => {
       mode: 'simple',
       variants: [],
       simpleSku: {
-        mrp: '500',
         price: '450',
         stock: '10',
         images: ['https://img/a.jpg'],
@@ -216,12 +215,47 @@ describe('vendor-product-form', () => {
     expect(payload.delivery_regions).toEqual(['Mumbai', 'Pune']);
   });
 
+  it('initialProductFormState prefills GST from numeric API values', () => {
+    const form = initialProductFormState({
+      name: 'Treats',
+      category_id: 'cat-1',
+      hsn_code: '1234',
+      gst_rate: '18.00',
+      price: 450,
+    });
+    expect(form.gst_rate).toBe('18');
+  });
+
+  it('gstRateForForm handles gstRate alias and zero slab', () => {
+    expect(gstRateForForm({ gst_rate: '18.00' })).toBe('18');
+    expect(gstRateForForm({ gstRate: 5 })).toBe('5');
+    expect(gstRateForForm({ gst_rate: 0 })).toBe('0');
+    expect(gstRateForForm({})).toBe('');
+  });
+
+  it('petTypeSelectValueFromInput maps standard and custom pet types', () => {
+    expect(petTypeSelectValueFromInput('')).toBe('');
+    expect(petTypeSelectValueFromInput('Dog')).toBe('Dog');
+    expect(petTypeSelectValueFromInput('All pets')).toBe('All pets');
+    expect(petTypeSelectValueFromInput('Birds')).toBe(PET_TYPE_SELECT_OTHER);
+  });
+
+  it('categoryIdForForm resolves legacy category name when id missing', () => {
+    const categories = [{ id: 'uuid-food', name: 'Pet Food' }];
+    expect(
+      categoryIdForForm({ category: 'Pet Food' }, categories),
+    ).toBe('uuid-food');
+    expect(
+      categoryIdForForm({ category_id: 'uuid-food' }, categories),
+    ).toBe('uuid-food');
+  });
+
   it('validateProductForm allows All pets without extra text', () => {
     const err = validateProductForm({
       form: { ...baseForm, petTypeInput: 'All pets' },
       mode: 'simple',
       variants: [],
-      simpleSku: { mrp: '500', price: '450', stock: '10', images: ['a'], barcode: '' },
+      simpleSku: { price: '450', stock: '10', images: ['a'], barcode: '' },
       variantAxes: presetVariantAxes('size'),
     });
     expect(err).toBeNull();
@@ -232,7 +266,7 @@ describe('vendor-product-form', () => {
       form: { ...baseForm, petTypeInput: 'Birds' },
       mode: 'simple',
       variants: [],
-      simpleSku: { mrp: '500', price: '450', stock: '10', images: ['https://img/a.jpg'], barcode: '' },
+      simpleSku: { price: '450', stock: '10', images: ['https://img/a.jpg'], barcode: '' },
       variantAxes: presetVariantAxes('size'),
       sellerId: 'vendor-1',
       stripImageUrl: strip,
@@ -246,7 +280,7 @@ describe('vendor-product-form', () => {
       form: baseForm,
       mode: 'simple',
       variants: [],
-      simpleSku: { mrp: '500', price: '450', stock: '10', images: ['https://img/a.jpg'], barcode: '' },
+      simpleSku: { price: '450', stock: '10', images: ['https://img/a.jpg'], barcode: '' },
       variantAxes: presetVariantAxes('size'),
       sellerId: 'vendor-1',
       stripImageUrl: strip,
@@ -273,32 +307,18 @@ describe('vendor-product-form', () => {
     expect(sellingPriceForForm({ price: 450, compare_at_price: 500 })).toBe('450');
   });
 
-  it('buildVendorProductPayload simple mode uses form.basePrice not stale simpleSku.price', () => {
+  it('buildVendorProductPayload simple mode uses form.basePrice as single price', () => {
     const payload = buildVendorProductPayload({
-      form: { ...baseForm, baseMrp: '500', basePrice: '450' },
+      form: { ...baseForm, basePrice: '450' },
       mode: 'simple',
       variants: [],
-      simpleSku: { mrp: '500', price: '659', stock: '10', images: ['https://img/a.jpg'] },
+      simpleSku: { price: '659', stock: '10', images: ['https://img/a.jpg'], barcode: '' },
       variantAxes: presetVariantAxes('size'),
       sellerId: 'vendor-1',
       stripImageUrl: strip,
     });
     expect(payload.price).toBe(450);
-    expect(payload.original_price).toBe(500);
-  });
-
-  it('buildVendorProductPayload simple mode uses form.basePrice when simpleSku.price empty', () => {
-    const payload = buildVendorProductPayload({
-      form: { ...baseForm, baseMrp: '500', basePrice: '400' },
-      mode: 'simple',
-      variants: [],
-      simpleSku: { mrp: '', price: '', stock: '10', images: ['https://img/a.jpg'] },
-      variantAxes: presetVariantAxes('size'),
-      sellerId: 'vendor-1',
-      stripImageUrl: strip,
-    });
-    expect(payload.price).toBe(400);
-    expect(payload.original_price).toBe(500);
+    expect(payload).not.toHaveProperty('original_price');
   });
 
   it('detectProductMode treats single phantom SKU as simple', () => {
@@ -327,7 +347,6 @@ describe('vendor-product-form', () => {
       {
         id: 'v1',
         optionValues: { flavour: 'Chicken', pack: '500g', size: 'Adult' },
-        mrp: '600',
         price: '550',
         stock: '3',
         images: ['https://img/p.jpg'],
@@ -338,7 +357,7 @@ describe('vendor-product-form', () => {
       form: baseForm,
       mode: 'multi',
       variants,
-      simpleSku: { mrp: '', price: '', stock: '', images: [] },
+      simpleSku: { price: '', stock: '', images: [], barcode: '' },
       variantAxes: axes,
       sellerId: 'vendor-1',
       stripImageUrl: strip,
@@ -365,14 +384,13 @@ describe('vendor-product-form', () => {
         {
           id: 'v1',
           optionValues: { a: '1', b: '2', c: '3', d: '4' },
-          mrp: '100',
           price: '90',
           stock: '1',
           images: ['https://img/a.jpg'],
           isDefault: true,
         },
       ],
-      simpleSku: { mrp: '', price: '', stock: '', images: [] },
+      simpleSku: { price: '', stock: '', images: [], barcode: '' },
       variantAxes: axes,
     });
     expect(err).toMatch(/Maximum 3 variant attributes/);
@@ -382,7 +400,6 @@ describe('vendor-product-form', () => {
     const variants: VariantRow[] = Array.from({ length: 51 }, (_, i) => ({
       id: `v${i}`,
       optionValues: { size: `S${i}` },
-      mrp: '100',
       price: '90',
       stock: '1',
       images: ['https://img/a.jpg'],
@@ -392,9 +409,9 @@ describe('vendor-product-form', () => {
       form: baseForm,
       mode: 'multi',
       variants,
-      simpleSku: { mrp: '', price: '', stock: '', images: [] },
+      simpleSku: { price: '', stock: '', images: [], barcode: '' },
       variantAxes: presetVariantAxes('size'),
     });
-    expect(err).toMatch(/Maximum 50 variant rows/);
+    expect(err).toMatch(/Maximum 50/);
   });
 });

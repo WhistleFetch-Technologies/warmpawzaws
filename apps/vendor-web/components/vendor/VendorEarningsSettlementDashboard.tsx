@@ -100,6 +100,8 @@ interface Settlement {
   period_end?: string;
   payout_reference?: string;
   payout_method?: string;
+  vendor_promo_deducted?: number;
+  admin_promo_deducted?: number;
 }
 
 interface EarningsData {
@@ -322,9 +324,10 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
 
   const loadAnalytics = async () => {
     try {
-      const [dashboardRes, settlementsRes] = await Promise.all([
+      const [dashboardRes, settlementsRes, ecommerceRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${ledgerVendorId}/dashboard?timeframe=${period}`).catch(() => null),
-        apiClient.get<any>(`/vendor/${ledgerVendorId}/settlements?summary=true`).catch(() => null)
+        apiClient.get<any>(`/vendor/${ledgerVendorId}/settlements?summary=true`).catch(() => null),
+        apiClient.get<any>(`/vendor/${ledgerVendorId}/commission-analytics`).catch(() => null),
       ]);
       
       const stats = dashboardRes?.stats || dashboardRes?.data?.stats || {};
@@ -337,13 +340,17 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
         summary.pendingAmount ??
         0;
 
+      // Supplement booking-based totals with ecommerce pending payout when available.
+      const ecommercePending = Number(ecommerceRes?.pendingPayout ?? 0);
+      const combinedPending = Number(pendingAvailable) + ecommercePending;
+
       setAnalytics({
-        totalRevenue: stats.totalEarnings || stats.earnings || 0,
+        totalRevenue: stats.totalEarnings || stats.earnings || (ecommerceRes?.totalRevenue ?? 0),
         periodRevenue: stats.thisMonthEarnings || stats.earnings || 0,
         periodCount: stats.completedServices || stats.completedBookings || 0,
         avgSettlement: stats.averageBookingValue || 0,
         commissionSaved: summary.commission_saved || 0,
-        pendingAmount: Number(pendingAvailable) || 0,
+        pendingAmount: combinedPending || 0,
         processingAmount: summary.processing_amount ?? summary.processingAmount ?? 0,
         minPayoutRequestAmount:
           Number(summary.minPayoutRequestAmount ?? summary.min_payout_request_amount) ||
@@ -1476,6 +1483,18 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                     <p className="text-lg font-bold text-red-600">-₹{(Number(selectedSettlementBreakup.breakup.commission?.amount) || 0).toLocaleString()}</p>
                   </div>
                 </div>
+
+                {Number(selectedSettlementBreakup.breakup.vendorPromo?.amount) > 0 && (
+                  <div className="p-4 bg-orange-50 rounded-lg">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="font-medium text-orange-700">{selectedSettlementBreakup.breakup.vendorPromo?.label || 'Vendor Promotion Deduction'}</p>
+                        <p className="text-xs text-orange-600">{selectedSettlementBreakup.breakup.vendorPromo?.explanation || 'Discount you offered to the customer, deducted from your payout'}</p>
+                      </div>
+                      <p className="text-lg font-bold text-orange-600">-₹{Number(selectedSettlementBreakup.breakup.vendorPromo.amount).toLocaleString()}</p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="p-4 bg-green-50 rounded-lg border-2 border-green-200">
                   <div className="flex justify-between items-center">

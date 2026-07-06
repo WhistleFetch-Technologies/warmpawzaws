@@ -32,6 +32,36 @@ function triggerOrderInvoiceOnDelivered(orderId: string, status: string, previou
     );
   }
 }
+
+async function triggerPendingLoyaltyAwardOnDelivered(
+  orderId: string,
+  status: string,
+  previousStatus: string,
+  vendorId: string | null
+): Promise<void> {
+  if (status !== 'delivered' || previousStatus === 'delivered') return;
+  try {
+    const { insertPendingLoyaltyAward } = await import('../../../utils/ecommerce-loyalty');
+    const { resolveReturnWindowDays } = await import('../../../utils/return-window');
+    const orderRes = await import('../../../database/rds-connection').then((m) =>
+      m.query(
+        'SELECT customer_id, total_amount FROM orders WHERE id = $1 LIMIT 1',
+        [orderId]
+      )
+    );
+    const row = orderRes.rows[0];
+    if (!row?.customer_id) return;
+    const windowDays = await resolveReturnWindowDays(vendorId);
+    await insertPendingLoyaltyAward({
+      orderId,
+      customerId: String(row.customer_id),
+      amount: parseFloat(String(row.total_amount || '0')),
+      windowDays,
+    });
+  } catch (e: any) {
+    console.warn('[VENDOR-ORDERS] Loyalty pending award trigger failed (non-fatal):', e?.message);
+  }
+}
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -154,9 +184,20 @@ class GetVendorOrdersHandler extends BaseHandler {
           o.*,
           c.full_name as customer_name,
           c.phone as customer_phone,
-          c.email as customer_email
+          c.email as customer_email,
+          s.awb_code AS shipment_tracking_number,
+          s.tracking_url AS shipment_tracking_url,
+          s.courier_name AS shipment_carrier_name,
+          s.logistics_partner AS shipment_carrier_id
         FROM orders o
         LEFT JOIN customers c ON o.customer_id = c.id
+        LEFT JOIN LATERAL (
+          SELECT awb_code, tracking_url, courier_name, logistics_partner
+          FROM shipments
+          WHERE order_id = o.id
+          ORDER BY created_at DESC
+          LIMIT 1
+        ) s ON true
         WHERE o.vendor_id = $1
           ${dateFilterClause}
           ${statusFilter}
@@ -223,9 +264,20 @@ class GetVendorOrdersHandler extends BaseHandler {
             }
           }
           
+          // Prefer shipments table data for tracking fields when orders row is stale
+          const resolvedTrackingNumber =
+            order.tracking_number || order.shipment_tracking_number || null;
+          const resolvedTrackingUrl =
+            order.tracking_url || order.shipment_tracking_url || null;
+          const resolvedDeliveryPartner =
+            order.delivery_partner || order.shipment_carrier_name || null;
+
           return {
             ...order,
             status: order.order_status, // Map order_status to status for frontend compatibility
+            tracking_number: resolvedTrackingNumber,
+            tracking_url: resolvedTrackingUrl,
+            delivery_partner: resolvedDeliveryPartner,
             items: items,
           };
         })
@@ -580,6 +632,7 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       }
 
       triggerOrderInvoiceOnDelivered(orderId, status, currentStatus);
+      void triggerPendingLoyaltyAwardOnDelivered(orderId, status, currentStatus, vendorId);
 
       return c.json({ 
         success: true, 
@@ -706,6 +759,7 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       }
 
       triggerOrderInvoiceOnDelivered(orderId, status, currentStatus);
+      void triggerPendingLoyaltyAwardOnDelivered(orderId, status, currentStatus, vendorId);
 
       return c.json({ 
         success: true, 

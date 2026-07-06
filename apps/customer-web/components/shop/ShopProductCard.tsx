@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { useRouter } from 'next/navigation';
 import { canonicalProductId } from '@/lib/product-id';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
 import { ShopCartQuantityControl } from './ShopCartQuantityControl';
 import type { ShopProduct } from './shop-types';
@@ -26,7 +26,7 @@ export function ShopProductCard({
   onAddToCart,
   onQuantityChange,
 }: ShopProductCardProps) {
-  const router = useRouter();
+  const nav = useCustomerNavigation();
   const [imageFailed, setImageFailed] = React.useState(false);
 
   const wishlistPid = canonicalProductId(product as unknown as Record<string, unknown>) || product.id;
@@ -46,7 +46,7 @@ export function ShopProductCard({
   const handleCardClick = () => {
     const pid = (wishlistPid || product.id || '').trim();
     if (!pid) return;
-    router.push(`/shop/${encodeURIComponent(pid)}`);
+    nav.goToProduct(pid);
   };
 
   if (variant === 'deal') {
@@ -75,6 +75,13 @@ export function ShopProductCard({
           ) : (
             <div className="w-full h-full flex items-center justify-center text-3xl">
               {product.emoji || '🐾'}
+            </div>
+          )}
+          {outOfStock && (
+            <div className="absolute bottom-2 inset-x-2 flex justify-center pointer-events-none z-[1]">
+              <span className="px-2 py-0.5 rounded-full bg-slate-900/85 text-white text-[9px] font-bold tracking-wide backdrop-blur-sm">
+                Out of stock
+              </span>
             </div>
           )}
           <ShopCartQuantityControl

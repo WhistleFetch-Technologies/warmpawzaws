@@ -1,7 +1,12 @@
 /**
  * Product delivery region matching — city names only.
  * Empty regions = ships everywhere. Empty customer city = allow browse.
+ *
+ * City aliases (e.g. Bangalore ↔ Bengaluru) are resolved via resolveCityToCanonical
+ * from city-aliases.ts. All alias data lives there — do not add city strings here.
  */
+
+import { resolveCityToCanonical } from './city-aliases';
 
 export function normalizeCity(name: string): string {
   return String(name ?? '')
@@ -58,8 +63,9 @@ export function isProductDeliverableToCity(
   if (list.length === 0) return true;
   const city = String(customerCity ?? '').trim();
   if (!city) return true;
-  const norm = normalizeCity(city);
-  return list.some((r) => normalizeCity(r) === norm);
+  // Resolve through alias map so "Bangalore" matches a stored "Bengaluru" and vice versa.
+  const customerCanonical = resolveCityToCanonical(normalizeCity(city));
+  return list.some((r) => resolveCityToCanonical(normalizeCity(r)) === customerCanonical);
 }
 
 export function formatDeliveryRegionsList(

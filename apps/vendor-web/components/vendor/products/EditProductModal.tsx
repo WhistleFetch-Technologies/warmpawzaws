@@ -12,6 +12,7 @@ import {
   removePendingProductImageByUrl,
   uploadProductImage,
 } from '@/lib/product-image-upload';
+import { gstRateForForm } from '@/lib/vendor-product-form';
 
 function stripAwsPresignFromProductImageUrl(url: string): string {
   try {
@@ -127,7 +128,7 @@ export function EditProductModal({
         original_price: mrp != null ? String(mrp) : '',
         stock: String(product.stock ?? product.stock_quantity ?? 0),
         hsn_code: product.hsn_code || '',
-        gst_rate: product.gst_rate != null ? String(product.gst_rate) : '',
+        gst_rate: gstRateForForm(product as Record<string, unknown>),
         is_active: product.is_active !== false,
       });
       setImages(normalizeProductImages(product.images));

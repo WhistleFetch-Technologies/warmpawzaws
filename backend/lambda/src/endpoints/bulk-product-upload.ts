@@ -59,6 +59,16 @@ import {
 } from '../utils/product-vendor-persist';
 import { validateAndApplyVendorDeclaredOwnership } from '../utils/compute-listing-ownership';
 
+/**
+ * Represents one row from the bulk product upload spreadsheet.
+ *
+ * VARIANT LIMITATION: Bulk upload creates a single simple product per row — it does NOT
+ * create multiple product_skus rows for variant combinations. After import, open the product
+ * in ProductFormModal (Seller Hub) to add size/color/weight variants via the inline SKU editor.
+ *
+ * size_variant / colour / variant_attr_* columns are accepted but currently stored in metadata
+ * only; they do not automatically create separate SKU rows via product_skus.
+ */
 interface BulkProductRow {
   name: string;
   description?: string | null;
@@ -205,8 +215,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             name: normalized.name,
             description: product.description?.trim() || null,
             category: normalized.category,
-            price: normalized.sellingPrice,
-            compare_at_price: normalized.mrp,
+            price: normalized.price,
             stock_quantity: normalized.stock,
             hsn_code: normalized.hsn_code,
             gst_rate: normalized.gst_rate,
@@ -428,7 +437,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             category_id: resolvedCategory.id,
             category: resolvedCategory.name,
             price: listingPricing.price,
-            compare_at_price: listingPricing.compare_at_price,
             stock: stockValue,
             hsn_code: group.parent.hsn_code || null,
             gst_rate: group.parent.gst_rate != null ? Number(group.parent.gst_rate) : null,

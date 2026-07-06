@@ -4,6 +4,7 @@
  */
 
 export type CommissionSource =
+  | 'product_override'
   | 'vendor_category'
   | 'vendor_own_brand'
   | 'vendor_third_party'

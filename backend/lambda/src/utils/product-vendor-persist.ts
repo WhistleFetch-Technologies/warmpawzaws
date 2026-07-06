@@ -9,6 +9,7 @@ import {
   parseSpecificationsCsv,
   resolveVendorPetTypeInput,
   RESERVED_SPEC_KEYS,
+  resolveCityToCanonical,
 } from '@warmpawz/shared-types';
 
 /** Cached products column set for bulk + vendor persist. */
@@ -45,6 +46,59 @@ export type VendorProductExtrasInput = {
   delivery_regions?: unknown;
 };
 
+function nestedSpecificationsObject(
+  input: VendorProductExtrasInput,
+): Record<string, unknown> | null {
+  if (
+    input.specifications != null &&
+    typeof input.specifications === 'object' &&
+    !Array.isArray(input.specifications)
+  ) {
+    return input.specifications as Record<string, unknown>;
+  }
+  return null;
+}
+
+function pickVendorSpecField(
+  topLevel: unknown,
+  nestedSpecs: Record<string, unknown> | null,
+  nestedKey: string,
+): unknown {
+  if (topLevel !== undefined) return topLevel;
+  if (nestedSpecs) return nestedSpecs[nestedKey];
+  return undefined;
+}
+
+function applyPositiveDimensionField(
+  base: Record<string, unknown>,
+  key: 'length_cm' | 'breadth_cm' | 'height_cm',
+  raw: unknown,
+  specsObjectProvided: boolean,
+): void {
+  if (raw === undefined) {
+    if (specsObjectProvided) delete base[key];
+    return;
+  }
+  const n = parseOptionalPositiveNumber(raw);
+  if (n != null && n > 0) base[key] = n;
+  else delete base[key];
+}
+
+function applyTrimmedSpecField(
+  base: Record<string, unknown>,
+  key: string,
+  raw: unknown,
+  specsObjectProvided: boolean,
+): void {
+  if (raw === undefined) {
+    if (specsObjectProvided) delete base[key];
+    return;
+  }
+  const trimmed = String(raw).trim();
+  if (trimmed) base[key] = trimmed;
+  else delete base[key];
+}
+
 export function buildSpecificationsFromVendorInput(
   input: VendorProductExtrasInput,
   existingSpecs?: Record<string, unknown> | null,
@@ -54,8 +108,11 @@ export function buildSpecificationsFromVendorInput(
       ? { ...existingSpecs }
       : {};
 
-  if (input.specifications != null && typeof input.specifications === 'object' && !Array.isArray(input.specifications)) {
-    for (const [k, v] of Object.entries(input.specifications as Record<string, unknown>)) {
+  const nestedSpecs = nestedSpecificationsObject(input);
+  const specsObjectProvided = nestedSpecs !== null;
+
+  if (nestedSpecs) {
+    for (const [k, v] of Object.entries(nestedSpecs)) {
       const normKey = k.toLowerCase().replace(/\s+/g, '_');
       if (RESERVED_SPEC_KEYS.has(normKey)) continue;
       if (v != null && String(v).trim() !== '') base[k] = v;
@@ -69,26 +126,35 @@ export function buildSpecificationsFromVendorInput(
     }
   }
 
-  const length = parseOptionalPositiveNumber(input.length_cm);
-  const breadth = parseOptionalPositiveNumber(input.breadth_cm);
-  const height = parseOptionalPositiveNumber(input.height_cm);
-  if (length != null) base.length_cm = length;
-  if (breadth != null) base.breadth_cm = breadth;
-  if (height != null) base.height_cm = height;
+  applyPositiveDimensionField(
+    base,
+    'length_cm',
+    pickVendorSpecField(input.length_cm, nestedSpecs, 'length_cm'),
+    specsObjectProvided,
+  );
+  applyPositiveDimensionField(
+    base,
+    'breadth_cm',
+    pickVendorSpecField(input.breadth_cm, nestedSpecs, 'breadth_cm'),
+    specsObjectProvided,
+  );
+  applyPositiveDimensionField(
+    base,
+    'height_cm',
+    pickVendorSpecField(input.height_cm, nestedSpecs, 'height_cm'),
+    specsObjectProvided,
+  );
 
-  if (input.key_features != null && String(input.key_features).trim()) {
-    base.key_features = String(input.key_features).trim();
-  }
+  applyTrimmedSpecField(
+    base,
+    'key_features',
+    pickVendorSpecField(input.key_features, nestedSpecs, 'key_features'),
+    specsObjectProvided,
+  );
 
-  const nestedSpecs =
-    input.specifications != null &&
-    typeof input.specifications === 'object' &&
-    !Array.isArray(input.specifications)
-      ? (input.specifications as Record<string, unknown>)
-      : null;
   const resolvedPet = resolveVendorPetTypeInput(
-    input.pet_type ?? nestedSpecs?.pet_type,
-    input.pet_type_other ?? nestedSpecs?.pet_type_other,
+    pickVendorSpecField(input.pet_type, nestedSpecs, 'pet_type'),
+    pickVendorSpecField(input.pet_type_other, nestedSpecs, 'pet_type_other'),
   );
   if (resolvedPet.pet_type) {
     base.pet_type = resolvedPet.pet_type;
@@ -97,14 +163,17 @@ export function buildSpecificationsFromVendorInput(
     } else {
       delete base.pet_type_other;
     }
-  } else {
+  } else if (specsObjectProvided) {
     delete base.pet_type;
     delete base.pet_type_other;
   }
 
-  if (input.manufacturing_details != null && String(input.manufacturing_details).trim()) {
-    base.manufacturing_details = String(input.manufacturing_details).trim();
-  }
+  applyTrimmedSpecField(
+    base,
+    'manufacturing_details',
+    pickVendorSpecField(input.manufacturing_details, nestedSpecs, 'manufacturing_details'),
+    specsObjectProvided,
+  );
 
   return base;
 }
@@ -119,7 +188,10 @@ export function buildMetadataWithDeliveryRegions(
     return meta;
   }
   if (deliveryRegions !== undefined) {
-    const list = normalizeDeliveryRegionsList(deliveryRegions);
+    // Canonicalize each city through the alias map so "Bangalore" is stored as "bengaluru".
+    const list = normalizeDeliveryRegionsList(deliveryRegions).map((city) =>
+      resolveCityToCanonical(city),
+    );
     if (list.length > 0) {
       meta.delivery_regions = list;
     } else {

@@ -52,6 +52,10 @@ export function getProductDiscountPercent(product: ShopProduct): number {
   return discountPercentFromPrices(product.price, product.original_price);
 }
 
+/**
+ * Client-side sort fallback — kept for non-shop contexts (e.g. recommendation carousels).
+ * The main shop page now sends `sort` to the server; do not re-apply this on the shop catalog.
+ */
 export function sortShopProducts(products: ShopProduct[], sortBy: string): ShopProduct[] {
   const list = [...products];
   switch (sortBy) {

@@ -5,7 +5,7 @@ import {
   Tag, Plus, Edit2, Trash2, Calendar, Percent, Gift, Zap, Clock, 
   CheckCircle, XCircle, Search, Package, Users, ShoppingBag, 
   Sparkles, Target, TrendingUp, Copy, Eye, ToggleLeft, ToggleRight,
-  ChevronDown, ChevronUp, Filter, ArrowRight, Info, AlertCircle
+  ArrowRight, Info, AlertCircle
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -280,6 +280,17 @@ export function PromotionsManagement({ sellerId }: PromotionsManagementProps) {
             <div>
               <p className="text-xs text-slate-500">Scheduled</p>
               <p className="text-xl font-bold text-amber-600">{stats.scheduled}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-slate-100 rounded-xl">
+              <XCircle className="w-5 h-5 text-slate-500" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Expired</p>
+              <p className="text-xl font-bold text-slate-600">{stats.expired}</p>
             </div>
           </div>
         </div>

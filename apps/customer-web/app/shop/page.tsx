@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
@@ -18,7 +18,7 @@ import { ShopTopDealsSection } from '@/components/shop/ShopTopDealsSection';
 import { ShopTrustRow } from '@/components/shop/ShopTrustRow';
 import { DeliveryAddressPickerSheet } from '@/components/customer/ecommerce/DeliveryAddressPickerSheet';
 import { AddAddressModal } from '@/components/customer/shared/AddAddressModal';
-import { mapApiProductsList, sortShopProducts } from '@/components/shop/map-shop-product';
+import { mapApiProductsList } from '@/components/shop/map-shop-product';
 import type { ShopCartItem, ShopCategory, ShopProduct } from '@/components/shop/shop-types';
 import { apiClient } from '@/lib/api-client';
 import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
@@ -70,18 +70,25 @@ export default function ShopPage() {
   const nav = useCustomerNavigation();
   const { accountSidebar, handleTabbedBottomNav, openAccountMenu } = useCustomerAccountSidebarHost();
 
+  /** Must match SHOP_DEFAULT_LIMIT on the backend. */
+  const SHOP_PAGE_SIZE = 10;
+
   const [products, setProducts] = useState<ShopProduct[]>([]);
   const [featuredProducts, setFeaturedProducts] = useState<ShopProduct[]>([]);
   const [categories, setCategories] = useState<ShopCategory[]>([]);
   const [cart, setCart] = useState<ShopCartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [featuredLoading, setFeaturedLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [selectedCategory, setSelectedCategory] = useState('');
   const [sortBy, setSortBy] = useState('popular');
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000]);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
 
   const [showFilters, setShowFilters] = useState(false);
   const [showSortSheet, setShowSortSheet] = useState(false);
@@ -159,49 +166,93 @@ export default function ShopPage() {
     [applySelectedDeliveryAddress]
   );
 
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  /** Debounce searchTerm → debouncedSearch (300 ms). API calls use debouncedSearch. */
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
-      const categoriesRes = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>(
-        '/ecommerce/categories'
-      );
-      const rawCategories = categoriesRes?.categories;
-      const mappedCategories = mapApiCategoriesToShop(
-        Array.isArray(rawCategories)
-          ? rawCategories.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
-          : []
-      );
-      setCategories(mappedCategories);
-
-      let effectiveCategory = selectedCategory;
-      if (
-        effectiveCategory &&
-        !mappedCategories.some((c) => c.id === effectiveCategory)
-      ) {
-        effectiveCategory = '';
-        setSelectedCategory('');
-        clearShopCategoryFromUrl();
+  /**
+   * Fetch one page of products and either replace (reset=true) or append (reset=false).
+   * Uses a stable ref for currentOffset to avoid stale-closure issues on append.
+   */
+  const loadProducts = useCallback(
+    async (reset: boolean, currentOffset: number, currentCategory: string) => {
+      if (reset) {
+        setLoading(true);
+        setError(null);
+      } else {
+        setLoadingMore(true);
       }
 
-      const params = new URLSearchParams();
-      if (effectiveCategory) params.append('category', effectiveCategory);
-      if (sortBy) params.append('sort', sortBy);
+      try {
+        // On first call also load categories (only needed once per page mount).
+        let effectiveCategory = currentCategory;
+        if (reset) {
+          const categoriesRes = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>(
+            '/ecommerce/categories'
+          );
+          const rawCategories = categoriesRes?.categories;
+          const mappedCategories = mapApiCategoriesToShop(
+            Array.isArray(rawCategories)
+              ? rawCategories.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
+              : []
+          );
+          setCategories(mappedCategories);
 
-      const productsRes = await apiClient.get<{ products?: unknown[] }>(
-        `/ecommerce/products?${params.toString()}`
-      );
+          if (
+            effectiveCategory &&
+            !mappedCategories.some((c) => c.id === effectiveCategory)
+          ) {
+            effectiveCategory = '';
+            setSelectedCategory('');
+            clearShopCategoryFromUrl();
+          }
+        }
 
-      const rawList = productsRes?.products || [];
-      setProducts(mapApiProductsList(rawList));
-    } catch (err: unknown) {
-      console.error('Error loading shop:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load shop');
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedCategory, sortBy]);
+        const params = new URLSearchParams();
+        if (effectiveCategory) params.set('category', effectiveCategory);
+        params.set('sort', sortBy);
+        params.set('limit', String(SHOP_PAGE_SIZE));
+        params.set('offset', String(currentOffset));
+        if (debouncedSearch) params.set('search', debouncedSearch);
+        if (priceRange[0] > 0) params.set('min_price', String(priceRange[0]));
+        if (priceRange[1] < 10000) params.set('max_price', String(priceRange[1]));
+
+        const productsRes = await apiClient.get<{
+          products?: unknown[];
+          hasMore?: boolean;
+          total?: number;
+        }>(`/ecommerce/products?${params.toString()}`);
+
+        const rawList = productsRes?.products || [];
+        const newProducts = mapApiProductsList(rawList);
+        const more = productsRes?.hasMore ?? newProducts.length >= SHOP_PAGE_SIZE;
+
+        if (reset) {
+          setProducts(newProducts);
+          setOffset(newProducts.length);
+        } else {
+          setProducts((prev) => [...prev, ...newProducts]);
+          setOffset((prev) => prev + newProducts.length);
+        }
+        setHasMore(more);
+      } catch (err: unknown) {
+        console.error('Error loading shop:', err);
+        if (reset) setError(err instanceof Error ? err.message : 'Failed to load shop');
+      } finally {
+        if (reset) setLoading(false);
+        else setLoadingMore(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sortBy, debouncedSearch, priceRange, SHOP_PAGE_SIZE],
+  );
+
+  const loadMoreProducts = useCallback(() => {
+    if (!hasMore || loadingMore || loading) return;
+    void loadProducts(false, offset, selectedCategory);
+  }, [hasMore, loadingMore, loading, loadProducts, offset, selectedCategory]);
 
   const loadFeaturedDeals = useCallback(async () => {
     try {
@@ -244,9 +295,10 @@ export default function ShopPage() {
     return () => window.removeEventListener(CART_UPDATED_EVENT, sync);
   }, [loadCart]);
 
+  /** Reset and reload whenever filters/sort/search/category change. */
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    void loadProducts(true, 0, selectedCategory);
+  }, [selectedCategory, sortBy, debouncedSearch, priceRange]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     loadFeaturedDeals();
@@ -326,7 +378,7 @@ export default function ShopPage() {
 
   const addToCart = (product: ShopProduct) => {
     if (product.has_variants) {
-      router.push(`/shop/${encodeURIComponent(product.id)}`);
+      nav.goToProduct(product.id);
       return;
     }
     updateProductQuantity(
@@ -347,14 +399,8 @@ export default function ShopPage() {
   );
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const filteredProducts = useMemo(() => {
-    const filtered = products.filter((product) => {
-      const matchesSearch = product.name?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
-      return matchesSearch && matchesPrice;
-    });
-    return sortShopProducts(filtered, sortBy);
-  }, [products, searchTerm, priceRange, sortBy]);
+  // Search, sort, and price filtering are now server-side.
+  // `products` is the final list to render; no client-side filter step.
 
   if (typeof window !== 'undefined' && !isShopUiVisibleForAccount(readStoredCustomerPhone())) {
     return <AppReviewDemoRouteGuard>{null}</AppReviewDemoRouteGuard>;
@@ -430,14 +476,16 @@ export default function ShopPage() {
           <ShopCatalogSection
             loading={loading}
             error={error}
-            products={filteredProducts}
+            products={products}
             getCartQuantity={getCartQuantity}
             sortBy={sortBy}
-            cartSubtotal={cartSubtotal}
-            onRetry={loadData}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
+            onRetry={() => void loadProducts(true, 0, selectedCategory)}
             onAddToCart={addToCart}
             onQuantityChange={updateProductQuantity}
             onOpenSort={() => setShowSortSheet(true)}
+            onLoadMore={loadMoreProducts}
           />
         </main>
 
