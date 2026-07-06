@@ -22,17 +22,13 @@ import {
   listApplicableBookingPromotions,
   resolveBookingPromotions,
 } from '../lib/services/booking-promotion-service';
-import { computeCouponDiscountAmount } from '../discount-engine/benefits/adapters/coupon-benefit.adapter';
-import { couponValidateToDiscountContext } from '../discount-engine/adapters/context-mappers';
-import { DiscountDomain } from '../discount-engine/enums/discount-domain';
-import { invokeResolverAlongsideLegacy } from '../discount-engine/resolver/production-bridge';
+import { validateCouponInternal as validatePlatformCouponInternal } from '../lib/services/platform-coupon-service';
 import {
   getAnalyticsEngine,
   isAnalyticsAuthoritative,
   isAnalyticsEnabled,
 } from '../discount-engine/analytics';
 import {
-  shadowCouponEligibility,
   shadowPlatformInlineEligibility,
 } from '../discount-engine/rules/adapters/shadow-adapters';
 import {
@@ -667,8 +663,8 @@ export function registerPromotionEndpoints(app: Hono) {
   });
 
   /**
-   * ✅ FIX GAP 7.1: Internal coupon validation helper function
-   * Extracted from GET /coupons/validate/:couponCode to avoid fetch() in Lambda
+   * @deprecated Legacy inline validation — delegates to platform-coupon-service (Phase 8B).
+   * Retained for handler compatibility; removal candidate Phase 8C.
    */
   async function validateCouponInternal(couponCode: string, amount: number): Promise<{
     success: boolean;
@@ -677,101 +673,7 @@ export function registerPromotionEndpoints(app: Hono) {
     discountAmount?: number;
     error?: string;
   }> {
-    try {
-      const coupons = await select('coupons', { code: couponCode.toUpperCase(), is_active: true });
-      if (coupons.length === 0) {
-        return { success: false, valid: false, error: 'Invalid coupon code' };
-      }
-
-      const coupon = coupons[0];
-
-      // Check validity
-      const now = new Date();
-      const startDate = new Date(coupon.start_date);
-      const endDate = coupon.end_date ? new Date(coupon.end_date) : null;
-
-      if (now < startDate || (endDate && now > endDate)) {
-        shadowCouponEligibility(coupon, amount, 0, false, 'Coupon has expired');
-        return { success: false, valid: false, error: 'Coupon has expired' };
-      }
-
-      if (coupon.min_order_amount && amount < parseFloat(coupon.min_order_amount)) {
-        shadowCouponEligibility(
-          coupon,
-          amount,
-          0,
-          false,
-          `Minimum order amount of ₹${coupon.min_order_amount} required`
-        );
-        return {
-          success: false,
-          valid: false,
-          error: `Minimum order amount of ₹${coupon.min_order_amount} required`,
-        };
-      }
-
-      // Check usage limit
-      let usageCount = 0;
-      if (coupon.max_uses) {
-        const usageCountResult = await query(
-          'SELECT COUNT(*) as count FROM coupon_usages WHERE coupon_id = $1',
-          [coupon.id]
-        ).catch(() => ({ rows: [{ count: '0' }] }));
-
-        usageCount = parseInt(usageCountResult.rows[0]?.count || '0', 10);
-        if (usageCount >= coupon.max_uses) {
-          shadowCouponEligibility(coupon, amount, usageCount, false, 'Coupon usage limit reached');
-          return { success: false, valid: false, error: 'Coupon usage limit reached' };
-        }
-      }
-
-      shadowCouponEligibility(coupon, amount, usageCount, true);
-
-      // Calculate discount
-      let legacyDiscountAmount = 0;
-      if (coupon.discount_type === 'percentage') {
-        legacyDiscountAmount = (amount * parseFloat(coupon.discount_value || '0')) / 100;
-        if (coupon.max_discount_amount) {
-          legacyDiscountAmount = Math.min(
-            legacyDiscountAmount,
-            parseFloat(coupon.max_discount_amount)
-          );
-        }
-      } else if (coupon.discount_type === 'fixed') {
-        legacyDiscountAmount = parseFloat(coupon.discount_value || '0');
-      }
-
-      const discountAmount = computeCouponDiscountAmount({
-        discountType: coupon.discount_type,
-        discountValue: coupon.discount_value,
-        amount,
-        maxDiscountAmount: coupon.max_discount_amount,
-        legacyAmount: legacyDiscountAmount,
-      });
-
-      const couponContext = couponValidateToDiscountContext(coupon, amount, { usageCount });
-      invokeResolverAlongsideLegacy('validateCouponInternal-service', {
-        ...couponContext,
-        domain: DiscountDomain.SERVICE,
-      });
-      invokeResolverAlongsideLegacy('validateCouponInternal-ecommerce', couponContext);
-
-      return {
-        success: true,
-        valid: true,
-        coupon: {
-          id: coupon.id,
-          code: coupon.code,
-          name: coupon.name,
-          discountType: coupon.discount_type,
-          discountValue: coupon.discount_value,
-        },
-        discountAmount,
-      };
-    } catch (error: any) {
-      console.error('Error in validateCouponInternal:', error);
-      return { success: false, valid: false, error: error.message };
-    }
+    return validatePlatformCouponInternal(couponCode, amount);
   }
 
   /**
@@ -846,6 +748,8 @@ export function registerPromotionEndpoints(app: Hono) {
         return c.json({ success: false, error: 'vendorId and amount are required' }, 400);
       }
 
+      const couponCode = body.couponCode || body.coupon_code;
+
       const result = await resolveBookingPromotions({
         vendorId,
         serviceIds,
@@ -853,6 +757,7 @@ export function registerPromotionEndpoints(app: Hono) {
         amount,
         customerId: customerId ? String(customerId) : undefined,
         serviceCategory: serviceCategory ? String(serviceCategory) : undefined,
+        couponCode: couponCode ? String(couponCode).trim() : undefined,
       });
 
       return c.json({

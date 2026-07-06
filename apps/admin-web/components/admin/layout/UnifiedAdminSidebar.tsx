@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
-import { apiClient } from '@/lib/api-client';
+import { filterMarketingSidebarNavItems } from '@/lib/legacy-promotion-ui';
 import { getStoredAdminPermissions, hasAdminPortalPermission } from '@/lib/admin-permissions';
 import {
   adminPortalNavItemVisible,
@@ -217,7 +217,8 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
 
   const visibleMarketingNav = useMemo(() => {
     if (!hydrated) return marketingNavItems;
-    return marketingNavItems.filter((item) => canSeeNavItem(item, hydrated));
+    const permitted = marketingNavItems.filter((item) => canSeeNavItem(item, hydrated));
+    return filterMarketingSidebarNavItems(permitted);
   }, [hydrated, marketingNavItems, pathname, activeView]);
 
   const visibleFooterNav = useMemo(() => {

@@ -34,12 +34,11 @@ import {
 import {
   normalizeServicePromotionRow,
 } from '../../../utils/service-promotion-engine';
-import {
-  platformPromotionCodeToDiscountContext,
-  vendorServiceCodeToDiscountContext,
-} from '../../../discount-engine/adapters/context-mappers';
 import { DiscountDomain } from '../../../discount-engine/enums/discount-domain';
-import { invokeResolverAlongsideLegacy } from '../../../discount-engine/resolver/production-bridge';
+import {
+  evaluateServiceCodeViaProductionMode,
+  evaluatePlatformCodeViaProductionMode,
+} from '../../../lib/services/promotion-code-validation-service';
 
 export function registerVendorPromotionsEndpoints(app: Hono) {
   // ============================================================================
@@ -843,33 +842,23 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
             });
           }
 
-          // Calculate discount
-          let discountAmount = 0;
-          if (promo.discount_type === 'percentage') {
-            discountAmount = (amount * promo.discount_value) / 100;
-            if (promo.max_discount_amount) {
-              discountAmount = Math.min(discountAmount, promo.max_discount_amount);
-            }
-          } else {
-            discountAmount = promo.discount_value || 0;
-          }
-
           const normalizedService = normalizeServicePromotionRow(
             promo as Record<string, unknown>
           );
-          invokeResolverAlongsideLegacy(
-            'validate-code-service-vendor',
-            vendorServiceCodeToDiscountContext(normalizedService, amount, {
+          const { discountAmount, finalAmount } = await evaluateServiceCodeViaProductionMode(
+            normalizedService,
+            amount,
+            {
               vendorId: vendorId ? String(vendorId) : normalizedService.vendor_id,
               customerId: customerId ? String(customerId) : undefined,
-            })
+            }
           );
 
           return c.json({
             valid: true,
             promotion: promo,
             discount_amount: discountAmount,
-            final_amount: Math.max(0, amount - discountAmount),
+            final_amount: finalAmount,
             promo_category: 'service'
           });
         }
@@ -899,33 +888,24 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
           });
         }
 
-        // Calculate discount
-        let discountAmount = 0;
-        if (promo.discount_type === 'percentage') {
-          discountAmount = (amount * promo.discount_value) / 100;
-          if (promo.max_discount_amount) {
-            discountAmount = Math.min(discountAmount, promo.max_discount_amount);
-          }
-        } else {
-          discountAmount = promo.discount_value || 0;
-        }
-
+        // Calculate discount via resolver (S3/S4)
         const promoDomain =
           orderType === 'service' ? DiscountDomain.SERVICE : DiscountDomain.ECOMMERCE;
-        invokeResolverAlongsideLegacy(
-          'validate-code-platform',
-          platformPromotionCodeToDiscountContext(promo as Record<string, unknown>, amount, {
-            domain: promoDomain,
+        const { discountAmount, finalAmount } = await evaluatePlatformCodeViaProductionMode(
+          promo as Record<string, unknown>,
+          amount,
+          promoDomain,
+          {
             vendorId: vendorId ? String(vendorId) : undefined,
             customerId: customerId ? String(customerId) : undefined,
-          })
+          }
         );
 
         return c.json({
           valid: true,
           promotion: promo,
           discount_amount: discountAmount,
-          final_amount: Math.max(0, amount - discountAmount),
+          final_amount: finalAmount,
           promo_category: 'platform'
         });
       }

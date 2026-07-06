@@ -8,6 +8,7 @@ import type {
   PromotionTargetCatalog,
   PromotionWizardForm,
   PromotionTypeId,
+  SmartTargetCatalogAdapter,
   TargetScopeId,
 } from '../types';
 import { DEFAULT_WIZARD_FORM } from '../types';
@@ -65,6 +66,7 @@ export function PromotionWizard({
   onSave,
   saving,
   initialStep = 0,
+  smartTargetAdapter,
 }: {
   open: boolean;
   onClose: () => void;
@@ -75,6 +77,7 @@ export function PromotionWizard({
   onSave: (form: PromotionWizardForm, publish: boolean) => Promise<void>;
   saving?: boolean;
   initialStep?: number;
+  smartTargetAdapter?: SmartTargetCatalogAdapter;
 }) {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<PromotionWizardForm>(initial ?? DEFAULT_WIZARD_FORM());
@@ -277,6 +280,8 @@ export function PromotionWizard({
                   selectedTargets={form.selectedTargets}
                   onScopesChange={(targetScopes) => patch({ targetScopes })}
                   onTargetsChange={(selectedTargets) => patch({ selectedTargets })}
+                  smartTargetSurface={scope.smartTargetSurface}
+                  smartTargetAdapter={smartTargetAdapter}
                 />
               </div>
             </div>
@@ -390,7 +395,15 @@ export function PromotionWizard({
           {step === 4 && (
             <div className="space-y-4">
               <PromotionPreview form={form} />
-              <PromotionSummary form={form} />
+              <PromotionSummary
+                form={form}
+                catalog={catalog}
+                smartSurface={
+                  scope.smartTargetSurface === 'marketing' || scope.smartTargetSurface === 'ecommerce'
+                    ? scope.smartTargetSurface
+                    : undefined
+                }
+              />
               {issues.length > 0 && (
                 <ul className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm space-y-1">
                   {issues.map((i, idx) => (

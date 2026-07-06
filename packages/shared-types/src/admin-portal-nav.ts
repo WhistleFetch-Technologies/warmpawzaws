@@ -292,13 +292,13 @@ export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
   },
   {
     id: 'marketing',
-    label: 'Marketing Hub',
+    label: 'Marketing Content',
     permissionId: 'admin.integrations',
     permissionsAny: ['admin.integrations', 'admin.notifications.view'],
     pathPrefixes: ['/marketing'],
     section: 'marketing-child',
     sortOrder: 190,
-    description: 'Marketing campaigns and promotions hub',
+    description: 'Banners, spotlight, articles, and dashboard UI configuration',
   },
   {
     id: 'promotions',

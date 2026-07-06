@@ -111,6 +111,10 @@ export async function fetchRuntimeDiagnostics(): Promise<Partial<RuntimePolicyDi
 
   const analytics = await tryGet<{ mode: string }>('/admin/analytics/discount-engine/mode');
   if (analytics.ok) flags.DISCOUNT_ENGINE_V2_ANALYTICS_MODE = analytics.data.mode;
+  const engineFlags = (analytics.data as { engineFlags?: Record<string, string> })?.engineFlags;
+  if (engineFlags?.DISCOUNT_ENGINE_V2_RESOLVER_MODE) {
+    flags.DISCOUNT_ENGINE_V2_RESOLVER_MODE = engineFlags.DISCOUNT_ENGINE_V2_RESOLVER_MODE;
+  }
 
   const campaign = await tryGet<{ mode: string }>('/admin/commercial-campaigns/mode');
   if (campaign.ok) flags.DISCOUNT_ENGINE_V2_CAMPAIGN_MODE = campaign.data.mode;

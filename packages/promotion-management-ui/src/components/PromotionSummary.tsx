@@ -1,6 +1,7 @@
 'use client';
 
-import type { PromotionWizardForm } from '../types';
+import type { PromotionWizardForm, PromotionTargetCatalog } from '../types';
+import { formatSmartTargetSummary, inferSmartFlowFromForm } from '../smart-target';
 
 function row(label: string, value: string) {
   return (
@@ -11,19 +12,28 @@ function row(label: string, value: string) {
   );
 }
 
-export function PromotionSummary({ form }: { form: PromotionWizardForm }) {
+export function PromotionSummary({
+  form,
+  catalog,
+  smartSurface,
+}: {
+  form: PromotionWizardForm;
+  catalog?: PromotionTargetCatalog;
+  smartSurface?: 'marketing' | 'ecommerce';
+}) {
   const discount =
     form.discountType === 'percentage'
       ? `${form.discountValue}%${form.maxDiscount ? ` (max ₹${form.maxDiscount})` : ''}`
       : `₹${form.discountValue}`;
 
-  const targets =
-    form.targetScopes.includes('entire_platform')
+  const targets = smartSurface
+    ? formatSmartTargetSummary(form, smartSurface, catalog)
+    : form.targetScopes.includes('entire_platform')
       ? 'Entire platform'
       : form.targetScopes
           .map((s) => {
             const n = form.selectedTargets[s]?.length ?? 0;
-            return n > 0 ? `${n} ${s.replace('_', ' ')}` : s;
+            return n > 0 ? `${n} ${s.replace(/_/g, ' ')}` : s.replace(/_/g, ' ');
           })
           .join(', ');
 
@@ -36,11 +46,23 @@ export function PromotionSummary({ form }: { form: PromotionWizardForm }) {
       {row('Offer', form.promotionType.replace(/_/g, ' '))}
       {row('Discount', discount)}
       {row('Audience', form.audience.replace(/_/g, ' '))}
-      {row('Targets', targets)}
+      {row('Targets', targets || '—')}
       {form.minAmount ? row('Min amount', `₹${form.minAmount}`) : null}
       {form.usageLimit ? row('Usage limit', String(form.usageLimit)) : null}
       {row('Schedule', `${form.startDate} → ${form.endDate}`)}
       {row('Status', form.uiStatus)}
     </div>
   );
+}
+
+export function promotionTargetSummaryLabel(
+  form: PromotionWizardForm,
+  smartSurface?: 'marketing' | 'ecommerce',
+  catalog?: PromotionTargetCatalog
+): string {
+  if (smartSurface) {
+    return formatSmartTargetSummary(form, smartSurface, catalog);
+  }
+  if (form.targetScopes.includes('entire_platform')) return 'Entire platform';
+  return inferSmartFlowFromForm(form, smartSurface ?? 'marketing');
 }

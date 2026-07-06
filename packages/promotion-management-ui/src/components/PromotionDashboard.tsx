@@ -9,6 +9,7 @@ import type {
   PromotionManagementScope,
   PromotionTargetCatalog,
   PromotionWizardForm,
+  SmartTargetCatalogAdapter,
 } from '../types';
 import { lifecycleFromPromotion, lifecycleFromCoupon } from '../lifecycle';
 import { promotionToWizardForm, couponToWizardForm } from '../normalize';
@@ -35,6 +36,8 @@ export type PromotionDashboardProps = {
   headerActions?: React.ReactNode;
   /** When set, opens on coupons tab (e.g. E-Commerce coupons route). */
   initialTab?: TabId;
+  /** Lazy catalog adapter for admin Smart Context targeting. */
+  smartTargetAdapter?: SmartTargetCatalogAdapter;
 };
 
 type TabId = 'active' | 'scheduled' | 'expired' | 'draft' | 'coupons' | 'recent';
@@ -85,6 +88,7 @@ export function PromotionDashboard({
   onToggleCoupon,
   headerActions,
   initialTab = 'active',
+  smartTargetAdapter,
 }: PromotionDashboardProps) {
   const [tab, setTab] = useState<TabId>(initialTab);
   const [search, setSearch] = useState('');
@@ -533,6 +537,7 @@ export function PromotionDashboard({
         existingCodes={existingCodes}
         onSave={handleSave}
         saving={saving}
+        smartTargetAdapter={smartTargetAdapter}
       />
 
       {(detailPromo || detailCoupon) && (

@@ -1,5 +1,6 @@
 /**
- * Vendor service promotion evaluation — backend source of truth for booking discounts.
+ * @deprecated Legacy vendor service promotion engine — retained for OFF/fallback (Phase 8C removal candidate).
+ * Authoritative path: Unified Discount Resolver via resolveWithProductionMode.
  */
 
 import { isPromotionLiveInIst } from './promotion-date-bounds';

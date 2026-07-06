@@ -271,7 +271,15 @@ module "lambda" {
     local.delivery_stack_live ? {
       DELIVERY_SERVICE_BASE_URL = "http://${module.delivery_service_ecs[0].internal_alb_dns_name}"
     } : {},
-    { MEAL_DELIVERY_NOTIFY_SECRET = "warmpawz-dev-meal-delivery-notify-2026" }
+    { MEAL_DELIVERY_NOTIFY_SECRET = "warmpawz-dev-meal-delivery-notify-2026" },
+    {
+      DISCOUNT_ENGINE_V2_RESOLVER_MODE    = "OFF"
+      DISCOUNT_ENGINE_V2_PRIORITY_MODE    = "AUTHORITATIVE"
+      DISCOUNT_ENGINE_V2_STACK_MODE       = "OFF"
+      DISCOUNT_ENGINE_V2_SETTLEMENT_MODE  = "OFF"
+      DISCOUNT_ENGINE_V2_ANALYTICS_MODE   = "OFF"
+      DISCOUNT_ENGINE_V2_CAMPAIGN_MODE    = "OFF"
+    }
   )
 
   secrets_arns = concat(

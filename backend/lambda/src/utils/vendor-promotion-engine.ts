@@ -1,5 +1,6 @@
 /**
- * Vendor product promotion evaluation — backend source of truth for discount math.
+ * @deprecated Legacy vendor product promotion engine — retained for OFF/fallback (Phase 8C removal candidate).
+ * Authoritative path: Unified Discount Resolver via resolveWithProductionMode.
  */
 
 import { isPromotionLiveInIst } from './promotion-date-bounds';
@@ -17,7 +18,8 @@ import {
   vendorCartPromotionsToDiscountContext,
   vendorPromoEvaluateToDiscountContext,
 } from '../discount-engine/adapters/context-mappers';
-import { invokeResolverAlongsideLegacy } from '../discount-engine/resolver/production-bridge';
+import { invokeResolverAlongsideLegacy, resolveWithProductionMode } from '../discount-engine/resolver/production-bridge';
+import { mapResolverResultToCartPromotion } from '../discount-engine/resolver/resolver-result-mappers';
 
 export type CartLineItem = {
   productId: string;
@@ -390,48 +392,119 @@ export function calculateBestCartPromotion(
   totalSavings: number;
   bestPromotion: PromotionEvaluation | null;
   allPromotions: PromotionEvaluation[];
+  platformCouponDiscount?: number;
+  platformCouponId?: string;
 } {
   const originalTotal = cartLineSubtotal(items);
-  const all = evaluateAllPromotions(promotions, items, ctx);
+  const legacyCompute = () => {
+    const all = evaluateAllPromotions(promotions, items, ctx);
 
-  invokeResolverAlongsideLegacy(
-    ctx.manualCode ? 'calculateBestCartPromotion-code' : 'calculateBestCartPromotion-auto',
-    vendorCartPromotionsToDiscountContext(promotions, items, ctx)
-  );
-
-  if (ctx.manualCode) {
-    const code = ctx.manualCode.toUpperCase();
-    const manual = all.find(
-      (e) => e.promotion.code?.toUpperCase() === code
+    invokeResolverAlongsideLegacy(
+      ctx.manualCode ? 'calculateBestCartPromotion-code' : 'calculateBestCartPromotion-auto',
+      vendorCartPromotionsToDiscountContext(promotions, items, ctx)
     );
-    if (manual) {
+
+    if (ctx.manualCode) {
+      const code = ctx.manualCode.toUpperCase();
+      const manual = all.find((e) => e.promotion.code?.toUpperCase() === code);
+      if (manual) {
+        return {
+          originalTotal,
+          discountedTotal: Math.max(0, originalTotal - manual.discountAmount),
+          totalSavings: manual.discountAmount,
+          bestPromotion: manual,
+          allPromotions: all,
+        };
+      }
       return {
         originalTotal,
-        discountedTotal: Math.max(0, originalTotal - manual.discountAmount),
-        totalSavings: manual.discountAmount,
-        bestPromotion: manual,
+        discountedTotal: originalTotal,
+        totalSavings: 0,
+        bestPromotion: null,
         allPromotions: all,
       };
     }
+
+    const autoEligible = all.filter((e) => e.autoApplyEligible);
+    const best = autoEligible[0] ?? null;
+    const savings = best?.discountAmount ?? 0;
     return {
       originalTotal,
-      discountedTotal: originalTotal,
-      totalSavings: 0,
-      bestPromotion: null,
+      discountedTotal: Math.max(0, originalTotal - savings),
+      totalSavings: savings,
+      bestPromotion: best,
       allPromotions: all,
     };
+  };
+
+  const resolverContext = vendorCartPromotionsToDiscountContext(promotions, items, ctx);
+
+  // Synchronous legacy API — run production mode via deasync pattern: only use sync return from legacy when OFF/SHADOW
+  // For AUTHORITATIVE, callers using async path should use calculateBestCartPromotionAsync
+  const mode = process.env.DISCOUNT_ENGINE_V2_RESOLVER_MODE?.trim().toUpperCase();
+  if (mode !== 'AUTHORITATIVE') {
+    return legacyCompute();
   }
 
-  const autoEligible = all.filter((e) => e.autoApplyEligible);
-  const best = autoEligible[0] ?? null;
-  const savings = best?.discountAmount ?? 0;
-  return {
-    originalTotal,
-    discountedTotal: Math.max(0, originalTotal - savings),
-    totalSavings: savings,
-    bestPromotion: best,
-    allPromotions: all,
+  // AUTHORITATIVE sync callers: fall back to legacy compute (ecommerce order path uses async helper)
+  return legacyCompute();
+}
+
+/** Async cart promotion resolution — supports AUTHORITATIVE resolver (E1/E2/E6). */
+export async function calculateBestCartPromotionAsync(
+  promotions: PromotionRow[],
+  items: CartLineItem[],
+  ctx: EvaluateContext = {},
+  options?: { platformCouponCode?: string }
+): Promise<ReturnType<typeof calculateBestCartPromotion>> {
+  const originalTotal = cartLineSubtotal(items);
+  const legacyResult = () => {
+    const base = calculateBestCartPromotion(promotions, items, ctx);
+    return base;
   };
+
+  const resolverContext = vendorCartPromotionsToDiscountContext(promotions, items, ctx);
+  if (options?.platformCouponCode) {
+    resolverContext.couponCode = options.platformCouponCode.trim().toUpperCase();
+    resolverContext.trigger = ctx.manualCode ? resolverContext.trigger : resolverContext.trigger;
+  }
+
+  const { value: cartResult } = await resolveWithProductionMode({
+    label: ctx.manualCode || options?.platformCouponCode
+      ? 'calculateBestCartPromotion-code'
+      : 'calculateBestCartPromotion-auto',
+    context: resolverContext,
+    legacy: legacyResult,
+    mapResolverToLegacy: (result) =>
+      mapResolverResultToCartPromotion(result, originalTotal),
+  });
+
+  if (
+    options?.platformCouponCode &&
+    (cartResult.platformCouponDiscount ?? 0) <= 0 &&
+    cartResult.totalSavings <= 0
+  ) {
+    const { resolveEcommercePlatformCoupon } = await import(
+      '../lib/services/promotion-code-validation-service'
+    );
+    const coupon = await resolveEcommercePlatformCoupon(
+      options.platformCouponCode,
+      originalTotal
+    );
+    if (coupon && coupon.discountAmount > 0) {
+      return {
+        originalTotal,
+        discountedTotal: Math.max(0, originalTotal - coupon.discountAmount),
+        totalSavings: coupon.discountAmount,
+        bestPromotion: null,
+        allPromotions: [],
+        platformCouponDiscount: coupon.discountAmount,
+        platformCouponId: coupon.couponId,
+      };
+    }
+  }
+
+  return cartResult;
 }
 
 export const PROMOTION_DISCOUNT_TOLERANCE = 1;

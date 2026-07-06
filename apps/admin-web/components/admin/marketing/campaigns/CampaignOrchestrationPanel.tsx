@@ -6,7 +6,8 @@ import { toast } from 'sonner';
 import { Button } from '@warmpawz/ui';
 import { ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { loadPromotionTargetCatalogWithErrors } from '@/lib/promotion-catalog-loader';
+import { loadSmartTargetBaseCatalogWithErrors } from '@/lib/promotion-catalog-loader';
+import { createAdminSmartTargetAdapter } from '@/lib/smart-target-catalog-adapter';
 import {
   catalogForSurface,
   filterCouponRows,
@@ -25,6 +26,7 @@ import {
   DEFAULT_WIZARD_FORM,
   type PromotionTargetCatalog,
   type PromotionWizardForm,
+  type SmartTargetCatalogAdapter,
 } from '@warmpawz/promotion-management-ui';
 
 export function CampaignOrchestrationPanel({
@@ -52,7 +54,7 @@ export function CampaignOrchestrationPanel({
 
   const loadCatalog = useCallback(async () => {
     const [catalogResult, promotionsRes, couponsRes] = await Promise.all([
-      loadPromotionTargetCatalogWithErrors(apiClient),
+      loadSmartTargetBaseCatalogWithErrors(apiClient),
       apiClient.get<{ promotions?: unknown[] }>('/admin/promotions'),
       apiClient.get<{ coupons?: unknown[] }>('/admin/coupons?limit=100'),
     ]);
@@ -79,6 +81,11 @@ export function CampaignOrchestrationPanel({
       ...existingCoupons.map((c) => c.code),
     ],
     [existingPromotions, existingCoupons]
+  );
+
+  const smartTargetAdapter = useMemo<SmartTargetCatalogAdapter>(
+    () => createAdminSmartTargetAdapter(apiClient, surface, catalog.vendors ?? []),
+    [surface, catalog.vendors]
   );
 
   const wizardInitial = useMemo(() => {
@@ -217,6 +224,7 @@ export function CampaignOrchestrationPanel({
         existingCodes={existingCodes}
         onSave={async (form) => handleWizardSave(form)}
         initial={wizardInitial}
+        smartTargetAdapter={smartTargetAdapter}
       />
     </div>
   );

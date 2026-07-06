@@ -94,6 +94,7 @@ export const POLICY_CENTER_TABS = [
 export type PolicyCenterTabId = (typeof POLICY_CENTER_TABS)[number]['id'];
 
 export const FEATURE_FLAG_LABELS: Record<string, string> = {
+  DISCOUNT_ENGINE_V2_RESOLVER_MODE: 'Production resolver mode (OFF | SHADOW | AUTHORITATIVE)',
   DISCOUNT_ENGINE_V2_PRIORITY_MODE: 'Priority engine mode',
   DISCOUNT_ENGINE_V2_STACK_MODE: 'Stack engine mode',
   DISCOUNT_ENGINE_V2_ANALYTICS_MODE: 'Analytics mode',

@@ -99,8 +99,15 @@ import {
 import { VendorPromotionsOverview } from "@/components/admin/marketing/VendorPromotionsOverview";
 
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
+import {
+	isLegacyMarketingPromoTab,
+	isLegacyPromotionUiEnabled,
+	MARKETING_HUB_DEFAULT_TAB,
+} from '@/lib/legacy-promotion-ui';
+import { LegacyPromotionDeprecatedScreen } from '@/components/admin/marketing/LegacyPromotionDeprecatedScreen';
 
 export default function MarketingPromotionsTab() {
+	const legacyPromotionUi = isLegacyPromotionUiEnabled();
 	const [activeTab, setActiveTab] = useState<
 		| "promotions"
 		| "vendor-promotions"
@@ -110,8 +117,22 @@ export default function MarketingPromotionsTab() {
 		| "banners"
 		| "articles"
 		| "announcements"
-	>("promotions");
+	>(MARKETING_HUB_DEFAULT_TAB as "banners");
 	const [loading, setLoading] = useState(false);
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const tab = new URLSearchParams(window.location.search).get("tab");
+		if (!tab) return;
+		if (isLegacyMarketingPromoTab(tab)) {
+			setActiveTab(tab);
+			return;
+		}
+		const hubTabs = ["ui-config", "spotlight", "banners", "articles", "announcements"] as const;
+		if ((hubTabs as readonly string[]).includes(tab)) {
+			setActiveTab(tab as typeof activeTab);
+		}
+	}, []);
 	
 	// Banners State
 	const [banners, setBanners] = useState<any[]>([]);
@@ -1648,10 +1669,10 @@ export default function MarketingPromotionsTab() {
 							<div>
 								{/* ✅ FIX: Match wireframe - text-2xl font-bold for marketing page */}
 								<h1 className="text-2xl font-bold text-gray-900">
-									Marketing & Promotions
+									Marketing Content
 								</h1>
 								<p className="text-gray-500 text-sm mt-1">
-									Manage promotions and customize customer dashboard experience
+									Banners, spotlight, articles, announcements, and customer dashboard UI
 								</p>
 							</div>
 							<div className="flex items-center gap-2">
@@ -1663,28 +1684,32 @@ export default function MarketingPromotionsTab() {
 
 						{/* ✅ FIX: Improved tabs with thicker border and better visual hierarchy */}
 						<div className="flex gap-0 overflow-x-auto border-b border-gray-200 -mb-px">
-							<button
-								onClick={() => setActiveTab("promotions")}
-								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
-									activeTab === "promotions"
-										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
-										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-								}`}
-							>
-								<Megaphone className="w-4 h-4" />
-								<span className="font-medium text-sm">Promotions</span>
-							</button>
-							<button
-								onClick={() => setActiveTab("vendor-promotions")}
-								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
-									activeTab === "vendor-promotions"
-										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
-										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-								}`}
-							>
-								<Store className="w-4 h-4" />
-								<span className="font-medium text-sm">Vendor Promotions</span>
-							</button>
+							{legacyPromotionUi ? (
+								<button
+									onClick={() => setActiveTab("promotions")}
+									className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
+										activeTab === "promotions"
+											? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+											: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+									}`}
+								>
+									<Megaphone className="w-4 h-4" />
+									<span className="font-medium text-sm">Promotions (legacy)</span>
+								</button>
+							) : null}
+							{legacyPromotionUi ? (
+								<button
+									onClick={() => setActiveTab("vendor-promotions")}
+									className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
+										activeTab === "vendor-promotions"
+											? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+											: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+									}`}
+								>
+									<Store className="w-4 h-4" />
+									<span className="font-medium text-sm">Vendor Promotions (legacy)</span>
+								</button>
+							) : null}
 							<button
 								onClick={() => setActiveTab("ui-config")}
 								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
@@ -1707,17 +1732,19 @@ export default function MarketingPromotionsTab() {
 								<Star className="w-4 h-4" />
 								<span className="font-medium text-sm">Spotlight</span>
 							</button>
-							<button
-								onClick={() => setActiveTab("coupons")}
-								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
-									activeTab === "coupons"
-										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
-										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-								}`}
-							>
-								<Tag className="w-4 h-4" />
-								<span className="font-medium text-sm">Coupons</span>
-							</button>
+							{legacyPromotionUi ? (
+								<button
+									onClick={() => setActiveTab("coupons")}
+									className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
+										activeTab === "coupons"
+											? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+											: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+									}`}
+								>
+									<Tag className="w-4 h-4" />
+									<span className="font-medium text-sm">Coupons (legacy)</span>
+								</button>
+							) : null}
 							<button
 								onClick={() => setActiveTab("banners")}
 								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
@@ -1760,26 +1787,20 @@ export default function MarketingPromotionsTab() {
 					<div className="max-w-7xl mx-auto p-6">
 						{/* VENDOR PROMOTIONS TAB */}
 						{activeTab === "vendor-promotions" && (
-							<VendorPromotionsOverview />
+							legacyPromotionUi ? (
+								<VendorPromotionsOverview />
+							) : (
+								<LegacyPromotionDeprecatedScreen
+									description="Vendor promotions are managed in the dedicated Vendor Promotions hub."
+									promotionHubHref="/marketing/vendor-promotions"
+									promotionHubLabel="Open Vendor Promotions"
+								/>
+							)
 						)}
 
-						{/* PROMOTIONS TAB */}
 						{activeTab === "promotions" && (
+							legacyPromotionUi ? (
 							<Card className="p-6">
-								<div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-									<div className="text-sm text-orange-900">
-										<strong>New Promotion Hub.</strong> Create and manage platform
-										promotions and coupons from the unified dashboard at{" "}
-										<code className="text-xs bg-white/70 px-1 rounded">/promotions</code>.
-										This legacy list remains available for reference.
-									</div>
-									<Link
-										href="/promotions"
-										className="inline-flex items-center rounded-lg bg-[#FF8C42] px-4 py-2 text-sm font-semibold text-white hover:bg-[#FF7A2E]"
-									>
-										Open Promotion Hub
-									</Link>
-								</div>
 								<div className="flex justify-between items-center mb-6">
 						<div className="relative w-64">
 							<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1881,6 +1902,13 @@ export default function MarketingPromotionsTab() {
 								</Table>
 							)}
 						</Card>
+							) : (
+								<LegacyPromotionDeprecatedScreen
+									description="Platform promotions and coupons are managed in the Promotion Hub."
+									promotionHubHref="/promotions"
+									promotionHubLabel="Open Promotion Hub"
+								/>
+							)
 						)}
 
 						{/* UI CONFIG TAB - Service Launch by Geography */}
@@ -2252,23 +2280,18 @@ export default function MarketingPromotionsTab() {
 							</div>
 						)}
 
-						{/* COUPONS TAB */}
 						{activeTab === "coupons" && (
+							legacyPromotionUi ? (
 							<div className="space-y-4">
-								<div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-									<p className="text-sm text-orange-900">
-										Coupon management has moved to the{" "}
-										<strong>Promotion Hub</strong> for a unified experience.
-									</p>
-									<Link
-										href="/promotions"
-										className="inline-flex items-center rounded-lg bg-[#FF8C42] px-4 py-2 text-sm font-semibold text-white hover:bg-[#FF7A2E]"
-									>
-										Open Promotion Hub
-									</Link>
-								</div>
 								<CouponManagement />
 							</div>
+							) : (
+								<LegacyPromotionDeprecatedScreen
+									description="Coupon management is available in the Promotion Hub."
+									promotionHubHref="/promotions"
+									promotionHubLabel="Open Promotion Hub"
+								/>
+							)
 						)}
 
 						{/* BANNERS TAB */}

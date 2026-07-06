@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
-import { loadPromotionTargetCatalogWithErrors } from '@/lib/promotion-catalog-loader';
+import { loadSmartTargetBaseCatalogWithErrors } from '@/lib/promotion-catalog-loader';
+import { createAdminSmartTargetAdapter } from '@/lib/smart-target-catalog-adapter';
 import {
   type AdminPromoSurface,
   catalogForSurface,
@@ -20,15 +20,16 @@ import {
   wizardToAdminPromotionPayload,
   type PromotionTargetCatalog,
   type PromotionWizardForm,
+  type SmartTargetCatalogAdapter,
 } from '@warmpawz/promotion-management-ui';
 
 export function AdminPromotionHub({
   surface = 'marketing',
   initialTab,
-  hideLegacyLink = false,
 }: {
   surface?: AdminPromoSurface;
   initialTab?: 'active' | 'scheduled' | 'expired' | 'draft' | 'coupons' | 'recent';
+  /** @deprecated Legacy link removed — use ENABLE_LEGACY_PROMOTION_UI for rollback paths */
   hideLegacyLink?: boolean;
 }) {
   const [promotions, setPromotions] = useState<ReturnType<typeof normalizePromotionRow>[]>([]);
@@ -45,7 +46,7 @@ export function AdminPromotionHub({
     setLoadError(null);
     try {
       const [catalogResult, promotionsRes, couponsRes] = await Promise.all([
-        loadPromotionTargetCatalogWithErrors(apiClient),
+        loadSmartTargetBaseCatalogWithErrors(apiClient),
         apiClient.get<{ promotions?: unknown[] }>('/admin/promotions'),
         apiClient.get<{ coupons?: unknown[] }>('/admin/coupons?limit=200'),
       ]);
@@ -114,7 +115,10 @@ export function AdminPromotionHub({
     }
   };
 
-  const legacyHref = surface === 'ecommerce' ? '/ecommerce' : '/marketing';
+  const smartTargetAdapter = useMemo<SmartTargetCatalogAdapter>(
+    () => createAdminSmartTargetAdapter(apiClient, surface, catalog.vendors ?? []),
+    [surface, catalog.vendors]
+  );
 
   return (
     <div className="space-y-3">
@@ -145,6 +149,7 @@ export function AdminPromotionHub({
         onRefresh={load}
         onSave={handleSave}
         initialTab={initialTab}
+        smartTargetAdapter={smartTargetAdapter}
         onDeletePromotion={async (id) => {
           try {
             await apiClient.delete(`/admin/promotions/${id}`);
@@ -174,16 +179,6 @@ export function AdminPromotionHub({
             toast.error('Failed to delete coupon');
           }
         }}
-        headerActions={
-          hideLegacyLink ? undefined : (
-            <Link
-              href={legacyHref}
-              className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-            >
-              {surface === 'ecommerce' ? 'E-Commerce Hub' : 'Legacy Marketing Hub'}
-            </Link>
-          )
-        }
       />
     </div>
   );

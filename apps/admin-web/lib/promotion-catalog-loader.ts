@@ -285,3 +285,71 @@ export async function loadPromotionTargetCatalogWithErrors(
     errors: userFacingErrors,
   };
 }
+
+/** Lightweight catalog for Smart Context — categories, partners, styles only (no bulk inventory). */
+export async function loadSmartTargetBaseCatalogWithErrors(
+  apiClient: ApiClientLike
+): Promise<PromotionCatalogLoadResult> {
+  const errors: string[] = [];
+  const wrap = async <T>(label: string, fn: () => Promise<T>, fallback: T): Promise<T> => {
+    try {
+      return await fn();
+    } catch (e) {
+      errors.push(label);
+      console.warn(`[PromotionCatalog] ${label} failed`, e);
+      return fallback;
+    }
+  };
+
+  const [categoriesRes, vendorsRes, stylesRes, bannerDestRes] = await Promise.all([
+    wrap('categories', () => apiClient.get<any>('/admin/catalog/categories'), { categories: [] }),
+    wrap('vendors', () => apiClient.get<any>('/admin/vendors?limit=200'), { vendors: [] }),
+    wrap('service-styles', () => apiClient.get<any>('/admin/catalog/service-styles'), {
+      serviceStyles: [],
+    }),
+    wrap('banner-destinations', () => apiClient.get<any>('/admin/banners/destination-options'), {
+      categories: [],
+    }),
+  ]);
+
+  const categoryRows = [
+    ...(Array.isArray(categoriesRes.categories) ? categoriesRes.categories : []),
+    ...(Array.isArray(bannerDestRes.categories) ? bannerDestRes.categories : []),
+  ];
+
+  const categories = categoryRows
+    .map((c) =>
+      mapCategoryOption({
+        ...c,
+        category_id: c.categoryId ?? c.category_id ?? c.id,
+        name: c.name ?? c.label,
+      })
+    )
+    .filter(Boolean) as TargetOption[];
+
+  const uniqueCategories = Array.from(
+    new Map(categories.map((c) => [c.id, c])).values()
+  ).sort((a, b) => a.label.localeCompare(b.label));
+
+  const vendorsRaw = vendorsRes.vendors ?? vendorsRes.data ?? [];
+  const vendors = (Array.isArray(vendorsRaw) ? vendorsRaw : [])
+    .map(mapVendorOption)
+    .filter(Boolean) as TargetOption[];
+
+  const styleRows = stylesRes.serviceStyles ?? stylesRes.service_styles ?? [];
+  let styles = (Array.isArray(styleRows) ? styleRows : [])
+    .map(mapStyleOption)
+    .filter(Boolean) as TargetOption[];
+  if (styles.length === 0) styles = DEFAULT_STYLES;
+
+  const userFacingErrors = errors.filter((label) => label !== 'service-styles');
+
+  return {
+    catalog: {
+      categories: uniqueCategories,
+      vendors,
+      styles,
+    },
+    errors: userFacingErrors,
+  };
+}

@@ -42,6 +42,7 @@ import {
 import { computeEcommerceDeliveryFee } from '../../../utils/ecommerce/delivery-fee';
 import {
   calculateBestCartPromotion,
+  calculateBestCartPromotionAsync,
   discountsWithinTolerance,
   normalizePromotionRow,
   type CartLineItem,
@@ -655,23 +656,32 @@ export function registerEcommerceEndpoints(app: Hono) {
               ? await countPriorVendorOrders(String(customerId), String(firstVendorId))
               : 0;
 
-          const autoResult = calculateBestCartPromotion(promos, cartLines, {
+          const autoResult = await calculateBestCartPromotionAsync(promos, cartLines, {
             vendorId: String(firstVendorId),
             customerId: customerId ? String(customerId) : undefined,
             priorVendorOrderCount,
           });
 
           const codeResult = couponCode
-            ? calculateBestCartPromotion(promos, cartLines, {
-                vendorId: String(firstVendorId),
-                customerId: customerId ? String(customerId) : undefined,
-                priorVendorOrderCount,
-                manualCode: String(couponCode).trim(),
-              })
+            ? await calculateBestCartPromotionAsync(
+                promos,
+                cartLines,
+                {
+                  vendorId: String(firstVendorId),
+                  customerId: customerId ? String(customerId) : undefined,
+                  priorVendorOrderCount,
+                  manualCode: String(couponCode).trim(),
+                },
+                { platformCouponCode: String(couponCode).trim() }
+              )
             : null;
 
-          const autoDiscount = autoResult.bestPromotion?.discountAmount ?? 0;
-          const codeDiscount = codeResult?.bestPromotion?.discountAmount ?? 0;
+          const autoDiscount = autoResult.bestPromotion?.discountAmount ?? autoResult.totalSavings;
+          const codeDiscount =
+            codeResult?.bestPromotion?.discountAmount ??
+            codeResult?.totalSavings ??
+            codeResult?.platformCouponDiscount ??
+            0;
           serverPromoDiscount = Math.max(autoDiscount, codeDiscount);
           const bestEval =
             codeDiscount >= autoDiscount
@@ -679,6 +689,8 @@ export function registerEcommerceEndpoints(app: Hono) {
               : autoResult.bestPromotion;
           if (bestEval) {
             appliedPromotionId = bestEval.promotionId;
+          } else if (codeResult?.platformCouponId && codeDiscount > 0) {
+            appliedPromotionId = codeResult.platformCouponId;
           }
 
           if (Number(bodyDiscount) > 0) {

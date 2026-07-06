@@ -1,7 +1,4 @@
-/**
- * Shared booking promotion resolution — vendor service + platform stack.
- */
-import { query } from '../../database/rds-connection';
+import { DiscountDomain } from '../../discount-engine/enums/discount-domain';
 import {
   calculateBookingPromotionsStack,
   normalizeServicePromotionRow,
@@ -16,7 +13,11 @@ import { resolveBookingParamsToDiscountContext } from '../../discount-engine/ada
 import {
   METADATA_PRIOR_VENDOR_BOOKING_COUNT,
 } from '../../discount-engine/resolver/context-runtime';
-import { invokeResolverAlongsideLegacy } from '../../discount-engine/resolver/production-bridge';
+import {
+  invokeResolverAlongsideLegacy,
+  resolveWithProductionMode,
+} from '../../discount-engine/resolver/production-bridge';
+import { mapResolverResultToBookingPromotion } from '../../discount-engine/resolver/resolver-result-mappers';
 
 export type ResolveBookingPromotionsParams = {
   vendorId: string;
@@ -25,6 +26,8 @@ export type ResolveBookingPromotionsParams = {
   amount: number;
   customerId?: string;
   serviceCategory?: string;
+  /** S5 — platform / vendor coupon code applied after auto promotion stack */
+  couponCode?: string;
 };
 
 function normalizeStyle(raw: unknown): string {
@@ -210,10 +213,35 @@ export async function resolveBookingPromotions(
       ? await countPriorVendorBookings(resolvedParams.customerId, resolvedParams.vendorId)
       : 0;
 
+  const resolverContext = resolveBookingParamsToDiscountContext(resolvedParams, {
+    couponCode: resolvedParams.couponCode,
+    metadata: {
+      [METADATA_PRIOR_VENDOR_BOOKING_COUNT]: priorVendorBookingCount,
+    },
+  });
+
+  const { value } = await resolveWithProductionMode({
+    label: 'resolveBookingPromotions',
+    context: resolverContext,
+    legacy: () =>
+      resolveBookingPromotionsLegacy(resolvedParams, priorVendorBookingCount),
+    mapResolverToLegacy: mapResolverResultToBookingPromotion,
+  });
+
+  return value;
+}
+
+/**
+ * @deprecated Legacy booking stack — retained for OFF mode and V2 fallback (Phase 8C removal candidate).
+ */
+async function resolveBookingPromotionsLegacy(
+  resolvedParams: ResolveBookingPromotionsParams,
+  priorVendorBookingCount: number
+): Promise<BookingPromotionResult> {
   const vendorPromotions = await loadVendorServicePromotions(resolvedParams.vendorId);
   const platformPromotions = await loadPlatformPromotions(resolvedParams);
 
-  const legacy = calculateBookingPromotionsStack({
+  let legacy = calculateBookingPromotionsStack({
     vendorPromotions,
     platformPromotions,
     ctx: {
@@ -226,9 +254,14 @@ export async function resolveBookingPromotions(
     },
   });
 
+  if (resolvedParams.couponCode?.trim()) {
+    legacy = await augmentLegacyBookingWithCoupon(legacy, resolvedParams);
+  }
+
   invokeResolverAlongsideLegacy(
     'resolveBookingPromotions',
     resolveBookingParamsToDiscountContext(resolvedParams, {
+      couponCode: resolvedParams.couponCode,
       metadata: {
         [METADATA_PRIOR_VENDOR_BOOKING_COUNT]: priorVendorBookingCount,
       },
@@ -236,6 +269,45 @@ export async function resolveBookingPromotions(
   );
 
   return legacy;
+}
+
+/** S5 legacy fallback — apply platform coupon on post-stack amount without removing legacy engine. */
+async function augmentLegacyBookingWithCoupon(
+  stack: BookingPromotionResult,
+  params: ResolveBookingPromotionsParams
+): Promise<BookingPromotionResult> {
+  try {
+    const { validateCouponForAmount } = await import('./platform-coupon-service');
+    const baseAmount = stack.finalAmount;
+    const validation = await validateCouponForAmount(
+      params.couponCode!.trim(),
+      baseAmount,
+      DiscountDomain.SERVICE
+    );
+    if (!validation.valid || !validation.discountAmount || validation.discountAmount <= 0) {
+      return stack;
+    }
+    const couponDiscount = validation.discountAmount;
+    return {
+      ...stack,
+      platformDiscountAmount: stack.platformDiscountAmount + couponDiscount,
+      totalSavings: stack.totalSavings + couponDiscount,
+      finalAmount: Math.max(0, stack.finalAmount - couponDiscount),
+      applied: [
+        ...stack.applied,
+        {
+          source: 'platform',
+          id: validation.couponId ?? 'coupon',
+          name: validation.couponName ?? 'Coupon',
+          discountAmount: couponDiscount,
+          promotionType: 'coupon',
+        },
+      ],
+      platformPromotionId: validation.couponId ?? stack.platformPromotionId,
+    };
+  } catch {
+    return stack;
+  }
 }
 
 export type ApplicablePromotionOffer = {
@@ -340,7 +412,7 @@ function invokeListApplicableResolver(
 export async function recordBookingPromotionUsageFromBooking(bookingId: string): Promise<void> {
   try {
     const res = await query(
-      `SELECT id, vendor_id, customer_id, promotion_id, discount_amount, base_price, total_amount, notes
+      `SELECT id, vendor_id, customer_id, promotion_id, discount_amount, base_price, total_amount, notes, coupon_code
        FROM bookings WHERE id = $1::uuid`,
       [bookingId]
     );
@@ -408,6 +480,38 @@ export async function recordBookingPromotionUsageFromBooking(bookingId: string):
         discountAmount: platformDiscount,
         originalAmount,
       });
+    }
+
+    const couponCode = booking.coupon_code ? String(booking.coupon_code).trim() : '';
+    if (couponCode && !vendorPromotionId && !platformPromotionId && discountTotal > 0) {
+      const { validateCouponForAmount } = await import('./platform-coupon-service');
+      const { commitResolverUsageEntries } = await import(
+        '../../discount-engine/adapters/legacy-usage-tracker'
+      );
+      const validation = await validateCouponForAmount(
+        couponCode,
+        originalAmount,
+        DiscountDomain.SERVICE
+      );
+      if (validation.valid && validation.couponId && validation.discountAmount) {
+        await commitResolverUsageEntries({
+          entries: [
+            {
+              candidateId: validation.couponId,
+              source: 'PLATFORM_COUPON',
+              owner: 'PLATFORM',
+              domain: 'SERVICE',
+              discountAmount: validation.discountAmount,
+              prepared: true,
+              metadata: { trigger: 'CODE', promotionType: 'coupon' },
+            },
+          ],
+          customerId: booking.customer_id ? String(booking.customer_id) : '',
+          referenceId: bookingId,
+          referenceType: 'booking',
+          originalAmount,
+        });
+      }
     }
   } catch (err) {
     console.warn('[recordBookingPromotionUsageFromBooking] failed:', err);

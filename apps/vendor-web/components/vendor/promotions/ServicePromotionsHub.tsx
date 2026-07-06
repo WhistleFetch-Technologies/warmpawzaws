@@ -10,6 +10,7 @@ import {
   type PromotionDomain,
   enrichPromotionRow,
   splitVendorPromotionRows,
+  isEligiblePublishedInventory,
   wizardToVendorServicePayload,
   type NormalizedCouponItem,
   type NormalizedPromotionItem,
@@ -53,26 +54,6 @@ function packageDisplayPrice(p: Record<string, unknown>): number | undefined {
   if (raw == null || raw === '') return undefined;
   const n = Number(raw);
   return Number.isFinite(n) ? n : undefined;
-}
-
-function isActiveLike(row: Record<string, unknown>): boolean {
-  const raw = row.isActive ?? row.is_active ?? row.isAvailable ?? row.is_available;
-  if (raw == null || raw === '') return true;
-  if (typeof raw === 'boolean') return raw;
-  const normalized = String(raw).trim().toLowerCase();
-  return !['false', '0', 'inactive', 'disabled', 'deleted'].includes(normalized);
-}
-
-function isApprovedOrUnversioned(row: Record<string, unknown>): boolean {
-  const raw =
-    row.status ??
-    row.approvalStatus ??
-    row.approval_status ??
-    row.publishStatus ??
-    row.publish_status;
-  if (raw == null || raw === '') return true;
-  const normalized = String(raw).trim().toLowerCase();
-  return ['approved', 'active', 'published', 'live'].includes(normalized);
 }
 
 function dedupeOptions<T extends { id: string }>(items: T[]): T[] {
@@ -148,7 +129,9 @@ export function ServicePromotionsHub({
 
       const nextCatalog: PromotionTargetCatalog = {
         services: dedupeOptions(
-          nonPackageServices.map((s) => {
+          nonPackageServices
+            .filter(isEligiblePublishedInventory)
+            .map((s) => {
             const price = serviceDisplayPrice(s);
             return {
               id: String(s.id),
@@ -159,7 +142,7 @@ export function ServicePromotionsHub({
         ),
         packages: dedupeOptions(
           [
-            ...packageServices.filter(isActiveLike).filter(isApprovedOrUnversioned).map((s) => {
+            ...packageServices.filter(isEligiblePublishedInventory).map((s) => {
               const price = serviceDisplayPrice(s);
               return {
                 id: String(s.id),
@@ -167,7 +150,7 @@ export function ServicePromotionsHub({
                 subtitle: price != null ? `₹${price}` : undefined,
               };
             }),
-            ...standalonePackages.filter(isActiveLike).filter(isApprovedOrUnversioned).map((p) => {
+            ...standalonePackages.filter(isEligiblePublishedInventory).map((p) => {
               const price = packageDisplayPrice(p);
               const sessionCount = p.sessionCount ?? p.session_count ?? p.totalSessions ?? p.total_sessions;
               return {
@@ -185,8 +168,7 @@ export function ServicePromotionsHub({
         ),
         mealPlans: dedupeOptions(
           mealPlanRows
-            .filter(isActiveLike)
-            .filter(isApprovedOrUnversioned)
+            .filter(isEligiblePublishedInventory)
             .map((p) => ({
               id: String(p.id),
               label: String(p.name ?? p.plan_name ?? p.planName ?? 'Meal plan'),

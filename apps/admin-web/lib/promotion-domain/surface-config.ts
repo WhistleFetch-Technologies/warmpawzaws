@@ -94,7 +94,7 @@ export const MARKETING_PROMOTION_SCOPE: PromotionManagementScope = {
   canManageCoupons: true,
   canManagePlatformTargets: true,
   domains: ['service', 'package', 'meal', 'booking'],
-  enabledTargetScopes: ['entire_platform', 'vendors', 'categories', 'services', 'packages', 'meal_plans', 'styles'],
+  smartTargetSurface: 'marketing',
 };
 
 export const ECOMMERCE_PROMOTION_SCOPE: PromotionManagementScope = {
@@ -104,7 +104,7 @@ export const ECOMMERCE_PROMOTION_SCOPE: PromotionManagementScope = {
   canManageCoupons: true,
   canManagePlatformTargets: true,
   domains: ['product'],
-  enabledTargetScopes: ['entire_platform', 'vendors', 'categories', 'products'],
+  smartTargetSurface: 'ecommerce',
 };
 
 export function scopeForSurface(surface: AdminPromoSurface): PromotionManagementScope {
@@ -115,15 +115,11 @@ export function catalogForSurface(catalog: PromotionTargetCatalog, surface: Admi
   if (surface === 'ecommerce') {
     return {
       categories: catalog.categories,
-      products: catalog.products,
       vendors: catalog.vendors,
     };
   }
   return {
     categories: catalog.categories,
-    services: catalog.services,
-    packages: catalog.packages,
-    mealPlans: catalog.mealPlans,
     styles: catalog.styles,
     vendors: catalog.vendors,
   };

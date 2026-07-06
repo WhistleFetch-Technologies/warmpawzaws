@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { ECommercePageHeader, ECommerceSubNav } from '@/components/admin/ecommerce/ECommerceSubNav';
 
@@ -16,7 +17,9 @@ export function ECommercePromoLayout({
     <AdminLayout>
       <div className="flex min-h-screen flex-col bg-gray-50">
         <ECommercePageHeader title={title} subtitle={subtitle} />
-        <ECommerceSubNav />
+        <Suspense fallback={null}>
+          <ECommerceSubNav />
+        </Suspense>
         <div className="flex-1">{children}</div>
       </div>
     </AdminLayout>

@@ -43,6 +43,36 @@ export type TargetScopeId =
   | 'products'
   | 'styles';
 
+/** Service marketplace vs retail marketplace operator UX — shared engine, different flows. */
+export type SmartTargetSurface = 'marketing' | 'ecommerce' | 'vendor';
+
+export type SmartTargetFlowId = 'entire_platform' | 'categories' | 'vendor_inventory';
+
+export type VendorInventoryType = 'services' | 'packages' | 'meal_plans';
+
+export type PaginatedTargetState = {
+  items: TargetOption[];
+  total: number;
+  page: number;
+  pageSize: number;
+  loading: boolean;
+  error?: string | null;
+  onPageChange?: (page: number) => void;
+  onSearchChange?: (query: string) => void;
+  onRetry?: () => void;
+};
+
+/** Lazy inventory loading for admin smart context — reuses existing APIs only. */
+export type SmartTargetCatalogAdapter = {
+  searchPartners?: (query: string) => Promise<TargetOption[]>;
+  loadVendorInventory?: (
+    partnerId: string,
+    inventoryType: VendorInventoryType,
+    search: string
+  ) => Promise<TargetOption[]>;
+  loadSellerProducts?: (sellerId: string, search: string) => Promise<TargetOption[]>;
+};
+
 export type TargetOption = {
   id: string;
   label: string;
@@ -140,6 +170,8 @@ export type PromotionManagementScope = {
   domains: PromotionDomain[];
   /** When set, limits target tabs in the wizard (vendor business type / capabilities). */
   enabledTargetScopes?: TargetScopeId[];
+  /** Enables Smart Context target UX (admin marketing / ecommerce). Vendor omits this. */
+  smartTargetSurface?: SmartTargetSurface;
 };
 
 export const DEFAULT_WIZARD_FORM = (): PromotionWizardForm => ({

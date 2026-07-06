@@ -117,11 +117,24 @@ export function registerDiscountAnalyticsEndpoints(app: Hono) {
    * Diagnostics — always available to admins.
    */
   app.get('/admin/analytics/discount-engine/mode', async (c) => {
+    const { getResolverMode } = await import('../discount-engine/policy/resolver-mode');
+    const { getStackMode } = await import('../discount-engine/stack/stack-mode');
+    const { getSettlementMode } = await import('../discount-engine/settlement/settlement-mode');
+    const { getPriorityMode } = await import('../discount-engine/policy/priority-mode');
+    const { getCampaignMode } = await import('../discount-engine/campaign/campaign-mode');
     return c.json({
       success: true,
       mode: getAnalyticsMode(),
       enabled: isAnalyticsEnabled(),
       publiclyExposed: isAnalyticsPubliclyExposed(),
+      engineFlags: {
+        DISCOUNT_ENGINE_V2_RESOLVER_MODE: getResolverMode(),
+        DISCOUNT_ENGINE_V2_PRIORITY_MODE: getPriorityMode(),
+        DISCOUNT_ENGINE_V2_STACK_MODE: getStackMode(),
+        DISCOUNT_ENGINE_V2_SETTLEMENT_MODE: getSettlementMode(),
+        DISCOUNT_ENGINE_V2_ANALYTICS_MODE: getAnalyticsMode(),
+        DISCOUNT_ENGINE_V2_CAMPAIGN_MODE: getCampaignMode(),
+      },
     });
   });
 }

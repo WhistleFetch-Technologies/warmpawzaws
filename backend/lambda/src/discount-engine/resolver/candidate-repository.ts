@@ -58,13 +58,26 @@ export function selectProvidersForContext(context: DiscountContext): CandidatePr
     if (owner === DiscountOwner.PLATFORM) {
       return [new PlatformPromotionCandidateProvider()];
     }
-    return [new VendorServicePromotionCandidateProvider(), new PlatformPromotionCandidateProvider()];
+    const serviceProviders: CandidateProvider[] = [
+      new VendorServicePromotionCandidateProvider(),
+      new PlatformPromotionCandidateProvider(),
+    ];
+    // S5 — booking stack with coupon code: auto phase + coupon phase candidates
+    if (couponCode) {
+      serviceProviders.push(new CouponCandidateProvider());
+    }
+    return serviceProviders;
   }
 
   if (owner === DiscountOwner.PLATFORM) {
     return [new PlatformPromotionCandidateProvider()];
   }
-  return [new VendorPromotionCandidateProvider()];
+  const ecommerceProviders: CandidateProvider[] = [new VendorPromotionCandidateProvider()];
+  if (couponCode) {
+    ecommerceProviders.unshift(new CouponCandidateProvider());
+    ecommerceProviders.push(new PlatformPromotionCandidateProvider());
+  }
+  return ecommerceProviders;
 }
 
 function matchesTrigger(candidate: DiscountCandidate, context: DiscountContext): boolean {
@@ -90,7 +103,11 @@ function filterCandidates(candidates: DiscountCandidate[], context: DiscountCont
       if (c.source === DiscountSource.PLATFORM_COUPON) return true;
       return matchesTrigger(c, context);
     }
-    if (context.trigger === DiscountTrigger.AUTO && c.code) return false;
+    if (context.trigger === DiscountTrigger.AUTO && c.code) {
+      const normalizedCoupon = String(context.couponCode || '').trim().toUpperCase();
+      if (normalizedCoupon && c.code.toUpperCase() === normalizedCoupon) return true;
+      return false;
+    }
     return true;
   });
 }

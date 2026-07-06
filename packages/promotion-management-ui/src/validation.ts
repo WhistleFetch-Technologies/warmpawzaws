@@ -72,6 +72,36 @@ export function validatePromotionWizard(
     });
   }
 
+  if (
+    form.targetScopes.includes('categories') &&
+    !form.targetScopes.includes('entire_platform') &&
+    (form.selectedTargets.categories?.length ?? 0) === 0
+  ) {
+    issues.push({
+      field: 'target',
+      message: 'Select at least one category',
+      severity: 'error',
+    });
+  }
+
+  const inventoryScopes: Array<keyof PromotionWizardForm['selectedTargets']> = [
+    'services',
+    'packages',
+    'meal_plans',
+    'products',
+  ];
+  const hasPartner = (form.selectedTargets.vendors?.length ?? 0) > 0;
+  const hasInventory = inventoryScopes.some(
+    (s) => (form.selectedTargets[s]?.length ?? 0) > 0
+  );
+  if (hasPartner && !hasInventory && form.targetScopes.includes('vendors')) {
+    issues.push({
+      field: 'target',
+      message: 'Select at least one inventory item for the chosen vendor or seller',
+      severity: 'error',
+    });
+  }
+
   return issues;
 }
 

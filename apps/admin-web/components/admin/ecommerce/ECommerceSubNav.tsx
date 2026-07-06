@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   LayoutDashboard,
   Store,
@@ -30,26 +30,40 @@ const NAV: ECommerceNavItem[] = [
   { id: 'sellers', label: 'Sellers', href: '/ecommerce?tab=sellers', icon: Store },
   { id: 'products', label: 'Product Approval', href: '/ecommerce?tab=products', icon: Package },
   { id: 'orders', label: 'Orders', href: '/ecommerce?tab=orders', icon: ShoppingCart },
-  { id: 'commission', label: 'Commission', href: '/ecommerce?tab=commission', icon: Percent },
   { id: 'categories', label: 'Categories', href: '/ecommerce?tab=categories', icon: FileText },
-  { id: 'marketplace-analytics', label: 'Marketplace Analytics', href: '/ecommerce?tab=analytics', icon: BarChart3 },
-  { id: 'promotions', label: 'Promotions & Coupons', href: '/ecommerce/promotions', icon: Tag, matchPrefix: '/ecommerce/promotions' },
+  { id: 'promotions', label: 'Promotions', href: '/ecommerce/promotions', icon: Tag, matchPrefix: '/ecommerce/promotions' },
   { id: 'seller-promotions', label: 'Seller Promotions', href: '/ecommerce/seller-promotions', icon: Store, matchPrefix: '/ecommerce/seller-promotions' },
-  { id: 'campaigns', label: 'Seller Campaigns', href: '/ecommerce/campaigns', icon: Megaphone, matchPrefix: '/ecommerce/campaigns' },
-  { id: 'promotion-analytics', label: 'Promotion Analytics', href: '/ecommerce/analytics', icon: LineChart, matchPrefix: '/ecommerce/analytics' },
+  { id: 'coupons', label: 'Coupons', href: '/ecommerce/promotions?tab=coupons', icon: Percent, matchPrefix: '/ecommerce/coupons' },
+  { id: 'campaigns', label: 'Campaigns', href: '/ecommerce/campaigns', icon: Megaphone, matchPrefix: '/ecommerce/campaigns' },
+  { id: 'promotion-analytics', label: 'Analytics', href: '/ecommerce/analytics', icon: LineChart, matchPrefix: '/ecommerce/analytics' },
+  { id: 'commission', label: 'Commission', href: '/ecommerce?tab=commission', icon: Percent },
+  { id: 'marketplace-analytics', label: 'Marketplace Analytics', href: '/ecommerce?tab=analytics', icon: BarChart3 },
   { id: 'policies', label: 'Policies', href: '/ecommerce?tab=policies', icon: Settings },
 ];
 
-function isActive(pathname: string | null, item: ECommerceNavItem): boolean {
+function isActive(
+  pathname: string | null,
+  searchParams: ReturnType<typeof useSearchParams>,
+  item: ECommerceNavItem
+): boolean {
   if (!pathname) return false;
+  const tab = searchParams.get('tab');
+  if (item.id === 'coupons') {
+    return (
+      pathname.startsWith('/ecommerce/coupons') ||
+      (pathname.startsWith('/ecommerce/promotions') && tab === 'coupons')
+    );
+  }
+  if (item.id === 'promotions') {
+    if (pathname.startsWith('/ecommerce/coupons')) return true;
+    if (pathname.startsWith('/ecommerce/promotions')) return tab !== 'coupons';
+  }
   if (item.matchPrefix && item.matchPrefix !== '/ecommerce') {
     return pathname === item.matchPrefix || pathname.startsWith(`${item.matchPrefix}/`);
   }
-  if (item.id === 'promotions' && pathname?.startsWith('/ecommerce/coupons')) {
-    return true;
-  }
   if (item.href.startsWith('/ecommerce/')) {
-    return pathname === item.href || pathname.startsWith(`${item.href}/`);
+    const baseHref = item.href.split('?')[0];
+    return pathname === baseHref || pathname.startsWith(`${baseHref}/`);
   }
   if (item.href === '/ecommerce') {
     return pathname === '/ecommerce';
@@ -59,6 +73,7 @@ function isActive(pathname: string | null, item: ECommerceNavItem): boolean {
 
 export function ECommerceSubNav() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   return (
     <div className="bg-white border-b border-gray-200">
@@ -66,7 +81,7 @@ export function ECommerceSubNav() {
         <div className="flex gap-1 overflow-x-auto">
           {NAV.map((item) => {
             const Icon = item.icon;
-            const active = isActive(pathname, item);
+            const active = isActive(pathname, searchParams, item);
             return (
               <Link
                 key={item.id}

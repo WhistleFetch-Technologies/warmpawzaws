@@ -1273,6 +1273,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               amount: grossPayableBeforeWallet,
               customerId: customerId ? String(customerId) : undefined,
               serviceCategory: serviceCategory || undefined,
+              couponCode:
+                (body.couponCode ?? body.coupon_code)
+                  ? String(body.couponCode ?? body.coupon_code).trim()
+                  : undefined,
             });
 
             const clientDiscountRaw =

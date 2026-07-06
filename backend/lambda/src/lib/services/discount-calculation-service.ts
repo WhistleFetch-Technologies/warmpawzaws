@@ -45,7 +45,11 @@ class DiscountCalculationServiceImpl {
       customerId: params.customerId,
       serviceCategory: params.serviceCategory,
       serviceStyle: params.serviceStyle,
+      couponCode: params.couponCode,
     });
+
+    const splitCoupon = bookingResult.applied.find((a) => a.promotionType === 'coupon');
+    const couponDiscountAmount = splitCoupon?.discountAmount ?? 0;
 
     const appliedDiscounts: AppliedDiscount[] = bookingResult.applied.map((a, idx) => ({
       id: a.id,
@@ -61,7 +65,7 @@ class DiscountCalculationServiceImpl {
       originalAmount: bookingResult.originalAmount,
       vendorDiscountAmount: bookingResult.vendorDiscountAmount,
       platformDiscountAmount: bookingResult.platformDiscountAmount,
-      couponDiscountAmount: 0,
+      couponDiscountAmount,
       totalDiscountAmount: bookingResult.totalSavings,
       finalAmount: bookingResult.finalAmount,
       appliedDiscounts,
