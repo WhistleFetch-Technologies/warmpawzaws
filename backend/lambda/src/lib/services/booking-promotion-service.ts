@@ -1,3 +1,4 @@
+import { query } from '../../database/rds-connection';
 import { DiscountDomain } from '../../discount-engine/enums/discount-domain';
 import {
   calculateBookingPromotionsStack,

@@ -161,6 +161,19 @@ export function buildPromotionPersistenceFromAdminBody(
     body.applicable_products ?? (selectedTargets as any).products
   );
 
+  const usageLimit =
+    body.usage_limit != null
+      ? Number(body.usage_limit)
+      : body.usageLimit != null
+        ? Number(body.usageLimit)
+        : null;
+  const usageLimitPerUser =
+    body.usage_limit_per_user != null
+      ? Number(body.usage_limit_per_user)
+      : body.usageLimitPerUser != null
+        ? Number(body.usageLimitPerUser)
+        : null;
+
   return {
     name,
     description,
@@ -192,18 +205,9 @@ export function buildPromotionPersistenceFromAdminBody(
     service_category: serviceCategory && serviceCategory !== 'all' ? serviceCategory : null,
     service_style: serviceStyle && serviceStyle !== 'all' ? serviceStyle : null,
     applicable_to: body.applicable_to ?? (applicableServices.length === 0 ? 'all' : 'bookings'),
-    max_uses:
-      body.usage_limit != null
-        ? Number(body.usage_limit)
-        : body.usageLimit != null
-          ? Number(body.usageLimit)
-          : null,
-    max_uses_per_user:
-      body.usage_limit_per_user != null
-        ? Number(body.usage_limit_per_user)
-        : body.usageLimitPerUser != null
-          ? Number(body.usageLimitPerUser)
-          : null,
+    max_uses: usageLimit,
+    max_uses_per_user: usageLimitPerUser,
+    usage_limit: usageLimit,
     priority: body.priority != null ? parseInt(String(body.priority), 10) || 0 : 0,
     is_spotlight: body.is_spotlight === true || body.targetAudience === 'vip',
     metadata: {

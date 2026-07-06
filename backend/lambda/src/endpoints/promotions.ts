@@ -38,6 +38,98 @@ import {
   parseDateInput as parseAdminDateInput,
 } from '../utils/promotion-admin-persistence';
 
+async function persistPromotionInsert(promotionData: Record<string, unknown>) {
+  const payload = { ...promotionData };
+  for (;;) {
+    try {
+      return await insert('promotions', payload);
+    } catch (insertError: unknown) {
+      const msg = String((insertError as { message?: string })?.message || '');
+      if (msg.includes('column "code"') && payload.code) {
+        console.warn('[Promotions] Code column does not exist, retrying without code');
+        delete payload.code;
+        continue;
+      }
+      if (msg.includes('column "applicable_to"') && payload.applicable_to !== undefined) {
+        console.warn('[Promotions] applicable_to column missing, persisting in metadata');
+        const baseMeta =
+          payload.metadata && typeof payload.metadata === 'object'
+            ? { ...(payload.metadata as Record<string, unknown>) }
+            : {};
+        baseMeta.applicableTo = payload.applicable_to;
+        payload.metadata = baseMeta;
+        delete payload.applicable_to;
+        continue;
+      }
+      if (
+        (msg.includes('column "max_uses"') || msg.includes('column "max_uses_per_user"')) &&
+        (payload.max_uses !== undefined || payload.max_uses_per_user !== undefined)
+      ) {
+        console.warn('[Promotions] max_uses column(s) missing, persisting via usage_limit/metadata');
+        if (payload.max_uses !== undefined && payload.usage_limit === undefined) {
+          payload.usage_limit = payload.max_uses;
+        }
+        if (payload.max_uses_per_user !== undefined) {
+          const baseMeta =
+            payload.metadata && typeof payload.metadata === 'object'
+              ? { ...(payload.metadata as Record<string, unknown>) }
+              : {};
+          baseMeta.maxUsesPerUser = payload.max_uses_per_user;
+          payload.metadata = baseMeta;
+        }
+        delete payload.max_uses;
+        delete payload.max_uses_per_user;
+        continue;
+      }
+      throw insertError;
+    }
+  }
+}
+
+async function persistPromotionUpdate(id: string, updateData: Record<string, unknown>) {
+  const payload = { ...updateData };
+  for (;;) {
+    try {
+      await update('promotions', { id }, payload);
+      return;
+    } catch (updateError: unknown) {
+      const msg = String((updateError as { message?: string })?.message || '');
+      if (msg.includes('column "applicable_to"') && payload.applicable_to !== undefined) {
+        console.warn('[Promotions] applicable_to column missing on update, persisting in metadata');
+        const baseMeta =
+          payload.metadata && typeof payload.metadata === 'object'
+            ? { ...(payload.metadata as Record<string, unknown>) }
+            : {};
+        baseMeta.applicableTo = payload.applicable_to;
+        payload.metadata = baseMeta;
+        delete payload.applicable_to;
+        continue;
+      }
+      if (
+        (msg.includes('column "max_uses"') || msg.includes('column "max_uses_per_user"')) &&
+        (payload.max_uses !== undefined || payload.max_uses_per_user !== undefined)
+      ) {
+        console.warn('[Promotions] max_uses column(s) missing on update, persisting via usage_limit/metadata');
+        if (payload.max_uses !== undefined && payload.usage_limit === undefined) {
+          payload.usage_limit = payload.max_uses;
+        }
+        if (payload.max_uses_per_user !== undefined) {
+          const baseMeta =
+            payload.metadata && typeof payload.metadata === 'object'
+              ? { ...(payload.metadata as Record<string, unknown>) }
+              : {};
+          baseMeta.maxUsesPerUser = payload.max_uses_per_user;
+          payload.metadata = baseMeta;
+        }
+        delete payload.max_uses;
+        delete payload.max_uses_per_user;
+        continue;
+      }
+      throw updateError;
+    }
+  }
+}
+
 export function registerPromotionEndpoints(app: Hono) {
   const normalizePromotionDiscountType = (raw: unknown): 'percentage' | 'fixed' => {
     const value = String(raw || 'percentage').trim().toLowerCase();
@@ -1414,17 +1506,7 @@ export function registerPromotionEndpoints(app: Hono) {
       }
 
       let promotion;
-      try {
-        promotion = await insert('promotions', promotionData);
-      } catch (insertError: any) {
-        if (insertError.message && insertError.message.includes('column "code"') && promotionData.code) {
-          console.warn('[Promotions] Code column does not exist, retrying without code');
-          delete promotionData.code;
-          promotion = await insert('promotions', promotionData);
-        } else {
-          throw insertError;
-        }
-      }
+      promotion = await persistPromotionInsert(promotionData);
 
       return c.json({
         success: true,
@@ -1456,7 +1538,7 @@ export function registerPromotionEndpoints(app: Hono) {
         updateData.code = String(body.code).toUpperCase();
       }
 
-      await update('promotions', { id }, updateData);
+      await persistPromotionUpdate(id, updateData);
 
       const updated = await query(
         'SELECT * FROM promotions WHERE id = $1::uuid',

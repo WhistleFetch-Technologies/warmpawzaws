@@ -131,8 +131,9 @@ export function PromotionWizard({
   const progress = wizardProgressPercent(step);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-0 sm:items-center sm:p-4">
-      <div className="flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden rounded-none bg-white shadow-2xl sm:h-auto sm:max-h-[92dvh] sm:rounded-2xl">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-0 sm:p-4">
+      <div className="flex min-h-full items-stretch justify-center sm:items-center sm:py-4">
+        <div className="flex h-[100dvh] w-full max-w-4xl min-h-0 flex-col overflow-hidden rounded-none bg-white shadow-2xl sm:h-[92dvh] sm:max-h-[92dvh] sm:rounded-2xl">
         <div className="space-y-2 border-b border-slate-100 px-4 py-3 sm:space-y-3 sm:px-5 sm:py-4">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -177,7 +178,7 @@ export function PromotionWizard({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
           {step === 0 && (
             <div className="grid gap-4 sm:grid-cols-2">
               <button
@@ -457,6 +458,7 @@ export function PromotionWizard({
               </button>
             ) : null}
           </div>
+        </div>
         </div>
       </div>
     </div>

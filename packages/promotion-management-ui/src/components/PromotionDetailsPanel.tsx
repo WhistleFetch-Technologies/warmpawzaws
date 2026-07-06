@@ -76,7 +76,7 @@ export function PromotionDetailsPanel({
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-5 space-y-6">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 space-y-6">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <PromotionStatusBadge status={lifecycle} />
