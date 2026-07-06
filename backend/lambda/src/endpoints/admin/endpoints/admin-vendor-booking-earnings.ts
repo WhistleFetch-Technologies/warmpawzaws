@@ -4,12 +4,15 @@
 
 import { Hono } from 'hono';
 import { assertReportDate, parseYearMonthQuery } from '../../../utils/vendor-accrual-ist';
+import { buildSettlementAuditCsv } from '../../../utils/settlement-audit-csv';
 import {
+  fetchAllVendorBookingEarningsLinesForIstRange,
   fetchVendorBookingEarningsForIstDay,
   fetchVendorBookingEarningsForIstMonth,
   type VendorBookingEarningsLine,
   type VendorBookingEarningsReportPayload,
 } from '../../../utils/vendor-booking-earnings-report';
+import { istDayEndExclusiveYmd, istMonthEndExclusiveYmd, istMonthStartYmd } from '../../../utils/vendor-accrual-ist';
 
 function csvEscape(v: unknown): string {
   if (v === null || v === undefined) return '';
@@ -110,6 +113,33 @@ async function loadVendorBookingEarnings(
   }
 
   return fetchVendorBookingEarningsForIstDay(reportDate, vendorId);
+}
+
+async function loadPeriodBounds(
+  reportDateRaw: string,
+  yearRaw: string,
+  monthRaw: string,
+): Promise<
+  | { periodStart: string; periodEndExclusive: string; label: string }
+  | { error: string; status: number }
+> {
+  const ym = parseYearMonthQuery(yearRaw, monthRaw);
+  if (ym) {
+    return {
+      periodStart: istMonthStartYmd(ym.year, ym.month),
+      periodEndExclusive: istMonthEndExclusiveYmd(ym.year, ym.month),
+      label: `${ym.year}-${String(ym.month).padStart(2, '0')}`,
+    };
+  }
+  const reportDate = assertReportDate(reportDateRaw.trim());
+  if (!reportDate) {
+    return { error: 'reportDate or year+month required', status: 400 };
+  }
+  const periodEndExclusive = istDayEndExclusiveYmd(reportDate);
+  if (!periodEndExclusive) {
+    return { error: 'Invalid reportDate', status: 400 };
+  }
+  return { periodStart: reportDate, periodEndExclusive, label: reportDate };
 }
 
 export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
@@ -216,6 +246,39 @@ export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('[admin-vendor-booking-earnings] export:', error);
       return c.text(error?.message || 'Export failed', 500);
+    }
+  });
+
+  /**
+   * GET /admin/finance/vendor-booking-earnings/export-settlement-audit.csv
+   * All bookings in period with settlement audit columns.
+   */
+  app.get('/admin/finance/vendor-booking-earnings/export-settlement-audit.csv', async (c) => {
+    try {
+      const bounds = await loadPeriodBounds(
+        String(c.req.query('reportDate') || ''),
+        String(c.req.query('year') || ''),
+        String(c.req.query('month') || ''),
+      );
+      if ('error' in bounds) {
+        return c.text(bounds.error, bounds.status);
+      }
+
+      const lines = await fetchAllVendorBookingEarningsLinesForIstRange(
+        bounds.periodStart,
+        bounds.periodEndExclusive,
+      );
+      const csv = buildSettlementAuditCsv(lines);
+
+      return new Response(csv, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="booking-settlement-audit-${bounds.label}.csv"`,
+        },
+      });
+    } catch (error: any) {
+      console.error('[admin-vendor-booking-earnings] settlement audit export:', error);
+      return c.text(error?.message || 'Settlement audit export failed', 500);
     }
   });
 }

@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { apiClient, getApiBaseUrl, isUatMode } from '@/lib/api-client';
 import { Button } from '@warmpawz/ui';
 import { Download, Loader2, Play, RefreshCw } from 'lucide-react';
+import { downloadReconciliationPack } from '@/lib/finance/settlementAuditExport';
 
 function currentYearMonthValue(): string {
   const d = new Date();
@@ -72,7 +73,10 @@ export function VendorMonthlyAccrualReport() {
     deliveryFee: number;
     gstTotal: number;
     vendorCount: number;
+    platformFundedDiscount?: number;
+    vendorFundedDiscount?: number;
   } | null>(null);
+  const [packDownloading, setPackDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const parsed = parseYearMonth(yearMonth);
@@ -107,6 +111,8 @@ export function VendorMonthlyAccrualReport() {
               deliveryFee: Number(t.deliveryFee) || 0,
               gstTotal: Number(t.gstTotal) || 0,
               vendorCount: Number(t.vendorCount) || 0,
+              platformFundedDiscount: Number(t.platformFundedDiscount) || 0,
+              vendorFundedDiscount: Number(t.vendorFundedDiscount) || 0,
             }
           : null
       );
@@ -189,6 +195,22 @@ export function VendorMonthlyAccrualReport() {
     }
   };
 
+  const downloadReconciliationPackAction = async () => {
+    if (!parsed) {
+      setError('Pick a valid month (YYYY-MM)');
+      return;
+    }
+    setError(null);
+    setPackDownloading(true);
+    try {
+      await downloadReconciliationPack(parsed.year, parsed.month);
+    } catch (e: any) {
+      setError(e?.message || 'Reconciliation pack download failed');
+    } finally {
+      setPackDownloading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
@@ -229,6 +251,15 @@ export function VendorMonthlyAccrualReport() {
         <Button type="button" variant="outline" onClick={() => void downloadCsv()} disabled={!parsed}>
           <Download className="h-4 w-4" />
           <span className="ml-2">Export CSV</span>
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void downloadReconciliationPackAction()}
+          disabled={!parsed || packDownloading}
+        >
+          {packDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          <span className="ml-2">Download reconciliation pack</span>
         </Button>
       </div>
 
@@ -272,6 +303,16 @@ export function VendorMonthlyAccrualReport() {
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">GST</div>
               <div className="text-sm font-semibold">{moneyCell(totals.gstTotal)}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-orange-100 bg-orange-50/50 p-3">
+              <div className="text-xs text-gray-600">Platform discount total</div>
+              <div className="text-sm font-semibold">{moneyCell(totals.platformFundedDiscount)}</div>
+            </div>
+            <div className="rounded-lg border border-orange-100 bg-orange-50/50 p-3">
+              <div className="text-xs text-gray-600">Vendor discount total</div>
+              <div className="text-sm font-semibold">{moneyCell(totals.vendorFundedDiscount)}</div>
             </div>
           </div>
         </>

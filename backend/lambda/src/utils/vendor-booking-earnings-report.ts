@@ -19,6 +19,10 @@ import {
   istMonthEndExclusiveYmd,
   istMonthStartYmd,
 } from './vendor-accrual-ist';
+import {
+  resolveSettlementBreakdownForReport,
+  type SettlementBreakdownForReport,
+} from './resolve-settlement-breakdown-for-report';
 
 const PAYMENT_OK = `LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', 'success', 'paid', 'partially_refunded')`;
 const PAYMENT_PREFERRED = `LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', 'paid')`;
@@ -48,7 +52,11 @@ export type VendorBookingEarningsLine = {
   vendorNet: number;
   feeSource: CustomerPaidFeeBreakdownSource;
   realizedAt: string | null;
+  businessName?: string | null;
+  settlementBreakdown: SettlementBreakdownForReport;
 };
+
+export type { SettlementBreakdownForReport };
 
 export type VendorBookingEarningsDaySummary = {
   vendorId: string;
@@ -110,6 +118,13 @@ type RawEarningsRow = {
   payment_total_amount?: unknown;
   payment_amount?: unknown;
   fee_breakdown?: unknown;
+  earnings_metadata?: unknown;
+  settlement_id?: unknown;
+  payout_id?: unknown;
+  settlement_status?: unknown;
+  payout_status?: unknown;
+  booking_notes?: unknown;
+  booking_financial_meta?: unknown;
 };
 
 function rowToResolveContext(row: RawEarningsRow): BookingAccrualResolveContext {
@@ -293,6 +308,12 @@ async function fetchRawEarningsRowsForIstRange(
             ve.amount AS earning_net_amount,
             ve.commission_rate,
             ve.realized_at::text AS realized_at,
+            ve.metadata AS earnings_metadata,
+            ve.settlement_id::text AS settlement_id,
+            ve.payout_id::text AS payout_id,
+            COALESCE(s.settlement_status, s.status) AS settlement_status,
+            po.status AS payout_status,
+            b.notes AS booking_notes,
             b.service_id::text AS service_id,
             b.service_style,
             b.service_type,
@@ -316,6 +337,8 @@ async function fetchRawEarningsRowsForIstRange(
      CROSS JOIN bounds bnd
      INNER JOIN bookings b ON b.id = ve.booking_id
      INNER JOIN vendors v ON v.id = ve.vendor_id
+     LEFT JOIN settlements s ON s.id = ve.settlement_id
+     LEFT JOIN payouts po ON po.id = ve.payout_id
      LEFT JOIN customers c ON c.id = b.customer_id
      LEFT JOIN vendor_services vs ON vs.id = b.service_id
      LEFT JOIN service_catalog sc ON sc.id = vs.service_id
@@ -357,9 +380,20 @@ export async function buildVendorBookingEarningsLine(
   const commissionRateRaw = safeMoneyAmount(row.commission_rate);
   const commissionRate = commissionRateRaw > 0 ? commissionRateRaw : null;
 
+  const settlementBreakdown = resolveSettlementBreakdownForReport({
+    earningsMetadata: row.earnings_metadata,
+    bookingNotes: row.booking_notes,
+    bookingFinancialMeta: row.booking_financial_meta,
+    settlementId: row.settlement_id != null ? String(row.settlement_id) : null,
+    settlementStatus: row.settlement_status != null ? String(row.settlement_status) : null,
+    payoutId: row.payout_id != null ? String(row.payout_id) : null,
+    payoutStatus: row.payout_status != null ? String(row.payout_status) : null,
+  });
+
   return {
     bookingId: String(row.booking_id),
     vendorId: String(row.vendor_id),
+    businessName: row.business_name != null ? String(row.business_name) : null,
     bookingDate: row.booking_date != null ? String(row.booking_date) : null,
     bookingStatus: row.booking_status != null ? String(row.booking_status) : null,
     serviceName: row.service_name != null ? String(row.service_name) : null,
@@ -378,7 +412,28 @@ export async function buildVendorBookingEarningsLine(
     vendorNet,
     feeSource: source,
     realizedAt: row.realized_at != null ? String(row.realized_at) : null,
+    settlementBreakdown,
   };
+}
+
+/** All booking lines for a period (audit export / reconciliation pack). */
+export async function fetchAllVendorBookingEarningsLinesForIstRange(
+  periodStartYmd: string,
+  periodEndExclusiveYmd: string,
+): Promise<VendorBookingEarningsLine[]> {
+  const rawRows = await fetchRawEarningsRowsForIstRange(periodStartYmd, periodEndExclusiveYmd);
+  const lineByBooking = new Map<string, VendorBookingEarningsLine>();
+  const linesInOrder: VendorBookingEarningsLine[] = [];
+
+  for (const row of rawRows) {
+    const bookingId = String(row.booking_id || '');
+    if (!bookingId || lineByBooking.has(bookingId)) continue;
+    const line = await buildVendorBookingEarningsLine(row);
+    lineByBooking.set(bookingId, line);
+    linesInOrder.push(line);
+  }
+
+  return linesInOrder;
 }
 
 export type VendorBookingEarningsReportPayload = {

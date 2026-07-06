@@ -3,7 +3,8 @@
 import { useCallback, useState } from 'react';
 import { apiClient, getApiBaseUrl, isUatMode } from '@/lib/api-client';
 import { Button } from '@warmpawz/ui';
-import { Download, Loader2, Play, RefreshCw } from 'lucide-react';
+import { Download, ExternalLink, Loader2, Play, RefreshCw } from 'lucide-react';
+import { buildBookingEarningsFinanceUrl } from '@/lib/finance/settlementAuditExport';
 
 function yesterdayYmd(): string {
   const d = new Date();
@@ -64,6 +65,8 @@ export function VendorDailyAccrualReport() {
     deliveryFee: number;
     gstTotal: number;
     vendorCount: number;
+    platformFundedDiscount?: number;
+    vendorFundedDiscount?: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,6 +96,8 @@ export function VendorDailyAccrualReport() {
               deliveryFee: Number(t.deliveryFee) || 0,
               gstTotal: Number(t.gstTotal) || 0,
               vendorCount: Number(t.vendorCount) || 0,
+              platformFundedDiscount: Number(t.platformFundedDiscount) || 0,
+              vendorFundedDiscount: Number(t.vendorFundedDiscount) || 0,
             }
           : null
       );
@@ -255,6 +260,18 @@ export function VendorDailyAccrualReport() {
               <div className="text-sm font-semibold">{moneyCell(totals.gstTotal)}</div>
             </div>
           </div>
+          {(totals.platformFundedDiscount != null || totals.vendorFundedDiscount != null) && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-orange-100 bg-orange-50/50 p-3">
+                <div className="text-xs text-gray-600">Platform-funded discount</div>
+                <div className="text-sm font-semibold">{moneyCell(totals.platformFundedDiscount)}</div>
+              </div>
+              <div className="rounded-lg border border-orange-100 bg-orange-50/50 p-3">
+                <div className="text-xs text-gray-600">Vendor-funded discount</div>
+                <div className="text-sm font-semibold">{moneyCell(totals.vendorFundedDiscount)}</div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -278,12 +295,13 @@ export function VendorDailyAccrualReport() {
               <th className="px-3 py-2 text-left font-medium text-gray-700">Bank</th>
               <th className="px-3 py-2 text-left font-medium text-gray-700">IFSC</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Verified</th>
+              <th className="px-3 py-2 text-center font-medium text-gray-700">Bookings</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={16} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={17} className="px-3 py-8 text-center text-gray-500">
                   No rows. Pick a date, run <strong>Compute</strong> (requires migration 732 + 753), then <strong>Load</strong>.
                 </td>
               </tr>
@@ -313,6 +331,19 @@ export function VendorDailyAccrualReport() {
                 <td className="px-3 py-2 font-mono text-xs">{r.ifscCode || '—'}</td>
                 <td className="px-3 py-2 text-center">
                   {r.hasBankOnFile ? (r.bankVerified ? 'Yes' : 'No') : '—'}
+                </td>
+                <td className="px-3 py-2 text-center">
+                  <a
+                    href={buildBookingEarningsFinanceUrl({
+                      periodType: 'day',
+                      reportDate,
+                      vendorId: r.vendor_id,
+                    })}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-700"
+                  >
+                    View bookings
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
                 </td>
               </tr>
             ))}

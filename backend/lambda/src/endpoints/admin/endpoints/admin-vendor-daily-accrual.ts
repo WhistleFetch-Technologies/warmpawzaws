@@ -26,6 +26,7 @@ import {
   mergeFeeBreakdownIntoAccrualRows,
   sumAccrualFeeBreakdowns,
 } from '../../../utils/vendor-accrual-fee-breakdown';
+import { fetchFundingDiscountTotalsForIstRange } from '../../../utils/resolve-settlement-breakdown-for-report';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -582,6 +583,10 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
 
       const rows = await enrichAccrualRowsWithFees(pack.rows, pack.monthStart, pack.monthEndExclusive);
       const totals = accrualExportTotals(rows);
+      const fundingTotals = await fetchFundingDiscountTotalsForIstRange(
+        pack.monthStart,
+        pack.monthEndExclusive,
+      );
 
       return c.json({
         success: true,
@@ -602,6 +607,8 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
           igstAmount: totals.igstAmount,
           gstTotal: totals.gstTotal,
           vendorCount: rows.length,
+          platformFundedDiscount: fundingTotals.platformFundedTotal,
+          vendorFundedDiscount: fundingTotals.vendorFundedTotal,
         },
         rows,
       });
@@ -723,6 +730,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
       }
       const rows = await enrichAccrualRowsWithFees(pack.rows, reportDate, periodEnd);
       const totals = accrualExportTotals(rows);
+      const fundingTotals = await fetchFundingDiscountTotalsForIstRange(reportDate, periodEnd);
 
       return c.json({
         success: true,
@@ -740,6 +748,8 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
           igstAmount: totals.igstAmount,
           gstTotal: totals.gstTotal,
           vendorCount: rows.length,
+          platformFundedDiscount: fundingTotals.platformFundedTotal,
+          vendorFundedDiscount: fundingTotals.vendorFundedTotal,
         },
         rows,
       });
