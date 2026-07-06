@@ -154,13 +154,34 @@ export interface PaymentResumeContext {
   bookingTime: string;
   petId?: string | null;
   customerId: string;
+  /** @deprecated Prefer payableAmount — kept for older clients. */
   amount: number;
+  /** Gross payable total (pending payment row when present, else bookings.total_amount). */
+  payableAmount: number;
+  /** Service subtotal before tax/fees — use as payment page baseAmount on resume. */
+  basePrice: number;
+  discountAmount: number;
+  selectedServices?: Record<string, unknown>[];
   currency: string;
   paymentHoldExpiresAt: string | null;
   secondsRemaining: number;
   canResume: boolean;
   razorpayOrderId: string | null;
   paymentId: string | null;
+}
+
+function parseBookingSelectedServices(raw: unknown): Record<string, unknown>[] | undefined {
+  if (!raw) return undefined;
+  if (Array.isArray(raw)) return raw as Record<string, unknown>[];
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 export async function buildBookingPaymentResumeContext(
@@ -220,6 +241,14 @@ export async function buildBookingPaymentResumeContext(
   const serviceStyle =
     serviceType === 'at_vendor' ? 'at_center' : serviceType === 'at_home' ? 'at_home' : serviceType;
 
+  const bookingTotal = Number(b.total_amount || 0);
+  const pendingPayAmount = pay?.amount != null ? Number(pay.amount) : 0;
+  const payableAmount =
+    pendingPayAmount > 0.009 ? Math.round(pendingPayAmount * 100) / 100 : Math.round(bookingTotal * 100) / 100;
+  const basePrice = Number(b.base_price || 0);
+  const discountAmount = Number(b.discount_amount || 0);
+  const selectedServices = parseBookingSelectedServices(b.selected_services);
+
   return {
     entityType: 'booking',
     entityId: bookingId,
@@ -234,7 +263,11 @@ export async function buildBookingPaymentResumeContext(
     bookingTime: String(b.booking_time || ''),
     petId: b.pet_id ? String(b.pet_id) : null,
     customerId: String(b.customer_id || ''),
-    amount: Number(b.total_amount || pay?.amount || 0),
+    amount: payableAmount,
+    payableAmount,
+    basePrice: basePrice > 0 ? Math.round(basePrice * 100) / 100 : payableAmount,
+    discountAmount: Math.round(discountAmount * 100) / 100,
+    selectedServices,
     currency: String(pay?.currency || 'INR'),
     paymentHoldExpiresAt: expiresAt,
     secondsRemaining,
