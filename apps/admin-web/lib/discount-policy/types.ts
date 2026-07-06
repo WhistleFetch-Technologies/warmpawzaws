@@ -110,11 +110,15 @@ export interface LimitConfiguration {
   campaigns?: Record<string, Partial<LimitConfiguration['global']>>;
 }
 
+import type { BusinessRulesConfiguration } from './business-rules-types';
+
 export interface DiscountPolicyBundle {
   priority: PriorityConfiguration;
   stack: StackPolicyConfiguration;
   funding: FundingConfiguration;
   limits: LimitConfiguration;
+  /** Business-friendly Policy Center rules (maps to stack/priority config). */
+  businessRules?: BusinessRulesConfiguration;
 }
 
 export type PolicyScope = 'global' | DiscountDomainKey;
@@ -151,6 +155,9 @@ export interface RuntimePolicyDiagnostics {
   stackVersion: string;
   fundingVersion: string;
   limitsVersion: string;
+  businessRulesVersion?: string;
+  applicationStrategy?: string;
+  winningStrategy?: string;
   policyFingerprint: string | null;
   publishId: string | null;
   publishedBy: string | null;

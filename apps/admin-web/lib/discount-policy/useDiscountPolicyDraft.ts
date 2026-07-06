@@ -12,6 +12,7 @@ import {
   probePolicyApiCapabilities,
   saveDraftPolicy,
 } from './discount-policy-api';
+import { ensureBusinessRules, syncBusinessRulesToEngine } from './business-rules-mapper';
 import type { DiscountPolicyBundle, PolicyApiCapabilities } from './types';
 
 function loadLocalDraft(): DiscountPolicyBundle | null {
@@ -63,7 +64,10 @@ export function useDiscountPolicyDraft() {
       setPublished(pub);
 
       const local = loadLocalDraft();
-      const initial = remoteDraft ?? local ?? pub;
+      let initial = remoteDraft ?? local ?? pub;
+      if (!initial.businessRules) {
+        initial = syncBusinessRulesToEngine(initial, ensureBusinessRules(initial));
+      }
       setDraft(clonePolicyBundle(initial));
       setApiDraft(Boolean(remoteDraft));
     } finally {

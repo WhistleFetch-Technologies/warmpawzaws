@@ -4,6 +4,7 @@
  */
 import { apiClient } from '@/lib/api-client';
 import { CONTRACT_DEFAULT_POLICY, clonePolicyBundle } from './default-config';
+import { validateBusinessRulesLocally } from './business-rules-validation';
 import type {
   DiscountPolicyBundle,
   PolicyApiCapabilities,
@@ -73,12 +74,12 @@ export async function saveDraftPolicy(bundle: DiscountPolicyBundle): Promise<boo
 }
 
 export async function validatePolicy(
-  _bundle: DiscountPolicyBundle
+  bundle: DiscountPolicyBundle
 ): Promise<ValidationResult | null> {
   try {
-    return await apiClient.post<ValidationResult>(`${BASE}/validate`, { bundle: _bundle });
+    return await apiClient.post<ValidationResult>(`${BASE}/validate`, { bundle });
   } catch {
-    return null;
+    return validateBusinessRulesLocally(bundle);
   }
 }
 

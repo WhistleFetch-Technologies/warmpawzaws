@@ -8,21 +8,20 @@ import {
   CardHeader,
   CardTitle,
   Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Input,
   Badge,
 } from '@warmpawz/ui';
 import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 import { DomainScopeSelector } from '../shared/DomainScopeSelector';
+import { CustomPriorityOrder } from '../shared/CustomPriorityOrder';
+import { TIE_BREAKER_OPTIONS, WINNING_STRATEGY_OPTIONS } from '@/lib/discount-policy/option-registry';
 import {
-  PRIORITY_STRATEGY_OPTIONS,
-  TIE_BREAKER_OPTIONS,
-} from '@/lib/discount-policy/option-registry';
-import type { DiscountPolicyBundle, PolicyScope, PriorityStrategyKey } from '@/lib/discount-policy/types';
+  ensureBusinessRules,
+  getApplicationStrategyLabel,
+  patchBusinessRules,
+} from '@/lib/discount-policy/business-rules-mapper';
+import type { WinningStrategyKey } from '@/lib/discount-policy/business-rules-types';
+import type { DiscountPolicyBundle, PolicyScope } from '@/lib/discount-policy/types';
 
 export function PriorityConfigSection({
   draft,
@@ -32,18 +31,15 @@ export function PriorityConfigSection({
   onChange: (bundle: DiscountPolicyBundle) => void;
 }) {
   const [scope, setScope] = useState<PolicyScope>('global');
-
-  const strategy =
-    scope === 'global'
-      ? draft.priority.global.strategy
-      : draft.priority.domains?.[scope]?.strategy ?? draft.priority.global.strategy;
+  const rules = ensureBusinessRules(draft);
+  const bestOfferOnly = rules.applicationStrategy === 'BEST_OFFER_ONLY';
 
   const autoMax =
     scope === 'global'
-      ? draft.priority.global.phases.AUTO_PROMOTIONS?.maxSelected ?? 2
+      ? draft.priority.global.phases.AUTO_PROMOTIONS?.maxSelected ?? 1
       : draft.priority.domains?.[scope]?.phases?.AUTO_PROMOTIONS?.maxSelected ??
         draft.priority.global.phases.AUTO_PROMOTIONS?.maxSelected ??
-        2;
+        1;
 
   const couponMax =
     scope === 'global'
@@ -52,20 +48,15 @@ export function PriorityConfigSection({
         draft.priority.global.phases.COUPONS?.maxSelected ??
         1;
 
-  const strategyMeta = PRIORITY_STRATEGY_OPTIONS.find((o) => o.value === strategy);
+  const winningStrategy = rules.winningStrategy ?? 'MAX_CUSTOMER_SAVINGS';
+  const strategyMeta = WINNING_STRATEGY_OPTIONS.find((o) => o.value === winningStrategy);
 
-  const setStrategy = (value: PriorityStrategyKey) => {
-    const next = structuredClone(draft);
-    if (scope === 'global') {
-      next.priority.global.strategy = value;
-    } else {
-      next.priority.domains = next.priority.domains ?? {};
-      next.priority.domains[scope] = {
-        ...next.priority.domains[scope],
-        strategy: value,
-      };
-    }
-    onChange(next);
+  const setWinningStrategy = (value: WinningStrategyKey) => {
+    onChange(patchBusinessRules(draft, { winningStrategy: value }));
+  };
+
+  const setCustomOrder = (customPriorityOrder: string[]) => {
+    onChange(patchBusinessRules(draft, { customPriorityOrder }));
   };
 
   const setPhaseMax = (phase: 'AUTO_PROMOTIONS' | 'COUPONS', max: number) => {
@@ -84,6 +75,31 @@ export function PriorityConfigSection({
     onChange(next);
   };
 
+  if (!bestOfferOnly) {
+    return (
+      <div className="space-y-6">
+        <DomainScopeSelector scope={scope} onScopeChange={setScope} />
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Winning Offer Strategy</CardTitle>
+            <CardDescription>
+              Winning Offer Strategy applies when Discount Application Strategy is{' '}
+              <strong>Apply Best Offer Only</strong>.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
+              Current strategy:{' '}
+              <strong>{getApplicationStrategyLabel(rules.applicationStrategy)}</strong>. Configure
+              offer combinations on the Discount Application tab, or switch to Apply Best Offer Only
+              to set how a single winning offer is chosen.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <DomainScopeSelector scope={scope} onScopeChange={setScope} />
@@ -91,34 +107,58 @@ export function PriorityConfigSection({
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>
-            <CardTitle className="text-lg">Priority strategy</CardTitle>
+            <CardTitle className="text-lg">Winning Offer Strategy</CardTitle>
             <CardDescription>
-              Controls how eligible promotions and coupons are ranked before stacking.
+              Determines which offer wins when multiple promotions or coupons are applicable.
             </CardDescription>
           </div>
           <PolicyHelpButton docKey="discount-priority-policy" />
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="priority-strategy">Strategy</Label>
-            <Select value={strategy} onValueChange={(v) => setStrategy(v as PriorityStrategyKey)}>
-              <SelectTrigger id="priority-strategy" className="bg-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PRIORITY_STRATEGY_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {strategyMeta ? (
-              <p className="text-sm text-slate-600">{strategyMeta.description}</p>
-            ) : null}
-          </div>
+          <fieldset className="space-y-3">
+            <legend className="sr-only">Winning offer strategy</legend>
+            {WINNING_STRATEGY_OPTIONS.map((option) => (
+              <label
+                key={option.value}
+                className={`flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors ${
+                  winningStrategy === option.value
+                    ? 'border-violet-300 bg-violet-50/50'
+                    : 'border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="winningStrategy"
+                  className="mt-1"
+                  checked={winningStrategy === option.value}
+                  onChange={() => setWinningStrategy(option.value)}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-slate-900">{option.label}</span>
+                  <span className="mt-0.5 block text-sm text-slate-600">{option.description}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          {strategyMeta ? (
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              {strategyMeta.description}
+            </p>
+          ) : null}
+
+          {winningStrategy === 'CUSTOM_PRIORITY' ? (
+            <div className="space-y-2 border-t pt-6">
+              <Label>Custom priority order</Label>
+              <CustomPriorityOrder
+                order={rules.customPriorityOrder}
+                offerTypes={rules.offerTypes}
+                onChange={setCustomOrder}
+              />
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 border-t pt-6 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="auto-max">Max auto promotions (phase)</Label>
               <Input
@@ -127,8 +167,12 @@ export function PriorityConfigSection({
                 min={0}
                 max={10}
                 value={autoMax}
+                disabled={bestOfferOnly}
                 onChange={(e) => setPhaseMax('AUTO_PROMOTIONS', Number(e.target.value))}
               />
+              {bestOfferOnly ? (
+                <p className="text-xs text-slate-500">Locked to 1 when Apply Best Offer Only.</p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="coupon-max">Max coupons (phase)</Label>
@@ -138,13 +182,17 @@ export function PriorityConfigSection({
                 min={0}
                 max={5}
                 value={couponMax}
+                disabled={bestOfferOnly}
                 onChange={(e) => setPhaseMax('COUPONS', Number(e.target.value))}
               />
+              {bestOfferOnly ? (
+                <p className="text-xs text-slate-500">Locked to 1 when Apply Best Offer Only.</p>
+              ) : null}
             </div>
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-medium text-slate-700">Global tie-breakers (read-only order)</p>
+            <p className="mb-2 text-sm font-medium text-slate-700">Tie-breakers (engine order)</p>
             <div className="flex flex-wrap gap-2">
               {(scope === 'global'
                 ? draft.priority.global.tieBreakers
@@ -155,9 +203,6 @@ export function PriorityConfigSection({
                 </Badge>
               ))}
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Tie-breaker reordering will be available when the policy API supports full PriorityConfiguration writes.
-            </p>
           </div>
         </CardContent>
       </Card>

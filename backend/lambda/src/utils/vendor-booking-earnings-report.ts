@@ -1,6 +1,7 @@
 /**
  * Per-booking vendor earnings ledger for admin (IST day or month).
  * Combines vendor_earnings ledger rows with customer-paid checkout breakdown.
+ * Finance S2: vendorGross/commission/vendorNet prefer vendor_earnings columns (ledger SoT).
  */
 import { query } from '../database/rds-connection';
 import { safeMoneyAmount } from './delivery-settlement-finance';

@@ -5,12 +5,18 @@ import { Card, CardContent, CardHeader, CardTitle, Badge, Button } from '@warmpa
 import { Copy, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetchRuntimeDiagnostics } from '@/lib/discount-policy/discount-policy-api';
+import {
+  ensureBusinessRules,
+  getApplicationStrategyLabel,
+  getWinningStrategyLabel,
+} from '@/lib/discount-policy/business-rules-mapper';
 import { FEATURE_FLAG_LABELS } from '@/lib/discount-policy/option-registry';
 import type { DiscountPolicyBundle, RuntimePolicyDiagnostics } from '@/lib/discount-policy/types';
 
 export function RuntimePolicySection({ draft }: { draft: DiscountPolicyBundle }) {
   const [diagnostics, setDiagnostics] = useState<Partial<RuntimePolicyDiagnostics> | null>(null);
   const [loading, setLoading] = useState(true);
+  const rules = ensureBusinessRules(draft);
 
   const load = async () => {
     setLoading(true);
@@ -40,11 +46,36 @@ export function RuntimePolicySection({ draft }: { draft: DiscountPolicyBundle })
     <div className="space-y-6">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Runtime policy diagnostics</CardTitle>
+          <CardTitle className="text-lg">Active policy strategy</CardTitle>
           <Button type="button" variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
             Refresh
           </Button>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          {[
+            ['Discount application', getApplicationStrategyLabel(rules.applicationStrategy)],
+            [
+              'Winning offer strategy',
+              rules.applicationStrategy === 'BEST_OFFER_ONLY' && rules.winningStrategy
+                ? getWinningStrategyLabel(rules.winningStrategy)
+                : '— (not applicable)',
+            ],
+            ['Business rules version', rules.version],
+            ['Policy version (stack)', draft.stack.version],
+            ['Policy version (priority)', draft.priority.version],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="rounded-lg border bg-violet-50/30 p-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">{String(value)}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-lg">Runtime policy diagnostics</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
           {[

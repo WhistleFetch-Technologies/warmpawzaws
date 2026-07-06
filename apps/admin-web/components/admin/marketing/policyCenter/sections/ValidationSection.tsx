@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Badge } from '@warmpawz/ui';
 import { ShieldCheck } from 'lucide-react';
 import { validatePolicy } from '@/lib/discount-policy/discount-policy-api';
-import { ComingSoonPanel } from '../shared/ApiPendingBanner';
 import type { DiscountPolicyBundle, ValidationResult } from '@/lib/discount-policy/types';
 
 function FindingList({
@@ -30,7 +29,7 @@ function FindingList({
       <ul className="space-y-2 text-sm">
         {items.map((f, i) => (
           <li key={`${f.ruleId}-${i}`}>
-            <span className="font-mono text-xs">{f.ruleId}</span> — {f.message}
+            {f.message}
             {f.suggestion ? <p className="mt-0.5 text-xs opacity-80">Suggestion: {f.suggestion}</p> : null}
           </li>
         ))}
@@ -42,19 +41,14 @@ function FindingList({
 export function ValidationSection({ draft }: { draft: DiscountPolicyBundle }) {
   const [result, setResult] = useState<ValidationResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [apiUnavailable, setApiUnavailable] = useState(false);
+  const [usedLocal, setUsedLocal] = useState(false);
 
   const runValidate = async () => {
     setLoading(true);
-    setApiUnavailable(false);
     try {
       const res = await validatePolicy(draft);
-      if (!res) {
-        setApiUnavailable(true);
-        setResult(null);
-      } else {
-        setResult(res);
-      }
+      setResult(res);
+      setUsedLocal(res?.validatedFingerprint?.startsWith('local-') ?? false);
     } finally {
       setLoading(false);
     }
@@ -66,7 +60,8 @@ export function ValidationSection({ draft }: { draft: DiscountPolicyBundle }) {
         <CardHeader>
           <CardTitle className="text-lg">Policy validation</CardTitle>
           <CardDescription>
-            Runs the backend Policy Validation Engine — no client-side rule duplication.
+            Verifies business rules consistency: winning strategy, custom priority order, and offer
+            combination matrix. Uses backend Policy Validation Engine when available.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -75,12 +70,10 @@ export function ValidationSection({ draft }: { draft: DiscountPolicyBundle }) {
             {loading ? 'Validating…' : 'Validate draft'}
           </Button>
 
-          {apiUnavailable ? (
-            <ComingSoonPanel
-              title="Validation API not available"
-              description="POST /admin/discount-policy/validate will invoke PolicyValidationEngine when Phase 8 policy endpoints ship. Until then, publish is blocked."
-              apiPath="POST /admin/discount-policy/validate"
-            />
+          {usedLocal ? (
+            <p className="text-xs text-slate-500">
+              Validated locally — backend API will add engine-level checks when Phase 8 endpoints ship.
+            </p>
           ) : null}
 
           {result ? (

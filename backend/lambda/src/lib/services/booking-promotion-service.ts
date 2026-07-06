@@ -511,8 +511,24 @@ export type BookingFinancialNotesMeta = {
   deliveryFee?: number;
   walletAmount?: number;
   finalPaid: number;
+  /** Finance S2 — persisted settlement snapshot fields */
+  settlementSnapshot?: Record<string, unknown>;
+  winningOffer?: Record<string, unknown>;
+  vendorBasePrice?: number;
+  commissionBase?: number;
+  commissionRate?: number;
+  commissionAmount?: number;
+  vendorSettlement?: number;
+  couponFundingType?: 'VENDOR' | 'PLATFORM';
+  vendorPromotionId?: string;
+  platformPromotionId?: string;
+  policyFingerprint?: string;
 };
 
-export function buildBookingFinancialNotesMeta(meta: BookingFinancialNotesMeta): string {
+export function serializeBookingFinancialMeta(meta: BookingFinancialNotesMeta | Record<string, unknown>): string {
   return `wp_financial_meta:${JSON.stringify(meta)}`;
+}
+
+export function buildBookingFinancialNotesMeta(meta: BookingFinancialNotesMeta): string {
+  return serializeBookingFinancialMeta(meta);
 }

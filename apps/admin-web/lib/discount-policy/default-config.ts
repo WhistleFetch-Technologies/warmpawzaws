@@ -2,9 +2,10 @@
  * Runtime contract defaults — aligned with discount-engine config loaders.
  * Used when policy HTTP APIs are unavailable (Phase 8 pending).
  */
+import { DEFAULT_BUSINESS_RULES, syncBusinessRulesToEngine } from './business-rules-mapper';
 import type { DiscountPolicyBundle } from './types';
 
-export const CONTRACT_DEFAULT_POLICY: DiscountPolicyBundle = {
+const BASE_POLICY: DiscountPolicyBundle = {
   priority: {
     version: '1.0.0',
     global: {
@@ -76,7 +77,12 @@ export const CONTRACT_DEFAULT_POLICY: DiscountPolicyBundle = {
   },
 };
 
-export const DRAFT_STORAGE_KEY = 'warmpawz.discount-policy.draft.v1';
+export const CONTRACT_DEFAULT_POLICY: DiscountPolicyBundle = syncBusinessRulesToEngine(
+  BASE_POLICY,
+  DEFAULT_BUSINESS_RULES
+);
+
+export const DRAFT_STORAGE_KEY = 'warmpawz.discount-policy.draft.v2';
 
 export function clonePolicyBundle(bundle: DiscountPolicyBundle): DiscountPolicyBundle {
   return JSON.parse(JSON.stringify(bundle)) as DiscountPolicyBundle;

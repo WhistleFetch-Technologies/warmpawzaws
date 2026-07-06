@@ -38,8 +38,10 @@ import { getDiscoveryRules } from '../../../lib/rule-engine';
 import {
   buildBookingFinancialNotesMeta,
   buildBookingPromotionNotesMeta,
+  serializeBookingFinancialMeta,
   resolveBookingPromotions,
 } from '../../../lib/services/booking-promotion-service';
+import { enrichFinancialMetaWithSettlement } from '../../../finance/settlement/build-settlement-snapshot';
 import { discountsWithinTolerance } from '../../../utils/vendor-promotion-engine';
 import {
   SQL_BOOKING_BLOCKS_SLOT,
@@ -1657,23 +1659,71 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           if (Number.isFinite(servicePrice) && servicePrice >= 0) {
             bookingData.base_price = Math.round(servicePrice * 100) / 100;
           }
-          const finNotes = buildBookingFinancialNotesMeta({
-            servicePrice: Number.isFinite(servicePrice) ? servicePrice : calculatedBasePrice,
-            vendorDiscount: parseFloat(String(fm.vendorDiscount ?? fm.vendor_discount ?? 0)) || 0,
-            platformDiscount: parseFloat(String(fm.platformDiscount ?? fm.platform_discount ?? 0)) || 0,
-            couponDiscount: parseFloat(String(fm.couponDiscount ?? fm.coupon_discount ?? 0)) || 0,
-            subtotalAfterDiscounts:
-              parseFloat(String(fm.subtotalAfterDiscounts ?? fm.subtotal_after_discounts ?? 0)) || undefined,
-            cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
-            sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
-            igst: parseFloat(String(fm.igst ?? 0)) || 0,
-            totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
-            platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
-            convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
-            deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
-            walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
-            finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
-          });
+          const servicePriceForMeta = Number.isFinite(servicePrice) ? servicePrice : calculatedBasePrice;
+          const vendorDisc =
+            parseFloat(String(fm.vendorDiscount ?? fm.vendor_discount ?? 0)) ||
+            resolvedBookingPromotions?.vendorDiscountAmount ||
+            0;
+          const platformDisc =
+            parseFloat(String(fm.platformDiscount ?? fm.platform_discount ?? 0)) ||
+            resolvedBookingPromotions?.platformDiscountAmount ||
+            0;
+          const couponDisc = parseFloat(String(fm.couponDiscount ?? fm.coupon_discount ?? 0)) || 0;
+          const settlementVendorId = String(bookingData.vendor_id ?? body.vendorId ?? body.vendor_id ?? '');
+          const enrichedMeta = settlementVendorId
+            ? await enrichFinancialMetaWithSettlement({
+                vendorId: settlementVendorId,
+                servicePrice: servicePriceForMeta,
+                vendorDiscount: vendorDisc,
+                platformDiscount: platformDisc,
+                couponDiscount: couponDisc,
+                vendorPromotionId: resolvedBookingPromotions?.vendorPromotionId,
+                platformPromotionId: resolvedBookingPromotions?.platformPromotionId,
+                couponFundingType: 'PLATFORM',
+              })
+            : {
+                servicePrice: servicePriceForMeta,
+                vendorDiscount: vendorDisc,
+                platformDiscount: platformDisc,
+                couponDiscount: couponDisc,
+                subtotalAfterDiscounts:
+                  parseFloat(String(fm.subtotalAfterDiscounts ?? fm.subtotal_after_discounts ?? 0)) || undefined,
+                cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
+                sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
+                igst: parseFloat(String(fm.igst ?? 0)) || 0,
+                totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+                platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
+                convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
+                deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
+                walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
+                finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
+              };
+          if (!settlementVendorId) {
+            Object.assign(enrichedMeta, {
+              subtotalAfterDiscounts:
+                parseFloat(String(fm.subtotalAfterDiscounts ?? fm.subtotal_after_discounts ?? 0)) || undefined,
+              cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
+              sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
+              igst: parseFloat(String(fm.igst ?? 0)) || 0,
+              totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+              platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
+              convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
+              deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
+              walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
+              finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
+            });
+          } else {
+            enrichedMeta.finalPaid = Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount;
+            enrichedMeta.cgst = parseFloat(String(fm.cgst ?? 0)) || 0;
+            enrichedMeta.sgst = parseFloat(String(fm.sgst ?? 0)) || 0;
+            enrichedMeta.igst = parseFloat(String(fm.igst ?? 0)) || 0;
+            enrichedMeta.totalTax = parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0;
+            enrichedMeta.platformFee = parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0;
+            enrichedMeta.convenienceFee = parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0;
+            enrichedMeta.deliveryFee = parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0;
+            enrichedMeta.walletAmount = parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0;
+          }
+          const finNotes = serializeBookingFinancialMeta(enrichedMeta);
           bookingData.notes = bookingData.notes
             ? `${bookingData.notes} | ${finNotes}`
             : finNotes;

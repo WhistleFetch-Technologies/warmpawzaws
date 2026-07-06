@@ -5,6 +5,7 @@ import type {
   PriorityConfiguration,
   StackPolicyConfiguration,
 } from '../config/types';
+import type { BusinessRulesConfiguration } from '../config/business-rules-types';
 
 export interface RuntimePolicyVersions {
   priorityVersion: string;
@@ -19,6 +20,8 @@ export interface RuntimePolicy extends RuntimePolicyVersions {
   stack: StackPolicyConfiguration;
   funding: FundingConfiguration;
   limits: LimitConfiguration;
+  /** Optional business rules overlay from Policy Center publish bundle. */
+  businessRules?: BusinessRulesConfiguration;
   featureFlagSnapshot?: string;
   publishId?: string;
   mergedAt: string;
@@ -29,6 +32,7 @@ export interface RuntimePolicySources {
   stack: StackPolicyConfiguration;
   funding: FundingConfiguration;
   limits: LimitConfiguration;
+  businessRules?: BusinessRulesConfiguration;
   domain: DiscountDomain;
   featureFlagSnapshot?: string;
   publishId?: string;

@@ -24,7 +24,7 @@ import { PolicySimulatorSection } from './sections/PolicySimulatorSection';
 import { AuditViewerSection } from './sections/AuditViewerSection';
 
 export function PolicyCenter() {
-  const [activeTab, setActiveTab] = useState<PolicyCenterTabId>('priority');
+  const [activeTab, setActiveTab] = useState<PolicyCenterTabId>('stack');
   const [viewDomain, setViewDomain] = useState<PolicyViewDomain>('services');
   const {
     draft,
@@ -87,7 +87,8 @@ export function PolicyCenter() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Policy Center</h1>
             <p className="text-sm text-slate-500">
-              Configure priority, stack, funding, and limits for the Discount Engine V2.
+              Configure discount application, winning offer strategy, funding, and limits for Discount
+              Engine V2.
             </p>
           </div>
         </div>
@@ -136,7 +137,7 @@ export function PolicyCenter() {
             <PolicyHistorySection />
           </TabsContent>
           <TabsContent value="simulator">
-            <PolicySimulatorSection />
+            <PolicySimulatorSection draft={draft} />
           </TabsContent>
           <TabsContent value="audit">
             <AuditViewerSection />

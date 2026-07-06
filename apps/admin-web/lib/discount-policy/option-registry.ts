@@ -7,6 +7,10 @@ import type {
   PriorityStrategyKey,
   TieBreakerKey,
 } from './types';
+import type {
+  DiscountApplicationStrategy,
+  WinningStrategyKey,
+} from './business-rules-types';
 
 export const POLICY_DOMAIN_OPTIONS: { value: DiscountDomainKey; label: string }[] = [
   { value: 'SERVICE', label: 'Service bookings' },
@@ -15,6 +19,63 @@ export const POLICY_DOMAIN_OPTIONS: { value: DiscountDomainKey; label: string }[
   { value: 'TELECONSULT', label: 'Teleconsultation' },
   { value: 'SUBSCRIPTION', label: 'Subscriptions' },
   { value: 'MEMBERSHIP', label: 'Memberships' },
+];
+
+export const APPLICATION_STRATEGY_OPTIONS: {
+  value: DiscountApplicationStrategy;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: 'BEST_OFFER_ONLY',
+    label: 'Apply Best Offer Only',
+    description:
+      'When enabled, only one eligible promotion or coupon will be applied to a transaction.',
+  },
+  {
+    value: 'STACK_ELIGIBLE',
+    label: 'Stack Eligible Offers',
+    description:
+      'Allow multiple discounts when configured offer combinations are enabled in the rule matrix.',
+  },
+  {
+    value: 'CUSTOM_RULES',
+    label: 'Custom Rules',
+    description:
+      'Advanced mode — use engine stack rules directly. For power users and future offer types.',
+  },
+];
+
+export const WINNING_STRATEGY_OPTIONS: {
+  value: WinningStrategyKey;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: 'MAX_CUSTOMER_SAVINGS',
+    label: 'Maximum Customer Savings',
+    description: 'Determines which offer wins when multiple offers are applicable.',
+  },
+  {
+    value: 'HIGHEST_PRIORITY',
+    label: 'Highest Priority',
+    description: 'Uses configured priority weights on promotion and coupon records.',
+  },
+  {
+    value: 'LOWEST_PLATFORM_COST',
+    label: 'Lowest Platform Cost',
+    description: 'Minimizes platform-funded discount exposure when choosing the winning offer.',
+  },
+  {
+    value: 'VENDOR_PREFERRED',
+    label: 'Vendor Preferred',
+    description: 'Prefers vendor-funded offers over platform offers when both are eligible.',
+  },
+  {
+    value: 'CUSTOM_PRIORITY',
+    label: 'Custom Priority',
+    description: 'Uses admin-defined offer type order to determine the winning offer.',
+  },
 ];
 
 export const PRIORITY_STRATEGY_OPTIONS: {
@@ -79,8 +140,8 @@ export const CAP_OVERFLOW_OPTIONS: { value: CapOverflowStrategy; label: string }
 ];
 
 export const POLICY_CENTER_TABS = [
-  { id: 'priority', label: 'Priority', group: 'configuration' },
-  { id: 'stack', label: 'Stack', group: 'configuration' },
+  { id: 'stack', label: 'Discount Application', group: 'configuration' },
+  { id: 'priority', label: 'Winning Offer', group: 'configuration' },
   { id: 'funding', label: 'Funding', group: 'configuration' },
   { id: 'limits', label: 'Limits', group: 'configuration' },
   { id: 'runtime', label: 'Runtime Policy', group: 'diagnostics' },

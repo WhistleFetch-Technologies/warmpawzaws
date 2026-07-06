@@ -26,6 +26,15 @@ import { getVendorCommissionRate, isCanonicalPackageParentBooking } from './vend
 
 import { applySettlementPreviewToCommissionableGross, extractSettlementPreviewFromBooking } from '../discount-engine/settlement/settlement-hook-bridge';
 
+import {
+  createFundingAwareVendorEarnings,
+} from '../finance/settlement/create-vendor-earnings-from-snapshot';
+
+import {
+  isFinanceFundingAwareSettlementEnabled,
+  useFundingAwareVendorEarnings,
+} from '../finance/settlement/finance-settlement-mode';
+
 import { loadBookingServiceSnapshot } from './booking-service-snapshot';
 
 import { resolveVendorVisibleBookingAmount } from './entity-extractor';
@@ -224,11 +233,45 @@ export async function ensureVendorEarningsForCompletedBooking(
 
     const earningsVendorId = await resolveVendorId(rawVendorId);
 
+    let totalAmount = await resolveLedgerGrossForVendorCommission(booking, bookingId);
+
+    const merged = { ...booking, ...(await syncBookingGrossFromPaidSources(bookingId)) };
+
+    const realizedAt =
+
+      options?.realizedAt ?? pickBookingRealizedAtIso(merged) ?? new Date().toISOString();
+
+    if (isFinanceFundingAwareSettlementEnabled()) {
+      const faResult = await createFundingAwareVendorEarnings(
+        merged,
+        bookingId,
+        earningsVendorId,
+        totalAmount,
+        realizedAt,
+        logPrefix
+      );
+      if (useFundingAwareVendorEarnings() && faResult.inserted) {
+        await query(
+          `UPDATE vendors 
+           SET pending_payout = COALESCE(pending_payout, 0) + $1,
+               total_earnings = COALESCE(total_earnings, 0) + $1,
+               updated_at = NOW()
+           WHERE id = $2`,
+          [faResult.snapshot.vendorSettlement, earningsVendorId]
+        ).catch((err: unknown) =>
+          console.warn(`${logPrefix} vendor totals update:`, (err as Error)?.message)
+        );
+        return true;
+      }
+      if (useFundingAwareVendorEarnings()) {
+        return false;
+      }
+    }
+
     const commissionRate = await getVendorCommissionRate(earningsVendorId);
 
-    let totalAmount = await resolveLedgerGrossForVendorCommission(booking, bookingId);
-    const settlementPreview = extractSettlementPreviewFromBooking(booking);
-    totalAmount = applySettlementPreviewToCommissionableGross(totalAmount, settlementPreview);
+    const settlementPreviewLegacy = extractSettlementPreviewFromBooking(booking);
+    totalAmount = applySettlementPreviewToCommissionableGross(totalAmount, settlementPreviewLegacy);
 
     const commissionAmount = Math.round((totalAmount * commissionRate) / 100 * 100) / 100;
 
@@ -247,14 +290,6 @@ export async function ensureVendorEarningsForCompletedBooking(
       return false;
 
     }
-
-
-
-    const merged = { ...booking, ...(await syncBookingGrossFromPaidSources(bookingId)) };
-
-    const realizedAt =
-
-      options?.realizedAt ?? pickBookingRealizedAtIso(merged) ?? new Date().toISOString();
 
 
 
