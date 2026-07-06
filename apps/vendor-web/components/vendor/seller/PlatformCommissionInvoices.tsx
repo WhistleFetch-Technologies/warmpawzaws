@@ -46,7 +46,12 @@ function docTypeLabel(type: string): string {
   return 'Tax invoice';
 }
 
-function DisabledState({ reason }: { reason: PlatformTaxApiStatus extends { available: false } ? PlatformTaxApiStatus['reason'] : never }) {
+type PlatformTaxUnavailableReason = Extract<
+  PlatformTaxApiStatus,
+  { available: false }
+>['reason'];
+
+function DisabledState({ reason }: { reason: PlatformTaxUnavailableReason }) {
   const detail =
     reason === 'MIGRATION_REQUIRED'
       ? 'Database migration is pending on the API environment. Contact your administrator.'
@@ -113,7 +118,7 @@ export function PlatformCommissionInvoices({ sellerId }: PlatformCommissionInvoi
     }
   };
 
-  const handleDownloadPdf = async (doc: PlatformTaxDocumentSummary) => {
+  const handleDownloadDocument = async (doc: PlatformTaxDocumentSummary) => {
     try {
       setDownloadingId(doc.id);
       const fileName = doc.invoiceNumber
@@ -131,7 +136,7 @@ export function PlatformCommissionInvoices({ sellerId }: PlatformCommissionInvoi
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Download failed';
       if (msg.includes('404') || msg.includes('PDF_NOT_GENERATED')) {
-        toast.error('PDF has not been generated for this document yet.');
+        toast.error('Document file has not been generated yet. Please try again later.');
       } else {
         toast.error(msg);
       }
@@ -255,10 +260,10 @@ export function PlatformCommissionInvoices({ sellerId }: PlatformCommissionInvoi
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDownloadPdf(doc)}
+                          onClick={() => handleDownloadDocument(doc)}
                           disabled={downloadingId === doc.id || doc.status !== 'ISSUED'}
                           className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg disabled:opacity-40"
-                          title="Download PDF"
+                          title="Download document"
                         >
                           {downloadingId === doc.id ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -328,12 +333,12 @@ export function PlatformCommissionInvoices({ sellerId }: PlatformCommissionInvoi
               <button
                 type="button"
                 onClick={() => {
-                  handleDownloadPdf(selectedDoc);
+                  handleDownloadDocument(selectedDoc);
                   setSelectedDoc(null);
                 }}
                 className="mt-6 w-full py-3 bg-orange-500 text-white rounded-xl font-semibold"
               >
-                Download PDF
+                Download document
               </button>
             )}
           </div>

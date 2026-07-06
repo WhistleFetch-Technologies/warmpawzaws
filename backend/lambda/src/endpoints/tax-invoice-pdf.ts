@@ -372,9 +372,13 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
       const offset = parseInt(c.req.query('offset') || '0');
       const month = c.req.query('month'); // Format: YYYY-MM
       const status = c.req.query('status');
+      const access = await assertVendorInvoiceAccess(c, vendorId);
+      if (!access.ok) {
+        return c.json({ success: false, error: access.error }, access.status);
+      }
 
       let whereClause = 'WHERE i.vendor_id = $1';
-      const params: any[] = [vendorId];
+      const params: any[] = [access.vendorId];
       let paramIdx = 2;
 
       if (month) {
@@ -466,6 +470,10 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
       if (!month) {
         return c.json({ success: false, error: 'Month parameter required (format: YYYY-MM)' }, 400);
       }
+      const access = await assertVendorInvoiceAccess(c, vendorId);
+      if (!access.ok) {
+        return c.json({ success: false, error: access.error }, access.status);
+      }
 
       // Fetch all invoices for the month
       const invoicesQuery = `
@@ -482,7 +490,7 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
         ORDER BY i.invoice_date
       `;
 
-      const result = await query(invoicesQuery, [vendorId, month]);
+      const result = await query(invoicesQuery, [access.vendorId, month]);
 
       const effectiveRate = (i: any) => effectiveInvoiceGstRatePercent(i);
 
@@ -531,7 +539,7 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
           AND oi.hsn_code IS NOT NULL
         GROUP BY oi.hsn_code
       `;
-      const hsnResult = await query(hsnSummaryQuery, [vendorId, month]);
+      const hsnResult = await query(hsnSummaryQuery, [access.vendorId, month]);
 
       const hsnSummary = (hsnResult.rows || []).map((h: any) => ({
         'HSN Code': h.hsn_code,
@@ -559,6 +567,90 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error generating GSTR-1 export:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.post('/admin/invoices/ecommerce/backfill', async (c) => {
+    try {
+      const admin = await assertAdminInvoiceAccess(c);
+      if (!admin.ok) {
+        return c.json({ success: false, error: admin.error }, admin.status);
+      }
+
+      const body = await c.req.json().catch(() => ({}));
+      const vendorId = body?.vendorId ? String(body.vendorId) : null;
+      const periodFrom = body?.periodFrom ? String(body.periodFrom) : null;
+      const periodTo = body?.periodTo ? String(body.periodTo) : null;
+      const dryRun = Boolean(body?.dryRun);
+      const limit = Math.min(Math.max(parseInt(String(body?.limit ?? 100), 10) || 100, 1), 500);
+
+      const conditions = [
+        `o.order_status = 'delivered'`,
+        `NOT EXISTS (SELECT 1 FROM invoices i WHERE i.order_id = o.id)`,
+      ];
+      const params: unknown[] = [];
+      let idx = 1;
+
+      if (vendorId) {
+        conditions.push(`o.vendor_id = $${idx++}::uuid`);
+        params.push(vendorId);
+      }
+      if (periodFrom) {
+        conditions.push(`o.created_at >= $${idx++}::timestamptz`);
+        params.push(periodFrom);
+      }
+      if (periodTo) {
+        conditions.push(`o.created_at < ($${idx++}::date + INTERVAL '1 day')`);
+        params.push(periodTo);
+      }
+
+      params.push(limit);
+      const ordersRes = await query(
+        `SELECT o.id::text AS id, o.vendor_id::text AS vendor_id, o.order_number
+         FROM orders o
+         WHERE ${conditions.join(' AND ')}
+         ORDER BY o.created_at ASC
+         LIMIT $${idx}`,
+        params
+      );
+
+      const candidates = ordersRes.rows ?? [];
+      if (dryRun) {
+        return c.json({
+          success: true,
+          dryRun: true,
+          count: candidates.length,
+          orders: candidates,
+        });
+      }
+
+      const generated: Array<{ orderId: string; invoiceId?: string }> = [];
+      const failed: Array<{ orderId: string; error: string }> = [];
+
+      for (const order of candidates) {
+        const orderId = String(order.id);
+        try {
+          const result = await ensureOrderInvoiceGenerated(orderId);
+          generated.push({ orderId, invoiceId: result.invoiceId ?? result.invoice?.id });
+        } catch (error) {
+          failed.push({
+            orderId,
+            error: error instanceof Error ? error.message : 'Unknown invoice generation error',
+          });
+        }
+      }
+
+      return c.json({
+        success: true,
+        scanned: candidates.length,
+        generatedCount: generated.length,
+        failedCount: failed.length,
+        generated,
+        failed,
+      });
+    } catch (error: any) {
+      console.error('Error backfilling ecommerce invoices:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
@@ -1313,6 +1405,60 @@ function effectiveInvoiceGstRatePercent(invoiceRow: {
   const tax = parseFloat(String(invoiceRow.tax_amount ?? 0));
   if (subtotal <= 0 || tax <= 0) return '0';
   return (Math.round((tax / subtotal) * 10000) / 100).toFixed(2);
+}
+
+async function assertVendorInvoiceAccess(
+  c: Context,
+  vendorId: string
+): Promise<{ ok: true; vendorId: string } | { ok: false; error: string; status: 401 | 403 }> {
+  const authHeader = c.req.header('Authorization') || c.req.header('authorization') || '';
+  if (!authHeader) {
+    return { ok: false, error: 'Authentication required', status: 401 };
+  }
+
+  const verified = await extractAndVerifyAuthToken({ authorization: authHeader });
+  if (!verified.valid || !verified.payload?.sub) {
+    return { ok: false, error: 'Authentication required', status: 401 };
+  }
+
+  const userId = verified.payload.sub;
+  const role = String(verified.payload['custom:user_type'] || verified.payload['custom:role'] || '').toLowerCase();
+  const resolvedVendor = await resolveVendorId(vendorId);
+  if (role === 'admin' || role.includes('admin')) {
+    return { ok: true, vendorId: resolvedVendor || vendorId };
+  }
+
+  const resolvedUser = await resolveVendorId(String(userId));
+  if (resolvedVendor && resolvedUser && String(resolvedVendor) === String(resolvedUser)) {
+    return { ok: true, vendorId: resolvedVendor };
+  }
+
+  if (String(userId) === String(vendorId)) {
+    return { ok: true, vendorId };
+  }
+
+  return { ok: false, error: 'Not authorized for this vendor', status: 403 };
+}
+
+async function assertAdminInvoiceAccess(
+  c: Context
+): Promise<{ ok: true } | { ok: false; error: string; status: 401 | 403 }> {
+  const authHeader = c.req.header('Authorization') || c.req.header('authorization') || '';
+  if (!authHeader) {
+    return { ok: false, error: 'Authentication required', status: 401 };
+  }
+
+  const verified = await extractAndVerifyAuthToken({ authorization: authHeader });
+  if (!verified.valid || !verified.payload?.sub) {
+    return { ok: false, error: 'Authentication required', status: 401 };
+  }
+
+  const role = String(verified.payload['custom:user_type'] || verified.payload['custom:role'] || '').toLowerCase();
+  if (role === 'admin' || role.includes('admin')) {
+    return { ok: true };
+  }
+
+  return { ok: false, error: 'Admin access required', status: 403 };
 }
 
 async function assertInvoiceDownloadAccess(
