@@ -19,6 +19,11 @@ import {
   resolveWithProductionMode,
 } from '../../discount-engine/resolver/production-bridge';
 import { mapResolverResultToBookingPromotion } from '../../discount-engine/resolver/resolver-result-mappers';
+import {
+  expandPromotionServiceTokensForVendor,
+  parsePromotionServicesList,
+  platformPromoMatchesBookingContext,
+} from '../../utils/platform-promotion-matching';
 
 export type ResolveBookingPromotionsParams = {
   vendorId: string;
@@ -38,20 +43,6 @@ function normalizeStyle(raw: unknown): string {
   if (value === 'clinic' || value === 'center' || value === 'at_center') return 'at_center';
   if (value === 'online' || value === 'tele') return 'tele';
   return value;
-}
-
-function parseServicesList(raw: unknown): string[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw.map((x) => String(x).trim()).filter(Boolean);
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.map((x) => String(x).trim()).filter(Boolean) : [];
-    } catch {
-      return [raw.trim()].filter(Boolean);
-    }
-  }
-  return [];
 }
 
 /**
@@ -87,61 +78,22 @@ export async function normalizeBookingServiceIds(
   }
 }
 
-function platformPromoMatchesContext(
-  row: Record<string, unknown>,
-  params: { category?: string; serviceStyle?: string; serviceIds: string[]; amount: number }
-): boolean {
-  const now = new Date();
-  const start = row.start_date ? new Date(String(row.start_date)) : null;
-  const end = row.end_date ? new Date(String(row.end_date)) : null;
-  if (start && now < start) return false;
-  if (end && now > end) return false;
-  if (row.published === false) return false;
-
-  const minOrder = row.min_order_amount != null ? parseFloat(String(row.min_order_amount)) : 0;
-  if (minOrder > 0 && params.amount > 0 && params.amount < minOrder) return false;
-
-  const category = String(params.category || '').trim().toLowerCase();
-  const style = normalizeStyle(params.serviceStyle);
-  const services = parseServicesList(row.applicable_services);
-  const rowCategory = String(
-    row.service_category ?? row.target_category ?? ''
-  )
-    .trim()
-    .toLowerCase();
-  const rowStyle = normalizeStyle(row.service_style ?? row.target_service_style ?? '');
-
-  if (rowCategory && category && rowCategory !== 'all' && rowCategory !== category) {
-    const inServices = services.some((s) => !s.startsWith('style:') && s.toLowerCase() === category);
-    if (!inServices) return false;
-  }
-
-  if (rowStyle && style && rowStyle !== 'all' && rowStyle !== style) {
-    const styleToken = services.find((s) => s.startsWith('style:'));
-    if (styleToken) {
-      const fromToken = normalizeStyle(styleToken.replace(/^style:/, ''));
-      if (fromToken && fromToken !== style) return false;
-    } else if (rowStyle !== style) {
-      return false;
-    }
-  }
-
-  if (services.length > 0 && params.serviceIds.length > 0) {
-    const nonStyle = services.filter((s) => !s.startsWith('style:'));
-    if (nonStyle.length > 0) {
-      const match = params.serviceIds.some((id) => nonStyle.includes(id));
-      if (!match && category && !nonStyle.includes(category)) return false;
-    }
-  }
-
-  return true;
-}
-
 function platformPromoMatchesContextWithShadow(
   row: Record<string, unknown>,
-  params: { category?: string; serviceStyle?: string; serviceIds: string[]; amount: number }
+  params: { category?: string; serviceStyle?: string; serviceIds: string[]; amount: number },
+  expandedServiceTokens: Set<string>
 ): boolean {
-  const legacy = platformPromoMatchesContext(row, params);
+  const legacy = platformPromoMatchesBookingContext(
+    row,
+    {
+      category: params.category,
+      serviceStyle: params.serviceStyle,
+      serviceIds: params.serviceIds,
+      amount: params.amount,
+      expandedServiceTokens,
+    },
+    normalizeStyle
+  );
   return shadowPlatformPromoEligibility(row, params, legacy);
 }
 
@@ -175,15 +127,31 @@ async function loadPlatformPromotions(
          AND start_date <= CURRENT_DATE
          AND (end_date IS NULL OR end_date >= CURRENT_DATE)`
     );
-    const rows = ((res as { rows?: Record<string, unknown>[] }).rows || []).filter((row) =>
-      platformPromoMatchesContextWithShadow(row, {
-        category: params.serviceCategory,
-        serviceStyle: params.serviceStyle,
-        serviceIds: params.serviceIds,
-        amount: params.amount,
-      })
-    );
-    return rows.map((row) => ({
+    const rows = (res as { rows?: Record<string, unknown>[] }).rows || [];
+    const matched: Record<string, unknown>[] = [];
+    for (const row of rows) {
+      const tokens = parsePromotionServicesList(row.applicable_services);
+      const expanded = await expandPromotionServiceTokensForVendor(
+        params.vendorId,
+        tokens,
+        query
+      );
+      if (
+        platformPromoMatchesContextWithShadow(
+          row,
+          {
+            category: params.serviceCategory,
+            serviceStyle: params.serviceStyle,
+            serviceIds: params.serviceIds,
+            amount: params.amount,
+          },
+          expanded
+        )
+      ) {
+        matched.push(row);
+      }
+    }
+    return matched.map((row) => ({
       id: String(row.id),
       name: String(row.name || row.title || 'Offer'),
       discount_type: String(row.discount_type || 'percentage'),
