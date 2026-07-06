@@ -1995,15 +1995,29 @@ export function registerEcommerceEndpoints(app: Hono) {
   app.put("/admin/ecommerce/commission/settings", async (c) => {
     try {
       const body = await c.req.json();
-      const defaultRate =
-        normalizeCommissionRate(body.defaultRate ?? body.commissionRate) ?? 15;
-      const rules = Array.isArray(body.rules) ? body.rules : [];
-      const sellerRates = normalizeSellerRatesForResponse(
-        body.sellerRates ?? body.seller_rates ?? {}
-      );
-
       const existing = await query(
-        `SELECT id FROM ecommerce_commission_settings WHERE setting_key = 'default' LIMIT 1`
+        `SELECT * FROM ecommerce_commission_settings WHERE setting_key = 'default' LIMIT 1`
+      );
+      const existingRow = existing.rows[0] as Record<string, unknown> | undefined;
+
+      const defaultRate = normalizeCommissionRate(
+        body.defaultRate ?? body.commissionRate ?? existingRow?.default_rate
+      );
+      if (defaultRate == null) {
+        return c.json({ error: 'defaultRate must be between 0 and 100' }, 400);
+      }
+
+      const existingRules =
+        typeof existingRow?.rules === 'string'
+          ? JSON.parse(existingRow.rules as string)
+          : Array.isArray(existingRow?.rules)
+            ? existingRow.rules
+            : [];
+      const rules = body.rules !== undefined
+        ? (Array.isArray(body.rules) ? body.rules : [])
+        : existingRules;
+      const sellerRates = normalizeSellerRatesForResponse(
+        body.sellerRates ?? body.seller_rates ?? existingRow?.seller_rates ?? {}
       );
 
       if (existing.rows.length > 0) {

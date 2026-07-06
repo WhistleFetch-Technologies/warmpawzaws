@@ -8,7 +8,8 @@ export type CommissionSource =
   | 'vendor_own_brand'
   | 'vendor_third_party'
   | 'vendor_default'
-  | 'category_default';
+  | 'category_default'
+  | 'platform_default';
 
 export class CommissionConfigurationError extends Error {
   readonly code = 'COMMISSION_NOT_CONFIGURED' as const;

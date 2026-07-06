@@ -98,6 +98,46 @@ describe('resolveProductCommission V2', () => {
     expect(result.rate).toBe(14);
     expect(result.source).toBe('category_default');
   });
+
+  it('falls through to configured platform default', async () => {
+    mockQuery.mockImplementation(async (sql: string) => {
+      if (String(sql).includes('vendor_commission_config')) {
+        return { rows: [{ commission_model: 'category', default_commission_rate: null }] } as any;
+      }
+      if (String(sql).includes('vendor_category_commission_rates')) return { rows: [] } as any;
+      if (String(sql).includes('ecommerce_categories')) return { rows: [] } as any;
+      if (String(sql).includes('ecommerce_commission_settings')) {
+        return { rows: [{ default_rate: '15' }] } as any;
+      }
+      return { rows: [] } as any;
+    });
+
+    const result = await resolveProductCommission({
+      vendorId: 'vendor-1',
+      categoryId: 'cat-1',
+    });
+
+    expect(result.rate).toBe(15);
+    expect(result.source).toBe('platform_default');
+  });
+
+  it('uses platform default when vendor config is missing', async () => {
+    mockQuery.mockImplementation(async (sql: string) => {
+      if (String(sql).includes('ecommerce_categories')) return { rows: [] } as any;
+      if (String(sql).includes('ecommerce_commission_settings')) {
+        return { rows: [{ default_rate: '13' }] } as any;
+      }
+      return { rows: [] } as any;
+    });
+
+    const result = await resolveProductCommission({
+      vendorId: 'vendor-1',
+      categoryId: 'cat-1',
+    });
+
+    expect(result.rate).toBe(13);
+    expect(result.source).toBe('platform_default');
+  });
 });
 
 describe('resolveOrderCommission', () => {

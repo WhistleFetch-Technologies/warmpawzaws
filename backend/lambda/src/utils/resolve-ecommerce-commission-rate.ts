@@ -1,7 +1,7 @@
 /**
  * Ecommerce commission V2 resolver.
- * Priority: vendor model branch → vendor default → category default → error.
- * No tier, platform fallback, or hidden defaults.
+ * Priority: vendor model branch → vendor default → category default → platform default → error.
+ * No tier or hidden defaults.
  */
 
 import { query } from '../database/rds-connection';
@@ -108,6 +108,18 @@ async function getCategoryDefaultRate(categoryId: string): Promise<number | null
   }
 }
 
+async function getPlatformDefaultRate(): Promise<number | null> {
+  try {
+    const result = await query(
+      `SELECT default_rate FROM ecommerce_commission_settings
+       WHERE setting_key = 'default' LIMIT 1`
+    );
+    return normalizeCommissionRate(result.rows?.[0]?.default_rate);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Resolve commission for a single product line.
  */
@@ -119,15 +131,8 @@ export async function resolveProductCommission(
 
   const config = await getVendorCommissionConfig(vendorId);
   if (!config) {
-    throw new CommissionConfigurationError({
-      vendorId,
-      productId: productId ?? undefined,
-      categoryId: categoryId ?? undefined,
-      missing: ['commission_model'],
-    });
-  }
-
-  if (config.commissionModel === 'category') {
+    missing.push('commission_model');
+  } else if (config.commissionModel === 'category') {
     if (categoryId) {
       const vendorCategoryRate = await getVendorCategoryRate(vendorId, categoryId);
       if (vendorCategoryRate != null) {
@@ -136,43 +141,34 @@ export async function resolveProductCommission(
     }
   } else if (config.commissionModel === 'ownership') {
     if (!productId) {
-      throw new CommissionConfigurationError({
-        vendorId,
-        categoryId: categoryId ?? undefined,
-        missing: ['product_id_for_ownership'],
-      });
-    }
-    const ownership = await getProductListingOwnership(productId);
-    if (!ownership) {
-      throw new CommissionConfigurationError({
-        vendorId,
-        productId,
-        categoryId: categoryId ?? undefined,
-        missing: ['listing_ownership'],
-      });
-    }
-    if (ownership === 'own_brand') {
-      if (config.ownBrandCommissionRate != null) {
-        return {
-          rate: config.ownBrandCommissionRate,
-          source: 'vendor_own_brand',
-          listingOwnership: ownership,
-        };
-      }
-      missing.push('own_brand_commission_rate');
+      missing.push('product_id_for_ownership');
     } else {
-      if (config.thirdPartyCommissionRate != null) {
-        return {
-          rate: config.thirdPartyCommissionRate,
-          source: 'vendor_third_party',
-          listingOwnership: ownership,
-        };
+      const ownership = await getProductListingOwnership(productId);
+      if (!ownership) {
+        missing.push('listing_ownership');
+      } else if (ownership === 'own_brand') {
+        if (config.ownBrandCommissionRate != null) {
+          return {
+            rate: config.ownBrandCommissionRate,
+            source: 'vendor_own_brand',
+            listingOwnership: ownership,
+          };
+        }
+        missing.push('own_brand_commission_rate');
+      } else {
+        if (config.thirdPartyCommissionRate != null) {
+          return {
+            rate: config.thirdPartyCommissionRate,
+            source: 'vendor_third_party',
+            listingOwnership: ownership,
+          };
+        }
+        missing.push('third_party_commission_rate');
       }
-      missing.push('third_party_commission_rate');
     }
   }
 
-  if (config.defaultCommissionRate != null) {
+  if (config?.defaultCommissionRate != null) {
     return { rate: config.defaultCommissionRate, source: 'vendor_default' };
   }
 
@@ -185,6 +181,12 @@ export async function resolveProductCommission(
   } else {
     missing.push('category_id');
   }
+
+  const platformRate = await getPlatformDefaultRate();
+  if (platformRate != null) {
+    return { rate: platformRate, source: 'platform_default' };
+  }
+  missing.push('platform_default');
 
   throw new CommissionConfigurationError({
     vendorId,
