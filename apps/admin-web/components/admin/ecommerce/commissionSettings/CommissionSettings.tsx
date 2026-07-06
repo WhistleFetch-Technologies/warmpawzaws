@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Percent, Save, Search, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { Percent, Save, Search, ChevronDown, ChevronUp, Trash2, FileText, RefreshCcw, Loader2 } from 'lucide-react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { toast, Toaster } from 'sonner';
@@ -26,9 +26,53 @@ interface CategoryRateRow {
   rate: string;
 }
 
+interface PlatformTaxHealth {
+  enabled: boolean;
+  migrationApplied: boolean;
+}
+
+interface PlatformTaxPreview {
+  taxableAmount: number;
+  gstAmount: number;
+  totalAmount: number;
+  gstRate: number;
+  commissionRate: number | null;
+  source: string;
+  sourceRowCount: number;
+  existingDocumentId: string | null;
+  existingInvoiceNumber: string | null;
+  missing?: string[];
+}
+
+interface PlatformTaxDocumentSummary {
+  id: string;
+  invoiceNumber: string | null;
+  status: string;
+  periodFrom: string;
+  periodTo: string;
+  taxableAmount: number;
+  gstAmount: number;
+  totalAmount: number;
+}
+
+function currentMonthRange(): { from: string; to: string } {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    from: from.toISOString().slice(0, 10),
+    to: to.toISOString().slice(0, 10),
+  };
+}
+
+function formatMoney(value: number): string {
+  return `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export function CommissionSettings() {
   const [loading, setLoading] = useState(true);
   const [savingVendor, setSavingVendor] = useState(false);
+  const [savingPlatform, setSavingPlatform] = useState(false);
 
   const [sellers, setSellers] = useState<SellerOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
@@ -46,6 +90,16 @@ export function CommissionSettings() {
   const [addCategoryId, setAddCategoryId] = useState('');
   const [addCategoryRate, setAddCategoryRate] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [platformDefaultRate, setPlatformDefaultRate] = useState('');
+  const [platformTaxHealth, setPlatformTaxHealth] = useState<PlatformTaxHealth | null>(null);
+  const [platformTaxDocs, setPlatformTaxDocs] = useState<PlatformTaxDocumentSummary[]>([]);
+  const [platformTaxLoading, setPlatformTaxLoading] = useState(false);
+  const [platformTaxPreview, setPlatformTaxPreview] = useState<PlatformTaxPreview | null>(null);
+  const [previewingTaxDoc, setPreviewingTaxDoc] = useState(false);
+  const [issuingTaxDoc, setIssuingTaxDoc] = useState(false);
+  const monthRange = useMemo(() => currentMonthRange(), []);
+  const [taxPeriodFrom, setTaxPeriodFrom] = useState(monthRange.from);
+  const [taxPeriodTo, setTaxPeriodTo] = useState(monthRange.to);
 
   useEffect(() => {
     void loadInitial();
@@ -54,13 +108,23 @@ export function CommissionSettings() {
   useEffect(() => {
     if (selectedVendorId) {
       void loadVendorCommission(selectedVendorId);
+      void loadPlatformTaxDocuments(selectedVendorId);
+      setPlatformTaxPreview(null);
+    } else {
+      setPlatformTaxDocs([]);
+      setPlatformTaxPreview(null);
     }
   }, [selectedVendorId, categories]);
 
   const loadInitial = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadSellers(), loadCategories()]);
+      await Promise.all([
+        loadSellers(),
+        loadCategories(),
+        loadPlatformCommissionSettings(),
+        loadPlatformTaxHealth(),
+      ]);
     } finally {
       setLoading(false);
     }
@@ -97,6 +161,44 @@ export function CommissionSettings() {
       );
     } catch {
       setCategories([]);
+    }
+  };
+
+  const loadPlatformCommissionSettings = async () => {
+    try {
+      const data = await apiClient.get<any>('/admin/ecommerce/commission/settings');
+      const settings = (data as any).settings || (data as any).data?.settings || {};
+      const rate = settings.defaultRate ?? settings.commissionRate;
+      setPlatformDefaultRate(rate != null ? String(rate) : '');
+    } catch {
+      setPlatformDefaultRate('');
+    }
+  };
+
+  const loadPlatformTaxHealth = async () => {
+    try {
+      const data = await apiClient.get<any>('/admin/platform-tax/health');
+      setPlatformTaxHealth({
+        enabled: Boolean((data as any).enabled),
+        migrationApplied: Boolean((data as any).migrationApplied),
+      });
+    } catch {
+      setPlatformTaxHealth({ enabled: false, migrationApplied: false });
+    }
+  };
+
+  const loadPlatformTaxDocuments = async (vendorId: string) => {
+    try {
+      setPlatformTaxLoading(true);
+      const data = await apiClient.get<any>(
+        `/vendor/${vendorId}/platform-tax-documents?limit=5`
+      );
+      const docs = (data as any).documents || (data as any).data?.documents || [];
+      setPlatformTaxDocs(Array.isArray(docs) ? docs : []);
+    } catch {
+      setPlatformTaxDocs([]);
+    } finally {
+      setPlatformTaxLoading(false);
     }
   };
 
@@ -235,6 +337,88 @@ export function CommissionSettings() {
     }
   };
 
+  const handleSavePlatformDefault = async () => {
+    const rate = parseFloat(platformDefaultRate);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+      toast.error('Platform default commission must be between 0 and 100');
+      return;
+    }
+
+    try {
+      setSavingPlatform(true);
+      const data = await apiClient.put<any>('/admin/ecommerce/commission/settings', {
+        defaultRate: rate,
+      });
+      const settings = (data as any).settings || (data as any).data?.settings || {};
+      const savedRate = settings.defaultRate ?? settings.commissionRate ?? rate;
+      setPlatformDefaultRate(String(savedRate));
+      toast.success('Platform default commission saved');
+    } catch {
+      toast.error('Failed to save platform default commission');
+    } finally {
+      setSavingPlatform(false);
+    }
+  };
+
+  const handlePreviewPlatformTax = async () => {
+    if (!selectedVendorId) return;
+    if (!taxPeriodFrom || !taxPeriodTo) {
+      toast.error('Select a billing period');
+      return;
+    }
+    if (taxPeriodTo < taxPeriodFrom) {
+      toast.error('Period end must be after period start');
+      return;
+    }
+
+    try {
+      setPreviewingTaxDoc(true);
+      const data = await apiClient.post<any>('/admin/platform-tax-documents/preview', {
+        vendorId: selectedVendorId,
+        periodFrom: taxPeriodFrom,
+        periodTo: taxPeriodTo,
+      });
+      const preview = (data as any).preview || (data as any).data?.preview;
+      setPlatformTaxPreview(preview ?? null);
+      if (!preview || Number(preview.taxableAmount) <= 0) {
+        toast.info('No platform commission found for this period');
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to preview tax document');
+    } finally {
+      setPreviewingTaxDoc(false);
+    }
+  };
+
+  const handleIssuePlatformTax = async () => {
+    if (!selectedVendorId) return;
+    if (platformTaxPreview?.existingDocumentId) {
+      toast.error('A tax document already exists for this seller and period');
+      return;
+    }
+    if (!platformTaxPreview || platformTaxPreview.taxableAmount <= 0) {
+      toast.error('Preview a positive commission amount before issuing');
+      return;
+    }
+
+    try {
+      setIssuingTaxDoc(true);
+      const data = await apiClient.post<any>('/admin/platform-tax-documents/issue', {
+        vendorId: selectedVendorId,
+        periodFrom: taxPeriodFrom,
+        periodTo: taxPeriodTo,
+      });
+      const invoiceNumber = (data as any).invoiceNumber || 'tax document';
+      toast.success(`Issued ${invoiceNumber}`);
+      setPlatformTaxPreview(null);
+      await loadPlatformTaxDocuments(selectedVendorId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to issue tax document');
+    } finally {
+      setIssuingTaxDoc(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -256,6 +440,41 @@ export function CommissionSettings() {
         <p className="text-gray-500 text-sm mt-1">
           One commission model per seller. Category defaults are set under Categories.
         </p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex flex-col md:flex-row md:items-end gap-4 justify-between">
+          <div>
+            <h3 className="font-semibold text-gray-900">Platform Default Commission</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Final fallback for ecommerce orders when seller and category rates do not resolve.
+            </p>
+          </div>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Rate %</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={platformDefaultRate}
+                onChange={(e) => setPlatformDefaultRate(e.target.value)}
+                placeholder="e.g. 15"
+                className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSavePlatformDefault}
+              disabled={savingPlatform}
+            >
+              {savingPlatform ? 'Saving...' : 'Save Default'}
+            </Button>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -506,10 +725,173 @@ export function CommissionSettings() {
         </div>
       </div>
 
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-[#FF8C42]" />
+              Platform Tax Documents
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Preview and issue WarmPawz commission tax documents for the selected seller.
+            </p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={loadPlatformTaxHealth}>
+            <RefreshCcw className="w-4 h-4 mr-2" />
+            Check status
+          </Button>
+        </div>
+
+        {platformTaxHealth && (!platformTaxHealth.enabled || !platformTaxHealth.migrationApplied) ? (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            Platform tax documents are not ready. Enabled: {platformTaxHealth.enabled ? 'yes' : 'no'},
+            migration: {platformTaxHealth.migrationApplied ? 'applied' : 'missing'}.
+          </div>
+        ) : null}
+
+        {!selectedVendorId ? (
+          <div className="mt-4 flex items-center justify-center h-28 text-gray-500 text-sm border border-dashed rounded-lg">
+            Select a seller to preview or issue platform tax documents.
+          </div>
+        ) : (
+          <div className="mt-5 space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto] gap-3 items-end">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Period from</label>
+                <input
+                  type="date"
+                  value={taxPeriodFrom}
+                  onChange={(e) => {
+                    setTaxPeriodFrom(e.target.value);
+                    setPlatformTaxPreview(null);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Period to</label>
+                <input
+                  type="date"
+                  value={taxPeriodTo}
+                  onChange={(e) => {
+                    setTaxPeriodTo(e.target.value);
+                    setPlatformTaxPreview(null);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handlePreviewPlatformTax}
+                disabled={previewingTaxDoc || platformTaxHealth?.enabled === false}
+              >
+                {previewingTaxDoc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Preview
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleIssuePlatformTax}
+                disabled={
+                  issuingTaxDoc ||
+                  !platformTaxPreview ||
+                  platformTaxPreview.taxableAmount <= 0 ||
+                  Boolean(platformTaxPreview.existingDocumentId)
+                }
+                className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
+              >
+                {issuingTaxDoc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Issue
+              </Button>
+            </div>
+
+            {platformTaxPreview && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-500">Taxable commission</p>
+                    <p className="font-semibold text-gray-900">
+                      {formatMoney(platformTaxPreview.taxableAmount)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">GST</p>
+                    <p className="font-semibold text-gray-900">
+                      {formatMoney(platformTaxPreview.gstAmount)} @ {platformTaxPreview.gstRate}%
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Total</p>
+                    <p className="font-semibold text-gray-900">
+                      {formatMoney(platformTaxPreview.totalAmount)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Source</p>
+                    <p className="font-semibold text-gray-900">
+                      {platformTaxPreview.source} ({platformTaxPreview.sourceRowCount})
+                    </p>
+                  </div>
+                </div>
+                {platformTaxPreview.existingDocumentId && (
+                  <p className="mt-3 text-sm text-amber-700">
+                    Existing document: {platformTaxPreview.existingInvoiceNumber || platformTaxPreview.existingDocumentId}
+                  </p>
+                )}
+                {platformTaxPreview.missing && platformTaxPreview.missing.length > 0 && (
+                  <p className="mt-3 text-xs text-gray-500">
+                    Missing source data: {platformTaxPreview.missing.join(', ')}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
+                <p className="text-sm font-medium text-gray-700">Recent platform documents</p>
+                <button
+                  type="button"
+                  onClick={() => loadPlatformTaxDocuments(selectedVendorId)}
+                  className="text-xs text-[#FF8C42] hover:text-[#E67A32]"
+                >
+                  Refresh
+                </button>
+              </div>
+              {platformTaxLoading ? (
+                <div className="p-4 text-sm text-gray-500">Loading documents...</div>
+              ) : platformTaxDocs.length === 0 ? (
+                <div className="p-4 text-sm text-gray-500">No platform tax documents issued yet.</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {platformTaxDocs.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] gap-2 px-4 py-3 text-sm"
+                    >
+                      <span className="font-mono text-gray-900">{doc.invoiceNumber || doc.id.slice(0, 8)}</span>
+                      <span className="text-gray-600">
+                        {doc.periodFrom?.slice(0, 10)} to {doc.periodTo?.slice(0, 10)}
+                      </span>
+                      <span className="text-gray-900">{formatMoney(doc.totalAmount)}</span>
+                      <span className="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 w-fit">
+                        {doc.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="bg-stone-50 rounded-xl border border-stone-200 p-4">
         <p className="text-xs text-gray-500">
           Priority: vendor model (category or ownership) → optional vendor default → category
-          default → configuration error. No subscription tier or platform fallback for shop orders.
+          default → platform default → configuration error. No subscription tier fallback for shop
+          orders.
         </p>
       </div>
     </div>

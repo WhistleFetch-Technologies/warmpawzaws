@@ -2,7 +2,6 @@
  * Platform tax documents — WarmPawz → vendor GST invoices.
  */
 
-import * as fs from 'fs/promises';
 import { Hono } from 'hono';
 import {
   getPlatformTaxHealthSnapshot,
@@ -14,7 +13,8 @@ import { isPlatformTaxDocumentsEnabled } from '../lib/platform-tax/platform-tax-
 import {
   generatePlatformTaxPdf,
   issuePlatformTaxInvoice,
-  readLocalPlatformTaxPdf,
+  previewPlatformTaxInvoice,
+  readPlatformTaxDocumentBytes,
 } from '../lib/platform-tax/platform-tax-issue.service';
 import {
   toDocumentDetailDto,
@@ -29,7 +29,7 @@ import {
   requireVendorPlatformTaxAccess,
 } from './platform-tax-documents.guard';
 
-function parseJsonBody<T extends Record<string, unknown>>(body: unknown): T | null {
+function parseJsonBody<T extends object>(body: unknown): T | null {
   if (body == null || typeof body !== 'object' || Array.isArray(body)) return null;
   return body as T;
 }
@@ -111,19 +111,19 @@ export function registerPlatformTaxEndpoints(app: Hono) {
       if (!access.ok) return access.response;
 
       const documentId = c.req.param('id');
-      await getVendorPlatformTaxDocument(access.vendorId, documentId);
+      const document = await getVendorPlatformTaxDocument(access.vendorId, documentId);
 
-      let bytes = await readLocalPlatformTaxPdf(documentId);
+      let bytes = await readPlatformTaxDocumentBytes(documentId);
       if (!bytes) {
         await generatePlatformTaxPdf(documentId);
-        bytes = await readLocalPlatformTaxPdf(documentId);
+        bytes = await readPlatformTaxDocumentBytes(documentId);
       }
 
       if (!bytes) {
         return c.json(
           {
             success: false,
-            error: 'PDF has not been generated for this document',
+            error: 'Tax document file has not been generated for this document',
             code: 'PDF_NOT_GENERATED',
           },
           404
@@ -131,11 +131,13 @@ export function registerPlatformTaxEndpoints(app: Hono) {
       }
 
       const isHtml = bytes.slice(0, 15).toString('utf8').toLowerCase().includes('<!doctype');
+      const number = document.invoice_number || documentId.slice(0, 8);
+      const safeName = String(number).replace(/[^\w.-]+/g, '_');
       return new Response(bytes, {
         status: 200,
         headers: {
           'Content-Type': isHtml ? 'text/html; charset=utf-8' : 'application/pdf',
-          'Content-Disposition': `attachment; filename="platform-tax-${documentId.slice(0, 8)}.${isHtml ? 'html' : 'pdf'}"`,
+          'Content-Disposition': `attachment; filename="platform-tax-${safeName}.${isHtml ? 'html' : 'pdf'}"`,
           'Cache-Control': 'private, no-store',
         },
       });
@@ -150,6 +152,37 @@ export function registerPlatformTaxEndpoints(app: Hono) {
     if (!admin.ok) return admin.response;
     const snapshot = await getPlatformTaxHealthSnapshot();
     return c.json({ success: true, ...snapshot });
+  });
+
+  app.post('/admin/platform-tax-documents/preview', async (c) => {
+    try {
+      assertPlatformTaxFeatureEnabledForMutation();
+      const admin = await requireAdminPlatformTaxAccess(c);
+      if (!admin.ok) return admin.response;
+
+      if (!(await isPlatformTaxMigrationApplied())) {
+        return c.json(
+          { success: false, error: 'Platform tax migration not applied', code: 'MIGRATION_REQUIRED' },
+          503
+        );
+      }
+
+      const body = parseJsonBody<IssueTaxDocumentRequestDto>(await c.req.json());
+      if (!body?.vendorId || !body.periodFrom || !body.periodTo) {
+        return c.json({ success: false, error: 'vendorId, periodFrom, periodTo required' }, 400);
+      }
+
+      const preview = await previewPlatformTaxInvoice({
+        vendorId: body.vendorId,
+        periodFrom: body.periodFrom,
+        periodTo: body.periodTo,
+      });
+
+      return c.json({ success: true, preview });
+    } catch (error) {
+      const mapped = mapPlatformTaxErrorToHttp(error);
+      return c.json(mapped.body, mapped.status as 400);
+    }
   });
 
   app.post('/admin/platform-tax-documents/issue', async (c) => {
@@ -192,14 +225,13 @@ export function registerPlatformTaxEndpoints(app: Hono) {
       if (!admin.ok) return admin.response;
 
       const documentId = c.req.param('id');
-      const { pdfPath } = await generatePlatformTaxPdf(documentId);
-      const stat = await fs.stat(pdfPath).catch(() => null);
+      const { pdfPath, sizeBytes } = await generatePlatformTaxPdf(documentId);
 
       return c.json({
         success: true,
         documentId,
         pdfUrl: pdfPath,
-        sizeBytes: stat?.size ?? 0,
+        sizeBytes,
       });
     } catch (error) {
       const mapped = mapPlatformTaxErrorToHttp(error);

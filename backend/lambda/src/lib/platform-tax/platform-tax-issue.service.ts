@@ -1,49 +1,232 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { query, insert } from '../../database/rds-connection';
 import { getPlatformTaxProduct } from './platform-tax-api.service';
-import { resolveSellerCommissionRate } from '../../utils/seller-commission-rate';
+import { resolveOrderCommissionByOrderId } from '../../utils/resolve-ecommerce-commission-rate';
 
 const PRODUCT_CODE = 'PLATFORM_COMMISSION';
+const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+const PLATFORM_TAX_BUCKET =
+  process.env.S3_INVOICES_BUCKET || process.env.S3_UPLOADS_BUCKET || 'warmpawz-invoices';
+
+type PlatformTaxCommissionSource =
+  | 'settlements'
+  | 'vendor_earnings'
+  | 'order_commission_audit'
+  | 'recomputed_orders'
+  | 'none';
+
+interface PlatformTaxCommissionAggregation {
+  taxableAmount: number;
+  source: PlatformTaxCommissionSource;
+  sourceRowCount: number;
+  orderIds: string[];
+  missing: string[];
+  effectiveCommissionRate: number | null;
+}
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-async function aggregateCommissionForPeriod(
+function parseAmount(value: unknown): number {
+  const parsed = parseFloat(String(value ?? 0));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function aggregateSettlements(
   vendorId: string,
   periodFrom: string,
   periodTo: string
-): Promise<number> {
+): Promise<PlatformTaxCommissionAggregation | null> {
   try {
     const settlementRes = await query(
-      `SELECT COALESCE(SUM(commission_amount), 0) AS commission
+      `SELECT COALESCE(SUM(commission_amount), 0) AS commission,
+              COUNT(*)::int AS row_count
        FROM settlements
        WHERE vendor_id = $1::uuid
          AND settlement_period_start >= $2::date
          AND settlement_period_end <= $3::date`,
       [vendorId, periodFrom, periodTo]
     );
-    const fromSettlements = parseFloat(String(settlementRes.rows?.[0]?.commission ?? 0));
-    if (fromSettlements > 0) return fromSettlements;
+    const commission = parseAmount(settlementRes.rows?.[0]?.commission);
+    if (commission > 0) {
+      return {
+        taxableAmount: round2(commission),
+        source: 'settlements',
+        sourceRowCount: parseInt(String(settlementRes.rows?.[0]?.row_count ?? 0), 10) || 0,
+        orderIds: [],
+        missing: [],
+        effectiveCommissionRate: null,
+      };
+    }
   } catch {
     /* settlements schema may vary */
   }
+  return null;
+}
 
+async function aggregateVendorEarnings(
+  vendorId: string,
+  periodFrom: string,
+  periodTo: string
+): Promise<PlatformTaxCommissionAggregation | null> {
   try {
     const earningsRes = await query(
-      `SELECT COALESCE(SUM(commission_amount), 0) AS commission
+      `SELECT COALESCE(SUM(commission_amount), 0) AS commission,
+              COUNT(*)::int AS row_count
        FROM vendor_earnings
        WHERE vendor_id = $1::uuid
          AND realized_at >= $2::timestamptz
          AND realized_at < ($3::date + INTERVAL '1 day')`,
       [vendorId, periodFrom, periodTo]
     );
-    return parseFloat(String(earningsRes.rows?.[0]?.commission ?? 0));
+    const commission = parseAmount(earningsRes.rows?.[0]?.commission);
+    if (commission > 0) {
+      return {
+        taxableAmount: round2(commission),
+        source: 'vendor_earnings',
+        sourceRowCount: parseInt(String(earningsRes.rows?.[0]?.row_count ?? 0), 10) || 0,
+        orderIds: [],
+        missing: [],
+        effectiveCommissionRate: null,
+      };
+    }
   } catch {
-    return 0;
+    /* vendor_earnings schema may vary */
   }
+  return null;
+}
+
+async function loadDeliveredOrdersForPeriod(
+  vendorId: string,
+  periodFrom: string,
+  periodTo: string
+): Promise<Array<{ id: string; commissionAmount: number | null; subtotal: number }>> {
+  const ordersRes = await query(
+    `SELECT id::text AS id,
+            commission_amount,
+            COALESCE(subtotal, total_amount - COALESCE(tax_amount, 0), 0) AS subtotal
+     FROM orders
+     WHERE vendor_id = $1::uuid
+       AND order_status = 'delivered'
+       AND created_at >= $2::timestamptz
+       AND created_at < ($3::date + INTERVAL '1 day')
+     ORDER BY created_at ASC`,
+    [vendorId, periodFrom, periodTo]
+  );
+
+  return (ordersRes.rows ?? []).map((row: Record<string, unknown>) => ({
+    id: String(row.id),
+    commissionAmount:
+      row.commission_amount == null ? null : round2(parseAmount(row.commission_amount)),
+    subtotal: parseAmount(row.subtotal),
+  }));
+}
+
+async function aggregateOrderCommissionAudit(
+  vendorId: string,
+  periodFrom: string,
+  periodTo: string
+): Promise<PlatformTaxCommissionAggregation | null> {
+  try {
+    const orders = await loadDeliveredOrdersForPeriod(vendorId, periodFrom, periodTo);
+    const audited = orders.filter((order) => (order.commissionAmount ?? 0) > 0);
+    const taxableAmount = round2(
+      audited.reduce((sum, order) => sum + (order.commissionAmount ?? 0), 0)
+    );
+    if (taxableAmount > 0) {
+      const subtotal = audited.reduce((sum, order) => sum + order.subtotal, 0);
+      return {
+        taxableAmount,
+        source: 'order_commission_audit',
+        sourceRowCount: audited.length,
+        orderIds: audited.map((order) => order.id),
+        missing: [],
+        effectiveCommissionRate: subtotal > 0 ? round2((taxableAmount / subtotal) * 100) : null,
+      };
+    }
+  } catch {
+    /* orders audit columns may not exist until ecommerce commission migrations are applied */
+  }
+  return null;
+}
+
+async function aggregateRecomputedOrders(
+  vendorId: string,
+  periodFrom: string,
+  periodTo: string
+): Promise<PlatformTaxCommissionAggregation | null> {
+  let orders: Array<{ id: string; subtotal: number }>;
+  try {
+    orders = await loadDeliveredOrdersForPeriod(vendorId, periodFrom, periodTo);
+  } catch {
+    return null;
+  }
+
+  let taxableAmount = 0;
+  let subtotal = 0;
+  const orderIds: string[] = [];
+  const missing = new Set<string>();
+
+  for (const order of orders) {
+    try {
+      const resolved = await resolveOrderCommissionByOrderId(vendorId, order.id);
+      taxableAmount += resolved.commissionAmount;
+      subtotal += resolved.orderSubtotal;
+      orderIds.push(order.id);
+    } catch (err) {
+      const details = (err as { missing?: string[] })?.missing;
+      if (Array.isArray(details)) {
+        details.forEach((item) => missing.add(item));
+      } else {
+        missing.add('commission_rate');
+      }
+    }
+  }
+
+  taxableAmount = round2(taxableAmount);
+  if (taxableAmount <= 0) {
+    return null;
+  }
+
+  return {
+    taxableAmount,
+    source: 'recomputed_orders',
+    sourceRowCount: orderIds.length,
+    orderIds,
+    missing: Array.from(missing),
+    effectiveCommissionRate: subtotal > 0 ? round2((taxableAmount / subtotal) * 100) : null,
+  };
+}
+
+async function aggregatePlatformCommissionForPeriod(
+  vendorId: string,
+  periodFrom: string,
+  periodTo: string
+): Promise<PlatformTaxCommissionAggregation> {
+  const fromSettlements = await aggregateSettlements(vendorId, periodFrom, periodTo);
+  if (fromSettlements) return fromSettlements;
+
+  const fromEarnings = await aggregateVendorEarnings(vendorId, periodFrom, periodTo);
+  if (fromEarnings) return fromEarnings;
+
+  const fromAudit = await aggregateOrderCommissionAudit(vendorId, periodFrom, periodTo);
+  if (fromAudit) return fromAudit;
+
+  const recomputed = await aggregateRecomputedOrders(vendorId, periodFrom, periodTo);
+  if (recomputed) return recomputed;
+
+  return {
+    taxableAmount: 0,
+    source: 'none',
+    sourceRowCount: 0,
+    orderIds: [],
+    missing: ['settlement_or_commission_audit'],
+    effectiveCommissionRate: null,
+  };
 }
 
 async function nextInvoiceNumber(): Promise<string> {
@@ -72,7 +255,64 @@ export interface IssuePlatformTaxInvoiceResult {
   gstAmount: number;
   totalAmount: number;
   gstRate: number;
-  commissionRate: number;
+  commissionRate: number | null;
+  source: PlatformTaxCommissionSource;
+  sourceRowCount: number;
+}
+
+export interface PreviewPlatformTaxInvoiceResult {
+  vendorId: string;
+  periodFrom: string;
+  periodTo: string;
+  taxableAmount: number;
+  gstAmount: number;
+  totalAmount: number;
+  gstRate: number;
+  commissionRate: number | null;
+  source: PlatformTaxCommissionSource;
+  sourceRowCount: number;
+  orderIds: string[];
+  missing: string[];
+  existingDocumentId: string | null;
+  existingInvoiceNumber: string | null;
+}
+
+export async function previewPlatformTaxInvoice(
+  params: IssuePlatformTaxInvoiceParams
+): Promise<PreviewPlatformTaxInvoiceResult> {
+  const { vendorId, periodFrom, periodTo } = params;
+  const product = await getPlatformTaxProduct(PRODUCT_CODE);
+  const gstRate = product?.default_gst_rate ?? 18;
+  const aggregation = await aggregatePlatformCommissionForPeriod(vendorId, periodFrom, periodTo);
+  const taxableAmount = round2(aggregation.taxableAmount);
+  const gstAmount = round2(taxableAmount * (gstRate / 100));
+  const totalAmount = round2(taxableAmount + gstAmount);
+  const existing = await query(
+    `SELECT id::text AS id, invoice_number
+     FROM platform_tax_documents
+     WHERE vendor_id = $1::uuid AND period_from = $2::date AND period_to = $3::date
+       AND document_type = 'TAX_INVOICE' AND status != 'VOID'
+     LIMIT 1`,
+    [vendorId, periodFrom, periodTo]
+  );
+  const existingRow = existing.rows?.[0];
+
+  return {
+    vendorId,
+    periodFrom,
+    periodTo,
+    taxableAmount,
+    gstAmount,
+    totalAmount,
+    gstRate,
+    commissionRate: aggregation.effectiveCommissionRate,
+    source: aggregation.source,
+    sourceRowCount: aggregation.sourceRowCount,
+    orderIds: aggregation.orderIds,
+    missing: aggregation.missing,
+    existingDocumentId: existingRow?.id ? String(existingRow.id) : null,
+    existingInvoiceNumber: existingRow?.invoice_number ? String(existingRow.invoice_number) : null,
+  };
 }
 
 export async function issuePlatformTaxInvoice(
@@ -94,27 +334,13 @@ export async function issuePlatformTaxInvoice(
   const product = await getPlatformTaxProduct(PRODUCT_CODE);
   const gstRate = product?.default_gst_rate ?? 18;
   const sacCode = product?.sac_code ?? '998599';
-
-  let taxableAmount = await aggregateCommissionForPeriod(vendorId, periodFrom, periodTo);
-  if (taxableAmount <= 0) {
-    const { rate, configured } = await resolveSellerCommissionRate(vendorId);
-    if (configured && rate != null) {
-      const revenueRes = await query(
-        `SELECT COALESCE(SUM(COALESCE(subtotal, total_amount - COALESCE(tax_amount, 0))), 0) AS base
-         FROM orders
-         WHERE vendor_id = $1::uuid
-           AND order_status = 'delivered'
-           AND created_at >= $2::timestamptz
-           AND created_at < ($3::date + INTERVAL '1 day')`,
-        [vendorId, periodFrom, periodTo]
-      );
-      const base = parseFloat(String(revenueRes.rows?.[0]?.base ?? 0));
-      taxableAmount = round2(base * (rate / 100));
-    }
+  const preview = await previewPlatformTaxInvoice(params);
+  if (preview.taxableAmount <= 0) {
+    throw new Error(
+      `No platform commission found for this vendor and period: missing ${preview.missing.join(', ')}`
+    );
   }
-
-  const { rate: commissionRate, configured: commissionConfigured } =
-    await resolveSellerCommissionRate(vendorId);
+  const taxableAmount = preview.taxableAmount;
   const gstAmount = round2(taxableAmount * (gstRate / 100));
   const totalAmount = round2(taxableAmount + gstAmount);
   const invoiceNumber = await nextInvoiceNumber();
@@ -150,7 +376,15 @@ export async function issuePlatformTaxInvoice(
       state: vendor.state,
       pincode: vendor.pincode,
     }),
-    metadata: JSON.stringify({ commissionRate: commissionRate ?? null, gstRate, productCode: PRODUCT_CODE }),
+    metadata: JSON.stringify({
+      commissionRate: preview.commissionRate,
+      gstRate,
+      productCode: PRODUCT_CODE,
+      source: preview.source,
+      sourceRowCount: preview.sourceRowCount,
+      orderIds: preview.orderIds,
+      missing: preview.missing,
+    }),
     issued_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -158,7 +392,7 @@ export async function issuePlatformTaxInvoice(
 
   const description =
     product?.name ??
-    `Platform commission (${commissionConfigured && commissionRate != null ? commissionRate : '—'}% on eligible sales, ${periodFrom} to ${periodTo})`;
+    `Platform commission (${preview.commissionRate != null ? `${preview.commissionRate}%` : preview.source} source, ${periodFrom} to ${periodTo})`;
 
   await insert('platform_tax_document_lines', {
     tax_document_id: doc.id,
@@ -169,7 +403,11 @@ export async function issuePlatformTaxInvoice(
     taxable_amount: taxableAmount,
     gst_amount: gstAmount,
     total_amount: totalAmount,
-    metadata: JSON.stringify({ commissionRate: commissionRate ?? null }),
+    metadata: JSON.stringify({
+      commissionRate: preview.commissionRate,
+      source: preview.source,
+      sourceRowCount: preview.sourceRowCount,
+    }),
     created_at: new Date().toISOString(),
   });
 
@@ -180,7 +418,9 @@ export async function issuePlatformTaxInvoice(
     gstAmount,
     totalAmount,
     gstRate,
-    commissionRate: commissionRate ?? 0,
+    commissionRate: preview.commissionRate,
+    source: preview.source,
+    sourceRowCount: preview.sourceRowCount,
   };
 }
 
@@ -189,24 +429,101 @@ export function resolveLocalPdfDir(): string {
 }
 
 export async function readLocalPlatformTaxPdf(documentId: string): Promise<Buffer | null> {
-  const filePath = path.join(resolveLocalPdfDir(), `${documentId}.pdf`);
+  return readPlatformTaxDocumentBytes(documentId);
+}
+
+function isLikelyLocalPath(value: string): boolean {
+  return value.includes('\\') || value.startsWith('/') || /^[A-Za-z]:/.test(value);
+}
+
+async function getObjectBuffer(key: string): Promise<Buffer | null> {
   try {
-    return await fs.readFile(filePath);
+    const result = await s3Client.send(
+      new GetObjectCommand({
+        Bucket: PLATFORM_TAX_BUCKET,
+        Key: key,
+      })
+    );
+    const body = result.Body as
+      | {
+          transformToByteArray?: () => Promise<Uint8Array>;
+          transformToString?: (encoding?: string) => Promise<string>;
+        }
+      | undefined;
+    if (!body) return null;
+    if (body.transformToByteArray) {
+      return Buffer.from(await body.transformToByteArray());
+    }
+    if (body.transformToString) {
+      return Buffer.from(await body.transformToString('utf-8'), 'utf8');
+    }
+  } catch (error) {
+    console.warn('[PLATFORM-TAX] S3 document read failed:', error);
+  }
+  return null;
+}
+
+export async function readPlatformTaxDocumentBytes(documentId: string): Promise<Buffer | null> {
+  const docRes = await query(
+    `SELECT pdf_url FROM platform_tax_documents WHERE id = $1::uuid LIMIT 1`,
+    [documentId]
+  );
+  const pdfUrl = docRes.rows?.[0]?.pdf_url ? String(docRes.rows[0].pdf_url) : '';
+
+  if (pdfUrl && !isLikelyLocalPath(pdfUrl)) {
+    const s3Bytes = await getObjectBuffer(pdfUrl);
+    if (s3Bytes) return s3Bytes;
+  }
+
+  const legacyPath = pdfUrl && isLikelyLocalPath(pdfUrl)
+    ? pdfUrl
+    : path.join(resolveLocalPdfDir(), `${documentId}.pdf`);
+  try {
+    return await fs.readFile(legacyPath);
   } catch {
     return null;
   }
 }
 
 export async function writeLocalPlatformTaxPdf(documentId: string, bytes: Buffer): Promise<string> {
-  const dir = resolveLocalPdfDir();
-  await fs.mkdir(dir, { recursive: true });
-  const filePath = path.join(dir, `${documentId}.pdf`);
-  await fs.writeFile(filePath, bytes);
+  const filePath = await writePlatformTaxDocumentBytes(documentId, bytes);
+  return filePath;
+}
+
+function safeDocumentName(value: string): string {
+  return value.replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'document';
+}
+
+async function writePlatformTaxDocumentBytes(documentId: string, bytes: Buffer): Promise<string> {
+  const docRes = await query(
+    `SELECT id::text AS id, vendor_id::text AS vendor_id, invoice_number, pdf_url, issued_at, created_at
+     FROM platform_tax_documents WHERE id = $1::uuid`,
+    [documentId]
+  );
+  if (!docRes.rows?.length) throw new Error('Document not found');
+  const doc = docRes.rows[0];
+  const existingKey = doc.pdf_url ? String(doc.pdf_url) : '';
+  const dateLabel = String(doc.issued_at ?? doc.created_at ?? new Date().toISOString()).slice(0, 4);
+  const name = safeDocumentName(String(doc.invoice_number ?? documentId));
+  const key =
+    existingKey && !isLikelyLocalPath(existingKey)
+      ? existingKey
+      : `platform-tax/${doc.vendor_id}/${dateLabel}/${name}.html`;
+
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: PLATFORM_TAX_BUCKET,
+      Key: key,
+      Body: bytes,
+      ContentType: 'text/html; charset=utf-8',
+      CacheControl: 'private, no-store',
+    })
+  );
   await query(`UPDATE platform_tax_documents SET pdf_url = $2, updated_at = NOW() WHERE id = $1::uuid`, [
     documentId,
-    filePath,
+    key,
   ]);
-  return filePath;
+  return key;
 }
 
 export function buildPlatformTaxInvoiceHtml(doc: {
@@ -274,7 +591,7 @@ export function buildPlatformTaxInvoiceHtml(doc: {
 </body></html>`;
 }
 
-export async function generatePlatformTaxPdf(documentId: string): Promise<{ pdfPath: string; html: string }> {
+export async function generatePlatformTaxPdf(documentId: string): Promise<{ pdfPath: string; html: string; sizeBytes: number }> {
   const docRes = await query(`SELECT * FROM platform_tax_documents WHERE id = $1::uuid`, [documentId]);
   if (!docRes.rows?.length) throw new Error('Document not found');
   const doc = docRes.rows[0];
@@ -313,9 +630,7 @@ export async function generatePlatformTaxPdf(documentId: string): Promise<{ pdfP
     })),
   });
 
-  // Store HTML as PDF placeholder bytes for MVP (vendors can print HTML-equivalent via browser)
-  // Real PDF rendering can replace this in a follow-up.
-  const pdfBytes = Buffer.from(html, 'utf8');
-  const pdfPath = await writeLocalPlatformTaxPdf(documentId, pdfBytes);
-  return { pdfPath, html };
+  const bytes = Buffer.from(html, 'utf8');
+  const pdfPath = await writePlatformTaxDocumentBytes(documentId, bytes);
+  return { pdfPath, html, sizeBytes: bytes.length };
 }

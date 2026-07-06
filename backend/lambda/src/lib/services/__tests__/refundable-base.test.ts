@@ -43,6 +43,38 @@ describe('getRefundableCustomerPaidBreakdown', () => {
     expect(r.platformFeeNonRefundable).toBe(0);
   });
 
+  it('does not double-count wallet-only bookings (payment row + wallet debit)', async () => {
+    mockedQuery.mockImplementation(async (sql: string) => {
+      if (
+        sql.includes('FROM payments') &&
+        sql.includes("payment_method, '')) = 'wallet'")
+      ) {
+        return { rows: [{ w: '500' }] } as any;
+      }
+      if (sql.includes('FROM payments') && sql.includes('payment_status = \'completed\'')) {
+        return {
+          rows: [
+            {
+              paid_total: '500',
+              platform_fee_total: '0',
+              refundable_from_payments: '500',
+            },
+          ],
+        } as any;
+      }
+      if (sql.includes('wallet_transactions')) {
+        return { rows: [{ w: '500' }] } as any;
+      }
+      return { rows: [] } as any;
+    });
+
+    const r = await getRefundableCustomerPaidBreakdown('00000000-0000-4000-8000-000000000003', {
+      total_amount: 500,
+      discount_amount: 0,
+    });
+    expect(r.refundableBase).toBe(500);
+  });
+
   it('uses wallet-only debits when there is no completed payment row', async () => {
     mockedQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM payments') && sql.includes('payment_status = \'completed\'')) {

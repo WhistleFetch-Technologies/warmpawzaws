@@ -11,6 +11,7 @@
  */
 
 import { query } from '../../database/rds-connection';
+import { combineWalletAndPaymentRefundable } from './refundable-wallet-combine';
 
 export type BookingMoneySnapshot = {
   total_amount?: number | string | null;
@@ -36,7 +37,7 @@ async function loadWalletDebitTotalForBooking(bookingId: string): Promise<number
   if (!bookingId) return 0;
   let cols: Set<string>;
   try {
-    const meta = await query<{ column_name: string }>(
+    const meta = await query(
       `SELECT column_name FROM information_schema.columns
        WHERE table_schema = 'public' AND table_name = 'wallet_transactions'`
     );
@@ -81,6 +82,25 @@ async function loadWalletDebitTotalForBooking(bookingId: string): Promise<number
        FROM wallet_transactions
        WHERE transaction_type = 'debit'
          AND (${whereCore})`,
+      [bookingId]
+    );
+    const row = (res as any).rows?.[0];
+    return parseFloat(String(row?.w ?? '0')) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Sum of completed wallet payment rows (avoids double-count with wallet_transactions debits). */
+async function loadWalletCapturedInPayments(bookingId: string): Promise<number> {
+  if (!bookingId) return 0;
+  try {
+    const res = await query(
+      `SELECT COALESCE(SUM(amount::numeric), 0)::text AS w
+       FROM payments
+       WHERE booking_id = $1::uuid
+         AND payment_status = 'completed'
+         AND LOWER(COALESCE(payment_method, '')) = 'wallet'`,
       [bookingId]
     );
     const row = (res as any).rows?.[0];
@@ -157,10 +177,15 @@ export async function getRefundableCustomerPaidBreakdown(
 
   const paymentTotals = await loadCompletedPaymentTotals(bookingId);
   const walletPaid = await loadWalletDebitTotalForBooking(bookingId);
+  const walletInPayments = await loadWalletCapturedInPayments(bookingId);
 
   if (paymentTotals && (paymentTotals.paidTotal > 0 || walletPaid > 0)) {
     const { paidTotal, platformFeeTotal, refundableFromPayments } = paymentTotals;
-    const combinedRefundable = roundMoney(refundableFromPayments + walletPaid);
+    const combinedRefundable = combineWalletAndPaymentRefundable(
+      refundableFromPayments,
+      walletPaid,
+      walletInPayments
+    );
     if (gross > 0 && paidTotal > gross + 0.01) {
       const pfCapped = Math.min(platformFeeTotal, gross);
       const refundableCapped = Math.max(0, gross - pfCapped);

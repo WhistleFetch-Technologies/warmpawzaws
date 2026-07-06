@@ -173,6 +173,10 @@ interface UniversalPaymentPageProps {
    * tele-queue-accepted: queue-first flow; booking already exists with pending_payment; just collect payment and confirm
    */
   flowType?: 'tele-scheduled' | 'tele-instant' | 'tele-queue-accepted' | 'payment-resume' | 'home-visit';
+  /** When resuming pending_payment, charge this exact gross total (avoids re-adding tax/platform fees). */
+  lockedPayableAmount?: number;
+  /** Existing Razorpay order from payment-resume API (optional). */
+  resumeRazorpayOrderId?: string;
   /** Lab diagnostics: pay-first payload from DiagnosticsBookingFlow; booking is created only after payment. */
   prepaidBookingPayload?: Record<string, unknown>;
   initialPromotionId?: string;
@@ -396,6 +400,8 @@ export function UniversalPaymentPage({
   customerEmail,
   customerId,
   flowType,
+  lockedPayableAmount,
+  resumeRazorpayOrderId,
   prepaidBookingPayload,
   initialPromotionId,
   initialPromotionIntent,
@@ -1560,7 +1566,7 @@ export function UniversalPaymentPage({
   const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
 
   // If subscription covers this booking, final amount is 0
-  const finalAmount = subscriptionCovered
+  const computedFinalAmount = subscriptionCovered
     ? 0
     : isMealPay
       ? Math.max(0, resolvedMealPayTotal - couponDiscount - razorpayOfferDiscount - walletAmount)
@@ -1572,6 +1578,15 @@ export function UniversalPaymentPage({
       : promotionDiscount;
   const checkoutPlatformDiscount =
     type === 'booking' && bookingPromoStack ? bookingPromoStack.platformDiscount ?? 0 : 0;
+
+  const finalAmount =
+    type === 'booking' &&
+    flowType === 'payment-resume' &&
+    lockedPayableAmount != null &&
+    Number.isFinite(lockedPayableAmount) &&
+    lockedPayableAmount > 0
+      ? Math.max(0, Math.round((lockedPayableAmount - razorpayOfferDiscount - walletAmount) * 100) / 100)
+      : computedFinalAmount;
 
   const checkoutPriceLines = useMemo(
     () =>
@@ -1616,6 +1631,7 @@ export function UniversalPaymentPage({
     walletAmount,
     razorpayOfferAmount: razorpayOfferDiscount,
   });
+
 
   const getPaymentSuccessMeta = (gatewayMethod?: string | null) => {
     const paymentSources = buildCheckoutPaymentSources({

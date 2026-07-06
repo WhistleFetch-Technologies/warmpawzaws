@@ -3405,18 +3405,41 @@ export function CustomerHomeWrapper({
     const firstService = servicesArray[0] || bookingData;
     
     // Normalize selectedServices for UniversalPaymentPage (supports both camelCase and snake_case)
-    const selectedServices = servicesArray.length > 0 ? servicesArray.map((s: any) => ({
-      id: s.id || s.serviceId || s.service_id,
-      serviceId: s.serviceId || s.service_id || s.id,
-      name: s.name || s.serviceName || s.service_name || 'Service',
-      serviceName: s.serviceName || s.name || s.service_name,
-      price: Number(s.price) || 0,
-      duration: s.duration != null ? Number(s.duration) : 0,
-      serviceStyle: s.serviceStyle || s.service_style || bookingData.serviceType || bookingData.serviceStyle,
-      description: s.description,
-    })) : undefined;
-    
-    const baseAmount = Number(bookingData.totalAmount) 
+    const normalizedFromResume =
+      bookingData.selectedServices && Array.isArray(bookingData.selectedServices)
+        ? bookingData.selectedServices
+        : undefined;
+    const selectedServices =
+      normalizedFromResume && normalizedFromResume.length > 0
+        ? normalizedFromResume.map((s: any) => ({
+            id: s.id || s.serviceId || s.service_id,
+            serviceId: s.serviceId || s.service_id || s.id,
+            name: s.name || s.serviceName || s.service_name || 'Service',
+            serviceName: s.serviceName || s.name || s.service_name,
+            price: Number(s.price) || 0,
+            duration: s.duration != null ? Number(s.duration) : 0,
+            serviceStyle: s.serviceStyle || s.service_style || bookingData.serviceType || bookingData.serviceStyle,
+            description: s.description,
+          }))
+        : servicesArray.length > 0
+          ? servicesArray.map((s: any) => ({
+              id: s.id || s.serviceId || s.service_id,
+              serviceId: s.serviceId || s.service_id || s.id,
+              name: s.name || s.serviceName || s.service_name || 'Service',
+              serviceName: s.serviceName || s.name || s.service_name,
+              price: Number(s.price) || 0,
+              duration: s.duration != null ? Number(s.duration) : 0,
+              serviceStyle: s.serviceStyle || s.service_style || bookingData.serviceType || bookingData.serviceStyle,
+              description: s.description,
+            }))
+          : undefined;
+
+    const isPaymentResume = bookingData.flowType === 'payment-resume';
+    const resumeBasePrice = Number(bookingData.basePrice ?? bookingData.price ?? 0);
+    const lockedPayable = Number(bookingData.lockedPayableAmount ?? bookingData.totalAmount ?? 0);
+    const baseAmount = isPaymentResume && resumeBasePrice > 0
+      ? resumeBasePrice
+      : Number(bookingData.totalAmount) 
       || (selectedServices ? selectedServices.reduce((sum: number, s: any) => sum + (s.price || 0), 0) : 0)
       || Number(firstService?.price) || Number(bookingData?.price) || 0;
     const duration = bookingData.totalDuration ?? firstService?.duration ?? bookingData?.duration;
@@ -3450,6 +3473,12 @@ export function CustomerHomeWrapper({
         customerPhone={phone}
         customerId={bookingData.customerId}
         flowType={bookingData.flowType}
+        lockedPayableAmount={
+          isPaymentResume && lockedPayable > 0 ? lockedPayable : undefined
+        }
+        resumeRazorpayOrderId={
+          typeof bookingData.razorpayOrderId === 'string' ? bookingData.razorpayOrderId : undefined
+        }
         onBack={() => {
           if (shouldBannerReturnHome(bookingData as Record<string, unknown>, vetServiceData)) {
             bannerReturnHomeRef.current = false;
