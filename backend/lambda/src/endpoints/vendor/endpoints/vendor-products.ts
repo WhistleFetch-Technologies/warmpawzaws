@@ -34,6 +34,7 @@ import {
   PRODUCT_UPLOAD_MAX_BYTES,
   uploadProductImageBufferToS3,
 } from '../../../utils/product-s3-image';
+import { ingestExternalProductImageUrl } from '../../../utils/product-image-ingest';
 import { resolveVendorById } from './vendorProfile.vendor';
 import {
   applyNormalizedPricingToDbPayload,
@@ -405,6 +406,9 @@ async function resolveSingleProductImageToS3Url(vendorId: string, item: unknown)
     if (s.startsWith('data:image/')) {
       return tryUploadDataImageUrlToS3(vendorId, s);
     }
+    if (/^https?:\/\//i.test(s)) {
+      return ingestExternalProductImageUrl(vendorId, s);
+    }
     return s;
   }
   if (item && typeof item === 'object' && !Array.isArray(item)) {
@@ -434,6 +438,9 @@ async function resolveSingleProductImageToS3Url(vendorId: string, item: unknown)
       } catch {
         /* fall through */
       }
+    }
+    if (existing && /^https?:\/\//i.test(existing)) {
+      return ingestExternalProductImageUrl(vendorId, existing);
     }
     if (existing && typeof existing === 'string') {
       return existing.trim() || null;

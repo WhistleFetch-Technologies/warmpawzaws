@@ -59,6 +59,8 @@ import {
   filterProductPayloadToColumns,
 } from '../utils/product-vendor-persist';
 import { validateAndApplyVendorDeclaredOwnership } from '../utils/compute-listing-ownership';
+import { ingestExternalProductImageUrls } from '../utils/product-image-ingest';
+import { cleanupRemovedProductS3Images, collectImageUrlsFromJsonb } from '../utils/product-s3-image';
 
 /**
  * Represents one row from the bulk product upload spreadsheet.
@@ -395,6 +397,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             sku?: string;
             category_id?: string;
             metadata?: unknown;
+            images?: unknown;
           } | null = await findExistingProductByGroupKey(vendorId, groupKey);
 
           if (
@@ -427,9 +430,14 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             ? aggregateGroupStock(group)
             : Number(firstRow.stock_quantity) || 0;
 
-          const parentImages = hasVariants
+          const rawParentImages = hasVariants
             ? pickGroupParentImages(group)
             : parseProductImageList(firstRow.images ?? firstRow.image_urls);
+          // Mirror any external (e.g. Google Drive) URLs onto our own S3 storage
+          // (compressed) so the storefront never depends on a third-party host
+          // staying reachable. Already-managed S3 URLs pass through untouched.
+          const parentImages = await ingestExternalProductImageUrls(vendorId, rawParentImages);
+          const prevParentImages = existingProduct ? collectImageUrlsFromJsonb(existingProduct.images) : [];
 
           const productData: Record<string, unknown> = {
             vendor_id: vendorId,
@@ -504,6 +512,12 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             await update('products', { id: existingProduct.id }, updatePayload);
             savedProductId = existingProduct.id;
             results.updated++;
+            // Eviction: delete any of this vendor's S3 objects that were on the
+            // product before this upload but are no longer referenced, so
+            // replacing an image never leaves an orphaned file in the bucket.
+            if (prevParentImages.length > 0) {
+              await cleanupRemovedProductS3Images(prevParentImages, parentImages, vendorId);
+            }
           } else {
             const inserted = await insert('products', {
               ...persistPayload,

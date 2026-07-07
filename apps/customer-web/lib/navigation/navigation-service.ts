@@ -6,7 +6,8 @@ import {
   shouldSkipProductNavigation,
   type CoordinatorRouter,
 } from './navigation-coordinator';
-import { CUSTOMER_ROUTES, productPath } from './route-registry';
+import { shopProductDetailPath } from '../shop-product-path';
+import { CUSTOMER_ROUTES } from './route-registry';
 import { navigateCustomerTab, type TabNavigationHandlers } from './tab-policy';
 import type { CustomerTabId } from './route-registry';
 
@@ -33,7 +34,7 @@ export function createCustomerNavigation(router: CoordinatorRouter) {
     goToProduct(productId: string) {
       const id = String(productId || '').trim();
       if (!id || shouldSkipProductNavigation(id)) return;
-      router.push(productPath(id));
+      router.push(shopProductDetailPath(id));
     },
 
     goToCart(opts?: { replace?: boolean; buynow?: boolean }) {

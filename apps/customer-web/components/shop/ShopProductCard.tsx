@@ -63,6 +63,11 @@ export function ShopProductCard({
               {discount}% OFF
             </span>
           )}
+          <WishlistProductHeartButton
+            productId={wishlistPid}
+            visualVariant="shop-floating"
+            className="absolute top-2 right-2 w-7 h-7 z-[2]"
+          />
           {primaryImage ? (
             <img
               src={primaryImage}

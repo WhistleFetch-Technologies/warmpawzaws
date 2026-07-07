@@ -1,4 +1,8 @@
 import { goBackOrReplace } from './back-intent-store';
+import {
+  normalizeShopProductId,
+  SHOP_PRODUCT_PLACEHOLDER_PATH,
+} from '../shop-product-path';
 import { isCurrentPath, orderTrackingPath, productPath } from './route-registry';
 import type { RoutePolicy } from './route-registry';
 
@@ -32,7 +36,19 @@ export function coordinateUrlBack(router: CoordinatorRouter, fallbackPath: strin
 /** Skip push when already on the same product URL. */
 export function shouldSkipProductNavigation(productId: string): boolean {
   if (typeof window === 'undefined') return false;
-  return isCurrentPath(window.location.pathname, productPath(productId));
+  const id = String(productId || '').trim();
+  if (!id) return true;
+  if (isCurrentPath(window.location.pathname, productPath(id))) return true;
+  const qs = new URLSearchParams(window.location.search);
+  const current = normalizeShopProductId(qs.get('productId') || qs.get('product_id'));
+  if (
+    current &&
+    current === id &&
+    isCurrentPath(window.location.pathname, SHOP_PRODUCT_PLACEHOLDER_PATH)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function afterUrlCheckoutSuccess(router: CoordinatorRouter, orderId: string | null | undefined): void {

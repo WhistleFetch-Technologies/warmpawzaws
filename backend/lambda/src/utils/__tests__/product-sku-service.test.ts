@@ -9,7 +9,7 @@ jest.mock('../../database/rds-connection', () => ({
 }));
 
 jest.mock('../product-sku-images', () => ({
-  processProductImagesForS3Storage: jest.fn(async (urls: string[]) => urls),
+  processProductImagesForS3Storage: jest.fn(async (_vendorId: string, urls: string[]) => urls),
   stripPresignFromProductImagesJsonb: jest.fn((urls: string[]) => urls),
 }));
 

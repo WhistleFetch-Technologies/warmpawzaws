@@ -58,17 +58,17 @@ export function generateProductGroupId(): string {
 export async function findExistingProductByGroupKey(
   vendorId: string,
   groupKey: string,
-): Promise<{ id: string; sku?: string; category_id?: string; metadata?: unknown } | null> {
+): Promise<{ id: string; sku?: string; category_id?: string; metadata?: unknown; images?: unknown } | null> {
   if (groupKey.includes('::pgid::')) {
     const pgid = groupKey.split('::pgid::')[1] ?? '';
     if (!pgid) return null;
     const r = await query(
-      `SELECT id, sku, category_id, metadata FROM products
+      `SELECT id, sku, category_id, metadata, images FROM products
        WHERE vendor_id = $1 AND lower(trim(metadata->>'product_group_id')) = $2
        LIMIT 1`,
       [vendorId, pgid],
     );
-    if (r.rows.length > 0) return r.rows[0] as { id: string; sku?: string; category_id?: string };
+    if (r.rows.length > 0) return r.rows[0] as { id: string; sku?: string; category_id?: string; images?: unknown };
     return null;
   }
 
@@ -82,22 +82,22 @@ export async function findExistingProductByGroupKey(
   const categoryKey = segments[2];
 
   const byId = await query(
-    `SELECT id, sku, category_id, metadata FROM products
+    `SELECT id, sku, category_id, metadata, images FROM products
      WHERE vendor_id = $1 AND lower(trim(name)) = $2 AND category_id::text = $3
        AND lower(trim(COALESCE(brand, ''))) = $4
      LIMIT 1`,
     [vendorId, title, categoryKey, brand],
   );
-  if (byId.rows.length > 0) return byId.rows[0] as { id: string; sku?: string; category_id?: string };
+  if (byId.rows.length > 0) return byId.rows[0] as { id: string; sku?: string; category_id?: string; images?: unknown };
 
   const byName = await query(
-    `SELECT id, sku, category_id, metadata FROM products
+    `SELECT id, sku, category_id, metadata, images FROM products
      WHERE vendor_id = $1 AND lower(trim(name)) = $2 AND lower(trim(category)) = $3
        AND lower(trim(COALESCE(brand, ''))) = $4
      LIMIT 1`,
     [vendorId, title, categoryKey, brand],
   );
-  if (byName.rows.length > 0) return byName.rows[0] as { id: string; sku?: string; category_id?: string };
+  if (byName.rows.length > 0) return byName.rows[0] as { id: string; sku?: string; category_id?: string; images?: unknown };
 
   return null;
 }
