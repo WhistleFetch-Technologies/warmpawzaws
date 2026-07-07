@@ -284,17 +284,33 @@ export async function loadOrderLineItemsForCommission(
     const result = await query(
       `SELECT oi.total_price AS line_subtotal,
               oi.product_id::text AS product_id,
-              p.category_id::text AS category_id
+              p.category_id::text AS category_id,
+              o.subtotal AS order_subtotal,
+              COALESCE(o.vendor_promotion_amount, 0) AS vendor_promo_amount
        FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
        LEFT JOIN products p ON p.id = oi.product_id
        WHERE oi.order_id = $1::uuid`,
       [orderId]
     );
-    return (result.rows || []).map((row: Record<string, unknown>) => ({
-      lineSubtotal: parseFloat(String(row.line_subtotal ?? 0)) || 0,
-      productId: row.product_id != null ? String(row.product_id) : null,
-      categoryId: row.category_id != null ? String(row.category_id) : null,
-    }));
+    if (!result.rows?.length) return [];
+
+    // Apply the vendor promotion discount ratio so commission is computed on the
+    // discounted selling price (matching order-creation logic). Admin promotions are
+    // absorbed by the platform and do not reduce the vendor's commission base.
+    const firstRow = result.rows[0] as Record<string, unknown>;
+    const orderSubtotal = parseFloat(String(firstRow.order_subtotal ?? 0)) || 0;
+    const vendorPromoAmount = parseFloat(String(firstRow.vendor_promo_amount ?? 0)) || 0;
+    const vendorPromoRatio = orderSubtotal > 0 ? vendorPromoAmount / orderSubtotal : 0;
+
+    return (result.rows || []).map((row: Record<string, unknown>) => {
+      const rawSubtotal = parseFloat(String(row.line_subtotal ?? 0)) || 0;
+      return {
+        lineSubtotal: Math.round(rawSubtotal * (1 - vendorPromoRatio) * 100) / 100,
+        productId: row.product_id != null ? String(row.product_id) : null,
+        categoryId: row.category_id != null ? String(row.category_id) : null,
+      };
+    });
   } catch {
     return [];
   }

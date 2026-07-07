@@ -992,8 +992,13 @@ export function registerEcommerceEndpoints(app: Hono) {
       // before payment verification. applyOrderCommissionAudit serves as a reconcile pass later.
       if (firstVendorId) {
         try {
+          // Commission is calculated on the discounted selling price (after vendor promotion only).
+          // Admin promotions are absorbed by the platform and do not reduce the vendor's commission base.
+          const vendorPromoRatio =
+            promotionSource === 'vendor' && subtotal > 0 ? discountAmount / subtotal : 0;
           const lineItemsForCommission = orderItems.map((item) => ({
-            lineSubtotal: Number(item.total) || 0,
+            lineSubtotal:
+              Math.round(Number(item.total) * (1 - vendorPromoRatio) * 100) / 100,
             productId: item.product_id ?? null,
             categoryId: (item as Record<string, unknown>).category_id as string | null ?? null,
           }));

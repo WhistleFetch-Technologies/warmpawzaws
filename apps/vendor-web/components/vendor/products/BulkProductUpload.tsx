@@ -171,9 +171,9 @@ export function BulkProductUpload({
     setTemplateOkMessage('');
     // Compulsory headers carry `*` so the parser still maps them after
     // normalization (`*` is stripped). Order matches the XLSX template.
-    const headers = ['name*', 'description', 'key_features', 'brand', 'category*', 'product_specifications', 'weight', 'length_cm', 'breadth_cm', 'height_cm', 'barcode', 'stock_quantity*', 'images*', 'selling_price', 'mrp*', 'pet_type', 'tax*', 'hsn_code*', 'manufacturing_details', 'delivery_regions', 'product_group_id', 'variant_attr_1', 'variant_value_1', 'variant_attr_2', 'variant_value_2', 'variant_attr_3', 'variant_value_3', 'listing_ownership*'];
+    const headers = ['name*', 'description', 'key_features', 'brand*', 'category*', 'product_specifications', 'weight', 'length_cm', 'breadth_cm', 'height_cm', 'barcode', 'stock_quantity*', 'images*', 'price*', 'pet_type', 'tax*', 'hsn_code*', 'manufacturing_details', 'delivery_regions', 'product_group_id', 'variant_attr_1', 'variant_value_1', 'variant_attr_2', 'variant_value_2', 'variant_attr_3', 'variant_value_3', 'listing_ownership*'];
     const sample = [
-      '"Smiling Sunflower Dog Dress"', '"Bright, happy, full of joy."', '"Design: Smiling Flower"', '"15 FURRIES"', '"Pet Accessories"', '"Material:Cotton"', '0.15', '35', '25', '1', '', '100', '"https://example.com/your-product-image-1000x1000.jpg"', '799', '1598', 'Dog', '5%', '62052000', '"Made in India"', '"Mumbai, Pune"', '', '', '', '', '', '', '"Third party"'
+      '"Premium Dog Harness"', '"Comfortable and adjustable harness for everyday walks."', '"Adjustable straps"', '"Your Brand Name"', '"Pet Accessories"', '"Material:Nylon"', '0.2', '25', '15', '5', '', '50', '"https://example.com/your-product-image-1000x1000.jpg"', '599', 'Dog', '12%', '42010000', '"Country of Origin: India"', '', '', '', '', '', '', '', '', '"Third party"'
     ];
     const csv = headers.join(',') + '\n' + sample.join(',');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -184,7 +184,7 @@ export function BulkProductUpload({
       previewHtmlInBrowser: false,
     });
     setTemplateOkMessage(
-      'Downloaded simple CSV. Required: name, category, mrp, stock_quantity, hsn_code, gst_rate, images. Optional: selling_price (defaults to MRP).',
+      'Downloaded simple CSV. Required: name, brand, category, price, stock_quantity, hsn_code, tax, images.',
     );
   };
 
