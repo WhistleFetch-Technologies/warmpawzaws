@@ -210,7 +210,7 @@ function CustomerHomePageContentComponent({
           rehomingListings={adoptionStats?.rehomingListings}
         />
       ) : null}
-      {!reviewDemoAccount ? <PremiumPetFoodSection /> : null}
+      {!reviewDemoAccount ? <PremiumPetFoodSection onNavigate={onNavigate} /> : null}
       <PetCareArticlesSection
         articles={petCareArticles}
         onArticleClick={onPetCareArticleClick}

@@ -12,7 +12,9 @@ export function getDeepLinkBackFallback(pathname: string): string {
   const path = normalizePathname(pathname);
 
   if (/^\/shop\/[^/]+$/.test(path)) return CUSTOMER_ROUTES.shop.path;
-  if (/^\/orders\/[^/]+\/tracking$/.test(path)) return CUSTOMER_ROUTES.orders.path;
+  if (path === CUSTOMER_ROUTES.orders.path || path.startsWith(`${CUSTOMER_ROUTES.orders.path}?`)) {
+    return CUSTOMER_ROUTES.shop.path;
+  }
   if (path === CUSTOMER_ROUTES.checkout.path) return CUSTOMER_ROUTES.cart.path;
   if (path === '/checkout/success') return CUSTOMER_ROUTES.shop.path;
   if (path === CUSTOMER_ROUTES.cart.path) return CUSTOMER_ROUTES.shop.path;

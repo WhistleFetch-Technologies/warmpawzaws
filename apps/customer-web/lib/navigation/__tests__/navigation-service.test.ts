@@ -28,7 +28,7 @@ describe('navigation Phase 3', () => {
     it('afterUrlCheckoutSuccess replaces to tracking or orders', () => {
       const router = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };
       afterUrlCheckoutSuccess(router, 'ord-1');
-      expect(router.replace).toHaveBeenCalledWith('/orders/ord-1/tracking');
+      expect(router.replace).toHaveBeenCalledWith('/orders?expand=ord-1');
       afterUrlCheckoutSuccess(router, null);
       expect(router.replace).toHaveBeenCalledWith('/orders');
     });
@@ -70,7 +70,7 @@ describe('navigation Phase 3', () => {
     it('afterCheckoutSuccess delegates to coordinator', () => {
       const router = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };
       createCustomerNavigation(router).afterCheckoutSuccess('x');
-      expect(router.replace).toHaveBeenCalledWith('/orders/x/tracking');
+      expect(router.replace).toHaveBeenCalledWith('/orders?expand=x');
     });
   });
 

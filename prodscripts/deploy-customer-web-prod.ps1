@@ -71,7 +71,7 @@ if ($DeployOnly -and (Test-Path "dist")) {
     $env:NEXT_PUBLIC_ENVIRONMENT = 'production'
     $env:NEXT_PUBLIC_API_BASE_URL = $API_BASE_URL
     $env:NEXT_PUBLIC_FIREBASE_VAPID_KEY = 'BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw'
-    $env:NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED = 'false'
+    $env:NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED = 'true'
     $env:NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED = 'true'
 
     # Build with retry on failure (prod NEXT_PUBLIC_* baked into static export)
@@ -105,6 +105,7 @@ $runtimeConfig = "// Runtime Configuration for Warmpawz $APP_NAME (PRODUCTION)`n
 "    apiBaseUrl: `"$API_BASE_URL`",`n" +
 "    uatMode: false,`n" +
 "    environment: `"production`",`n" +
+"    customerEcommerceEnabled: true,`n" +
 "    customerMealPlansEnabled: true`n" +
 "  };`n" +
 "  console.log('Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);`n" +
@@ -116,7 +117,7 @@ Write-Host "runtime-config.js injected (apiBaseUrl -> API Gateway)" -ForegroundC
 
 # Step 1.6: Replace inline runtime-config in HTML files
 Write-Host "Replacing inline runtime-config in HTML files..." -ForegroundColor Blue
-$INLINE_CONFIG = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$API_BASE_URL', uatMode: false, environment: 'production', customerMealPlansEnabled: true };"
+$INLINE_CONFIG = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$API_BASE_URL', uatMode: false, environment: 'production', customerEcommerceEnabled: true, customerMealPlansEnabled: true };"
 Get-ChildItem -Path "apps\$APP_NAME\dist" -Filter "*.html" -Recurse | ForEach-Object {
     $content = Get-Content $_.FullName -Raw
     if ($content -match 'runtime-config-inline') {
