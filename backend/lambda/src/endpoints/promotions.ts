@@ -400,6 +400,36 @@ export function registerPromotionEndpoints(app: Hono) {
    * Phase 0.1: Get promotions filtered by service and published status
    * Query params: service, published (true/false), spotlight (optional)
    */
+  const mapPromotionListRow = (row: any) => {
+    const serviceCategory = extractPromotionCategory(row);
+    const serviceStyle = extractPromotionStyle(row);
+    const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    return {
+      ...row,
+      service_category: row.service_category ?? serviceCategory ?? null,
+      service_style: row.service_style ?? serviceStyle ?? null,
+      serviceCategory: row.serviceCategory ?? row.service_category ?? serviceCategory ?? null,
+      serviceStyle: row.serviceStyle ?? row.service_style ?? serviceStyle ?? null,
+      metadata: {
+        ...(metadata as Record<string, unknown>),
+        promotionTarget: {
+          ...(((metadata as any)?.promotionTarget || {}) as Record<string, unknown>),
+          serviceCategory: (metadata as any)?.promotionTarget?.serviceCategory ?? (metadata as any)?.serviceCategory ?? serviceCategory ?? null,
+          serviceStyle: (metadata as any)?.promotionTarget?.serviceStyle ?? (metadata as any)?.serviceStyle ?? serviceStyle ?? null,
+        },
+        serviceCategory: (metadata as any)?.serviceCategory ?? serviceCategory ?? null,
+        serviceStyle: (metadata as any)?.serviceStyle ?? serviceStyle ?? null,
+      },
+    };
+  };
+
+  const promotionMatchesListService = (promotion: any, serviceBucket: string | undefined): boolean => {
+    if (!serviceBucket || serviceBucket === 'all') return true;
+    const category = String(serviceBucket).trim().toLowerCase();
+    const { eligible } = isPromotionEligible(promotion, { category });
+    return eligible;
+  };
+
   app.get("/promotions/list", async (c) => {
     try {
       const service = c.req.query('service');
@@ -413,9 +443,10 @@ export function registerPromotionEndpoints(app: Hono) {
         WHERE is_active = true
         AND start_date <= $1
         AND (end_date IS NULL OR end_date >= $1)
+        AND (usage_limit IS NULL OR usage_count < usage_limit)
+        AND (max_uses IS NULL OR usage_count < max_uses)
       `;
       const params: any[] = [now];
-      let paramIndex = 2;
 
       // Filter by published status
       if (published === 'true') {
@@ -429,43 +460,67 @@ export function registerPromotionEndpoints(app: Hono) {
         queryStr += ` AND is_spotlight = true`;
       }
 
-      // Filter by service (check applicable_services JSONB array)
-      if (service && service !== 'all') {
-        queryStr += ` AND (
-          applicable_services IS NULL 
-          OR applicable_services = '[]'::jsonb
-          OR applicable_services @> $${paramIndex}::jsonb
-        )`;
-        params.push(JSON.stringify([service]));
-        paramIndex++;
-      }
-
       // Order: spotlight first, then by priority (lower number = higher priority)
       queryStr += ` ORDER BY is_spotlight DESC, priority ASC, created_at DESC`;
 
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
-      const promotions = rows.map((row: any) => {
-        const serviceCategory = extractPromotionCategory(row);
-        const serviceStyle = extractPromotionStyle(row);
-        const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
-        return {
-          ...row,
-          service_category: row.service_category ?? serviceCategory ?? null,
-          service_style: row.service_style ?? serviceStyle ?? null,
-          serviceCategory: row.serviceCategory ?? row.service_category ?? serviceCategory ?? null,
-          serviceStyle: row.serviceStyle ?? row.service_style ?? serviceStyle ?? null,
-          metadata: {
-            ...(metadata as Record<string, unknown>),
-            promotionTarget: {
-              ...(((metadata as any)?.promotionTarget || {}) as Record<string, unknown>),
-              serviceCategory: (metadata as any)?.promotionTarget?.serviceCategory ?? (metadata as any)?.serviceCategory ?? serviceCategory ?? null,
-              serviceStyle: (metadata as any)?.promotionTarget?.serviceStyle ?? (metadata as any)?.serviceStyle ?? serviceStyle ?? null,
-            },
-            serviceCategory: (metadata as any)?.serviceCategory ?? serviceCategory ?? null,
-            serviceStyle: (metadata as any)?.serviceStyle ?? serviceStyle ?? null,
-          },
-        };
+      let promotions = rows
+        .map(mapPromotionListRow)
+        .filter((promo: any) => promotionMatchesListService(promo, service));
+
+      let couponRows: Record<string, unknown>[] = [];
+      try {
+        const couponResult = await query(
+          `SELECT id, code, name, description, discount_type, discount_value,
+                  COALESCE(min_order_amount, min_amount) AS min_order_amount,
+                  COALESCE(max_discount_amount, max_discount) AS max_discount_amount,
+                  start_date, end_date,
+                  COALESCE(max_uses, usage_limit) AS max_uses,
+                  usage_count
+           FROM coupons
+           WHERE is_active = true
+             AND (start_date IS NULL OR start_date <= $1)
+             AND (end_date IS NULL OR end_date >= $1)
+             AND (COALESCE(max_uses, usage_limit) IS NULL
+                  OR COALESCE(usage_count, 0) < COALESCE(max_uses, usage_limit))`,
+          [now]
+        );
+        couponRows = couponResult.rows ?? [];
+      } catch (couponErr) {
+        console.warn('[promotions/list] coupons merge skipped', couponErr);
+      }
+
+      const couponAsPromotions = couponRows.map((couponRow) =>
+        mapPromotionListRow({
+          id: couponRow.id,
+          code: couponRow.code,
+          name: couponRow.name,
+          title: couponRow.name,
+          description: couponRow.description,
+          discount_type: couponRow.discount_type,
+          discount_value: couponRow.discount_value,
+          min_order_amount: couponRow.min_order_amount,
+          max_discount_amount: couponRow.max_discount_amount,
+          start_date: couponRow.start_date,
+          end_date: couponRow.end_date,
+          valid_from: couponRow.start_date,
+          valid_until: couponRow.end_date,
+          source: 'platform_coupon',
+          promotion_type: 'coupon',
+          published: true,
+          is_active: true,
+          applicable_services: [],
+        })
+      );
+
+      const seenCodes = new Set<string>();
+      promotions = [...promotions, ...couponAsPromotions].filter((row) => {
+        const code = String(row.code ?? '').trim().toUpperCase();
+        if (!code) return true;
+        if (seenCodes.has(code)) return false;
+        seenCodes.add(code);
+        return true;
       });
 
       return c.json({

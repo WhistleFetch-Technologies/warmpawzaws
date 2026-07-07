@@ -15,6 +15,8 @@ interface Promotion {
   id: string;
   name: string;
   description?: string;
+  code?: string;
+  source?: string;
   discount_type?: 'percentage' | 'fixed';
   discount_value?: number;
   max_discount_amount?: number;
@@ -206,9 +208,16 @@ export function PromotionBanner({
 
   const getPromotionIcon = (promo: Promotion) => {
     if (promo.is_spotlight) return <Sparkles className="w-4 h-4" />;
+    if (promo.promotion_type === 'coupon' || promo.source === 'platform_coupon') return <Tag className="w-4 h-4" />;
     if (promo.promotion_type === 'flash_sale') return <Tag className="w-4 h-4" />;
     if (promo.promotion_type === 'first_order') return <Gift className="w-4 h-4" />;
     return <Percent className="w-4 h-4" />;
+  };
+
+  const getPromoCode = (promo: Promotion): string | null => {
+    const code = String(promo.code ?? '').trim();
+    if (!code) return null;
+    return code.toUpperCase();
   };
 
   if (loading) {
@@ -267,6 +276,12 @@ export function PromotionBanner({
                     
                     <h4 className="font-semibold text-gray-900 mb-1">{promo.name}</h4>
                     
+                    {getPromoCode(promo) && (
+                      <p className="text-sm font-medium text-[#FF8C42] mb-1">
+                        Use code {getPromoCode(promo)}
+                      </p>
+                    )}
+
                     {promo.description && (
                       <p className="text-sm text-gray-600 line-clamp-2">{promo.description}</p>
                     )}
@@ -324,6 +339,12 @@ export function PromotionBanner({
                       <h4 className="font-semibold text-gray-900 text-lg leading-tight line-clamp-2 mb-1">
                         {promo.name}
                       </h4>
+
+                      {getPromoCode(promo) && (
+                        <p className="text-sm font-medium text-[#FF8C42] mb-1">
+                          Use code {getPromoCode(promo)}
+                        </p>
+                      )}
 
                       {promo.description ? (
                         <p className="text-sm text-gray-500 line-clamp-2">{promo.description}</p>

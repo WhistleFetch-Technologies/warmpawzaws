@@ -33,6 +33,7 @@ import { ServicePricingDisplay } from '../ServicePricingDisplay';
 import { pickProviderDistanceKm } from '@/lib/distance-display';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
+import { PromotionBanner } from '../shared/PromotionBanner';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
@@ -558,6 +559,8 @@ export function ClinicListView({
             className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/40 focus:border-[#FF8C42] transition-all"
           />
         </div>
+
+        <PromotionBanner service="vet" maxPromotions={2} onNavigate={onNavigate} className="mb-5" />
 
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide mb-5">
           {filters.map((filter) => (
