@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -10,16 +11,17 @@ import {
   Mail,
   MessageCircle,
   Package,
-  Phone,
   ShoppingBag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
   readCheckoutOrderResponse,
   clearCheckoutOrderResponse,
   type StoredCheckoutOrderResponse,
 } from '@/lib/ecommerce/checkout-order-storage';
+import { openShopOrderTracking, pickShopOrderTrackingUrl } from '@/lib/ecommerce/open-shop-order-tracking';
 import { getShippingOptionLabel } from '@/lib/ecommerce/checkout-shipping-options';
 import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
 import { navigateToProfileShopOrders } from '@/lib/go-back-or-replace';
@@ -27,6 +29,10 @@ import { registerCheckoutSuccessBackHandler } from '@/lib/navigation/back-handle
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { toast } from 'sonner';
 
+const AIChatbotWidget = dynamic(
+  () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
+  { ssr: false }
+);
 const TIMELINE_STEPS = [
   { key: 'confirmed', label: 'Order confirmed' },
   { key: 'packed', label: 'Being packed' },
@@ -49,7 +55,9 @@ export function EcommerceOrderSuccessScreen() {
   const [order, setOrder] = useState<StoredCheckoutOrderResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [timelineStatus, setTimelineStatus] = useState<string>('confirmed');
-
+  const [showAIChat, setShowAIChat] = useState(false);
+  const [customerPhone, setCustomerPhone] = useState<string | undefined>(undefined);
+  const [trackingLoading, setTrackingLoading] = useState(false);
   const leaveSuccessToShop = useCallback(() => {
     clearCheckoutOrderResponse();
     nav.goToShop({ replace: true });
@@ -59,6 +67,10 @@ export function EcommerceOrderSuccessScreen() {
     return registerCheckoutSuccessBackHandler(leaveSuccessToShop);
   }, [leaveSuccessToShop]);
 
+  useEffect(() => {
+    const storedPhone = localStorage.getItem('customerPhone');
+    setCustomerPhone(storedPhone ?? undefined);
+  }, []);
   useEffect(() => {
     const stored = readCheckoutOrderResponse();
     if (!stored?.orderId) {
@@ -70,18 +82,21 @@ export function EcommerceOrderSuccessScreen() {
 
     // Optional background refresh — does not block render
     apiClient
-      .get<{ order?: { status?: string; orderNumber?: string } }>(
-        `/orders/${stored.orderId}/tracking`
-      )
+      .get<{
+        order?: { status?: string; orderNumber?: string; trackingUrl?: string | null };
+        tracking?: { trackingUrl?: string | null };
+      }>(`/orders/${stored.orderId}/tracking`)
       .then((res) => {
-        if (res?.order?.status) {
-          setTimelineStatus(res.order.status);
+        const trackingUrl = pickShopOrderTrackingUrl(res);
+        if (res?.order?.status || trackingUrl) {
+          setTimelineStatus(res.order?.status || stored.status || 'confirmed');
           setOrder((prev) =>
             prev
               ? {
                   ...prev,
-                  status: res.order?.status,
+                  status: res.order?.status ?? prev.status,
                   orderNumber: res.order?.orderNumber ?? prev.orderNumber,
+                  trackingUrl: trackingUrl ?? prev.trackingUrl,
                 }
               : prev
           );
@@ -119,6 +134,24 @@ export function EcommerceOrderSuccessScreen() {
   const goToProfileOrders = (expandCurrent = true) => {
     clearCheckoutOrderResponse();
     navigateToProfileShopOrders(router, expandCurrent ? order.orderId : undefined);
+  };
+
+  const handleTrackOrder = async () => {
+    if (trackingLoading) return;
+    setTrackingLoading(true);
+    try {
+      const cachedUrl = order.trackingUrl?.trim();
+      if (cachedUrl) {
+        clearCheckoutOrderResponse();
+        window.open(cachedUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      await openShopOrderTracking(order.orderId, router, {
+        onBeforeNavigate: clearCheckoutOrderResponse,
+      });
+    } finally {
+      setTrackingLoading(false);
+    }
   };
 
   return (
@@ -204,14 +237,12 @@ export function EcommerceOrderSuccessScreen() {
 
         <div className="flex flex-col gap-2">
           <Button
-            onClick={() => {
-              clearCheckoutOrderResponse();
-              nav.afterCheckoutSuccess(order.orderId);
-            }}
+            onClick={() => void handleTrackOrder()}
+            disabled={trackingLoading}
             className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A29] text-white font-semibold rounded-xl"
           >
             <Package className="w-4 h-4 mr-2" />
-            Track order
+            {trackingLoading ? 'Opening tracking…' : 'Track order'}
           </Button>
           <Button
             variant="outline"
@@ -251,20 +282,32 @@ export function EcommerceOrderSuccessScreen() {
               <Mail className="w-4 h-4" />
               Email
             </a>
-            <a
-              href="tel:+919876543210"
+            <button
+              type="button"
+              onClick={() => setShowAIChat(true)}
               className="inline-flex items-center gap-1.5 text-sm font-medium text-[#FF8C42] px-3 py-2 rounded-lg bg-orange-50"
             >
-              <Phone className="w-4 h-4" />
-              Call
-            </a>
-            <span className="inline-flex items-center gap-1.5 text-sm text-slate-400 px-3 py-2 rounded-lg bg-slate-50">
               <MessageCircle className="w-4 h-4" />
-              Chat — coming soon
-            </span>
+              Chat with us
+            </button>
           </div>
         </section>
       </div>
+
+      {showAIChat && (
+        <AIChatbotWidget
+          presentation="modal"
+          customerId={getResolvedCustomerId() || undefined}
+          customerPhone={customerPhone || order.phone}
+          onClose={() => setShowAIChat(false)}
+          onNavigate={(dest) => {
+            if (typeof dest === 'string' && dest.startsWith('/')) {
+              setShowAIChat(false);
+              router.push(dest);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
