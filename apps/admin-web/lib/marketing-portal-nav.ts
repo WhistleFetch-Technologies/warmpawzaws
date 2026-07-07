@@ -1,5 +1,5 @@
 /**
- * Marketing portal IA — sidebar groups (UI only; routes unchanged).
+ * Marketing portal IA — flat sidebar under Marketing (tabs live on each hub page).
  */
 
 export type MarketingPortalNavLink = {
@@ -10,12 +10,36 @@ export type MarketingPortalNavLink = {
   permissionNavId: string;
 };
 
+/** Flat links shown under Marketing in the admin sidebar. */
+export const MARKETING_PORTAL_TOP_LINKS: MarketingPortalNavLink[] = [
+  {
+    id: 'marketing-hub',
+    label: 'Marketing Hub',
+    href: '/marketing',
+    permissionNavId: 'marketing',
+  },
+  {
+    id: 'promotion-center',
+    label: 'Promotion Center',
+    href: '/promotion-center',
+    permissionNavId: 'promotions',
+  },
+  {
+    id: 'notifications',
+    label: 'Notification',
+    href: '/notification-engine',
+    permissionNavId: 'notification-engine',
+  },
+];
+
+/** @deprecated Nested groups replaced by hub pages with top tabs. Kept for legacy UI flag. */
 export type MarketingPortalNavGroup = {
   id: 'marketing-hub' | 'promotions' | 'notifications';
   label: string;
   links: MarketingPortalNavLink[];
 };
 
+/** @deprecated Use MARKETING_PORTAL_TOP_LINKS */
 export const MARKETING_PORTAL_NAV_GROUPS: MarketingPortalNavGroup[] = [
   {
     id: 'marketing-hub',
@@ -59,38 +83,32 @@ export const MARKETING_PORTAL_NAV_GROUPS: MarketingPortalNavGroup[] = [
     links: [
       {
         id: 'promo-platform',
-        label: 'Platform Promotions',
-        href: '/promotions',
+        label: 'Platform Promotions & Coupons',
+        href: '/promotion-center?tab=platform',
         permissionNavId: 'promotions',
       },
       {
         id: 'promo-vendor',
         label: 'Vendor Promotions',
-        href: '/marketing/vendor-promotions',
+        href: '/promotion-center?tab=vendor',
         permissionNavId: 'marketing-vendor-promotions',
-      },
-      {
-        id: 'promo-coupons',
-        label: 'Coupons',
-        href: '/promotions?type=coupons',
-        permissionNavId: 'promotions',
       },
       {
         id: 'promo-policy',
         label: 'Policy Center',
-        href: '/policy-center',
+        href: '/promotion-center?tab=policy',
         permissionNavId: 'policy-center',
       },
       {
         id: 'promo-analytics',
         label: 'Analytics',
-        href: '/marketing/analytics',
+        href: '/promotion-center?tab=analytics',
         permissionNavId: 'marketing-analytics',
       },
       {
         id: 'promo-campaigns',
         label: 'Campaigns',
-        href: '/marketing/campaigns',
+        href: '/promotion-center?tab=campaigns',
         permissionNavId: 'marketing-campaigns',
       },
     ],
@@ -120,7 +138,7 @@ export const MARKETING_PORTAL_NAV_GROUPS: MarketingPortalNavGroup[] = [
       {
         id: 'notif-history',
         label: 'History',
-        href: '/notifications',
+        href: '/notification-engine?view=history',
         permissionNavId: 'notification-engine',
       },
     ],
@@ -133,11 +151,48 @@ export function marketingPortalLinkActive(href: string, pathname: string | null)
   if (pathname !== path && !pathname.startsWith(`${path}/`)) return false;
   if (!query) return pathname === path || pathname.startsWith(`${path}/`);
   const expected = new URLSearchParams(query);
-  const actual = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const actual =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams();
   for (const [key, value] of expected.entries()) {
     if (actual.get(key) !== value) return false;
   }
   return true;
+}
+
+export function marketingPortalTopLinkActive(
+  link: MarketingPortalNavLink,
+  pathname: string | null
+): boolean {
+  if (!pathname) return false;
+  const [path] = link.href.split('?');
+  if (link.id === 'marketing-hub') {
+    return pathname === '/marketing' || pathname.startsWith('/marketing/');
+  }
+  if (link.id === 'promotion-center') {
+    return (
+      pathname === '/promotion-center' ||
+      pathname.startsWith('/promotion-center/') ||
+      pathname === '/promotions' ||
+      pathname.startsWith('/promotions/') ||
+      pathname === '/policy-center' ||
+      pathname.startsWith('/policy-center/') ||
+      (pathname.startsWith('/marketing/') &&
+        (pathname.includes('vendor-promotions') ||
+          pathname.includes('analytics') ||
+          pathname.includes('campaigns')))
+    );
+  }
+  if (link.id === 'notifications') {
+    return (
+      pathname === '/notification-engine' ||
+      pathname.startsWith('/notification-engine/') ||
+      pathname === '/notifications' ||
+      pathname.startsWith('/notifications/')
+    );
+  }
+  return pathname === path || pathname.startsWith(`${path}/`);
 }
 
 export function marketingPortalGroupActive(

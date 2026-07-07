@@ -157,6 +157,7 @@ export type NormalizedCouponItem = {
   startDate: string;
   endDate: string;
   isActive: boolean;
+  targetSummary?: string;
   raw?: Record<string, unknown>;
   createdAt?: string;
 };

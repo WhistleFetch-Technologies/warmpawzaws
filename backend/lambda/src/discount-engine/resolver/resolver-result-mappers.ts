@@ -1,7 +1,7 @@
 import { DiscountOwner } from '../enums/discount-owner';
 import { DiscountSource } from '../enums/discount-source';
 import { DiscountTrigger } from '../enums/discount-trigger';
-import type { AppliedDiscount } from '../models/discount-result';
+import type { AppliedDiscount, DiscountSettlementPreview } from '../models/discount-result';
 import type { BookingPromotionResult } from '../../utils/service-promotion-engine';
 import type { PromotionEvaluation } from '../../utils/vendor-promotion-engine';
 import type { ResolverResult } from './types';
@@ -84,6 +84,7 @@ export function mapResolverResultToBookingPromotion(
     applied,
     vendorPromotionId: split.vendorPromotionId,
     platformPromotionId: split.platformPromotionId ?? split.couponId,
+    settlement: result.settlement,
   };
 }
 

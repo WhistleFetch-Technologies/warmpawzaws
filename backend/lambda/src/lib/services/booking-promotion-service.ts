@@ -19,6 +19,10 @@ import {
   resolveWithProductionMode,
 } from '../../discount-engine/resolver/production-bridge';
 import { mapResolverResultToBookingPromotion } from '../../discount-engine/resolver/resolver-result-mappers';
+import { DiscountOwner } from '../../discount-engine/enums/discount-owner';
+import { DiscountTrigger } from '../../discount-engine/enums/discount-trigger';
+import type { ResolverResult } from '../../discount-engine/resolver/types';
+import { parseJsonMetaFromNotes } from '../../utils/booking-notes-meta';
 import {
   expandPromotionServiceTokensForVendor,
   parsePromotionServicesList,
@@ -125,7 +129,9 @@ async function loadPlatformPromotions(
        WHERE is_active = true
          AND published = true
          AND start_date <= CURRENT_DATE
-         AND (end_date IS NULL OR end_date >= CURRENT_DATE)`
+         AND (end_date IS NULL OR end_date >= CURRENT_DATE)
+         AND (usage_limit IS NULL OR usage_count < usage_limit)
+         AND (max_uses IS NULL OR usage_count < max_uses)`
     );
     const rows = (res as { rows?: Record<string, unknown>[] }).rows || [];
     const matched: Record<string, unknown>[] = [];
@@ -306,6 +312,50 @@ export async function listApplicableBookingPromotions(
       ? await countPriorVendorBookings(resolvedParams.customerId, resolvedParams.vendorId)
       : 0;
 
+  const { value } = await resolveWithProductionMode({
+    label: 'listApplicableBookingPromotions',
+    context: resolveBookingParamsToDiscountContext(resolvedParams, {
+      metadata: {
+        [METADATA_PRIOR_VENDOR_BOOKING_COUNT]: priorVendorBookingCount,
+      },
+    }),
+    legacy: () =>
+      listApplicableBookingPromotionsLegacy(resolvedParams, priorVendorBookingCount),
+    mapResolverToLegacy: mapResolverResultToApplicableOffers,
+  });
+
+  return value;
+}
+
+function mapResolverResultToApplicableOffers(
+  result: ResolverResult
+): ApplicablePromotionOffer[] {
+  return result.benefitResults
+    .filter((b) => b.discountAmount > 0 && b.candidate.trigger === DiscountTrigger.AUTO)
+    .map((b) => {
+      const promo = b.candidate.originalEntity;
+      return {
+        id: b.candidate.id,
+        source: b.candidate.owner === DiscountOwner.VENDOR ? 'vendor' : 'platform',
+        title: b.candidate.name,
+        description:
+          typeof promo.description === 'string'
+            ? promo.description
+            : b.candidate.name,
+        discountType: String(promo.discount_type ?? b.candidate.benefits.type ?? 'percentage'),
+        discountValue: parseFloat(String(promo.discount_value ?? b.candidate.benefits.value ?? 0)) || 0,
+        discountAmount: b.discountAmount,
+        autoApplyEligible: true,
+        promotionType: String(promo.promotion_type ?? b.candidate.metadata?.promotionType ?? ''),
+        isSpotlight: promo.is_spotlight === true,
+      };
+    });
+}
+
+async function listApplicableBookingPromotionsLegacy(
+  resolvedParams: ResolveBookingPromotionsParams,
+  priorVendorBookingCount: number
+): Promise<ApplicablePromotionOffer[]> {
   const vendorPromotions = await loadVendorServicePromotions(resolvedParams.vendorId);
   const platformPromotions = await loadPlatformPromotions(resolvedParams);
 
@@ -397,17 +447,12 @@ export async function recordBookingPromotionUsageFromBooking(bookingId: string):
     let platformDiscount = 0;
 
     const notes = String(booking.notes || '');
-    const metaMatch = notes.match(/wp_promo_meta:(\{[^}]+\})/);
-    if (metaMatch) {
-      try {
-        const meta = JSON.parse(metaMatch[1]) as Record<string, unknown>;
-        vendorPromotionId = meta.vendorPromotionId ? String(meta.vendorPromotionId) : null;
-        platformPromotionId = meta.platformPromotionId ? String(meta.platformPromotionId) : null;
-        vendorDiscount = parseFloat(String(meta.vendorDiscount ?? 0)) || 0;
-        platformDiscount = parseFloat(String(meta.platformDiscount ?? 0)) || 0;
-      } catch {
-        /* ignore */
-      }
+    const meta = parseJsonMetaFromNotes(notes, 'wp_promo_meta');
+    if (meta) {
+      vendorPromotionId = meta.vendorPromotionId ? String(meta.vendorPromotionId) : null;
+      platformPromotionId = meta.platformPromotionId ? String(meta.platformPromotionId) : null;
+      vendorDiscount = parseFloat(String(meta.vendorDiscount ?? 0)) || 0;
+      platformDiscount = parseFloat(String(meta.platformDiscount ?? 0)) || 0;
     }
 
     if (!vendorPromotionId && !platformPromotionId && booking.promotion_id) {

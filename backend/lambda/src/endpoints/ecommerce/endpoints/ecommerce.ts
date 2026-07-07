@@ -735,7 +735,8 @@ export function registerEcommerceEndpoints(app: Hono) {
              WHERE vendor_id = $1::uuid
                AND is_active = true
                AND start_date <= NOW()
-               AND end_date >= NOW()`,
+               AND end_date >= NOW()
+               AND (usage_limit IS NULL OR usage_count < usage_limit)`,
             [firstVendorId]
           );
           const promos = (promosRes.rows || []).map((row: Record<string, unknown>) =>
@@ -792,8 +793,17 @@ export function registerEcommerceEndpoints(app: Hono) {
             }
           }
         } catch (promoErr) {
-          console.warn('[ecommerce/orders] promotion validation skipped:', promoErr);
+          console.error('[ecommerce/orders] promotion validation failed:', promoErr);
+          return c.json({ error: 'Promotion validation failed' }, 400);
         }
+      }
+
+      if (
+        Number(bodyDiscount) > 0 &&
+        serverPromoDiscount === 0 &&
+        (couponCode || promoId)
+      ) {
+        return c.json({ error: 'Promotion validation failed' }, 400);
       }
 
       const discountAmount =

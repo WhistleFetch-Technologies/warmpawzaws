@@ -442,6 +442,11 @@ export function calculateBestCartPromotion(
   // Synchronous legacy API — run production mode via deasync pattern: only use sync return from legacy when OFF/SHADOW
   // For AUTHORITATIVE, callers using async path should use calculateBestCartPromotionAsync
   const mode = process.env.DISCOUNT_ENGINE_V2_RESOLVER_MODE?.trim().toUpperCase();
+  if (mode === 'AUTHORITATIVE') {
+    console.warn(
+      '[vendor-promotion-engine] calculateBestCartPromotion called synchronously while DISCOUNT_ENGINE_V2_RESOLVER_MODE=AUTHORITATIVE; use calculateBestCartPromotionAsync for resolver-backed results'
+    );
+  }
   if (mode !== 'AUTHORITATIVE') {
     return legacyCompute();
   }

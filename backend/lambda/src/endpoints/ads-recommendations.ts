@@ -10,7 +10,7 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
-import { calculateBestCartPromotion, discountsWithinTolerance, normalizePromotionRow, type CartLineItem } from '../utils/vendor-promotion-engine';
+import { calculateBestCartPromotionAsync, discountsWithinTolerance, normalizePromotionRow, type CartLineItem } from '../utils/vendor-promotion-engine';
 import { countPriorVendorOrders, recordVendorPromotionUsage } from '../utils/vendor-promotion-usage';
 import {
   clampRecommendationLimit,
@@ -541,7 +541,7 @@ app.post('/promotions/calculate-cart', async (c) => {
       normalizePromotionRow(p as Record<string, unknown>)
     );
 
-    const result = calculateBestCartPromotion(normalizedPromos, cartLines, {
+    const result = await calculateBestCartPromotionAsync(normalizedPromos, cartLines, {
       vendorId,
       customerId,
       priorVendorOrderCount,

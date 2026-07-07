@@ -1,12 +1,21 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
-import { CommercialCampaignHub } from '@/components/admin/marketing/campaigns/CommercialCampaignHub';
 
-export default function CommercialCampaignsPage() {
+export default function MarketingCampaignsRedirectPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/promotion-center?tab=campaigns');
+  }, [router]);
+
   return (
     <AdminLayout>
-      <CommercialCampaignHub surface="marketing" />
+      <div className="flex min-h-[40vh] items-center justify-center text-slate-500">
+        Redirecting to Promotion Center…
+      </div>
     </AdminLayout>
   );
 }

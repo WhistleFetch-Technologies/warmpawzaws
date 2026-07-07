@@ -23,7 +23,7 @@ import { PolicyHistorySection } from './sections/PolicyHistorySection';
 import { PolicySimulatorSection } from './sections/PolicySimulatorSection';
 import { AuditViewerSection } from './sections/AuditViewerSection';
 
-export function PolicyCenter() {
+export function PolicyCenter({ embedded = false }: { embedded?: boolean }) {
   const [activeTab, setActiveTab] = useState<PolicyCenterTabId>('stack');
   const [viewDomain, setViewDomain] = useState<PolicyViewDomain>('services');
   const {
@@ -78,23 +78,25 @@ export function PolicyCenter() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <div className="border-b bg-white">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-4">
-          <div className="rounded-lg bg-violet-100 p-2">
-            <Scale className="h-6 w-6 text-violet-700" aria-hidden />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Policy Center</h1>
-            <p className="text-sm text-slate-500">
-              Configure discount application, winning offer strategy, funding, and limits for Discount
-              Engine V2.
-            </p>
+    <div className={embedded ? 'flex flex-col' : 'flex min-h-screen flex-col'}>
+      {!embedded ? (
+        <div className="border-b bg-white">
+          <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-4">
+            <div className="rounded-lg bg-violet-100 p-2">
+              <Scale className="h-6 w-6 text-violet-700" aria-hidden />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Policy Center</h1>
+              <p className="text-sm text-slate-500">
+                Configure discount application, winning offer strategy, funding, and limits for Discount
+                Engine V2.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
-      <div className="mx-auto w-full max-w-6xl flex-1 px-6 py-6 pb-24">
+      <div className={`mx-auto w-full max-w-6xl flex-1 px-6 py-6 ${embedded ? 'pb-12' : 'pb-24'}`}>
         {!capabilities?.draftWrite ? (
           <div className="mb-6">
             <ApiPendingBanner />

@@ -99,6 +99,7 @@ export function promotionItemToCoupon(item: NormalizedPromotionItem): Normalized
     startDate: item.startDate,
     endDate: item.endDate,
     isActive: item.isActive,
+    targetSummary: item.targetSummary,
     raw: item.raw,
     createdAt: item.createdAt,
   };

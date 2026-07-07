@@ -97,7 +97,9 @@ export function readSettlementPreviewFromMetadata(
   metadata: unknown
 ): DiscountSettlementPreview | undefined {
   if (!metadata || typeof metadata !== 'object') return undefined;
-  const raw = (metadata as Record<string, unknown>).settlement_preview;
+  const record = metadata as Record<string, unknown>;
+  const raw =
+    record.settlement_preview ?? record.discountSettlementPreview ?? record.settlementSnapshot;
   if (!raw || typeof raw !== 'object') return undefined;
   return raw as DiscountSettlementPreview;
 }

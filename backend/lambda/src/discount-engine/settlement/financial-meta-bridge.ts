@@ -14,9 +14,22 @@ export function appendSettlementPreviewToFinancialMeta(
   return {
     ...financialMeta,
     discountSettlementPreview: settlement,
+    settlement_preview: settlement,
     discountSettlementVersion: settlement.settlementVersion ?? '1.0.0',
     policyFingerprint: settlement.policyFingerprint,
   };
+}
+
+export function readDiscountSettlementPreviewFromMeta(
+  meta: Record<string, unknown> | undefined
+): DiscountSettlementPreview | undefined {
+  if (!meta) return undefined;
+  const preview =
+    meta.discountSettlementPreview ?? meta.settlement_preview ?? meta.settlementSnapshot;
+  if (preview && typeof preview === 'object') {
+    return preview as DiscountSettlementPreview;
+  }
+  return undefined;
 }
 
 export function extractResolverSettlementFromMeta(

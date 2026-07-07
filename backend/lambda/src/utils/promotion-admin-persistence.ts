@@ -4,6 +4,7 @@
  */
 
 import { isValidUUID } from '../types/entities';
+import { promotionEndDateToIso, promotionStartDateToIso } from './promotion-date-bounds';
 
 export function normalizePromotionDiscountType(raw: unknown): 'percentage' | 'fixed' {
   const value = String(raw || 'percentage').trim().toLowerCase();
@@ -115,12 +116,17 @@ export function buildPromotionPersistenceFromAdminBody(
     body.promotion_type ?? body.promotionType ?? body.type
   );
 
-  const startDate =
-    parseDateInput(body.valid_from ?? body.validFrom ?? body.startDate ?? body.start_date) ||
-    new Date().toISOString().split('T')[0];
-  const endDate = parseDateInput(
-    body.valid_until ?? body.validUntil ?? body.endDate ?? body.end_date
-  );
+  const startDateInput =
+    body.valid_from ?? body.validFrom ?? body.startDate ?? body.start_date;
+  const endDateInput =
+    body.valid_until ?? body.validUntil ?? body.endDate ?? body.end_date;
+
+  const startDate = startDateInput
+    ? promotionStartDateToIso(String(startDateInput).split('T')[0])
+    : promotionStartDateToIso(new Date().toISOString().split('T')[0]);
+  const endDate = endDateInput
+    ? promotionEndDateToIso(String(endDateInput).split('T')[0])
+    : null;
 
   const applicableServices = buildApplicableServicesFromBody(body);
   const selectedTargets =

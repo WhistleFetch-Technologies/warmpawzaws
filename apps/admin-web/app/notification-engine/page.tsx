@@ -5,7 +5,7 @@ import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { apiClient } from '@/lib/api-client';
 import { CampaignPreview, type PreviewPlatform } from '@/components/admin/notification-engine/CampaignPreview';
 import { hasAdminPortalPermission } from '@/lib/admin-permissions';
-import { AlertTriangle, Bell, Loader2, Send, Save } from 'lucide-react';
+import { AlertTriangle, Bell, History, Loader2, Megaphone, Send, Save, FileText } from 'lucide-react';
 
 type TargetApp = 'CUSTOMER' | 'VENDOR';
 type TargetingType = 'BROADCAST' | 'SPECIFIC_USERS' | 'REGIONS' | 'CITIES' | 'SEGMENTS';
@@ -79,6 +79,15 @@ interface SegmentRow {
   target_app: TargetApp;
 }
 
+type NotificationView = 'push' | 'campaigns' | 'templates' | 'history';
+
+const NOTIFICATION_TABS: { id: NotificationView; label: string }[] = [
+  { id: 'push', label: 'Push Notifications' },
+  { id: 'campaigns', label: 'Campaigns' },
+  { id: 'templates', label: 'Templates' },
+  { id: 'history', label: 'History' },
+];
+
 export default function NotificationEnginePage() {
   const [form, setForm] = useState(emptyForm);
   const [previewPlatform, setPreviewPlatform] = useState<PreviewPlatform>('android');
@@ -96,6 +105,17 @@ export default function NotificationEnginePage() {
   const [regions, setRegions] = useState<RegionRow[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [segments, setSegments] = useState<SegmentRow[]>([]);
+  const [activeView, setActiveView] = useState<NotificationView>('push');
+  const [deliveryHistory, setDeliveryHistory] = useState<
+    Array<{
+      id: string;
+      title: string;
+      delivery_status: string;
+      recipient_type: string;
+      created_at: string;
+    }>
+  >([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const canSend = hasAdminPortalPermission(['admin.notifications.send', 'admin.full_access']);
   const canCreate = hasAdminPortalPermission(['admin.notifications.create', 'admin.full_access']);
@@ -150,20 +170,36 @@ export default function NotificationEnginePage() {
   useEffect(() => {
     if (typeof window === 'undefined' || loading) return;
     const view = new URLSearchParams(window.location.search).get('view');
-    const scrollToId =
-      view === 'campaigns'
-        ? 'notification-campaigns'
-        : view === 'templates'
-          ? 'notification-templates'
-          : view === 'push'
-            ? 'notification-push-builder'
-            : null;
-    if (scrollToId) {
-      window.requestAnimationFrame(() => {
-        document.getElementById(scrollToId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
+    if (view === 'push' || view === 'campaigns' || view === 'templates' || view === 'history') {
+      setActiveView(view);
     }
   }, [loading]);
+
+  const selectView = (view: NotificationView) => {
+    setActiveView(view);
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', view);
+    window.history.replaceState({}, '', url.toString());
+  };
+
+  useEffect(() => {
+    if (activeView !== 'history' || historyLoading || deliveryHistory.length > 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setHistoryLoading(true);
+        const res = await apiClient.get<any>('/admin/notifications/delivery');
+        if (!cancelled) setDeliveryHistory(res.notifications || []);
+      } catch {
+        if (!cancelled) setDeliveryHistory([]);
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, deliveryHistory.length, historyLoading]);
 
   const buildAudiencePayload = () => ({
     targeting_type: form.targeting_type,
@@ -332,17 +368,43 @@ export default function NotificationEnginePage() {
     <AdminLayout>
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                <Bell className="w-7 h-7 text-orange-500" />
-                Notification Engine
-              </h1>
-              <p className="text-sm text-gray-500 mt-1">Audience → Message → Preview → Estimate → Review → Send</p>
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                  <Bell className="w-7 h-7 text-orange-500" />
+                  Notification
+                </h1>
+                <p className="text-sm text-gray-500 mt-1">
+                  Push campaigns, templates, and delivery history
+                </p>
+              </div>
+              <div className="text-xs text-gray-500">
+                Push: Customer {settings.customerPushEnabled ? 'on' : 'off'} · Vendor{' '}
+                {settings.vendorPushEnabled ? 'on' : 'off'}
+                <span className="block text-[10px]">Configure in Platform Settings → Notifications</span>
+              </div>
             </div>
-            <div className="text-xs text-gray-500">
-              Push: Customer {settings.customerPushEnabled ? 'on' : 'off'} · Vendor {settings.vendorPushEnabled ? 'on' : 'off'}
-              <span className="block text-[10px]">Configure in Platform Settings → Notifications</span>
+
+            <div className="mt-4 flex gap-0 overflow-x-auto border-b border-gray-200 -mb-px">
+              {NOTIFICATION_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => selectView(tab.id)}
+                  className={`flex items-center gap-2 whitespace-nowrap border-b-[3px] px-4 py-3 text-sm transition-colors ${
+                    activeView === tab.id
+                      ? 'border-[#FF8C42] bg-orange-50/50 font-medium text-[#FF8C42]'
+                      : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  {tab.id === 'push' ? <Bell className="h-4 w-4" /> : null}
+                  {tab.id === 'campaigns' ? <Megaphone className="h-4 w-4" /> : null}
+                  {tab.id === 'templates' ? <FileText className="h-4 w-4" /> : null}
+                  {tab.id === 'history' ? <History className="h-4 w-4" /> : null}
+                  {tab.label}
+                </button>
+              ))}
             </div>
           </div>
         </header>
@@ -362,6 +424,8 @@ export default function NotificationEnginePage() {
           )}
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            {activeView === 'push' ? (
+            <>
             <div className="xl:col-span-2 space-y-6">
               {/* 1 Campaign Details */}
               <section className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
@@ -694,7 +758,6 @@ export default function NotificationEnginePage() {
               </section>
             </div>
 
-            {/* 4 Live Preview */}
             <div className="space-y-4">
               <section className="bg-white rounded-2xl border border-gray-200 p-6 sticky top-24">
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">4. Live Preview</h2>
@@ -718,11 +781,13 @@ export default function NotificationEnginePage() {
                 </div>
               </section>
             </div>
+          </>
+          ) : null}
           </div>
 
-          {/* 9 Recent Campaigns */}
+          {activeView === 'campaigns' ? (
           <section id="notification-campaigns" className="bg-white rounded-2xl border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">9. Recent Campaigns</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Campaigns</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -784,6 +849,75 @@ export default function NotificationEnginePage() {
               </table>
             </div>
           </section>
+          ) : null}
+
+          {activeView === 'templates' ? (
+            <section className="bg-white rounded-2xl border border-gray-200 p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Notification Templates</h2>
+              {templates.length === 0 ? (
+                <p className="text-sm text-gray-500">No templates yet. Save a campaign as a template from Push Notifications.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-xs uppercase text-gray-500">
+                        <th className="py-2 pr-4">Name</th>
+                        <th className="py-2 pr-4">Title</th>
+                        <th className="py-2 pr-4">Target app</th>
+                        <th className="py-2">Message preview</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {templates.map((t) => (
+                        <tr key={t.id} className="border-b border-gray-100">
+                          <td className="py-3 pr-4 font-medium">{t.name}</td>
+                          <td className="py-3 pr-4">{t.title_template}</td>
+                          <td className="py-3 pr-4">{t.target_app}</td>
+                          <td className="py-3 text-gray-600 line-clamp-2">{t.message_template}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          ) : null}
+
+          {activeView === 'history' ? (
+            <section className="bg-white rounded-2xl border border-gray-200 p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Delivery History</h2>
+              {historyLoading ? (
+                <div className="flex items-center gap-2 text-gray-500 py-8 justify-center">
+                  <Loader2 className="h-5 w-5 animate-spin" /> Loading delivery history…
+                </div>
+              ) : deliveryHistory.length === 0 ? (
+                <p className="text-sm text-gray-500">No delivery records yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-xs uppercase text-gray-500">
+                        <th className="py-2 pr-4">Title</th>
+                        <th className="py-2 pr-4">Recipient</th>
+                        <th className="py-2 pr-4">Status</th>
+                        <th className="py-2">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deliveryHistory.map((row) => (
+                        <tr key={row.id} className="border-b border-gray-100">
+                          <td className="py-3 pr-4 font-medium">{row.title}</td>
+                          <td className="py-3 pr-4 capitalize">{row.recipient_type}</td>
+                          <td className="py-3 pr-4">{row.delivery_status}</td>
+                          <td className="py-3">{new Date(row.created_at).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          ) : null}
         </main>
       </div>
     </AdminLayout>

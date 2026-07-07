@@ -35,6 +35,8 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { filterMarketingSidebarNavItems, isLegacyPromotionUiEnabled } from '@/lib/legacy-promotion-ui';
 import {
   MARKETING_PORTAL_NAV_GROUPS,
+  MARKETING_PORTAL_TOP_LINKS,
+  marketingPortalTopLinkActive,
   type MarketingPortalNavGroup,
 } from '@/lib/marketing-portal-nav';
 import { getStoredAdminPermissions, hasAdminPortalPermission } from '@/lib/admin-permissions';
@@ -106,7 +108,7 @@ function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void
   }
   if (item.id === 'promotions') {
     return () => {
-      window.location.href = '/promotions';
+      window.location.href = '/promotion-center';
     };
   }
   if (item.id === 'marketing-vendor-promotions') {
@@ -233,6 +235,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       pathname?.startsWith('/marketing') ||
       pathname?.startsWith('/notification-engine') ||
       pathname?.startsWith('/notifications') ||
+      pathname?.startsWith('/promotion-center') ||
       pathname?.startsWith('/promotions') ||
       pathname?.startsWith('/policy-center');
     if (inMarketing) {
@@ -278,6 +281,12 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
     return filterMarketingSidebarNavItems(permitted);
   }, [hydrated, marketingNavItems, pathname, activeView]);
 
+  const visibleMarketingTopLinks = useMemo(() => {
+    return MARKETING_PORTAL_TOP_LINKS.filter((link) =>
+      canSeeMarketingLink(link.permissionNavId, hydrated)
+    );
+  }, [hydrated]);
+
   const visibleMarketingPortalGroups = useMemo(() => {
     return MARKETING_PORTAL_NAV_GROUPS.map((group) => ({
       ...group,
@@ -289,6 +298,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
     pathname?.startsWith('/marketing') ||
     pathname?.startsWith('/notification-engine') ||
     pathname?.startsWith('/notifications') ||
+    pathname?.startsWith('/promotion-center') ||
     pathname?.startsWith('/promotions') ||
     pathname?.startsWith('/policy-center') ||
     false;
@@ -375,7 +385,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                 );
               })}
 
-              {(legacyMarketingNav ? visibleMarketingNav.length > 0 : visibleMarketingPortalGroups.length > 0) && (
+              {(legacyMarketingNav ? visibleMarketingNav.length > 0 : visibleMarketingTopLinks.length > 0) && (
                 <div className="pt-1">
                   <button
                     type="button"
@@ -416,62 +426,25 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                     </div>
                   )}
                   {marketingOpen && !legacyMarketingNav && (
-                    <div className="ml-4 mt-1 space-y-2 border-l border-gray-200 pl-2">
-                      {visibleMarketingPortalGroups.map((group) => {
-                        const groupActive = isMarketingPortalGroupActive(group, pathname, searchParams);
-                        const groupOpen = openMarketingGroups[group.id] ?? false;
+                    <div className="ml-4 mt-1 space-y-1 border-l border-gray-200 pl-2">
+                      {visibleMarketingTopLinks.map((link) => {
+                        const linkActive = marketingPortalTopLinkActive(link, pathname);
                         return (
-                          <div key={group.id}>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setOpenMarketingGroups((prev) => ({
-                                  ...prev,
-                                  [group.id]: !groupOpen,
-                                }))
-                              }
-                              className={`w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors rounded-lg ${
-                                groupActive
-                                  ? 'text-[#FF8C42] bg-orange-50 font-medium'
-                                  : 'text-gray-700 hover:bg-gray-100'
-                              }`}
-                            >
-                              <span className="truncate flex-1 text-left font-medium">{group.label}</span>
-                              {groupOpen ? (
-                                <ChevronDown className="w-3.5 h-3.5 shrink-0" />
-                              ) : (
-                                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-                              )}
-                            </button>
-                            {groupOpen && (
-                              <div className="ml-3 mt-0.5 space-y-0.5 border-l border-gray-100 pl-2">
-                                {group.links.map((link) => {
-                                  const linkActive = isMarketingPortalLinkActive(
-                                    link.href,
-                                    pathname,
-                                    searchParams
-                                  );
-                                  return (
-                                    <button
-                                      key={link.id}
-                                      type="button"
-                                      onClick={() => {
-                                        window.location.href = link.href;
-                                        setOpen(false);
-                                      }}
-                                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors rounded-lg ${
-                                        linkActive
-                                          ? 'text-[#FF8C42] bg-orange-50 font-medium'
-                                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                      }`}
-                                    >
-                                      {link.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
+                          <button
+                            key={link.id}
+                            type="button"
+                            onClick={() => {
+                              window.location.href = link.href;
+                              setOpen(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm transition-colors rounded-lg ${
+                              linkActive
+                                ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                            }`}
+                          >
+                            {link.label}
+                          </button>
                         );
                       })}
                     </div>

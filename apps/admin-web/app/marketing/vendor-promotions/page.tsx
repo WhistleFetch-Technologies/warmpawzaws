@@ -1,16 +1,21 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
-import { VendorPromotionsOverview } from '@/components/admin/marketing/VendorPromotionsOverview';
 
-export default function MarketingVendorPromotionsPage() {
+export default function MarketingVendorPromotionsRedirectPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/promotion-center?tab=vendor');
+  }, [router]);
+
   return (
     <AdminLayout>
-      <VendorPromotionsOverview
-        domain="SERVICE"
-        title="Vendor Promotions"
-        subtitle="Service vendor-created promotions and coupons"
-      />
+      <div className="flex min-h-[40vh] items-center justify-center text-slate-500">
+        Redirecting to Promotion Center…
+      </div>
     </AdminLayout>
   );
 }

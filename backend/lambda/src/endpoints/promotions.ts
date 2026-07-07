@@ -37,6 +37,8 @@ import {
   normalizePromotionDiscountType as normalizeAdminPromotionDiscountType,
   parseDateInput as parseAdminDateInput,
 } from '../utils/promotion-admin-persistence';
+import { isPromotionLiveInIst } from '../utils/promotion-date-bounds';
+import { promotionCategoriesMatch } from '../utils/platform-promotion-matching';
 
 async function persistPromotionInsert(promotionData: Record<string, unknown>) {
   const payload = { ...promotionData };
@@ -199,12 +201,17 @@ export function registerPromotionEndpoints(app: Hono) {
 
   const isPromotionEligible = (promotion: any, params: { category?: string; serviceStyle?: string; serviceIds?: string[]; amount?: number }) => {
     const now = new Date();
-    const startDate = promotion.start_date ? new Date(promotion.start_date) : null;
-    const endDate = promotion.end_date ? new Date(promotion.end_date) : null;
+    const startIso = promotion.start_date ? String(promotion.start_date) : new Date(0).toISOString();
+    const endIso = promotion.end_date ? String(promotion.end_date) : new Date('2099-12-31').toISOString();
     let legacy: { eligible: boolean; reason: string | null };
-    if (startDate && now < startDate) legacy = { eligible: false, reason: 'Promotion not started yet' };
-    else if (endDate && now > endDate) legacy = { eligible: false, reason: 'Promotion has expired' };
-    else {
+    if (!isPromotionLiveInIst(startIso, endIso, now)) {
+      legacy = { eligible: false, reason: 'Promotion is not active' };
+    } else if (
+      (promotion.usage_limit != null && promotion.usage_count >= promotion.usage_limit) ||
+      (promotion.max_uses != null && promotion.usage_count >= promotion.max_uses)
+    ) {
+      legacy = { eligible: false, reason: 'Promotion has reached its usage limit' };
+    } else {
       const amount = Number(params.amount || 0);
       const minOrder = promotion.min_order_amount != null ? parseFloat(String(promotion.min_order_amount)) : 0;
       if (minOrder > 0 && amount > 0 && amount < minOrder) {
@@ -224,7 +231,7 @@ export function registerPromotionEndpoints(app: Hono) {
           category &&
           category !== 'all' &&
           configuredCategories.length > 0 &&
-          !configuredCategories.map((x) => x.toLowerCase()).includes(category)
+          !configuredCategories.some((token) => promotionCategoriesMatch(category, token))
         ) {
           legacy = { eligible: false, reason: 'Promotion not applicable for this category' };
         } else if (
@@ -649,6 +656,8 @@ export function registerPromotionEndpoints(app: Hono) {
          AND (start_date IS NULL OR start_date <= NOW())
          AND (end_date IS NULL OR end_date >= NOW())
          AND published = true
+         AND (usage_limit IS NULL OR usage_count < usage_limit)
+         AND (max_uses IS NULL OR usage_count < max_uses)
          LIMIT 1`,
         [promotionCode]
       );
@@ -942,6 +951,8 @@ export function registerPromotionEndpoints(app: Hono) {
         AND published = true
         AND (start_date IS NULL OR start_date <= $1)
         AND (end_date IS NULL OR end_date >= $1)
+        AND (usage_limit IS NULL OR usage_count < usage_limit)
+        AND (max_uses IS NULL OR usage_count < max_uses)
       `;
 
       const params: any[] = [now];
@@ -1019,6 +1030,8 @@ export function registerPromotionEndpoints(app: Hono) {
         WHERE is_active = true
         AND (start_date IS NULL OR start_date <= $1)
         AND (end_date IS NULL OR end_date >= $1)
+        AND (usage_limit IS NULL OR usage_count < usage_limit)
+        AND (max_uses IS NULL OR usage_count < max_uses)
       `;
       
       const params: any[] = [now];

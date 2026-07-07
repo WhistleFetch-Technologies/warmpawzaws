@@ -42,6 +42,7 @@ import {
   resolveBookingPromotions,
 } from '../../../lib/services/booking-promotion-service';
 import { enrichFinancialMetaWithSettlement } from '../../../finance/settlement/build-settlement-snapshot';
+import { appendSettlementPreviewToFinancialMeta } from '../../../discount-engine/settlement/financial-meta-bridge';
 import { discountsWithinTolerance } from '../../../utils/vendor-promotion-engine';
 import {
   SQL_BOOKING_BLOCKS_SLOT,
@@ -1294,7 +1295,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           } catch (promoErr: unknown) {
             const msg = promoErr instanceof Error ? promoErr.message : String(promoErr);
             if (msg === 'PROMOTION_DISCOUNT_MISMATCH') throw promoErr;
-            console.warn('[BOOKING] promotion validation skipped:', msg);
+            console.error('[BOOKING] promotion validation failed:', msg);
+            throw new Error('PROMOTION_VALIDATION_FAILED');
           }
         }
 
@@ -1670,7 +1672,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             0;
           const couponDisc = parseFloat(String(fm.couponDiscount ?? fm.coupon_discount ?? 0)) || 0;
           const settlementVendorId = String(bookingData.vendor_id ?? body.vendorId ?? body.vendor_id ?? '');
-          const enrichedMeta = settlementVendorId
+          let enrichedMeta = settlementVendorId
             ? await enrichFinancialMetaWithSettlement({
                 vendorId: settlementVendorId,
                 servicePrice: servicePriceForMeta,
@@ -1722,6 +1724,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             enrichedMeta.convenienceFee = parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0;
             enrichedMeta.deliveryFee = parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0;
             enrichedMeta.walletAmount = parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0;
+          }
+          if (resolvedBookingPromotions?.settlement) {
+            enrichedMeta = appendSettlementPreviewToFinancialMeta(
+              enrichedMeta,
+              resolvedBookingPromotions.settlement
+            );
           }
           const finNotes = serializeBookingFinancialMeta(enrichedMeta);
           bookingData.notes = bookingData.notes

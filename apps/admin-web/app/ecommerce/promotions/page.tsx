@@ -20,7 +20,7 @@ function ECommercePromotionsInner() {
 
   return (
     <ECommercePromoLayout
-      title="Promotions"
+      title="Promotions & Coupons"
       subtitle="Seller and product promotions, cart coupons, and marketplace offers"
     >
       <AdminPromotionHub surface="ecommerce" initialKindFilter={initialKindFilter} />

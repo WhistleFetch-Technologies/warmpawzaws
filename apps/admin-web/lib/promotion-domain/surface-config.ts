@@ -89,7 +89,7 @@ export function filterCampaigns(
 
 export const MARKETING_PROMOTION_SCOPE: PromotionManagementScope = {
   mode: 'platform',
-  title: 'Service Promotions',
+  title: 'Platform Promotions & Coupons',
   subtitle: 'Veterinary, grooming, training, boarding, meal plans, packages & service vendors',
   canManageCoupons: true,
   canManagePlatformTargets: true,
@@ -99,7 +99,7 @@ export const MARKETING_PROMOTION_SCOPE: PromotionManagementScope = {
 
 export const ECOMMERCE_PROMOTION_SCOPE: PromotionManagementScope = {
   mode: 'platform',
-  title: 'Seller Promotions & Coupons',
+  title: 'Promotions & Coupons',
   subtitle: 'Marketplace sellers, products, categories & cart coupons',
   canManageCoupons: true,
   canManagePlatformTargets: true,

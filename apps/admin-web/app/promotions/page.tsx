@@ -1,31 +1,29 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
-import { AdminPromotionHub } from '@/components/admin/marketing/AdminPromotionHub';
-import type { KindFilter } from '@warmpawz/promotion-management-ui';
 
-function PromotionsPageInner() {
-  const [initialKindFilter, setInitialKindFilter] = useState<KindFilter | undefined>(undefined);
+function PromotionsRedirectInner() {
+  const router = useRouter();
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const type = params.get('type');
-    if (type === 'coupons' || type === 'coupon') {
-      setInitialKindFilter('coupon');
-    } else if (type === 'promotions' || type === 'promotion') {
-      setInitialKindFilter('promotion');
-    }
-  }, []);
+    router.replace('/promotion-center?tab=platform');
+  }, [router]);
 
-  return <AdminPromotionHub surface="marketing" initialKindFilter={initialKindFilter} />;
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center text-slate-500">
+      Redirecting to Promotion Center…
+    </div>
+  );
 }
 
-export default function PromotionsPage() {
+/** Legacy route — redirects to Promotion Center. */
+export default function PromotionsRedirectPage() {
   return (
     <AdminLayout>
-      <Suspense fallback={<div className="p-8 text-slate-500">Loading promotions…</div>}>
-        <PromotionsPageInner />
+      <Suspense fallback={<div className="p-8 text-slate-500">Loading…</div>}>
+        <PromotionsRedirectInner />
       </Suspense>
     </AdminLayout>
   );

@@ -20,9 +20,6 @@ import {
   promotionStartDateToIso,
 } from '../../../utils/promotion-date-bounds';
 import {
-  calculateBestCartPromotion,
-  evaluatePromotionDiscount,
-  isPromotionEligible,
   normalizePromotionRow,
   type CartLineItem,
 } from '../../../utils/vendor-promotion-engine';
@@ -38,6 +35,7 @@ import { DiscountDomain } from '../../../discount-engine/enums/discount-domain';
 import {
   evaluateServiceCodeViaProductionMode,
   evaluatePlatformCodeViaProductionMode,
+  evaluateProductCodeViaProductionMode,
 } from '../../../lib/services/promotion-code-validation-service';
 
 export function registerVendorPromotionsEndpoints(app: Hono) {
@@ -748,42 +746,15 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
             priorVendorOrderCount = await countPriorVendorOrders(String(customerId), promo.vendor_id);
           }
 
-          let evaluation = evaluatePromotionDiscount(
+          let evaluation = await evaluateProductCodeViaProductionMode(
             promo,
-            cartLines.length > 0 ? cartLines : [],
-            { vendorId, customerId, priorVendorOrderCount }
+            cartLines.length > 0
+              ? cartLines
+              : lineSubtotal > 0
+                ? [{ productId: '__order__', quantity: 1, price: lineSubtotal }]
+                : [],
+            { vendorId, customerId, priorVendorOrderCount, manualCode: code.toUpperCase() }
           );
-
-          if (!evaluation && cartLines.length === 0 && lineSubtotal > 0) {
-            const eligibility = isPromotionEligible(promo, { vendorId, customerId, priorVendorOrderCount });
-            if (eligibility.ok && promo.promotion_type !== 'buy_x_get_y' && promo.promotion_type !== 'bundle') {
-              if (promo.min_order_value && lineSubtotal < promo.min_order_value) {
-                return c.json({
-                  valid: false,
-                  message: `Minimum order value of ₹${promo.min_order_value} required`,
-                });
-              }
-              let discountAmount = 0;
-              if (promo.discount_type === 'percentage') {
-                discountAmount = (lineSubtotal * promo.discount_value) / 100;
-                if (promo.max_discount_amount) {
-                  discountAmount = Math.min(discountAmount, promo.max_discount_amount);
-                }
-              } else {
-                discountAmount = promo.discount_value;
-              }
-              evaluation = {
-                discountAmount,
-                promotionId: promo.id,
-                promotionType: promo.promotion_type,
-                label: promo.name,
-                description: promo.name,
-                affectedProductIds: [],
-                autoApplyEligible: !promo.code,
-                promotion: promo,
-              };
-            }
-          }
 
           if (!evaluation) {
             if (promo.min_order_value && lineSubtotal < promo.min_order_value) {
@@ -872,6 +843,8 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
           AND start_date <= $2 
           AND end_date >= $2
           AND published = true
+          AND (usage_limit IS NULL OR usage_count < usage_limit)
+          AND (max_uses IS NULL OR usage_count < max_uses)
         LIMIT 1
       `, [code.toUpperCase(), now]);
       

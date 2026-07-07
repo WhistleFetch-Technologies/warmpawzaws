@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, Loader2, Tag, X } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { validateCouponCode } from '@/lib/pricing/coupon-validation';
 import { toast } from 'sonner';
 
 export type SelectedCartPromotion = {
@@ -146,19 +147,14 @@ export function CartPromotionSelect({
     setApplying(true);
     setError(null);
     try {
-      const res = await apiClient.post<{
-        valid?: boolean;
-        message?: string;
-        discount_amount?: number;
-        promotion?: { id?: string };
-      }>('/promotions/validate-code', {
-        code: code.toUpperCase(),
+      const result = await validateCouponCode({
+        code,
         vendorId: vendorId && vendorId !== 'default' ? vendorId : undefined,
-        orderAmount,
-        orderType: 'product',
         customerId,
-        items: cartItems.map((item) => ({
-          productId: item.productId || item.id,
+        orderType: 'product',
+        amount: orderAmount,
+        cartItems: cartItems.map((item) => ({
+          productId: item.productId || item.id || '',
           quantity: item.quantity,
           price: item.price,
           categoryId: item.categoryId || item.category,
@@ -166,16 +162,16 @@ export function CartPromotionSelect({
         })),
       });
 
-      if (!res.valid) {
-        setError(res.message || 'Promotion not applicable');
+      if (!result.ok) {
+        setError(result.message || 'Promotion not applicable');
         return;
       }
 
       onApply({
-        code: code.toUpperCase(),
-        discountAmount: toFiniteNumber(res.discount_amount),
-        promotionId: res.promotion?.id ?? promo.id,
-        label: promo.name,
+        code: result.coupon.code,
+        discountAmount: toFiniteNumber(result.coupon.discountAmount),
+        promotionId: result.coupon.promotionId ?? promo.id,
+        label: result.coupon.label || promo.name,
       });
       toast.success('Coupon applied');
     } catch (e: unknown) {

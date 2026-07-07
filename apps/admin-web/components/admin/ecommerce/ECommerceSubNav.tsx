@@ -31,9 +31,8 @@ const NAV: ECommerceNavItem[] = [
   { id: 'products', label: 'Product Approval', href: '/ecommerce?tab=products', icon: Package },
   { id: 'orders', label: 'Orders', href: '/ecommerce?tab=orders', icon: ShoppingCart },
   { id: 'categories', label: 'Categories', href: '/ecommerce?tab=categories', icon: FileText },
-  { id: 'promotions', label: 'Promotions', href: '/ecommerce/promotions', icon: Tag, matchPrefix: '/ecommerce/promotions' },
+  { id: 'promotions', label: 'Promotions & Coupons', href: '/ecommerce/promotions', icon: Tag, matchPrefix: '/ecommerce/promotions' },
   { id: 'seller-promotions', label: 'Seller Promotions', href: '/ecommerce/seller-promotions', icon: Store, matchPrefix: '/ecommerce/seller-promotions' },
-  { id: 'coupons', label: 'Coupons', href: '/ecommerce/promotions?type=coupons', icon: Percent, matchPrefix: '/ecommerce/coupons' },
   { id: 'campaigns', label: 'Campaigns', href: '/ecommerce/campaigns', icon: Megaphone, matchPrefix: '/ecommerce/campaigns' },
   { id: 'promotion-analytics', label: 'Analytics', href: '/ecommerce/analytics', icon: LineChart, matchPrefix: '/ecommerce/analytics' },
   { id: 'commission', label: 'Commission', href: '/ecommerce?tab=commission', icon: Percent },
@@ -43,24 +42,13 @@ const NAV: ECommerceNavItem[] = [
 
 function isActive(
   pathname: string | null,
-  searchParams: ReturnType<typeof useSearchParams>,
+  _searchParams: ReturnType<typeof useSearchParams>,
   item: ECommerceNavItem
 ): boolean {
   if (!pathname) return false;
-  const tab = searchParams.get('tab');
-  const type = searchParams.get('type');
-  if (item.id === 'coupons') {
-    return (
-      pathname.startsWith('/ecommerce/coupons') ||
-      (pathname.startsWith('/ecommerce/promotions') &&
-        (type === 'coupons' || type === 'coupon' || tab === 'coupons'))
-    );
-  }
   if (item.id === 'promotions') {
     if (pathname.startsWith('/ecommerce/coupons')) return true;
-    if (pathname.startsWith('/ecommerce/promotions')) {
-      return type !== 'coupons' && type !== 'coupon' && tab !== 'coupons';
-    }
+    return pathname.startsWith('/ecommerce/promotions');
   }
   if (item.matchPrefix && item.matchPrefix !== '/ecommerce') {
     return pathname === item.matchPrefix || pathname.startsWith(`${item.matchPrefix}/`);
