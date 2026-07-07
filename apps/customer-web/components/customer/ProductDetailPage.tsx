@@ -42,6 +42,7 @@ import { RecommendationProductScroller } from '@/components/ecommerce/shared/Rec
 import type { ShopProduct } from '@/components/shop/shop-types';
 import { shopProductToCartItem } from '@/lib/ecommerce/cart-product-helpers';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
+import { ProductImageGallery } from '@/components/ecommerce/ProductImageGallery';
 
 interface ProductDetailPageProps {
   phone?: string;
@@ -270,11 +271,21 @@ export function ProductDetailPage({
   // Product exists - calculate derived values (moved before return to fix parser issue)
   const isInCart = cart.some(item => item.id === (product?.id || product?.productId));
   const inCartQuantity = cart.find(item => item.id === (product?.id || product?.productId))?.quantity || 0;
-  const productImages = product.images || 
-    (product.image ? [product.image] : []) ||
-    (product.image_url ? [product.image_url] : []) ||
-    (product.primary_image ? [product.primary_image] : []) ||
-    ['🐾'];
+  const productImages: string[] = (() => {
+    const candidates: string[] = [];
+    if (Array.isArray(product.images)) {
+      candidates.push(...product.images.map(String));
+    }
+    if (product.image) candidates.push(String(product.image));
+    if (product.image_url) candidates.push(String(product.image_url));
+    if (product.primary_image) candidates.push(String(product.primary_image));
+
+    const urls = [...new Set(candidates.map((s) => s.trim()).filter((s) => s.startsWith('http')))];
+    if (urls.length > 0) return urls;
+
+    const emoji = candidates.find((s) => s.trim() && !s.startsWith('http'))?.trim();
+    return [emoji || '🐾'];
+  })();
   const price = parseFloat(product.price || product.unit_price || 0);
   const originalPrice = (product.original_price || product.mrp) ? parseFloat(product.original_price || product.mrp) : null;
   const discount = originalPrice ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0;
@@ -286,62 +297,42 @@ export function ProductDetailPage({
   return (
     <div>
       {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      <div className="pb-24">
-        <div className="max-w-md mx-auto bg-white">
+      <div className="pb-24 overflow-x-hidden">
+        <div className="max-w-md mx-auto bg-white min-w-0">
 
         {/* Image Gallery */}
-        <div className="relative">
-          <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center overflow-hidden relative">
-            <button
-              type="button"
-              onClick={onBack}
-              className="absolute top-3 left-3 z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-gray-200/90 bg-white/95 text-gray-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white"
-              aria-label="Go back"
-            >
-              <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
-            </button>
-            {typeof productImages[selectedImageIndex] === 'string' && productImages[selectedImageIndex].startsWith('http') ? (
-              <img 
-                src={productImages[selectedImageIndex]} 
-                alt={product.name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="text-8xl">{productImages[selectedImageIndex] || '🐾'}</div>
-            )}
-          </div>
-          
-          {productImages.length > 1 && (
-            <div className="absolute bottom-4 left-0 right-0 flex gap-2 justify-center px-4">
-              {productImages.map((img: string, idx: number) => (
+        <div className="px-0">
+          <ProductImageGallery
+            images={productImages}
+            alt={product.name || product.product_name || 'Product'}
+            selectedIndex={selectedImageIndex}
+            onSelectedIndexChange={setSelectedImageIndex}
+            className="rounded-none [&>div:first-child]:rounded-none [&>div:first-child]:border-x-0 [&>div:first-child]:border-t-0"
+            overlayTopLeft={
+              <>
                 <button
-                  key={idx}
-                  onClick={() => setSelectedImageIndex(idx)}
-                  className={`w-16 h-16 rounded-lg overflow-hidden border-2 ${
-                    selectedImageIndex === idx ? 'border-[#FF8C42]' : 'border-white'
-                  }`}
+                  type="button"
+                  onClick={onBack}
+                  className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-gray-200/90 bg-white/95 text-gray-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white"
+                  aria-label="Go back"
                 >
-                  {typeof img === 'string' && img.startsWith('http') ? (
-                    <img src={img} alt={`${product.name} ${idx + 1}`} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-gray-200 flex items-center justify-center text-2xl">{img || '🐾'}</div>
-                  )}
+                  <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
                 </button>
-              ))}
-            </div>
-          )}
-
-          {discount > 0 && (
-            <Badge className="absolute top-3 left-14 z-20 bg-red-500 text-white">
-              {discount}% OFF
-            </Badge>
-          )}
-          
-          {!inStock && (
-            <Badge className="absolute top-4 right-4 bg-gray-500 text-white">
-              Out of Stock
-            </Badge>
-          )}
+                {discount > 0 ? (
+                  <Badge className="bg-red-500 text-white border-0 shadow-sm">
+                    {discount}% OFF
+                  </Badge>
+                ) : null}
+              </>
+            }
+            overlayTopRight={
+              !inStock ? (
+                <Badge className="bg-gray-500 text-white border-0 shadow-sm">
+                  Out of Stock
+                </Badge>
+              ) : undefined
+            }
+          />
         </div>
 
         {/* Product Info */}

@@ -62,6 +62,7 @@ import {
   loadProductRecommendations,
 } from '@/lib/ecommerce/load-ecommerce-recommendations';
 import { RecommendationProductScroller } from '@/components/ecommerce/shared/RecommendationProductScroller';
+import { ProductImageGallery } from '@/components/ecommerce/ProductImageGallery';
 import type { ShopProduct } from '@/components/shop/shop-types';
 import { shopProductToCartItem } from '@/lib/ecommerce/cart-product-helpers';
 import { useCart } from '@/context/CartContext';
@@ -527,6 +528,10 @@ export default function ProductDetailClient() {
     }
   }, [displayImages, selectedImage]);
 
+  useEffect(() => {
+    setSelectedImage(0);
+  }, [matchedSku?.id, displayImages[0]]);
+
   const productSnapshot = (): WarmpawzCartProductSnapshot | null => {
     if (!product) return null;
     const vendorId = product.vendor_id?.trim();
@@ -761,7 +766,7 @@ export default function ProductDetailClient() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-orange-50/30">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-orange-50/30 overflow-x-hidden">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-orange-100/50 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4">
@@ -795,7 +800,7 @@ export default function ProductDetailClient() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="max-w-7xl mx-auto px-4 py-6 min-w-0">
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm text-slate-500 mb-6">
           <button onClick={() => nav.goToShop()} className="hover:text-orange-600">Shop</button>
@@ -809,64 +814,46 @@ export default function ProductDetailClient() {
           <span className="text-slate-900 font-medium truncate">{product.name}</span>
         </nav>
 
-        <div className="grid lg:grid-cols-2 gap-8">
+        <div className="grid lg:grid-cols-2 gap-8 min-w-0">
           {/* Product Images */}
-          <div className="space-y-4">
-            {/* Main Image */}
-            <div className="aspect-square bg-white rounded-2xl border border-slate-100 overflow-hidden flex items-center justify-center relative">
-              <button
-                type="button"
-                onClick={() => goBackOrHome(router)}
-                className="absolute top-3 left-3 z-20 flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-slate-200/90 bg-white/95 text-slate-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white lg:hidden"
-                aria-label="Go back"
-              >
-                <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
-              </button>
-              {product.images && displayImages.length > 0 ? (
-                <img 
-                  src={displayImages[selectedImage] ?? displayImages[0]} 
-                  alt={product.name}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <span className="text-9xl">{product.emoji || '📦'}</span>
-              )}
-              
-              {/* Discount Badge */}
-              {discount > 0 && (
-                <div className="absolute top-3 left-14 z-10 px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg lg:top-4 lg:left-4">
-                  {discount}% OFF
-                </div>
-              )}
-
-              {/* Out of Stock Overlay — based on selected SKU stock, not aggregate product stock */}
-              {displayStock === 0 && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                  <span className="px-6 py-3 bg-white text-slate-900 font-bold rounded-xl text-lg">Out of Stock</span>
-                </div>
-              )}
-            </div>
-
-            {/* Thumbnail Gallery */}
-            {displayImages.length > 1 && (
-              <div className="flex gap-3 overflow-x-auto pb-2">
-                {displayImages.map((img, index) => (
+          <div className="min-w-0">
+            <ProductImageGallery
+              images={displayImages}
+              alt={product.name}
+              selectedIndex={selectedImage}
+              onSelectedIndexChange={setSelectedImage}
+              fallbackEmoji={product.emoji || '📦'}
+              overlayTopLeft={
+                <>
                   <button
-                    key={index}
-                    onClick={() => setSelectedImage(index)}
-                    className={`flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${
-                      selectedImage === index ? 'border-orange-500' : 'border-slate-200'
-                    }`}
+                    type="button"
+                    onClick={() => goBackOrHome(router)}
+                    className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-slate-200/90 bg-white/95 text-slate-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white lg:hidden"
+                    aria-label="Go back"
                   >
-                    <img src={img} alt="" className="w-full h-full object-cover" />
+                    <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
                   </button>
-                ))}
-              </div>
-            )}
+                  {discount > 0 ? (
+                    <div className="px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg lg:mt-0">
+                      {discount}% OFF
+                    </div>
+                  ) : null}
+                </>
+              }
+              overlayCenter={
+                displayStock === 0 ? (
+                  <div className="flex h-full w-full items-center justify-center bg-black/50">
+                    <span className="px-6 py-3 bg-white text-slate-900 font-bold rounded-xl text-lg">
+                      Out of Stock
+                    </span>
+                  </div>
+                ) : undefined
+              }
+            />
           </div>
 
           {/* Product Details */}
-          <div className="space-y-6">
+          <div className="space-y-6 min-w-0">
             {/* Title */}
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{product.name}</h1>
 
