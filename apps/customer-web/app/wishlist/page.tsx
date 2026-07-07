@@ -10,6 +10,7 @@ import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { goBackOrHome, consumeWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
+import { shopProductDetailPath } from '@/lib/shop-product-path';
 import {
   readWishlistIds,
   setWishlistIds,
@@ -253,7 +254,7 @@ function WishlistPageContent() {
               className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm"
             >
               <Link
-                href={`/shop/${encodeURIComponent(row.id)}`}
+                href={shopProductDetailPath(row.id)}
                 className="flex min-w-0 flex-1 items-center gap-3 text-left"
               >
                 <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-2xl">

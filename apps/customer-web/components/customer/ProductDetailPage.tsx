@@ -41,6 +41,7 @@ import {
 import { RecommendationProductScroller } from '@/components/ecommerce/shared/RecommendationProductScroller';
 import type { ShopProduct } from '@/components/shop/shop-types';
 import { shopProductToCartItem } from '@/lib/ecommerce/cart-product-helpers';
+import { shopProductDetailPath } from '@/lib/shop-product-path';
 
 interface ProductDetailPageProps {
   phone?: string;
@@ -603,7 +604,7 @@ export function ProductDetailPage({
               if (onNavigate) {
                 onNavigate('product_detail', { product: p });
               } else {
-                router.push(`/shop/${encodeURIComponent(p.id)}`);
+                router.push(shopProductDetailPath(p.id));
               }
             }}
           />

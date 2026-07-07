@@ -1959,10 +1959,6 @@ export function registerEcommerceEndpoints(app: Hono) {
     }
   });
 
-  /**
-   * PUT /admin/ecommerce/product/:productId
-   * Update product status (approve/reject)
-   */
   app.put("/admin/ecommerce/product/:productId", async (c) => {
     try {
       const { productId } = c.req.param();
@@ -2016,6 +2012,79 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating product:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/ecommerce/vendors/:vendorId/products/approve-all
+   * Approve all pending products for a vendor (skips rows missing category_id).
+   */
+  app.post('/admin/ecommerce/vendors/:vendorId/products/approve-all', async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(String(vendorId || '').trim())) {
+        return c.json({ success: false, error: 'Invalid vendorId' }, 400);
+      }
+
+      const pending = await query(
+        `SELECT id, category_id, name
+         FROM products
+         WHERE vendor_id = $1
+           AND (
+             status IS NULL
+             OR LOWER(TRIM(status::text)) IN ('pending', 'pending_approval', 'submit_for_approval', 'submitted')
+           )`,
+        [vendorId],
+      );
+
+      let approved = 0;
+      let skipped = 0;
+      const skippedProducts: { id: string; name: string; reason: string }[] = [];
+
+      for (const row of pending.rows || []) {
+        const pid = String(row.id || '').trim();
+        const cid = row.category_id;
+        if (!pid) continue;
+        if (cid == null || String(cid).trim() === '') {
+          skipped++;
+          skippedProducts.push({
+            id: pid,
+            name: String(row.name || 'Product'),
+            reason: 'missing category_id',
+          });
+          continue;
+        }
+        const updated = await update(
+          'products',
+          { id: pid },
+          { status: 'active', is_active: true },
+        );
+        if (updated && updated.length > 0) {
+          approved++;
+        } else {
+          skipped++;
+          skippedProducts.push({
+            id: pid,
+            name: String(row.name || 'Product'),
+            reason: 'update failed',
+          });
+        }
+      }
+
+      return c.json({
+        success: true,
+        approved,
+        skipped,
+        total: (pending.rows || []).length,
+        skippedProducts,
+        message:
+          approved > 0
+            ? `Approved ${approved} product${approved === 1 ? '' : 's'}`
+            : 'No products were approved',
+      });
+    } catch (error: any) {
+      console.error('Error bulk approving vendor products:', error);
       return c.json({ error: error.message }, 500);
     }
   });

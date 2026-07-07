@@ -146,6 +146,13 @@ export default function RootLayout({
                   if (trackMatch && trackMatch[1] !== 'placeholder' && trackMatch[1] !== '_') {
                     if (!qs.get('orderId')) qs.set('orderId', decodeURIComponent(trackMatch[1]));
                     location.replace('/track/placeholder?' + qs.toString());
+                    return;
+                  }
+                  if (qs.get('productId') || qs.get('product_id')) return;
+                  var shopMatch = path.match(/^\\/shop\\/([^/]+)$/);
+                  if (shopMatch && shopMatch[1] !== 'placeholder' && shopMatch[1] !== '_') {
+                    qs.set('productId', decodeURIComponent(shopMatch[1]));
+                    location.replace('/shop/placeholder?' + qs.toString());
                   }
                 } catch (e) { /* ignore */ }
               })();

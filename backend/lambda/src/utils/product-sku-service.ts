@@ -16,6 +16,7 @@ import {
   processProductImagesForS3Storage,
   stripPresignFromProductImagesJsonb,
 } from './product-sku-images';
+import { cleanupRemovedProductS3Images, deleteAllManagedProductImages } from './product-s3-image';
 import { isValidUUID } from '../types/entities';
 
 export type SkuInput = {
@@ -158,6 +159,15 @@ export async function syncProductSkus(
     if (imagesNorm.length > 0) {
       imagesNorm = await processProductImagesForS3Storage(vendorId, imagesNorm);
       imagesNorm = stripPresignFromProductImagesJsonb(imagesNorm) as string[];
+      // Evict any of this SKU's previously-managed S3 images that are no
+      // longer referenced after the replacement, so a swapped photo doesn't
+      // leave the old file orphaned in the bucket.
+      if (prevSku) {
+        const prevImages = normalizeImagesArray(prevSku.images);
+        if (prevImages.length > 0) {
+          await cleanupRemovedProductS3Images(prevImages, imagesNorm, vendorId);
+        }
+      }
     } else if (prevSku) {
       imagesNorm = normalizeImagesArray(prevSku.images);
     }
@@ -216,6 +226,13 @@ export async function syncProductSkus(
 
   for (const ex of existing) {
     if (ex.id && !keptIds.has(String(ex.id))) {
+      // Evict this variant's own S3-managed images before dropping the row —
+      // otherwise a removed variant leaves its photos orphaned in the bucket
+      // forever (nothing else references that S3 key once the row is gone).
+      const removedImages = normalizeImagesArray(ex.images);
+      if (removedImages.length > 0) {
+        await deleteAllManagedProductImages(removedImages, vendorId);
+      }
       await deleteRows('product_skus', { id: ex.id });
     }
   }

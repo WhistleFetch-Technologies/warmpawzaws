@@ -28,6 +28,7 @@ import { AdoptionSection } from './sections/AdoptionSection';
 import { PetCareArticlesSection } from './sections/PetCareArticlesSection';
 import type { PetCareArticleItem } from './sections/PetCareArticlesSection';
 import { NeedHelpSection } from './sections/NeedHelpSection';
+import { ViewportSection } from './shared/ViewportSection';
 import type { HomeNavigateFn } from './hooks/useHomeNavigation';
 import type { HomeCarouselBanner, QuickServiceTile } from './types';
 import type { Pet } from '../homepage/constants/interface';
@@ -165,6 +166,8 @@ function CustomerHomePageContentComponent({
   onPetCareArticlesSeeAll,
   reviewDemoAccount = false,
 }: CustomerHomePageContentProps) {
+  const lowerHomeBanners = featuredLowerBanners.slice(1);
+
   return (
     <>
       <SearchFilterSection
@@ -189,15 +192,23 @@ function CustomerHomePageContentComponent({
           onNavigate={onNavigate}
         />
       ) : null}
-      <PopularServicesSection phone={phone} onNavigate={onNavigate} />
-      <OffersForYouSection lowerBanners={featuredLowerBanners} onNavigate={onNavigate} />
-      <HelpWaysSection
-        services={services}
-        customerCommerceEnabled={customerCommerceEnabled}
-        onNavigate={onNavigate}
-        reviewDemoAccount={reviewDemoAccount}
-      />
-      <DiscoverMoreSection phone={phone} onNavigate={onNavigate} />
+      <ViewportSection placeholderMinHeight={260}>
+        <PopularServicesSection phone={phone} onNavigate={onNavigate} />
+      </ViewportSection>
+      <ViewportSection placeholderMinHeight={320}>
+        <OffersForYouSection lowerBanners={featuredLowerBanners} onNavigate={onNavigate} />
+      </ViewportSection>
+      <ViewportSection placeholderMinHeight={480}>
+        <HelpWaysSection
+          services={services}
+          customerCommerceEnabled={customerCommerceEnabled}
+          onNavigate={onNavigate}
+          reviewDemoAccount={reviewDemoAccount}
+        />
+      </ViewportSection>
+      <ViewportSection placeholderMinHeight={400}>
+        <DiscoverMoreSection phone={phone} onNavigate={onNavigate} />
+      </ViewportSection>
       <WhatsNewSection
         announcements={whatsNewAnnouncements}
         onSeeAll={onWhatsNewSeeAll}
@@ -205,20 +216,38 @@ function CustomerHomePageContentComponent({
         onSosPress={onWhatsNewSosPress}
       />
       {!reviewDemoAccount ? (
-        <AdoptionSection
-          adoptablePets={adoptionStats?.adoptablePets}
-          rehomingListings={adoptionStats?.rehomingListings}
-        />
+        <ViewportSection placeholderMinHeight={300}>
+          <AdoptionSection
+            adoptablePets={adoptionStats?.adoptablePets}
+            rehomingListings={adoptionStats?.rehomingListings}
+          />
+        </ViewportSection>
       ) : null}
-      {!reviewDemoAccount ? <PremiumPetFoodSection onNavigate={onNavigate} /> : null}
-      <PetCareArticlesSection
-        articles={petCareArticles}
-        onArticleClick={onPetCareArticleClick}
-        onSeeAll={onPetCareArticlesSeeAll}
-      />
-      <MoreServicesSection onNavigate={onNavigate} reviewDemoAccount={reviewDemoAccount} />
-      <HomeLowerBannersSection lowerBanners={featuredLowerBanners.slice(1)} onNavigate={onNavigate} />
-      <NeedHelpSection onNavigate={onNavigate} />
+      {!reviewDemoAccount ? (
+        <ViewportSection placeholderMinHeight={250}>
+          <PremiumPetFoodSection onNavigate={onNavigate} />
+        </ViewportSection>
+      ) : null}
+      {petCareArticles.length > 0 ? (
+        <ViewportSection placeholderMinHeight={120 + petCareArticles.length * 110}>
+          <PetCareArticlesSection
+            articles={petCareArticles}
+            onArticleClick={onPetCareArticleClick}
+            onSeeAll={onPetCareArticlesSeeAll}
+          />
+        </ViewportSection>
+      ) : null}
+      <ViewportSection placeholderMinHeight={720}>
+        <MoreServicesSection onNavigate={onNavigate} reviewDemoAccount={reviewDemoAccount} />
+      </ViewportSection>
+      {lowerHomeBanners.length > 0 ? (
+        <ViewportSection placeholderMinHeight={16 + lowerHomeBanners.length * 176}>
+          <HomeLowerBannersSection lowerBanners={lowerHomeBanners} onNavigate={onNavigate} />
+        </ViewportSection>
+      ) : null}
+      <ViewportSection placeholderMinHeight={200}>
+        <NeedHelpSection onNavigate={onNavigate} />
+      </ViewportSection>
     </>
   );
 }
