@@ -40,6 +40,10 @@ import {
 } from '../utils/promotion-admin-persistence';
 import { isPromotionLiveInIst } from '../utils/promotion-date-bounds';
 import { promotionCategoriesMatch } from '../utils/platform-promotion-matching';
+import {
+  buildCouponTargetingFromAdminBody,
+  couponRowMatchesService,
+} from '../utils/coupon-targeting';
 
 async function persistPromotionInsert(promotionData: Record<string, unknown>) {
   const payload = { ...promotionData };
@@ -508,55 +512,99 @@ export function registerPromotionEndpoints(app: Hono) {
    * GET /promotions/active
    * Get active promotions
    */
-  const loadActivePlatformCouponsAsPromotions = async (now: string): Promise<Record<string, unknown>[]> => {
-    try {
-      const couponResult = await query(
-        `SELECT id, code, name, description, discount_type, discount_value,
-                COALESCE(min_order_amount, min_amount) AS min_order_amount,
-                COALESCE(max_discount_amount, max_discount) AS max_discount_amount,
-                start_date, end_date,
-                COALESCE(max_uses, usage_limit) AS max_uses,
-                usage_count
+  const loadActivePlatformCouponsAsPromotions = async (
+    now: string,
+    serviceBucket?: string
+  ): Promise<Record<string, unknown>[]> => {
+    const mapCouponRows = (rows: Record<string, unknown>[]) =>
+      rows
+        .filter((row) => couponRowMatchesService(row, serviceBucket))
+        .map((c) => ({
+          id: c.id,
+          code: c.code,
+          name: c.name,
+          title: c.name,
+          description: c.description,
+          discount_type: c.discount_type,
+          discount_value: c.discount_value,
+          min_order_amount: c.min_order_amount,
+          max_discount_amount: c.max_discount_amount,
+          start_date: c.start_date,
+          end_date: c.end_date,
+          valid_from: c.start_date,
+          valid_until: c.end_date,
+          source: 'platform_coupon',
+          promotion_type: 'coupon',
+          published: true,
+          is_active: true,
+          applicable_to: c.applicable_to,
+          service_category: c.service_category,
+          applicable_services: c.applicable_services,
+        }));
+
+    const fullQuery = `
+        SELECT id, code, name, description, discount_type, discount_value,
+               COALESCE(min_order_amount, min_amount, min_order_value) AS min_order_amount,
+               COALESCE(max_discount_amount, max_discount) AS max_discount_amount,
+               start_date, end_date,
+               COALESCE(max_uses, usage_limit) AS max_uses,
+               COALESCE(usage_count, uses_count, current_uses, 0) AS usage_count,
+               applicable_to, service_category, applicable_services, metadata
+         FROM coupons
+         WHERE is_active = true
+           AND (start_date IS NULL OR start_date::date <= $1::date)
+           AND (end_date IS NULL OR end_date::date >= $1::date)
+           AND (
+             COALESCE(max_uses, usage_limit) IS NULL
+             OR COALESCE(usage_count, uses_count, current_uses, 0)
+                < COALESCE(max_uses, usage_limit)
+           )`;
+
+    const legacyQuery = `
+        SELECT id, code, name, description, discount_type, discount_value,
+               COALESCE(min_order_amount, min_amount) AS min_order_amount,
+               COALESCE(max_discount_amount, max_discount) AS max_discount_amount,
+               start_date, end_date,
+               COALESCE(max_uses, usage_limit) AS max_uses,
+               COALESCE(usage_count, uses_count, current_uses, 0) AS usage_count
          FROM coupons
          WHERE is_active = true
            AND (start_date IS NULL OR start_date <= $1)
            AND (end_date IS NULL OR end_date >= $1)
-           AND (COALESCE(max_uses, usage_limit) IS NULL
-                OR COALESCE(usage_count, 0) < COALESCE(max_uses, usage_limit))`,
-        [now]
-      );
-      return (couponResult.rows ?? []).map((c) => ({
-        id: c.id,
-        code: c.code,
-        name: c.name,
-        title: c.name,
-        description: c.description,
-        discount_type: c.discount_type,
-        discount_value: c.discount_value,
-        min_order_amount: c.min_order_amount,
-        max_discount_amount: c.max_discount_amount,
-        start_date: c.start_date,
-        end_date: c.end_date,
-        valid_from: c.start_date,
-        valid_until: c.end_date,
-        source: 'platform_coupon',
-        promotion_type: 'coupon',
-        published: true,
-        is_active: true,
-      }));
+           AND (
+             COALESCE(max_uses, usage_limit) IS NULL
+             OR COALESCE(usage_count, uses_count, current_uses, 0) < COALESCE(max_uses, usage_limit)
+           )`;
+
+    try {
+      const couponResult = await query(fullQuery, [now]);
+      return mapCouponRows((couponResult.rows ?? []) as Record<string, unknown>[]);
     } catch (couponErr) {
-      console.warn('[promotions/active] coupons merge skipped', couponErr);
-      return [];
+      const msg = String((couponErr as Error)?.message ?? couponErr);
+      if (!msg.includes('does not exist') && !msg.includes('column')) {
+        console.warn('[promotions/active] coupons merge skipped', couponErr);
+        return [];
+      }
+      try {
+        const couponResult = await query(legacyQuery, [now]);
+        return mapCouponRows((couponResult.rows ?? []) as Record<string, unknown>[]);
+      } catch (legacyErr) {
+        console.warn('[promotions/active] coupons legacy merge skipped', legacyErr);
+        return [];
+      }
     }
   };
 
   const handleActivePromotions = async (c: any) => {
     try {
       const serviceType = c.req.query('serviceType') || 'all';
+      const serviceBucket = c.req.query('service') || c.req.query('serviceCategory') || undefined;
       const customerId = c.req.query('customerId');
       const vendorRoleId = c.req.query('vendorRoleId');
       /** Checkout/coupon gallery only — discovery surfaces must not auto-apply platform coupons. */
       const includeCoupons = c.req.query('includeCoupons') === 'true';
+      const includeCodedPromotions =
+        c.req.query('includeCodedPromotions') === 'true' || includeCoupons;
 
       const now = new Date().toISOString().split('T')[0];
 
@@ -618,12 +666,27 @@ export function registerPromotionEndpoints(app: Hono) {
       const promotionRows = promotions.rows ?? [];
 
       const couponAsPromotions = includeCoupons
-        ? await loadActivePlatformCouponsAsPromotions(now)
+        ? await loadActivePlatformCouponsAsPromotions(now, serviceBucket)
         : [];
 
-      const discoveryRows = includeCoupons
-        ? promotionRows
-        : promotionRows.filter(isDiscoveryAutoApplyPromotionRow);
+      const filterPromotionRowsForActive = (rows: Record<string, unknown>[]) => {
+        let filtered = rows;
+        if (serviceBucket) {
+          filtered = filtered.filter((promo) =>
+            promotionMatchesListService(promo, serviceBucket)
+          );
+        }
+        if (includeCodedPromotions) {
+          return filtered.filter(
+            (promo) =>
+              isDiscoveryAutoApplyPromotionRow(promo) ||
+              String(promo.code ?? '').trim().length > 0
+          );
+        }
+        return filtered.filter(isDiscoveryAutoApplyPromotionRow);
+      };
+
+      const discoveryRows = filterPromotionRowsForActive(promotionRows);
 
       const seenCodes = new Set<string>();
       const merged = [...discoveryRows, ...couponAsPromotions].filter((row) => {
@@ -1780,6 +1843,73 @@ export function registerPromotionEndpoints(app: Hono) {
   // ADMIN ENDPOINTS - COUPONS CRUD
   // ============================================================================
 
+  const buildAdminCouponRecord = (body: Record<string, unknown>): Record<string, unknown> => {
+    const finalCode = String(body.code ?? '').trim().toUpperCase();
+    const finalDiscountType = String(body.discount_type ?? body.type ?? 'percentage');
+    const finalDiscountValue =
+      body.discount_value !== undefined
+        ? body.discount_value
+        : body.value !== undefined
+          ? body.value
+          : 0;
+    const finalMinOrder =
+      body.min_order_value !== undefined
+        ? body.min_order_value
+        : body.minOrderAmount !== undefined
+          ? body.minOrderAmount
+          : 0;
+    const finalMaxDiscount =
+      body.max_discount !== undefined
+        ? body.max_discount
+        : body.maxDiscountAmount !== undefined
+          ? body.maxDiscountAmount
+          : 0;
+    const finalValidFrom = String(body.valid_from ?? body.validFrom ?? new Date().toISOString().split('T')[0]);
+    const finalValidUntil = body.valid_until ?? body.validUntil ?? null;
+    const finalUsageLimit =
+      body.usage_limit !== undefined
+        ? body.usage_limit
+        : body.usageLimit !== undefined
+          ? body.usageLimit
+          : 0;
+    const finalIsActive =
+      body.is_active !== undefined
+        ? body.is_active
+        : body.isActive !== undefined
+          ? body.isActive
+          : true;
+    const targeting = buildCouponTargetingFromAdminBody(body);
+
+    const couponData: Record<string, unknown> = {
+      code: finalCode,
+      name: String(body.name ?? finalCode).trim() || finalCode,
+      description: body.description != null ? String(body.description) : null,
+      discount_type: finalDiscountType,
+      discount_value: finalDiscountValue,
+      min_order_amount: Number(finalMinOrder) > 0 ? finalMinOrder : null,
+      max_discount_amount: Number(finalMaxDiscount) > 0 ? finalMaxDiscount : null,
+      start_date: finalValidFrom ? new Date(finalValidFrom) : new Date(),
+      end_date: finalValidUntil
+        ? new Date(String(finalValidUntil))
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      max_uses: Number(finalUsageLimit) > 0 ? finalUsageLimit : null,
+      is_active: finalIsActive,
+      applicable_to: targeting.applicable_to,
+      service_category: targeting.service_category,
+      applicable_services: targeting.applicable_services,
+      metadata: targeting.metadata,
+    };
+
+    if (couponData.min_order_amount === null) delete couponData.min_order_amount;
+    if (couponData.max_discount_amount === null) delete couponData.max_discount_amount;
+    if (couponData.max_uses === null) delete couponData.max_uses;
+    if (couponData.description === null) delete couponData.description;
+    if (couponData.service_category === null) delete couponData.service_category;
+    if (couponData.applicable_services === null) delete couponData.applicable_services;
+
+    return couponData;
+  };
+
   /**
    * GET /admin/coupons
    * Get all coupons (admin)
@@ -1841,59 +1971,27 @@ export function registerPromotionEndpoints(app: Hono) {
   app.post("/admin/coupons", async (c) => {
     try {
       const body = await c.req.json();
-      const {
-        code,
-        type,
-        value,
-        discount_type,
-        discount_value,
-        minOrderAmount,
-        min_order_value,
-        maxDiscountAmount,
-        max_discount,
-        validFrom,
-        valid_from,
-        validUntil,
-        valid_until,
-        usageLimit,
-        usage_limit,
-        isActive,
-        is_active = true,
-      } = body;
-
-      // Handle both UI format (type, value) and backend format (discount_type, discount_value)
-      const finalCode = code || '';
-      const finalDiscountType = discount_type || type || 'percentage';
-      const finalDiscountValue = discount_value !== undefined ? discount_value : (value !== undefined ? value : 0);
-      const finalMinOrder = min_order_value !== undefined ? min_order_value : (minOrderAmount !== undefined ? minOrderAmount : 0);
-      const finalMaxDiscount = max_discount !== undefined ? max_discount : (maxDiscountAmount !== undefined ? maxDiscountAmount : 0);
-      const finalValidFrom = valid_from || validFrom || new Date().toISOString().split('T')[0];
-      const finalValidUntil = valid_until || validUntil || null;
-      const finalUsageLimit = usage_limit !== undefined ? usage_limit : (usageLimit !== undefined ? usageLimit : 0);
-      const finalIsActive = is_active !== undefined ? is_active : (isActive !== undefined ? isActive : true);
-
-      if (!finalCode || !finalDiscountType || finalDiscountValue === undefined) {
+      if (!body.code || (body.discount_value === undefined && body.value === undefined)) {
         return c.json({ error: 'code, discount_type/type, and discount_value/value are required' }, 400);
       }
-
-      // Use correct column names based on schema (no max_discount column in base schema)
-      const couponData: any = {
-        code: finalCode.toUpperCase(),
-        name: finalCode.toUpperCase(), // Required field
-        discount_type: finalDiscountType,
-        discount_value: finalDiscountValue,
-        min_order_amount: finalMinOrder > 0 ? finalMinOrder : null,
-        start_date: finalValidFrom ? new Date(finalValidFrom) : new Date(),
-        end_date: finalValidUntil ? new Date(finalValidUntil) : (finalValidFrom ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : new Date()),
-        max_uses: finalUsageLimit > 0 ? finalUsageLimit : null,
-        is_active: finalIsActive,
-      };
-
-      // Remove null values for optional fields
-      if (couponData.min_order_amount === null) delete couponData.min_order_amount;
-      if (couponData.max_uses === null) delete couponData.max_uses;
-
-      const coupon = await insert('coupons', couponData);
+      const couponData = buildAdminCouponRecord(body as Record<string, unknown>);
+      let coupon;
+      try {
+        coupon = await insert('coupons', couponData);
+      } catch (insertErr: unknown) {
+        const msg = String((insertErr as Error)?.message ?? insertErr);
+        if (msg.includes('does not exist') || msg.includes('column')) {
+          const fallback = { ...couponData };
+          delete fallback.applicable_to;
+          delete fallback.service_category;
+          delete fallback.applicable_services;
+          delete fallback.metadata;
+          delete fallback.description;
+          coupon = await insert('coupons', fallback);
+        } else {
+          throw insertErr;
+        }
+      }
 
       return c.json({
         success: true,
@@ -1913,59 +2011,27 @@ export function registerPromotionEndpoints(app: Hono) {
   app.post("/admin/coupons/create", async (c) => {
     try {
       const body = await c.req.json();
-      const {
-        code,
-        type,
-        value,
-        discount_type,
-        discount_value,
-        minOrderAmount,
-        min_order_value,
-        maxDiscountAmount,
-        max_discount,
-        validFrom,
-        valid_from,
-        validUntil,
-        valid_until,
-        usageLimit,
-        usage_limit,
-        isActive,
-        is_active = true,
-      } = body;
-
-      // Handle both UI format (type, value) and backend format (discount_type, discount_value)
-      const finalCode = code || '';
-      const finalDiscountType = discount_type || type || 'percentage';
-      const finalDiscountValue = discount_value !== undefined ? discount_value : (value !== undefined ? value : 0);
-      const finalMinOrder = min_order_value !== undefined ? min_order_value : (minOrderAmount !== undefined ? minOrderAmount : 0);
-      const finalMaxDiscount = max_discount !== undefined ? max_discount : (maxDiscountAmount !== undefined ? maxDiscountAmount : 0);
-      const finalValidFrom = valid_from || validFrom || new Date().toISOString().split('T')[0];
-      const finalValidUntil = valid_until || validUntil || null;
-      const finalUsageLimit = usage_limit !== undefined ? usage_limit : (usageLimit !== undefined ? usageLimit : 0);
-      const finalIsActive = is_active !== undefined ? is_active : (isActive !== undefined ? isActive : true);
-
-      if (!finalCode || !finalDiscountType || finalDiscountValue === undefined) {
+      if (!body.code || (body.discount_value === undefined && body.value === undefined)) {
         return c.json({ error: 'code, discount_type/type, and discount_value/value are required' }, 400);
       }
-
-      // Use correct column names based on schema (no max_discount column in base schema)
-      const couponData: any = {
-        code: finalCode.toUpperCase(),
-        name: finalCode.toUpperCase(), // Required field
-        discount_type: finalDiscountType,
-        discount_value: finalDiscountValue,
-        min_order_amount: finalMinOrder > 0 ? finalMinOrder : null,
-        start_date: finalValidFrom ? new Date(finalValidFrom) : new Date(),
-        end_date: finalValidUntil ? new Date(finalValidUntil) : (finalValidFrom ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : new Date()),
-        max_uses: finalUsageLimit > 0 ? finalUsageLimit : null,
-        is_active: finalIsActive,
-      };
-
-      // Remove null values for optional fields
-      if (couponData.min_order_amount === null) delete couponData.min_order_amount;
-      if (couponData.max_uses === null) delete couponData.max_uses;
-
-      const coupon = await insert('coupons', couponData);
+      const couponData = buildAdminCouponRecord(body as Record<string, unknown>);
+      let coupon;
+      try {
+        coupon = await insert('coupons', couponData);
+      } catch (insertErr: unknown) {
+        const msg = String((insertErr as Error)?.message ?? insertErr);
+        if (msg.includes('does not exist') || msg.includes('column')) {
+          const fallback = { ...couponData };
+          delete fallback.applicable_to;
+          delete fallback.service_category;
+          delete fallback.applicable_services;
+          delete fallback.metadata;
+          delete fallback.description;
+          coupon = await insert('coupons', fallback);
+        } else {
+          throw insertErr;
+        }
+      }
 
       return c.json({
         success: true,
@@ -2015,6 +2081,23 @@ export function registerPromotionEndpoints(app: Hono) {
       }
       if (body.is_active !== undefined || body.isActive !== undefined) {
         updateData.is_active = body.is_active !== undefined ? body.is_active : body.isActive;
+      }
+      if (body.name !== undefined) updateData.name = String(body.name);
+      if (body.description !== undefined) updateData.description = body.description;
+
+      const targeting = buildCouponTargetingFromAdminBody(body as Record<string, unknown>);
+      if (body.applicable_to !== undefined || body.applicableTo !== undefined || body.target_scopes) {
+        updateData.applicable_to = targeting.applicable_to;
+      }
+      if (
+        body.service_category !== undefined ||
+        body.serviceCategory !== undefined ||
+        body.applicable_services !== undefined ||
+        body.applicableServices !== undefined
+      ) {
+        updateData.service_category = targeting.service_category;
+        updateData.applicable_services = targeting.applicable_services;
+        updateData.metadata = targeting.metadata;
       }
 
       await update('coupons', { id }, updateData);

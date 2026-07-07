@@ -39,8 +39,7 @@ function mapVendorSource(code: unknown): DiscountSource {
 export class CandidateNormalizer {
   fromPlatformPromotion(row: Record<string, unknown>): DiscountCandidate {
     const code = parseOptionalString(row.code);
-    // Platform promotions are auto-applied; optional code is for manual entry only.
-    const trigger = DiscountTrigger.AUTO;
+    const trigger = code ? DiscountTrigger.CODE : DiscountTrigger.AUTO;
 
     return {
       id: String(row.id),

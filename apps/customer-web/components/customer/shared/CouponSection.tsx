@@ -33,6 +33,7 @@ export type AppliedCoupon = AppliedCheckoutCoupon;
 interface CouponSectionProps {
   vendorId?: string;
   customerId?: string;
+  serviceCategory?: string;
   orderAmount: number;
   /** booking = service, order = product, meal = service validation */
   orderType: 'booking' | 'order' | 'meal';
@@ -57,6 +58,7 @@ function formatAmount(value: unknown): string {
 export function CouponSection({
   vendorId,
   customerId,
+  serviceCategory,
   orderAmount,
   orderType,
   appliedCoupon,
@@ -82,16 +84,35 @@ export function CouponSection({
     if (vendorId && expanded) {
       void fetchAvailablePromotions();
     }
-  }, [vendorId, expanded, orderAmount, customerId, checkoutKind]);
+  }, [vendorId, expanded, orderAmount, customerId, checkoutKind, serviceCategory]);
 
   const fetchAvailablePromotions = async () => {
     if (!vendorId) return;
     
     setLoadingPromotions(true);
     try {
-      const res = await apiClient.get<any>(`/vendors/${vendorId}/active-promotions?type=${orderType === 'booking' ? 'service' : 'product'}`);
-      const promotions = Array.isArray((res as any)?.promotions) ? (res as any).promotions : [];
-      const coded = promotions
+      const [vendorRes, platformRes] = await Promise.all([
+        apiClient.get<any>(`/vendors/${vendorId}/active-promotions?type=${orderType === 'booking' ? 'service' : 'product'}`),
+        orderType === 'booking'
+          ? apiClient.get<any>(
+              `/promotions/active?includeCoupons=true&includeCodedPromotions=true${
+                serviceCategory ? `&service=${encodeURIComponent(serviceCategory)}` : ''
+              }`
+            )
+          : apiClient.get<any>('/promotions/active?includeCoupons=true&includeCodedPromotions=true'),
+      ]);
+      const vendorPromotions = Array.isArray((vendorRes as any)?.promotions) ? (vendorRes as any).promotions : [];
+      const platformRows = Array.isArray((platformRes as any)?.promotions) ? (platformRes as any).promotions : [];
+      const promotions = [...vendorPromotions, ...platformRows];
+      const seenCodes = new Set<string>();
+      const dedupedPromotions = promotions.filter((promo: Promotion) => {
+        const code = String(promo.code ?? '').trim().toUpperCase();
+        if (!code) return false;
+        if (seenCodes.has(code)) return false;
+        seenCodes.add(code);
+        return true;
+      });
+      const coded = dedupedPromotions
         .filter((promo: Promotion) => Boolean(promo.code?.trim()))
         .map((promo: Promotion) => ({
           ...promo,

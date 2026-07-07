@@ -1555,6 +1555,7 @@ export function VetBookingRouter({
                   kind="service_booking"
                   vendorId={vendorId || doctorId}
                   customerId={customerId || undefined}
+                  serviceCategory="vet"
                   orderAmount={Math.max(
                     0,
                     (allSelectedServices?.length

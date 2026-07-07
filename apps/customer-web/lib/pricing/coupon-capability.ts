@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client';
+import { couponOfferMatchesService } from '@/lib/pricing/coupon-targeting';
 
 export type CouponCheckoutKind = 'service_booking' | 'product_order' | 'meal';
 
@@ -12,6 +13,9 @@ export type CouponAvailabilityResult = {
 type PromotionRow = {
   code?: string | null;
   promotion_type?: string;
+  source?: string;
+  applicable_services?: unknown;
+  service_category?: string;
 };
 
 function hasRedeemableCode(promotions: PromotionRow[]): boolean {
@@ -31,13 +35,24 @@ async function fetchVendorCodedPromotions(
   }
 }
 
-async function fetchPlatformCodedPromotions(serviceType: 'service' | 'product'): Promise<PromotionRow[]> {
+async function fetchPlatformCodedOffers(
+  serviceCategory?: string
+): Promise<PromotionRow[]> {
   try {
-    const res = await apiClient.get<any>(
-      `/promotions/active?serviceType=${serviceType}&includeCoupons=true`
-    );
+    const params = new URLSearchParams({
+      includeCoupons: 'true',
+      includeCodedPromotions: 'true',
+    });
+    if (serviceCategory) params.set('service', serviceCategory);
+    const res = await apiClient.get<any>(`/promotions/active?${params.toString()}`);
     const rows = (res?.promotions || []) as PromotionRow[];
-    return Array.isArray(rows) ? rows : [];
+    if (!Array.isArray(rows)) return [];
+    return rows.filter(
+      (row) =>
+        typeof row.code === 'string' &&
+        row.code.trim().length > 0 &&
+        couponOfferMatchesService(row, serviceCategory)
+    );
   } catch {
     return [];
   }
@@ -46,6 +61,7 @@ async function fetchPlatformCodedPromotions(serviceType: 'service' | 'product'):
 export type CheckCouponAvailabilityParams = {
   kind: CouponCheckoutKind;
   vendorId?: string;
+  serviceCategory?: string;
   /** When false, coupon UI is hidden (e.g. package purchase API has no coupon field). */
   paymentSupportsCoupon?: boolean;
 };
@@ -69,11 +85,12 @@ export async function checkCouponAvailability(
   }
 
   const promoType = params.kind === 'product_order' ? 'product' : 'service';
+  const serviceCategory = params.serviceCategory;
 
   try {
     const [vendorPromos, platformPromos] = await Promise.all([
       params.vendorId ? fetchVendorCodedPromotions(params.vendorId, promoType) : Promise.resolve([]),
-      fetchPlatformCodedPromotions(promoType),
+      fetchPlatformCodedOffers(serviceCategory),
     ]);
 
     const available = hasRedeemableCode(vendorPromos) || hasRedeemableCode(platformPromos);

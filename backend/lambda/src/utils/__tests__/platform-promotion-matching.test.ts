@@ -1,4 +1,5 @@
 import {
+  isAutoApplyPlatformPromotionRow,
   platformPromoMatchesBookingContext,
   promotionCategoriesMatch,
   promotionServiceTokensMatch,
@@ -54,6 +55,22 @@ describe('platform-promotion-matching', () => {
     ).toBe(false);
     expect(
       promotionServiceTokensMatch(['bbb-catalog-id'], ['bbb-catalog-id'], 'vet')
+    ).toBe(true);
+  });
+
+  it('excludes coded legacy platform coupon rows from auto-apply', () => {
+    expect(
+      isAutoApplyPlatformPromotionRow({
+        name: 'Plat Coupon',
+        code: 'FLAT500',
+        promotion_type: 'flash_sale',
+      })
+    ).toBe(false);
+    expect(
+      isAutoApplyPlatformPromotionRow({
+        name: 'Vet promotions',
+        promotion_type: 'flash_sale',
+      })
     ).toBe(true);
   });
 });

@@ -108,7 +108,6 @@ function filterCandidates(candidates: DiscountCandidate[], context: DiscountCont
     if (context.trigger === DiscountTrigger.AUTO && c.code) {
       const normalizedCoupon = String(context.couponCode || '').trim().toUpperCase();
       if (normalizedCoupon && c.code.toUpperCase() === normalizedCoupon) return true;
-      if (c.source === DiscountSource.PLATFORM_PROMOTION) return true;
       return false;
     }
     return true;

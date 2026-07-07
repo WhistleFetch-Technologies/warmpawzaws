@@ -173,3 +173,12 @@ export function platformPromoMatchesBookingContext(
 
   return true;
 }
+
+/** Coded rows in `promotions` are checkout-only — not auto-apply (legacy Plat Coupon pattern). */
+export function isAutoApplyPlatformPromotionRow(row: Record<string, unknown>): boolean {
+  const type = String(row.promotion_type ?? '').trim().toLowerCase();
+  if (type === 'coupon' || type === 'platform_coupon') return false;
+  const code = String(row.code ?? '').trim();
+  if (code.length > 0) return false;
+  return true;
+}

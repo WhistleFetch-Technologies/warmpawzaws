@@ -179,6 +179,26 @@ describe('Discount Engine Phase 4 — Unified Discount Resolver', () => {
       expect(result.benefitResults[0]?.discountAmount).toBeGreaterThan(0);
     });
 
+    it('S2b — coded platform promotion in promotions table does not AUTO apply', async () => {
+      const result = await resolve(
+        {
+          domain: DiscountDomain.SERVICE,
+          trigger: DiscountTrigger.AUTO,
+          owner: DiscountOwner.PLATFORM,
+          amount: 200,
+          booking: {
+            serviceIds: ['s1'],
+            serviceCategory: 'vet',
+            serviceStyle: 'at_center',
+          },
+        },
+        [staticProvider(DiscountSource.PLATFORM_PROMOTION, [codedPlatformRow])]
+      );
+
+      expect(result.eligibleCandidates).toHaveLength(0);
+      expect(result.benefitResults).toHaveLength(0);
+    });
+
     it('S5 — service platform coupon (CODE)', async () => {
       const result = await resolve(
         {

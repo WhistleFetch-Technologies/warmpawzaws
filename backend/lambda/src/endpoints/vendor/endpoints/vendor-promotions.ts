@@ -37,6 +37,7 @@ import {
   evaluatePlatformCodeViaProductionMode,
   evaluateProductCodeViaProductionMode,
 } from '../../../lib/services/promotion-code-validation-service';
+import { validateCouponInternal as validatePlatformCouponInternal } from '../../../lib/services/platform-coupon-service';
 
 export function registerVendorPromotionsEndpoints(app: Hono) {
   // ============================================================================
@@ -883,9 +884,30 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
         });
       }
 
+      const platformCoupon = await validatePlatformCouponInternal(
+        code.toUpperCase(),
+        amount,
+        orderType === 'service' ? DiscountDomain.SERVICE : DiscountDomain.ECOMMERCE
+      );
+      if (platformCoupon.valid && platformCoupon.discountAmount && platformCoupon.discountAmount > 0) {
+        return c.json({
+          valid: true,
+          promotion: {
+            id: platformCoupon.couponId,
+            code: code.toUpperCase(),
+            name: platformCoupon.couponName ?? code.toUpperCase(),
+            discount_type: platformCoupon.coupon?.discountType ?? 'fixed',
+            discount_value: platformCoupon.coupon?.discountValue,
+          },
+          discount_amount: platformCoupon.discountAmount,
+          final_amount: Math.max(0, amount - platformCoupon.discountAmount),
+          promo_category: 'platform',
+        });
+      }
+
       return c.json({
         valid: false,
-        message: 'Invalid or expired promotion code'
+        message: platformCoupon.error || 'Invalid or expired promotion code'
       });
     } catch (error: any) {
       console.error('Error validating promotion code:', error);

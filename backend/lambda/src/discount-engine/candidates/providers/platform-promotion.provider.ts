@@ -23,6 +23,9 @@ export class PlatformPromotionCandidateProvider implements CandidateProvider {
       if (context.code) {
         queryStr += ` AND UPPER(code) = $1`;
         params.push(context.code.toUpperCase());
+      } else {
+        queryStr += ` AND (code IS NULL OR BTRIM(code) = '')
+           AND COALESCE(LOWER(promotion_type), '') NOT IN ('coupon', 'platform_coupon')`;
       }
       const res = await query(queryStr, params);
       return (res as { rows?: unknown[] }).rows ?? [];

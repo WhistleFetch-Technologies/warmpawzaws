@@ -31,6 +31,7 @@ import type { ResolverResult } from '../../discount-engine/resolver/types';
 import { parseJsonMetaFromNotes } from '../../utils/booking-notes-meta';
 import {
   expandPromotionServiceTokensForVendor,
+  isAutoApplyPlatformPromotionRow,
   parsePromotionServicesList,
   platformPromoMatchesBookingContext,
 } from '../../utils/platform-promotion-matching';
@@ -143,6 +144,7 @@ async function loadPlatformPromotions(
     const rows = (res as { rows?: Record<string, unknown>[] }).rows || [];
     const matched: Record<string, unknown>[] = [];
     for (const row of rows) {
+      if (!isAutoApplyPlatformPromotionRow(row)) continue;
       const tokens = parsePromotionServicesList(row.applicable_services);
       const expanded = await expandPromotionServiceTokensForVendor(
         params.vendorId,

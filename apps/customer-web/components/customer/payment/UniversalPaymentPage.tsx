@@ -3676,6 +3676,7 @@ export function UniversalPaymentPage({
           kind={couponCheckoutKind}
           vendorId={vendorId}
           customerId={customerId}
+          serviceCategory={category}
           orderAmount={couponValidationBase}
           appliedCoupon={appliedCoupon}
           onApplyCoupon={handleApplyCheckoutCoupon}

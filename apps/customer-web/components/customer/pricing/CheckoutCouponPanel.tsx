@@ -14,6 +14,7 @@ export type CheckoutCouponPanelProps = {
   kind: CouponCheckoutKind;
   vendorId?: string;
   customerId?: string;
+  serviceCategory?: string;
   /** Subtotal after auto-promotions — coupon validates against this amount. */
   orderAmount: number;
   appliedCoupon: AppliedCheckoutCoupon | null;
@@ -30,6 +31,7 @@ export function CheckoutCouponPanel({
   kind,
   vendorId,
   customerId,
+  serviceCategory,
   orderAmount,
   appliedCoupon,
   onApplyCoupon,
@@ -46,11 +48,12 @@ export function CheckoutCouponPanel({
     const result = await checkCouponAvailability({
       kind,
       vendorId,
+      serviceCategory,
       paymentSupportsCoupon,
     });
     setAvailability(result);
     setLoading(false);
-  }, [kind, vendorId, paymentSupportsCoupon]);
+  }, [kind, vendorId, serviceCategory, paymentSupportsCoupon]);
 
   useEffect(() => {
     void probe();
@@ -73,6 +76,7 @@ export function CheckoutCouponPanel({
         <CouponSection
           vendorId={vendorId}
           customerId={customerId}
+          serviceCategory={serviceCategory}
           orderAmount={orderAmount}
           orderType="booking"
           appliedCoupon={appliedCoupon}
@@ -113,6 +117,7 @@ export function CheckoutCouponPanel({
     <CouponSection
       vendorId={vendorId}
       customerId={customerId}
+      serviceCategory={serviceCategory}
       orderAmount={orderAmount}
       orderType={orderType}
       appliedCoupon={appliedCoupon}

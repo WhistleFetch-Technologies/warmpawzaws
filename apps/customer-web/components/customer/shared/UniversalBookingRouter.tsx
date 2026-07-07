@@ -1482,6 +1482,7 @@ export function UniversalBookingRouter({
                   kind="service_booking"
                   vendorId={vendorId || doctorId}
                   customerId={customerId || undefined}
+                  serviceCategory={config.category}
                   orderAmount={Math.max(
                     0,
                     (() => {

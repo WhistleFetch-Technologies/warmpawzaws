@@ -94,18 +94,6 @@ export function AdminPromotionHub({
   const handleSave = async (form: PromotionWizardForm, _publish: boolean, editingId?: string) => {
     try {
       if (form.createKind === 'coupon') {
-        const hasServiceTargeting = !form.targetScopes.includes('entire_platform');
-        if (hasServiceTargeting) {
-          const payload = wizardToAdminPromotionPayload(form);
-          if (editingId) {
-            await apiClient.put(`/admin/promotions/${editingId}`, payload);
-            toast.success('Coupon promotion updated');
-          } else {
-            await apiClient.post('/admin/promotions', payload);
-            toast.success('Coupon promotion created');
-          }
-          return;
-        }
         const payload = wizardToAdminCouponPayload(form);
         if (editingId) {
           await apiClient.put(`/admin/coupons/${editingId}`, payload);

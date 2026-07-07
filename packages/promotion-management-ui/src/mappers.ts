@@ -74,10 +74,15 @@ export function wizardToAdminPromotionPayload(form: PromotionWizardForm) {
   };
 }
 
-/** Admin `/admin/coupons/create` payload */
+/** Admin `/admin/coupons/create` payload — includes optional service targeting. */
 export function wizardToAdminCouponPayload(form: PromotionWizardForm) {
+  const applicableServices = buildApplicableServicesFromForm(form);
+  const primaryCategory = form.selectedTargets.categories?.[0];
+
   return {
     code: form.code!.trim().toUpperCase(),
+    name: form.name.trim() || form.code!.trim().toUpperCase(),
+    description: form.description.trim(),
     type: form.discountType,
     value: form.discountValue,
     minOrderAmount: form.minAmount ?? 0,
@@ -86,6 +91,11 @@ export function wizardToAdminCouponPayload(form: PromotionWizardForm) {
     validUntil: form.endDate,
     usageLimit: form.usageLimit ?? 0,
     isActive: form.uiStatus !== 'draft' && form.uiStatus !== 'paused',
+    applicable_to: applicableTo(form),
+    applicable_services: applicableServices,
+    service_category: primaryCategory && primaryCategory !== 'all' ? primaryCategory : undefined,
+    target_scopes: form.targetScopes,
+    selected_targets: form.selectedTargets,
   };
 }
 
