@@ -93,17 +93,29 @@ export async function enrichFinancialMetaWithSettlement(
     return { ...params };
   }
 
-  const snapshot = await buildFundingAwareSettlementSnapshot({
-    vendorId: params.vendorId,
-    vendorBasePrice: params.servicePrice,
-    vendorDiscount: params.vendorDiscount,
-    platformDiscount: params.platformDiscount,
-    couponDiscount: params.couponDiscount,
-    vendorPromotionId: params.vendorPromotionId,
-    platformPromotionId: params.platformPromotionId,
-    couponFundingType: params.couponFundingType,
-    policyFingerprint: params.policyFingerprint,
-  });
+  const legacyRate = (await resolveVendorCommissionPolicy(params.vendorId)).commissionRate;
+  const legacyBase =
+    params.servicePrice -
+    (params.vendorDiscount ?? 0) -
+    (params.platformDiscount ?? 0) -
+    (params.couponDiscount ?? 0);
+  const legacyCommissionBase = Math.max(0, legacyBase > 0 ? legacyBase : params.servicePrice);
+
+  const snapshot = await buildSettlementSnapshotWithShadowLog(
+    {
+      vendorId: params.vendorId,
+      vendorBasePrice: params.servicePrice,
+      vendorDiscount: params.vendorDiscount,
+      platformDiscount: params.platformDiscount,
+      couponDiscount: params.couponDiscount,
+      vendorPromotionId: params.vendorPromotionId,
+      platformPromotionId: params.platformPromotionId,
+      couponFundingType: params.couponFundingType,
+      policyFingerprint: params.policyFingerprint,
+    },
+    legacyCommissionBase,
+    legacyRate
+  );
 
   return attachSettlementSnapshotToFinancialMeta(
     {

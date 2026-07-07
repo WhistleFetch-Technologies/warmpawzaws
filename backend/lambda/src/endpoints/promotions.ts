@@ -22,6 +22,7 @@ import {
   listApplicableBookingPromotions,
   resolveBookingPromotions,
 } from '../lib/services/booking-promotion-service';
+import { resolveBookingServiceCategory } from '../lib/services/resolve-booking-service-category';
 import { validateCouponInternal as validatePlatformCouponInternal } from '../lib/services/platform-coupon-service';
 import {
   getAnalyticsEngine,
@@ -975,6 +976,12 @@ export function registerPromotionEndpoints(app: Hono) {
         return c.json({ success: false, error: 'vendorId and amount are required' }, 400);
       }
 
+      const resolvedCategory = await resolveBookingServiceCategory({
+        vendorId,
+        serviceId: serviceIds[0],
+        explicitCategory: serviceCategory ? String(serviceCategory) : null,
+      });
+
       const couponCode = body.couponCode || body.coupon_code;
 
       const result = await resolveBookingPromotions({
@@ -983,7 +990,7 @@ export function registerPromotionEndpoints(app: Hono) {
         serviceStyle,
         amount,
         customerId: customerId ? String(customerId) : undefined,
-        serviceCategory: serviceCategory ? String(serviceCategory) : undefined,
+        serviceCategory: resolvedCategory ?? undefined,
         couponCode: couponCode ? String(couponCode).trim() : undefined,
       });
 

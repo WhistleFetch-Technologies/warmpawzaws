@@ -40,7 +40,9 @@ import {
   buildBookingPromotionNotesMeta,
   serializeBookingFinancialMeta,
   resolveBookingPromotions,
+  bookingPromotionIdentityMissing,
 } from '../../../lib/services/booking-promotion-service';
+import { resolveBookingServiceCategory } from '../../../lib/services/resolve-booking-service-category';
 import { enrichFinancialMetaWithSettlement } from '../../../finance/settlement/build-settlement-snapshot';
 import { appendSettlementPreviewToFinancialMeta } from '../../../discount-engine/settlement/financial-meta-bridge';
 import { discountsWithinTolerance } from '../../../utils/vendor-promotion-engine';
@@ -1170,14 +1172,24 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           }
         }
 
+        // Resolve service category once for subscription + promotion matching (see resolve-booking-service-category.ts).
+        const serviceCategory = await resolveBookingServiceCategory({
+          vendorId: vendorId ? String(vendorId) : null,
+          service: service as Record<string, unknown>,
+          serviceId: finalServiceId ? String(finalServiceId) : serviceId ? String(serviceId) : null,
+          serviceName: String(
+            (service as any)?.service_name || (service as any)?.name || serviceName || ''
+          ),
+          explicitCategory:
+            body.serviceCategory ?? body.service_category ?? body.category ?? null,
+        });
+
         // ✅ CRITICAL FIX: Use SAVEPOINT to protect transaction from subscription query failures
         // The customer_subscriptions table or its columns (e.g. end_date) may not exist in dev/UAT,
         // which would abort the entire PostgreSQL transaction without a SAVEPOINT.
         try {
           // Skip subscription check when already using package
           if (!isPackageBooking) {
-          // Get service category for subscription matching
-          const serviceCategory = service.category || null;
           
           await client.query('SAVEPOINT sp_subscription_check');
           const activeSubscriptions = await client.query(
@@ -1304,6 +1316,28 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           } catch (promoErr: unknown) {
             const msg = promoErr instanceof Error ? promoErr.message : String(promoErr);
             if (msg === 'PROMOTION_DISCOUNT_MISMATCH') throw promoErr;
+
+            const clientPromoDiscount = parseFloat(
+              String(body.discountAmount ?? body.discount_amount ?? 0)
+            );
+            const clientCouponDiscount = parseFloat(
+              String(body.couponDiscount ?? body.coupon_discount ?? 0)
+            );
+            const clientClaimedTotal =
+              (Number.isFinite(clientPromoDiscount) ? Math.max(0, clientPromoDiscount) : 0) +
+              (Number.isFinite(clientCouponDiscount) ? Math.max(0, clientCouponDiscount) : 0);
+            const fmEarly = body.financialMeta ?? body.financial_meta;
+            let fmClaimedDiscount = 0;
+            if (fmEarly && typeof fmEarly === 'object') {
+              const fm = fmEarly as Record<string, unknown>;
+              fmClaimedDiscount =
+                (parseFloat(String(fm.platformDiscount ?? fm.platform_discount ?? 0)) || 0) +
+                (parseFloat(String(fm.vendorDiscount ?? fm.vendor_discount ?? 0)) || 0) +
+                (parseFloat(String(fm.couponDiscount ?? fm.coupon_discount ?? 0)) || 0);
+            }
+            if (clientClaimedTotal > 0 || fmClaimedDiscount > 0) {
+              throw new Error('PROMOTION_RESOLUTION_REQUIRED');
+            }
             console.warn(
               '[BOOKING] promotion resolver unavailable — proceeding without server promo validation:',
               msg
@@ -1638,20 +1672,35 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         const couponDiscountRaw = body.couponDiscount ?? body.discountAmount ?? body.discount_amount;
         const couponDisc = parseFloat(String(couponDiscountRaw ?? ''));
-        if (Number.isFinite(couponDisc) && couponDisc > 0) {
-          bookingData.discount_amount = Math.round(couponDisc * 100) / 100;
-        } else if (resolvedBookingPromotions && resolvedBookingPromotions.totalSavings > 0) {
+        if (resolvedBookingPromotions && resolvedBookingPromotions.totalSavings > 0) {
           bookingData.discount_amount =
             Math.round(resolvedBookingPromotions.totalSavings * 100) / 100;
+        } else if (Number.isFinite(couponDisc) && couponDisc > 0) {
+          throw new Error('PROMOTION_RESOLUTION_REQUIRED');
         }
 
-        if (resolvedBookingPromotions && resolvedBookingPromotions.totalSavings > 0) {
-          const promoMeta = buildBookingPromotionNotesMeta({
-            vendorPromotionId: resolvedBookingPromotions.vendorPromotionId,
-            platformPromotionId: resolvedBookingPromotions.platformPromotionId,
-            vendorDiscount: resolvedBookingPromotions.vendorDiscountAmount,
-            platformDiscount: resolvedBookingPromotions.platformDiscountAmount,
-          });
+        const winningApplied = resolvedBookingPromotions?.applied?.[0];
+        const promoNotesPayload = resolvedBookingPromotions &&
+          resolvedBookingPromotions.totalSavings > 0
+          ? {
+              vendorPromotionId: resolvedBookingPromotions.vendorPromotionId,
+              platformPromotionId: resolvedBookingPromotions.platformPromotionId,
+              vendorDiscount: resolvedBookingPromotions.vendorDiscountAmount,
+              platformDiscount: resolvedBookingPromotions.platformDiscountAmount,
+              promotionType: winningApplied?.promotionType ?? winningApplied?.source,
+              promotionSource: winningApplied?.source,
+              fundingType:
+                resolvedBookingPromotions.platformDiscountAmount > 0
+                  ? 'PLATFORM'
+                  : resolvedBookingPromotions.vendorDiscountAmount > 0
+                    ? 'VENDOR'
+                    : undefined,
+              policyFingerprint: resolvedBookingPromotions.settlement?.policyFingerprint,
+            }
+          : null;
+
+        if (promoNotesPayload) {
+          const promoMeta = buildBookingPromotionNotesMeta(promoNotesPayload);
           bookingData.notes = bookingData.notes
             ? `${bookingData.notes} | ${promoMeta}`
             : promoMeta;
@@ -1747,6 +1796,20 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           bookingData.notes = bookingData.notes
             ? `${bookingData.notes} | ${finNotes}`
             : finNotes;
+        }
+
+        if (
+          bookingPromotionIdentityMissing({
+            discountAmount: parseFloat(String(bookingData.discount_amount ?? 0)) || 0,
+            promotionId: bookingData.promotion_id ? String(bookingData.promotion_id) : null,
+            couponCode: bookingData.coupon_code ? String(bookingData.coupon_code) : null,
+            vendorPromotionId: resolvedBookingPromotions?.vendorPromotionId ?? null,
+            platformPromotionId: resolvedBookingPromotions?.platformPromotionId ?? null,
+            vendorDiscount: resolvedBookingPromotions?.vendorDiscountAmount,
+            platformDiscount: resolvedBookingPromotions?.platformDiscountAmount,
+          })
+        ) {
+          throw new Error('PROMOTION_IDENTITY_REQUIRED');
         }
 
         if (packagePurchaseIdToUse != null && packageSessionNumberToUse != null) {
@@ -2302,6 +2365,28 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           'This time slot is already booked. Please select a different time.',
           409,
           'SLOT_CONFLICT',
+          undefined,
+          requestId
+        );
+      }
+
+      if (errorMessage === 'PROMOTION_DISCOUNT_MISMATCH') {
+        return this.error(
+          'The promotion discount could not be verified. Refresh and try again.',
+          400,
+          'PROMOTION_DISCOUNT_MISMATCH',
+          undefined,
+          requestId
+        );
+      }
+      if (
+        errorMessage === 'PROMOTION_RESOLUTION_REQUIRED' ||
+        errorMessage === 'PROMOTION_IDENTITY_REQUIRED'
+      ) {
+        return this.error(
+          'A promotion discount was requested but could not be confirmed. Refresh offers and try again.',
+          400,
+          errorMessage,
           undefined,
           requestId
         );

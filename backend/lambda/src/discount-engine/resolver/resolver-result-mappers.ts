@@ -223,12 +223,10 @@ export function isResolverResultAuthoritativeUsable(result: ResolverResult | nul
   if (result.metadata?.priority && (result.metadata.priority as { fallbackReason?: string }).fallbackReason) {
     return false;
   }
-  const hasSavings =
-    result.totalSavings > 0 ||
-    result.applied.length > 0 ||
-    result.benefitResults.some((b) => b.discountAmount > 0);
-  if (!hasSavings) {
-    return false;
+  const appliedWithSavings = result.applied.some((d) => d.discountAmount > 0);
+  const benefitsWithSavings = result.benefitResults.some((b) => b.discountAmount > 0);
+  if (result.totalSavings > 0 || appliedWithSavings || benefitsWithSavings) {
+    return true;
   }
-  return true;
+  return false;
 }

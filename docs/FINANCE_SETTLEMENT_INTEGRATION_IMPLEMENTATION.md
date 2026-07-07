@@ -1,6 +1,6 @@
 # Finance Settlement Integration — Implementation (Phase S2)
 
-**Status:** Local implementation — not committed  
+**Status:** Deployed to DEV (2026-07-07) — `FINANCE_FUNDING_AWARE_SETTLEMENT=SHADOW`  
 **Feature flag:** `FINANCE_FUNDING_AWARE_SETTLEMENT` = `LEGACY` | `SHADOW` | `AUTHORITATIVE` (default: `LEGACY`)
 
 ---
@@ -76,6 +76,13 @@ vendorSettlement = commissionBase - commissionAmount
 | **AUTHORITATIVE** | Persist | Funding-aware INSERT | Ledger aggregation |
 
 Rollback: set `FINANCE_FUNDING_AWARE_SETTLEMENT=LEGACY`.
+
+### DEV rollout (2026-07-07)
+
+- Terraform: `infra/envs/dev/main.tf` sets `FINANCE_FUNDING_AWARE_SETTLEMENT = "SHADOW"`.
+- Lambda env updated via deploy + AWS CLI merge.
+- **Not** set to AUTHORITATIVE until shadow logs validated on fresh bookings.
+- See `docs/P0_P1_STABILIZATION_IMPLEMENTATION.md` for validation checklist.
 
 ---
 

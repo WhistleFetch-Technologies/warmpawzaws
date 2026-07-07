@@ -17,7 +17,8 @@ export class PlatformPromotionCandidateProvider implements CandidateProvider {
            AND start_date <= CURRENT_DATE
            AND (end_date IS NULL OR end_date >= CURRENT_DATE)
          AND (usage_limit IS NULL OR usage_count < usage_limit)
-         AND (max_uses IS NULL OR usage_count < max_uses)`;
+         AND (max_uses IS NULL OR usage_count < max_uses)
+         AND COALESCE(discount_value, 0) > 0`;
       const params: unknown[] = [];
       if (context.code) {
         queryStr += ` AND UPPER(code) = $1`;

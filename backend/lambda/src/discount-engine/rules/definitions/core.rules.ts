@@ -568,9 +568,13 @@ function platformPromoMatchesContext(
     .toLowerCase();
   const rowStyle = normalizeStyle(row.service_style ?? row.target_service_style ?? '');
 
-  if (rowCategory && category && rowCategory !== 'all' && rowCategory !== category) {
-    const inServices = services.some((s) => !s.startsWith('style:') && s.toLowerCase() === category);
-    if (!inServices) return false;
+  if (rowCategory && category && rowCategory !== 'all') {
+    if (!promotionCategoriesMatch(category, rowCategory)) {
+      const inServices = services.some(
+        (s) => !s.startsWith('style:') && promotionCategoriesMatch(category, s)
+      );
+      if (!inServices) return false;
+    }
   }
 
   if (rowStyle && style && rowStyle !== 'all' && rowStyle !== style) {
@@ -587,7 +591,13 @@ function platformPromoMatchesContext(
     const nonStyle = services.filter((s) => !s.startsWith('style:'));
     if (nonStyle.length > 0) {
       const match = params.serviceIds.some((id) => nonStyle.includes(id));
-      if (!match && category && !nonStyle.includes(category)) return false;
+      if (
+        !match &&
+        category &&
+        !nonStyle.some((token) => promotionCategoriesMatch(category, token))
+      ) {
+        return false;
+      }
     }
   }
 

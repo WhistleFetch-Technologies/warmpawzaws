@@ -19,7 +19,6 @@ import {
   resolveWithProductionMode,
 } from '../../discount-engine/resolver/production-bridge';
 import { mapResolverResultToBookingPromotion } from '../../discount-engine/resolver/resolver-result-mappers';
-import { DiscountOwner } from '../../discount-engine/enums/discount-owner';
 import { DiscountTrigger } from '../../discount-engine/enums/discount-trigger';
 import type { ResolverResult } from '../../discount-engine/resolver/types';
 import { parseJsonMetaFromNotes } from '../../utils/booking-notes-meta';
@@ -131,7 +130,8 @@ async function loadPlatformPromotions(
          AND start_date <= CURRENT_DATE
          AND (end_date IS NULL OR end_date >= CURRENT_DATE)
          AND (usage_limit IS NULL OR usage_count < usage_limit)
-         AND (max_uses IS NULL OR usage_count < max_uses)`
+         AND (max_uses IS NULL OR usage_count < max_uses)
+         AND COALESCE(discount_value, 0) > 0`
     );
     const rows = (res as { rows?: Record<string, unknown>[] }).rows || [];
     const matched: Record<string, unknown>[] = [];
@@ -455,6 +455,26 @@ export async function recordBookingPromotionUsageFromBooking(bookingId: string):
       platformDiscount = parseFloat(String(meta.platformDiscount ?? 0)) || 0;
     }
 
+    if (!vendorPromotionId && !platformPromotionId) {
+      const finMeta = parseJsonMetaFromNotes(notes, 'wp_financial_meta');
+      if (finMeta) {
+        if (!vendorPromotionId && finMeta.vendorPromotionId) {
+          vendorPromotionId = String(finMeta.vendorPromotionId);
+          vendorDiscount =
+            parseFloat(String(finMeta.vendorDiscount ?? 0)) ||
+            vendorDiscount ||
+            discountTotal;
+        }
+        if (!platformPromotionId && finMeta.platformPromotionId) {
+          platformPromotionId = String(finMeta.platformPromotionId);
+          platformDiscount =
+            parseFloat(String(finMeta.platformDiscount ?? 0)) ||
+            platformDiscount ||
+            discountTotal;
+        }
+      }
+    }
+
     if (!vendorPromotionId && !platformPromotionId && booking.promotion_id) {
       const promoId = String(booking.promotion_id);
       const vendorCheck = await query(
@@ -537,8 +557,38 @@ export function buildBookingPromotionNotesMeta(meta: {
   platformPromotionId?: string;
   vendorDiscount?: number;
   platformDiscount?: number;
+  promotionType?: string;
+  promotionSource?: string;
+  winningOffer?: Record<string, unknown>;
+  fundingType?: string;
+  policyFingerprint?: string;
 }): string {
   return `wp_promo_meta:${JSON.stringify(meta)}`;
+}
+
+/** True when booking has discount savings but no persisted promotion identity. */
+export function bookingPromotionIdentityMissing(params: {
+  discountAmount: number;
+  vendorDiscount?: number;
+  platformDiscount?: number;
+  couponDiscount?: number;
+  promotionId?: string | null;
+  couponCode?: string | null;
+  vendorPromotionId?: string | null;
+  platformPromotionId?: string | null;
+}): boolean {
+  const totalDiscount =
+    params.discountAmount > 0
+      ? params.discountAmount
+      : (params.vendorDiscount ?? 0) +
+        (params.platformDiscount ?? 0) +
+        (params.couponDiscount ?? 0);
+  if (totalDiscount <= 0) return false;
+
+  if (params.vendorPromotionId || params.platformPromotionId) return false;
+  if (params.promotionId) return false;
+  if (params.couponCode?.trim()) return false;
+  return true;
 }
 
 export type BookingFinancialNotesMeta = {

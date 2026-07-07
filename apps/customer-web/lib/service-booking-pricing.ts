@@ -3,6 +3,39 @@
  */
 import { apiClient } from '@/lib/api-client';
 
+type BookingPromoStackResponse = {
+  success?: boolean;
+  totalSavings?: number;
+  finalAmount?: number;
+  vendorPromotionId?: string;
+  platformPromotionId?: string;
+  vendorDiscountAmount?: number;
+  platformDiscountAmount?: number;
+  applied?: Array<{ source: string; id: string; name: string; discountAmount: number }>;
+};
+
+const promoStackInflight = new Map<string, Promise<BookingPromoStackResponse | null>>();
+const promoStackCache = new Map<string, BookingPromoStackResponse | null>();
+
+function promoStackCacheKey(params: {
+  vendorId: string;
+  serviceIds: string[];
+  amount: number;
+  customerId?: string;
+  serviceStyle?: string;
+  serviceCategory?: string;
+}): string {
+  const ids = [...params.serviceIds].map(String).sort().join(',');
+  return [
+    params.vendorId,
+    params.amount,
+    params.serviceCategory ?? '',
+    params.serviceStyle ?? '',
+    params.customerId ?? '',
+    ids,
+  ].join('|');
+}
+
 export type ServiceBookingQuote = {
   basePrice: number;
   discount: number;
@@ -54,18 +87,29 @@ export async function fetchBookingPromotionStack(params: {
   serviceStyle?: string;
   serviceCategory?: string;
 }) {
-  try {
-    return await apiClient.post<{
-      success?: boolean;
-      totalSavings?: number;
-      finalAmount?: number;
-      vendorPromotionId?: string;
-      platformPromotionId?: string;
-      vendorDiscountAmount?: number;
-      platformDiscountAmount?: number;
-      applied?: Array<{ source: string; id: string; name: string; discountAmount: number }>;
-    }>('/promotions/calculate-booking', params);
-  } catch {
-    return null;
-  }
+  const key = promoStackCacheKey(params);
+  const cached = promoStackCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const inflight = promoStackInflight.get(key);
+  if (inflight) return inflight;
+
+  const request = (async () => {
+    try {
+      const res = await apiClient.post<BookingPromoStackResponse>(
+        '/promotions/calculate-booking',
+        params
+      );
+      promoStackCache.set(key, res);
+      return res;
+    } catch {
+      promoStackCache.set(key, null);
+      return null;
+    } finally {
+      promoStackInflight.delete(key);
+    }
+  })();
+
+  promoStackInflight.set(key, request);
+  return request;
 }
