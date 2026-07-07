@@ -73,7 +73,7 @@
       apiBaseUrl: normalizeLegacyDevApiUrl('https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'),
       uatMode: false,
       environment: 'production',
-      customerEcommerceEnabled: false
+      customerEcommerceEnabled: true
     };
   }
   console.log('🔧 Runtime config loaded (deployed):', window.__WARMPAWZ_RUNTIME_CONFIG__);
