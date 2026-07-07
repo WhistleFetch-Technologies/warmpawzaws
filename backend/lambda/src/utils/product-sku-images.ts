@@ -3,6 +3,7 @@
  */
 import { stripPresignFromProductImagesJsonb } from './s3-media-presign';
 import { uploadProductImageBufferToS3 } from './product-s3-image';
+import { ingestExternalProductImageUrl } from './product-image-ingest';
 
 async function tryUploadDataImageUrlToS3(vendorId: string, dataUrl: string): Promise<string | null> {
   const m = dataUrl.match(/^data:image\/([\w.+-]+);base64,(.+)$/i);
@@ -26,6 +27,7 @@ async function resolveSingleProductImageToS3Url(vendorId: string, item: unknown)
     if (!s) return null;
     if (s.startsWith('blob:')) return null;
     if (s.startsWith('data:image/')) return tryUploadDataImageUrlToS3(vendorId, s);
+    if (/^https?:\/\//i.test(s)) return ingestExternalProductImageUrl(vendorId, s);
     return s;
   }
   if (item && typeof item === 'object' && !Array.isArray(item)) {

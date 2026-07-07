@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { ChevronDown, Package } from 'lucide-react';
+import { Package } from 'lucide-react';
 import type { ShopProduct } from './shop-types';
-import { SHOP_SORT_LABELS } from './shop-types';
 import { ShopProductCard } from './ShopProductCard';
 
 interface ShopCatalogSectionProps {
@@ -11,7 +10,6 @@ interface ShopCatalogSectionProps {
   error: string | null;
   products: ShopProduct[];
   getCartQuantity: (productId: string) => number;
-  sortBy: string;
   /** Whether more products are available from the server. */
   hasMore: boolean;
   /** True while the next page is being fetched (appending). */
@@ -19,7 +17,6 @@ interface ShopCatalogSectionProps {
   onRetry: () => void;
   onAddToCart: (product: ShopProduct) => void;
   onQuantityChange: (product: ShopProduct, quantity: number) => void;
-  onOpenSort: () => void;
   /** Called by IntersectionObserver when the bottom sentinel is visible. */
   onLoadMore: () => void;
 }
@@ -29,13 +26,11 @@ export function ShopCatalogSection({
   error,
   products,
   getCartQuantity,
-  sortBy,
   hasMore,
   loadingMore,
   onRetry,
   onAddToCart,
   onQuantityChange,
-  onOpenSort,
   onLoadMore,
 }: ShopCatalogSectionProps) {
   /** Sentinel element watched by IntersectionObserver to trigger the next page load. */
@@ -68,14 +63,6 @@ export function ShopCatalogSection({
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onOpenSort}
-          className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-50 text-slate-700 ring-1 ring-slate-200/90"
-        >
-          <span className="truncate max-w-[7rem]">{SHOP_SORT_LABELS[sortBy] || 'Sort'}</span>
-          <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-60" />
-        </button>
       </div>
 
       {loading ? (

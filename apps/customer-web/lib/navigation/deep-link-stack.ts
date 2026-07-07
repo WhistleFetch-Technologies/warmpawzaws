@@ -1,4 +1,5 @@
-import { CUSTOMER_ROUTES, productPath } from './route-registry';
+import { shopProductDetailPath } from '../shop-product-path';
+import { CUSTOMER_ROUTES } from './route-registry';
 
 const DEEP_LINK_SEED_PREFIX = 'warmpawz_dl_seeded_';
 
@@ -47,7 +48,7 @@ export function ensureDeepLinkBackStack(pathname: string): void {
   }
 
   const productId = decodeURIComponent(productMatch[1]);
-  const productUrl = productPath(productId);
+  const productUrl = shopProductDetailPath(productId);
   const shopUrl = `${window.location.origin}${CUSTOMER_ROUTES.shop.path}`;
 
   window.history.replaceState({ warmpawz: 'shop-root' }, '', CUSTOMER_ROUTES.shop.path);

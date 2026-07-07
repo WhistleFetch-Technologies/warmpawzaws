@@ -8,14 +8,12 @@ import { BottomNavigation } from '@/components/customer/bottomNavigation/BottomN
 import { ShopCatalogSection } from '@/components/shop/ShopCatalogSection';
 import { ShopCategoryScroller } from '@/components/shop/ShopCategoryScroller';
 import { ShopDeliveryBar } from '@/components/shop/ShopDeliveryBar';
-import { ShopHeroCarousel } from '@/components/shop/ShopHeroCarousel';
 import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerPlacementBanners';
 import { ShopPageHeader } from '@/components/shop/ShopPageHeader';
 import { ShopFloatingCartBar } from '@/components/shop/ShopFloatingCartBar';
 import { ShopSearchBar } from '@/components/shop/ShopSearchBar';
 import { ShopSortFilterSheets } from '@/components/shop/ShopSortFilterSheets';
 import { ShopTopDealsSection } from '@/components/shop/ShopTopDealsSection';
-import { ShopTrustRow } from '@/components/shop/ShopTrustRow';
 import { DeliveryAddressPickerSheet } from '@/components/customer/ecommerce/DeliveryAddressPickerSheet';
 import { AddAddressModal } from '@/components/customer/shared/AddAddressModal';
 import { mapApiProductsList } from '@/components/shop/map-shop-product';
@@ -82,7 +80,10 @@ export default function ShopPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('category') || '';
+  });
   const [sortBy, setSortBy] = useState('popular');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -90,8 +91,7 @@ export default function ShopPage() {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  const [showFilters, setShowFilters] = useState(false);
-  const [showSortSheet, setShowSortSheet] = useState(false);
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryLabel, setDeliveryLabel] = useState('Deliver to: Add delivery address');
   const [savedAddresses, setSavedAddresses] = useState<DeliveryAddress[]>([]);
@@ -100,11 +100,8 @@ export default function ShopPage() {
   const [addressPickerLoading, setAddressPickerLoading] = useState(false);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const cat = new URLSearchParams(window.location.search).get('category');
-    if (cat) setSelectedCategory(cat);
-  }, []);
+  const selectedDeliveryAddressRef = useRef<DeliveryAddress | null>(null);
+  const loadProductsGenRef = useRef(0);
 
   const loadCustomerData = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -117,8 +114,6 @@ export default function ShopPage() {
       '';
     setCustomerPhone(phone);
   }, []);
-
-  const selectedDeliveryAddressRef = useRef<DeliveryAddress | null>(null);
 
   const applySelectedDeliveryAddress = useCallback((addr: DeliveryAddress) => {
       selectedDeliveryAddressRef.current = addr;
@@ -178,6 +173,8 @@ export default function ShopPage() {
    */
   const loadProducts = useCallback(
     async (reset: boolean, currentOffset: number, currentCategory: string) => {
+      const gen = ++loadProductsGenRef.current;
+
       if (reset) {
         setLoading(true);
         setError(null);
@@ -199,6 +196,8 @@ export default function ShopPage() {
               : []
           );
           setCategories(mappedCategories);
+
+          if (gen !== loadProductsGenRef.current) return;
 
           if (
             effectiveCategory &&
@@ -229,6 +228,8 @@ export default function ShopPage() {
         const newProducts = mapApiProductsList(rawList);
         const more = productsRes?.hasMore ?? newProducts.length >= SHOP_PAGE_SIZE;
 
+        if (gen !== loadProductsGenRef.current) return;
+
         if (reset) {
           setProducts(newProducts);
           setOffset(newProducts.length);
@@ -239,8 +240,10 @@ export default function ShopPage() {
         setHasMore(more);
       } catch (err: unknown) {
         console.error('Error loading shop:', err);
+        if (gen !== loadProductsGenRef.current) return;
         if (reset) setError(err instanceof Error ? err.message : 'Failed to load shop');
       } finally {
+        if (gen !== loadProductsGenRef.current) return;
         if (reset) setLoading(false);
         else setLoadingMore(false);
       }
@@ -443,7 +446,9 @@ export default function ShopPage() {
             <ShopSearchBar
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
-              onOpenFilters={() => setShowFilters(true)}
+              sortBy={sortBy}
+              hasActivePriceFilter={priceRange[0] > 0 || priceRange[1] < 10000}
+              onOpenFilters={() => setShowFilterSheet(true)}
             />
             <ShopCategoryScroller
               categories={categories}
@@ -462,9 +467,7 @@ export default function ShopPage() {
             placement="shop"
             className="px-4 mt-3 mb-1"
             shellClassName="h-36"
-            fallback={<ShopHeroCarousel embedded />}
           />
-          <ShopTrustRow />
           <ShopTopDealsSection
             products={featuredProducts}
             loading={featuredLoading}
@@ -478,13 +481,11 @@ export default function ShopPage() {
             error={error}
             products={products}
             getCartQuantity={getCartQuantity}
-            sortBy={sortBy}
             hasMore={hasMore}
             loadingMore={loadingMore}
             onRetry={() => void loadProducts(true, 0, selectedCategory)}
             onAddToCart={addToCart}
             onQuantityChange={updateProductQuantity}
-            onOpenSort={() => setShowSortSheet(true)}
             onLoadMore={loadMoreProducts}
           />
         </main>
@@ -499,15 +500,13 @@ export default function ShopPage() {
         {accountSidebar}
 
         <ShopSortFilterSheets
-          showSort={showSortSheet}
-          showFilters={showFilters}
+          open={showFilterSheet}
           sortBy={sortBy}
           priceRange={priceRange}
-          onCloseSort={() => setShowSortSheet(false)}
-          onCloseFilters={() => setShowFilters(false)}
+          onClose={() => setShowFilterSheet(false)}
           onSelectSort={(id) => {
             setSortBy(id);
-            setShowSortSheet(false);
+            setShowFilterSheet(false);
           }}
           onSelectPriceRange={setPriceRange}
         />

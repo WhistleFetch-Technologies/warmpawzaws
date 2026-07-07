@@ -1,3 +1,5 @@
+import { shopProductDetailPath } from '@/lib/shop-product-path';
+
 export type ShopBannerTargetLevel = 'informational' | 'product';
 
 export type ShopBannerTargetMetadata = {
@@ -60,8 +62,8 @@ export function resolveShopBannerProductPath(
   ctaLink?: string
 ): string | null {
   if (shopTarget?.targetLevel === 'product' && shopTarget.productId) {
-    return `/shop/${shopTarget.productId}`;
+    return shopProductDetailPath(shopTarget.productId);
   }
   const legacy = parseShopProductIdFromCtaLink(ctaLink);
-  return legacy ? `/shop/${legacy}` : null;
+  return legacy ? shopProductDetailPath(legacy) : null;
 }

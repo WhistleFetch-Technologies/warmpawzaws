@@ -140,6 +140,13 @@ export default function RootLayout({
                   if (boardingMatch && boardingMatch[1] !== 'placeholder' && boardingMatch[1] !== '_') {
                     qs.set('vendorId', decodeURIComponent(boardingMatch[1]));
                     location.replace('/pet-boarding/vendor/placeholder?' + qs.toString());
+                    return;
+                  }
+                  if (qs.get('productId') || qs.get('product_id')) return;
+                  var shopMatch = path.match(/^\\/shop\\/([^/]+)$/);
+                  if (shopMatch && shopMatch[1] !== 'placeholder' && shopMatch[1] !== '_') {
+                    qs.set('productId', decodeURIComponent(shopMatch[1]));
+                    location.replace('/shop/placeholder?' + qs.toString());
                   }
                 } catch (e) { /* ignore */ }
               })();

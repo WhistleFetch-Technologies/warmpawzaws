@@ -10,6 +10,7 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { buildSearchFetchTrigger } from '@/lib/search-fetch-trigger';
 import { applyHubCategoryFilter } from '@/lib/search-hub-category-filter';
 import { formatCustomerApiError } from '@/lib/format-api-error';
+import { shopProductDetailPath } from '@/lib/shop-product-path';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
 import { ServiceEvents } from '@/components/customer/ServiceEvents';
 import { CustomerSearchListingCard } from '@/components/customer/search/CustomerSearchListingCard';
@@ -706,7 +707,7 @@ function SearchContent() {
                   key={`product-${result.id}`}
                   type="button"
                   className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
-                  onClick={() => router.push(`/shop/${result.id}`)}
+                  onClick={() => router.push(shopProductDetailPath(String(result.id)))}
                 >
                   <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-100">
                     {result.imageUrl ? (
