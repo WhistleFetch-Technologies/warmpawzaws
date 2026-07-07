@@ -544,53 +544,62 @@ export function registerPromotionEndpoints(app: Hono) {
 
     const fullQuery = `
         SELECT id, code, name, description, discount_type, discount_value,
-               COALESCE(min_order_amount, min_amount, min_order_value) AS min_order_amount,
-               COALESCE(max_discount_amount, max_discount) AS max_discount_amount,
+               min_order_amount,
+               max_discount_amount,
                start_date, end_date,
-               COALESCE(max_uses, usage_limit) AS max_uses,
-               COALESCE(usage_count, uses_count, current_uses, 0) AS usage_count,
+               max_uses,
+               COALESCE(usage_count, uses_count, 0) AS usage_count,
                applicable_to, service_category, applicable_services, metadata
          FROM coupons
          WHERE is_active = true
            AND (start_date IS NULL OR start_date::date <= $1::date)
            AND (end_date IS NULL OR end_date::date >= $1::date)
-           AND (
-             COALESCE(max_uses, usage_limit) IS NULL
-             OR COALESCE(usage_count, uses_count, current_uses, 0)
-                < COALESCE(max_uses, usage_limit)
-           )`;
+           AND (max_uses IS NULL OR COALESCE(usage_count, uses_count, 0) < max_uses)`;
 
     const legacyQuery = `
-        SELECT id, code, name, description, discount_type, discount_value,
-               COALESCE(min_order_amount, min_amount) AS min_order_amount,
-               COALESCE(max_discount_amount, max_discount) AS max_discount_amount,
+        SELECT id, code, name, discount_type, discount_value,
+               min_order_amount,
+               max_discount_amount,
                start_date, end_date,
-               COALESCE(max_uses, usage_limit) AS max_uses,
-               COALESCE(usage_count, uses_count, current_uses, 0) AS usage_count
+               max_uses,
+               COALESCE(uses_count, 0) AS usage_count
          FROM coupons
          WHERE is_active = true
-           AND (start_date IS NULL OR start_date <= $1)
-           AND (end_date IS NULL OR end_date >= $1)
-           AND (
-             COALESCE(max_uses, usage_limit) IS NULL
-             OR COALESCE(usage_count, uses_count, current_uses, 0) < COALESCE(max_uses, usage_limit)
-           )`;
+           AND (start_date IS NULL OR start_date::date <= $1::date)
+           AND (end_date IS NULL OR end_date::date >= $1::date)
+           AND (max_uses IS NULL OR COALESCE(uses_count, 0) < max_uses)`;
+
+    const minimalQuery = `
+        SELECT id, code, name, discount_type, discount_value,
+               min_order_amount,
+               start_date, end_date,
+               max_uses,
+               COALESCE(uses_count, 0) AS usage_count
+         FROM coupons
+         WHERE is_active = true
+           AND (start_date IS NULL OR start_date::date <= $1::date)
+           AND (end_date IS NULL OR end_date::date >= $1::date)
+           AND (max_uses IS NULL OR COALESCE(uses_count, 0) < max_uses)`;
 
     try {
       const couponResult = await query(fullQuery, [now]);
       return mapCouponRows((couponResult.rows ?? []) as Record<string, unknown>[]);
     } catch (couponErr) {
       const msg = String((couponErr as Error)?.message ?? couponErr);
-      if (!msg.includes('does not exist') && !msg.includes('column')) {
-        console.warn('[promotions/active] coupons merge skipped', couponErr);
-        return [];
-      }
+      console.warn('[promotions/active] coupons full query failed:', msg);
       try {
         const couponResult = await query(legacyQuery, [now]);
         return mapCouponRows((couponResult.rows ?? []) as Record<string, unknown>[]);
       } catch (legacyErr) {
-        console.warn('[promotions/active] coupons legacy merge skipped', legacyErr);
-        return [];
+        const legacyMsg = String((legacyErr as Error)?.message ?? legacyErr);
+        console.warn('[promotions/active] coupons legacy query failed:', legacyMsg);
+        try {
+          const couponResult = await query(minimalQuery, [now]);
+          return mapCouponRows((couponResult.rows ?? []) as Record<string, unknown>[]);
+        } catch (minimalErr) {
+          console.warn('[promotions/active] coupons minimal merge skipped', minimalErr);
+          return [];
+        }
       }
     }
   };
