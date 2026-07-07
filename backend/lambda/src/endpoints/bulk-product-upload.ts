@@ -56,6 +56,7 @@ import {
   applyVendorProductExtrasToPayload,
   vendorExtrasFromBulkRow,
   getProductsColumnSet,
+  filterProductPayloadToColumns,
 } from '../utils/product-vendor-persist';
 import { validateAndApplyVendorDeclaredOwnership } from '../utils/compute-listing-ownership';
 
@@ -441,7 +442,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             hsn_code: group.parent.hsn_code || null,
             gst_rate: group.parent.gst_rate != null ? Number(group.parent.gst_rate) : null,
             images: parentImages,
-            brand: group.parent.brand || null,
             updated_at: new Date().toISOString(),
           };
 
@@ -494,8 +494,10 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
 
           let savedProductId: string | null = existingProduct?.id ?? null;
 
+          const persistPayload = filterProductPayloadToColumns(productData, productCols);
+
           if (existingProduct) {
-            const updatePayload = { ...productData };
+            const updatePayload = { ...persistPayload };
             if (!existingProduct.sku?.trim()) {
               updatePayload.sku = generateVendorProductSku(vendorId, String(primaryRowNum));
             }
@@ -504,7 +506,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             results.updated++;
           } else {
             const inserted = await insert('products', {
-              ...productData,
+              ...persistPayload,
               sku: generateVendorProductSku(vendorId, String(primaryRowNum)),
               is_active: false,
               status: 'pending',

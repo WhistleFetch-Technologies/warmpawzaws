@@ -30,6 +30,18 @@ export async function getProductsColumnSet(): Promise<Set<string>> {
   return cols;
 }
 
+/** Drop payload keys that are not real products columns (prevents RDS errors on older schemas). */
+export function filterProductPayloadToColumns(
+  payload: Record<string, unknown>,
+  cols: Set<string>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (cols.has(key)) out[key] = value;
+  }
+  return out;
+}
+
 export type VendorProductExtrasInput = {
   brand?: unknown;
   weight?: unknown;
@@ -210,15 +222,8 @@ export function applyVendorProductExtrasToPayload(
   opts?: { partial?: boolean },
 ): void {
   const partial = opts?.partial ?? false;
-
-  if (
-    (!partial || input.brand !== undefined) &&
-    input.brand != null &&
-    String(input.brand).trim() &&
-    cols.has('brand')
-  ) {
-    payload.brand = String(input.brand).trim();
-  }
+  const brandTrimmed =
+    input.brand != null && String(input.brand).trim() ? String(input.brand).trim() : '';
 
   if ((!partial || input.weight !== undefined) && cols.has('weight')) {
     if (input.weight === null || input.weight === '') {
@@ -283,6 +288,21 @@ export function applyVendorProductExtrasToPayload(
       existingMeta ??
       {};
     payload.metadata = buildMetadataWithDeliveryRegions(currentMeta, input.delivery_regions);
+  }
+
+  if ((!partial || input.brand !== undefined) && brandTrimmed) {
+    if (cols.has('brand')) {
+      payload.brand = brandTrimmed;
+    } else if (cols.has('specifications')) {
+      const existing =
+        payload.specifications &&
+        typeof payload.specifications === 'object' &&
+        !Array.isArray(payload.specifications)
+          ? { ...(payload.specifications as Record<string, unknown>) }
+          : {};
+      existing.brand = brandTrimmed;
+      payload.specifications = existing;
+    }
   }
 }
 
