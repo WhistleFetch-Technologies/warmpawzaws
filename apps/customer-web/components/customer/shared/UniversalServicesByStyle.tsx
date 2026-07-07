@@ -42,6 +42,7 @@ import {
 import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
 import { roleIdToSharePersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import { PromotionBanner } from './PromotionBanner';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -1370,6 +1371,10 @@ export function UniversalServicesByStyle({
         bottomEdge="sheet"
         sheetToneClass="bg-white"
       />
+
+      <div className="px-4 sm:px-6">
+        <PromotionBanner service={finalCategory} maxPromotions={2} onNavigate={onNavigate} />
+      </div>
 
       {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
       <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">
