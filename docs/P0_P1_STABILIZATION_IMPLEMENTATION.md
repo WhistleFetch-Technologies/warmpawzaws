@@ -120,14 +120,16 @@ After deploy + AWS CLI env update:
 
 ## Validation Results
 
-*(Fill after post-deploy smoke test)*
-
 | Check | Result |
 |-------|--------|
-| Unit tests | PASS (13 tests) |
-| Lambda build | *(see deploy log)* |
-| AWS env `FINANCE_FUNDING_AWARE_SETTLEMENT` | *(see CLI output)* |
-| Fresh booking E2E | *(pending manual)* |
+| Unit tests | **PASS** (13 tests: commission policy + funding-aware settlement) |
+| Lambda build | **PASS** |
+| Lambda deploy (`warmpawz-dev-api-handler`) | **PASS** (2026-07-07) |
+| Loyalty consumer deploy | **PASS** |
+| Customer-web deploy | **PASS** (S3 + CloudFront invalidation) |
+| AWS env `FINANCE_FUNDING_AWARE_SETTLEMENT` | **SHADOW** (verified via CLI) |
+| Fresh booking E2E | *Manual — create vet booking with promotion after deploy* |
+| `realignPendingVendorEarningsForBooking(e8584dfb...)` | *Manual — run via repair endpoint/script after SHADOW snapshot validation* |
 
 ---
 
