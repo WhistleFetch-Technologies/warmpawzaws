@@ -2,9 +2,11 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Heart } from 'lucide-react';
+import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
+  canSyncWishlistToApi,
   readWishlistIds,
   setWishlistIds,
   WISHLIST_UPDATED_EVENT,
@@ -44,7 +46,7 @@ export function WishlistProductHeartButton({
   verifyAfterAdd = true,
 }: WishlistProductHeartButtonProps) {
   const [isWishlisted, setIsWishlisted] = useState(false);
-  const syncInFlight = useRef(false);
+  const syncInFlightByProduct = useRef<Map<string, boolean>>(new Map());
 
   const pid = (productId || '').trim();
 
@@ -65,15 +67,9 @@ export function WishlistProductHeartButton({
         console.warn('[wishlist] WishlistProductHeartButton: missing product id');
         return;
       }
-      const customerId = getResolvedCustomerId();
-      if (customerId) {
-        if (syncInFlight.current) return;
-        syncInFlight.current = true;
-      }
 
       const wishlist = readWishlistIds();
       const wasInList = wishlist.some((id: string) => String(id) === String(pid));
-      const previous = [...wishlist];
 
       if (wasInList) {
         setWishlistIds(wishlist.filter((id: string) => String(id) !== String(pid)));
@@ -87,12 +83,19 @@ export function WishlistProductHeartButton({
         setIsWishlisted(true);
       }
 
-      if (!customerId) {
-        console.warn('[wishlist] no customerId; saved locally only', { productId: pid });
+      const customerId = getResolvedCustomerId();
+      const action = wasInList ? 'remove' : 'add';
+
+      if (!canSyncWishlistToApi(customerId, pid)) {
+        if (action === 'add') {
+          toast.success('Saved on this device');
+        }
         return;
       }
 
-      const action = wasInList ? 'remove' : 'add';
+      if (syncInFlightByProduct.current.get(pid)) return;
+      syncInFlightByProduct.current.set(pid, true);
+
       try {
         await apiClient.post(`/customer/${customerId}/wishlist`, {
           productId: pid,
@@ -105,12 +108,12 @@ export function WishlistProductHeartButton({
             /* non-fatal */
           }
         }
+        toast.success(action === 'add' ? 'Added to saved items' : 'Removed from saved items');
       } catch (err) {
         console.error('[wishlist] POST failed', { productId: pid, customerId, err });
-        setWishlistIds(previous);
-        setIsWishlisted(previous.some((id: string) => String(id) === String(pid)));
+        toast.error('Saved on this device; sync failed — try again');
       } finally {
-        syncInFlight.current = false;
+        syncInFlightByProduct.current.delete(pid);
       }
     },
     [pid, verifyAfterAdd]

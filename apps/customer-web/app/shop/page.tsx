@@ -301,7 +301,7 @@ export default function ShopPage() {
   /** Reset and reload whenever filters/sort/search/category change. */
   useEffect(() => {
     void loadProducts(true, 0, selectedCategory);
-  }, [selectedCategory, sortBy, debouncedSearch, priceRange]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCategory, sortBy, debouncedSearch, priceRange, loadProducts]);
 
   useEffect(() => {
     loadFeaturedDeals();
