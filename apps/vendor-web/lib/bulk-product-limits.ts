@@ -1,5 +1,9 @@
-/** Keep in sync with backend/lambda MAX_BULK_PRODUCT_ROWS */
-export const MAX_BULK_PRODUCT_ROWS = 500;
+/**
+ * Keep in sync with backend/lambda/src/utils/product-ecommerce-validation.ts MAX_BULK_PRODUCT_ROWS.
+ * NOTE: at 2000 rows, Lambda processing time may approach the 15-min hard limit.
+ * Validate with a 2000-row test file in dev before deploying.
+ */
+export const MAX_BULK_PRODUCT_ROWS = 2000;
 
 export function countTitledBulkProducts(products: { name?: string; title?: string }[]): number {
   return products.filter((p) => {

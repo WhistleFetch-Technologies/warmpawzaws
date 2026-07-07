@@ -10,6 +10,8 @@ import {
   getVendorSecuritySnapshot,
   requestVendorPhoneChange,
   confirmVendorPhoneChange,
+  sendCurrentPhoneChangeOtp,
+  verifyCurrentPhoneForChange,
 } from '../../../lib/services/vendor-security-service';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -111,6 +113,45 @@ export function registerVendorSecurityEndpoints(app: Hono) {
       return c.json(result.data, result.status);
     } catch (error: any) {
       console.error('[vendor-security] disable-2fa failed:', error);
+      return c.json({ error: error.message || 'Internal Server Error' }, 500);
+    }
+  });
+
+  app.post('/vendor/:vendorId/security/phone-change/send-current-otp', async (c) => {
+    const vendorId = c.req.param('vendorId');
+    if (!isValidVendorId(vendorId)) {
+      return c.json({ success: true, message: 'Test mode' }, 200);
+    }
+    try {
+      const result = await sendCurrentPhoneChangeOtp(vendorId);
+      if (result.status !== 200) {
+        return c.json({ error: (result as any).error }, result.status);
+      }
+      return c.json(result.data, 200);
+    } catch (error: any) {
+      console.error('[vendor-security] send-current-otp failed:', error);
+      return c.json({ error: error.message || 'Internal Server Error' }, 500);
+    }
+  });
+
+  app.post('/vendor/:vendorId/security/phone-change/verify-current', async (c) => {
+    const vendorId = c.req.param('vendorId');
+    const body = await c.req.json().catch(() => ({}));
+    const otp = String((body as any).otp || (body as any).code || '').trim();
+    if (!otp) {
+      return c.json({ error: 'OTP is required' }, 400);
+    }
+    if (!isValidVendorId(vendorId)) {
+      return c.json({ success: true, message: 'Current phone verified' }, 200);
+    }
+    try {
+      const result = await verifyCurrentPhoneForChange(vendorId, otp);
+      if (result.status !== 200) {
+        return c.json({ error: (result as any).error }, result.status);
+      }
+      return c.json(result.data, 200);
+    } catch (error: any) {
+      console.error('[vendor-security] verify-current failed:', error);
       return c.json({ error: error.message || 'Internal Server Error' }, 500);
     }
   });

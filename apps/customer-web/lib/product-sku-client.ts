@@ -48,10 +48,9 @@ export function resolveSkuFromSelection(
 
   const exact = active.find((s) => {
     const ov = normalizeOptionValues(s.option_values as Record<string, unknown>);
-    const keys = Object.keys(ov);
-    if (keys.length === 0) return Object.keys(normSel).length === 0;
-    if (Object.keys(normSel).length !== keys.length) return false;
-    return keys.every((k) => normSel[k] === ov[k]);
+    const selKeys = Object.keys(normSel);
+    if (selKeys.length === 0) return Object.keys(ov).length === 0;
+    return selKeys.every((k) => ov[k] === normSel[k]);
   });
   if (exact) return exact;
 
@@ -144,17 +143,45 @@ function activeSkusWithOptionValues(skus: ClientProductSku[]): ClientProductSku[
   });
 }
 
-/** True if some active SKU matches current selection + this axis value. */
+function upstreamAxisKeysForAvailability(
+  axisKey: string,
+  selected: Record<string, string>,
+  variationAxes?: Array<{ type: string; option_key?: string }>,
+): string[] {
+  if (variationAxes?.length) {
+    const axisOrder = variationAxes.map((a) => variationSelectionKey(a));
+    const idx = axisOrder.indexOf(axisKey);
+    if (idx >= 0) {
+      return axisOrder.slice(0, idx);
+    }
+  }
+  return Object.keys(normalizeOptionValues(selected)).filter((k) => k !== axisKey);
+}
+
+/**
+ * True if some active, in-stock SKU matches current selection + this axis value.
+ * Requires stock > 0 so that out-of-stock variants render as disabled chips on the PDP.
+ * Downstream axes are not constrained — they are cleared/snapped when the user picks this value.
+ */
 export function isOptionValueAvailable(
   skus: ClientProductSku[],
   selected: Record<string, string>,
   axisKey: string,
   optionValue: string,
+  variationAxes?: Array<{ type: string; option_key?: string }>,
 ): boolean {
-  const trial = { ...normalizeOptionValues(selected), [axisKey]: optionValue };
+  const normSel = normalizeOptionValues(selected);
+  const upstreamKeys = upstreamAxisKeysForAvailability(axisKey, normSel, variationAxes);
   return activeSkusWithOptionValues(skus).some((s) => {
     const ov = normalizeOptionValues(s.option_values as Record<string, unknown>);
-    return Object.entries(trial).every(([k, v]) => ov[k] === v);
+    if (ov[axisKey] !== optionValue) return false;
+    if ((Number(s.stock) || 0) <= 0) return false;
+    return upstreamKeys.every((k) => {
+      const selVal = normSel[k];
+      if (!selVal) return true;
+      if (!(k in ov)) return true;
+      return ov[k] === selVal;
+    });
   });
 }
 
@@ -163,16 +190,21 @@ export function getAvailableOptionValues(
   skus: ClientProductSku[],
   selected: Record<string, string>,
   axisKey: string,
+  variationAxes?: Array<{ type: string; option_key?: string }>,
 ): string[] {
   const seen = new Set<string>();
   const normSel = normalizeOptionValues(selected);
+  const upstreamKeys = upstreamAxisKeysForAvailability(axisKey, normSel, variationAxes);
   for (const s of activeSkusWithOptionValues(skus)) {
     const ov = normalizeOptionValues(s.option_values as Record<string, unknown>);
     const val = ov[axisKey];
     if (!val) continue;
-    const matchesPartial = Object.entries(normSel).every(([k, v]) => {
-      if (k === axisKey) return true;
-      return ov[k] === v;
+    if ((Number(s.stock) || 0) <= 0) continue;
+    const matchesPartial = upstreamKeys.every((k) => {
+      const selVal = normSel[k];
+      if (!selVal) return true;
+      if (!(k in ov)) return true;
+      return ov[k] === selVal;
     });
     if (matchesPartial) seen.add(val);
   }

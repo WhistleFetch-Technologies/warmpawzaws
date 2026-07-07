@@ -21,11 +21,16 @@ import {
   RefreshCcw, AlertCircle, Search, Download, ShoppingBag,
 } from 'lucide-react';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import {
   OrderTrackingCard,
   resolveOrderTracking,
   shouldShowOrderTracking,
 } from '@/components/shop/OrderTrackingCard';
+import {
+  ShopProductReviewModal,
+  type ShopReviewItem,
+} from '@/components/shop/ShopProductReviewModal';
 import {
   Select,
   SelectContent,
@@ -46,6 +51,7 @@ interface OrderItem {
   id: string;
   product_id: string;
   product_name: string;
+  product_image?: string;
   product_emoji?: string;
   quantity: number;
   price: number;
@@ -79,6 +85,8 @@ interface Order {
     trackingUrl?: string | null;
   };
   estimated_delivery?: string;
+  delivered_at?: string;
+  return_window_days?: number;
   created_at: string;
   updated_at: string;
 }
@@ -95,29 +103,52 @@ const statusConfig: Record<string, { badge: string; icon: typeof Clock; label: s
 };
 
 function getOrderStatusDisplay(order: Order): { badge: string; icon: typeof Clock; label: string } {
-  const base = statusConfig[order.status] || statusConfig.pending;
-  if (order.status === 'pending' && order.payment_status === 'paid') {
-    return {
-      ...base,
-      badge: 'bg-amber-100 text-amber-800',
-      label: 'Paid ? awaiting seller',
-    };
-  }
-  return base;
+  return statusConfig[order.status] || statusConfig.pending;
 }
 
 function normalizeItems(items: unknown): OrderItem[] {
   if (!Array.isArray(items)) return [];
-  return items.map((it: any, idx: number) => ({
-    id: String(it.id ?? `item-${idx}`),
-    product_id: String(it.product_id ?? it.productId ?? ''),
-    product_name: it.product_name || it.service_name || it.name || 'Item',
-    product_emoji: it.product_emoji,
-    quantity: Number(it.quantity) || 1,
-    price: Number(it.unit_price ?? it.price ?? it.unitPrice ?? 0),
-    vendor_id: String(it.vendor_id ?? ''),
-    vendor_name: it.vendor_name || 'Store',
-  }));
+  return items.map((it: any, idx: number) => {
+    const imageRaw = it.product_image ?? it.productImage ?? it.image ?? it.image_url;
+    const productImage =
+      typeof imageRaw === 'string' && imageRaw.trim() ? imageRaw.trim() : undefined;
+    return {
+      id: String(it.id ?? `item-${idx}`),
+      product_id: String(it.product_id ?? it.productId ?? ''),
+      product_name: it.product_name || it.service_name || it.name || 'Item',
+      product_image: productImage,
+      product_emoji: it.product_emoji || it.emoji,
+      quantity: Number(it.quantity) || 1,
+      price: Number(it.unit_price ?? it.price ?? it.unitPrice ?? 0),
+      vendor_id: String(it.vendor_id ?? ''),
+      vendor_name: it.vendor_name || 'Store',
+    };
+  });
+}
+
+function OrderItemThumbnail({
+  item,
+  className = 'w-10 h-10',
+}: {
+  item: OrderItem;
+  className?: string;
+}) {
+  if (item.product_image) {
+    return (
+      <img
+        src={item.product_image}
+        alt=""
+        className={`${className} shrink-0 rounded-lg object-cover bg-slate-100`}
+      />
+    );
+  }
+  return (
+    <div
+      className={`${className} shrink-0 flex items-center justify-center rounded-lg bg-gradient-to-br from-slate-100 to-slate-50 text-lg`}
+    >
+      {item.product_emoji || <Package className="w-5 h-5 text-slate-400" aria-hidden />}
+    </div>
+  );
 }
 
 function parseShippingAddress(raw: any): Order['shipping_address'] {
@@ -130,7 +161,7 @@ function parseShippingAddress(raw: any): Order['shipping_address'] {
         return {
           name: p.name || 'You',
           phone: p.phone || raw.shipping_phone || '',
-          line1: p.line1 || p.address || p.street || '?',
+          line1: p.line1 || p.address || p.street || '—',
           city: p.city || raw.shipping_city || '',
           state: p.state || raw.shipping_state || '',
           pincode: p.pincode || raw.shipping_pincode || '',
@@ -143,7 +174,7 @@ function parseShippingAddress(raw: any): Order['shipping_address'] {
   return {
     name: raw.customer_name || 'You',
     phone: raw.shipping_phone || raw.customer_phone || '',
-    line1: lineFromDelivery || String(raw.shipping_address || '?'),
+    line1: lineFromDelivery || String(raw.shipping_address || '—'),
     city: raw.shipping_city || '',
     state: raw.shipping_state || '',
     pincode: raw.shipping_pincode || '',
@@ -174,14 +205,27 @@ function normalizeOrder(raw: any): Order {
     shipping_fee: shippingFee,
     discount,
     total,
-    payment_method: raw.payment_method || '?',
+    payment_method: raw.payment_method || 'online',
     payment_status: String(raw.payment_status || 'pending').toLowerCase(),
     tracking_number: raw.tracking_number,
     tracking,
     estimated_delivery: raw.estimated_delivery,
+    delivered_at: raw.delivered_at || undefined,
+    return_window_days: raw.return_window_days != null ? Number(raw.return_window_days) : undefined,
     created_at: raw.created_at || new Date().toISOString(),
     updated_at: raw.updated_at || raw.created_at || new Date().toISOString(),
   };
+}
+
+/** Returns true if the return window is still open for a delivered order. */
+function isReturnWindowOpen(order: Order): boolean {
+  if (order.status !== 'delivered') return false;
+  if (!order.delivered_at) return false;
+  const windowDays = order.return_window_days ?? 7;
+  const daysSinceDelivery = Math.floor(
+    (Date.now() - new Date(order.delivered_at).getTime()) / 86_400_000
+  );
+  return daysSinceDelivery <= windowDays;
 }
 
 export interface CustomerShopOrdersScreenProps {
@@ -208,6 +252,8 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [reviewTarget, setReviewTarget] = useState<{ orderId: string; items: ShopReviewItem[] } | null>(null);
+  const [reviewedProductIds, setReviewedProductIds] = useState<Set<string>>(new Set());
 
   const handleBack = () => {
     if (onBack) {
@@ -278,7 +324,7 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
     if (!confirm('Are you sure you want to return this order?')) return;
 
     try {
-      await apiClient.put(`/orders/${orderId}/status`, { status: 'returned' });
+      await ordersApi.returnOrder(orderId, { reason: 'Customer request' });
       await loadOrders();
     } catch (err: any) {
       console.error('Error requesting return:', err);
@@ -300,6 +346,63 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
     }
   };
 
+  const openProductReview = async (order: Order) => {
+    const customerId = getResolvedCustomerId();
+    if (!customerId) {
+      toast.error('Please sign in to leave a review');
+      return;
+    }
+
+    const orderItems: ShopReviewItem[] = order.items
+      .filter((item) => item.product_id)
+      .map((item) => ({
+        orderItemId: item.id,
+        productId: item.product_id,
+        productName: item.product_name,
+        productEmoji: item.product_emoji,
+      }));
+
+    if (orderItems.length === 0) {
+      toast.error('No products to review on this order');
+      return;
+    }
+
+    let reviewableItems = orderItems.filter((item) => !reviewedProductIds.has(item.productId));
+
+    try {
+      const res = await apiClient.get<{ pendingReviews?: Array<{ orderId?: string; productId?: string }> }>(
+        `/customer/${customerId}/product-reviews/pending`,
+      );
+      const pending = Array.isArray(res?.pendingReviews) ? res.pendingReviews : [];
+      const pendingForOrder = pending.filter((p) => String(p.orderId) === order.id);
+      if (pending.length > 0) {
+        if (pendingForOrder.length === 0) {
+          reviewableItems = [];
+        } else {
+          const pendingIds = new Set(pendingForOrder.map((p) => String(p.productId)));
+          reviewableItems = orderItems.filter((item) => pendingIds.has(item.productId));
+        }
+      }
+    } catch {
+      /* fall back to local/session state */
+    }
+
+    if (reviewableItems.length === 0) {
+      toast.info('You have already reviewed all products in this order');
+      return;
+    }
+
+    setReviewTarget({ orderId: order.id, items: reviewableItems });
+  };
+
+  const handleReviewSubmitted = (productIds: string[]) => {
+    setReviewedProductIds((prev) => {
+      const next = new Set(prev);
+      for (const id of productIds) next.add(id);
+      return next;
+    });
+  };
+
   const filteredOrders = orders.filter(
     (order) =>
       order.order_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -317,9 +420,9 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
     ).length;
     const done = orders.filter((o) => o.status === 'delivered' || o.status === 'cancelled' || o.status === 'returned').length;
     return [
-      { value: loading ? '?' : String(orders.length), label: 'Total' },
-      { value: loading ? '?' : String(active), label: 'Active' },
-      { value: loading ? '?' : String(done), label: 'Done' },
+      { value: loading ? '—' : String(orders.length), label: 'Total' },
+      { value: loading ? '—' : String(active), label: 'Active' },
+      { value: loading ? '—' : String(done), label: 'Done' },
     ];
   }, [orders, loading]);
 
@@ -328,7 +431,7 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
       <div className="min-h-[100dvh] w-full max-w-customer bg-gradient-to-b from-orange-50 via-amber-50/90 to-orange-50/80 pb-[max(7rem,env(safe-area-inset-bottom,0px))] sm:shadow-[0_0_48px_rgba(0,0,0,0.06)] sm:border-x border-black/[0.04]">
         <ServiceDashboardHeader
           serviceName="My Orders"
-          serviceSubtitle={loading ? 'Loading?' : orderCountLabel}
+          serviceSubtitle={loading ? 'Loading…' : orderCountLabel}
           serviceIcon={ShoppingBag}
           iconColor="text-white"
           stats={dashboardStats}
@@ -509,7 +612,9 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="font-semibold text-slate-900 text-sm">#{order.order_number}</h3>
+                          <h3 className="font-semibold text-slate-900 text-sm">
+                            Order ID - {order.order_number}
+                          </h3>
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${config.badge}`}>
                             {config.label}
                           </span>
@@ -520,7 +625,9 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                             {new Date(order.created_at).toLocaleDateString()}
                           </span>
                           <span>{order.items?.length || 0} items</span>
-                          <span className="font-semibold text-slate-900">?{order.total}</span>
+                          <span className="font-semibold text-slate-900">
+                            {formatPriceWithSymbol(order.total)}
+                          </span>
                         </div>
                       </div>
                       <button
@@ -545,9 +652,7 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                           key={item.id}
                           className="flex-shrink-0 flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 max-w-[200px]"
                         >
-                          <div className="w-10 h-10 bg-gradient-to-br from-slate-100 to-slate-50 rounded-lg flex items-center justify-center text-lg shrink-0">
-                            {item.product_emoji || '??'}
-                          </div>
+                          <OrderItemThumbnail item={item} />
                           <div className="min-w-0">
                             <p className="font-medium text-slate-900 text-xs line-clamp-2">{item.product_name}</p>
                             <p className="text-[10px] text-slate-500">Qty: {item.quantity}</p>
@@ -653,18 +758,16 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                         <div className="space-y-2">
                           {order.items?.map((item) => (
                             <div key={item.id} className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-xl text-sm">
-                              <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center text-xl border shrink-0">
-                                {item.product_emoji || '??'}
-                              </div>
+                              <OrderItemThumbnail item={item} className="w-12 h-12" />
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium text-slate-900 text-xs">{item.product_name}</p>
                                 <p className="text-[10px] text-orange-600">{item.vendor_name}</p>
                                 <p className="text-[10px] text-slate-500">
-                                  Qty: {item.quantity} ? ?{item.price}
+                                  Qty: {item.quantity} × {formatPriceWithSymbol(item.price)}
                                 </p>
                               </div>
                               <p className="font-bold text-slate-900 text-xs shrink-0">
-                                ?{item.quantity * item.price}
+                                {formatPriceWithSymbol(item.quantity * item.price)}
                               </p>
                             </div>
                           ))}
@@ -677,7 +780,7 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                           <p className="font-medium text-slate-900">{order.shipping_address?.name}</p>
                           <p>{order.shipping_address?.line1}</p>
                           <p>
-                            {order.shipping_address?.city}, {order.shipping_address?.state} ?{' '}
+                            {order.shipping_address?.city}, {order.shipping_address?.state} -{' '}
                             {order.shipping_address?.pincode}
                           </p>
                           <p className="mt-1 flex items-center gap-1">
@@ -692,23 +795,23 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                         <div className="p-3 bg-slate-50 rounded-xl space-y-1.5 text-xs">
                           <div className="flex justify-between">
                             <span className="text-slate-600">Subtotal</span>
-                            <span className="text-slate-900">?{order.subtotal}</span>
+                            <span className="text-slate-900">{formatPriceWithSymbol(order.subtotal)}</span>
                           </div>
                           {order.discount > 0 && (
                             <div className="flex justify-between">
                               <span className="text-emerald-600">Discount</span>
-                              <span className="text-emerald-600">-?{order.discount}</span>
+                              <span className="text-emerald-600">-{formatPriceWithSymbol(order.discount)}</span>
                             </div>
                           )}
                           <div className="flex justify-between">
                             <span className="text-slate-600">Shipping</span>
                             <span className={order.shipping_fee === 0 ? 'text-emerald-600' : 'text-slate-900'}>
-                              {order.shipping_fee === 0 ? 'FREE' : `?${order.shipping_fee}`}
+                              {order.shipping_fee === 0 ? 'FREE' : formatPriceWithSymbol(order.shipping_fee)}
                             </span>
                           </div>
                           <div className="flex justify-between font-bold pt-2 border-t border-slate-200">
                             <span className="text-slate-900">Total</span>
-                            <span className="text-orange-600">?{order.total}</span>
+                            <span className="text-orange-600">{formatPriceWithSymbol(order.total)}</span>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 mt-1">
                             <span className="text-slate-500">Method:</span>
@@ -740,16 +843,23 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                         )}
                         {order.status === 'delivered' && (
                           <div className="flex flex-col gap-2">
+                            {isReturnWindowOpen(order) ? (
+                              <button
+                                type="button"
+                                onClick={() => requestReturn(order.id)}
+                                className="w-full py-2.5 text-sm border border-orange-200 text-orange-600 rounded-xl font-medium hover:bg-orange-50 flex items-center justify-center gap-2"
+                              >
+                                <RefreshCcw className="w-4 h-4" />
+                                Return order
+                              </button>
+                            ) : (
+                              <p className="w-full py-2.5 text-sm text-center text-slate-400 border border-slate-100 rounded-xl">
+                                Return window closed
+                              </p>
+                            )}
                             <button
                               type="button"
-                              onClick={() => requestReturn(order.id)}
-                              className="w-full py-2.5 text-sm border border-orange-200 text-orange-600 rounded-xl font-medium hover:bg-orange-50 flex items-center justify-center gap-2"
-                            >
-                              <RefreshCcw className="w-4 h-4" />
-                              Return order
-                            </button>
-                            <button
-                              type="button"
+                              onClick={() => void openProductReview(order)}
                               className="w-full py-2.5 text-sm bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-medium flex items-center justify-center gap-2"
                             >
                               <Star className="w-4 h-4" />
@@ -775,6 +885,14 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
         )}
         </main>
       </div>
+
+      <ShopProductReviewModal
+        isOpen={reviewTarget != null}
+        orderId={reviewTarget?.orderId ?? ''}
+        items={reviewTarget?.items ?? []}
+        onClose={() => setReviewTarget(null)}
+        onSubmitted={(productId) => handleReviewSubmitted([productId])}
+      />
     </div>
   );
 }

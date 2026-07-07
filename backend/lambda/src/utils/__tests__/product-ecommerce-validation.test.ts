@@ -21,15 +21,14 @@ const validBulkRow = {
 const petFoodCategories = new Set(['pet food', 'pet accessories']);
 
 describe('product-ecommerce-validation', () => {
-  it('accepts MRP-only and defaults selling to MRP', () => {
+  it('accepts compare_at_price as the canonical price (single-price model)', () => {
     const r = validateEcommerceProductInput(
       { ...validBulkRow, compare_at_price: 500 },
       { mode: 'bulk', validCategoryNames: petFoodCategories },
     );
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.normalized.mrp).toBe(500);
-      expect(r.normalized.sellingPrice).toBe(500);
+      expect(r.normalized.price).toBe(500);
     }
   });
 

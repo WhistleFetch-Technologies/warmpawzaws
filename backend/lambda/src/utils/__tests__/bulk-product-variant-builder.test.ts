@@ -111,9 +111,9 @@ describe('bulk-product-variant-builder', () => {
     const skus = buildSkuInputsFromGroup(groups[0]);
     expect(skus).toHaveLength(2);
     expect(skus[0].price).toBe(90);
-    expect(skus[0].compare_at_price).toBe(120);
+    expect(skus[0].compare_at_price).toBeNull();
     expect(skus[1].price).toBe(100);
-    expect(skus[1].compare_at_price).toBe(130);
+    expect(skus[1].compare_at_price).toBeNull();
   });
 
   it('buildSkuInputsFromGroup defaults SP to MRP when SP empty', () => {
@@ -169,7 +169,7 @@ describe('bulk-product-variant-builder', () => {
     );
     const listing = listingPriceFromGroup(groups[0]);
     expect(listing.price).toBe(150);
-    expect(listing.compare_at_price).toBe(180);
+    expect(listing.compare_at_price).toBeNull();
   });
 
   it('validateVariantGroup rejects duplicate variants', () => {

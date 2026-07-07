@@ -1306,6 +1306,75 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
   });
 
   /**
+   * GET /vendor/:vendorId/settlements/:settlementId/statement
+   * Download a JSON statement for a completed settlement (used by the "Statement" button in VendorEarningsSettlementDashboard).
+   * Also handles the legacy path /vendor/settlements/:settlementId/statement (vendorId = 'settlements' in that call).
+   */
+  app.get("/vendor/:vendorId/settlements/:settlementId/statement", async (c) => {
+    try {
+      const { vendorId: paramVendorId, settlementId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
+
+      const settlements = await query(
+        `SELECT s.*, v.business_name as vendor_name, v.gstin,
+                vt.tier_name, vt.commission_rate as tier_commission
+         FROM settlements s
+         LEFT JOIN vendors v ON s.vendor_id = v.id
+         LEFT JOIN vendor_tiers vt ON v.tier = vt.tier_name
+         WHERE s.id = $1 AND (s.vendor_id = $2 OR $2 IS NULL)`,
+        [settlementId, vendorId || null]
+      ).catch(() => ({ rows: [] }));
+
+      const rows = Array.isArray(settlements) ? settlements : settlements.rows || [];
+      if (rows.length === 0) {
+        return c.json({ error: 'Settlement not found' }, 404);
+      }
+
+      const s = rows[0];
+      const grossAmount = parseFloat(s.total_amount || '0');
+      const commissionAmount = parseFloat(s.commission_amount || '0');
+      const tierDeductionAmount = parseFloat(s.tier_deduction_amount || '0');
+      const vendorAmount = parseFloat(s.vendor_amount || '0');
+      const commissionRate = parseFloat(s.tier_commission || s.commission_rate || '10');
+
+      return c.json({
+        success: true,
+        statement: {
+          settlementId: s.id,
+          vendorName: s.vendor_name || 'Vendor',
+          gstin: s.gstin || null,
+          period: {
+            from: s.period_start || s.created_at,
+            to: s.period_end || s.completed_at,
+          },
+          status: s.status,
+          createdAt: s.created_at,
+          completedAt: s.completed_at,
+          razorpayTransferId: s.razorpay_transfer_id || null,
+          lineItems: [
+            { label: 'Gross Amount', amount: grossAmount },
+            { label: `Platform Commission (${commissionRate}%)`, amount: -commissionAmount },
+            ...(tierDeductionAmount > 0
+              ? [{ label: 'Tier Upgrade Recovery', amount: -tierDeductionAmount }]
+              : []),
+            { label: 'Net Payout', amount: vendorAmount },
+          ],
+          totals: {
+            grossAmount,
+            commissionAmount,
+            tierDeductionAmount,
+            netPayout: vendorAmount,
+            commissionRate,
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error('[SETTLEMENT-STATEMENT] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /vendor/:vendorId/settlements
    * Get all settlements for a vendor with breakup summaries
    */

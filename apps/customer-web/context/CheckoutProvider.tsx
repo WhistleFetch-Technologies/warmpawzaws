@@ -96,6 +96,8 @@ type CheckoutContextValue = {
   addressesLoading: boolean;
   shippingMethod: DeliverySpeed;
   coupon: CheckoutCoupon | null;
+  walletAmountApplied: number;
+  setWalletAmountApplied: (amount: number) => void;
   orderResponse: StoredCheckoutOrderResponse | null;
   isPlacingOrder: boolean;
   primaryVendorId: string | undefined;
@@ -135,6 +137,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
   const [addressesLoading, setAddressesLoading] = useState(true);
   const [shippingMethod, setShippingMethod] = useState<DeliverySpeed>('standard');
   const [coupon, setCoupon] = useState<CheckoutCoupon | null>(null);
+  const [walletAmountApplied, setWalletAmountApplied] = useState(0);
   const [orderResponse, setOrderResponse] = useState<StoredCheckoutOrderResponse | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const placingRef = useRef(false);
@@ -360,6 +363,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
         shippingAddress: address,
         onProcessingChange: setIsPlacingOrder,
         clearCart,
+        walletAmountApplied,
         onSuccess: (orderId) => {
           const stored: StoredCheckoutOrderResponse = {
             orderId,
@@ -397,6 +401,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
     shippingMethod,
     syncStepToUrl,
     isPlacingOrder,
+    walletAmountApplied,
   ]);
 
   const value = useMemo<CheckoutContextValue>(
@@ -413,6 +418,8 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       addressesLoading,
       shippingMethod,
       coupon,
+      walletAmountApplied,
+      setWalletAmountApplied,
       orderResponse,
       isPlacingOrder,
       primaryVendorId,
@@ -441,6 +448,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       addressesLoading,
       shippingMethod,
       coupon,
+      walletAmountApplied,
       orderResponse,
       isPlacingOrder,
       primaryVendorId,

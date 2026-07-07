@@ -76,6 +76,7 @@ import {
   getBulkVariantHintsForCategory,
   getVariantSuggestionsForCategory,
 } from '@warmpawz/shared-types';
+import { PRODUCT_STATUS } from '../../../utils/product-status-constants';
 
 /** Cached information_schema snapshot so we avoid hitting metadata column when it is not migrated yet */
 const PRODUCTS_COLUMN_CACHE: { until: number; cols: Set<string> | null } = { until: 0, cols: null };
@@ -133,11 +134,14 @@ function buildSingleProductValidationRecord(
   return {
     name: body.name ?? prev.name,
     category_id: body.category_id ?? prev.category_id,
-    compare_at_price:
-      body.compare_at_price ?? body.original_price ?? body.mrp ?? prev.compare_at_price,
-    original_price: body.original_price ?? body.compare_at_price ?? prev.compare_at_price,
-    mrp: body.mrp ?? body.compare_at_price ?? prev.compare_at_price,
-    price: body.price ?? body.selling_price ?? prev.price,
+    // Single-price model: accept any legacy alias; normalizeEcommerceProductPricing resolves all.
+    price:
+      body.price ??
+      body.selling_price ??
+      body.sp ??
+      body.original_price ??
+      body.mrp ??
+      prev.price,
     selling_price: body.selling_price ?? body.price ?? prev.price,
     stock: body.stock ?? body.stock_quantity ?? prev.stock,
     stock_quantity: body.stock_quantity ?? body.stock ?? prev.stock,
@@ -719,7 +723,7 @@ class CreateVendorProductHandler extends BaseHandler {
       const hasMetadataCol = cols.has('metadata');
 
       applyNormalizedPricingToDbPayload(
-        { mrp: normalized.mrp, sellingPrice: normalized.sellingPrice },
+        { price: normalized.price },
         productData,
         cols,
       );
@@ -729,6 +733,18 @@ class CreateVendorProductHandler extends BaseHandler {
       if (vendorLifecycleStatus === 'active') {
         vendorLifecycleStatus = 'pending';
       }
+
+      // Auto-draft: products with zero stock are held as drafts until restocked.
+      const simpleStockForDraftCheck = normalized.stock;
+      const skuInputsForDraftCheck = parseSkuInputsFromBody(body as Record<string, unknown>, normalized.price);
+      const totalStockForDraftCheck =
+        skuInputsForDraftCheck && skuInputsForDraftCheck.length > 0
+          ? skuInputsForDraftCheck.reduce((s, sku) => s + (Number(sku.stock) || 0), 0)
+          : simpleStockForDraftCheck;
+      if (totalStockForDraftCheck === 0 && vendorLifecycleStatus !== PRODUCT_STATUS.INACTIVE) {
+        vendorLifecycleStatus = PRODUCT_STATUS.DRAFT;
+      }
+
       if (cols.has('status')) {
         productData.status = vendorLifecycleStatus;
       }
@@ -816,7 +832,7 @@ class CreateVendorProductHandler extends BaseHandler {
 
       const skuInputsPreview = parseSkuInputsFromBody(
         body as Record<string, unknown>,
-        normalized.sellingPrice,
+        normalized.price,
       );
       if (hasMetadataCol && skuInputsPreview && skuInputsPreview.length > 0) {
         const bodyMeta =
@@ -1001,27 +1017,25 @@ class UpdateVendorProductHandler extends BaseHandler {
       if (body.description !== undefined) updateData.description = body.description;
       if (body.category_id !== undefined) updateData.category_id = body.category_id;
       if (body.category !== undefined) updateData.category = body.category;
+      // Pricing: accept price/selling_price/sp/mrp/original_price — all map to the single price field.
+      // compare_at_price is NOT accepted from vendor input; it is managed by the promotion engine.
       const pricingTouched =
         body.price !== undefined ||
         body.selling_price !== undefined ||
-        body.compare_at_price !== undefined ||
         body.original_price !== undefined ||
-        body.mrp !== undefined;
+        body.mrp !== undefined ||
+        body.sp !== undefined;
       if (pricingTouched) {
         const mergeBody: Record<string, unknown> = {
           ...prevRow,
           ...body,
-          price: body.price ?? body.selling_price ?? prevRow.price,
-          compare_at_price:
-            body.compare_at_price ??
+          price:
+            body.price ??
+            body.selling_price ??
+            body.sp ??
             body.original_price ??
             body.mrp ??
-            prevRow.compare_at_price,
-          original_price:
-            body.original_price ??
-            body.compare_at_price ??
-            body.mrp ??
-            prevRow.compare_at_price,
+            prevRow.price,
         };
         const pricingErr = applyBodyPricingToPayload(mergeBody, updateData, cols);
         if (pricingErr) {
@@ -1057,7 +1071,14 @@ class UpdateVendorProductHandler extends BaseHandler {
         updateData.is_active = st === 'active';
       }
       if (body.hsn_code !== undefined) updateData.hsn_code = body.hsn_code;
-      if (body.gst_rate !== undefined) updateData.gst_rate = body.gst_rate ? parseFloat(body.gst_rate) : null;
+      if (body.gst_rate !== undefined) {
+        if (body.gst_rate === null || body.gst_rate === '') {
+          updateData.gst_rate = null;
+        } else {
+          const gstNum = parseFloat(String(body.gst_rate));
+          updateData.gst_rate = Number.isFinite(gstNum) ? gstNum : null;
+        }
+      }
 
       let existingSpecs: Record<string, unknown> | null = null;
       const rawSpecs = prevRow.specifications;
@@ -1235,6 +1256,34 @@ class UpdateVendorProductHandler extends BaseHandler {
         nextSkus,
       );
       await cleanupRemovedProductS3Images(prevImageUrls, nextImageUrls, resolvedVendorId);
+
+      // Auto-draft / auto-restore: recalculate total stock after update and SKU sync.
+      if (cols.has('status')) {
+        const nextRow = (nextProductRows[0] ?? updated[0]) as Record<string, unknown>;
+        const currentStatus = String(nextRow.status || '').trim().toLowerCase();
+        const totalStock =
+          nextSkus.length > 0
+            ? nextSkus.reduce((s, sku) => s + (Number((sku as Record<string, unknown>).stock) || 0), 0)
+            : Number(nextRow.stock) || 0;
+
+        let autoStatus: string | null = null;
+        if (totalStock === 0 && currentStatus !== PRODUCT_STATUS.INACTIVE && currentStatus !== PRODUCT_STATUS.DRAFT) {
+          autoStatus = PRODUCT_STATUS.DRAFT;
+        } else if (totalStock > 0 && currentStatus === PRODUCT_STATUS.DRAFT) {
+          // Restock: move back to pending for admin re-approval.
+          autoStatus = PRODUCT_STATUS.PENDING;
+        }
+
+        if (autoStatus !== null) {
+          await update('products', { id: productId, vendor_id: resolvedVendorId }, {
+            status: autoStatus,
+            is_active: autoStatus === PRODUCT_STATUS.ACTIVE,
+            updated_at: new Date().toISOString(),
+          });
+          // Reflect the auto-status in the row returned to the caller.
+          (nextProductRows[0] as Record<string, unknown>).status = autoStatus;
+        }
+      }
 
       const productOut = await enrichProductRowWithSkus(
         (nextProductRows[0] ?? updated[0]) as Record<string, unknown>,

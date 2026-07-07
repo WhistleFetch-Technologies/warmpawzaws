@@ -127,7 +127,8 @@ describe('product-sku-resolve', () => {
     const out = applyStorefrontSkuPricingFields({ id: 'p1', price: 500 }, variantSkus);
     expect(out.price).toBe(400);
     expect(out.min_price).toBe(400);
-    expect(out.original_price).toBe(550);
+    expect(out.original_price).toBeUndefined();
+    expect(out.compare_at_price).toBeUndefined();
     expect(out.price_from).toBe(true);
     expect(out.has_variants).toBe(true);
     expect(out.default_sku_id).toBe('c');
@@ -161,9 +162,32 @@ describe('product-sku-resolve', () => {
     expect(sortSkusByDefaultOrder(shuffled).map((s) => s.id)).toEqual(['1', '2', '3']);
   });
 
-  it('optionValuesMatch requires all axes when requireAllAxes true', () => {
-    expect(optionValuesMatch({ size: 'S', color: 'Red' }, { size: 'S' }, true)).toBe(false);
-    expect(optionValuesMatch({ size: 'S', color: 'Red' }, { size: 'S', color: 'Red' }, true)).toBe(true);
+  it('optionValuesMatch requires every selected axis on the SKU when requireAllAxes true', () => {
+    expect(optionValuesMatch({ size: 'S', color: 'Red' }, { size: 'S' }, true)).toBe(true);
+    expect(optionValuesMatch({ size: 'S', color: 'Red' }, { size: 'S', color: 'Blue' }, true)).toBe(
+      false,
+    );
+    expect(optionValuesMatch({ size: 'S', color: 'Red' }, { size: 'S', color: 'Red' }, true)).toBe(
+      true,
+    );
+  });
+
+  it('mapSkusToCustomerVariations collapses redundant size and weight axes', () => {
+    const petFoodSkus: ProductSkuRow[] = [
+      { id: '1', option_values: { size: '800g', weight: '800g' }, price: 819, stock: 5, is_active: true },
+      { id: '2', option_values: { size: '2.5kg', weight: '2.5kg' }, price: 2205, stock: 10, is_active: true },
+      { id: '3', option_values: { size: '7kg', weight: '7kg' }, price: 6090, stock: 6, is_active: true },
+    ];
+    const variations = mapSkusToCustomerVariations(petFoodSkus);
+    expect(variations.map((v) => v.option_key)).toEqual(['size']);
+    expect(variations[0].options.map((o) => o.value)).toEqual(['2.5kg', '7kg', '800g']);
+  });
+
+  it('resolveSkuFromSelection matches when selected axes are a subset of SKU axes', () => {
+    const petFoodSkus: ProductSkuRow[] = [
+      { id: '2', option_values: { size: '2.5kg', weight: '2.5kg' }, price: 2205, stock: 10, is_active: true },
+    ];
+    expect(resolveSkuFromSelection(petFoodSkus, { size: '2.5kg' })?.id).toBe('2');
   });
 
   it('metadataVariantsToSkus maps legacy shape', () => {

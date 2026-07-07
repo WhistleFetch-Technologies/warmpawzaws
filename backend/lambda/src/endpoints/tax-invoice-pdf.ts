@@ -24,6 +24,12 @@ import {
   buildMealOrderInvoicePayload,
   isMealOrderInvoiceEligible,
 } from '../utils/meal-order-invoice';
+import {
+  SQL_INVOICE_IS_INTER_STATE,
+  customerGstinFromInvoiceRow,
+  inferIsInterStateFromInvoiceRow,
+  placeOfSupplyFromInvoiceRow,
+} from '../utils/invoice-row-gst';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 const INVOICE_BUCKET = process.env.S3_INVOICES_BUCKET || process.env.S3_UPLOADS_BUCKET || 'warmpawz-invoices';
@@ -438,7 +444,7 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
           sgst: parseFloat(i.sgst_amount || 0),
           igst: parseFloat(i.igst_amount || 0),
           total: parseFloat(i.total_amount),
-          isInterState: i.is_inter_state,
+          isInterState: inferIsInterStateFromInvoiceRow(i),
           status: i.status,
         })),
         summary: {
@@ -496,11 +502,11 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
 
       // Format for GSTR-1 B2C (Business to Consumer) section
       const b2cInvoices = (result.rows || [])
-        .filter((i: any) => !i.customer_gstin)
+        .filter((i: any) => !customerGstinFromInvoiceRow(i))
         .map((i: any) => ({
           'Invoice Number': i.invoice_number,
           'Invoice Date': new Date(i.invoice_date).toLocaleDateString('en-IN'),
-          'Place of Supply': i.place_of_supply,
+          'Place of Supply': placeOfSupplyFromInvoiceRow(i),
           'Rate': effectiveRate(i),
           'Taxable Value': parseFloat(i.subtotal).toFixed(2),
           'CGST': parseFloat(i.cgst_amount || 0).toFixed(2),
@@ -511,13 +517,13 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
 
       // Format for GSTR-1 B2B (Business to Business) section
       const b2bInvoices = (result.rows || [])
-        .filter((i: any) => i.customer_gstin)
+        .filter((i: any) => Boolean(customerGstinFromInvoiceRow(i)))
         .map((i: any) => ({
-          'GSTIN': i.customer_gstin,
+          'GSTIN': customerGstinFromInvoiceRow(i),
           'Invoice Number': i.invoice_number,
           'Invoice Date': new Date(i.invoice_date).toLocaleDateString('en-IN'),
           'Invoice Value': parseFloat(i.total_amount).toFixed(2),
-          'Place of Supply': i.place_of_supply,
+          'Place of Supply': placeOfSupplyFromInvoiceRow(i),
           'Rate': effectiveRate(i),
           'Taxable Value': parseFloat(i.subtotal).toFixed(2),
           'IGST': parseFloat(i.igst_amount || 0).toFixed(2),
@@ -525,30 +531,60 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
           'SGST': parseFloat(i.sgst_amount || 0).toFixed(2),
         }));
 
-      // Summary by HSN
+      // Summary by HSN — join products for hsn_code (order_items has no hsn_code column).
+      // Tax amounts are proportionally derived from stored CGST/SGST/IGST columns.
+      // Inter-state is inferred from invoice_data + tax split (no is_inter_state column required).
       const hsnSummaryQuery = `
-        SELECT 
-          oi.hsn_code,
-          SUM(oi.quantity) as total_qty,
-          SUM(oi.unit_price * oi.quantity) as taxable_value,
-          SUM(oi.tax_amount) as total_tax
+        SELECT
+          p.hsn_code,
+          SUM(oi.quantity)                                        AS total_qty,
+          SUM(oi.total_price)                                     AS taxable_value,
+          BOOL_OR(${SQL_INVOICE_IS_INTER_STATE})                  AS is_inter_state,
+          COALESCE(SUM(
+            CASE WHEN ${SQL_INVOICE_IS_INTER_STATE}
+              THEN (oi.total_price / NULLIF(o.subtotal::numeric, 0))
+                   * COALESCE(o.igst_amount::numeric, 0)
+              ELSE 0
+            END
+          ), 0)                                                   AS igst_amount,
+          COALESCE(SUM(
+            CASE WHEN NOT ${SQL_INVOICE_IS_INTER_STATE}
+              THEN (oi.total_price / NULLIF(o.subtotal::numeric, 0))
+                   * COALESCE(o.cgst_amount::numeric, 0)
+              ELSE 0
+            END
+          ), 0)                                                   AS cgst_amount,
+          COALESCE(SUM(
+            CASE WHEN NOT ${SQL_INVOICE_IS_INTER_STATE}
+              THEN (oi.total_price / NULLIF(o.subtotal::numeric, 0))
+                   * COALESCE(o.sgst_amount::numeric, 0)
+              ELSE 0
+            END
+          ), 0)                                                   AS sgst_amount
         FROM order_items oi
-        JOIN orders o ON oi.order_id = o.id
+        JOIN orders o           ON oi.order_id = o.id
+        LEFT JOIN products p    ON oi.product_id = p.id
+        LEFT JOIN invoices inv  ON inv.order_id = o.id
         WHERE o.vendor_id = $1
           AND TO_CHAR(o.created_at, 'YYYY-MM') = $2
-          AND oi.hsn_code IS NOT NULL
-        GROUP BY oi.hsn_code
+          AND p.hsn_code IS NOT NULL
+        GROUP BY p.hsn_code
       `;
       const hsnResult = await query(hsnSummaryQuery, [access.vendorId, month]);
 
-      const hsnSummary = (hsnResult.rows || []).map((h: any) => ({
-        'HSN Code': h.hsn_code,
-        'Total Quantity': parseInt(h.total_qty),
-        'Taxable Value': parseFloat(h.taxable_value).toFixed(2),
-        'Integrated Tax': '0.00',
-        'Central Tax': (parseFloat(h.total_tax) / 2).toFixed(2),
-        'State Tax': (parseFloat(h.total_tax) / 2).toFixed(2),
-      }));
+      const hsnSummary = (hsnResult.rows || []).map((h: any) => {
+        const igst = parseFloat(h.igst_amount) || 0;
+        const cgst = parseFloat(h.cgst_amount) || 0;
+        const sgst = parseFloat(h.sgst_amount) || 0;
+        return {
+          'HSN Code': h.hsn_code,
+          'Total Quantity': parseInt(h.total_qty),
+          'Taxable Value': parseFloat(h.taxable_value).toFixed(2),
+          'Integrated Tax': igst.toFixed(2),
+          'Central Tax': cgst.toFixed(2),
+          'State Tax': sgst.toFixed(2),
+        };
+      });
 
       return c.json({
         success: true,
@@ -779,11 +815,21 @@ function buildInvoiceData(params: {
   });
 
   const subtotal = invoiceItems.reduce((sum, item) => sum + item.taxableValue, 0);
-  const totalCgst = invoiceItems.reduce((sum, item) => sum + item.cgst, 0);
-  const totalSgst = invoiceItems.reduce((sum, item) => sum + item.sgst, 0);
-  const totalIgst = invoiceItems.reduce((sum, item) => sum + item.igst, 0);
+
+  // Fix B: prefer stored CGST/SGST/IGST from Phase 5 tax calculation over per-item gst_rate||18 fallbacks.
+  // Stored values are authoritative (computed by taxCalculationService at order creation time).
+  const storedCgst = parseFloat(order.cgst_amount) || 0;
+  const storedSgst = parseFloat(order.sgst_amount) || 0;
+  const storedIgst = parseFloat(order.igst_amount) || 0;
+  const hasSufficientTaxData = (storedCgst + storedSgst + storedIgst) > 0;
+
+  const totalCgst = hasSufficientTaxData ? storedCgst : invoiceItems.reduce((sum, item) => sum + item.cgst, 0);
+  const totalSgst = hasSufficientTaxData ? storedSgst : invoiceItems.reduce((sum, item) => sum + item.sgst, 0);
+  const totalIgst = hasSufficientTaxData ? storedIgst : invoiceItems.reduce((sum, item) => sum + item.igst, 0);
   const totalTax = totalCgst + totalSgst + totalIgst;
-  const shipping = parseFloat(order.shipping_fee) || 0;
+
+  // Fix A: orders table stores shipping_amount (Phase 5); shipping_fee is legacy fallback.
+  const shipping = parseFloat(order.shipping_amount) || parseFloat(order.shipping_fee) || 0;
   const discount = parseFloat(order.discount_amount) || 0;
   const total = subtotal + totalTax + shipping - discount;
 

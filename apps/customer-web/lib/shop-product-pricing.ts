@@ -1,6 +1,6 @@
 /**
- * Shop product pricing: MRP (compare_at_price) vs selling price (price).
- * MRP is required in catalog; selling defaults to MRP when omitted.
+ * Shop product pricing: single canonical `price` (SP).
+ * Discount badges use compare_at_price only when the promotion engine sets it on the API response.
  */
 
 export function resolveProductCompareAtPrice(

@@ -263,6 +263,12 @@ export function registerRewardsEndpoints(app: Hono) {
     try {
       const { customerId } = c.req.param();
 
+      // Process any overdue ecommerce loyalty pending awards before reading the balance.
+      // Non-blocking: a failure here must not prevent the balance from being returned.
+      await import('../utils/ecommerce-loyalty')
+        .then(({ processCustomerDuePendingAwards }) => processCustomerDuePendingAwards(customerId))
+        .catch((e) => console.warn('[REWARDS] processCustomerDuePendingAwards failed:', e?.message));
+
       // Graceful handling if tables don't exist or have issues
       let profile: any[] = [];
       try {

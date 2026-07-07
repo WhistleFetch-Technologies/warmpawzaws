@@ -244,6 +244,7 @@ export function SellerHubMainPanels({
           sellerId={sellerId}
           sellerName={sellerName}
           onViewAllOrders={() => onTabChange('orders')}
+          onNavigateToInventory={() => onTabChange('inventory')}
         />
       )}
       {activeTab === 'products' && <ProductCatalogManagement sellerId={sellerId} />}

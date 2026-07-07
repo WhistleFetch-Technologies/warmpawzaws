@@ -1,11 +1,11 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
   Grid, List, ChevronDown, X, Upload, Tag,
-  Check, AlertCircle, Image as ImageIcon, MapPin,   RefreshCcw,
-  FileSpreadsheet, Archive,
+  Check, AlertCircle, Image as ImageIcon, MapPin, RefreshCcw,
+  FileSpreadsheet, Archive, FileEdit,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
@@ -212,14 +212,21 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 
     const label = getVendorDisplayStatusLabel(status);
 
+    const tooltip =
+      status === 'draft'
+        ? 'This product is in draft because it has 0 stock. Add stock to publish.'
+        : undefined;
+
     return (
       <span
+        title={tooltip}
         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${styles[status] || 'bg-slate-100 text-slate-700'}`}
       >
         {status === 'active' && <Check className="w-3 h-3" />}
         {(status === 'pending' || status === 'pending_approval') && (
           <AlertCircle className="w-3 h-3" />
         )}
+        {status === 'draft' && <FileEdit className="w-3 h-3" />}
         {status === 'inactive' && <Archive className="w-3 h-3" />}
         {label}
       </span>
@@ -301,6 +308,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
             <option value="all">All Status</option>
             <option value="active">Active</option>
             <option value="pending">Pending Approval</option>
+            <option value="draft">Draft (0 stock)</option>
             <option value="inactive">Removed</option>
             <option value="rejected">Rejected</option>
             <option value="draft">Draft</option>

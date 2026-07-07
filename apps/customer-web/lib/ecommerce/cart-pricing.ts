@@ -89,6 +89,9 @@ export const VENDOR_DELIVERY_CONFIG: Record<
   default: { name: 'Warmpawz Store', deliveryTime: '2-3 days', freeDeliveryMin: 999 },
 };
 
+// These constants are intentionally duplicated from backend/lambda/src/utils/ecommerce/delivery-fee.ts
+// because the two packages cannot share source. If you change the delivery policy here,
+// you MUST update the backend file to match (and vice versa) to prevent cart↔order fee mismatches.
 export const ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL = 1000;
 export const ECOMMERCE_DEFAULT_DELIVERY_FEE = 150;
 

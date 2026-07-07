@@ -143,15 +143,15 @@ describe('product-sku-client', () => {
     ];
 
     it('isOptionValueAvailable disables invalid cross-combinations', () => {
-      expect(isOptionValueAvailable(matrixSkus, { color: 'red' }, 'flavour', 'blackberry')).toBe(
-        true,
-      );
-      expect(isOptionValueAvailable(matrixSkus, { color: 'red' }, 'flavour', 'choclate')).toBe(
-        true,
-      );
-      expect(isOptionValueAvailable(matrixSkus, { colour: 'blue' }, 'flavour', 'blackberry')).toBe(
-        false,
-      );
+      expect(
+        isOptionValueAvailable(matrixSkus, { color: 'red' }, 'flavour', 'blackberry', axes),
+      ).toBe(true);
+      expect(
+        isOptionValueAvailable(matrixSkus, { color: 'red' }, 'flavour', 'choclate', axes),
+      ).toBe(true);
+      expect(
+        isOptionValueAvailable(matrixSkus, { colour: 'blue' }, 'flavour', 'blackberry', axes),
+      ).toBe(false);
     });
 
     it('hasInvalidVariantSelection when full selection has no exact SKU', () => {
@@ -171,11 +171,50 @@ describe('product-sku-client', () => {
     });
 
     it('getAvailableOptionValues filters by partial selection', () => {
-      expect(getAvailableOptionValues(matrixSkus, { color: 'red' }, 'flavour')).toEqual([
+      expect(getAvailableOptionValues(matrixSkus, { color: 'red' }, 'flavour', axes)).toEqual([
         'blackberry',
         'choclate',
       ]);
-      expect(getAvailableOptionValues(matrixSkus, { colour: 'blue' }, 'flavour')).toEqual([]);
+      expect(getAvailableOptionValues(matrixSkus, { colour: 'blue' }, 'flavour', axes)).toEqual([]);
+    });
+
+    it('allows selecting in-stock size when weight axis duplicates size values', () => {
+      const petFoodSkus: ClientProductSku[] = [
+        {
+          id: 's1',
+          option_values: { size: '800g', weight: '800g' },
+          price: 819,
+          stock: 5,
+        },
+        {
+          id: 's2',
+          option_values: { size: '2.5kg', weight: '2.5kg' },
+          price: 2205,
+          stock: 10,
+        },
+        {
+          id: 's3',
+          option_values: { size: '7kg', weight: '7kg' },
+          price: 6090,
+          stock: 6,
+        },
+      ];
+      const axes = [
+        { type: 'size' as const, name: 'Size', option_key: 'size' },
+        { type: 'weight' as const, name: 'Weight', option_key: 'weight' },
+      ];
+      const selected = { size: '800g', weight: '800g' };
+
+      expect(isOptionValueAvailable(petFoodSkus, selected, 'size', '2.5kg', axes)).toBe(true);
+      expect(isOptionValueAvailable(petFoodSkus, selected, 'size', '7kg', axes)).toBe(true);
+      expect(resolveSkuFromSelection(petFoodSkus, { size: '2.5kg' })?.id).toBe('s2');
+
+      const oosSkus: ClientProductSku[] = [
+        { id: 'x', option_values: { size: 'XL' }, price: 100, stock: 0 },
+      ];
+      expect(isOptionValueAvailable(oosSkus, {}, 'size', 'XL', [{ type: 'size', option_key: 'size' }])).toBe(
+        false,
+      );
     });
 
     it('supports three-axis matrix', () => {
@@ -193,11 +232,28 @@ describe('product-sku-client', () => {
           stock: 1,
         },
       ];
+      const threeAxes = [
+        { type: 'other' as const, name: 'Flavour', option_key: 'flavour' },
+        { type: 'other' as const, name: 'Pack', option_key: 'pack' },
+        { type: 'size' as const, name: 'Size', option_key: 'size' },
+      ];
       expect(
-        isOptionValueAvailable(threeAxisSkus, { flavour: 'Chicken', pack: '500g' }, 'size', 'Adult'),
+        isOptionValueAvailable(
+          threeAxisSkus,
+          { flavour: 'Chicken', pack: '500g' },
+          'size',
+          'Adult',
+          threeAxes,
+        ),
       ).toBe(true);
       expect(
-        isOptionValueAvailable(threeAxisSkus, { flavour: 'Chicken', pack: '500g' }, 'size', 'Puppy'),
+        isOptionValueAvailable(
+          threeAxisSkus,
+          { flavour: 'Chicken', pack: '500g' },
+          'size',
+          'Puppy',
+          threeAxes,
+        ),
       ).toBe(false);
     });
   });

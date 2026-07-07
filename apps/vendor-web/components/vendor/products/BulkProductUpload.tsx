@@ -502,7 +502,7 @@ export function BulkProductUpload({
                   <li>• <strong>HSN*</strong> — 4–8 digit code</li>
                 </ul>
                 <p className="text-xs text-amber-700 mt-2">
-                  <strong>SP</strong> (selling price) is optional — leave blank to sell at MRP. Use <strong>Category*</strong> (column Y), not Type (Category). Up to {MAX_BULK_PRODUCT_ROWS} products per file (rows with Title); max {MAX_BULK_FILE_BYTES / 1024 / 1024} MB.
+                  Use <strong>Price*</strong> as the single product price. Use <strong>Category*</strong> (column Y), not Type (Category). Up to {MAX_BULK_PRODUCT_ROWS} products per file (rows with Title); max {MAX_BULK_FILE_BYTES / 1024 / 1024} MB.
                 </p>
               </div>
 

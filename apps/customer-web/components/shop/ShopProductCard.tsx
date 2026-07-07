@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { useRouter } from 'next/navigation';
 import { canonicalProductId } from '@/lib/product-id';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
 import { ShopCartQuantityControl } from './ShopCartQuantityControl';
 import type { ShopProduct } from './shop-types';
@@ -27,7 +27,7 @@ export function ShopProductCard({
   onAddToCart,
   onQuantityChange,
 }: ShopProductCardProps) {
-  const router = useRouter();
+  const nav = useCustomerNavigation();
   const [imageFailed, setImageFailed] = React.useState(false);
 
   const wishlistPid = canonicalProductId(product as unknown as Record<string, unknown>) || product.id;
@@ -49,7 +49,7 @@ export function ShopProductCard({
   const handleCardClick = () => {
     const pid = (wishlistPid || product.id || '').trim();
     if (!pid) return;
-    router.push(`/shop/${encodeURIComponent(pid)}`);
+    nav.goToProduct(pid);
   };
 
   const cartControl = (
