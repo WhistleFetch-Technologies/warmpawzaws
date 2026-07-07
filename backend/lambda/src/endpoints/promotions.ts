@@ -430,6 +430,12 @@ export function registerPromotionEndpoints(app: Hono) {
     return eligible;
   };
 
+  /** Hide stale/test rows with no customer-facing discount (e.g. legacy "one offer" 0%). */
+  const isCustomerListablePromotion = (promotion: any): boolean => {
+    const discountValue = parseFloat(String(promotion.discount_value ?? 0)) || 0;
+    return discountValue > 0;
+  };
+
   app.get("/promotions/list", async (c) => {
     try {
       const service = c.req.query('service');
@@ -467,7 +473,8 @@ export function registerPromotionEndpoints(app: Hono) {
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
       let promotions = rows
         .map(mapPromotionListRow)
-        .filter((promo: any) => promotionMatchesListService(promo, service));
+        .filter((promo: any) => promotionMatchesListService(promo, service))
+        .filter(isCustomerListablePromotion);
 
       let couponRows: Record<string, unknown>[] = [];
       try {
@@ -515,7 +522,9 @@ export function registerPromotionEndpoints(app: Hono) {
       );
 
       const seenCodes = new Set<string>();
-      promotions = [...promotions, ...couponAsPromotions].filter((row) => {
+      promotions = [...promotions, ...couponAsPromotions]
+        .filter(isCustomerListablePromotion)
+        .filter((row) => {
         const code = String(row.code ?? '').trim().toUpperCase();
         if (!code) return true;
         if (seenCodes.has(code)) return false;
