@@ -72,10 +72,12 @@ export function selectProvidersForContext(context: DiscountContext): CandidatePr
   if (owner === DiscountOwner.PLATFORM) {
     return [new PlatformPromotionCandidateProvider()];
   }
-  const ecommerceProviders: CandidateProvider[] = [new VendorPromotionCandidateProvider()];
+  const ecommerceProviders: CandidateProvider[] = [
+    new VendorPromotionCandidateProvider(),
+    new PlatformPromotionCandidateProvider(),
+  ];
   if (couponCode) {
     ecommerceProviders.unshift(new CouponCandidateProvider());
-    ecommerceProviders.push(new PlatformPromotionCandidateProvider());
   }
   return ecommerceProviders;
 }
@@ -106,6 +108,7 @@ function filterCandidates(candidates: DiscountCandidate[], context: DiscountCont
     if (context.trigger === DiscountTrigger.AUTO && c.code) {
       const normalizedCoupon = String(context.couponCode || '').trim().toUpperCase();
       if (normalizedCoupon && c.code.toUpperCase() === normalizedCoupon) return true;
+      if (c.source === DiscountSource.PLATFORM_PROMOTION) return true;
       return false;
     }
     return true;

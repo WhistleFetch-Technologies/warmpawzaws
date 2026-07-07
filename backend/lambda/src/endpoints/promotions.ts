@@ -502,21 +502,32 @@ export function registerPromotionEndpoints(app: Hono) {
         AND published = true
         AND start_date <= $1
         AND (end_date IS NULL OR end_date >= $1)
+        AND (usage_limit IS NULL OR usage_count < usage_limit)
+        AND (max_uses IS NULL OR usage_count < max_uses)
       `;
 
       const params: any[] = [now];
       let paramIndex = 2;
 
       if (serviceType !== 'all') {
-        // applicable_services is JSONB, not a PG array — ANY() fails with "requires array on right side"
+        const isProductScope = serviceType === 'product' || serviceType === 'shop';
         promotionsQuery += ` AND (
           applicable_services IS NULL
+          OR COALESCE(LOWER(applicable_to), 'all') IN ('all', 'products')
+          OR (
+            metadata IS NOT NULL
+            AND (
+              metadata->'targetScopes' @> '"products"'::jsonb
+              OR LOWER(COALESCE(metadata->>'applicableTo', '')) = 'products'
+            )
+          )
           OR EXISTS (
             SELECT 1 FROM jsonb_array_elements_text(
               CASE WHEN jsonb_typeof(applicable_services) = 'array' THEN applicable_services ELSE '[]'::jsonb END
             ) AS svc(val)
             WHERE svc.val = $${paramIndex}
-               OR ($${paramIndex} IN ('product', 'shop') AND svc.val IN ('product', 'shop', 'ecom', 'ecommerce'))
+               OR (${isProductScope} AND svc.val IN ('product', 'shop', 'ecom', 'ecommerce'))
+               OR (${isProductScope} AND svc.val ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
           )
         )`;
         params.push(serviceType);
@@ -540,11 +551,62 @@ export function registerPromotionEndpoints(app: Hono) {
       promotionsQuery += ` ORDER BY priority DESC, created_at DESC`;
 
       const promotions = await query(promotionsQuery, params);
+      const promotionRows = promotions.rows ?? [];
+
+      let couponRows: Record<string, unknown>[] = [];
+      try {
+        const couponResult = await query(
+          `SELECT id, code, name, description, discount_type, discount_value,
+                  COALESCE(min_order_amount, min_amount) AS min_order_amount,
+                  COALESCE(max_discount_amount, max_discount) AS max_discount_amount,
+                  start_date, end_date,
+                  COALESCE(max_uses, usage_limit) AS max_uses,
+                  usage_count
+           FROM coupons
+           WHERE is_active = true
+             AND (start_date IS NULL OR start_date <= $1)
+             AND (end_date IS NULL OR end_date >= $1)
+             AND (COALESCE(max_uses, usage_limit) IS NULL
+                  OR COALESCE(usage_count, 0) < COALESCE(max_uses, usage_limit))`,
+          [now]
+        );
+        couponRows = couponResult.rows ?? [];
+      } catch (couponErr) {
+        console.warn('[promotions/active] coupons merge skipped', couponErr);
+      }
+
+      const couponAsPromotions = couponRows.map((c) => ({
+        id: c.id,
+        code: c.code,
+        name: c.name,
+        title: c.name,
+        description: c.description,
+        discount_type: c.discount_type,
+        discount_value: c.discount_value,
+        min_order_amount: c.min_order_amount,
+        max_discount_amount: c.max_discount_amount,
+        start_date: c.start_date,
+        end_date: c.end_date,
+        valid_from: c.start_date,
+        valid_until: c.end_date,
+        source: 'platform_coupon',
+        published: true,
+        is_active: true,
+      }));
+
+      const seenCodes = new Set<string>();
+      const merged = [...promotionRows, ...couponAsPromotions].filter((row) => {
+        const code = String(row.code ?? '').trim().toUpperCase();
+        if (!code) return true;
+        if (seenCodes.has(code)) return false;
+        seenCodes.add(code);
+        return true;
+      });
 
       return c.json({
         success: true,
-        promotions: promotions.rows,
-        total: promotions.rows.length,
+        promotions: merged,
+        total: merged.length,
       });
     } catch (error: any) {
       console.error('Error fetching promotions:', error);

@@ -67,13 +67,19 @@ export function CouponSection({
   const [expanded, setExpanded] = useState(false);
   const [availablePromotions, setAvailablePromotions] = useState<Promotion[]>([]);
   const [loadingPromotions, setLoadingPromotions] = useState(false);
+  const [promoEligibility, setPromoEligibility] = useState<
+    Record<string, { eligible: boolean; reason?: string; discountAmount?: number }>
+  >({});
+
+  const checkoutKind =
+    orderType === 'order' ? 'product_order' : orderType === 'meal' ? 'meal' : 'service_booking';
 
   // Fetch available promotions for the vendor
   useEffect(() => {
     if (vendorId && expanded) {
-      fetchAvailablePromotions();
+      void fetchAvailablePromotions();
     }
-  }, [vendorId, expanded]);
+  }, [vendorId, expanded, orderAmount, customerId, checkoutKind]);
 
   const fetchAvailablePromotions = async () => {
     if (!vendorId) return;
@@ -82,28 +88,61 @@ export function CouponSection({
     try {
       const res = await apiClient.get<any>(`/vendors/${vendorId}/active-promotions?type=${orderType === 'booking' ? 'service' : 'product'}`);
       const promotions = Array.isArray((res as any)?.promotions) ? (res as any).promotions : [];
-      // Coupon picker should only show manually entered/copyable codes.
-      // No-code promotions are auto-applied by pricing and should not appear as coupon options.
-      setAvailablePromotions(
-        promotions
-          .filter((promo: Promotion) => Boolean(promo.code?.trim()))
-          .map((promo: Promotion) => ({
-            ...promo,
-            discount_value: toFiniteNumber(promo.discount_value),
-            min_order_value: toFiniteNumber(promo.min_order_value),
-            min_booking_value: toFiniteNumber(promo.min_booking_value),
-            max_discount_amount: toFiniteNumber(promo.max_discount_amount),
-          }))
+      const coded = promotions
+        .filter((promo: Promotion) => Boolean(promo.code?.trim()))
+        .map((promo: Promotion) => ({
+          ...promo,
+          discount_value: toFiniteNumber(promo.discount_value),
+          min_order_value: toFiniteNumber(promo.min_order_value),
+          min_booking_value: toFiniteNumber(promo.min_booking_value),
+          max_discount_amount: toFiniteNumber(promo.max_discount_amount),
+        }));
+
+      const eligibility: Record<string, { eligible: boolean; reason?: string; discountAmount?: number }> =
+        {};
+      await Promise.all(
+        coded.map(async (promo: Promotion) => {
+          const minValue = promo.min_order_value || promo.min_booking_value || 0;
+          if (orderAmount < minValue) {
+            eligibility[promo.id] = {
+              eligible: false,
+              reason: `Min order ₹${minValue}`,
+            };
+            return;
+          }
+          try {
+            const result = await validateCouponCode({
+              code: promo.code!,
+              vendorId,
+              customerId,
+              orderType: couponValidateOrderTypeForCheckout(checkoutKind),
+              amount: orderAmount,
+            });
+            if (result.ok && result.coupon.discountAmount > 0) {
+              eligibility[promo.id] = {
+                eligible: true,
+                discountAmount: result.coupon.discountAmount,
+              };
+            } else {
+              eligibility[promo.id] = {
+                eligible: false,
+                reason: result.ok ? 'Not applicable with current offers' : result.message,
+              };
+            }
+          } catch {
+            eligibility[promo.id] = { eligible: false, reason: 'Could not validate' };
+          }
+        })
       );
+
+      setPromoEligibility(eligibility);
+      setAvailablePromotions(coded);
     } catch (error) {
       console.error('Error fetching promotions:', error);
     } finally {
       setLoadingPromotions(false);
     }
   };
-
-  const checkoutKind =
-    orderType === 'order' ? 'product_order' : orderType === 'meal' ? 'meal' : 'service_booking';
 
   const validateCoupon = async (code: string) => {
     setLoading(true);
@@ -117,6 +156,10 @@ export function CouponSection({
       });
 
       if (result.ok) {
+        if (result.coupon.discountAmount <= 0) {
+          toast.error('This coupon is not applicable with your current offers.');
+          return;
+        }
         onApplyCoupon(result.coupon);
         toast.success(`Coupon applied! You save ₹${formatAmount(result.coupon.discountAmount)}`);
         setCouponCode('');
@@ -249,7 +292,13 @@ export function CouponSection({
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {availablePromotions.map((promo) => {
                   const minValue = promo.min_order_value || promo.min_booking_value || 0;
-                  const isEligible = orderAmount >= minValue;
+                  const eligibility = promoEligibility[promo.id];
+                  const isEligible =
+                    eligibility?.eligible === true ||
+                    (eligibility == null && orderAmount >= minValue);
+                  const blockReason =
+                    eligibility?.reason ??
+                    (orderAmount < minValue ? `Min ₹${minValue}` : 'Not applicable');
                   
                   return (
                     <div 
@@ -304,10 +353,14 @@ export function CouponSection({
                             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                               isEligible
                                 ? 'bg-orange-500 text-white hover:bg-orange-600'
-                                : 'bg-slate-100 text-slate-400'
+                                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                             }`}
                           >
-                            {isEligible ? 'Apply' : `Add ₹${minValue - orderAmount} more`}
+                            {isEligible
+                              ? eligibility?.discountAmount
+                                ? `Apply (−₹${formatAmount(eligibility.discountAmount)})`
+                                : 'Apply'
+                              : blockReason}
                           </button>
                         </div>
                       </div>

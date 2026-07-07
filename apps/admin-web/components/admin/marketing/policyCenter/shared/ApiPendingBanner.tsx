@@ -4,7 +4,7 @@ import { Badge } from '@warmpawz/ui';
 import { AlertCircle, CloudOff } from 'lucide-react';
 
 export function ApiPendingBanner({
-  message = 'Policy publish APIs are pending Phase 8. Drafts are saved locally until backend endpoints are available.',
+  message = 'Policy runtime API is unreachable. Showing local defaults until the backend is available.',
 }: {
   message?: string;
 }) {

@@ -38,7 +38,7 @@ export function wizardToAdminPromotionPayload(form: PromotionWizardForm) {
   const primaryStyle = form.selectedTargets.styles?.[0];
 
   return {
-    code: isCoupon ? form.code!.trim().toUpperCase() : autoCode(form),
+    code: isCoupon ? form.code!.trim().toUpperCase() : undefined,
     name: form.name.trim(),
     description: form.description.trim(),
     discount_type: form.discountType,

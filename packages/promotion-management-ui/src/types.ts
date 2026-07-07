@@ -78,6 +78,8 @@ export type TargetOption = {
   label: string;
   subtitle?: string;
   group?: string;
+  /** Numeric price for preview calculations (optional — subtitle may also carry ₹ display). */
+  price?: number;
 };
 
 export type PromotionTargetCatalog = {

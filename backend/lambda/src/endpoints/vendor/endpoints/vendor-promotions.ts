@@ -841,7 +841,7 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
         WHERE code = $1 
           AND is_active = true 
           AND start_date <= $2 
-          AND end_date >= $2
+          AND (end_date IS NULL OR end_date >= $2)
           AND published = true
           AND (usage_limit IS NULL OR usage_count < usage_limit)
           AND (max_uses IS NULL OR usage_count < max_uses)

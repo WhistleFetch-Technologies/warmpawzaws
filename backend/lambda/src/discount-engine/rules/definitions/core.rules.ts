@@ -1,4 +1,5 @@
 import { isPromotionLiveInIst } from '../../../utils/promotion-date-bounds';
+import { promotionCategoriesMatch } from '../../../utils/platform-promotion-matching';
 import type { CartLineItem } from '../../../utils/vendor-promotion-engine';
 import type { DiscountRule, RuleContext, RuleResult } from '../types';
 
@@ -455,7 +456,10 @@ export class PlatformInlineCategoryRule implements DiscountRule {
     const category = String(ctx.serviceCategory || '').trim().toLowerCase();
     const configured = (ctx.applicableServices || []).filter((x) => !x.startsWith('style:'));
     if (category && category !== 'all' && configured.length > 0) {
-      if (!configured.map((x) => x.toLowerCase()).includes(category)) {
+      const matches = configured.some((token) =>
+        promotionCategoriesMatch(category, token)
+      );
+      if (!matches) {
         return fail(this.ruleName, 'Promotion not applicable for this category');
       }
     }

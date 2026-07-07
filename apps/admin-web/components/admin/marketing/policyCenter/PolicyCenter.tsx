@@ -97,9 +97,20 @@ export function PolicyCenter({ embedded = false }: { embedded?: boolean }) {
       ) : null}
 
       <div className={`mx-auto w-full max-w-6xl flex-1 px-6 py-6 ${embedded ? 'pb-12' : 'pb-24'}`}>
-        {!capabilities?.draftWrite ? (
+        {!capabilities?.runtimeRead ? (
           <div className="mb-6">
             <ApiPendingBanner />
+          </div>
+        ) : !capabilities.draftWrite ? (
+          <div
+            className="mb-6 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
+            role="status"
+          >
+            <p>
+              <span className="font-medium">Runtime policy is live</span> from Discount Engine V2
+              config. Draft publish to the server is not enabled yet — use Save to keep changes in
+              this browser only.
+            </p>
           </div>
         ) : null}
 

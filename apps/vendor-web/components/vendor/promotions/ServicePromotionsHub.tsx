@@ -137,6 +137,7 @@ export function ServicePromotionsHub({
               id: String(s.id),
               label: serviceDisplayName(s),
               subtitle: price != null ? `₹${price}` : undefined,
+              price,
             };
           })
         ),
@@ -148,6 +149,7 @@ export function ServicePromotionsHub({
                 id: String(s.id),
                 label: serviceDisplayName(s),
                 subtitle: price != null ? `₹${price}` : undefined,
+                price,
               };
             }),
             ...standalonePackages.filter(isEligiblePublishedInventory).map((p) => {
@@ -162,6 +164,7 @@ export function ServicePromotionsHub({
                     : sessionCount
                       ? `${sessionCount} sessions`
                       : undefined,
+                price,
               };
             }),
           ].filter((p) => p.id && p.id !== 'undefined')
@@ -169,14 +172,22 @@ export function ServicePromotionsHub({
         mealPlans: dedupeOptions(
           mealPlanRows
             .filter(isEligiblePublishedInventory)
-            .map((p) => ({
-              id: String(p.id),
-              label: String(p.name ?? p.plan_name ?? p.planName ?? 'Meal plan'),
-              subtitle:
-                p.price != null || p.price_per_meal != null
-                  ? `₹${p.price_per_meal ?? p.price}`
-                  : undefined,
-            }))
+            .map((p) => {
+              const mealPrice =
+                p.price_per_meal != null
+                  ? Number(p.price_per_meal)
+                  : p.price != null
+                    ? Number(p.price)
+                    : undefined;
+              const price =
+                mealPrice != null && Number.isFinite(mealPrice) ? mealPrice : undefined;
+              return {
+                id: String(p.id),
+                label: String(p.name ?? p.plan_name ?? p.planName ?? 'Meal plan'),
+                subtitle: price != null ? `₹${price}` : undefined,
+                price,
+              };
+            })
             .filter((p) => p.id && p.id !== 'undefined')
         ),
         styles: [

@@ -129,7 +129,7 @@ export function MarketingAnalyticsHub({ surface = 'marketing' }: { surface?: Adm
               </TabsContent>
             ) : null}
             <TabsContent value="savings" className="mt-6">
-              <SavingsAnalyticsTab report={report} />
+              <SavingsAnalyticsTab report={report} legacyStats={legacyStats} />
             </TabsContent>
             <TabsContent value="settlement" className="mt-6">
               <SettlementAnalyticsTab report={report} />

@@ -24,5 +24,6 @@ export type {
 } from './components/PromotionDashboard';
 export { DashboardSkeleton } from './components/DashboardSkeleton';
 export * from './smart-target';
+export * from './preview-discount';
 export { TargetContextBar, TargetSelectionSummary } from './components/TargetContextBar';
 export { WIZARD_STEP_LABELS, wizardProgressPercent } from './wizard-steps';

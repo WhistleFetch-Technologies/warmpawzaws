@@ -39,12 +39,16 @@ export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
       ] as string[];
 
       const nextCatalog: PromotionTargetCatalog = {
-        products: products.map((p: any) => ({
-          id: String(p.id),
-          label: String(p.name),
-          subtitle: p.price != null ? `₹${p.price}` : undefined,
-          group: p.category,
-        })),
+        products: products.map((p: any) => {
+          const price = p.price != null ? Number(p.price) : undefined;
+          return {
+            id: String(p.id),
+            label: String(p.name),
+            subtitle: price != null && Number.isFinite(price) ? `₹${price}` : undefined,
+            price: price != null && Number.isFinite(price) ? price : undefined,
+            group: p.category,
+          };
+        }),
         categories: categories.map((c) => ({ id: c, label: c })),
         mealPlans: [],
         packages: [],

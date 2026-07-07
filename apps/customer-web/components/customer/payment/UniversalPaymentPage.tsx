@@ -1226,7 +1226,9 @@ export function UniversalPaymentPage({
           };
           setBookingPromoStack(stack.totalSavings > 0 ? stack : null);
 
-          const applicablePromos = (calcRes.applied || []).map((a: any) => ({
+          const applicablePromos = (calcRes.applied || [])
+            .filter((a: any) => Number(a.discountAmount ?? 0) > 0)
+            .map((a: any) => ({
             id: a.id,
             type: a.source === 'platform' ? 'spotlight' : 'vendor',
             title: a.name,
@@ -2274,9 +2276,10 @@ export function UniversalPaymentPage({
                 },
               }
             : {}),
-          ...(promotionDiscount > 0
+          ...(promotionDiscount > 0 || couponDiscount > 0
             ? {
                 discountAmount: promotionDiscount,
+                ...(couponDiscount > 0 ? { couponDiscount } : {}),
                 ...(bookingPromoStack?.vendorPromotionId
                   ? { vendorPromotionId: bookingPromoStack.vendorPromotionId }
                   : {}),

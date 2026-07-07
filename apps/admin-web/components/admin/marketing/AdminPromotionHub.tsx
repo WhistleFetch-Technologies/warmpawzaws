@@ -166,7 +166,7 @@ export function AdminPromotionHub({
         }}
         onTogglePromotion={async (id, active) => {
           try {
-            await apiClient.put(`/admin/promotions/${id}`, { is_active: active });
+            await apiClient.put(`/admin/promotions/${id}`, { is_active: active, published: active });
             toast.success(active ? 'Promotion activated' : 'Promotion paused');
             load();
           } catch {

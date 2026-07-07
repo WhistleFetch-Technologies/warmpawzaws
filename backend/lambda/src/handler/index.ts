@@ -76,6 +76,7 @@ import { registerPackageBookingEndpoints } from '../endpoints/package-booking';
 import { registerWalkerGPSEndpoints } from '../endpoints/walker-gps';
 import { registerPromotionEndpoints } from '../endpoints/promotions';
 import { registerDiscountAnalyticsEndpoints } from '../endpoints/discount-analytics.endpoints';
+import { registerDiscountPolicyEndpoints } from '../endpoints/discount-policy.endpoints';
 import { registerCommercialCampaignEndpoints } from '../endpoints/commercial-campaign.endpoints';
 import { registerVendorPromotionsEndpoints } from '../endpoints/vendor/endpoints/vendor-promotions';
 import { registerAdsRecommendationEndpoints } from '../endpoints/ads-recommendations';
@@ -695,6 +696,7 @@ registerAdsRecommendationEndpoints(app); // Before ecommerce — /products/simil
 registerEcommerceEndpoints(app);
 registerAnalyticsEndpoints(app);
 registerDiscountAnalyticsEndpoints(app);
+registerDiscountPolicyEndpoints(app);
 registerCommercialCampaignEndpoints(app);
 registerProductAnalyticsEndpoints(app);
 registerLoyaltyEndpoints(app);

@@ -23,6 +23,19 @@ function mapPromotionRow(row: Record<string, unknown>): PromotionUsageRow {
 }
 
 function mapCouponRow(row: Record<string, unknown>): CouponUsageRow {
+  let discountAmount = row.discount_amount != null ? parseFloat(String(row.discount_amount)) : undefined;
+  if ((discountAmount == null || discountAmount <= 0) && row.discount_type && row.booking_total != null) {
+    const amount = parseFloat(String(row.booking_total)) || 0;
+    const value = parseFloat(String(row.discount_value ?? 0)) || 0;
+    const dtype = String(row.discount_type);
+    if (dtype === 'percentage' && amount > 0) {
+      discountAmount = (amount * value) / 100;
+      const cap = row.max_discount_amount ?? row.max_discount;
+      if (cap != null) discountAmount = Math.min(discountAmount, parseFloat(String(cap)));
+    } else if (dtype === 'fixed') {
+      discountAmount = value;
+    }
+  }
   return {
     id: String(row.id),
     couponId: String(row.coupon_id ?? row.couponId ?? ''),
@@ -34,7 +47,7 @@ function mapCouponRow(row: Record<string, unknown>): CouponUsageRow {
     maxUses: row.max_uses != null ? parseInt(String(row.max_uses), 10) : null,
     isActive: row.is_active !== false,
     endDate: row.end_date ? String(row.end_date) : null,
-    discountAmount: row.discount_amount != null ? parseFloat(String(row.discount_amount)) : undefined,
+    discountAmount: discountAmount != null ? parseFloat(String(discountAmount)) : undefined,
   };
 }
 
@@ -73,9 +86,12 @@ export class RdsUsageReadRepository implements UsageReadRepository {
 
     const couponParams: unknown[] = [];
     let couponSql = `
-      SELECT cu.*, c.code, c.max_uses, c.is_active, c.end_date, NULL::numeric AS discount_amount
+      SELECT cu.*, c.code, c.max_uses, c.is_active, c.end_date, c.discount_type, c.discount_value,
+             c.max_discount_amount, c.max_discount,
+             b.total_amount AS booking_total
       FROM coupon_usages cu
       LEFT JOIN coupons c ON c.id = cu.coupon_id
+      LEFT JOIN bookings b ON b.id = cu.booking_id
       WHERE 1=1
     `;
 

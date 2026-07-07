@@ -260,7 +260,12 @@ export function mergeAdminPromotionUpdateBody(
     usage_limit_per_user:
       body.usage_limit_per_user ?? body.usageLimitPerUser ?? existing.max_uses_per_user,
     is_active: body.is_active ?? body.isActive ?? body.active ?? existing.is_active,
-    published: body.published ?? existing.published,
+    published:
+      body.published !== undefined
+        ? body.published === true
+        : body.is_active === true || body.active === true || body.isActive === true
+          ? true
+          : existing.published,
     applicable_services: body.applicable_services ?? body.applicableServices ?? existing.applicable_services,
     service_category: body.service_category ?? body.serviceCategory ?? existing.service_category,
     service_style: body.service_style ?? body.serviceStyle ?? existing.service_style,

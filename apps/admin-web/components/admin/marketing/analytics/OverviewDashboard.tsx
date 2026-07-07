@@ -36,9 +36,17 @@ export function OverviewDashboard({
   const topPromo = report.promotions.topPromotions[0] ?? report.promotions.rows[0];
   const topCoupon = report.coupons.mostUsed[0] ?? report.coupons.rows[0];
   const topVendor = report.vendors.topVendors[0] ?? report.vendors.rows[0];
+  const totalSavingsDisplay =
+    report.savings.totalSaved > 0 ? report.savings.totalSaved : legacyStats?.totalRevenue ?? 0;
 
   return (
     <div className="space-y-6">
+      {report.savings.totalSaved <= 0 && (legacyStats?.totalConversions ?? 0) === 0 ? (
+        <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+          No discount usage in this period yet. Active promotions:{' '}
+          {formatNumber(legacyStats?.activePromotions ?? 0)}.
+        </p>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Active promotions"
@@ -60,7 +68,7 @@ export function OverviewDashboard({
         />
         <StatCard
           title="Total customer savings"
-          value={formatInr(report.savings.totalSaved)}
+          value={formatInr(totalSavingsDisplay)}
           icon={PiggyBank}
           iconColor="green"
         />

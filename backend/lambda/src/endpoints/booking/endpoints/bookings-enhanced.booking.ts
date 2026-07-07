@@ -1282,21 +1282,33 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                   : undefined,
             });
 
-            const clientDiscountRaw =
-              body.discountAmount ?? body.discount_amount ?? body.couponDiscount;
-            const clientDiscount = parseFloat(String(clientDiscountRaw ?? ''));
+            const clientPromoDiscount = parseFloat(
+              String(body.discountAmount ?? body.discount_amount ?? 0)
+            );
+            const clientCouponDiscount = parseFloat(
+              String(body.couponDiscount ?? body.coupon_discount ?? 0)
+            );
+            const clientClaimedTotal =
+              (Number.isFinite(clientPromoDiscount) ? Math.max(0, clientPromoDiscount) : 0) +
+              (Number.isFinite(clientCouponDiscount) ? Math.max(0, clientCouponDiscount) : 0);
+
             if (
-              Number.isFinite(clientDiscount) &&
-              clientDiscount > 0 &&
-              !discountsWithinTolerance(clientDiscount, resolvedBookingPromotions.totalSavings)
+              clientClaimedTotal > 0 &&
+              !discountsWithinTolerance(
+                clientClaimedTotal,
+                resolvedBookingPromotions.totalSavings
+              )
             ) {
               throw new Error('PROMOTION_DISCOUNT_MISMATCH');
             }
           } catch (promoErr: unknown) {
             const msg = promoErr instanceof Error ? promoErr.message : String(promoErr);
             if (msg === 'PROMOTION_DISCOUNT_MISMATCH') throw promoErr;
-            console.error('[BOOKING] promotion validation failed:', msg);
-            throw new Error('PROMOTION_VALIDATION_FAILED');
+            console.warn(
+              '[BOOKING] promotion resolver unavailable — proceeding without server promo validation:',
+              msg
+            );
+            resolvedBookingPromotions = null;
           }
         }
 
