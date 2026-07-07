@@ -1,26 +1,12 @@
 /**
- * Customer marketplace launch gate (shop, cart, wishlist, orders).
- *
- * Automatically ON for non-production environments, OFF for production.
- * Uses runtime-config `environment` on the client and NEXT_PUBLIC_ENVIRONMENT at build/SSR.
- *
- * At full launch: change isCustomerEcommerceEnabled() to `return true` and remove call-site guards.
+ * Customer marketplace (shop, cart, wishlist, orders) — live in all environments.
  */
 
-function isProductionEnvironment(): boolean {
-  if (typeof window !== 'undefined') {
-    const env = window.__WARMPAWZ_RUNTIME_CONFIG__?.environment;
-    if (env === 'production') return true;
-    if (env === 'development') return false;
-  }
-  return process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
-}
-
 export function isCustomerEcommerceEnabled(): boolean {
-  return !isProductionEnvironment();
+  return true;
 }
 
-/** Toast / inline copy when shop, cart, wishlist, or product orders are disabled. */
+/** Legacy toast copy — guards remain for optional kill-switch if flag logic returns. */
 export const CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE = 'Shop is coming soon.';
 
 /** SPA screens owned by the marketplace (CustomerHomeWrapper). */

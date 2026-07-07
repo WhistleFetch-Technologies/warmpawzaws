@@ -2455,7 +2455,7 @@ export function CustomerHomeComplete({
         </>
         ) : null}
 
-        {/* Shop — gated until customerEcommerceEnabled / NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED */}
+        {/* Shop */}
         {!newHomeUi && shopUiVisible ? (
         <div className="mb-4">
           <div className="flex items-center gap-3 px-4 mb-2">
@@ -3046,34 +3046,40 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* Premium Pet Food — full section coming soon (shop wiring deferred) */}
-        <div className="mb-6" aria-label="Premium Pet Food — coming soon">
+        {/* Premium Pet Food */}
+        <div className="mb-6" aria-label="Premium Pet Food">
           <div className="px-6 mb-4">
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex items-center gap-2 min-w-0">
                 <Wheat className="w-5 h-5 text-yellow-600 shrink-0" />
                 <h2 className="text-black font-semibold">Premium Pet Food</h2>
               </div>
-              <span className="text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full shrink-0">
-                Soon
-              </span>
+              <button
+                type="button"
+                onClick={() => handleNavigation('shop', { category: 'food' })}
+                className="text-[11px] text-[#FF8C42] font-medium shrink-0"
+              >
+                Browse shop
+              </button>
             </div>
             <p className="text-xs text-gray-600">
-              Coming soon — trusted brands and vendor deals when we launch. Browse the shop for food then.
+              Trusted brands and vendor deals — shop food, treats, and nutrition essentials.
             </p>
           </div>
-          <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6 pointer-events-none select-none">
+          <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
             {petFoodSpotlightBrands().map((vendor, index) => (
-              <div
+              <button
                 key={index}
-                className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center opacity-[0.92] grayscale-[0.08]"
+                type="button"
+                onClick={() => handleNavigation('shop', { category: 'food' })}
+                className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center transition active:scale-[0.98]"
               >
                 <div className="w-12 h-12 mx-auto mb-2 bg-yellow-100 rounded-xl flex items-center justify-center">
                   <vendor.Icon className="w-6 h-6 text-yellow-600" />
                 </div>
                 <h3 className="text-sm font-semibold text-gray-800 mb-1">{vendor.name}</h3>
-                <span className="text-xs font-semibold text-amber-600 inline-block">Coming soon</span>
-              </div>
+                <span className="text-xs font-semibold text-[#FF8C42] inline-block">{vendor.discount}</span>
+              </button>
             ))}
           </div>
         </div>

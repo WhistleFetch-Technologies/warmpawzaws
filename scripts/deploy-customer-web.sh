@@ -89,10 +89,8 @@ fi
 RESOLVED_API_BASE_URL="${RESOLVED_API_BASE_URL%/}"
 
 # Customer marketplace toggle (shop / cart / wishlist / shop orders / checkout).
-# Hard-off everywhere until launch — both dev and prod default to disabled so the
-# customer-facing app shows "Coming Soon" surfaces. Opt in for an internal beta by
-# exporting CUSTOMER_ECOMMERCE_ENABLED=true before running the deploy script.
-CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-false}"
+# Enabled by default; set CUSTOMER_ECOMMERCE_ENABLED=false to disable for a deploy.
+CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-true}"
 if [ "$CEE_RAW" = "true" ] || [ "$CEE_RAW" = "1" ]; then
   CEE_JS="true"
 else
