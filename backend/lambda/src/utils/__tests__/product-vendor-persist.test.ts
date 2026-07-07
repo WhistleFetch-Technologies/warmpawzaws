@@ -1,4 +1,8 @@
-import { buildSpecificationsFromVendorInput } from '../product-vendor-persist';
+import {
+  applyVendorProductExtrasToPayload,
+  buildSpecificationsFromVendorInput,
+  filterProductPayloadToColumns,
+} from '../product-vendor-persist';
 
 describe('buildSpecificationsFromVendorInput', () => {
   it('persists dimensions from nested specifications (vendor form payload)', () => {
@@ -59,5 +63,26 @@ describe('buildSpecificationsFromVendorInput', () => {
 
     expect(specs.Material).toBe('Cotton');
     expect(specs.length_cm).toBe(12);
+  });
+});
+
+describe('filterProductPayloadToColumns', () => {
+  it('drops unknown columns such as brand when schema lacks them', () => {
+    const cols = new Set(['name', 'vendor_id', 'price']);
+    const filtered = filterProductPayloadToColumns(
+      { name: 'Treats', vendor_id: 'v1', price: 99, brand: 'Acme' },
+      cols,
+    );
+    expect(filtered).toEqual({ name: 'Treats', vendor_id: 'v1', price: 99 });
+    expect(filtered.brand).toBeUndefined();
+  });
+});
+
+describe('applyVendorProductExtrasToPayload brand fallback', () => {
+  it('stores brand in specifications when products.brand column is missing', () => {
+    const payload: Record<string, unknown> = {};
+    applyVendorProductExtrasToPayload(payload, { brand: 'Royal Canin' }, new Set(['specifications']));
+    expect(payload.brand).toBeUndefined();
+    expect((payload.specifications as Record<string, unknown>).brand).toBe('Royal Canin');
   });
 });

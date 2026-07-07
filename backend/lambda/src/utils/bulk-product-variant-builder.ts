@@ -313,18 +313,15 @@ export function validateVariantGroup(group: BulkProductGroup): VariantGroupValid
   const isMultiRow = group.variants.length > 1;
   const pgid = group.product_group_id ?? String(group.variants[0]?.product_group_id ?? '').trim();
 
+  if (!group.parent.brand?.trim()) {
+    push('brand', 'Brand is required', group.rowNums[0]);
+  }
+
   if (hasVariantAxes || isMultiRow) {
     if (!pgid) {
       push(
         'product_group_id',
         'Product Group ID is required for multi-row or variant products',
-        group.rowNums[0],
-      );
-    }
-    if (!pgid && !group.parent.brand?.trim()) {
-      push(
-        'brand',
-        'Brand is required when Product Group ID is blank for multi-variant products',
         group.rowNums[0],
       );
     }

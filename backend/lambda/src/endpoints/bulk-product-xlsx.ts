@@ -1,8 +1,8 @@
 /**
- * XLSX bulk product template — unified 28-column layout for vendor product upload.
+ * XLSX bulk product template — unified 27-column layout for vendor product upload.
  * Single sheet (NPI), inline dropdowns, one demo row.
  *
- * Required (`*`): Title, Category, Quantity, Image, MRP, Tax, HSN
+ * Required (`*`): Title, Brand, Category, Quantity, Image, Price, Tax, HSN
  */
 import {
   getBulkProductTitle,
@@ -22,12 +22,12 @@ export { getBulkProductTitle };
 export const SHEET_NAME = 'NPI';
 export const VARIANT_GUIDE_SHEET_NAME = 'Variant Guide';
 
-/** 28 columns. Compulsory ones carry a `*` suffix. */
+/** 27 columns. Compulsory ones carry a `*` suffix. */
 export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Title*',
   'Description',
   'Key Features',
-  'Brand',
+  'Brand*',
   'Category*',
   'Product Specifications',
   'Weight (kg)',
@@ -37,8 +37,7 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Barcode (EAN)',
   'Quantity*',
   'Image (1000X1000px)*',
-  'SP',
-  'MRP*',
+  'Price*',
   'Pet Type',
   'Tax*',
   'HSN*',
@@ -56,13 +55,14 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
 
 const REQUIRED_COL_LETTERS = {
   TITLE: 'A',
+  BRAND: 'D',
   CATEGORY: 'E',
   QUANTITY: 'L',
   IMAGE: 'M',
-  MRP: 'O',
-  PET_TYPE: 'P',
-  TAX: 'Q',
-  HSN: 'R',
+  PRICE: 'N',
+  PET_TYPE: 'O',
+  TAX: 'P',
+  HSN: 'Q',
 } as const;
 
 type Fill = ExcelJS.Fill;
@@ -93,13 +93,13 @@ const THIN_BORDER: Partial<ExcelJS.Borders> = {
 const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill }> = [
   {
     start: 1,
-    end: 20,
+    end: 19,
     title: `Product Details (max ${MAX_BULK_PRODUCT_ROWS} rows per file)`,
     fill: YELLOW,
   },
   {
-    start: 21,
-    end: 28,
+    start: 20,
+    end: 27,
     title: 'Same Product Group ID = one product (variants). Listing Ownership required for ownership-model sellers.',
     fill: TAN,
   },
@@ -126,26 +126,26 @@ const DEFAULT_CATEGORIES = [
 function buildSampleRow(sampleCategory: string): string[] {
   const cat = sampleCategory || 'Pet Accessories';
   return [
-    'Smiling Sunflower Dog Dress',
-    'Bright, happy, and full of joy — smiley flower print.',
-    'Design: Smiling Flower\nFabric: Cotton Rayon Blend',
-    '15 FURRIES',
+    'Premium Dog Harness',
+    'Comfortable and adjustable harness for everyday walks.',
+    'Adjustable straps\nBreathable mesh\nReflective trim',
+    'Your Brand Name',
     cat,
-    'Material:Cotton Rayon Blend, Pattern:Floral',
-    '0.15',
-    '35',
+    'Material:Nylon, Size:Medium',
+    '0.2',
     '25',
-    '1',
+    '15',
+    '5',
     '',
-    '100',
-    'https://example.com/your-product-image-1000x1000.jpg, https://example.com/your-product-image-2.jpg',
-    '799',
-    '1598',
+    '50',
+    'https://example.com/your-product-image-1000x1000.jpg',
+    '599',
     'Dog',
-    '5%',
-    '62052000',
-    'Country of Origin: India. Manufactured by Apparo Lifestyle Pvt Ltd.',
-    'Mumbai, Pune',
+    '12%',
+    '42010000',
+    'Country of Origin: India',
+    '',
+    '',
     '',
     '',
     '',
@@ -210,7 +210,7 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     cell.value = h;
     if (c === 1) {
       cell.note =
-        'Required (*): Title, Category, Quantity, Image URL(s), MRP, Tax, HSN. SP optional (defaults to MRP). Same Product Group ID = one product (variant rows).';
+        'Required (*): Title, Brand, Category, Quantity, Image URL(s), Price, Tax, HSN. Same Product Group ID = one product (variant rows).';
     }
     if (h === 'Image (1000X1000px)*') {
       cell.note = 'One or more image URLs, comma-separated.';
@@ -220,6 +220,13 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     }
     if (h === 'Delivery Regions') {
       cell.note = 'Optional. Comma-separated city names. Empty = ships everywhere.';
+    }
+    if (h === 'Brand*') {
+      cell.note = 'Required. Enter your product brand name.';
+    }
+    if (h === 'Price*') {
+      cell.note =
+        'Required. The single selling price charged to customers. Commission and promotions are calculated on this price.';
     }
     if (h === 'Pet Type') {
       cell.note =
@@ -234,7 +241,7 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     cell.border = THIN_BORDER as ExcelJS.Borders;
     ws.getColumn(c).width =
-      c === 1 ? 40 : c === 3 || c === 6 || c === 13 || c === 19 ? 32 : 14;
+      c === 1 ? 40 : c === 3 || c === 6 || c === 13 || c === 19 ? 32 : c === 2 ? 28 : 14;
   });
 
   SAMPLE_ROW.forEach((v, i) => {
@@ -254,7 +261,7 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
   addInlineDropdown(ws, `${CATEGORY}3:${CATEGORY}500`, categories);
   addInlineDropdown(ws, `${PET_TYPE}3:${PET_TYPE}500`, STATIC_PET_TYPES);
   addInlineDropdown(ws, `${TAX}3:${TAX}500`, STATIC_TAX_LABELS);
-  addInlineDropdown(ws, `${colLetter(28)}3:${colLetter(28)}500`, ['Own brand', 'Third party']);
+  addInlineDropdown(ws, `${colLetter(27)}3:${colLetter(27)}500`, ['Own brand', 'Third party']);
 
   addVariantGuideSheet(wb);
 
