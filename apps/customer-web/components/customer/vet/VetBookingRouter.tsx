@@ -1564,6 +1564,7 @@ export function VetBookingRouter({
                   appliedCoupon={appliedBookingCoupon}
                   onApplyCoupon={setAppliedBookingCoupon}
                   onRemoveCoupon={() => setAppliedBookingCoupon(null)}
+                  alwaysShow
                 />
               ) : null}
               {selectedPackageForSwitch && (

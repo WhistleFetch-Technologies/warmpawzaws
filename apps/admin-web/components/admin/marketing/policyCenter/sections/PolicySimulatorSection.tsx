@@ -181,58 +181,59 @@ export function PolicySimulatorSection({ draft }: { draft: DiscountPolicyBundle 
         />
       ) : null}
 
-      {localResult && 'eligibleOffers' in localResult ? (
+      {localResult && ('eligibleOffers' in localResult || 'appliedOffers' in (localResult as object)) ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Eligible offers</CardTitle>
+              <CardTitle className="text-base">Applied offers</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {localResult.eligibleOffers.map((o) => (
-                <div key={o.offerType} className="flex items-center gap-2 text-sm">
+              {(
+                (localResult as { appliedOffers?: Array<{ name: string; discountAmount: number; offerType?: string }> })
+                  .appliedOffers ??
+                localResult.eligibleOffers ??
+                []
+              ).map((o) => (
+                <div key={o.offerType ?? o.name} className="flex items-center gap-2 text-sm">
                   <Check className="h-4 w-4 text-emerald-600" aria-hidden />
-                  <span>{o.label}</span>
+                  <span>{o.label ?? o.name ?? o.offerType}</span>
                   <Badge variant="outline" className="ml-auto">
-                    {formatCurrency(o.discountAmount)} off
+                    {formatCurrency(o.discountAmount ?? 0)} off
                   </Badge>
                 </div>
               ))}
-              {!localResult.eligibleOffers.length ? (
-                <p className="text-sm text-slate-500">No eligible offers for this scenario.</p>
+              {!((localResult as { appliedOffers?: unknown[] }).appliedOffers?.length ||
+                localResult.eligibleOffers?.length) ? (
+                <p className="text-sm text-slate-500">No offers applied for this scenario.</p>
               ) : null}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Winning offer</CardTitle>
+              <CardTitle className="text-base">Rejected / ignored offers</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {localResult.winningOffer ? (
-                <>
-                  <p className="text-lg font-semibold text-slate-900">
-                    {localResult.winningOffer.label}
-                  </p>
-                  <p className="text-sm text-slate-600">
-                    <strong>Reason:</strong> {localResult.reason}
-                  </p>
-                  {localResult.ignoredOffers.length ? (
-                    <div className="border-t pt-3">
-                      <p className="mb-2 text-xs font-medium uppercase text-slate-500">
-                        All others ignored
-                      </p>
-                      {localResult.ignoredOffers.map((o) => (
-                        <div key={o.offerType} className="flex items-center gap-2 text-sm text-slate-600">
-                          <X className="h-3.5 w-3.5" aria-hidden />
-                          {o.label}
-                        </div>
-                      ))}
-                    </div>
+              {(
+                (localResult as { rejectedOffers?: Array<{ name?: string; reason: string; id: string }> })
+                  .rejectedOffers ??
+                localResult.ignoredOffers ??
+                []
+              ).map((o) => (
+                <div key={o.id ?? o.offerType} className="text-sm text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <X className="h-3.5 w-3.5" aria-hidden />
+                    {o.label ?? o.name ?? o.id}
+                  </div>
+                  {'reason' in o && o.reason ? (
+                    <p className="ml-5 text-xs text-slate-500">{o.reason}</p>
                   ) : null}
-                </>
-              ) : (
-                <p className="text-sm text-slate-500">No winning offer.</p>
-              )}
+                </div>
+              ))}
+              {!((localResult as { rejectedOffers?: unknown[] }).rejectedOffers?.length ||
+                localResult.ignoredOffers?.length) ? (
+                <p className="text-sm text-slate-500">No rejected offers.</p>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -242,10 +243,34 @@ export function PolicySimulatorSection({ draft }: { draft: DiscountPolicyBundle 
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {[
-                ['Customer pays', formatCurrency(localResult.customerPays)],
-                ['Total savings', formatCurrency(localResult.totalSavings)],
-                ['Vendor funds', formatCurrency(localResult.vendorFunds)],
-                ['Platform funds', formatCurrency(localResult.platformFunds)],
+                [
+                  'Customer pays',
+                  formatCurrency(
+                    (localResult as { savings?: { finalAmount: number } }).savings?.finalAmount ??
+                      localResult.customerPays
+                  ),
+                ],
+                [
+                  'Total savings',
+                  formatCurrency(
+                    (localResult as { savings?: { totalSavings: number } }).savings?.totalSavings ??
+                      localResult.totalSavings
+                  ),
+                ],
+                [
+                  'Vendor funds',
+                  formatCurrency(
+                    (localResult as { funding?: { vendorCost?: number } }).funding?.vendorCost ??
+                      localResult.vendorFunds
+                  ),
+                ],
+                [
+                  'Platform funds',
+                  formatCurrency(
+                    (localResult as { funding?: { platformCost?: number } }).funding?.platformCost ??
+                      localResult.platformFunds
+                  ),
+                ],
               ].map(([label, value]) => (
                 <div key={String(label)} className="rounded-lg border bg-slate-50/50 p-3">
                   <p className="text-xs font-medium uppercase text-slate-500">{label}</p>
@@ -253,7 +278,12 @@ export function PolicySimulatorSection({ draft }: { draft: DiscountPolicyBundle 
                 </div>
               ))}
               <div className="sm:col-span-2 lg:col-span-4 rounded-lg border border-dashed p-3 text-sm text-slate-600">
-                <strong>Settlement preview:</strong> {localResult.settlementPreview}
+                <strong>Policy:</strong>{' '}
+                {(localResult as { currentPolicy?: { applicationStrategy: string } }).currentPolicy
+                  ?.applicationStrategy ?? localResult.applicationStrategy}
+                {' · '}
+                <strong>Resolver:</strong>{' '}
+                {(localResult as { mode?: string }).mode ?? (usedLocal ? 'local' : 'server')}
               </div>
             </CardContent>
           </Card>

@@ -1,21 +1,14 @@
 /**
- * Server-side booking price quote (promotions auto-applied).
+ * Server-side booking discount quote — unified resolver response.
  */
 import { apiClient } from '@/lib/api-client';
+import {
+  normalizeUnifiedQuote,
+  type UnifiedResolverResponse,
+} from '@/lib/pricing/unified-resolver-response';
 
-type BookingPromoStackResponse = {
-  success?: boolean;
-  totalSavings?: number;
-  finalAmount?: number;
-  vendorPromotionId?: string;
-  platformPromotionId?: string;
-  vendorDiscountAmount?: number;
-  platformDiscountAmount?: number;
-  applied?: Array<{ source: string; id: string; name: string; discountAmount: number }>;
-};
-
-const promoStackInflight = new Map<string, Promise<BookingPromoStackResponse | null>>();
-const promoStackCache = new Map<string, BookingPromoStackResponse | null>();
+const promoStackInflight = new Map<string, Promise<UnifiedResolverResponse | null>>();
+const promoStackCache = new Map<string, UnifiedResolverResponse | null>();
 
 function promoStackCacheKey(params: {
   vendorId: string;
@@ -24,6 +17,8 @@ function promoStackCacheKey(params: {
   customerId?: string;
   serviceStyle?: string;
   serviceCategory?: string;
+  couponCode?: string;
+  displayPromotionsOnly?: boolean;
 }): string {
   const ids = [...params.serviceIds].map(String).sort().join(',');
   return [
@@ -32,8 +27,73 @@ function promoStackCacheKey(params: {
     params.serviceCategory ?? '',
     params.serviceStyle ?? '',
     params.customerId ?? '',
+    params.couponCode ?? '',
+    params.displayPromotionsOnly ? 'promo-only' : 'full',
     ids,
   ].join('|');
+}
+
+export type BookingDiscountQuoteParams = {
+  vendorId: string;
+  serviceIds: string[];
+  amount: number;
+  customerId?: string;
+  serviceStyle?: string;
+  serviceCategory?: string;
+  /** When set, resolver evaluates coupon per published policy. */
+  couponCode?: string;
+  /** Service listing / detail — promos only, no coupon. */
+  displayPromotionsOnly?: boolean;
+  /** Skip in-memory cache (e.g. after coupon apply). */
+  bypassCache?: boolean;
+};
+
+export async function fetchBookingDiscountQuote(
+  params: BookingDiscountQuoteParams
+): Promise<UnifiedResolverResponse | null> {
+  const key = promoStackCacheKey(params);
+  if (!params.bypassCache) {
+    const cached = promoStackCache.get(key);
+    if (cached !== undefined) return cached;
+    const inflight = promoStackInflight.get(key);
+    if (inflight) return inflight;
+  }
+
+  const request = (async () => {
+    try {
+      const res = await apiClient.post<UnifiedResolverResponse>(
+        '/promotions/calculate-booking',
+        {
+          vendorId: params.vendorId,
+          serviceIds: params.serviceIds,
+          amount: params.amount,
+          customerId: params.customerId,
+          serviceStyle: params.serviceStyle,
+          serviceCategory: params.serviceCategory,
+          couponCode: params.couponCode,
+          displayPromotionsOnly: params.displayPromotionsOnly ?? !params.couponCode,
+        }
+      );
+      const normalized = normalizeUnifiedQuote(res);
+      if (!params.bypassCache) promoStackCache.set(key, normalized);
+      return normalized;
+    } catch {
+      if (!params.bypassCache) promoStackCache.set(key, null);
+      return null;
+    } finally {
+      if (!params.bypassCache) promoStackInflight.delete(key);
+    }
+  })();
+
+  if (!params.bypassCache) promoStackInflight.set(key, request);
+  return request;
+}
+
+/** @deprecated Use fetchBookingDiscountQuote — kept for existing imports. */
+export async function fetchBookingPromotionStack(
+  params: Omit<BookingDiscountQuoteParams, 'couponCode' | 'bypassCache'>
+) {
+  return fetchBookingDiscountQuote({ ...params, displayPromotionsOnly: true });
 }
 
 export type ServiceBookingQuote = {
@@ -79,37 +139,7 @@ export async function fetchServiceBookingQuote(params: {
   }
 }
 
-export async function fetchBookingPromotionStack(params: {
-  vendorId: string;
-  serviceIds: string[];
-  amount: number;
-  customerId?: string;
-  serviceStyle?: string;
-  serviceCategory?: string;
-}) {
-  const key = promoStackCacheKey(params);
-  const cached = promoStackCache.get(key);
-  if (cached !== undefined) return cached;
-
-  const inflight = promoStackInflight.get(key);
-  if (inflight) return inflight;
-
-  const request = (async () => {
-    try {
-      const res = await apiClient.post<BookingPromoStackResponse>(
-        '/promotions/calculate-booking',
-        params
-      );
-      promoStackCache.set(key, res);
-      return res;
-    } catch {
-      promoStackCache.set(key, null);
-      return null;
-    } finally {
-      promoStackInflight.delete(key);
-    }
-  })();
-
-  promoStackInflight.set(key, request);
-  return request;
+export function clearBookingDiscountQuoteCache(): void {
+  promoStackCache.clear();
+  promoStackInflight.clear();
 }

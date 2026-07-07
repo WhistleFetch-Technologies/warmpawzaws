@@ -401,7 +401,102 @@ export type BookingPromotionResult = {
   settlement?: import('../discount-engine/models/discount-result').DiscountSettlementPreview;
 };
 
-export function calculateBookingPromotionsStack(params: {
+function pickBestPlatformPromotion(
+  platformPromotions: PlatformPromotionRow[],
+  amount: number
+): { promo: PlatformPromotionRow; discount: number } | null {
+  const eligiblePlatform = platformPromotions
+    .map((p) => ({
+      promo: p,
+      discount: calculatePlatformDiscount(p, amount),
+    }))
+    .filter((x) => x.discount > 0)
+    .sort((a, b) => {
+      if (a.promo.is_spotlight && !b.promo.is_spotlight) return -1;
+      if (!a.promo.is_spotlight && b.promo.is_spotlight) return 1;
+      return b.discount - a.discount;
+    });
+  return eligiblePlatform[0] ?? null;
+}
+
+/**
+ * Policy Center BEST_OFFER_ONLY — one auto promo on the original amount (no vendor+platform stack).
+ */
+export function calculateBookingPromotionsBestOffer(params: {
+  vendorPromotions: ServicePromotionRow[];
+  platformPromotions: PlatformPromotionRow[];
+  ctx: ServiceEvaluateContext;
+}): BookingPromotionResult {
+  const { vendorPromotions, platformPromotions, ctx } = params;
+  const originalAmount = ctx.bookingAmount;
+  const vendorResult = calculateBestBookingPromotion(vendorPromotions, ctx);
+  const vendorDiscount = vendorResult.bestPromotion?.discountAmount ?? 0;
+  const bestPlatform = pickBestPlatformPromotion(platformPromotions, originalAmount);
+  const platformDiscount = bestPlatform?.discount ?? 0;
+
+  if (vendorDiscount <= 0 && platformDiscount <= 0) {
+    return {
+      originalAmount,
+      vendorDiscountAmount: 0,
+      platformDiscountAmount: 0,
+      totalSavings: 0,
+      finalAmount: originalAmount,
+      applied: [],
+    };
+  }
+
+  const vendorWins = vendorDiscount >= platformDiscount;
+  if (vendorWins && vendorResult.bestPromotion) {
+    return {
+      originalAmount,
+      vendorDiscountAmount: vendorDiscount,
+      platformDiscountAmount: 0,
+      totalSavings: vendorDiscount,
+      finalAmount: Math.max(0, originalAmount - vendorDiscount),
+      applied: [
+        {
+          source: 'vendor',
+          id: vendorResult.bestPromotion.promotionId,
+          name: vendorResult.bestPromotion.label,
+          discountAmount: vendorDiscount,
+          promotionType: vendorResult.bestPromotion.promotionType,
+        },
+      ],
+      vendorPromotionId: vendorResult.bestPromotion.promotionId,
+    };
+  }
+
+  if (bestPlatform) {
+    return {
+      originalAmount,
+      vendorDiscountAmount: 0,
+      platformDiscountAmount: platformDiscount,
+      totalSavings: platformDiscount,
+      finalAmount: Math.max(0, originalAmount - platformDiscount),
+      applied: [
+        {
+          source: 'platform',
+          id: bestPlatform.promo.id,
+          name: bestPlatform.promo.name,
+          discountAmount: platformDiscount,
+        },
+      ],
+      platformPromotionId: bestPlatform.promo.id,
+    };
+  }
+
+  return {
+    originalAmount,
+    vendorDiscountAmount: 0,
+    platformDiscountAmount: 0,
+    totalSavings: 0,
+    finalAmount: originalAmount,
+    applied: [],
+  };
+}
+
+/** @deprecated Sequential vendor-then-platform stack — use only when stack policy explicitly allows both legs. */
+export function calculateBookingPromotionsSequentialStack(params: {
   vendorPromotions: ServicePromotionRow[];
   platformPromotions: PlatformPromotionRow[];
   ctx: ServiceEvaluateContext;
@@ -426,27 +521,16 @@ export function calculateBookingPromotionsStack(params: {
 
   let platformDiscount = 0;
   let platformPromotionId: string | undefined;
-  const eligiblePlatform = platformPromotions
-    .map((p) => ({
-      promo: p,
-      discount: calculatePlatformDiscount(p, current),
-    }))
-    .filter((x) => x.discount > 0)
-    .sort((a, b) => {
-      if (a.promo.is_spotlight && !b.promo.is_spotlight) return -1;
-      if (!a.promo.is_spotlight && b.promo.is_spotlight) return 1;
-      return b.discount - a.discount;
-    });
+  const bestPlatform = pickBestPlatformPromotion(platformPromotions, current);
 
-  if (eligiblePlatform.length > 0) {
-    const best = eligiblePlatform[0];
-    platformDiscount = best.discount;
-    platformPromotionId = best.promo.id;
+  if (bestPlatform) {
+    platformDiscount = bestPlatform.discount;
+    platformPromotionId = bestPlatform.promo.id;
     current = Math.max(0, current - platformDiscount);
     applied.push({
       source: 'platform',
-      id: best.promo.id,
-      name: best.promo.name,
+      id: bestPlatform.promo.id,
+      name: bestPlatform.promo.name,
       discountAmount: platformDiscount,
     });
   }
@@ -461,4 +545,13 @@ export function calculateBookingPromotionsStack(params: {
     vendorPromotionId: vendorResult.bestPromotion?.promotionId,
     platformPromotionId,
   };
+}
+
+export function calculateBookingPromotionsStack(params: {
+  vendorPromotions: ServicePromotionRow[];
+  platformPromotions: PlatformPromotionRow[];
+  ctx: ServiceEvaluateContext;
+}): BookingPromotionResult {
+  // Legacy path: align with Policy Center BEST_OFFER_ONLY (POST /promotions/calculate-booking).
+  return calculateBookingPromotionsBestOffer(params);
 }

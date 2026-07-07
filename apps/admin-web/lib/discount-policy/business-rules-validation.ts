@@ -50,11 +50,30 @@ export function validateBusinessRulesLocally(bundle: DiscountPolicyBundle): Vali
     }
   }
 
+  if (rules.applicationStrategy === 'PROMOTION_PLUS_COUPON') {
+    const promoCouponPairs = rules.combinationMatrix.filter(
+      (r) => r.allowed && (
+        (r.left.includes('PROMOTION') && r.right.includes('COUPON')) ||
+        (r.left.includes('COUPON') && r.right.includes('PROMOTION'))
+      )
+    );
+    if (promoCouponPairs.length === 0) {
+      findings.push(
+        finding(
+          'warning',
+          'businessRules.promoPlusCoupon.matrix',
+          'Promotion + Coupon mode expects promo+coupon pairs in the matrix.',
+          'businessRules.combinationMatrix'
+        )
+      );
+    }
+  }
+
   if (rules.applicationStrategy === 'STACK_ELIGIBLE') {
     validateStackMatrix(rules, findings);
   }
 
-  if (rules.applicationStrategy === 'CUSTOM_RULES') {
+  if (rules.applicationStrategy === 'FULLY_CONFIGURABLE' || rules.applicationStrategy === 'CUSTOM_RULES') {
     findings.push(
       finding(
         'suggestion',

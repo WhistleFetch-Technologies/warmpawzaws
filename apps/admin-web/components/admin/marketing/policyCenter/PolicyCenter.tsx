@@ -49,9 +49,7 @@ export function PolicyCenter({ embedded = false }: { embedded?: boolean }) {
   const handleSave = useCallback(async () => {
     await saveDraft();
     toast.success(
-      capabilities?.draftWrite
-        ? 'Draft saved to server'
-        : 'Draft saved locally (policy API pending Phase 8)'
+      capabilities?.draftWrite ? 'Draft saved to server' : 'Draft saved locally'
     );
   }, [saveDraft, capabilities?.draftWrite]);
 
@@ -100,17 +98,6 @@ export function PolicyCenter({ embedded = false }: { embedded?: boolean }) {
         {!capabilities?.runtimeRead ? (
           <div className="mb-6">
             <ApiPendingBanner />
-          </div>
-        ) : !capabilities.draftWrite ? (
-          <div
-            className="mb-6 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
-            role="status"
-          >
-            <p>
-              <span className="font-medium">Runtime policy is live</span> from Discount Engine V2
-              config. Draft publish to the server is not enabled yet — use Save to keep changes in
-              this browser only.
-            </p>
           </div>
         ) : null}
 

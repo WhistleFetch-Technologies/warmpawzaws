@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PriceDisplay } from './PriceDisplay';
 import { SavingsBadge } from './SavingsBadge';
-import { fetchBookingPromotionStack } from '@/lib/service-booking-pricing';
+import { fetchBookingDiscountQuote } from '@/lib/service-booking-pricing';
 import { roundMoney } from '@/lib/pricing/format';
+import { totalSavingsFromQuote } from '@/lib/pricing/unified-resolver-response';
 
 export type ServiceListingPriceProps = {
   basePrice: number;
@@ -12,9 +13,13 @@ export type ServiceListingPriceProps = {
   serviceId?: string;
   customerId?: string;
   serviceStyle?: string;
+  /** Used when service row has no style (featured hub cards). */
+  defaultServiceStyle?: string;
   serviceCategory?: string;
   vendorDiscount?: number;
   vendorDiscountAmount?: number;
+  /** When true (default), only server quote drives promo display — no local vendorDiscount fallback. */
+  promoQuoteOnly?: boolean;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 };
@@ -39,9 +44,11 @@ export function ServiceListingPrice({
   serviceId,
   customerId,
   serviceStyle,
+  defaultServiceStyle,
   serviceCategory,
   vendorDiscount,
   vendorDiscountAmount,
+  promoQuoteOnly = true,
   size = 'md',
   className = '',
 }: ServiceListingPriceProps) {
@@ -49,6 +56,8 @@ export function ServiceListingPrice({
   const [quoteCurrent, setQuoteCurrent] = useState<number | null>(null);
   const [quoteSavings, setQuoteSavings] = useState(0);
   const [hasAppliedPromo, setHasAppliedPromo] = useState(false);
+  const [promoBadgePercent, setPromoBadgePercent] = useState<number | undefined>();
+  const effectiveServiceStyle = serviceStyle || defaultServiceStyle;
 
   const local = useMemo(
     () => applyVendorDiscount(basePrice, vendorDiscount, vendorDiscountAmount),
@@ -59,26 +68,34 @@ export function ServiceListingPrice({
     if (!vendorId || basePrice <= 0) return;
     let cancelled = false;
     setLoading(true);
-    fetchBookingPromotionStack({
+    fetchBookingDiscountQuote({
       vendorId,
       serviceIds: serviceId ? [serviceId] : [],
       amount: basePrice,
       customerId,
-      serviceStyle,
+      serviceStyle: effectiveServiceStyle,
       serviceCategory,
+      displayPromotionsOnly: true,
     })
-      .then((stack) => {
-        if (cancelled) return;
-        const savings = stack?.totalSavings ?? 0;
-        const final = stack?.finalAmount ?? basePrice - savings;
+      .then((quote) => {
+        if (cancelled || !quote) return;
+        const savings = totalSavingsFromQuote(quote);
+        const final = quote.savings?.finalAmount ?? basePrice - savings;
+        const winner = quote.winningPromotion;
         if (savings > 0 && final < basePrice) {
           setQuoteCurrent(roundMoney(final));
           setQuoteSavings(roundMoney(savings));
-          setHasAppliedPromo((stack?.applied?.length ?? 0) > 0);
+          setHasAppliedPromo((quote.appliedOffers?.length ?? 0) > 0);
+          const stated =
+            winner && winner.discountAmount > 0 && savings > 0
+              ? Math.round((winner.discountAmount / basePrice) * 100)
+              : undefined;
+          setPromoBadgePercent(stated);
         } else {
           setQuoteCurrent(null);
           setQuoteSavings(0);
           setHasAppliedPromo(false);
+          setPromoBadgePercent(undefined);
         }
       })
       .catch(() => {
@@ -86,6 +103,7 @@ export function ServiceListingPrice({
           setQuoteCurrent(null);
           setQuoteSavings(0);
           setHasAppliedPromo(false);
+          setPromoBadgePercent(undefined);
         }
       })
       .finally(() => {
@@ -94,17 +112,25 @@ export function ServiceListingPrice({
     return () => {
       cancelled = true;
     };
-  }, [vendorId, serviceId, basePrice, customerId, serviceStyle, serviceCategory, local.savings]);
+  }, [
+    vendorId,
+    serviceId,
+    basePrice,
+    customerId,
+    effectiveServiceStyle,
+    serviceCategory,
+  ]);
 
+  const useLocalFallback = !promoQuoteOnly && local.savings > 0;
   const currentPrice =
     quoteCurrent != null && quoteSavings > 0
       ? quoteCurrent
-      : local.savings > 0
+      : useLocalFallback
         ? local.current
         : basePrice;
 
   const originalPrice = basePrice;
-  const savings = quoteSavings > 0 ? quoteSavings : local.savings;
+  const savings = quoteSavings > 0 ? quoteSavings : useLocalFallback ? local.savings : 0;
   const hasPromo = savings > 0;
 
   return (
@@ -115,6 +141,7 @@ export function ServiceListingPrice({
         size={size}
         loading={loading && !hasPromo}
         showDiscountPercent={hasPromo}
+        discountPercent={promoBadgePercent}
       />
       {hasPromo && (
         <div className="mt-1 flex flex-wrap items-center gap-1">

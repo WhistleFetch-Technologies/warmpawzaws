@@ -3,16 +3,16 @@ import { patchBusinessRules, ensureBusinessRules } from '../business-rules-mappe
 import { simulatePolicyLocally, DEFAULT_SIMULATOR_SCENARIO } from '../policy-simulator-local';
 
 describe('business rules mapper', () => {
-  it('defaults to Apply Best Offer Only with Maximum Customer Savings', () => {
+  it('defaults to Best Offer Only with Highest Customer Savings', () => {
     const rules = ensureBusinessRules(CONTRACT_DEFAULT_POLICY);
     expect(rules.applicationStrategy).toBe('BEST_OFFER_ONLY');
-    expect(rules.winningStrategy).toBe('MAX_CUSTOMER_SAVINGS');
+    expect(rules.winningStrategy).toBe('HIGHEST_CUSTOMER_SAVINGS');
   });
 
   it('syncs best offer only to engine limits', () => {
     const bundle = patchBusinessRules(CONTRACT_DEFAULT_POLICY, {
       applicationStrategy: 'BEST_OFFER_ONLY',
-      winningStrategy: 'MAX_CUSTOMER_SAVINGS',
+      winningStrategy: 'HIGHEST_CUSTOMER_SAVINGS',
     });
     expect(bundle.limits.global.maxTotalDiscounts).toBe(1);
     expect(bundle.priority.global.strategy).toBe('MAX_CUSTOMER_SAVINGS');

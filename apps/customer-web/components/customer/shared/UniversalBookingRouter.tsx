@@ -1492,6 +1492,7 @@ export function UniversalBookingRouter({
                   appliedCoupon={appliedBookingCoupon}
                   onApplyCoupon={setAppliedBookingCoupon}
                   onRemoveCoupon={() => setAppliedBookingCoupon(null)}
+                  alwaysShow
                 />
               ) : null}
               {selectedPackageForSwitch && (

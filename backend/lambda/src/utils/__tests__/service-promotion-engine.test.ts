@@ -1,5 +1,7 @@
 import {
   calculateBestBookingPromotion,
+  calculateBookingPromotionsBestOffer,
+  calculateBookingPromotionsSequentialStack,
   evaluateServicePromotionDiscount,
   normalizeServicePromotionRow,
   type ServicePromotionRow,
@@ -86,5 +88,33 @@ describe('service-promotion-engine', () => {
     const result = calculateBestBookingPromotion([low, high, coded], baseCtx);
     expect(result.bestPromotion?.promotionId).toBe('high');
     expect(result.totalSavings).toBe(150);
+  });
+
+  it('calculateBookingPromotionsBestOffer picks one leg — no vendor+platform stack', () => {
+    const vendor80 = svcPromo({ id: 'v80', discount_value: 80 });
+    const platform50 = {
+      id: 'p50',
+      name: 'Platform 50',
+      discount_type: 'percentage',
+      discount_value: 50,
+    };
+    const ctx = { ...baseCtx, bookingAmount: 199 };
+    const best = calculateBookingPromotionsBestOffer({
+      vendorPromotions: [vendor80],
+      platformPromotions: [platform50],
+      ctx,
+    });
+    expect(best.applied).toHaveLength(1);
+    expect(best.applied[0]?.source).toBe('vendor');
+    expect(best.finalAmount).toBeCloseTo(39.8, 1);
+    expect(best.totalSavings).toBeCloseTo(159.2, 1);
+
+    const stacked = calculateBookingPromotionsSequentialStack({
+      vendorPromotions: [vendor80],
+      platformPromotions: [platform50],
+      ctx,
+    });
+    expect(stacked.applied).toHaveLength(2);
+    expect(stacked.finalAmount).toBeCloseTo(19.9, 1);
   });
 });

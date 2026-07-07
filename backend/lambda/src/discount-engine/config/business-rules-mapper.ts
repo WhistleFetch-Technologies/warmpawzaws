@@ -1,7 +1,6 @@
 /**
  * Maps business-friendly Policy Center rules ↔ stack/priority/limits engine config.
  */
-import { clonePolicyBundle } from './default-config';
 import {
   buildDefaultCombinationMatrix,
   buildPromotionPlusCouponMatrix,
@@ -20,7 +19,21 @@ import {
   normalizeApplicationStrategy,
   normalizeWinningStrategy,
 } from './business-rules-types';
-import type { DiscountPolicyBundle, StackRuleConfig } from './types';
+import type {
+  FundingConfiguration,
+  LimitConfiguration,
+  PriorityConfiguration,
+  StackPolicyConfiguration,
+  StackRuleConfig,
+} from './types';
+
+export interface DiscountPolicyBundle {
+  priority: PriorityConfiguration;
+  stack: StackPolicyConfiguration;
+  funding: FundingConfiguration;
+  limits: LimitConfiguration;
+  businessRules?: BusinessRulesConfiguration;
+}
 
 export const DEFAULT_BUSINESS_RULES: BusinessRulesConfiguration = {
   version: '2.0.0',
@@ -46,10 +59,7 @@ function matrixToStackRules(matrix: OfferCombinationRule[]): StackRuleConfig[] {
   }));
 }
 
-function applyMatrixToStackFlags(
-  bundle: DiscountPolicyBundle,
-  matrix: OfferCombinationRule[]
-): void {
+function applyMatrixToStackFlags(bundle: DiscountPolicyBundle, matrix: OfferCombinationRule[]): void {
   const g = bundle.stack.global;
   g.allowPlatformWithVendor = matrixPairAllowed(
     matrix,
@@ -136,7 +146,7 @@ export function syncBusinessRulesToEngine(
   bundle: DiscountPolicyBundle,
   rules: BusinessRulesConfiguration
 ): DiscountPolicyBundle {
-  const next = clonePolicyBundle(bundle);
+  const next: DiscountPolicyBundle = JSON.parse(JSON.stringify(bundle));
   const normalizedRules: BusinessRulesConfiguration = {
     ...rules,
     applicationStrategy: normalizeApplicationStrategy(rules.applicationStrategy),
@@ -209,45 +219,77 @@ export function syncBusinessRulesToEngine(
   return next;
 }
 
-export function patchBusinessRules(
-  bundle: DiscountPolicyBundle,
-  patch: Partial<BusinessRulesConfiguration>
-): DiscountPolicyBundle {
-  const current = ensureBusinessRules(bundle);
-  const merged: BusinessRulesConfiguration = {
-    ...current,
-    ...patch,
-    combinationMatrix: patch.combinationMatrix ?? current.combinationMatrix,
-    customPriorityOrder: patch.customPriorityOrder ?? current.customPriorityOrder,
-    offerTypes: patch.offerTypes ?? current.offerTypes,
+export function buildDefaultPolicyBundle(): DiscountPolicyBundle {
+  const base: DiscountPolicyBundle = {
+    priority: {
+      version: '2.0.0',
+      global: {
+        strategy: 'MAX_CUSTOMER_SAVINGS',
+        tieBreakers: ['EXCLUSIVE', 'SPOTLIGHT', 'PRIORITY_WEIGHT', 'VALID_FROM', 'ID'],
+        phases: {
+          AUTO_PROMOTIONS: { maxSelected: 1 },
+          COUPONS: { maxSelected: 1 },
+        },
+      },
+      domains: {
+        SERVICE: {
+          strategy: 'MAX_CUSTOMER_SAVINGS',
+          phases: { AUTO_PROMOTIONS: { maxSelected: 1 }, COUPONS: { maxSelected: 1 } },
+        },
+        ECOMMERCE: {
+          strategy: 'MAX_CUSTOMER_SAVINGS',
+          phases: { AUTO_PROMOTIONS: { maxSelected: 1 }, COUPONS: { maxSelected: 1 } },
+        },
+      },
+    },
+    stack: {
+      version: '2.0.0',
+      global: {
+        allowCouponWithPromotion: false,
+        allowMultipleCoupons: false,
+        allowMultipleVendorPromotions: false,
+        allowPlatformWithVendor: false,
+        applicationModeDefault: 'SEQUENTIAL',
+        exclusiveSkipsCouponPhase: true,
+        exclusiveTerminatesAll: true,
+        stackOrder: [
+          'VENDOR_PROMOTION',
+          'PLATFORM_PROMOTION',
+          'VENDOR_COUPON',
+          'PLATFORM_COUPON',
+        ],
+        stackRules: [],
+      },
+      domains: {
+        SERVICE: { allowPlatformWithVendor: false },
+        ECOMMERCE: { allowPlatformWithVendor: false },
+      },
+    },
+    funding: {
+      version: '2.0.0',
+      sharedDefaultSplit: { platformPercent: 50, vendorPercent: 50 },
+      stackVetoes: [],
+      settlementHints: { roundTo: 2, currency: 'INR' },
+      blockVendorFundedWithPlatformCoupon: false,
+      blockSharedWithPlatformCoupon: false,
+    },
+    limits: {
+      version: '2.0.0',
+      global: {
+        maxAutoPromotions: 1,
+        maxVendorPromotions: 1,
+        maxPlatformPromotions: 1,
+        maxCoupons: 1,
+        maxTotalDiscounts: 1,
+        maxTotalDiscountPercent: 100,
+        minPayableAmount: 1,
+        capOverflowStrategy: 'REJECT_LAST',
+      },
+      domains: {
+        SERVICE: { maxAutoPromotions: 1, maxCoupons: 1 },
+        ECOMMERCE: { maxAutoPromotions: 1, maxCoupons: 1 },
+      },
+    },
   };
-  if (patch.applicationStrategy === 'PROMOTION_PLUS_COUPON') {
-    merged.combinationMatrix = buildPromotionPlusCouponMatrix(merged.offerTypes);
-  }
-  return syncBusinessRulesToEngine(bundle, merged);
-}
-
-export function getApplicationStrategyLabel(strategy: DiscountApplicationStrategy): string {
-  const labels: Record<DiscountApplicationStrategy, string> = {
-    BEST_OFFER_ONLY: 'Best Offer Only',
-    PROMOTION_PLUS_COUPON: 'Promotion + Coupon',
-    STACK_ELIGIBLE: 'Stack Eligible Offers',
-    FULLY_CONFIGURABLE: 'Fully Configurable',
-    CUSTOM_RULES: 'Fully Configurable',
-  };
-  return labels[normalizeApplicationStrategy(strategy)];
-}
-
-export function getWinningStrategyLabel(strategy: WinningStrategyKey): string {
-  const key = normalizeWinningStrategy(strategy);
-  const labels: Record<WinningStrategyKey, string> = {
-    HIGHEST_CUSTOMER_SAVINGS: 'Highest Customer Savings',
-    MAX_CUSTOMER_SAVINGS: 'Highest Customer Savings',
-    HIGHEST_PRIORITY: 'Highest Priority',
-    LOWEST_PLATFORM_COST: 'Lowest Platform Cost',
-    VENDOR_PREFERRED: 'Vendor Preferred',
-    CUSTOM_PRIORITY: 'Custom Rule',
-    CUSTOM_RULE: 'Custom Rule',
-  };
-  return labels[key];
+  return syncBusinessRulesToEngine(base, DEFAULT_BUSINESS_RULES);
 }

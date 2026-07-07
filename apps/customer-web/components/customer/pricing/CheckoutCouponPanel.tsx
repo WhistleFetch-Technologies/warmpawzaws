@@ -22,6 +22,8 @@ export type CheckoutCouponPanelProps = {
   className?: string;
   /** Set false when the downstream payment API cannot accept couponCode. */
   paymentSupportsCoupon?: boolean;
+  /** Always show coupon input on booking summary (policy-driven messages when unavailable). */
+  alwaysShow?: boolean;
 };
 
 export function CheckoutCouponPanel({
@@ -34,6 +36,7 @@ export function CheckoutCouponPanel({
   onRemoveCoupon,
   className = '',
   paymentSupportsCoupon = true,
+  alwaysShow = false,
 }: CheckoutCouponPanelProps) {
   const [availability, setAvailability] = useState<CouponAvailabilityResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,6 +68,24 @@ export function CheckoutCouponPanel({
   }
 
   if (!availability?.available) {
+    if (alwaysShow && kind === 'service_booking') {
+      return (
+        <CouponSection
+          vendorId={vendorId}
+          customerId={customerId}
+          orderAmount={orderAmount}
+          orderType="booking"
+          appliedCoupon={appliedCoupon}
+          onApplyCoupon={onApplyCoupon}
+          onRemoveCoupon={onRemoveCoupon}
+          className={className}
+          unavailableMessage={
+            availability?.message ??
+            'Enter a coupon code — savings depend on your current promotion.'
+          }
+        />
+      );
+    }
     if (!availability?.message) return null;
     return (
       <div

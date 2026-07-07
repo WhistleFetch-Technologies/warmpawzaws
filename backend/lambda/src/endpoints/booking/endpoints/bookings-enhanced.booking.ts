@@ -1281,11 +1281,30 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                   : [];
 
           try {
+            const fmForPromo = body.financialMeta ?? body.financial_meta;
+            let promoValidationAmount = grossPayableBeforeWallet;
+            if (fmForPromo && typeof fmForPromo === 'object') {
+              const fm = fmForPromo as Record<string, unknown>;
+              const servicePrice = parseFloat(
+                String(fm.servicePrice ?? fm.service_price ?? '')
+              );
+              if (Number.isFinite(servicePrice) && servicePrice > 0) {
+                promoValidationAmount = servicePrice;
+              }
+            }
+            if (
+              listedServerPrice > 0 &&
+              promoValidationAmount !== grossPayableBeforeWallet &&
+              !(fmForPromo && typeof fmForPromo === 'object')
+            ) {
+              promoValidationAmount = Math.max(promoValidationAmount, listedServerPrice);
+            }
+
             resolvedBookingPromotions = await resolveBookingPromotions({
               vendorId: String(vendorId),
               serviceIds: serviceIdsForPromo,
               serviceStyle: serviceType || body.serviceStyle || body.service_style,
-              amount: grossPayableBeforeWallet,
+              amount: promoValidationAmount,
               customerId: customerId ? String(customerId) : undefined,
               serviceCategory: serviceCategory || undefined,
               couponCode:

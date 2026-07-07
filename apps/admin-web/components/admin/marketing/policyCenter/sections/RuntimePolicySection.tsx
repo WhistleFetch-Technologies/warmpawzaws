@@ -98,6 +98,46 @@ export function RuntimePolicySection({ draft }: { draft: DiscountPolicyBundle })
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-lg">Combination matrix (published)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {(diagnostics?.combinationMatrix ?? rules.combinationMatrix).map((rule) => (
+            <div
+              key={rule.id ?? `${rule.left}-${rule.right}`}
+              className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+            >
+              <span>
+                {rule.left} + {rule.right}
+              </span>
+              <Badge variant={rule.allowed ? 'default' : 'secondary'}>
+                {rule.allowed ? 'Allowed' : 'Blocked'}
+              </Badge>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Engine modes (read-only)</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          {[
+            ['Resolver mode', diagnostics?.resolverMode ?? 'unknown'],
+            ['Settlement mode', diagnostics?.settlementMode ?? 'unknown'],
+            ['Stack mode', diagnostics?.stackMode ?? 'unknown'],
+            ['Priority mode', diagnostics?.priorityMode ?? 'unknown'],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="rounded-lg border bg-slate-50/50 p-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+              <p className="mt-1 font-mono text-sm text-slate-900">{String(value)}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-lg">Policy fingerprint</CardTitle>
         </CardHeader>
         <CardContent>

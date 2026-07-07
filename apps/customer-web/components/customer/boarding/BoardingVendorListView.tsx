@@ -196,6 +196,8 @@ export function BoardingVendorListView({
                   onDetails={openVendorProfile}
                   onBookPlan={handleBookPlan}
                   onOpenCenterDetails={openVendorProfile}
+                  customerId={phone}
+                  serviceCategory={serviceSlug === 'all' ? undefined : serviceSlug}
                 />
               );
             })}

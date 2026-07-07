@@ -30,6 +30,15 @@ export function buildDefaultCombinationMatrix(
   return rules;
 }
 
+export function mergeCombinationMatrix(
+  defaults: OfferCombinationRule[],
+  existing: OfferCombinationRule[] | undefined
+): OfferCombinationRule[] {
+  if (!existing?.length) return defaults;
+  const byId = new Map(existing.map((r) => [r.id, r]));
+  return defaults.map((d) => byId.get(d.id) ?? d);
+}
+
 function isPromotionType(key: string): boolean {
   return key === 'VENDOR_PROMOTION' || key === 'PLATFORM_PROMOTION';
 }
@@ -48,26 +57,4 @@ export function buildPromotionPlusCouponMatrix(
       (isCouponType(rule.left) && isPromotionType(rule.right));
     return { ...rule, allowed: promoCoupon };
   });
-}
-
-export function mergeCombinationMatrix(
-  defaults: OfferCombinationRule[],
-  existing: OfferCombinationRule[] | undefined
-): OfferCombinationRule[] {
-  if (!existing?.length) return defaults;
-  const byId = new Map(existing.map((r) => [r.id, r]));
-  return defaults.map((d) => byId.get(d.id) ?? d);
-}
-
-export function formatCombinationLabel(
-  left: string,
-  right: string,
-  offerTypes: OfferTypeDefinition[] = DEFAULT_OFFER_TYPES
-): string {
-  const label = (key: string) => offerTypes.find((o) => o.key === key)?.label ?? key;
-  return `${label(left)} + ${label(right)}`;
-}
-
-export function matrixToStackRuleIds(matrix: OfferCombinationRule[]): string[] {
-  return matrix.filter((r) => !r.allowed).map((r) => r.id);
 }

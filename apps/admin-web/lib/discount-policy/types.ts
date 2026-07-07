@@ -158,6 +158,11 @@ export interface RuntimePolicyDiagnostics {
   businessRulesVersion?: string;
   applicationStrategy?: string;
   winningStrategy?: string;
+  combinationMatrix?: Array<{ id?: string; left: string; right: string; allowed: boolean }>;
+  resolverMode?: string;
+  settlementMode?: string;
+  stackMode?: string;
+  priorityMode?: string;
   policyFingerprint: string | null;
   publishId: string | null;
   publishedBy: string | null;

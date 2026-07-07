@@ -33,7 +33,9 @@ async function fetchVendorCodedPromotions(
 
 async function fetchPlatformCodedPromotions(serviceType: 'service' | 'product'): Promise<PromotionRow[]> {
   try {
-    const res = await apiClient.get<any>(`/promotions/active?serviceType=${serviceType}`);
+    const res = await apiClient.get<any>(
+      `/promotions/active?serviceType=${serviceType}&includeCoupons=true`
+    );
     const rows = (res?.promotions || []) as PromotionRow[];
     return Array.isArray(rows) ? rows : [];
   } catch {

@@ -577,6 +577,8 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                         onDetails={openVendorProfile}
                         onBookPlan={handleBookPlan}
                         onOpenCenterDetails={openVendorProfile}
+                        customerId={phone}
+                        serviceCategory="boarding"
                       />
                     );
                   })

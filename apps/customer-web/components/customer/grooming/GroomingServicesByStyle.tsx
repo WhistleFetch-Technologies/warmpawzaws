@@ -28,6 +28,7 @@ import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import { isDiscoveryAutoApplyPromotion } from '@/lib/promotion-banner-filter';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -185,8 +186,9 @@ export function GroomingServicesByStyle({
     try {
       const response = await apiClient.get('/promotions/active') as any;
       if (response.success && response.promotions) {
-        setPromotions(response.promotions || []);
-        console.log(`✅ [Grooming] Loaded ${response.promotions.length} active promotions`);
+        const discoveryPromos = (response.promotions || []).filter(isDiscoveryAutoApplyPromotion);
+        setPromotions(discoveryPromos);
+        console.log(`✅ [Grooming] Loaded ${discoveryPromos.length} active promotions`);
       }
     } catch (error) {
       console.error('Error loading promotions:', error);
@@ -997,7 +999,16 @@ export function GroomingServicesByStyle({
                               </div>
                             </div>
                             <div className="text-right flex-shrink-0">
-                              <div className="text-2xl font-bold text-[#FF8C42] mb-1">{formatPriceWithSymbol(service.price)}</div>
+                              <ServicePricingDisplay
+                                basePrice={service.originalPrice ?? service.price}
+                                usePromoQuote
+                                vendorId={vendorId || profileProvider?.providerId}
+                                serviceId={String(service.id || service.serviceId || '')}
+                                customerId={phone}
+                                serviceStyle={serviceStyle}
+                                serviceCategory={category}
+                                className="mb-1 items-end"
+                              />
                               {isSelected && (
                                 <div className="mt-1 flex justify-end">
                                   <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
@@ -1421,8 +1432,12 @@ export function GroomingServicesByStyle({
                               <div className="shrink-0 text-right">
                                 <ServicePricingDisplay
                                   basePrice={service.originalPrice ?? service.price}
-                                  discountedPrice={service.price}
-                                  vendorDiscount={service.discountPercentage}
+                                  usePromoQuote
+                                  vendorId={String(provider.vendorId || provider.providerId || vendorId || '')}
+                                  serviceId={String(service.id || service.serviceId || '')}
+                                  customerId={phone}
+                                  serviceStyle={serviceStyle}
+                                  serviceCategory={category}
                                   className="items-end"
                                 />
                               </div>

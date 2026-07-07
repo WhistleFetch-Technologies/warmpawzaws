@@ -67,7 +67,9 @@ export function StackConfigSection({
     onChange(next);
   };
 
-  const matrixReadOnly = rules.applicationStrategy === 'BEST_OFFER_ONLY';
+  const matrixReadOnly =
+    rules.applicationStrategy === 'BEST_OFFER_ONLY' ||
+    rules.applicationStrategy === 'PROMOTION_PLUS_COUPON';
 
   return (
     <div className="space-y-6">
@@ -123,8 +125,8 @@ export function StackConfigSection({
         <CardHeader>
           <CardTitle className="text-lg">Offer Combination Rules</CardTitle>
           <CardDescription>
-            Matrix of which offer types may apply together. When Apply Best Offer Only is active,
-            combinations are resolved by the Winning Offer Strategy.
+            Matrix of which offer types may apply together. Hidden for Best Offer Only;
+            auto-configured for Promotion + Coupon.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -137,7 +139,7 @@ export function StackConfigSection({
         </CardContent>
       </Card>
 
-      {rules.applicationStrategy === 'CUSTOM_RULES' ? (
+      {rules.applicationStrategy === 'FULLY_CONFIGURABLE' ? (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>

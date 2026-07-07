@@ -19,6 +19,13 @@ import {
   resolveWithProductionMode,
 } from '../../discount-engine/resolver/production-bridge';
 import { mapResolverResultToBookingPromotion } from '../../discount-engine/resolver/resolver-result-mappers';
+import { shouldCollapseToSingleWinner } from '../../discount-engine/resolver/policy-simulator';
+import {
+  mapLegacyBookingToUnifiedResponse,
+  mapResolverResultToUnifiedResponse,
+  type UnifiedResolverResponse,
+} from '../../discount-engine/resolver/unified-resolver-response';
+import { loadRuntimePolicy } from '../../discount-engine/policy/runtime-policy-loader';
 import { DiscountTrigger } from '../../discount-engine/enums/discount-trigger';
 import type { ResolverResult } from '../../discount-engine/resolver/types';
 import { parseJsonMetaFromNotes } from '../../utils/booking-notes-meta';
@@ -174,9 +181,13 @@ async function loadPlatformPromotions(
   }
 }
 
-export async function resolveBookingPromotions(
+async function resolveBookingPromotionsInternal(
   params: ResolveBookingPromotionsParams
-): Promise<BookingPromotionResult> {
+): Promise<{
+  booking: BookingPromotionResult;
+  source: 'v2' | 'legacy';
+  resolverResult?: ResolverResult;
+}> {
   const normalizedServiceIds = await normalizeBookingServiceIds(
     params.vendorId,
     params.serviceIds
@@ -195,7 +206,7 @@ export async function resolveBookingPromotions(
     },
   });
 
-  const { value } = await resolveWithProductionMode({
+  const { value, source, resolverResult } = await resolveWithProductionMode({
     label: 'resolveBookingPromotions',
     context: resolverContext,
     legacy: () =>
@@ -203,7 +214,61 @@ export async function resolveBookingPromotions(
     mapResolverToLegacy: mapResolverResultToBookingPromotion,
   });
 
-  return value;
+  const runtimePolicy = loadRuntimePolicy(DiscountDomain.SERVICE);
+  const booking =
+    shouldCollapseToSingleWinner(runtimePolicy) || source === 'legacy'
+      ? collapseBookingPromotionToSingleWinner(value)
+      : value;
+
+  return { booking, source, resolverResult };
+}
+
+export async function resolveBookingPromotions(
+  params: ResolveBookingPromotionsParams
+): Promise<BookingPromotionResult> {
+  const { booking } = await resolveBookingPromotionsInternal(params);
+  return booking;
+}
+
+/** Unified resolver quote — used by service page, booking summary, payment, simulator. */
+export async function resolveBookingDiscountQuote(
+  params: ResolveBookingPromotionsParams & { displayPromotionsOnly?: boolean }
+): Promise<UnifiedResolverResponse> {
+  const { booking, source, resolverResult } = await resolveBookingPromotionsInternal(params);
+  const runtimePolicy = loadRuntimePolicy(DiscountDomain.SERVICE);
+
+  if (resolverResult) {
+    const unified = mapResolverResultToUnifiedResponse(resolverResult, runtimePolicy, {
+      resolverSource: source,
+      displayPromotionsOnly: params.displayPromotionsOnly,
+    });
+    if (shouldCollapseToSingleWinner(runtimePolicy) || params.displayPromotionsOnly) {
+      unified.appliedOffers = unified.appliedOffers.filter((o) => o.trigger === 'AUTO');
+      if (params.displayPromotionsOnly) {
+        unified.appliedOffers = unified.appliedOffers.slice(0, 1);
+        unified.winningPromotion = unified.appliedOffers[0] ?? null;
+      }
+    }
+    unified.savings = {
+      originalAmount: booking.originalAmount,
+      totalSavings: booking.totalSavings,
+      finalAmount: booking.finalAmount,
+      vendorDiscountAmount: unified.appliedOffers
+        .filter((o) => o.source === 'vendor')
+        .reduce((s, o) => s + o.discountAmount, 0),
+      platformDiscountAmount: unified.appliedOffers
+        .filter((o) => o.source === 'platform')
+        .reduce((s, o) => s + o.discountAmount, 0),
+      couponDiscountAmount: unified.appliedOffers
+        .filter((o) => o.source === 'coupon')
+        .reduce((s, o) => s + o.discountAmount, 0),
+    };
+    return unified;
+  }
+
+  return mapLegacyBookingToUnifiedResponse(booking, runtimePolicy, {
+    displayPromotionsOnly: params.displayPromotionsOnly,
+  });
 }
 
 /**
@@ -246,30 +311,36 @@ async function resolveBookingPromotionsLegacy(
   return legacy;
 }
 
-/** S5 legacy fallback — apply platform coupon on post-stack amount without removing legacy engine. */
+/** Best-offer-only: compare entered coupon against auto promo on the original booking amount. */
 async function augmentLegacyBookingWithCoupon(
   stack: BookingPromotionResult,
   params: ResolveBookingPromotionsParams
 ): Promise<BookingPromotionResult> {
   try {
     const { validateCouponForAmount } = await import('./platform-coupon-service');
-    const baseAmount = stack.finalAmount;
+    const originalAmount = stack.originalAmount || params.amount;
     const validation = await validateCouponForAmount(
       params.couponCode!.trim(),
-      baseAmount,
+      originalAmount,
       DiscountDomain.SERVICE
     );
     if (!validation.valid || !validation.discountAmount || validation.discountAmount <= 0) {
       return stack;
     }
     const couponDiscount = validation.discountAmount;
+    const promoSavings = stack.totalSavings;
+
+    if (promoSavings > 0 && couponDiscount <= promoSavings) {
+      return stack;
+    }
+
     return {
-      ...stack,
-      platformDiscountAmount: stack.platformDiscountAmount + couponDiscount,
-      totalSavings: stack.totalSavings + couponDiscount,
-      finalAmount: Math.max(0, stack.finalAmount - couponDiscount),
+      originalAmount,
+      vendorDiscountAmount: 0,
+      platformDiscountAmount: couponDiscount,
+      totalSavings: couponDiscount,
+      finalAmount: Math.max(0, originalAmount - couponDiscount),
       applied: [
-        ...stack.applied,
         {
           source: 'platform',
           id: validation.couponId ?? 'coupon',
@@ -278,11 +349,39 @@ async function augmentLegacyBookingWithCoupon(
           promotionType: 'coupon',
         },
       ],
-      platformPromotionId: validation.couponId ?? stack.platformPromotionId,
+      platformPromotionId: validation.couponId,
     };
   } catch {
     return stack;
   }
+}
+
+/** Policy Center default: one winning offer per booking (promo OR coupon, not both). */
+function collapseBookingPromotionToSingleWinner(
+  result: BookingPromotionResult
+): BookingPromotionResult {
+  if (result.applied.length <= 1) return result;
+
+  const winner = result.applied.reduce((best, cur) =>
+    (cur.discountAmount ?? 0) > (best.discountAmount ?? 0) ? cur : best
+  );
+  const savings = winner.discountAmount ?? 0;
+  const originalAmount = result.originalAmount;
+
+  const isVendor = winner.source === 'vendor';
+  const isCoupon = winner.promotionType === 'coupon';
+
+  return {
+    originalAmount,
+    vendorDiscountAmount: isVendor && !isCoupon ? savings : 0,
+    platformDiscountAmount: !isVendor || isCoupon ? savings : 0,
+    totalSavings: savings,
+    finalAmount: Math.max(0, originalAmount - savings),
+    applied: [winner],
+    vendorPromotionId: isVendor && !isCoupon ? winner.id : undefined,
+    platformPromotionId: !isVendor || isCoupon ? winner.id : undefined,
+    settlement: result.settlement,
+  };
 }
 
 export type ApplicablePromotionOffer = {

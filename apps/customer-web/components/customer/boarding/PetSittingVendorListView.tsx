@@ -215,6 +215,8 @@ export function PetSittingVendorListView({
                   onDetails={(e) => openSitterVendorProfile(e, v)}
                   onBookPlan={handleBookPlan}
                   onOpenCenterDetails={(e) => openSitterVendorProfile(e, v)}
+                  customerId={phone}
+                  serviceCategory="pet_sitting"
                 />
               );
             })}

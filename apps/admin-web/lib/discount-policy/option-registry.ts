@@ -28,21 +28,27 @@ export const APPLICATION_STRATEGY_OPTIONS: {
 }[] = [
   {
     value: 'BEST_OFFER_ONLY',
-    label: 'Apply Best Offer Only',
+    label: 'Best Offer Only',
     description:
-      'When enabled, only one eligible promotion or coupon will be applied to a transaction.',
+      'Exactly one offer applies. The engine compares every eligible offer and chooses the winner.',
+  },
+  {
+    value: 'PROMOTION_PLUS_COUPON',
+    label: 'Promotion + Coupon',
+    description:
+      'Best promotion plus best coupon — promo+coupon pairs allowed; promo+promo and coupon+coupon blocked.',
   },
   {
     value: 'STACK_ELIGIBLE',
     label: 'Stack Eligible Offers',
     description:
-      'Allow multiple discounts when configured offer combinations are enabled in the rule matrix.',
+      'Multiple discounts per the Offer Combination Matrix.',
   },
   {
-    value: 'CUSTOM_RULES',
-    label: 'Custom Rules',
+    value: 'FULLY_CONFIGURABLE',
+    label: 'Fully Configurable',
     description:
-      'Advanced mode — use engine stack rules directly. For power users and future offer types.',
+      'Admin defines allowed combinations via the matrix and advanced stack settings.',
   },
 ];
 
@@ -52,8 +58,8 @@ export const WINNING_STRATEGY_OPTIONS: {
   description: string;
 }[] = [
   {
-    value: 'MAX_CUSTOMER_SAVINGS',
-    label: 'Maximum Customer Savings',
+    value: 'HIGHEST_CUSTOMER_SAVINGS',
+    label: 'Highest Customer Savings',
     description: 'Determines which offer wins when multiple offers are applicable.',
   },
   {
@@ -73,7 +79,7 @@ export const WINNING_STRATEGY_OPTIONS: {
   },
   {
     value: 'CUSTOM_PRIORITY',
-    label: 'Custom Priority',
+    label: 'Custom Rule',
     description: 'Uses admin-defined offer type order to determine the winning offer.',
   },
 ];
@@ -141,7 +147,7 @@ export const CAP_OVERFLOW_OPTIONS: { value: CapOverflowStrategy; label: string }
 
 export const POLICY_CENTER_TABS = [
   { id: 'stack', label: 'Discount Application', group: 'configuration' },
-  { id: 'priority', label: 'Winning Offer', group: 'configuration' },
+  { id: 'priority', label: 'Winning Strategy', group: 'configuration' },
   { id: 'funding', label: 'Funding', group: 'configuration' },
   { id: 'limits', label: 'Limits', group: 'configuration' },
   { id: 'runtime', label: 'Runtime Policy', group: 'diagnostics' },

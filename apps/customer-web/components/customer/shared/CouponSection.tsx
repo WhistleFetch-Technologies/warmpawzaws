@@ -40,6 +40,8 @@ interface CouponSectionProps {
   onApplyCoupon: (coupon: AppliedCoupon) => void;
   onRemoveCoupon: () => void;
   className?: string;
+  /** Shown when coupon list is empty but input should remain visible (Policy Center UX). */
+  unavailableMessage?: string;
 }
 
 function toFiniteNumber(value: unknown, fallback = 0): number {
@@ -61,6 +63,7 @@ export function CouponSection({
   onApplyCoupon,
   onRemoveCoupon,
   className = '',
+  unavailableMessage,
 }: CouponSectionProps) {
   const [couponCode, setCouponCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -254,6 +257,9 @@ export function CouponSection({
       {/* Expanded Content */}
       {expanded && (
         <div className="border-t border-slate-100 p-3 space-y-4">
+          {unavailableMessage ? (
+            <p className="text-xs text-slate-500">{unavailableMessage}</p>
+          ) : null}
           {/* Manual Input */}
           <div className="flex gap-2">
             <div className="flex-1 relative">

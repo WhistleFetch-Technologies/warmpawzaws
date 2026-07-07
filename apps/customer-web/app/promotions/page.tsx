@@ -60,7 +60,7 @@ function PromotionsPageContent() {
       setLoading(true);
       setError(null);
       
-      const result = await apiClient.get<any>('/promotions/active');
+      const result = await apiClient.get<any>('/promotions/active?includeCoupons=true');
       setPromotions((result as any)?.promotions || []);
     } catch (err: any) {
       console.error('Error loading promotions:', err);

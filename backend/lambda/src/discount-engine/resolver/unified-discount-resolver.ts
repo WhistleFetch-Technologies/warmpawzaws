@@ -1,25 +1,11 @@
-import { DiscountDomain } from '../enums/discount-domain';
-import { DiscountSource } from '../enums/discount-source';
-import { DiscountTrigger } from '../enums/discount-trigger';
-import { evaluateCandidateBenefit } from '../candidates/bridges/candidate-to-benefit-context';
 import {
-  candidateToPlatformInlineRuleContext,
-  candidateToPlatformMatchRuleContext,
-} from '../candidates/bridges/candidate-to-rule-context';
-import { evaluateCandidateEligibility, evaluateRules } from '../rules/engine';
-import type { DiscountCandidate } from '../candidates/types';
-import type { DiscountContext } from '../models/discount-context';
-import type { AppliedDiscount, DiscountBenefitLine } from '../models/discount-result';
-import { emptyDiscountEngineResult } from '../models/discount-result';
-import {
+  getPriorityMode,
   isPriorityAuthoritative,
   loadRuntimePolicy,
 } from '../policy/runtime-policy-loader';
-import { getCandidateRepository, type DefaultCandidateRepository } from './candidate-repository';
-import {
-  discountContextToBenefitRuntime,
-  discountContextToRuleRuntime,
-} from './context-runtime';
+import { getPolicyValidationEngine } from '../policy/policy-validation-engine';
+import { getOfferDiscovery } from './offer-discovery';
+import { resolveOffers } from './offer-resolution';
 import {
   applyLegacyStackToSelected,
   mapSelectedToBenefitOutcomes,
@@ -42,56 +28,51 @@ import {
   toDiscountSettlementPreview,
 } from '../settlement';
 import type { SettlementDecision } from '../settlement/types';
-import type {
-  CandidateBenefitOutcome,
-  CandidateRuleOutcome,
-  PriorityDiagnostics,
-  ResolverResult,
-  SettlementDiagnostics,
-  StackDiagnostics,
-  UnifiedDiscountResolver,
-} from './types';
-import type { EligibilityResult } from '../rules/types';
+import type { DiscountCandidate } from '../candidates/types';
+import type { DiscountContext } from '../models/discount-context';
+import type { AppliedDiscount, DiscountBenefitLine } from '../models/discount-result';
+import { emptyDiscountEngineResult } from '../models/discount-result';
+import { DiscountSource } from '../enums/discount-source';
 
-const RESOLVER_VERSION = 'phase-7.0';
+const RESOLVER_VERSION = 'phase-8.0';
 const PRIORITY_VERSION = '1.0.0';
 
 export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
   constructor(
-    private readonly repository: DefaultCandidateRepository = getCandidateRepository()
+    private readonly discovery = getOfferDiscovery()
   ) {}
 
   async resolve(context: DiscountContext): Promise<ResolverResult> {
     const started = Date.now();
-    const { candidates, providerBreakdown } = await this.repository.loadCandidates(context);
-    const ruleRuntime = discountContextToRuleRuntime(context);
-    const benefitRuntime = discountContextToBenefitRuntime(context);
+    const discovery = await this.discovery.discover(context);
+    const {
+      candidates,
+      providerBreakdown,
+      ruleResults,
+      eligibleCandidates,
+      rejectedCandidates,
+      benefitResults,
+    } = discovery;
 
-    const ruleResults: CandidateRuleOutcome[] = [];
-    const eligibleCandidates = [];
-    const rejectedCandidates = [];
+    const runtimePolicy = loadRuntimePolicy(context.domain);
+    const validation = getPolicyValidationEngine().validate(runtimePolicy);
 
-    for (const candidate of candidates) {
-      const eligibility = this.evaluateRulesForCandidate(candidate, context, ruleRuntime);
-      ruleResults.push({ candidate, eligibility });
-      if (eligibility.eligible) {
-        eligibleCandidates.push(candidate);
-      } else {
-        rejectedCandidates.push(candidate);
-      }
+    let priorityPipeline = runPriorityPipeline(context, benefitResults);
+
+    if (isPriorityAuthoritative() && validation.isPublishable) {
+      const offerResolution = resolveOffers(context, benefitResults, runtimePolicy);
+      priorityPipeline = {
+        mode: getPriorityMode(),
+        success: true,
+        policyFingerprint: runtimePolicy.policyFingerprint,
+        publishId: runtimePolicy.publishId,
+        validation,
+        autoPhase: offerResolution.unifiedPhase ?? offerResolution.autoPhase,
+        couponPhase: offerResolution.couponPhase,
+        mergedSelected: offerResolution.mergedSelected,
+        executionTimeMs: discovery.discoveryTimeMs,
+      };
     }
-
-    const benefitResults: CandidateBenefitOutcome[] = [];
-    for (const candidate of eligibleCandidates) {
-      const benefit = evaluateCandidateBenefit(candidate, benefitRuntime);
-      benefitResults.push({
-        candidate,
-        benefit,
-        discountAmount: benefit.discountAmount,
-      });
-    }
-
-    const priorityPipeline = runPriorityPipeline(context, benefitResults);
     let stackBenefitResults = benefitResults;
     let appliedCandidates: DiscountCandidate[] = [...eligibleCandidates];
     let authoritative = false;
@@ -278,33 +259,6 @@ export class DefaultUnifiedDiscountResolver implements UnifiedDiscountResolver {
         settlement: settlementDiagnostics,
       },
     };
-  }
-
-  private evaluateRulesForCandidate(
-    candidate: DiscountCandidate,
-    context: DiscountContext,
-    ruleRuntime: ReturnType<typeof discountContextToRuleRuntime>
-  ): EligibilityResult {
-    if (
-      candidate.source === DiscountSource.PLATFORM_PROMOTION &&
-      ruleRuntime.platformMatchParams &&
-      context.domain === DiscountDomain.SERVICE &&
-      context.trigger === DiscountTrigger.AUTO
-    ) {
-      return evaluateRules(
-        candidateToPlatformMatchRuleContext(candidate, {
-          ...ruleRuntime,
-          platformMatchParams: ruleRuntime.platformMatchParams,
-        })
-      );
-    }
-    if (
-      candidate.source === DiscountSource.PLATFORM_PROMOTION &&
-      context.trigger === DiscountTrigger.CODE
-    ) {
-      return evaluateRules(candidateToPlatformInlineRuleContext(candidate, ruleRuntime));
-    }
-    return evaluateCandidateEligibility(candidate, ruleRuntime);
   }
 }
 

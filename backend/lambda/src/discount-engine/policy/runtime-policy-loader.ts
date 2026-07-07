@@ -1,4 +1,5 @@
 import { DiscountDomain } from '../enums/discount-domain';
+import { ensureBusinessRules } from '../config/business-rules-mapper';
 import { loadFundingConfiguration } from '../config/funding-config-loader';
 import { loadLimitConfiguration } from '../config/limit-config-loader';
 import { loadPriorityConfiguration } from '../config/priority-config-loader';
@@ -11,6 +12,17 @@ import type {
 } from '../config/types';
 import type { RuntimePolicy, RuntimePolicySources } from './runtime-policy';
 import { attachPolicyFingerprint, type RuntimePolicyFingerprint } from './runtime-policy-fingerprint';
+import {
+  getActivePolicyBundleSync,
+  loadPublishedPolicyFromDb,
+} from './policy-persistence';
+
+let warmStarted = false;
+function warmPolicyCache(): void {
+  if (warmStarted) return;
+  warmStarted = true;
+  void loadPublishedPolicyFromDb();
+}
 
 function mergePriorityForDomain(
   base: PriorityConfiguration,
@@ -64,12 +76,16 @@ export function buildRuntimePolicy(sources: RuntimePolicySources): RuntimePolicy
   const limits = mergeLimitsForDomain(sources.limits, sources.domain);
   const funding: FundingConfiguration = { ...sources.funding };
 
+  const bundle = getActivePolicyBundleSync();
+  const businessRules = sources.businessRules ?? ensureBusinessRules(bundle);
+
   return {
     domain: sources.domain,
     priority,
     stack,
     funding,
     limits,
+    businessRules,
     priorityVersion: priority.version,
     stackVersion: stack.version,
     fundingVersion: funding.version,
@@ -85,6 +101,7 @@ export interface RuntimePolicyLoaderOptions {
   stack?: Partial<StackPolicyConfiguration>;
   funding?: Partial<FundingConfiguration>;
   limits?: Partial<LimitConfiguration>;
+  businessRules?: RuntimePolicySources['businessRules'];
   featureFlagSnapshot?: string;
   publishId?: string;
 }
@@ -93,12 +110,15 @@ export function loadRuntimePolicy(
   domain: DiscountDomain,
   options: RuntimePolicyLoaderOptions = {}
 ): RuntimePolicyFingerprint {
+  warmPolicyCache();
+  const publishedBundle = getActivePolicyBundleSync();
   const sources: RuntimePolicySources = {
     domain,
-    priority: loadPriorityConfiguration(options.priority),
-    stack: loadStackPolicyConfiguration(options.stack),
-    funding: loadFundingConfiguration(options.funding),
-    limits: loadLimitConfiguration(options.limits),
+    priority: loadPriorityConfiguration(options.priority ?? publishedBundle.priority),
+    stack: loadStackPolicyConfiguration(options.stack ?? publishedBundle.stack),
+    funding: loadFundingConfiguration(options.funding ?? publishedBundle.funding),
+    limits: loadLimitConfiguration(options.limits ?? publishedBundle.limits),
+    businessRules: options.businessRules ?? publishedBundle.businessRules,
     featureFlagSnapshot: options.featureFlagSnapshot,
     publishId: options.publishId,
   };

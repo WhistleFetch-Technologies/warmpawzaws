@@ -20,7 +20,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 import {
   listApplicableBookingPromotions,
-  resolveBookingPromotions,
+  resolveBookingDiscountQuote,
 } from '../lib/services/booking-promotion-service';
 import { resolveBookingServiceCategory } from '../lib/services/resolve-booking-service-category';
 import { validateCouponInternal as validatePlatformCouponInternal } from '../lib/services/platform-coupon-service';
@@ -437,6 +437,16 @@ export function registerPromotionEndpoints(app: Hono) {
     return discountValue > 0;
   };
 
+  /** Discovery surfaces: auto-apply promos only — coded/coupon offers are checkout-only. */
+  const isDiscoveryAutoApplyPromotionRow = (promotion: any): boolean => {
+    const type = String(promotion.promotion_type ?? '').trim().toLowerCase();
+    if (type === 'coupon' || type === 'platform_coupon') return false;
+    if (String(promotion.source ?? '').trim().toLowerCase() === 'platform_coupon') return false;
+    const code = String(promotion.code ?? '').trim();
+    if (code.length > 0) return false;
+    return true;
+  };
+
   app.get("/promotions/list", async (c) => {
     try {
       const service = c.req.query('service');
@@ -472,66 +482,11 @@ export function registerPromotionEndpoints(app: Hono) {
 
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
-      let promotions = rows
+      const promotions = rows
         .map(mapPromotionListRow)
         .filter((promo: any) => promotionMatchesListService(promo, service))
-        .filter(isCustomerListablePromotion);
-
-      let couponRows: Record<string, unknown>[] = [];
-      try {
-        const couponResult = await query(
-          `SELECT id, code, name, description, discount_type, discount_value,
-                  COALESCE(min_order_amount, min_amount) AS min_order_amount,
-                  COALESCE(max_discount_amount, max_discount) AS max_discount_amount,
-                  start_date, end_date,
-                  COALESCE(max_uses, usage_limit) AS max_uses,
-                  usage_count
-           FROM coupons
-           WHERE is_active = true
-             AND (start_date IS NULL OR start_date <= $1)
-             AND (end_date IS NULL OR end_date >= $1)
-             AND (COALESCE(max_uses, usage_limit) IS NULL
-                  OR COALESCE(usage_count, 0) < COALESCE(max_uses, usage_limit))`,
-          [now]
-        );
-        couponRows = couponResult.rows ?? [];
-      } catch (couponErr) {
-        console.warn('[promotions/list] coupons merge skipped', couponErr);
-      }
-
-      const couponAsPromotions = couponRows.map((couponRow) =>
-        mapPromotionListRow({
-          id: couponRow.id,
-          code: couponRow.code,
-          name: couponRow.name,
-          title: couponRow.name,
-          description: couponRow.description,
-          discount_type: couponRow.discount_type,
-          discount_value: couponRow.discount_value,
-          min_order_amount: couponRow.min_order_amount,
-          max_discount_amount: couponRow.max_discount_amount,
-          start_date: couponRow.start_date,
-          end_date: couponRow.end_date,
-          valid_from: couponRow.start_date,
-          valid_until: couponRow.end_date,
-          source: 'platform_coupon',
-          promotion_type: 'coupon',
-          published: true,
-          is_active: true,
-          applicable_services: [],
-        })
-      );
-
-      const seenCodes = new Set<string>();
-      promotions = [...promotions, ...couponAsPromotions]
         .filter(isCustomerListablePromotion)
-        .filter((row) => {
-        const code = String(row.code ?? '').trim().toUpperCase();
-        if (!code) return true;
-        if (seenCodes.has(code)) return false;
-        seenCodes.add(code);
-        return true;
-      });
+        .filter(isDiscoveryAutoApplyPromotionRow);
 
       return c.json({
         success: true,
@@ -553,11 +508,55 @@ export function registerPromotionEndpoints(app: Hono) {
    * GET /promotions/active
    * Get active promotions
    */
+  const loadActivePlatformCouponsAsPromotions = async (now: string): Promise<Record<string, unknown>[]> => {
+    try {
+      const couponResult = await query(
+        `SELECT id, code, name, description, discount_type, discount_value,
+                COALESCE(min_order_amount, min_amount) AS min_order_amount,
+                COALESCE(max_discount_amount, max_discount) AS max_discount_amount,
+                start_date, end_date,
+                COALESCE(max_uses, usage_limit) AS max_uses,
+                usage_count
+         FROM coupons
+         WHERE is_active = true
+           AND (start_date IS NULL OR start_date <= $1)
+           AND (end_date IS NULL OR end_date >= $1)
+           AND (COALESCE(max_uses, usage_limit) IS NULL
+                OR COALESCE(usage_count, 0) < COALESCE(max_uses, usage_limit))`,
+        [now]
+      );
+      return (couponResult.rows ?? []).map((c) => ({
+        id: c.id,
+        code: c.code,
+        name: c.name,
+        title: c.name,
+        description: c.description,
+        discount_type: c.discount_type,
+        discount_value: c.discount_value,
+        min_order_amount: c.min_order_amount,
+        max_discount_amount: c.max_discount_amount,
+        start_date: c.start_date,
+        end_date: c.end_date,
+        valid_from: c.start_date,
+        valid_until: c.end_date,
+        source: 'platform_coupon',
+        promotion_type: 'coupon',
+        published: true,
+        is_active: true,
+      }));
+    } catch (couponErr) {
+      console.warn('[promotions/active] coupons merge skipped', couponErr);
+      return [];
+    }
+  };
+
   const handleActivePromotions = async (c: any) => {
     try {
       const serviceType = c.req.query('serviceType') || 'all';
       const customerId = c.req.query('customerId');
       const vendorRoleId = c.req.query('vendorRoleId');
+      /** Checkout/coupon gallery only — discovery surfaces must not auto-apply platform coupons. */
+      const includeCoupons = c.req.query('includeCoupons') === 'true';
 
       const now = new Date().toISOString().split('T')[0];
 
@@ -618,49 +617,16 @@ export function registerPromotionEndpoints(app: Hono) {
       const promotions = await query(promotionsQuery, params);
       const promotionRows = promotions.rows ?? [];
 
-      let couponRows: Record<string, unknown>[] = [];
-      try {
-        const couponResult = await query(
-          `SELECT id, code, name, description, discount_type, discount_value,
-                  COALESCE(min_order_amount, min_amount) AS min_order_amount,
-                  COALESCE(max_discount_amount, max_discount) AS max_discount_amount,
-                  start_date, end_date,
-                  COALESCE(max_uses, usage_limit) AS max_uses,
-                  usage_count
-           FROM coupons
-           WHERE is_active = true
-             AND (start_date IS NULL OR start_date <= $1)
-             AND (end_date IS NULL OR end_date >= $1)
-             AND (COALESCE(max_uses, usage_limit) IS NULL
-                  OR COALESCE(usage_count, 0) < COALESCE(max_uses, usage_limit))`,
-          [now]
-        );
-        couponRows = couponResult.rows ?? [];
-      } catch (couponErr) {
-        console.warn('[promotions/active] coupons merge skipped', couponErr);
-      }
+      const couponAsPromotions = includeCoupons
+        ? await loadActivePlatformCouponsAsPromotions(now)
+        : [];
 
-      const couponAsPromotions = couponRows.map((c) => ({
-        id: c.id,
-        code: c.code,
-        name: c.name,
-        title: c.name,
-        description: c.description,
-        discount_type: c.discount_type,
-        discount_value: c.discount_value,
-        min_order_amount: c.min_order_amount,
-        max_discount_amount: c.max_discount_amount,
-        start_date: c.start_date,
-        end_date: c.end_date,
-        valid_from: c.start_date,
-        valid_until: c.end_date,
-        source: 'platform_coupon',
-        published: true,
-        is_active: true,
-      }));
+      const discoveryRows = includeCoupons
+        ? promotionRows
+        : promotionRows.filter(isDiscoveryAutoApplyPromotionRow);
 
       const seenCodes = new Set<string>();
-      const merged = [...promotionRows, ...couponAsPromotions].filter((row) => {
+      const merged = [...discoveryRows, ...couponAsPromotions].filter((row) => {
         const code = String(row.code ?? '').trim().toUpperCase();
         if (!code) return true;
         if (seenCodes.has(code)) return false;
@@ -675,6 +641,73 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching promotions:', error);
+      const msg = String(error?.message ?? error);
+      if (
+        msg.includes('applicable_to') &&
+        (msg.includes('does not exist') || msg.includes('column'))
+      ) {
+        console.warn('[promotions/active] applicable_to missing — retry without column');
+        try {
+          const serviceType = c.req.query('serviceType') || 'all';
+          const vendorRoleId = c.req.query('vendorRoleId');
+          const now = new Date().toISOString().split('T')[0];
+          let fallbackQuery = `
+            SELECT * FROM promotions
+            WHERE is_active = true
+            AND published = true
+            AND start_date <= $1
+            AND (end_date IS NULL OR end_date >= $1)
+            AND (usage_limit IS NULL OR usage_count < usage_limit)
+            AND (max_uses IS NULL OR usage_count < max_uses)
+          `;
+          const fallbackParams: unknown[] = [now];
+          let fallbackIndex = 2;
+          if (serviceType !== 'all') {
+            const isProductScope = serviceType === 'product' || serviceType === 'shop';
+            fallbackQuery += ` AND (
+              applicable_services IS NULL
+              OR (
+                metadata IS NOT NULL
+                AND (
+                  metadata->'targetScopes' @> '"products"'::jsonb
+                  OR LOWER(COALESCE(metadata->>'applicableTo', '')) = 'products'
+                )
+              )
+              OR EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(
+                  CASE WHEN jsonb_typeof(applicable_services) = 'array' THEN applicable_services ELSE '[]'::jsonb END
+                ) AS svc(val)
+                WHERE svc.val = $${fallbackIndex}
+                   OR (${isProductScope} AND svc.val IN ('product', 'shop', 'ecom', 'ecommerce'))
+                   OR (${isProductScope} AND svc.val ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+              )
+            )`;
+            fallbackParams.push(serviceType);
+            fallbackIndex++;
+          }
+          if (vendorRoleId) {
+            fallbackQuery += ` AND (
+              applicable_roles IS NULL
+              OR EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(
+                  CASE WHEN jsonb_typeof(applicable_roles) = 'array' THEN applicable_roles ELSE '[]'::jsonb END
+                ) AS role(val)
+                WHERE role.val = $${fallbackIndex}
+              )
+            )`;
+            fallbackParams.push(vendorRoleId);
+          }
+          fallbackQuery += ` ORDER BY priority DESC, created_at DESC`;
+          const fallbackRows = (await query(fallbackQuery, fallbackParams)).rows ?? [];
+          const includeCouponsFallback = c.req.query('includeCoupons') === 'true';
+          const filteredFallback = includeCouponsFallback
+            ? fallbackRows
+            : fallbackRows.filter(isDiscoveryAutoApplyPromotionRow);
+          return c.json({ success: true, promotions: filteredFallback, total: filteredFallback.length });
+        } catch (retryErr: unknown) {
+          console.error('[promotions/active] fallback query failed:', retryErr);
+        }
+      }
       return c.json({ error: error.message }, 500);
     }
   };
@@ -983,8 +1016,12 @@ export function registerPromotionEndpoints(app: Hono) {
       });
 
       const couponCode = body.couponCode || body.coupon_code;
+      const displayPromotionsOnly =
+        body.displayPromotionsOnly === true ||
+        body.display_promotions_only === true ||
+        (!couponCode && body.includeCoupon !== true);
 
-      const result = await resolveBookingPromotions({
+      const quote = await resolveBookingDiscountQuote({
         vendorId,
         serviceIds,
         serviceStyle,
@@ -992,26 +1029,35 @@ export function registerPromotionEndpoints(app: Hono) {
         customerId: customerId ? String(customerId) : undefined,
         serviceCategory: resolvedCategory ?? undefined,
         couponCode: couponCode ? String(couponCode).trim() : undefined,
+        displayPromotionsOnly,
       });
 
       return c.json({
-        success: true,
-        originalAmount: result.originalAmount,
-        vendorDiscountAmount: result.vendorDiscountAmount,
-        platformDiscountAmount: result.platformDiscountAmount,
-        totalSavings: result.totalSavings,
-        finalAmount: result.finalAmount,
-        applied: result.applied,
-        vendorPromotionId: result.vendorPromotionId,
-        platformPromotionId: result.platformPromotionId,
-        bestPromotion: result.applied[0]
+        ...quote,
+        // Legacy field aliases for existing customer-web callers
+        originalAmount: quote.savings.originalAmount,
+        vendorDiscountAmount: quote.savings.vendorDiscountAmount,
+        platformDiscountAmount: quote.savings.platformDiscountAmount,
+        totalSavings: quote.savings.totalSavings,
+        finalAmount: quote.savings.finalAmount,
+        applied: quote.appliedOffers.map((o) => ({
+          id: o.id,
+          source: o.source === 'vendor' ? 'vendor' : 'platform',
+          name: o.name,
+          discountAmount: o.discountAmount,
+          promotionType: o.source === 'coupon' ? 'coupon' : o.offerType,
+        })),
+        bestPromotion: quote.winningPromotion
           ? {
-              id: result.applied[0].id,
-              source: result.applied[0].source,
-              name: result.applied[0].name,
-              calculatedDiscount: result.applied[0].discountAmount,
+              id: quote.winningPromotion.id,
+              source: quote.winningPromotion.source === 'vendor' ? 'vendor' : 'platform',
+              name: quote.winningPromotion.name,
+              calculatedDiscount: quote.winningPromotion.discountAmount,
             }
           : null,
+        policyApplicationStrategy: quote.currentPolicy.applicationStrategy,
+        winningStrategy: quote.currentPolicy.winningStrategy ?? null,
+        policyFingerprint: quote.currentPolicy.policyFingerprint,
       });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);

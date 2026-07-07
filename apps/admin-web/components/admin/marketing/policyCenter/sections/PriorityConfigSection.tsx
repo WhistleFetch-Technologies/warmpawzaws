@@ -21,6 +21,7 @@ import {
   patchBusinessRules,
 } from '@/lib/discount-policy/business-rules-mapper';
 import type { WinningStrategyKey } from '@/lib/discount-policy/business-rules-types';
+import { normalizeWinningStrategy } from '@/lib/discount-policy/business-rules-types';
 import type { DiscountPolicyBundle, PolicyScope } from '@/lib/discount-policy/types';
 
 export function PriorityConfigSection({
@@ -48,7 +49,7 @@ export function PriorityConfigSection({
         draft.priority.global.phases.COUPONS?.maxSelected ??
         1;
 
-  const winningStrategy = rules.winningStrategy ?? 'MAX_CUSTOMER_SAVINGS';
+  const winningStrategy = normalizeWinningStrategy(rules.winningStrategy);
   const strategyMeta = WINNING_STRATEGY_OPTIONS.find((o) => o.value === winningStrategy);
 
   const setWinningStrategy = (value: WinningStrategyKey) => {
@@ -81,18 +82,16 @@ export function PriorityConfigSection({
         <DomainScopeSelector scope={scope} onScopeChange={setScope} />
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Winning Offer Strategy</CardTitle>
+            <CardTitle className="text-lg">Winning Strategy</CardTitle>
             <CardDescription>
-              Winning Offer Strategy applies when Discount Application Strategy is{' '}
-              <strong>Apply Best Offer Only</strong>.
+              Determines which offer wins when multiple promotions or coupons are applicable.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
               Current strategy:{' '}
-              <strong>{getApplicationStrategyLabel(rules.applicationStrategy)}</strong>. Configure
-              offer combinations on the Discount Application tab, or switch to Apply Best Offer Only
-              to set how a single winning offer is chosen.
+              <strong>{getApplicationStrategyLabel(rules.applicationStrategy)}</strong>. Winning
+              Strategy applies only when Discount Application is Best Offer Only.
             </p>
           </CardContent>
         </Card>
@@ -107,7 +106,7 @@ export function PriorityConfigSection({
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>
-            <CardTitle className="text-lg">Winning Offer Strategy</CardTitle>
+            <CardTitle className="text-lg">Winning Strategy</CardTitle>
             <CardDescription>
               Determines which offer wins when multiple promotions or coupons are applicable.
             </CardDescription>
@@ -116,7 +115,7 @@ export function PriorityConfigSection({
         </CardHeader>
         <CardContent className="space-y-6">
           <fieldset className="space-y-3">
-            <legend className="sr-only">Winning offer strategy</legend>
+            <legend className="sr-only">Winning strategy</legend>
             {WINNING_STRATEGY_OPTIONS.map((option) => (
               <label
                 key={option.value}
@@ -171,7 +170,7 @@ export function PriorityConfigSection({
                 onChange={(e) => setPhaseMax('AUTO_PROMOTIONS', Number(e.target.value))}
               />
               {bestOfferOnly ? (
-                <p className="text-xs text-slate-500">Locked to 1 when Apply Best Offer Only.</p>
+                <p className="text-xs text-slate-500">Locked to 1 when Best Offer Only is active.</p>
               ) : null}
             </div>
             <div className="space-y-2">
@@ -186,7 +185,7 @@ export function PriorityConfigSection({
                 onChange={(e) => setPhaseMax('COUPONS', Number(e.target.value))}
               />
               {bestOfferOnly ? (
-                <p className="text-xs text-slate-500">Locked to 1 when Apply Best Offer Only.</p>
+                <p className="text-xs text-slate-500">Locked to 1 when Best Offer Only is active.</p>
               ) : null}
             </div>
           </div>

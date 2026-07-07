@@ -9,7 +9,11 @@ import { apiClient } from '@/lib/api-client';
 import { resolvePromotionDestination } from '@/lib/promotion-navigation';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
-import { parsePromotionApplicableServices, shouldIncludePromotionForService } from '@/lib/promotion-banner-filter';
+import {
+  isDiscoveryAutoApplyPromotion,
+  parsePromotionApplicableServices,
+  shouldIncludePromotionForService,
+} from '@/lib/promotion-banner-filter';
 
 interface Promotion {
   id: string;
@@ -83,6 +87,9 @@ export function PromotionBanner({
         fetchedPromotions = response;
       }
       
+      // Platform coupons are checkout-only — never show in discovery Special Offers.
+      fetchedPromotions = fetchedPromotions.filter(isDiscoveryAutoApplyPromotion);
+
       // For home feed (`service=all`) include active published promos across categories.
       // Service-specific filtering applies only when rendering a specific vertical feed.
       if (fetchedPromotions.length > 0) {

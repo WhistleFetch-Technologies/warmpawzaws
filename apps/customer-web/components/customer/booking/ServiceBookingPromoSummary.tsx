@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { fetchBookingPromotionStack } from '@/lib/service-booking-pricing';
+import { fetchBookingDiscountQuote } from '@/lib/service-booking-pricing';
+import { totalSavingsFromQuote } from '@/lib/pricing/unified-resolver-response';
 import { PriceDisplay } from '@/components/customer/pricing/PriceDisplay';
 import { PromotionCard } from '@/components/customer/pricing/PromotionCard';
 import { SavingsBadge } from '@/components/customer/pricing/SavingsBadge';
@@ -48,31 +49,35 @@ export function ServiceBookingPromoSummary({
     let cancelled = false;
     setLoading(true);
 
-    fetchBookingPromotionStack({
+    fetchBookingDiscountQuote({
       vendorId,
       customerId: customerId || undefined,
       serviceIds,
       amount: baseAmount,
       serviceStyle,
       serviceCategory,
+      displayPromotionsOnly: true,
     })
-      .then((res) => {
-        if (cancelled) return;
-        const savings = res?.totalSavings ?? 0;
+      .then((quote) => {
+        if (cancelled || !quote) return;
+        const savings = totalSavingsFromQuote(quote);
         setDiscount(savings);
-        setFinalAmount(res?.finalAmount ?? Math.max(0, baseAmount - savings));
+        setFinalAmount(quote.savings?.finalAmount ?? Math.max(0, baseAmount - savings));
         setOffers(
-          (res?.applied || []).map((a) => ({
-            id: a.id,
-            name: a.name,
-            source: a.source === 'platform' ? 'platform' : 'vendor',
-            discountAmount: a.discountAmount,
-            autoApply: true,
-          }))
+          quote.appliedOffers
+            .filter((o) => o.trigger === 'AUTO')
+            .slice(0, 1)
+            .map((winner) => ({
+              id: winner.id,
+              name: winner.name,
+              source: winner.source === 'platform' ? 'platform' : 'vendor',
+              discountAmount: winner.discountAmount,
+              autoApply: true,
+            }))
         );
         onQuote?.({
           totalSavings: savings,
-          finalAmount: res?.finalAmount ?? Math.max(0, baseAmount - savings),
+          finalAmount: quote.savings?.finalAmount ?? Math.max(0, baseAmount - savings),
         });
       })
       .catch(() => {

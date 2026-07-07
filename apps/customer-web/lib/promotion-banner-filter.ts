@@ -5,6 +5,23 @@ export interface PromotionFilterInput {
   target_category?: string;
   targetCategory?: string;
   metadata?: Record<string, unknown>;
+  code?: string;
+  source?: string;
+  promotion_type?: string;
+}
+
+/** Coded offers and platform coupons are checkout-only — never discovery/auto-apply. */
+export function isPlatformCouponPromotion(promo: PromotionFilterInput): boolean {
+  if (String(promo.source ?? '').trim().toLowerCase() === 'platform_coupon') return true;
+  const type = String(promo.promotion_type ?? '').trim().toLowerCase();
+  if (type === 'coupon' || type === 'platform_coupon') return true;
+  const code = String(promo.code ?? '').trim();
+  if (code.length > 0) return true;
+  return false;
+}
+
+export function isDiscoveryAutoApplyPromotion(promo: PromotionFilterInput): boolean {
+  return !isPlatformCouponPromotion(promo);
 }
 
 const VALID_CUSTOMER_SERVICES = new Set([

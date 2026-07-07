@@ -3,8 +3,8 @@
  * Uses business rules + simplified discount math (no full resolver).
  */
 import { ensureBusinessRules, getWinningStrategyLabel } from './business-rules-mapper';
+import { WINNING_TO_PRIORITY, normalizeWinningStrategy } from './business-rules-types';
 import type { WinningStrategyKey } from './business-rules-types';
-import { WINNING_TO_PRIORITY } from './business-rules-types';
 import type { DiscountPolicyBundle } from './types';
 
 export interface SimulatorOfferInput {
@@ -74,7 +74,8 @@ function pickWinner(
 ): SimulatedOffer {
   if (eligible.length === 1) return eligible[0];
 
-  switch (winningStrategy) {
+  switch (normalizeWinningStrategy(winningStrategy)) {
+    case 'HIGHEST_CUSTOMER_SAVINGS':
     case 'MAX_CUSTOMER_SAVINGS':
       return [...eligible].sort((a, b) => b.discountAmount - a.discountAmount)[0];
     case 'LOWEST_PLATFORM_COST': {
@@ -161,12 +162,26 @@ export function simulatePolicyLocally(
   let reason = '';
 
   if (rules.applicationStrategy === 'BEST_OFFER_ONLY') {
-    const winningKey = rules.winningStrategy ?? 'MAX_CUSTOMER_SAVINGS';
+    const winningKey = normalizeWinningStrategy(rules.winningStrategy);
     winning = eligible.length ? pickWinner(eligible, input.offers, winningKey, rules.customPriorityOrder) : null;
     applied = winning ? [winning] : [];
     reason = winning
       ? `${getWinningStrategyLabel(winningKey)} (${WINNING_TO_PRIORITY[winningKey]})`
       : 'No eligible offers';
+  } else if (rules.applicationStrategy === 'PROMOTION_PLUS_COUPON') {
+    const promos = eligible.filter((e) => e.offerType.includes('PROMOTION'));
+    const coupons = eligible.filter((e) => e.offerType.includes('COUPON'));
+    const bestPromo = promos.length
+      ? pickWinner(promos, input.offers, 'HIGHEST_CUSTOMER_SAVINGS', rules.customPriorityOrder)
+      : null;
+    const bestCoupon = coupons.length
+      ? pickWinner(coupons, input.offers, 'HIGHEST_CUSTOMER_SAVINGS', rules.customPriorityOrder)
+      : null;
+    applied = [bestPromo, bestCoupon].filter(Boolean) as SimulatedOffer[];
+    winning = bestPromo;
+    reason = applied.length
+      ? 'Best promotion + best coupon per Promotion + Coupon policy'
+      : 'No eligible promo or coupon';
   } else if (rules.applicationStrategy === 'STACK_ELIGIBLE') {
     applied = stackSequential(price, eligible, matrixAllowed, rules.customPriorityOrder);
     winning = applied[0] ?? null;
@@ -176,7 +191,7 @@ export function simulatePolicyLocally(
   } else {
     applied = eligible.slice(0, 1);
     winning = applied[0] ?? null;
-    reason = 'Custom Rules — simplified preview (first eligible offer)';
+    reason = 'Fully Configurable — simplified preview (first eligible offer)';
   }
 
   const ignored = eligible.filter((e) => !applied.some((a) => a.offerType === e.offerType));

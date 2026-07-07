@@ -1,25 +1,24 @@
 /**
- * Runtime contract defaults — aligned with discount-engine config loaders.
- * Used when policy HTTP APIs are unavailable (Phase 8 pending).
+ * Runtime contract defaults — aligned with discount-engine config loaders (Policy Center V2).
  */
 import { DEFAULT_BUSINESS_RULES, syncBusinessRulesToEngine } from './business-rules-mapper';
 import type { DiscountPolicyBundle } from './types';
 
 const BASE_POLICY: DiscountPolicyBundle = {
   priority: {
-    version: '1.0.0',
+    version: '2.0.0',
     global: {
       strategy: 'MAX_CUSTOMER_SAVINGS',
       tieBreakers: ['EXCLUSIVE', 'SPOTLIGHT', 'PRIORITY_WEIGHT', 'VALID_FROM', 'ID'],
       phases: {
-        AUTO_PROMOTIONS: { maxSelected: 2 },
+        AUTO_PROMOTIONS: { maxSelected: 1 },
         COUPONS: { maxSelected: 1 },
       },
     },
     domains: {
       SERVICE: {
-        strategy: 'VENDOR_SPOTLIGHT_FIRST',
-        phases: { AUTO_PROMOTIONS: { maxSelected: 2 }, COUPONS: { maxSelected: 1 } },
+        strategy: 'MAX_CUSTOMER_SAVINGS',
+        phases: { AUTO_PROMOTIONS: { maxSelected: 1 }, COUPONS: { maxSelected: 1 } },
       },
       ECOMMERCE: {
         strategy: 'MAX_CUSTOMER_SAVINGS',
@@ -28,12 +27,12 @@ const BASE_POLICY: DiscountPolicyBundle = {
     },
   },
   stack: {
-    version: '1.0.0',
+    version: '2.0.0',
     global: {
-      allowCouponWithPromotion: true,
+      allowCouponWithPromotion: false,
       allowMultipleCoupons: false,
       allowMultipleVendorPromotions: false,
-      allowPlatformWithVendor: true,
+      allowPlatformWithVendor: false,
       applicationModeDefault: 'SEQUENTIAL',
       exclusiveSkipsCouponPhase: true,
       exclusiveTerminatesAll: true,
@@ -46,12 +45,12 @@ const BASE_POLICY: DiscountPolicyBundle = {
       stackRules: [],
     },
     domains: {
-      SERVICE: { allowPlatformWithVendor: true },
+      SERVICE: { allowPlatformWithVendor: false },
       ECOMMERCE: { allowPlatformWithVendor: false },
     },
   },
   funding: {
-    version: '1.0.0',
+    version: '2.0.0',
     sharedDefaultSplit: { platformPercent: 50, vendorPercent: 50 },
     stackVetoes: [],
     settlementHints: { roundTo: 2, currency: 'INR' },
@@ -59,19 +58,19 @@ const BASE_POLICY: DiscountPolicyBundle = {
     blockSharedWithPlatformCoupon: false,
   },
   limits: {
-    version: '1.0.0',
+    version: '2.0.0',
     global: {
-      maxAutoPromotions: 2,
+      maxAutoPromotions: 1,
       maxVendorPromotions: 1,
       maxPlatformPromotions: 1,
       maxCoupons: 1,
-      maxTotalDiscounts: 3,
+      maxTotalDiscounts: 1,
       maxTotalDiscountPercent: 100,
       minPayableAmount: 1,
       capOverflowStrategy: 'REJECT_LAST',
     },
     domains: {
-      SERVICE: { maxAutoPromotions: 2, maxCoupons: 1 },
+      SERVICE: { maxAutoPromotions: 1, maxCoupons: 1 },
       ECOMMERCE: { maxAutoPromotions: 1, maxCoupons: 1 },
     },
   },

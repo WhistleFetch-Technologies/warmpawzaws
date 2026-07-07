@@ -648,6 +648,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     onDetails={openVetDetails}
                     onBookPlan={handleVetBookPlan}
                     onOpenCenterDetails={openVetCenterProfile}
+                    customerId={phone}
+                    serviceCategory="vet"
                   />
                 );
               })
