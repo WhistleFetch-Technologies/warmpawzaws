@@ -1,0 +1,7455 @@
+{
+  "generatedAt": "2026-07-02T11:14:40.703Z",
+  "environment": "prod",
+  "foreignKeys": {
+    "ok": true,
+    "label": "foreign_keys",
+    "rows": [
+      [
+        "ad_budget_transactions",
+        "campaign_id",
+        "advertising_campaigns",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "ad_budget_transactions_campaign_id_fkey"
+      ],
+      [
+        "ad_budget_transactions",
+        "click_id",
+        "ad_clicks",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "ad_budget_transactions_click_id_fkey"
+      ],
+      [
+        "ad_budget_transactions",
+        "impression_id",
+        "ad_impressions",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "ad_budget_transactions_impression_id_fkey"
+      ],
+      [
+        "ad_budget_transactions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "ad_budget_transactions_vendor_id_fkey"
+      ],
+      [
+        "ad_clicks",
+        "campaign_id",
+        "advertising_campaigns",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "ad_clicks_campaign_id_fkey"
+      ],
+      [
+        "ad_clicks",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "ad_clicks_customer_id_fkey"
+      ],
+      [
+        "ad_clicks",
+        "impression_id",
+        "ad_impressions",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "ad_clicks_impression_id_fkey"
+      ],
+      [
+        "ad_clicks",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "ad_clicks_vendor_id_fkey"
+      ],
+      [
+        "ad_impressions",
+        "campaign_id",
+        "advertising_campaigns",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "ad_impressions_campaign_id_fkey"
+      ],
+      [
+        "ad_impressions",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "ad_impressions_customer_id_fkey"
+      ],
+      [
+        "ad_impressions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "ad_impressions_vendor_id_fkey"
+      ],
+      [
+        "ad_performance_analytics",
+        "campaign_id",
+        "advertising_campaigns",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "ad_performance_analytics_campaign_id_fkey"
+      ],
+      [
+        "ad_performance_analytics",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "ad_performance_analytics_vendor_id_fkey"
+      ],
+      [
+        "admins",
+        "admin_role_id",
+        "roles",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "admins_admin_role_id_fkey"
+      ],
+      [
+        "adoption_applications",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "adoption_applications_booking_fkey"
+      ],
+      [
+        "adoption_applications",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "adoption_applications_customer_fkey"
+      ],
+      [
+        "adoption_center_profiles",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "adoption_center_profiles_vendor_id_fkey"
+      ],
+      [
+        "advertising_campaigns",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "advertising_campaigns_vendor_id_fkey"
+      ],
+      [
+        "ai_booking_wizard_sessions",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "ai_booking_wizard_sessions_customer_id_fkey"
+      ],
+      [
+        "ai_chatbot_conversations",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "ai_chatbot_conversations_customer_id_fkey"
+      ],
+      [
+        "ai_chatbot_conversations",
+        "escalation_ticket_id",
+        "support_tickets",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "ai_chatbot_conversations_escalation_ticket_id_fkey"
+      ],
+      [
+        "ambulance_vehicles",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "ambulance_vehicles_vendor_id_fkey"
+      ],
+      [
+        "analytics_events",
+        "session_id",
+        "analytics_sessions",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "analytics_events_session_id_fkey"
+      ],
+      [
+        "bank_verifications",
+        "bank_detail_id",
+        "vendor_bank_details",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "bank_verifications_bank_detail_id_fkey"
+      ],
+      [
+        "bank_verifications",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "bank_verifications_vendor_id_fkey"
+      ],
+      [
+        "banner_analytics",
+        "banner_id",
+        "banners",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "banner_analytics_banner_id_fkey"
+      ],
+      [
+        "banner_analytics",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "banner_analytics_customer_id_fkey"
+      ],
+      [
+        "boarding_facilities",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "boarding_facilities_vendor_id_fkey"
+      ],
+      [
+        "boarding_rooms",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "boarding_rooms_vendor_id_fkey"
+      ],
+      [
+        "booking_cancellation_rules",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "booking_cancellation_rules_vendor_id_fkey"
+      ],
+      [
+        "booking_policies",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "booking_policies_vendor_id_fkey"
+      ],
+      [
+        "booking_staff_assignments",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "booking_staff_assignments_booking_fkey"
+      ],
+      [
+        "booking_staff_assignments",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "booking_staff_assignments_staff_fkey"
+      ],
+      [
+        "booking_status_history",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "booking_status_history_booking_id_fkey"
+      ],
+      [
+        "booking_status_transitions",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "booking_status_transitions_booking_fkey"
+      ],
+      [
+        "bookings",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "bookings_customer_id_fkey"
+      ],
+      [
+        "bookings",
+        "parent_booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "bookings_parent_booking_id_fkey"
+      ],
+      [
+        "bookings",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "bookings_pet_id_fkey"
+      ],
+      [
+        "bookings",
+        "rescheduled_from_booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "bookings_rescheduled_from_fkey"
+      ],
+      [
+        "bookings",
+        "service_id",
+        "vendor_services",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "bookings_service_id_vendor_services_fkey"
+      ],
+      [
+        "bookings",
+        "settlement_id",
+        "settlements",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "bookings_settlement_id_fkey"
+      ],
+      [
+        "bookings",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "bookings_staff_id_fkey"
+      ],
+      [
+        "bookings",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "bookings_vendor_id_fkey"
+      ],
+      [
+        "breeder_profiles",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "breeder_profiles_vendor_id_fkey"
+      ],
+      [
+        "cafe_tables",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "cafe_tables_vendor_id_fkey"
+      ],
+      [
+        "chat_messages",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "chat_messages_booking_id_fkey"
+      ],
+      [
+        "coupon_usages",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "coupon_usages_booking_id_fkey"
+      ],
+      [
+        "coupon_usages",
+        "coupon_id",
+        "coupons",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "coupon_usages_coupon_id_fkey"
+      ],
+      [
+        "coupon_usages",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "coupon_usages_customer_id_fkey"
+      ],
+      [
+        "coupon_usages",
+        "order_id",
+        "orders",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "coupon_usages_order_id_fkey"
+      ],
+      [
+        "customer_addresses",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_addresses_customer_id_fkey"
+      ],
+      [
+        "customer_admin_portal_codes",
+        "created_by_admin_id",
+        "admins",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "customer_admin_portal_codes_created_by_admin_id_fkey"
+      ],
+      [
+        "customer_admin_portal_codes",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_admin_portal_codes_customer_id_fkey"
+      ],
+      [
+        "customer_compliance_issues",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_compliance_issues_customer_id_fkey"
+      ],
+      [
+        "customer_deactivation_requests",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_deactivation_requests_customer_id_fkey"
+      ],
+      [
+        "customer_identity",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "customer_identity_customer_id_fkey"
+      ],
+      [
+        "customer_payment_methods",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_payment_methods_customer_id_fkey"
+      ],
+      [
+        "customer_profile_completion",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_profile_completion_customer_id_fkey"
+      ],
+      [
+        "customer_provider_history",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_provider_history_customer_id_fkey"
+      ],
+      [
+        "customer_provider_history",
+        "last_booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "customer_provider_history_last_booking_id_fkey"
+      ],
+      [
+        "customer_provider_history",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_provider_history_vendor_id_fkey"
+      ],
+      [
+        "customer_referrals",
+        "referred_customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "customer_referrals_referred_customer_id_fkey"
+      ],
+      [
+        "customer_referrals",
+        "referrer_customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_referrals_referrer_customer_id_fkey"
+      ],
+      [
+        "customer_referrals",
+        "referrer_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_referrals_referrer_vendor_id_fkey"
+      ],
+      [
+        "customer_segment_assignments",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_segment_assignments_customer_id_fkey"
+      ],
+      [
+        "customer_segment_assignments",
+        "segment_id",
+        "loyalty_segments",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_segment_assignments_segment_id_fkey"
+      ],
+      [
+        "customer_subscriptions",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_subscriptions_customer_id_fkey"
+      ],
+      [
+        "customer_subscriptions",
+        "plan_id",
+        "vendor_subscription_plans",
+        "plan_id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_subscriptions_plan_id_fkey"
+      ],
+      [
+        "customer_subscriptions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_subscriptions_vendor_id_fkey"
+      ],
+      [
+        "customer_tiers",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "customer_tiers_customer_id_fkey"
+      ],
+      [
+        "customer_wallets",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "customer_wallets_customer_id_fkey"
+      ],
+      [
+        "customers",
+        "customer_identity_id",
+        "customer_identity",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "customers_customer_identity_id_fkey"
+      ],
+      [
+        "dating_chat_messages",
+        "match_id",
+        "dating_matches",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "dating_chat_messages_match_id_fkey"
+      ],
+      [
+        "dating_chat_messages",
+        "sender_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "dating_chat_messages_sender_id_fkey"
+      ],
+      [
+        "dating_matches",
+        "chat_unlocked_by",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "dating_matches_chat_unlocked_by_fkey"
+      ],
+      [
+        "dating_matches",
+        "customer1_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "dating_matches_customer1_id_fkey"
+      ],
+      [
+        "dating_matches",
+        "customer2_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "dating_matches_customer2_id_fkey"
+      ],
+      [
+        "dating_meetups",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "dating_meetups_booking_id_fkey"
+      ],
+      [
+        "dating_meetups",
+        "cafe_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "dating_meetups_cafe_vendor_id_fkey"
+      ],
+      [
+        "dating_meetups",
+        "customer1_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "dating_meetups_customer1_id_fkey"
+      ],
+      [
+        "dating_meetups",
+        "customer2_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "dating_meetups_customer2_id_fkey"
+      ],
+      [
+        "dating_meetups",
+        "initiated_by",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "dating_meetups_initiated_by_fkey"
+      ],
+      [
+        "dating_meetups",
+        "match_id",
+        "dating_matches",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "dating_meetups_match_id_fkey"
+      ],
+      [
+        "dating_profiles_owner",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "dating_profiles_owner_customer_id_fkey"
+      ],
+      [
+        "dating_profiles_pet",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "dating_profiles_pet_customer_id_fkey"
+      ],
+      [
+        "dating_profiles_pet",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "dating_profiles_pet_pet_id_fkey"
+      ],
+      [
+        "deliveries",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "deliveries_customer_id_fkey"
+      ],
+      [
+        "deliveries",
+        "delivery_partner_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "deliveries_delivery_partner_id_fkey"
+      ],
+      [
+        "deliveries",
+        "nutritionist_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "deliveries_nutritionist_id_fkey"
+      ],
+      [
+        "deliveries",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "deliveries_vendor_id_fkey"
+      ],
+      [
+        "delivery_location_history",
+        "tracking_id",
+        "delivery_tracking",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "delivery_location_history_tracking_id_fkey"
+      ],
+      [
+        "delivery_partners",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "delivery_partners_vendor_id_fkey"
+      ],
+      [
+        "delivery_routes",
+        "partner_id",
+        "delivery_partners",
+        "partner_id",
+        "NO ACTION",
+        "SET NULL",
+        "delivery_routes_partner_id_fkey"
+      ],
+      [
+        "delivery_settlements",
+        "meal_order_id",
+        "meal_orders",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "delivery_settlements_meal_order_id_fkey"
+      ],
+      [
+        "delivery_settlements",
+        "pharmacy_order_id",
+        "pharmacy_orders",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "delivery_settlements_pharmacy_order_id_fkey"
+      ],
+      [
+        "delivery_settlements",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "delivery_settlements_vendor_id_fkey"
+      ],
+      [
+        "delivery_tracking",
+        "logistics_partner_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "delivery_tracking_logistics_partner_id_fkey"
+      ],
+      [
+        "delivery_tracking",
+        "pharmacy_order_id",
+        "pharmacy_orders",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "delivery_tracking_pharmacy_order_id_fkey"
+      ],
+      [
+        "delivery_tracking",
+        "subscription_delivery_id",
+        "meal_subscription_deliveries",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "delivery_tracking_subscription_delivery_fk"
+      ],
+      [
+        "diagnostic_bookings",
+        "collector_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "diagnostic_bookings_collector_id_fkey"
+      ],
+      [
+        "diagnostic_bookings",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "diagnostic_bookings_customer_id_fkey"
+      ],
+      [
+        "diagnostic_bookings",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "diagnostic_bookings_pet_id_fkey"
+      ],
+      [
+        "diagnostic_bookings",
+        "prescription_id",
+        "prescriptions",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "diagnostic_bookings_prescription_id_fkey"
+      ],
+      [
+        "diagnostic_bookings",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "diagnostic_bookings_vendor_id_fkey"
+      ],
+      [
+        "diagnostic_reports",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "diagnostic_reports_booking_id_fkey"
+      ],
+      [
+        "diagnostic_reports",
+        "diagnostic_booking_id",
+        "diagnostic_bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "diagnostic_reports_diagnostic_booking_id_fkey"
+      ],
+      [
+        "diagnostic_reports",
+        "previous_version_id",
+        "diagnostic_reports",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "diagnostic_reports_previous_version_id_fkey"
+      ],
+      [
+        "diagnostic_reports",
+        "uploaded_by",
+        "staff",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "diagnostic_reports_uploaded_by_fkey"
+      ],
+      [
+        "diagnostic_tests",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "diagnostic_tests_vendor_id_fkey"
+      ],
+      [
+        "disputes",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "disputes_booking_id_fkey"
+      ],
+      [
+        "disputes",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "disputes_customer_id_fkey"
+      ],
+      [
+        "disputes",
+        "order_id",
+        "orders",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "disputes_order_id_fkey"
+      ],
+      [
+        "disputes",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "disputes_vendor_id_fkey"
+      ],
+      [
+        "ecommerce_categories",
+        "parent_category_id",
+        "ecommerce_categories",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "ecommerce_categories_parent_fkey"
+      ],
+      [
+        "ecommerce_policies",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "ecommerce_policies_vendor_id_fkey"
+      ],
+      [
+        "emergency_booking_queue",
+        "assigned_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "emergency_booking_queue_vendor_id_fkey"
+      ],
+      [
+        "emergency_booking_queue",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "emergency_booking_queue_booking_id_fkey"
+      ],
+      [
+        "error_case_occurrences",
+        "case_id",
+        "product_error_cases",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "error_case_occurrences_case_id_fkey"
+      ],
+      [
+        "error_case_occurrences",
+        "event_id",
+        "analytics_events",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "error_case_occurrences_event_id_fkey"
+      ],
+      [
+        "featured_vendors",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "featured_vendors_vendor_id_fkey"
+      ],
+      [
+        "gps_location_history",
+        "session_id",
+        "gps_tracking_sessions",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "gps_location_history_session_id_fkey"
+      ],
+      [
+        "gps_tracking_sessions",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "gps_tracking_sessions_booking_id_fkey"
+      ],
+      [
+        "groomer_gallery",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "groomer_gallery_booking_id_fkey"
+      ],
+      [
+        "groomer_gallery",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "groomer_gallery_pet_id_fkey"
+      ],
+      [
+        "groomer_gallery",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "groomer_gallery_vendor_id_fkey"
+      ],
+      [
+        "gst_rules",
+        "tax_category_id",
+        "tax_categories",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "gst_rules_tax_category_id_fkey"
+      ],
+      [
+        "holiday_bookings",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "holiday_bookings_customer_id_fkey"
+      ],
+      [
+        "holiday_bookings",
+        "package_id",
+        "holiday_packages",
+        "package_id",
+        "NO ACTION",
+        "CASCADE",
+        "holiday_bookings_package_id_fkey"
+      ],
+      [
+        "holiday_bookings",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "holiday_bookings_vendor_id_fkey"
+      ],
+      [
+        "holiday_packages",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "holiday_packages_vendor_id_fkey"
+      ],
+      [
+        "hsn_codes",
+        "category_id",
+        "tax_categories",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "hsn_codes_category_id_fkey"
+      ],
+      [
+        "insurance_claims",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "insurance_claims_booking_fkey"
+      ],
+      [
+        "insurance_claims",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "insurance_claims_customer_fkey"
+      ],
+      [
+        "invoices",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "invoices_customer_id_fkey"
+      ],
+      [
+        "invoices",
+        "order_id",
+        "orders",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "invoices_order_id_fkey"
+      ],
+      [
+        "invoices",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "invoices_vendor_id_fkey"
+      ],
+      [
+        "loyalty_transactions",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "loyalty_transactions_customer_id_fkey"
+      ],
+      [
+        "loyalty_transactions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "loyalty_transactions_vendor_id_fkey"
+      ],
+      [
+        "mating_appointments",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "mating_appointments_booking_id_fkey"
+      ],
+      [
+        "mating_appointments",
+        "customer1_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "mating_appointments_customer1_id_fkey"
+      ],
+      [
+        "mating_appointments",
+        "customer2_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "mating_appointments_customer2_id_fkey"
+      ],
+      [
+        "mating_appointments",
+        "match_id",
+        "dating_matches",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "mating_appointments_match_id_fkey"
+      ],
+      [
+        "mating_appointments",
+        "pet1_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "mating_appointments_pet1_id_fkey"
+      ],
+      [
+        "mating_appointments",
+        "pet2_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "mating_appointments_pet2_id_fkey"
+      ],
+      [
+        "mating_appointments",
+        "requested_by",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "mating_appointments_requested_by_fkey"
+      ],
+      [
+        "mating_appointments",
+        "vet_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "mating_appointments_vet_vendor_id_fkey"
+      ],
+      [
+        "meal_orders",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "meal_orders_customer_id_fkey"
+      ],
+      [
+        "meal_orders",
+        "logistics_partner_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "meal_orders_logistics_partner_id_fkey"
+      ],
+      [
+        "meal_orders",
+        "meal_plan_id",
+        "meal_plans",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "meal_orders_meal_plan_id_fkey"
+      ],
+      [
+        "meal_orders",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "meal_orders_pet_id_fkey"
+      ],
+      [
+        "meal_orders",
+        "subscription_id",
+        "meal_subscriptions",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "meal_orders_subscription_id_fkey"
+      ],
+      [
+        "meal_orders",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "meal_orders_vendor_id_fkey"
+      ],
+      [
+        "meal_plans",
+        "service_catalog_category_id",
+        "service_categories",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "meal_plans_service_catalog_category_id_fkey"
+      ],
+      [
+        "meal_plans",
+        "tax_category_id",
+        "tax_categories",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "meal_plans_tax_category_id_fkey"
+      ],
+      [
+        "meal_plans",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "meal_plans_vendor_id_fkey"
+      ],
+      [
+        "meal_refund_cases",
+        "meal_order_id",
+        "meal_orders",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "meal_refund_cases_meal_order_id_fkey"
+      ],
+      [
+        "meal_refund_cases",
+        "pidge_webhook_event_id",
+        "pidge_hyperlocal_webhook_events",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "meal_refund_cases_pidge_webhook_event_id_fkey"
+      ],
+      [
+        "meal_refund_cases",
+        "refunds_row_id",
+        "refunds",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "meal_refund_cases_refunds_row_id_fkey"
+      ],
+      [
+        "meal_rider_reassign_requests",
+        "delivery_tracking_id",
+        "delivery_tracking",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "meal_rider_reassign_requests_delivery_tracking_id_fkey"
+      ],
+      [
+        "meal_rider_reassign_requests",
+        "meal_order_id",
+        "meal_orders",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "meal_rider_reassign_requests_meal_order_id_fkey"
+      ],
+      [
+        "meal_subscription_deliveries",
+        "subscription_id",
+        "meal_subscriptions",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "meal_subscription_deliveries_subscription_id_fkey"
+      ],
+      [
+        "meal_subscription_deliveries",
+        "tracking_id",
+        "delivery_tracking",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "meal_subscription_deliveries_tracking_fk"
+      ],
+      [
+        "meal_subscription_payments",
+        "subscription_id",
+        "meal_subscriptions",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "meal_subscription_payments_subscription_id_fkey"
+      ],
+      [
+        "meal_subscriptions",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "meal_subscriptions_pet_id_fkey"
+      ],
+      [
+        "meal_subscriptions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "meal_subscriptions_vendor_id_fkey"
+      ],
+      [
+        "medical_records",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "medical_records_booking_id_fkey"
+      ],
+      [
+        "medical_records",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "medical_records_customer_id_fkey"
+      ],
+      [
+        "medical_records",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "medical_records_pet_id_fkey"
+      ],
+      [
+        "medical_records",
+        "previous_version_id",
+        "medical_records",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "medical_records_previous_version_id_fkey"
+      ],
+      [
+        "medical_records",
+        "referred_from_booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "medical_records_referred_from_booking_id_fkey"
+      ],
+      [
+        "medical_records",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "medical_records_staff_id_fkey"
+      ],
+      [
+        "medical_records",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "medical_records_vendor_id_fkey"
+      ],
+      [
+        "medicine_orders",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "medicine_orders_customer_id_fkey"
+      ],
+      [
+        "medicine_orders",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "medicine_orders_pet_id_fkey"
+      ],
+      [
+        "medicine_orders",
+        "pharmacy_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "medicine_orders_pharmacy_vendor_id_fkey"
+      ],
+      [
+        "medicine_orders",
+        "prescription_id",
+        "prescriptions",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "medicine_orders_prescription_id_fkey"
+      ],
+      [
+        "notification_campaign_cities",
+        "campaign_id",
+        "notification_campaigns",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "notification_campaign_cities_campaign_id_fkey"
+      ],
+      [
+        "notification_campaign_deliveries",
+        "campaign_id",
+        "notification_campaigns",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "notification_campaign_deliveries_campaign_id_fkey"
+      ],
+      [
+        "notification_campaign_events",
+        "campaign_id",
+        "notification_campaigns",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "notification_campaign_events_campaign_id_fkey"
+      ],
+      [
+        "notification_campaign_regions",
+        "campaign_id",
+        "notification_campaigns",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "notification_campaign_regions_campaign_id_fkey"
+      ],
+      [
+        "notification_campaign_users",
+        "campaign_id",
+        "notification_campaigns",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "notification_campaign_users_campaign_id_fkey"
+      ],
+      [
+        "notification_delivery_log",
+        "notification_id",
+        "notifications",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "notification_delivery_log_notification_id_fkey"
+      ],
+      [
+        "notification_logs",
+        "template_id",
+        "notification_templates_enhanced",
+        "template_id",
+        "NO ACTION",
+        "SET NULL",
+        "notification_logs_template_id_fkey"
+      ],
+      [
+        "notification_segment_rules",
+        "segment_id",
+        "notification_segments",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "notification_segment_rules_segment_id_fkey"
+      ],
+      [
+        "notification_segment_targets",
+        "campaign_id",
+        "notification_campaigns",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "notification_segment_targets_campaign_id_fkey"
+      ],
+      [
+        "notification_segment_targets",
+        "segment_id",
+        "notification_segments",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "notification_segment_targets_segment_id_fkey"
+      ],
+      [
+        "nutrition_consultation_requests",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "nutrition_consultation_requests_customer_id_fkey"
+      ],
+      [
+        "nutrition_consultation_requests",
+        "meal_plan_id",
+        "meal_plans",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "nutrition_consultation_requests_meal_plan_id_fkey"
+      ],
+      [
+        "nutrition_consultation_requests",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "nutrition_consultation_requests_pet_id_fkey"
+      ],
+      [
+        "nutrition_consultation_requests",
+        "reviewed_by",
+        "staff",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "nutrition_consultation_requests_reviewed_by_fkey"
+      ],
+      [
+        "nutrition_consultation_requests",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "nutrition_consultation_requests_vendor_id_fkey"
+      ],
+      [
+        "order_items",
+        "order_id",
+        "orders",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "order_items_order_id_fkey"
+      ],
+      [
+        "order_items",
+        "service_id",
+        "services",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "order_items_service_id_fkey"
+      ],
+      [
+        "orders",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "orders_customer_id_fkey"
+      ],
+      [
+        "orders",
+        "payment_id",
+        "payments",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "orders_payment_id_fkey"
+      ],
+      [
+        "orders",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "orders_vendor_id_fkey"
+      ],
+      [
+        "package_milestones",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "package_milestones_booking_fkey"
+      ],
+      [
+        "package_purchases",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "package_purchases_customer_id_fkey"
+      ],
+      [
+        "package_purchases",
+        "preferred_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "package_purchases_preferred_vendor_id_fkey"
+      ],
+      [
+        "package_purchases",
+        "settlement_id",
+        "settlements",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "package_purchases_settlement_id_fkey"
+      ],
+      [
+        "package_purchases",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "package_purchases_vendor_id_fkey"
+      ],
+      [
+        "package_scheduled_sessions",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "package_scheduled_sessions_booking_id_fkey"
+      ],
+      [
+        "package_scheduled_sessions",
+        "package_purchase_id",
+        "package_purchases",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "package_scheduled_sessions_package_purchase_id_fkey"
+      ],
+      [
+        "package_services",
+        "service_id",
+        "services",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "package_services_service_id_fkey"
+      ],
+      [
+        "package_sessions",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "package_sessions_booking_id_fkey"
+      ],
+      [
+        "package_sessions",
+        "package_purchase_id",
+        "package_purchases",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "fk_package_sessions_purchase"
+      ],
+      [
+        "package_sessions",
+        "package_purchase_id",
+        "package_purchases",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "package_sessions_package_purchase_id_fkey"
+      ],
+      [
+        "package_usage_log",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "package_usage_log_booking_id_fkey"
+      ],
+      [
+        "package_usage_log",
+        "package_purchase_id",
+        "package_purchases",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "package_usage_log_package_purchase_id_fkey"
+      ],
+      [
+        "payment_history",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "payment_history_customer_id_fkey"
+      ],
+      [
+        "payment_history",
+        "payment_id",
+        "payments",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "payment_history_payment_id_fkey"
+      ],
+      [
+        "payment_history",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "payment_history_vendor_id_fkey"
+      ],
+      [
+        "payment_retry_log",
+        "payment_id",
+        "payments",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "payment_retry_log_payment_fkey"
+      ],
+      [
+        "payments",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "payments_booking_id_fkey"
+      ],
+      [
+        "payments",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "payments_customer_id_fkey"
+      ],
+      [
+        "payments",
+        "gst_rule_id",
+        "gst_rules",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "payments_gst_rule_id_fkey"
+      ],
+      [
+        "payments",
+        "order_id",
+        "orders",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "payments_order_id_fkey"
+      ],
+      [
+        "payments",
+        "pharmacy_order_id",
+        "pharmacy_orders",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "payments_pharmacy_order_id_fkey"
+      ],
+      [
+        "payments",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "payments_vendor_id_fkey"
+      ],
+      [
+        "payouts",
+        "settlement_id",
+        "settlements",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "payouts_settlement_id_fkey"
+      ],
+      [
+        "payouts",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "payouts_vendor_id_fkey"
+      ],
+      [
+        "pending_payouts",
+        "payout_id",
+        "payouts",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "pending_payouts_payout_id_fkey"
+      ],
+      [
+        "pending_payouts",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "pending_payouts_vendor_id_fkey"
+      ],
+      [
+        "pending_reschedules",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "pending_reschedules_booking_id_fkey"
+      ],
+      [
+        "pet_inquiries",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "pet_inquiries_customer_id_fkey"
+      ],
+      [
+        "pet_inquiries",
+        "listing_id",
+        "pet_listings",
+        "listing_id",
+        "NO ACTION",
+        "CASCADE",
+        "pet_inquiries_listing_id_fkey"
+      ],
+      [
+        "pet_listings",
+        "breeder_id",
+        "breeder_profiles",
+        "breeder_id",
+        "NO ACTION",
+        "CASCADE",
+        "pet_listings_breeder_id_fkey"
+      ],
+      [
+        "pet_skill_progress",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "pet_skill_progress_pet_id_fkey"
+      ],
+      [
+        "pet_skill_progress",
+        "skill_id",
+        "training_skills",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "pet_skill_progress_skill_id_fkey"
+      ],
+      [
+        "pet_skill_progress",
+        "trainer_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "pet_skill_progress_trainer_id_fkey"
+      ],
+      [
+        "pet_skill_progress",
+        "training_package_id",
+        "package_purchases",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "pet_skill_progress_training_package_id_fkey"
+      ],
+      [
+        "pet_vaccination_reminder_log",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "pet_vaccination_reminder_log_customer_id_fkey"
+      ],
+      [
+        "pet_vaccination_reminder_log",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "pet_vaccination_reminder_log_pet_id_fkey"
+      ],
+      [
+        "pets",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "pets_customer_id_fkey"
+      ],
+      [
+        "pharmacy_broadcasts",
+        "order_id",
+        "pharmacy_orders",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "pharmacy_broadcasts_order_id_fkey"
+      ],
+      [
+        "pharmacy_broadcasts",
+        "pharmacy_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "pharmacy_broadcasts_pharmacy_id_fkey"
+      ],
+      [
+        "pharmacy_orders",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "pharmacy_orders_customer_id_fkey"
+      ],
+      [
+        "pharmacy_orders",
+        "logistics_partner_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "pharmacy_orders_logistics_partner_id_fkey"
+      ],
+      [
+        "pharmacy_orders",
+        "pharmacy_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "pharmacy_orders_pharmacy_id_fkey"
+      ],
+      [
+        "pharmacy_orders",
+        "prescription_id",
+        "prescriptions",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "pharmacy_orders_prescription_id_fkey"
+      ],
+      [
+        "pharmacy_quotes",
+        "medicine_order_id",
+        "medicine_orders",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "pharmacy_quotes_medicine_order_id_fkey"
+      ],
+      [
+        "pharmacy_quotes",
+        "pharmacy_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "pharmacy_quotes_pharmacy_vendor_id_fkey"
+      ],
+      [
+        "pidge_hyperlocal_webhook_events",
+        "delivery_tracking_id",
+        "delivery_tracking",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "pidge_hyperlocal_webhook_events_delivery_tracking_id_fkey"
+      ],
+      [
+        "pidge_hyperlocal_webhook_events",
+        "meal_order_id",
+        "meal_orders",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "pidge_hyperlocal_webhook_events_meal_order_id_fkey"
+      ],
+      [
+        "policy_acceptances",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "policy_acceptances_customer_id_fkey"
+      ],
+      [
+        "policy_acceptances",
+        "order_id",
+        "orders",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "policy_acceptances_order_id_fkey"
+      ],
+      [
+        "policy_acceptances",
+        "policy_id",
+        "ecommerce_policies",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "policy_acceptances_policy_id_fkey"
+      ],
+      [
+        "post_service_payments",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "post_service_payments_booking_fkey"
+      ],
+      [
+        "post_service_payments",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "post_service_payments_customer_fkey"
+      ],
+      [
+        "post_service_payments",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "post_service_payments_vendor_fkey"
+      ],
+      [
+        "prescription_submissions",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "prescription_submissions_customer_id_fkey"
+      ],
+      [
+        "prescription_submissions",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "prescription_submissions_pet_id_fkey"
+      ],
+      [
+        "prescription_submissions",
+        "pharmacy_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "prescription_submissions_pharmacy_vendor_id_fkey"
+      ],
+      [
+        "prescription_submissions",
+        "verified_by",
+        "staff",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "prescription_submissions_verified_by_fkey"
+      ],
+      [
+        "prescriptions",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "prescriptions_booking_id_fkey"
+      ],
+      [
+        "prescriptions",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "prescriptions_customer_id_fkey"
+      ],
+      [
+        "prescriptions",
+        "finalized_by",
+        "staff",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "prescriptions_finalized_by_fkey"
+      ],
+      [
+        "prescriptions",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "prescriptions_pet_id_fkey"
+      ],
+      [
+        "prescriptions",
+        "previous_version_id",
+        "prescriptions",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "prescriptions_previous_version_id_fkey"
+      ],
+      [
+        "prescriptions",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "prescriptions_staff_id_fkey"
+      ],
+      [
+        "prescriptions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "prescriptions_vendor_id_fkey"
+      ],
+      [
+        "pricing_rules",
+        "room_id",
+        "boarding_rooms",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "pricing_rules_room_id_fkey"
+      ],
+      [
+        "pricing_rules",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "pricing_rules_vendor_id_fkey"
+      ],
+      [
+        "product_error_cases",
+        "assigned_admin_id",
+        "admins",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "product_error_cases_assigned_admin_id_fkey"
+      ],
+      [
+        "product_policies",
+        "policy_id",
+        "ecommerce_policies",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "product_policies_policy_id_fkey"
+      ],
+      [
+        "product_policies",
+        "product_id",
+        "products",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "product_policies_product_id_fkey"
+      ],
+      [
+        "products",
+        "category_id",
+        "ecommerce_categories",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "products_category_id_fkey"
+      ],
+      [
+        "products",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "products_vendor_id_fkey"
+      ],
+      [
+        "rbac_audit_logs",
+        "role_id",
+        "roles",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "rbac_audit_logs_role_id_fkey"
+      ],
+      [
+        "referral_redemptions",
+        "referral_id",
+        "referrals",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "referral_redemptions_referral_id_fkey"
+      ],
+      [
+        "referral_redemptions",
+        "referred_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "referral_redemptions_referred_id_fkey"
+      ],
+      [
+        "referrals",
+        "referred_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "referrals_referred_id_fkey"
+      ],
+      [
+        "referrals",
+        "referred_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "referrals_referred_vendor_id_fkey"
+      ],
+      [
+        "referrals",
+        "referrer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "referrals_referrer_id_fkey"
+      ],
+      [
+        "refunds",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "refunds_booking_id_fkey"
+      ],
+      [
+        "refunds",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "refunds_customer_id_fkey"
+      ],
+      [
+        "refunds",
+        "meal_refund_case_id",
+        "meal_refund_cases",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "refunds_meal_refund_case_id_fkey"
+      ],
+      [
+        "refunds",
+        "payment_id",
+        "payments",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "refunds_payment_id_fkey"
+      ],
+      [
+        "refunds",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "refunds_vendor_id_fkey"
+      ],
+      [
+        "reminder_queue",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "reminder_queue_booking_id_fkey"
+      ],
+      [
+        "return_requests",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "return_requests_customer_id_fkey"
+      ],
+      [
+        "return_requests",
+        "exchange_product_id",
+        "products",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "return_requests_exchange_product_id_fkey"
+      ],
+      [
+        "return_requests",
+        "order_id",
+        "orders",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "return_requests_order_id_fkey"
+      ],
+      [
+        "return_requests",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "return_requests_vendor_id_fkey"
+      ],
+      [
+        "reviews",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "reviews_booking_id_fkey"
+      ],
+      [
+        "reviews",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "reviews_customer_id_fkey"
+      ],
+      [
+        "reviews",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "reviews_vendor_id_fkey"
+      ],
+      [
+        "reward_catalog_links",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "reward_catalog_links_customer_id_fkey"
+      ],
+      [
+        "reward_catalog_links",
+        "redemption_id",
+        "reward_redemptions",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "reward_catalog_links_redemption_id_fkey"
+      ],
+      [
+        "reward_catalog_links",
+        "reward_id",
+        "rewards_catalog",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "reward_catalog_links_reward_id_fkey"
+      ],
+      [
+        "reward_redemptions",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "reward_redemptions_customer_id_fkey"
+      ],
+      [
+        "reward_redemptions",
+        "reward_id",
+        "rewards_catalog",
+        "id",
+        "NO ACTION",
+        "RESTRICT",
+        "reward_redemptions_reward_id_fkey"
+      ],
+      [
+        "role_permissions",
+        "role_id",
+        "roles",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "role_permissions_role_id_fkey"
+      ],
+      [
+        "sample_collection_assignments",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "sample_collection_assignments_booking_id_fkey"
+      ],
+      [
+        "sample_collection_assignments",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "sample_collection_assignments_customer_id_fkey"
+      ],
+      [
+        "sample_collection_assignments",
+        "diagnostic_booking_id",
+        "diagnostic_bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "sample_collection_assignments_diagnostic_booking_id_fkey"
+      ],
+      [
+        "sample_collection_assignments",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "sample_collection_assignments_pet_id_fkey"
+      ],
+      [
+        "sample_collection_assignments",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "sample_collection_assignments_staff_id_fkey"
+      ],
+      [
+        "sample_collection_assignments",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "sample_collection_assignments_vendor_id_fkey"
+      ],
+      [
+        "search_history",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "search_history_customer_id_fkey"
+      ],
+      [
+        "service_catalog",
+        "hsn_code_id",
+        "hsn_codes",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "service_catalog_hsn_code_id_fkey"
+      ],
+      [
+        "service_catalog",
+        "tax_category_id",
+        "tax_categories",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "service_catalog_tax_category_id_fkey"
+      ],
+      [
+        "service_packages",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "service_packages_vendor_id_fkey"
+      ],
+      [
+        "service_publishing",
+        "service_id",
+        "services",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "service_publishing_service_id_fkey"
+      ],
+      [
+        "service_publishing",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "service_publishing_vendor_id_fkey"
+      ],
+      [
+        "services",
+        "gst_config_id",
+        "gst_configs",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "services_gst_config_id_fkey"
+      ],
+      [
+        "services",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "services_vendor_id_fkey"
+      ],
+      [
+        "settlement_schedules",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "settlement_schedules_vendor_id_fkey"
+      ],
+      [
+        "settlements",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "settlements_booking_id_fkey"
+      ],
+      [
+        "settlements",
+        "payment_id",
+        "payments",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "settlements_payment_id_fkey"
+      ],
+      [
+        "settlements",
+        "payout_id",
+        "payouts",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "settlements_payout_id_fkey"
+      ],
+      [
+        "settlements",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "settlements_vendor_id_fkey"
+      ],
+      [
+        "shipment_tracking_events",
+        "shipment_id",
+        "shipments",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "shipment_tracking_events_shipment_fkey"
+      ],
+      [
+        "shipments",
+        "logistics_partner_id",
+        "logistics_partners",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "shipments_partner_fkey"
+      ],
+      [
+        "shipments",
+        "order_id",
+        "orders",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "shipments_order_fkey"
+      ],
+      [
+        "shopping_carts",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "shopping_carts_customer_id_fkey"
+      ],
+      [
+        "specialization_symptoms",
+        "specialization_id",
+        "specialization_master",
+        "specialization_id",
+        "NO ACTION",
+        "CASCADE",
+        "specialization_symptoms_specialization_id_fkey"
+      ],
+      [
+        "spotlight_analytics",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "spotlight_analytics_customer_id_fkey"
+      ],
+      [
+        "spotlight_analytics",
+        "spotlight_id",
+        "spotlight_offers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "spotlight_analytics_spotlight_id_fkey"
+      ],
+      [
+        "staff",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "staff_vendor_id_fkey"
+      ],
+      [
+        "staff_availability",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "staff_availability_staff_id_fkey"
+      ],
+      [
+        "staff_availability_per_style",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "staff_availability_per_style_staff_id_fkey"
+      ],
+      [
+        "staff_certifications",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "staff_certifications_staff_id_fkey"
+      ],
+      [
+        "staff_schedules",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "staff_schedules_staff_id_fkey"
+      ],
+      [
+        "staff_services",
+        "service_id",
+        "services",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "staff_services_service_id_fkey"
+      ],
+      [
+        "staff_services",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "staff_services_staff_id_fkey"
+      ],
+      [
+        "staff_specializations",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "staff_specializations_staff_id_fkey"
+      ],
+      [
+        "subscription_deliveries",
+        "subscription_id",
+        "subscriptions",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "subscription_deliveries_subscription_fkey"
+      ],
+      [
+        "subscription_payments",
+        "payment_id",
+        "payments",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "subscription_payments_payment_fkey"
+      ],
+      [
+        "subscription_payments",
+        "subscription_id",
+        "subscriptions",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "subscription_payments_subscription_fkey"
+      ],
+      [
+        "subscription_plans",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "subscription_plans_vendor_id_fkey"
+      ],
+      [
+        "subscriptions",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "subscriptions_booking_fkey"
+      ],
+      [
+        "subscriptions",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "subscriptions_customer_fkey"
+      ],
+      [
+        "subscriptions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "subscriptions_vendor_fkey"
+      ],
+      [
+        "support_ticket_activity",
+        "ticket_id",
+        "support_tickets",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "support_ticket_activity_ticket_id_fkey"
+      ],
+      [
+        "support_ticket_responses",
+        "ticket_id",
+        "support_tickets",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "support_ticket_responses_ticket_id_fkey"
+      ],
+      [
+        "support_tickets",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "support_tickets_booking_id_fkey"
+      ],
+      [
+        "support_tickets",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "support_tickets_customer_id_fkey"
+      ],
+      [
+        "support_tickets",
+        "meal_order_id",
+        "meal_orders",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "support_tickets_meal_order_id_fkey"
+      ],
+      [
+        "support_tickets",
+        "order_id",
+        "orders",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "support_tickets_order_id_fkey"
+      ],
+      [
+        "support_tickets",
+        "refund_id",
+        "refunds",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "support_tickets_refund_id_fkey"
+      ],
+      [
+        "support_tickets",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "support_tickets_vendor_id_fkey"
+      ],
+      [
+        "tax_categories",
+        "catalog_category_id",
+        "service_categories",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "tax_categories_catalog_category_id_fkey"
+      ],
+      [
+        "tax_category_roles",
+        "catalog_category_id",
+        "service_categories",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "tax_category_roles_catalog_category_id_fkey"
+      ],
+      [
+        "tax_category_roles",
+        "role_id",
+        "roles",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "tax_category_roles_role_id_fkey"
+      ],
+      [
+        "tax_category_roles",
+        "tax_category_id",
+        "tax_categories",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "tax_category_roles_tax_category_id_fkey"
+      ],
+      [
+        "tele_queues",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "tele_queues_booking_id_fkey"
+      ],
+      [
+        "tele_queues",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "tele_queues_customer_id_fkey"
+      ],
+      [
+        "tele_sessions",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "tele_sessions_booking_id_fkey"
+      ],
+      [
+        "tele_sessions",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "tele_sessions_customer_id_fkey"
+      ],
+      [
+        "tele_sessions",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "tele_sessions_staff_id_fkey"
+      ],
+      [
+        "training_session_skills",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "training_session_skills_booking_id_fkey"
+      ],
+      [
+        "training_session_skills",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "training_session_skills_pet_id_fkey"
+      ],
+      [
+        "training_session_skills",
+        "session_id",
+        "package_sessions",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "training_session_skills_session_id_fkey"
+      ],
+      [
+        "training_session_skills",
+        "skill_id",
+        "training_skills",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "training_session_skills_skill_id_fkey"
+      ],
+      [
+        "user_roles",
+        "role_id",
+        "roles",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "user_roles_role_id_fkey"
+      ],
+      [
+        "user_subscriptions",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "user_subscriptions_customer_id_fkey"
+      ],
+      [
+        "user_subscriptions",
+        "tier_id",
+        "subscription_tiers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "user_subscriptions_tier_id_fkey"
+      ],
+      [
+        "vendor_admin_portal_codes",
+        "created_by_admin_id",
+        "admins",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "vendor_admin_portal_codes_created_by_admin_id_fkey"
+      ],
+      [
+        "vendor_admin_portal_codes",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_admin_portal_codes_vendor_id_fkey"
+      ],
+      [
+        "vendor_availability_v2",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_availability_v2_vendor_id_fkey"
+      ],
+      [
+        "vendor_bank_accounts",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_bank_accounts_vendor_id_fkey"
+      ],
+      [
+        "vendor_bank_details",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_bank_details_vendor_id_fkey"
+      ],
+      [
+        "vendor_breaks",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_breaks_vendor_id_fkey"
+      ],
+      [
+        "vendor_category_commission_rates",
+        "category_id",
+        "ecommerce_categories",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "vendor_category_commission_rates_category_id_fkey"
+      ],
+      [
+        "vendor_category_commission_rates",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "vendor_category_commission_rates_vendor_id_fkey"
+      ],
+      [
+        "vendor_daily_accrual",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_daily_accrual_vendor_id_fkey"
+      ],
+      [
+        "vendor_documents",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_documents_vendor_id_fkey"
+      ],
+      [
+        "vendor_holidays_enhanced",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_holidays_enhanced_vendor_id_fkey"
+      ],
+      [
+        "vendor_identity",
+        "selected_role_id",
+        "roles",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "vendor_identity_selected_role_id_fkey"
+      ],
+      [
+        "vendor_identity",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "vendor_identity_vendor_id_fkey"
+      ],
+      [
+        "vendor_onboarding_applications",
+        "role_id",
+        "roles",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "vendor_onboarding_applications_role_id_fkey"
+      ],
+      [
+        "vendor_onboarding_applications",
+        "vendor_identity_id",
+        "vendor_identity",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_onboarding_applications_vendor_identity_id_fkey"
+      ],
+      [
+        "vendor_onboarding_comments",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_onboarding_comments_vendor_id_fkey"
+      ],
+      [
+        "vendor_onboarding_steps",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_onboarding_steps_vendor_id_fkey"
+      ],
+      [
+        "vendor_onboarding_transitions",
+        "vendor_identity_id",
+        "vendor_identity",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_onboarding_transitions_vendor_identity_id_fkey"
+      ],
+      [
+        "vendor_policies",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_policies_vendor_id_fkey"
+      ],
+      [
+        "vendor_portfolio",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_portfolio_vendor_id_fkey"
+      ],
+      [
+        "vendor_referrals",
+        "referred_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "SET NULL",
+        "vendor_referrals_referred_vendor_id_fkey"
+      ],
+      [
+        "vendor_referrals",
+        "referrer_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_referrals_referrer_vendor_id_fkey"
+      ],
+      [
+        "vendor_segment_assignments",
+        "segment_id",
+        "loyalty_segments",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_segment_assignments_segment_id_fkey"
+      ],
+      [
+        "vendor_segment_assignments",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_segment_assignments_vendor_id_fkey"
+      ],
+      [
+        "vendor_service_areas",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_service_areas_vendor_id_fkey"
+      ],
+      [
+        "vendor_services",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_services_vendor_id_fkey"
+      ],
+      [
+        "vendor_setup_completion",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_setup_completion_vendor_id_fkey"
+      ],
+      [
+        "vendor_specializations",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_specializations_vendor_id_fkey"
+      ],
+      [
+        "vendor_subscription_plans",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_subscription_plans_vendor_id_fkey"
+      ],
+      [
+        "vendor_tier_subscriptions",
+        "tier_id",
+        "vendor_tiers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "vendor_tier_subscriptions_tier_id_fkey"
+      ],
+      [
+        "vendor_tier_subscriptions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_tier_subscriptions_vendor_id_fkey"
+      ],
+      [
+        "vendor_wallet_transactions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_wallet_transactions_vendor_id_fkey"
+      ],
+      [
+        "vendor_wallet_transactions",
+        "wallet_id",
+        "vendor_wallets",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_wallet_transactions_wallet_id_fkey"
+      ],
+      [
+        "vendor_wallets",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "vendor_wallets_vendor_id_fkey"
+      ],
+      [
+        "vendors",
+        "current_tier_id",
+        "vendor_tiers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "vendors_current_tier_id_fkey"
+      ],
+      [
+        "vendors",
+        "role_id",
+        "roles",
+        "id",
+        "NO ACTION",
+        "RESTRICT",
+        "vendors_role_id_fkey"
+      ],
+      [
+        "vendors",
+        "tier_subscription_id",
+        "vendor_tier_subscriptions",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "vendors_tier_subscription_id_fkey"
+      ],
+      [
+        "vendors",
+        "vendor_identity_id",
+        "vendor_identity",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "vendors_vendor_identity_id_fkey"
+      ],
+      [
+        "video_call_history",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "video_call_history_booking_id_fkey"
+      ],
+      [
+        "video_call_history",
+        "room_id",
+        "video_call_rooms",
+        "room_id",
+        "NO ACTION",
+        "CASCADE",
+        "video_call_history_room_id_fkey"
+      ],
+      [
+        "video_call_rooms",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "video_call_rooms_booking_id_fkey"
+      ],
+      [
+        "video_call_sessions",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "video_call_sessions_booking_id_fkey"
+      ],
+      [
+        "video_call_sessions",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "video_call_sessions_staff_id_fkey"
+      ],
+      [
+        "walk_routes",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "walk_routes_booking_id_fkey"
+      ],
+      [
+        "walk_routes",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "walk_routes_customer_id_fkey"
+      ],
+      [
+        "walk_routes",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "walk_routes_pet_id_fkey"
+      ],
+      [
+        "walk_routes",
+        "walker_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "walk_routes_walker_id_fkey"
+      ],
+      [
+        "walker_live_sessions",
+        "booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "walker_live_sessions_booking_id_fkey"
+      ],
+      [
+        "walker_live_sessions",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "walker_live_sessions_customer_id_fkey"
+      ],
+      [
+        "walker_live_sessions",
+        "walker_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "walker_live_sessions_walker_id_fkey"
+      ],
+      [
+        "wallet_transactions",
+        "wallet_id",
+        "customer_wallets",
+        "id",
+        "NO ACTION",
+        "NO ACTION",
+        "wallet_transactions_wallet_id_fkey"
+      ],
+      [
+        "wishlists",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "CASCADE",
+        "wishlists_customer_id_fkey"
+      ]
+    ],
+    "count": 410
+  },
+  "taxonomyFk": {
+    "ok": true,
+    "label": "taxonomy_fk",
+    "rows": [
+      [
+        "ad_budget_transactions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "ad_budget_transactions_vendor_id_fkey"
+      ],
+      [
+        "ad_clicks",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "ad_clicks_vendor_id_fkey"
+      ],
+      [
+        "ad_impressions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "ad_impressions_vendor_id_fkey"
+      ],
+      [
+        "ad_performance_analytics",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "ad_performance_analytics_vendor_id_fkey"
+      ],
+      [
+        "admins",
+        "admin_role_id",
+        "roles",
+        "id",
+        "SET NULL",
+        "admins_admin_role_id_fkey"
+      ],
+      [
+        "adoption_center_profiles",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "adoption_center_profiles_vendor_id_fkey"
+      ],
+      [
+        "advertising_campaigns",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "advertising_campaigns_vendor_id_fkey"
+      ],
+      [
+        "ambulance_vehicles",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "ambulance_vehicles_vendor_id_fkey"
+      ],
+      [
+        "bank_verifications",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "bank_verifications_vendor_id_fkey"
+      ],
+      [
+        "boarding_facilities",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "boarding_facilities_vendor_id_fkey"
+      ],
+      [
+        "boarding_rooms",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "boarding_rooms_vendor_id_fkey"
+      ],
+      [
+        "booking_cancellation_rules",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "booking_cancellation_rules_vendor_id_fkey"
+      ],
+      [
+        "booking_policies",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "booking_policies_vendor_id_fkey"
+      ],
+      [
+        "bookings",
+        "rescheduled_from_booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "bookings_rescheduled_from_fkey"
+      ],
+      [
+        "bookings",
+        "staff_id",
+        "staff",
+        "id",
+        "NO ACTION",
+        "bookings_staff_id_fkey"
+      ],
+      [
+        "bookings",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "bookings_vendor_id_fkey"
+      ],
+      [
+        "bookings",
+        "customer_id",
+        "customers",
+        "id",
+        "NO ACTION",
+        "bookings_customer_id_fkey"
+      ],
+      [
+        "bookings",
+        "pet_id",
+        "pets",
+        "id",
+        "NO ACTION",
+        "bookings_pet_id_fkey"
+      ],
+      [
+        "bookings",
+        "settlement_id",
+        "settlements",
+        "id",
+        "NO ACTION",
+        "bookings_settlement_id_fkey"
+      ],
+      [
+        "bookings",
+        "parent_booking_id",
+        "bookings",
+        "id",
+        "NO ACTION",
+        "bookings_parent_booking_id_fkey"
+      ],
+      [
+        "bookings",
+        "service_id",
+        "vendor_services",
+        "id",
+        "NO ACTION",
+        "bookings_service_id_vendor_services_fkey"
+      ],
+      [
+        "breeder_profiles",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "breeder_profiles_vendor_id_fkey"
+      ],
+      [
+        "cafe_tables",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "cafe_tables_vendor_id_fkey"
+      ],
+      [
+        "customer_provider_history",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "customer_provider_history_vendor_id_fkey"
+      ],
+      [
+        "customer_referrals",
+        "referrer_vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "customer_referrals_referrer_vendor_id_fkey"
+      ],
+      [
+        "customer_subscriptions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "customer_subscriptions_vendor_id_fkey"
+      ],
+      [
+        "dating_meetups",
+        "cafe_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "dating_meetups_cafe_vendor_id_fkey"
+      ],
+      [
+        "deliveries",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "deliveries_vendor_id_fkey"
+      ],
+      [
+        "deliveries",
+        "nutritionist_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "deliveries_nutritionist_id_fkey"
+      ],
+      [
+        "delivery_partners",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "delivery_partners_vendor_id_fkey"
+      ],
+      [
+        "delivery_settlements",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "delivery_settlements_vendor_id_fkey"
+      ],
+      [
+        "delivery_tracking",
+        "logistics_partner_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "delivery_tracking_logistics_partner_id_fkey"
+      ],
+      [
+        "diagnostic_bookings",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "diagnostic_bookings_vendor_id_fkey"
+      ],
+      [
+        "diagnostic_tests",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "diagnostic_tests_vendor_id_fkey"
+      ],
+      [
+        "disputes",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "disputes_vendor_id_fkey"
+      ],
+      [
+        "ecommerce_policies",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "ecommerce_policies_vendor_id_fkey"
+      ],
+      [
+        "emergency_booking_queue",
+        "assigned_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "emergency_booking_queue_vendor_id_fkey"
+      ],
+      [
+        "featured_vendors",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "featured_vendors_vendor_id_fkey"
+      ],
+      [
+        "groomer_gallery",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "groomer_gallery_vendor_id_fkey"
+      ],
+      [
+        "holiday_bookings",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "holiday_bookings_vendor_id_fkey"
+      ],
+      [
+        "holiday_packages",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "holiday_packages_vendor_id_fkey"
+      ],
+      [
+        "invoices",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "invoices_vendor_id_fkey"
+      ],
+      [
+        "loyalty_transactions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "SET NULL",
+        "loyalty_transactions_vendor_id_fkey"
+      ],
+      [
+        "mating_appointments",
+        "vet_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "mating_appointments_vet_vendor_id_fkey"
+      ],
+      [
+        "meal_orders",
+        "logistics_partner_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "meal_orders_logistics_partner_id_fkey"
+      ],
+      [
+        "meal_orders",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "meal_orders_vendor_id_fkey"
+      ],
+      [
+        "meal_plans",
+        "service_catalog_category_id",
+        "service_categories",
+        "id",
+        "SET NULL",
+        "meal_plans_service_catalog_category_id_fkey"
+      ],
+      [
+        "meal_plans",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "meal_plans_vendor_id_fkey"
+      ],
+      [
+        "meal_subscriptions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "meal_subscriptions_vendor_id_fkey"
+      ],
+      [
+        "medical_records",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "medical_records_vendor_id_fkey"
+      ],
+      [
+        "medicine_orders",
+        "pharmacy_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "medicine_orders_pharmacy_vendor_id_fkey"
+      ],
+      [
+        "nutrition_consultation_requests",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "nutrition_consultation_requests_vendor_id_fkey"
+      ],
+      [
+        "order_items",
+        "service_id",
+        "services",
+        "id",
+        "NO ACTION",
+        "order_items_service_id_fkey"
+      ],
+      [
+        "orders",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "orders_vendor_id_fkey"
+      ],
+      [
+        "package_purchases",
+        "preferred_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "package_purchases_preferred_vendor_id_fkey"
+      ],
+      [
+        "package_purchases",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "package_purchases_vendor_id_fkey"
+      ],
+      [
+        "package_services",
+        "service_id",
+        "services",
+        "id",
+        "CASCADE",
+        "package_services_service_id_fkey"
+      ],
+      [
+        "payment_history",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "payment_history_vendor_id_fkey"
+      ],
+      [
+        "payments",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "payments_vendor_id_fkey"
+      ],
+      [
+        "payouts",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "payouts_vendor_id_fkey"
+      ],
+      [
+        "pending_payouts",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "pending_payouts_vendor_id_fkey"
+      ],
+      [
+        "pet_skill_progress",
+        "trainer_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "pet_skill_progress_trainer_id_fkey"
+      ],
+      [
+        "pharmacy_broadcasts",
+        "pharmacy_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "pharmacy_broadcasts_pharmacy_id_fkey"
+      ],
+      [
+        "pharmacy_orders",
+        "logistics_partner_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "pharmacy_orders_logistics_partner_id_fkey"
+      ],
+      [
+        "pharmacy_orders",
+        "pharmacy_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "pharmacy_orders_pharmacy_id_fkey"
+      ],
+      [
+        "pharmacy_quotes",
+        "pharmacy_vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "pharmacy_quotes_pharmacy_vendor_id_fkey"
+      ],
+      [
+        "post_service_payments",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "post_service_payments_vendor_fkey"
+      ],
+      [
+        "prescription_submissions",
+        "pharmacy_vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "prescription_submissions_pharmacy_vendor_id_fkey"
+      ],
+      [
+        "prescriptions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "prescriptions_vendor_id_fkey"
+      ],
+      [
+        "pricing_rules",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "pricing_rules_vendor_id_fkey"
+      ],
+      [
+        "products",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "products_vendor_id_fkey"
+      ],
+      [
+        "rbac_audit_logs",
+        "role_id",
+        "roles",
+        "id",
+        "NO ACTION",
+        "rbac_audit_logs_role_id_fkey"
+      ],
+      [
+        "referrals",
+        "referred_vendor_id",
+        "vendors",
+        "id",
+        "SET NULL",
+        "referrals_referred_vendor_id_fkey"
+      ],
+      [
+        "refunds",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "refunds_vendor_id_fkey"
+      ],
+      [
+        "return_requests",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "return_requests_vendor_id_fkey"
+      ],
+      [
+        "reviews",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "reviews_vendor_id_fkey"
+      ],
+      [
+        "role_permissions",
+        "role_id",
+        "roles",
+        "id",
+        "CASCADE",
+        "role_permissions_role_id_fkey"
+      ],
+      [
+        "sample_collection_assignments",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "sample_collection_assignments_vendor_id_fkey"
+      ],
+      [
+        "service_catalog",
+        "hsn_code_id",
+        "hsn_codes",
+        "id",
+        "NO ACTION",
+        "service_catalog_hsn_code_id_fkey"
+      ],
+      [
+        "service_catalog",
+        "tax_category_id",
+        "tax_categories",
+        "id",
+        "NO ACTION",
+        "service_catalog_tax_category_id_fkey"
+      ],
+      [
+        "service_packages",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "service_packages_vendor_id_fkey"
+      ],
+      [
+        "service_publishing",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "service_publishing_vendor_id_fkey"
+      ],
+      [
+        "service_publishing",
+        "service_id",
+        "services",
+        "id",
+        "CASCADE",
+        "service_publishing_service_id_fkey"
+      ],
+      [
+        "services",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "services_vendor_id_fkey"
+      ],
+      [
+        "settlement_schedules",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "settlement_schedules_vendor_id_fkey"
+      ],
+      [
+        "settlements",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "settlements_vendor_id_fkey"
+      ],
+      [
+        "specialization_symptoms",
+        "specialization_id",
+        "specialization_master",
+        "specialization_id",
+        "CASCADE",
+        "specialization_symptoms_specialization_id_fkey"
+      ],
+      [
+        "staff",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "staff_vendor_id_fkey"
+      ],
+      [
+        "staff_services",
+        "service_id",
+        "services",
+        "id",
+        "CASCADE",
+        "staff_services_service_id_fkey"
+      ],
+      [
+        "subscription_plans",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "subscription_plans_vendor_id_fkey"
+      ],
+      [
+        "subscriptions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "subscriptions_vendor_fkey"
+      ],
+      [
+        "support_tickets",
+        "vendor_id",
+        "vendors",
+        "id",
+        "SET NULL",
+        "support_tickets_vendor_id_fkey"
+      ],
+      [
+        "tax_categories",
+        "catalog_category_id",
+        "service_categories",
+        "id",
+        "NO ACTION",
+        "tax_categories_catalog_category_id_fkey"
+      ],
+      [
+        "tax_category_roles",
+        "role_id",
+        "roles",
+        "id",
+        "CASCADE",
+        "tax_category_roles_role_id_fkey"
+      ],
+      [
+        "tax_category_roles",
+        "catalog_category_id",
+        "service_categories",
+        "id",
+        "CASCADE",
+        "tax_category_roles_catalog_category_id_fkey"
+      ],
+      [
+        "user_roles",
+        "role_id",
+        "roles",
+        "id",
+        "CASCADE",
+        "user_roles_role_id_fkey"
+      ],
+      [
+        "vendor_admin_portal_codes",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_admin_portal_codes_vendor_id_fkey"
+      ],
+      [
+        "vendor_availability_v2",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_availability_v2_vendor_id_fkey"
+      ],
+      [
+        "vendor_bank_accounts",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_bank_accounts_vendor_id_fkey"
+      ],
+      [
+        "vendor_bank_details",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_bank_details_vendor_id_fkey"
+      ],
+      [
+        "vendor_breaks",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_breaks_vendor_id_fkey"
+      ],
+      [
+        "vendor_category_commission_rates",
+        "vendor_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "vendor_category_commission_rates_vendor_id_fkey"
+      ],
+      [
+        "vendor_daily_accrual",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_daily_accrual_vendor_id_fkey"
+      ],
+      [
+        "vendor_documents",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_documents_vendor_id_fkey"
+      ],
+      [
+        "vendor_holidays_enhanced",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_holidays_enhanced_vendor_id_fkey"
+      ],
+      [
+        "vendor_identity",
+        "vendor_id",
+        "vendors",
+        "id",
+        "SET NULL",
+        "vendor_identity_vendor_id_fkey"
+      ],
+      [
+        "vendor_identity",
+        "selected_role_id",
+        "roles",
+        "id",
+        "NO ACTION",
+        "vendor_identity_selected_role_id_fkey"
+      ],
+      [
+        "vendor_onboarding_applications",
+        "vendor_identity_id",
+        "vendor_identity",
+        "id",
+        "CASCADE",
+        "vendor_onboarding_applications_vendor_identity_id_fkey"
+      ],
+      [
+        "vendor_onboarding_applications",
+        "role_id",
+        "roles",
+        "id",
+        "NO ACTION",
+        "vendor_onboarding_applications_role_id_fkey"
+      ],
+      [
+        "vendor_onboarding_comments",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_onboarding_comments_vendor_id_fkey"
+      ],
+      [
+        "vendor_onboarding_steps",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_onboarding_steps_vendor_id_fkey"
+      ],
+      [
+        "vendor_policies",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_policies_vendor_id_fkey"
+      ],
+      [
+        "vendor_portfolio",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_portfolio_vendor_id_fkey"
+      ],
+      [
+        "vendor_referrals",
+        "referrer_vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_referrals_referrer_vendor_id_fkey"
+      ],
+      [
+        "vendor_referrals",
+        "referred_vendor_id",
+        "vendors",
+        "id",
+        "SET NULL",
+        "vendor_referrals_referred_vendor_id_fkey"
+      ],
+      [
+        "vendor_segment_assignments",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_segment_assignments_vendor_id_fkey"
+      ],
+      [
+        "vendor_service_areas",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_service_areas_vendor_id_fkey"
+      ],
+      [
+        "vendor_services",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_services_vendor_id_fkey"
+      ],
+      [
+        "vendor_setup_completion",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_setup_completion_vendor_id_fkey"
+      ],
+      [
+        "vendor_specializations",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_specializations_vendor_id_fkey"
+      ],
+      [
+        "vendor_subscription_plans",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_subscription_plans_vendor_id_fkey"
+      ],
+      [
+        "vendor_tier_subscriptions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_tier_subscriptions_vendor_id_fkey"
+      ],
+      [
+        "vendor_wallet_transactions",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_wallet_transactions_vendor_id_fkey"
+      ],
+      [
+        "vendor_wallets",
+        "vendor_id",
+        "vendors",
+        "id",
+        "CASCADE",
+        "vendor_wallets_vendor_id_fkey"
+      ],
+      [
+        "vendors",
+        "tier_subscription_id",
+        "vendor_tier_subscriptions",
+        "id",
+        "NO ACTION",
+        "vendors_tier_subscription_id_fkey"
+      ],
+      [
+        "vendors",
+        "vendor_identity_id",
+        "vendor_identity",
+        "id",
+        "NO ACTION",
+        "vendors_vendor_identity_id_fkey"
+      ],
+      [
+        "vendors",
+        "role_id",
+        "roles",
+        "id",
+        "RESTRICT",
+        "vendors_role_id_fkey"
+      ],
+      [
+        "vendors",
+        "current_tier_id",
+        "vendor_tiers",
+        "id",
+        "NO ACTION",
+        "vendors_current_tier_id_fkey"
+      ],
+      [
+        "walk_routes",
+        "walker_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "walk_routes_walker_id_fkey"
+      ],
+      [
+        "walker_live_sessions",
+        "walker_id",
+        "vendors",
+        "id",
+        "NO ACTION",
+        "walker_live_sessions_walker_id_fkey"
+      ]
+    ],
+    "count": 130
+  },
+  "cascadeDeletes": {
+    "ok": true,
+    "label": "cascade_deletes",
+    "rows": [
+      [
+        "ad_clicks",
+        "impression_id",
+        "ad_impressions",
+        "SET NULL",
+        "ad_clicks_impression_id_fkey"
+      ],
+      [
+        "customer_admin_portal_codes",
+        "created_by_admin_id",
+        "admins",
+        "SET NULL",
+        "customer_admin_portal_codes_created_by_admin_id_fkey"
+      ],
+      [
+        "product_error_cases",
+        "assigned_admin_id",
+        "admins",
+        "SET NULL",
+        "product_error_cases_assigned_admin_id_fkey"
+      ],
+      [
+        "vendor_admin_portal_codes",
+        "created_by_admin_id",
+        "admins",
+        "SET NULL",
+        "vendor_admin_portal_codes_created_by_admin_id_fkey"
+      ],
+      [
+        "ad_budget_transactions",
+        "campaign_id",
+        "advertising_campaigns",
+        "CASCADE",
+        "ad_budget_transactions_campaign_id_fkey"
+      ],
+      [
+        "ad_clicks",
+        "campaign_id",
+        "advertising_campaigns",
+        "CASCADE",
+        "ad_clicks_campaign_id_fkey"
+      ],
+      [
+        "ad_impressions",
+        "campaign_id",
+        "advertising_campaigns",
+        "CASCADE",
+        "ad_impressions_campaign_id_fkey"
+      ],
+      [
+        "ad_performance_analytics",
+        "campaign_id",
+        "advertising_campaigns",
+        "CASCADE",
+        "ad_performance_analytics_campaign_id_fkey"
+      ],
+      [
+        "error_case_occurrences",
+        "event_id",
+        "analytics_events",
+        "CASCADE",
+        "error_case_occurrences_event_id_fkey"
+      ],
+      [
+        "analytics_events",
+        "session_id",
+        "analytics_sessions",
+        "CASCADE",
+        "analytics_events_session_id_fkey"
+      ],
+      [
+        "banner_analytics",
+        "banner_id",
+        "banners",
+        "CASCADE",
+        "banner_analytics_banner_id_fkey"
+      ],
+      [
+        "pricing_rules",
+        "room_id",
+        "boarding_rooms",
+        "CASCADE",
+        "pricing_rules_room_id_fkey"
+      ],
+      [
+        "adoption_applications",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "adoption_applications_booking_fkey"
+      ],
+      [
+        "booking_staff_assignments",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "booking_staff_assignments_booking_fkey"
+      ],
+      [
+        "booking_status_history",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "booking_status_history_booking_id_fkey"
+      ],
+      [
+        "booking_status_transitions",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "booking_status_transitions_booking_fkey"
+      ],
+      [
+        "chat_messages",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "chat_messages_booking_id_fkey"
+      ],
+      [
+        "diagnostic_reports",
+        "booking_id",
+        "bookings",
+        "SET NULL",
+        "diagnostic_reports_booking_id_fkey"
+      ],
+      [
+        "emergency_booking_queue",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "emergency_booking_queue_booking_id_fkey"
+      ],
+      [
+        "gps_tracking_sessions",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "gps_tracking_sessions_booking_id_fkey"
+      ],
+      [
+        "groomer_gallery",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "groomer_gallery_booking_id_fkey"
+      ],
+      [
+        "insurance_claims",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "insurance_claims_booking_fkey"
+      ],
+      [
+        "package_milestones",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "package_milestones_booking_fkey"
+      ],
+      [
+        "package_sessions",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "package_sessions_booking_id_fkey"
+      ],
+      [
+        "pending_reschedules",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "pending_reschedules_booking_id_fkey"
+      ],
+      [
+        "post_service_payments",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "post_service_payments_booking_fkey"
+      ],
+      [
+        "prescriptions",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "prescriptions_booking_id_fkey"
+      ],
+      [
+        "reviews",
+        "booking_id",
+        "bookings",
+        "SET NULL",
+        "reviews_booking_id_fkey"
+      ],
+      [
+        "sample_collection_assignments",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "sample_collection_assignments_booking_id_fkey"
+      ],
+      [
+        "subscriptions",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "subscriptions_booking_fkey"
+      ],
+      [
+        "support_tickets",
+        "booking_id",
+        "bookings",
+        "SET NULL",
+        "support_tickets_booking_id_fkey"
+      ],
+      [
+        "tele_queues",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "tele_queues_booking_id_fkey"
+      ],
+      [
+        "tele_sessions",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "tele_sessions_booking_id_fkey"
+      ],
+      [
+        "training_session_skills",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "training_session_skills_booking_id_fkey"
+      ],
+      [
+        "video_call_history",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "video_call_history_booking_id_fkey"
+      ],
+      [
+        "video_call_rooms",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "video_call_rooms_booking_id_fkey"
+      ],
+      [
+        "video_call_sessions",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "video_call_sessions_booking_id_fkey"
+      ],
+      [
+        "walk_routes",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "walk_routes_booking_id_fkey"
+      ],
+      [
+        "walker_live_sessions",
+        "booking_id",
+        "bookings",
+        "CASCADE",
+        "walker_live_sessions_booking_id_fkey"
+      ],
+      [
+        "pet_listings",
+        "breeder_id",
+        "breeder_profiles",
+        "CASCADE",
+        "pet_listings_breeder_id_fkey"
+      ],
+      [
+        "coupon_usages",
+        "coupon_id",
+        "coupons",
+        "CASCADE",
+        "coupon_usages_coupon_id_fkey"
+      ],
+      [
+        "adoption_applications",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "adoption_applications_customer_fkey"
+      ],
+      [
+        "ai_booking_wizard_sessions",
+        "customer_id",
+        "customers",
+        "SET NULL",
+        "ai_booking_wizard_sessions_customer_id_fkey"
+      ],
+      [
+        "ai_chatbot_conversations",
+        "customer_id",
+        "customers",
+        "SET NULL",
+        "ai_chatbot_conversations_customer_id_fkey"
+      ],
+      [
+        "customer_addresses",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "customer_addresses_customer_id_fkey"
+      ],
+      [
+        "customer_admin_portal_codes",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "customer_admin_portal_codes_customer_id_fkey"
+      ],
+      [
+        "customer_compliance_issues",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "customer_compliance_issues_customer_id_fkey"
+      ],
+      [
+        "customer_deactivation_requests",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "customer_deactivation_requests_customer_id_fkey"
+      ],
+      [
+        "customer_identity",
+        "customer_id",
+        "customers",
+        "SET NULL",
+        "customer_identity_customer_id_fkey"
+      ],
+      [
+        "customer_payment_methods",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "customer_payment_methods_customer_id_fkey"
+      ],
+      [
+        "customer_profile_completion",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "customer_profile_completion_customer_id_fkey"
+      ],
+      [
+        "customer_provider_history",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "customer_provider_history_customer_id_fkey"
+      ],
+      [
+        "customer_referrals",
+        "referrer_customer_id",
+        "customers",
+        "CASCADE",
+        "customer_referrals_referrer_customer_id_fkey"
+      ],
+      [
+        "customer_referrals",
+        "referred_customer_id",
+        "customers",
+        "SET NULL",
+        "customer_referrals_referred_customer_id_fkey"
+      ],
+      [
+        "customer_segment_assignments",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "customer_segment_assignments_customer_id_fkey"
+      ],
+      [
+        "customer_subscriptions",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "customer_subscriptions_customer_id_fkey"
+      ],
+      [
+        "customer_tiers",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "customer_tiers_customer_id_fkey"
+      ],
+      [
+        "dating_profiles_owner",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "dating_profiles_owner_customer_id_fkey"
+      ],
+      [
+        "dating_profiles_pet",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "dating_profiles_pet_customer_id_fkey"
+      ],
+      [
+        "deliveries",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "deliveries_customer_id_fkey"
+      ],
+      [
+        "diagnostic_bookings",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "diagnostic_bookings_customer_id_fkey"
+      ],
+      [
+        "holiday_bookings",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "holiday_bookings_customer_id_fkey"
+      ],
+      [
+        "insurance_claims",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "insurance_claims_customer_fkey"
+      ],
+      [
+        "medicine_orders",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "medicine_orders_customer_id_fkey"
+      ],
+      [
+        "nutrition_consultation_requests",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "nutrition_consultation_requests_customer_id_fkey"
+      ],
+      [
+        "package_purchases",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "package_purchases_customer_id_fkey"
+      ],
+      [
+        "pet_inquiries",
+        "customer_id",
+        "customers",
+        "SET NULL",
+        "pet_inquiries_customer_id_fkey"
+      ],
+      [
+        "pet_vaccination_reminder_log",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "pet_vaccination_reminder_log_customer_id_fkey"
+      ],
+      [
+        "pets",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "pets_customer_id_fkey"
+      ],
+      [
+        "policy_acceptances",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "policy_acceptances_customer_id_fkey"
+      ],
+      [
+        "post_service_payments",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "post_service_payments_customer_fkey"
+      ],
+      [
+        "prescription_submissions",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "prescription_submissions_customer_id_fkey"
+      ],
+      [
+        "prescriptions",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "prescriptions_customer_id_fkey"
+      ],
+      [
+        "referral_redemptions",
+        "referred_id",
+        "customers",
+        "CASCADE",
+        "referral_redemptions_referred_id_fkey"
+      ],
+      [
+        "return_requests",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "return_requests_customer_id_fkey"
+      ],
+      [
+        "reviews",
+        "customer_id",
+        "customers",
+        "SET NULL",
+        "reviews_customer_id_fkey"
+      ],
+      [
+        "reward_catalog_links",
+        "customer_id",
+        "customers",
+        "SET NULL",
+        "reward_catalog_links_customer_id_fkey"
+      ],
+      [
+        "reward_redemptions",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "reward_redemptions_customer_id_fkey"
+      ],
+      [
+        "sample_collection_assignments",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "sample_collection_assignments_customer_id_fkey"
+      ],
+      [
+        "shopping_carts",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "shopping_carts_customer_id_fkey"
+      ],
+      [
+        "subscriptions",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "subscriptions_customer_fkey"
+      ],
+      [
+        "support_tickets",
+        "customer_id",
+        "customers",
+        "SET NULL",
+        "support_tickets_customer_id_fkey"
+      ],
+      [
+        "wishlists",
+        "customer_id",
+        "customers",
+        "CASCADE",
+        "wishlists_customer_id_fkey"
+      ],
+      [
+        "dating_chat_messages",
+        "match_id",
+        "dating_matches",
+        "CASCADE",
+        "dating_chat_messages_match_id_fkey"
+      ],
+      [
+        "dating_meetups",
+        "match_id",
+        "dating_matches",
+        "CASCADE",
+        "dating_meetups_match_id_fkey"
+      ],
+      [
+        "mating_appointments",
+        "match_id",
+        "dating_matches",
+        "CASCADE",
+        "mating_appointments_match_id_fkey"
+      ],
+      [
+        "delivery_routes",
+        "partner_id",
+        "delivery_partners",
+        "SET NULL",
+        "delivery_routes_partner_id_fkey"
+      ],
+      [
+        "delivery_location_history",
+        "tracking_id",
+        "delivery_tracking",
+        "CASCADE",
+        "delivery_location_history_tracking_id_fkey"
+      ],
+      [
+        "meal_rider_reassign_requests",
+        "delivery_tracking_id",
+        "delivery_tracking",
+        "SET NULL",
+        "meal_rider_reassign_requests_delivery_tracking_id_fkey"
+      ],
+      [
+        "meal_subscription_deliveries",
+        "tracking_id",
+        "delivery_tracking",
+        "SET NULL",
+        "meal_subscription_deliveries_tracking_fk"
+      ],
+      [
+        "pidge_hyperlocal_webhook_events",
+        "delivery_tracking_id",
+        "delivery_tracking",
+        "SET NULL",
+        "pidge_hyperlocal_webhook_events_delivery_tracking_id_fkey"
+      ],
+      [
+        "diagnostic_reports",
+        "diagnostic_booking_id",
+        "diagnostic_bookings",
+        "CASCADE",
+        "diagnostic_reports_diagnostic_booking_id_fkey"
+      ],
+      [
+        "policy_acceptances",
+        "policy_id",
+        "ecommerce_policies",
+        "CASCADE",
+        "policy_acceptances_policy_id_fkey"
+      ],
+      [
+        "product_policies",
+        "policy_id",
+        "ecommerce_policies",
+        "CASCADE",
+        "product_policies_policy_id_fkey"
+      ],
+      [
+        "gps_location_history",
+        "session_id",
+        "gps_tracking_sessions",
+        "CASCADE",
+        "gps_location_history_session_id_fkey"
+      ],
+      [
+        "holiday_bookings",
+        "package_id",
+        "holiday_packages",
+        "CASCADE",
+        "holiday_bookings_package_id_fkey"
+      ],
+      [
+        "customer_segment_assignments",
+        "segment_id",
+        "loyalty_segments",
+        "CASCADE",
+        "customer_segment_assignments_segment_id_fkey"
+      ],
+      [
+        "vendor_segment_assignments",
+        "segment_id",
+        "loyalty_segments",
+        "CASCADE",
+        "vendor_segment_assignments_segment_id_fkey"
+      ],
+      [
+        "meal_refund_cases",
+        "meal_order_id",
+        "meal_orders",
+        "CASCADE",
+        "meal_refund_cases_meal_order_id_fkey"
+      ],
+      [
+        "pidge_hyperlocal_webhook_events",
+        "meal_order_id",
+        "meal_orders",
+        "SET NULL",
+        "pidge_hyperlocal_webhook_events_meal_order_id_fkey"
+      ],
+      [
+        "support_tickets",
+        "meal_order_id",
+        "meal_orders",
+        "SET NULL",
+        "support_tickets_meal_order_id_fkey"
+      ],
+      [
+        "nutrition_consultation_requests",
+        "meal_plan_id",
+        "meal_plans",
+        "SET NULL",
+        "nutrition_consultation_requests_meal_plan_id_fkey"
+      ],
+      [
+        "refunds",
+        "meal_refund_case_id",
+        "meal_refund_cases",
+        "SET NULL",
+        "refunds_meal_refund_case_id_fkey"
+      ],
+      [
+        "delivery_tracking",
+        "subscription_delivery_id",
+        "meal_subscription_deliveries",
+        "SET NULL",
+        "delivery_tracking_subscription_delivery_fk"
+      ],
+      [
+        "meal_subscription_deliveries",
+        "subscription_id",
+        "meal_subscriptions",
+        "CASCADE",
+        "meal_subscription_deliveries_subscription_id_fkey"
+      ],
+      [
+        "meal_subscription_payments",
+        "subscription_id",
+        "meal_subscriptions",
+        "CASCADE",
+        "meal_subscription_payments_subscription_id_fkey"
+      ],
+      [
+        "pharmacy_quotes",
+        "medicine_order_id",
+        "medicine_orders",
+        "CASCADE",
+        "pharmacy_quotes_medicine_order_id_fkey"
+      ],
+      [
+        "notification_campaign_cities",
+        "campaign_id",
+        "notification_campaigns",
+        "CASCADE",
+        "notification_campaign_cities_campaign_id_fkey"
+      ],
+      [
+        "notification_campaign_deliveries",
+        "campaign_id",
+        "notification_campaigns",
+        "CASCADE",
+        "notification_campaign_deliveries_campaign_id_fkey"
+      ],
+      [
+        "notification_campaign_events",
+        "campaign_id",
+        "notification_campaigns",
+        "CASCADE",
+        "notification_campaign_events_campaign_id_fkey"
+      ],
+      [
+        "notification_campaign_regions",
+        "campaign_id",
+        "notification_campaigns",
+        "CASCADE",
+        "notification_campaign_regions_campaign_id_fkey"
+      ],
+      [
+        "notification_campaign_users",
+        "campaign_id",
+        "notification_campaigns",
+        "CASCADE",
+        "notification_campaign_users_campaign_id_fkey"
+      ],
+      [
+        "notification_segment_targets",
+        "campaign_id",
+        "notification_campaigns",
+        "CASCADE",
+        "notification_segment_targets_campaign_id_fkey"
+      ],
+      [
+        "notification_segment_rules",
+        "segment_id",
+        "notification_segments",
+        "CASCADE",
+        "notification_segment_rules_segment_id_fkey"
+      ],
+      [
+        "notification_segment_targets",
+        "segment_id",
+        "notification_segments",
+        "CASCADE",
+        "notification_segment_targets_segment_id_fkey"
+      ],
+      [
+        "notification_logs",
+        "template_id",
+        "notification_templates_enhanced",
+        "SET NULL",
+        "notification_logs_template_id_fkey"
+      ],
+      [
+        "notification_delivery_log",
+        "notification_id",
+        "notifications",
+        "CASCADE",
+        "notification_delivery_log_notification_id_fkey"
+      ],
+      [
+        "order_items",
+        "order_id",
+        "orders",
+        "CASCADE",
+        "order_items_order_id_fkey"
+      ],
+      [
+        "policy_acceptances",
+        "order_id",
+        "orders",
+        "CASCADE",
+        "policy_acceptances_order_id_fkey"
+      ],
+      [
+        "return_requests",
+        "order_id",
+        "orders",
+        "CASCADE",
+        "return_requests_order_id_fkey"
+      ],
+      [
+        "shipments",
+        "order_id",
+        "orders",
+        "CASCADE",
+        "shipments_order_fkey"
+      ],
+      [
+        "support_tickets",
+        "order_id",
+        "orders",
+        "SET NULL",
+        "support_tickets_order_id_fkey"
+      ],
+      [
+        "package_scheduled_sessions",
+        "package_purchase_id",
+        "package_purchases",
+        "CASCADE",
+        "package_scheduled_sessions_package_purchase_id_fkey"
+      ],
+      [
+        "package_sessions",
+        "package_purchase_id",
+        "package_purchases",
+        "CASCADE",
+        "package_sessions_package_purchase_id_fkey"
+      ],
+      [
+        "package_sessions",
+        "package_purchase_id",
+        "package_purchases",
+        "CASCADE",
+        "fk_package_sessions_purchase"
+      ],
+      [
+        "package_usage_log",
+        "package_purchase_id",
+        "package_purchases",
+        "CASCADE",
+        "package_usage_log_package_purchase_id_fkey"
+      ],
+      [
+        "payment_history",
+        "payment_id",
+        "payments",
+        "CASCADE",
+        "payment_history_payment_id_fkey"
+      ],
+      [
+        "payment_retry_log",
+        "payment_id",
+        "payments",
+        "CASCADE",
+        "payment_retry_log_payment_fkey"
+      ],
+      [
+        "pending_payouts",
+        "payout_id",
+        "payouts",
+        "CASCADE",
+        "pending_payouts_payout_id_fkey"
+      ],
+      [
+        "pet_inquiries",
+        "listing_id",
+        "pet_listings",
+        "CASCADE",
+        "pet_inquiries_listing_id_fkey"
+      ],
+      [
+        "dating_profiles_pet",
+        "pet_id",
+        "pets",
+        "CASCADE",
+        "dating_profiles_pet_pet_id_fkey"
+      ],
+      [
+        "diagnostic_bookings",
+        "pet_id",
+        "pets",
+        "CASCADE",
+        "diagnostic_bookings_pet_id_fkey"
+      ],
+      [
+        "groomer_gallery",
+        "pet_id",
+        "pets",
+        "SET NULL",
+        "groomer_gallery_pet_id_fkey"
+      ],
+      [
+        "medical_records",
+        "pet_id",
+        "pets",
+        "CASCADE",
+        "medical_records_pet_id_fkey"
+      ],
+      [
+        "medicine_orders",
+        "pet_id",
+        "pets",
+        "CASCADE",
+        "medicine_orders_pet_id_fkey"
+      ],
+      [
+        "nutrition_consultation_requests",
+        "pet_id",
+        "pets",
+        "SET NULL",
+        "nutrition_consultation_requests_pet_id_fkey"
+      ],
+      [
+        "pet_skill_progress",
+        "pet_id",
+        "pets",
+        "CASCADE",
+        "pet_skill_progress_pet_id_fkey"
+      ],
+      [
+        "pet_vaccination_reminder_log",
+        "pet_id",
+        "pets",
+        "CASCADE",
+        "pet_vaccination_reminder_log_pet_id_fkey"
+      ],
+      [
+        "prescriptions",
+        "pet_id",
+        "pets",
+        "CASCADE",
+        "prescriptions_pet_id_fkey"
+      ],
+      [
+        "pharmacy_broadcasts",
+        "order_id",
+        "pharmacy_orders",
+        "CASCADE",
+        "pharmacy_broadcasts_order_id_fkey"
+      ],
+      [
+        "meal_refund_cases",
+        "pidge_webhook_event_id",
+        "pidge_hyperlocal_webhook_events",
+        "SET NULL",
+        "meal_refund_cases_pidge_webhook_event_id_fkey"
+      ],
+      [
+        "error_case_occurrences",
+        "case_id",
+        "product_error_cases",
+        "CASCADE",
+        "error_case_occurrences_case_id_fkey"
+      ],
+      [
+        "product_policies",
+        "product_id",
+        "products",
+        "CASCADE",
+        "product_policies_product_id_fkey"
+      ],
+      [
+        "return_requests",
+        "exchange_product_id",
+        "products",
+        "SET NULL",
+        "return_requests_exchange_product_id_fkey"
+      ],
+      [
+        "referral_redemptions",
+        "referral_id",
+        "referrals",
+        "CASCADE",
+        "referral_redemptions_referral_id_fkey"
+      ],
+      [
+        "meal_refund_cases",
+        "refunds_row_id",
+        "refunds",
+        "SET NULL",
+        "meal_refund_cases_refunds_row_id_fkey"
+      ],
+      [
+        "support_tickets",
+        "refund_id",
+        "refunds",
+        "SET NULL",
+        "support_tickets_refund_id_fkey"
+      ],
+      [
+        "reward_catalog_links",
+        "redemption_id",
+        "reward_redemptions",
+        "SET NULL",
+        "reward_catalog_links_redemption_id_fkey"
+      ],
+      [
+        "reward_catalog_links",
+        "reward_id",
+        "rewards_catalog",
+        "CASCADE",
+        "reward_catalog_links_reward_id_fkey"
+      ],
+      [
+        "reward_redemptions",
+        "reward_id",
+        "rewards_catalog",
+        "RESTRICT",
+        "reward_redemptions_reward_id_fkey"
+      ],
+      [
+        "admins",
+        "admin_role_id",
+        "roles",
+        "SET NULL",
+        "admins_admin_role_id_fkey"
+      ],
+      [
+        "role_permissions",
+        "role_id",
+        "roles",
+        "CASCADE",
+        "role_permissions_role_id_fkey"
+      ],
+      [
+        "tax_category_roles",
+        "role_id",
+        "roles",
+        "CASCADE",
+        "tax_category_roles_role_id_fkey"
+      ],
+      [
+        "user_roles",
+        "role_id",
+        "roles",
+        "CASCADE",
+        "user_roles_role_id_fkey"
+      ],
+      [
+        "vendors",
+        "role_id",
+        "roles",
+        "RESTRICT",
+        "vendors_role_id_fkey"
+      ],
+      [
+        "meal_plans",
+        "service_catalog_category_id",
+        "service_categories",
+        "SET NULL",
+        "meal_plans_service_catalog_category_id_fkey"
+      ],
+      [
+        "tax_category_roles",
+        "catalog_category_id",
+        "service_categories",
+        "CASCADE",
+        "tax_category_roles_catalog_category_id_fkey"
+      ],
+      [
+        "package_services",
+        "service_id",
+        "services",
+        "CASCADE",
+        "package_services_service_id_fkey"
+      ],
+      [
+        "service_publishing",
+        "service_id",
+        "services",
+        "CASCADE",
+        "service_publishing_service_id_fkey"
+      ],
+      [
+        "staff_services",
+        "service_id",
+        "services",
+        "CASCADE",
+        "staff_services_service_id_fkey"
+      ],
+      [
+        "shipment_tracking_events",
+        "shipment_id",
+        "shipments",
+        "CASCADE",
+        "shipment_tracking_events_shipment_fkey"
+      ],
+      [
+        "specialization_symptoms",
+        "specialization_id",
+        "specialization_master",
+        "CASCADE",
+        "specialization_symptoms_specialization_id_fkey"
+      ],
+      [
+        "spotlight_analytics",
+        "spotlight_id",
+        "spotlight_offers",
+        "CASCADE",
+        "spotlight_analytics_spotlight_id_fkey"
+      ],
+      [
+        "booking_staff_assignments",
+        "staff_id",
+        "staff",
+        "CASCADE",
+        "booking_staff_assignments_staff_fkey"
+      ],
+      [
+        "nutrition_consultation_requests",
+        "reviewed_by",
+        "staff",
+        "SET NULL",
+        "nutrition_consultation_requests_reviewed_by_fkey"
+      ],
+      [
+        "sample_collection_assignments",
+        "staff_id",
+        "staff",
+        "CASCADE",
+        "sample_collection_assignments_staff_id_fkey"
+      ],
+      [
+        "staff_availability",
+        "staff_id",
+        "staff",
+        "CASCADE",
+        "staff_availability_staff_id_fkey"
+      ],
+      [
+        "staff_availability_per_style",
+        "staff_id",
+        "staff",
+        "CASCADE",
+        "staff_availability_per_style_staff_id_fkey"
+      ],
+      [
+        "staff_certifications",
+        "staff_id",
+        "staff",
+        "CASCADE",
+        "staff_certifications_staff_id_fkey"
+      ],
+      [
+        "staff_schedules",
+        "staff_id",
+        "staff",
+        "CASCADE",
+        "staff_schedules_staff_id_fkey"
+      ],
+      [
+        "staff_services",
+        "staff_id",
+        "staff",
+        "CASCADE",
+        "staff_services_staff_id_fkey"
+      ],
+      [
+        "staff_specializations",
+        "staff_id",
+        "staff",
+        "CASCADE",
+        "staff_specializations_staff_id_fkey"
+      ],
+      [
+        "subscription_deliveries",
+        "subscription_id",
+        "subscriptions",
+        "CASCADE",
+        "subscription_deliveries_subscription_fkey"
+      ],
+      [
+        "subscription_payments",
+        "subscription_id",
+        "subscriptions",
+        "CASCADE",
+        "subscription_payments_subscription_fkey"
+      ],
+      [
+        "ai_chatbot_conversations",
+        "escalation_ticket_id",
+        "support_tickets",
+        "SET NULL",
+        "ai_chatbot_conversations_escalation_ticket_id_fkey"
+      ],
+      [
+        "support_ticket_activity",
+        "ticket_id",
+        "support_tickets",
+        "CASCADE",
+        "support_ticket_activity_ticket_id_fkey"
+      ],
+      [
+        "support_ticket_responses",
+        "ticket_id",
+        "support_tickets",
+        "CASCADE",
+        "support_ticket_responses_ticket_id_fkey"
+      ],
+      [
+        "meal_plans",
+        "tax_category_id",
+        "tax_categories",
+        "SET NULL",
+        "meal_plans_tax_category_id_fkey"
+      ],
+      [
+        "tax_category_roles",
+        "tax_category_id",
+        "tax_categories",
+        "CASCADE",
+        "tax_category_roles_tax_category_id_fkey"
+      ],
+      [
+        "pet_skill_progress",
+        "skill_id",
+        "training_skills",
+        "CASCADE",
+        "pet_skill_progress_skill_id_fkey"
+      ],
+      [
+        "vendor_onboarding_applications",
+        "vendor_identity_id",
+        "vendor_identity",
+        "CASCADE",
+        "vendor_onboarding_applications_vendor_identity_id_fkey"
+      ],
+      [
+        "vendor_onboarding_transitions",
+        "vendor_identity_id",
+        "vendor_identity",
+        "CASCADE",
+        "vendor_onboarding_transitions_vendor_identity_id_fkey"
+      ],
+      [
+        "customer_subscriptions",
+        "plan_id",
+        "vendor_subscription_plans",
+        "CASCADE",
+        "customer_subscriptions_plan_id_fkey"
+      ],
+      [
+        "vendor_wallet_transactions",
+        "wallet_id",
+        "vendor_wallets",
+        "CASCADE",
+        "vendor_wallet_transactions_wallet_id_fkey"
+      ],
+      [
+        "ad_budget_transactions",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "ad_budget_transactions_vendor_id_fkey"
+      ],
+      [
+        "ad_clicks",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "ad_clicks_vendor_id_fkey"
+      ],
+      [
+        "ad_impressions",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "ad_impressions_vendor_id_fkey"
+      ],
+      [
+        "ad_performance_analytics",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "ad_performance_analytics_vendor_id_fkey"
+      ],
+      [
+        "adoption_center_profiles",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "adoption_center_profiles_vendor_id_fkey"
+      ],
+      [
+        "advertising_campaigns",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "advertising_campaigns_vendor_id_fkey"
+      ],
+      [
+        "ambulance_vehicles",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "ambulance_vehicles_vendor_id_fkey"
+      ],
+      [
+        "boarding_facilities",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "boarding_facilities_vendor_id_fkey"
+      ],
+      [
+        "boarding_rooms",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "boarding_rooms_vendor_id_fkey"
+      ],
+      [
+        "booking_cancellation_rules",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "booking_cancellation_rules_vendor_id_fkey"
+      ],
+      [
+        "booking_policies",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "booking_policies_vendor_id_fkey"
+      ],
+      [
+        "breeder_profiles",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "breeder_profiles_vendor_id_fkey"
+      ],
+      [
+        "cafe_tables",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "cafe_tables_vendor_id_fkey"
+      ],
+      [
+        "customer_provider_history",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "customer_provider_history_vendor_id_fkey"
+      ],
+      [
+        "customer_referrals",
+        "referrer_vendor_id",
+        "vendors",
+        "CASCADE",
+        "customer_referrals_referrer_vendor_id_fkey"
+      ],
+      [
+        "customer_subscriptions",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "customer_subscriptions_vendor_id_fkey"
+      ],
+      [
+        "deliveries",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "deliveries_vendor_id_fkey"
+      ],
+      [
+        "delivery_partners",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "delivery_partners_vendor_id_fkey"
+      ],
+      [
+        "diagnostic_bookings",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "diagnostic_bookings_vendor_id_fkey"
+      ],
+      [
+        "diagnostic_tests",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "diagnostic_tests_vendor_id_fkey"
+      ],
+      [
+        "ecommerce_policies",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "ecommerce_policies_vendor_id_fkey"
+      ],
+      [
+        "groomer_gallery",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "groomer_gallery_vendor_id_fkey"
+      ],
+      [
+        "holiday_bookings",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "holiday_bookings_vendor_id_fkey"
+      ],
+      [
+        "holiday_packages",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "holiday_packages_vendor_id_fkey"
+      ],
+      [
+        "loyalty_transactions",
+        "vendor_id",
+        "vendors",
+        "SET NULL",
+        "loyalty_transactions_vendor_id_fkey"
+      ],
+      [
+        "meal_plans",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "meal_plans_vendor_id_fkey"
+      ],
+      [
+        "nutrition_consultation_requests",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "nutrition_consultation_requests_vendor_id_fkey"
+      ],
+      [
+        "package_purchases",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "package_purchases_vendor_id_fkey"
+      ],
+      [
+        "prescription_submissions",
+        "pharmacy_vendor_id",
+        "vendors",
+        "CASCADE",
+        "prescription_submissions_pharmacy_vendor_id_fkey"
+      ],
+      [
+        "prescriptions",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "prescriptions_vendor_id_fkey"
+      ],
+      [
+        "pricing_rules",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "pricing_rules_vendor_id_fkey"
+      ],
+      [
+        "referrals",
+        "referred_vendor_id",
+        "vendors",
+        "SET NULL",
+        "referrals_referred_vendor_id_fkey"
+      ],
+      [
+        "return_requests",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "return_requests_vendor_id_fkey"
+      ],
+      [
+        "reviews",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "reviews_vendor_id_fkey"
+      ],
+      [
+        "sample_collection_assignments",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "sample_collection_assignments_vendor_id_fkey"
+      ],
+      [
+        "service_packages",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "service_packages_vendor_id_fkey"
+      ],
+      [
+        "service_publishing",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "service_publishing_vendor_id_fkey"
+      ],
+      [
+        "services",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "services_vendor_id_fkey"
+      ],
+      [
+        "staff",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "staff_vendor_id_fkey"
+      ],
+      [
+        "subscription_plans",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "subscription_plans_vendor_id_fkey"
+      ],
+      [
+        "support_tickets",
+        "vendor_id",
+        "vendors",
+        "SET NULL",
+        "support_tickets_vendor_id_fkey"
+      ],
+      [
+        "vendor_admin_portal_codes",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_admin_portal_codes_vendor_id_fkey"
+      ],
+      [
+        "vendor_availability_v2",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_availability_v2_vendor_id_fkey"
+      ],
+      [
+        "vendor_bank_accounts",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_bank_accounts_vendor_id_fkey"
+      ],
+      [
+        "vendor_bank_details",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_bank_details_vendor_id_fkey"
+      ],
+      [
+        "vendor_breaks",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_breaks_vendor_id_fkey"
+      ],
+      [
+        "vendor_daily_accrual",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_daily_accrual_vendor_id_fkey"
+      ],
+      [
+        "vendor_documents",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_documents_vendor_id_fkey"
+      ],
+      [
+        "vendor_holidays_enhanced",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_holidays_enhanced_vendor_id_fkey"
+      ],
+      [
+        "vendor_identity",
+        "vendor_id",
+        "vendors",
+        "SET NULL",
+        "vendor_identity_vendor_id_fkey"
+      ],
+      [
+        "vendor_onboarding_comments",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_onboarding_comments_vendor_id_fkey"
+      ],
+      [
+        "vendor_onboarding_steps",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_onboarding_steps_vendor_id_fkey"
+      ],
+      [
+        "vendor_policies",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_policies_vendor_id_fkey"
+      ],
+      [
+        "vendor_portfolio",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_portfolio_vendor_id_fkey"
+      ],
+      [
+        "vendor_referrals",
+        "referred_vendor_id",
+        "vendors",
+        "SET NULL",
+        "vendor_referrals_referred_vendor_id_fkey"
+      ],
+      [
+        "vendor_referrals",
+        "referrer_vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_referrals_referrer_vendor_id_fkey"
+      ],
+      [
+        "vendor_segment_assignments",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_segment_assignments_vendor_id_fkey"
+      ],
+      [
+        "vendor_service_areas",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_service_areas_vendor_id_fkey"
+      ],
+      [
+        "vendor_services",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_services_vendor_id_fkey"
+      ],
+      [
+        "vendor_setup_completion",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_setup_completion_vendor_id_fkey"
+      ],
+      [
+        "vendor_specializations",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_specializations_vendor_id_fkey"
+      ],
+      [
+        "vendor_subscription_plans",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_subscription_plans_vendor_id_fkey"
+      ],
+      [
+        "vendor_tier_subscriptions",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_tier_subscriptions_vendor_id_fkey"
+      ],
+      [
+        "vendor_wallet_transactions",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_wallet_transactions_vendor_id_fkey"
+      ],
+      [
+        "vendor_wallets",
+        "vendor_id",
+        "vendors",
+        "CASCADE",
+        "vendor_wallets_vendor_id_fkey"
+      ],
+      [
+        "video_call_history",
+        "room_id",
+        "video_call_rooms",
+        "CASCADE",
+        "video_call_history_room_id_fkey"
+      ]
+    ],
+    "count": 250
+  },
+  "tablesWithoutFk": {
+    "ok": true,
+    "label": "tables_without_fk",
+    "rows": [
+      [
+        "audit_logs",
+        4652
+      ],
+      [
+        "analytics_sessions",
+        3143
+      ],
+      [
+        "notifications",
+        3028
+      ],
+      [
+        "otp_tokens",
+        2360
+      ],
+      [
+        "processed_events",
+        2349
+      ],
+      [
+        "search_index",
+        1342
+      ],
+      [
+        "auth_operation_rate_events",
+        644
+      ],
+      [
+        "banner_clicks",
+        416
+      ],
+      [
+        "customer_loyalty_points",
+        341
+      ],
+      [
+        "device_tokens",
+        178
+      ],
+      [
+        "vendor_earnings",
+        174
+      ],
+      [
+        "problem_grid_mappings",
+        70
+      ],
+      [
+        "onboarding_forms",
+        48
+      ],
+      [
+        "discovery_rules",
+        41
+      ],
+      [
+        "action_sources",
+        39
+      ],
+      [
+        "vendor_refund_tiers",
+        29
+      ],
+      [
+        "loyalty_action_rules",
+        28
+      ],
+      [
+        "roles",
+        28
+      ],
+      [
+        "admin_settings",
+        22
+      ]
+    ],
+    "count": 19
+  },
+  "checkConstraints": {
+    "ok": true,
+    "label": "check_constraints",
+    "rows": [
+      [
+        "bookings",
+        "2200_16647_1_not_null",
+        "id IS NOT NULL"
+      ],
+      [
+        "bookings",
+        "2200_16647_6_not_null",
+        "booking_date IS NOT NULL"
+      ],
+      [
+        "bookings",
+        "2200_16647_5_not_null",
+        "service_id IS NOT NULL"
+      ],
+      [
+        "bookings",
+        "2200_16647_2_not_null",
+        "customer_id IS NOT NULL"
+      ],
+      [
+        "bookings",
+        "bookings_payment_status_check",
+        "((payment_status = ANY (ARRAY['pending'::text, 'partial'::text, 'paid'::text, 'refunded'::text, 'failed'::text])))"
+      ],
+      [
+        "bookings",
+        "bookings_service_type_check",
+        "((service_type = ANY (ARRAY['at_center'::text, 'at_home'::text, 'tele'::text, 'hybrid'::text, 'product'::text, 'online'::text])))"
+      ],
+      [
+        "bookings",
+        "bookings_status_check",
+        "((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'scheduled'::text, 'in_progress'::text, 'completed'::text, 'cancelled'::text, 'no_show'::text, 'rescheduled'::text, 'partially_completed'::text, 'active'::text, 'paused'::text, 'renewal_pending'::text, 'expired'::text, 'claim_pending'::text, 'claim_approved'::text, 'claim_rejected'::text, 'approved'::text, 'rejected'::text, 'vendor_on_way'::text, 'in_transit'::text, 'arrived'::text, 'dispatched'::text, 'sample_collected'::text, 'sample_received_at_lab'::text, 'processing'::text, 'reports_ready'::text, 'pending_payment'::text])))"
+      ],
+      [
+        "bookings",
+        "check_booking_amount_positive",
+        "((COALESCE(is_package_session, false) OR (total_amount > (0)::numeric)))"
+      ],
+      [
+        "bookings",
+        "check_booking_base_price_positive",
+        "((COALESCE(is_package_session, false) OR (base_price > (0)::numeric)))"
+      ],
+      [
+        "bookings",
+        "check_booking_discount_valid",
+        "(((discount_amount >= (0)::numeric) AND (discount_amount <= base_price)))"
+      ],
+      [
+        "bookings",
+        "check_booking_tax_non_negative",
+        "((tax_amount >= (0)::numeric))"
+      ],
+      [
+        "bookings",
+        "2200_16647_19_not_null",
+        "total_amount IS NOT NULL"
+      ],
+      [
+        "bookings",
+        "2200_16647_16_not_null",
+        "base_price IS NOT NULL"
+      ],
+      [
+        "bookings",
+        "2200_16647_9_not_null",
+        "service_type IS NOT NULL"
+      ],
+      [
+        "bookings",
+        "2200_16647_8_not_null",
+        "status IS NOT NULL"
+      ],
+      [
+        "bookings",
+        "2200_16647_7_not_null",
+        "booking_time IS NOT NULL"
+      ],
+      [
+        "roles",
+        "2200_16876_2_not_null",
+        "name IS NOT NULL"
+      ],
+      [
+        "roles",
+        "2200_16876_3_not_null",
+        "display_name IS NOT NULL"
+      ],
+      [
+        "roles",
+        "2200_16876_1_not_null",
+        "id IS NOT NULL"
+      ],
+      [
+        "service_catalog",
+        "service_catalog_publish_status_check",
+        "((publish_status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text])))"
+      ],
+      [
+        "service_catalog",
+        "service_catalog_service_style_check",
+        "((service_style = ANY (ARRAY['at_center'::text, 'at_home'::text, 'tele'::text, 'all'::text])))"
+      ],
+      [
+        "service_catalog",
+        "service_catalog_status_check",
+        "((status = ANY (ARRAY['active'::text, 'archived'::text, 'draft'::text])))"
+      ],
+      [
+        "service_catalog",
+        "2200_19945_1_not_null",
+        "id IS NOT NULL"
+      ],
+      [
+        "service_catalog",
+        "2200_19945_2_not_null",
+        "service_id IS NOT NULL"
+      ],
+      [
+        "service_catalog",
+        "2200_19945_3_not_null",
+        "service_name IS NOT NULL"
+      ],
+      [
+        "service_catalog",
+        "2200_19945_10_not_null",
+        "applicable_roles IS NOT NULL"
+      ],
+      [
+        "service_catalog",
+        "2200_19945_14_not_null",
+        "status IS NOT NULL"
+      ],
+      [
+        "service_catalog",
+        "2200_19945_20_not_null",
+        "specialization_ids IS NOT NULL"
+      ],
+      [
+        "specialization_master",
+        "2200_28185_1_not_null",
+        "id IS NOT NULL"
+      ],
+      [
+        "specialization_master",
+        "2200_28185_2_not_null",
+        "specialization_id IS NOT NULL"
+      ],
+      [
+        "specialization_master",
+        "2200_28185_3_not_null",
+        "name IS NOT NULL"
+      ],
+      [
+        "specialization_master",
+        "2200_28185_8_not_null",
+        "applicable_roles IS NOT NULL"
+      ],
+      [
+        "vendor_services",
+        "2200_32924_11_not_null",
+        "is_enabled IS NOT NULL"
+      ],
+      [
+        "vendor_services",
+        "2200_32924_32_not_null",
+        "is_deleted IS NOT NULL"
+      ],
+      [
+        "vendor_services",
+        "vendor_services_service_style_check",
+        "((service_style = ANY (ARRAY['at_center'::text, 'at_home'::text, 'tele'::text])))"
+      ],
+      [
+        "vendor_services",
+        "vendor_services_publish_status_check",
+        "((publish_status = ANY (ARRAY['draft'::text, 'pending_approval'::text, 'published'::text, 'rejected'::text, 'auto_published'::text])))"
+      ],
+      [
+        "vendor_services",
+        "chk_vendor_services_category_not_uuid",
+        "(((category IS NULL) OR (category !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text)))"
+      ],
+      [
+        "vendor_services",
+        "2200_32924_1_not_null",
+        "id IS NOT NULL"
+      ],
+      [
+        "vendor_services",
+        "2200_32924_2_not_null",
+        "vendor_id IS NOT NULL"
+      ],
+      [
+        "vendor_services",
+        "2200_32924_3_not_null",
+        "service_id IS NOT NULL"
+      ],
+      [
+        "vendor_services",
+        "2200_32924_7_not_null",
+        "price IS NOT NULL"
+      ],
+      [
+        "vendor_services",
+        "2200_32924_4_not_null",
+        "service_name IS NOT NULL"
+      ],
+      [
+        "vendor_services",
+        "2200_32924_8_not_null",
+        "duration_minutes IS NOT NULL"
+      ],
+      [
+        "vendor_services",
+        "2200_32924_9_not_null",
+        "service_style IS NOT NULL"
+      ],
+      [
+        "vendor_services",
+        "2200_32924_10_not_null",
+        "publish_status IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "2200_16556_63_not_null",
+        "auth_version IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "vendors_tier_check",
+        "(((tier IS NULL) OR (TRIM(BOTH FROM tier) <> ''::text)))"
+      ],
+      [
+        "vendors",
+        "vendors_status_check",
+        "((status = ANY (ARRAY['new'::text, 'onboarding'::text, 'pending'::text, 'approved'::text, 'rejected'::text, 'active'::text, 'suspended'::text, 'inactive'::text])))"
+      ],
+      [
+        "vendors",
+        "vendors_rating_check",
+        "(((rating >= (0)::numeric) AND (rating <= (5)::numeric)))"
+      ],
+      [
+        "vendors",
+        "vendors_onboarding_status_check",
+        "((onboarding_status = ANY (ARRAY['INIT'::text, 'ROLE_PENDING'::text, 'FORM_PENDING'::text, 'UNDER_REVIEW'::text, 'CLARIFICATION_REQUIRED'::text, 'APPROVED'::text, 'REJECTED'::text, 'ACTIVATED'::text])))"
+      ],
+      [
+        "vendors",
+        "vendors_onboarding_progress_check",
+        "(((onboarding_progress >= 0) AND (onboarding_progress <= 100)))"
+      ],
+      [
+        "vendors",
+        "2200_16556_1_not_null",
+        "id IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "2200_16556_2_not_null",
+        "phone IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "2200_16556_3_not_null",
+        "email IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "2200_16556_4_not_null",
+        "business_name IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "2200_16556_5_not_null",
+        "owner_name IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "2200_16556_13_not_null",
+        "address IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "2200_16556_14_not_null",
+        "city IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "2200_16556_15_not_null",
+        "state IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "2200_16556_20_not_null",
+        "status IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "2200_16556_59_not_null",
+        "available_for_instant_tele IS NOT NULL"
+      ],
+      [
+        "vendors",
+        "vendors_vendor_type_check",
+        "((vendor_type = ANY (ARRAY['solo'::text, 'business'::text])))"
+      ]
+    ],
+    "count": 62
+  },
+  "taxonomyIndexes": {
+    "ok": true,
+    "label": "taxonomy_indexes",
+    "rows": [
+      [
+        "problem_grid_mappings",
+        "idx_problem_grid_allowed_styles",
+        "CREATE INDEX idx_problem_grid_allowed_styles ON public.problem_grid_mappings USING gin (allowed_service_styles)"
+      ],
+      [
+        "problem_grid_mappings",
+        "idx_problem_grid_mappings_problem_id",
+        "CREATE INDEX idx_problem_grid_mappings_problem_id ON public.problem_grid_mappings USING btree (problem_id)"
+      ],
+      [
+        "problem_grid_mappings",
+        "idx_problem_grid_mappings_role_id",
+        "CREATE INDEX idx_problem_grid_mappings_role_id ON public.problem_grid_mappings USING btree (role_id)"
+      ],
+      [
+        "problem_grid_mappings",
+        "idx_problem_grid_mappings_sub_category",
+        "CREATE INDEX idx_problem_grid_mappings_sub_category ON public.problem_grid_mappings USING btree (sub_category_id)"
+      ],
+      [
+        "problem_grid_mappings",
+        "problem_grid_mappings_pkey",
+        "CREATE UNIQUE INDEX problem_grid_mappings_pkey ON public.problem_grid_mappings USING btree (id)"
+      ],
+      [
+        "problem_grid_mappings",
+        "problem_grid_mappings_problem_id_sub_category_id_key",
+        "CREATE UNIQUE INDEX problem_grid_mappings_problem_id_sub_category_id_key ON public.problem_grid_mappings USING btree (problem_id, sub_category_id)"
+      ],
+      [
+        "role_permissions",
+        "idx_role_permissions_permission",
+        "CREATE INDEX idx_role_permissions_permission ON public.role_permissions USING btree (permission_name)"
+      ],
+      [
+        "role_permissions",
+        "idx_role_permissions_role",
+        "CREATE INDEX idx_role_permissions_role ON public.role_permissions USING btree (role_id)"
+      ],
+      [
+        "role_permissions",
+        "role_permissions_pkey",
+        "CREATE UNIQUE INDEX role_permissions_pkey ON public.role_permissions USING btree (id)"
+      ],
+      [
+        "role_permissions",
+        "role_permissions_role_id_permission_name_resource_action_key",
+        "CREATE UNIQUE INDEX role_permissions_role_id_permission_name_resource_action_key ON public.role_permissions USING btree (role_id, permission_name, resource, action)"
+      ],
+      [
+        "roles",
+        "idx_roles_config",
+        "CREATE INDEX idx_roles_config ON public.roles USING gin (config)"
+      ],
+      [
+        "roles",
+        "roles_name_key",
+        "CREATE UNIQUE INDEX roles_name_key ON public.roles USING btree (name)"
+      ],
+      [
+        "roles",
+        "roles_pkey",
+        "CREATE UNIQUE INDEX roles_pkey ON public.roles USING btree (id)"
+      ],
+      [
+        "search_index",
+        "search_index_entity_unique",
+        "CREATE UNIQUE INDEX search_index_entity_unique ON public.search_index USING btree (entity_type, entity_id)"
+      ],
+      [
+        "search_index",
+        "search_index_pkey",
+        "CREATE UNIQUE INDEX search_index_pkey ON public.search_index USING btree (id)"
+      ],
+      [
+        "service_catalog",
+        "idx_service_catalog_applicable_roles",
+        "CREATE INDEX idx_service_catalog_applicable_roles ON public.service_catalog USING gin (applicable_roles)"
+      ],
+      [
+        "service_catalog",
+        "idx_service_catalog_category",
+        "CREATE INDEX idx_service_catalog_category ON public.service_catalog USING btree (category_id)"
+      ],
+      [
+        "service_catalog",
+        "idx_service_catalog_hsn_code",
+        "CREATE INDEX idx_service_catalog_hsn_code ON public.service_catalog USING btree (hsn_code_id) WHERE (hsn_code_id IS NOT NULL)"
+      ],
+      [
+        "service_catalog",
+        "idx_service_catalog_service_style",
+        "CREATE INDEX idx_service_catalog_service_style ON public.service_catalog USING btree (service_style)"
+      ],
+      [
+        "service_catalog",
+        "idx_service_catalog_specialization_ids",
+        "CREATE INDEX idx_service_catalog_specialization_ids ON public.service_catalog USING gin (specialization_ids)"
+      ],
+      [
+        "service_catalog",
+        "idx_service_catalog_status",
+        "CREATE INDEX idx_service_catalog_status ON public.service_catalog USING btree (status, publish_status)"
+      ],
+      [
+        "service_catalog",
+        "idx_service_catalog_sub_category",
+        "CREATE INDEX idx_service_catalog_sub_category ON public.service_catalog USING btree (sub_category_id)"
+      ],
+      [
+        "service_catalog",
+        "idx_service_catalog_tax_category",
+        "CREATE INDEX idx_service_catalog_tax_category ON public.service_catalog USING btree (tax_category_id) WHERE (tax_category_id IS NOT NULL)"
+      ],
+      [
+        "service_catalog",
+        "service_catalog_pkey",
+        "CREATE UNIQUE INDEX service_catalog_pkey ON public.service_catalog USING btree (id)"
+      ],
+      [
+        "service_catalog",
+        "service_catalog_service_id_key",
+        "CREATE UNIQUE INDEX service_catalog_service_id_key ON public.service_catalog USING btree (service_id)"
+      ],
+      [
+        "service_categories",
+        "idx_service_categories_active",
+        "CREATE INDEX idx_service_categories_active ON public.service_categories USING btree (is_active) WHERE (is_active IS NOT NULL)"
+      ],
+      [
+        "service_categories",
+        "idx_service_categories_category_id",
+        "CREATE INDEX idx_service_categories_category_id ON public.service_categories USING btree (category_id) WHERE (category_id IS NOT NULL)"
+      ],
+      [
+        "service_categories",
+        "idx_service_categories_display_order",
+        "CREATE INDEX idx_service_categories_display_order ON public.service_categories USING btree (display_order)"
+      ],
+      [
+        "service_categories",
+        "idx_service_categories_name",
+        "CREATE INDEX idx_service_categories_name ON public.service_categories USING btree (name)"
+      ],
+      [
+        "service_categories",
+        "service_categories_category_id_key",
+        "CREATE UNIQUE INDEX service_categories_category_id_key ON public.service_categories USING btree (category_id)"
+      ],
+      [
+        "service_categories",
+        "service_categories_name_key",
+        "CREATE UNIQUE INDEX service_categories_name_key ON public.service_categories USING btree (name)"
+      ],
+      [
+        "service_categories",
+        "service_categories_pkey",
+        "CREATE UNIQUE INDEX service_categories_pkey ON public.service_categories USING btree (id)"
+      ],
+      [
+        "specialization_master",
+        "idx_spec_master_active",
+        "CREATE INDEX idx_spec_master_active ON public.specialization_master USING btree (is_active) WHERE (is_active = true)"
+      ],
+      [
+        "specialization_master",
+        "idx_spec_master_category",
+        "CREATE INDEX idx_spec_master_category ON public.specialization_master USING btree (category_id)"
+      ],
+      [
+        "specialization_master",
+        "idx_spec_master_problem_grid",
+        "CREATE INDEX idx_spec_master_problem_grid ON public.specialization_master USING btree (show_in_problem_grid) WHERE (show_in_problem_grid = true)"
+      ],
+      [
+        "specialization_master",
+        "idx_spec_master_roles",
+        "CREATE INDEX idx_spec_master_roles ON public.specialization_master USING gin (applicable_roles)"
+      ],
+      [
+        "specialization_master",
+        "idx_spec_master_vendor_profile",
+        "CREATE INDEX idx_spec_master_vendor_profile ON public.specialization_master USING btree (show_in_vendor_profile) WHERE (show_in_vendor_profile = true)"
+      ],
+      [
+        "specialization_master",
+        "specialization_master_pkey",
+        "CREATE UNIQUE INDEX specialization_master_pkey ON public.specialization_master USING btree (id)"
+      ],
+      [
+        "specialization_master",
+        "specialization_master_specialization_id_key",
+        "CREATE UNIQUE INDEX specialization_master_specialization_id_key ON public.specialization_master USING btree (specialization_id)"
+      ],
+      [
+        "vendor_services",
+        "idx_vendor_services_category_id",
+        "CREATE INDEX idx_vendor_services_category_id ON public.vendor_services USING btree (category_id)"
+      ],
+      [
+        "vendor_services",
+        "idx_vendor_services_custom",
+        "CREATE INDEX idx_vendor_services_custom ON public.vendor_services USING btree (vendor_id, is_custom_service) WHERE (is_custom_service = true)"
+      ],
+      [
+        "vendor_services",
+        "idx_vendor_services_description_trgm",
+        "CREATE INDEX idx_vendor_services_description_trgm ON public.vendor_services USING gin (lower(COALESCE(custom_description, ''::text)) gin_trgm_ops)"
+      ],
+      [
+        "vendor_services",
+        "idx_vendor_services_pending_approval",
+        "CREATE INDEX idx_vendor_services_pending_approval ON public.vendor_services USING btree (submitted_for_approval_at) WHERE ((publish_status = 'pending_approval'::text) AND (is_custom_service = true))"
+      ],
+      [
+        "vendor_services",
+        "idx_vendor_services_publish_status",
+        "CREATE INDEX idx_vendor_services_publish_status ON public.vendor_services USING btree (publish_status, is_enabled)"
+      ],
+      [
+        "vendor_services",
+        "idx_vendor_services_service_name_trgm",
+        "CREATE INDEX idx_vendor_services_service_name_trgm ON public.vendor_services USING gin (lower(service_name) gin_trgm_ops)"
+      ],
+      [
+        "vendor_services",
+        "idx_vendor_services_service_style",
+        "CREATE INDEX idx_vendor_services_service_style ON public.vendor_services USING btree (service_style)"
+      ],
+      [
+        "vendor_services",
+        "idx_vendor_services_sub_category",
+        "CREATE INDEX idx_vendor_services_sub_category ON public.vendor_services USING btree (sub_category)"
+      ],
+      [
+        "vendor_services",
+        "idx_vendor_services_vendor_id",
+        "CREATE INDEX idx_vendor_services_vendor_id ON public.vendor_services USING btree (vendor_id)"
+      ],
+      [
+        "vendor_services",
+        "vendor_services_pkey",
+        "CREATE UNIQUE INDEX vendor_services_pkey ON public.vendor_services USING btree (id)"
+      ],
+      [
+        "vendor_services",
+        "vendor_services_vendor_id_service_id_service_style_key",
+        "CREATE UNIQUE INDEX vendor_services_vendor_id_service_id_service_style_key ON public.vendor_services USING btree (vendor_id, service_id, service_style)"
+      ],
+      [
+        "vendor_specializations",
+        "idx_vendor_specializations_spec",
+        "CREATE INDEX idx_vendor_specializations_spec ON public.vendor_specializations USING btree (specialization)"
+      ],
+      [
+        "vendor_specializations",
+        "idx_vendor_specializations_vendor",
+        "CREATE INDEX idx_vendor_specializations_vendor ON public.vendor_specializations USING btree (vendor_id)"
+      ],
+      [
+        "vendor_specializations",
+        "vendor_specializations_pkey",
+        "CREATE UNIQUE INDEX vendor_specializations_pkey ON public.vendor_specializations USING btree (id)"
+      ],
+      [
+        "vendor_specializations",
+        "vendor_specializations_vendor_id_specialization_key",
+        "CREATE UNIQUE INDEX vendor_specializations_vendor_id_specialization_key ON public.vendor_specializations USING btree (vendor_id, specialization)"
+      ]
+    ],
+    "count": 54
+  },
+  "orphanFkRisk": {
+    "ok": true,
+    "label": "orphan_fk_risk",
+    "rows": [
+      [
+        "vendor_services.service_id",
+        2029,
+        2491
+      ],
+      [
+        "vendor_services missing catalog link",
+        0,
+        2162
+      ],
+      [
+        "vendor_specializations no master",
+        0,
+        802
+      ],
+      [
+        "bookings.service_id invalid",
+        0,
+        613
+      ]
+    ],
+    "count": 4
+  },
+  "rolePermissionGaps": {
+    "ok": true,
+    "label": "role_permission_gaps",
+    "rows": [
+      [
+        "marketing_mgr",
+        "3cfca3f2-9fd5-40d8-85ce-3a04c128b28c",
+        0,
+        null
+      ],
+      [
+        "pet_boarder",
+        "2b3ed273-d7cd-445a-96b5-7b5fe46cf132",
+        0,
+        null
+      ],
+      [
+        "tckt_mang",
+        "f46e7d34-11b4-41f8-8368-f002ed494a53",
+        0,
+        null
+      ],
+      [
+        "tdtftyfyugy",
+        "1d8e34c2-8e6c-4e84-aea2-bb33e4f9b285",
+        0,
+        null
+      ],
+      [
+        "vendor",
+        "35d8ebc0-6d26-4357-9c72-d075e79d5bab",
+        0,
+        null
+      ],
+      [
+        "customer_mgr",
+        "369dcef1-1ac4-491a-a642-03d4b30577b1",
+        1,
+        null
+      ],
+      [
+        "marketing_hub",
+        "9c7a1ebf-5935-47cf-8ec9-ebfcbce613e7",
+        1,
+        null
+      ],
+      [
+        "support_mngr",
+        "9c99505e-3480-4360-8889-1b62c66de23a",
+        1,
+        null
+      ],
+      [
+        "vendor_mnager",
+        "368e0256-0e34-4f3d-a5b1-3e7fb6db077c",
+        1,
+        null
+      ],
+      [
+        "support_admin",
+        "a23ba085-f369-441d-bff5-158ec272cc9f",
+        7,
+        null
+      ],
+      [
+        "insurance",
+        "25053d68-1639-4897-8936-2f18e4060a2a",
+        15,
+        null
+      ],
+      [
+        "event_organizer",
+        "0a15c75d-3296-4f92-8867-b067da04d314",
+        16,
+        null
+      ],
+      [
+        "photographer",
+        "3b95453b-fa0a-4edb-8978-13f804a6c340",
+        17,
+        null
+      ],
+      [
+        "sitter",
+        "d582a29c-cadc-444a-8231-7531c51c5b8e",
+        18,
+        null
+      ],
+      [
+        "groomer_solo",
+        "8677876a-da2b-44d7-ab0c-c2c0b78dfc56",
+        20,
+        null
+      ],
+      [
+        "breeder",
+        "5faf1e16-4ffa-4cf4-8ba5-7338bb93d9a4",
+        22,
+        null
+      ],
+      [
+        "sunset",
+        "974e6b2f-6652-48ce-85d5-c1ec5edb7f62",
+        22,
+        null
+      ],
+      [
+        "nutritionist",
+        "654b0a3f-226d-425e-ad16-f6783d82e308",
+        23,
+        null
+      ],
+      [
+        "relocation",
+        "d8e1105a-6aeb-4116-8be4-1c6b5a7bc154",
+        23,
+        null
+      ],
+      [
+        "adoption_center",
+        "9a116e08-cc24-4447-bd7b-95bdbb7c0cce",
+        24,
+        null
+      ],
+      [
+        "diagnostics_center",
+        "dccc8c32-a60b-4dcb-b2c8-2be04122c4b5",
+        24,
+        null
+      ],
+      [
+        "boarding",
+        "baf2bf60-6d8d-4cb8-966c-529e6cd77ceb",
+        25,
+        null
+      ],
+      [
+        "groomer_center",
+        "a9cc704f-73f1-4746-8c22-bcc6b67e3e5a",
+        25,
+        null
+      ],
+      [
+        "cafe",
+        "2571a3af-26d8-4581-8d4f-c2be64b6d0a3",
+        26,
+        null
+      ],
+      [
+        "holiday",
+        "44139745-7b23-407f-af8c-d2c150604642",
+        26,
+        null
+      ],
+      [
+        "resort",
+        "0115e6be-64d3-41ad-8d8e-7d7685b7c99c",
+        26,
+        null
+      ],
+      [
+        "ambulance",
+        "cbfb9b02-4e7d-4cae-b544-f4930ee86d24",
+        27,
+        null
+      ],
+      [
+        "seller",
+        "c05e9fac-a339-4f53-bbe8-a48384dfa981",
+        28,
+        null
+      ],
+      [
+        "pharmacy",
+        "6b6b2610-0cbf-4684-962e-bfb86fe0a5c7",
+        29,
+        null
+      ],
+      [
+        "behaviorist_solo",
+        "f45f074b-e12e-4299-8cdb-03493d47a98a",
+        31,
+        null
+      ],
+      [
+        "trainer_solo",
+        "2511b65d-e0bd-49b7-8848-ae67b894a693",
+        31,
+        null
+      ],
+      [
+        "behaviorist_center",
+        "5fd28e1b-f854-4310-b10b-10b3346fdd1f",
+        32,
+        null
+      ],
+      [
+        "trainer_center",
+        "07e1be6a-d75a-498d-b577-7477a6e2cdcb",
+        32,
+        null
+      ],
+      [
+        "nutritionist_center",
+        "da04f4cb-d7e9-4c99-a366-2006721964e7",
+        33,
+        null
+      ],
+      [
+        "vet_solo",
+        "072548c8-84a9-4165-a9ec-0387c8c76a0e",
+        34,
+        null
+      ],
+      [
+        "walker",
+        "2fd34a4e-ddd5-4ebe-908a-7e629abcb810",
+        34,
+        null
+      ],
+      [
+        "super_admin",
+        "5ad78a94-6cc0-429c-b24b-e75fa8f506c5",
+        36,
+        null
+      ],
+      [
+        "vet_clinic",
+        "e0473f0e-bc76-47fc-8378-3f0295fe6447",
+        38,
+        null
+      ],
+      [
+        "admin",
+        "12794cb5-4d74-486c-98b8-f5260facb864",
+        58,
+        null
+      ]
+    ],
+    "count": 39
+  },
+  "onboardingFormFields": {
+    "ok": false,
+    "label": "onboarding_forms",
+    "error": "ERROR: column \"form_name\" does not exist; Position: 38; SQLState: 42703"
+  }
+}

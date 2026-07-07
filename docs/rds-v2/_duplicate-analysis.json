@@ -1,0 +1,98 @@
+[
+  {
+    "pair": [
+      "coupon_usage",
+      "coupon_usages"
+    ],
+    "a": {
+      "status": "Active",
+      "codeFiles": 1,
+      "migrations": 6
+    },
+    "b": {
+      "status": "Active",
+      "codeFiles": 1,
+      "migrations": 1
+    }
+  },
+  {
+    "pair": [
+      "gst_configs",
+      "gst_configurations"
+    ],
+    "a": {
+      "status": "Active",
+      "codeFiles": 1,
+      "migrations": 3
+    },
+    "b": {
+      "status": "Migration-only",
+      "codeFiles": 0,
+      "migrations": 2
+    }
+  },
+  {
+    "pair": [
+      "audit_logs",
+      "audit_trail"
+    ],
+    "a": {
+      "status": "Active",
+      "codeFiles": 2,
+      "migrations": 5
+    },
+    "b": {
+      "status": "Migration-only",
+      "codeFiles": 0,
+      "migrations": 1
+    }
+  },
+  {
+    "pair": [
+      "tele_queue",
+      "tele_queues"
+    ],
+    "a": {
+      "status": "Active",
+      "codeFiles": 1,
+      "migrations": 5
+    },
+    "b": {
+      "status": "Migration-only",
+      "codeFiles": 0,
+      "migrations": 3
+    }
+  },
+  {
+    "pair": [
+      "notification_templates",
+      "notification_templates_enhanced"
+    ],
+    "a": {
+      "status": "Active",
+      "codeFiles": 1,
+      "migrations": 3
+    },
+    "b": {
+      "status": "Migration-only",
+      "codeFiles": 0,
+      "migrations": 1
+    }
+  },
+  {
+    "pair": [
+      "vendor_holidays",
+      "vendor_holidays_enhanced"
+    ],
+    "a": {
+      "status": "Active",
+      "codeFiles": 4,
+      "migrations": 2
+    },
+    "b": {
+      "status": "Active",
+      "codeFiles": 4,
+      "migrations": 1
+    }
+  }
+]

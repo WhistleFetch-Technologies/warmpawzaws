@@ -1,0 +1,4099 @@
+{
+  "nodes": [
+    "analytics_events",
+    "audit_logs",
+    "analytics_sessions",
+    "vendor_services",
+    "notifications",
+    "notification_delivery_log",
+    "vendors",
+    "vendor_onboarding_applications",
+    "processed_events",
+    "bookings",
+    "search_index",
+    "otp_tokens",
+    "vendor_availability_v2",
+    "vendor_admin_portal_codes",
+    "vendor_earnings",
+    "service_catalog",
+    "role_permissions",
+    "onboarding_forms",
+    "customers",
+    "pets",
+    "notification_campaign_deliveries",
+    "vendor_identity",
+    "services",
+    "auth_operation_rate_events",
+    "payments",
+    "vendor_specializations",
+    "meal_orders",
+    "vendor_onboarding_transitions",
+    "pharmacy_orders",
+    "support_tickets",
+    "roles",
+    "device_tokens",
+    "customer_admin_portal_codes",
+    "content_pages",
+    "platform_settings",
+    "customer_identity",
+    "loyalty_transactions",
+    "specialization_master",
+    "specialization_symptoms",
+    "package_purchases",
+    "video_call_sessions",
+    "vendor_refund_tiers",
+    "gps_tracking_sessions",
+    "platform_policies",
+    "error_case_occurrences",
+    "meal_plans",
+    "problem_grid_mappings",
+    "loyalty_action_rules",
+    "vendor_wallet_transactions",
+    "customer_loyalty_points",
+    "customer_addresses",
+    "banners",
+    "admins",
+    "prescriptions",
+    "package_scheduled_sessions",
+    "service_categories",
+    "discovery_rules",
+    "ai_booking_wizard_sessions",
+    "wallet_transactions",
+    "meal_refund_cases",
+    "vendor_referrals",
+    "reviews",
+    "ai_chatbot_conversations",
+    "regions",
+    "action_sources",
+    "vendor_daily_accrual",
+    "products",
+    "vendor_bank_details",
+    "customer_profile_completion",
+    "gps_location_history",
+    "support_ticket_responses",
+    "support_ticket_activity",
+    "delivery_tracking",
+    "medical_records",
+    "pidge_hyperlocal_webhook_events",
+    "banner_clicks",
+    "product_error_cases",
+    "customer_subscriptions",
+    "chat_messages",
+    "loyalty_segments",
+    "vendor_tiers",
+    "vendor_wallets",
+    "diagnostic_tests",
+    "product_skus",
+    "payouts",
+    "tax_categories",
+    "sample_collection_assignments",
+    "customer_segment_assignments",
+    "vendor_breaks",
+    "pet_listings",
+    "user_roles",
+    "service_packages",
+    "reward_catalog_links",
+    "reward_redemptions",
+    "logistics_partners",
+    "meal_subscription_deliveries",
+    "settlements",
+    "delivery_settlements",
+    "ecommerce_policies",
+    "coupons",
+    "gst_rules",
+    "support_agents",
+    "referral_redemptions",
+    "training_skills",
+    "package_usage_log",
+    "notification_templates_enhanced",
+    "notification_campaigns",
+    "customer_referrals",
+    "meal_subscriptions",
+    "cancellation_policies",
+    "hsn_codes",
+    "scheduling_policies",
+    "promotions",
+    "ecommerce_commission_settings",
+    "vendor_bank_accounts",
+    "prescription_submissions",
+    "commission_tiers",
+    "meal_rider_reassign_requests",
+    "medicine_orders",
+    "diagnostic_bookings",
+    "admin_ai_audit",
+    "platform_tax_products",
+    "referrals",
+    "dating_profiles_pet",
+    "support_reply_templates",
+    "holiday_bookings",
+    "pharmacy_broadcasts",
+    "invoices",
+    "notification_logs",
+    "deliveries",
+    "tax_category_roles",
+    "holiday_packages",
+    "delivery_location_history",
+    "user_subscriptions",
+    "dating_matches",
+    "booking_policies",
+    "staff_availability_per_style",
+    "breeder_profiles",
+    "nutrition_consultation_requests",
+    "adoption_center_profiles",
+    "pet_inquiries",
+    "staff",
+    "groomer_gallery",
+    "booking_cancellation_rules",
+    "return_requests",
+    "logistics_rules",
+    "mating_appointments",
+    "ui_configs",
+    "refund_tiers",
+    "admin_settings",
+    "gst_configs",
+    "payment_gateway_settings",
+    "payout_rules",
+    "booking_rules",
+    "cafe_tables",
+    "rbac_policies",
+    "platform_integrations",
+    "banner_analytics",
+    "service_style_mappings",
+    "subscriptions",
+    "package_milestones",
+    "audit_trail",
+    "spotlight_offers",
+    "dating_meetups",
+    "payout_policies",
+    "tele_sessions",
+    "tele_queues",
+    "rbac_audit_logs",
+    "advertising_campaigns",
+    "ad_impressions",
+    "ad_clicks",
+    "performance_metrics",
+    "optimization_tasks",
+    "video_call_rooms",
+    "vendor_portfolio",
+    "vendor_subscription_plans",
+    "customer_payment_methods",
+    "pet_skill_progress",
+    "customer_provider_history",
+    "customer_deactivation_requests",
+    "rewards_catalog",
+    "delivery_partners",
+    "delivery_routes",
+    "notification_state_transitions",
+    "refunds",
+    "loyalty_rules",
+    "ecommerce_categories",
+    "notification_campaign_events",
+    "diagnostic_reports",
+    "platform_tax_documents",
+    "adoption_applications",
+    "pidge_support_tickets",
+    "ad_budget_transactions",
+    "user_devices",
+    "insurance_claims",
+    "vendor_setup_completion",
+    "pharmacy_quotes",
+    "scheduled_notifications",
+    "walk_routes",
+    "package_sessions",
+    "ad_performance_analytics",
+    "booking_staff_assignments",
+    "ambulance_vehicles",
+    "orders",
+    "vendor_policies",
+    "product_policies",
+    "vendor_segment_assignments",
+    "ecommerce_loyalty_pending_awards",
+    "rbac_permissions_catalog",
+    "pricing_rules",
+    "vendor_registered_brands",
+    "notification_channel_settings",
+    "dating_analytics",
+    "customer_wallets",
+    "shipments",
+    "dating_chat_messages",
+    "policy_acceptances",
+    "service_publishing",
+    "spotlight_analytics",
+    "gst_configurations",
+    "dating_profiles_owner",
+    "wallet_checkout_rules",
+    "post_service_payments",
+    "pet_vaccination_reminder_log",
+    "boarding_facilities",
+    "gps_tracking_points",
+    "vendor_tier_subscriptions",
+    "mating_requests",
+    "shopping_carts",
+    "booking_status_history",
+    "booking_state_transitions",
+    "subscription_tiers",
+    "platform_tier_onboarding",
+    "shipment_tracking_events",
+    "walker_live_sessions",
+    "vendor_category_commission_rates",
+    "training_session_skills",
+    "booking_status_transitions",
+    "automation_jobs",
+    "customer_compliance_issues",
+    "vendor_discounts",
+    "pidge_partial_delivery_workflows",
+    "vendor_documents",
+    "notification_segments",
+    "notification_campaign_templates",
+    "support_routing_settings",
+    "boarding_rooms",
+    "referral_program_settings",
+    "vendor_onboarding_comments",
+    "vendor_onboarding_steps",
+    "vendor_payment_rules",
+    "subscription_plans",
+    "video_call_history",
+    "settlement_rules",
+    "vendor_holidays_enhanced",
+    "wishlists",
+    "support_sla_config",
+    "vendor_commission_config",
+    "report_templates",
+    "platform_tax_document_lines",
+    "meal_subscription_payments",
+    "support_categories",
+    "popular_searches",
+    "customer_tiers",
+    "search_analytics",
+    "cache_tokens",
+    "subscription_payments",
+    "product_commission_overrides",
+    "notification_templates",
+    "payment_timeout_rules",
+    "coupon_usages",
+    "no_show_policies",
+    "rescheduling_policies",
+    "payment_retry_log",
+    "subscription_deliveries",
+    "google_maps_settings",
+    "schema_migrations",
+    "coupon_usage",
+    "aws_settings",
+    "notification_campaign_cities",
+    "order_item_commission",
+    "order_items",
+    "support_escalation_rules",
+    "notification_segment_rules",
+    "item_stats",
+    "staff_availability",
+    "reminder_queue",
+    "featured_vendors",
+    "health_checks",
+    "cache_stats",
+    "search_history",
+    "vendor_stats",
+    "zero_result_searches",
+    "staff_certifications",
+    "package_services",
+    "notification_campaign_regions",
+    "bank_verifications",
+    "notification_campaign_users",
+    "tax_flexible_rules",
+    "notification_segment_targets",
+    "platform_revenue",
+    "settlement_schedules",
+    "vendor_service_areas",
+    "refund_rules",
+    "disputes",
+    "pending_reschedules",
+    "staff_services",
+    "staff_specializations",
+    "booking_limits",
+    "staff_schedules",
+    "payment_history",
+    "pending_payouts",
+    "emergency_booking_queue"
+  ],
+  "edges": [
+    {
+      "from": "ad_budget_transactions",
+      "fromColumn": "campaign_id",
+      "to": "advertising_campaigns",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_budget_transactions_campaign_id_fkey"
+    },
+    {
+      "from": "ad_budget_transactions",
+      "fromColumn": "click_id",
+      "to": "ad_clicks",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_budget_transactions_click_id_fkey"
+    },
+    {
+      "from": "ad_budget_transactions",
+      "fromColumn": "impression_id",
+      "to": "ad_impressions",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_budget_transactions_impression_id_fkey"
+    },
+    {
+      "from": "ad_budget_transactions",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_budget_transactions_vendor_id_fkey"
+    },
+    {
+      "from": "ad_clicks",
+      "fromColumn": "campaign_id",
+      "to": "advertising_campaigns",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_clicks_campaign_id_fkey"
+    },
+    {
+      "from": "ad_clicks",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_clicks_customer_id_fkey"
+    },
+    {
+      "from": "ad_clicks",
+      "fromColumn": "impression_id",
+      "to": "ad_impressions",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_clicks_impression_id_fkey"
+    },
+    {
+      "from": "ad_clicks",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_clicks_vendor_id_fkey"
+    },
+    {
+      "from": "ad_impressions",
+      "fromColumn": "campaign_id",
+      "to": "advertising_campaigns",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_impressions_campaign_id_fkey"
+    },
+    {
+      "from": "ad_impressions",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_impressions_customer_id_fkey"
+    },
+    {
+      "from": "ad_impressions",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_impressions_vendor_id_fkey"
+    },
+    {
+      "from": "ad_performance_analytics",
+      "fromColumn": "campaign_id",
+      "to": "advertising_campaigns",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_performance_analytics_campaign_id_fkey"
+    },
+    {
+      "from": "ad_performance_analytics",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "ad_performance_analytics_vendor_id_fkey"
+    },
+    {
+      "from": "admins",
+      "fromColumn": "admin_role_id",
+      "to": "roles",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "admins_admin_role_id_fkey"
+    },
+    {
+      "from": "adoption_applications",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "adoption_applications_booking_fkey"
+    },
+    {
+      "from": "adoption_applications",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "adoption_applications_customer_fkey"
+    },
+    {
+      "from": "adoption_center_profiles",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "adoption_center_profiles_vendor_id_fkey"
+    },
+    {
+      "from": "advertising_campaigns",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "advertising_campaigns_vendor_id_fkey"
+    },
+    {
+      "from": "ai_booking_wizard_sessions",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "ai_booking_wizard_sessions_customer_id_fkey"
+    },
+    {
+      "from": "ai_chatbot_conversations",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "ai_chatbot_conversations_customer_id_fkey"
+    },
+    {
+      "from": "ai_chatbot_conversations",
+      "fromColumn": "escalation_ticket_id",
+      "to": "support_tickets",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "ai_chatbot_conversations_escalation_ticket_id_fkey"
+    },
+    {
+      "from": "ambulance_vehicles",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "ambulance_vehicles_vendor_id_fkey"
+    },
+    {
+      "from": "analytics_events",
+      "fromColumn": "session_id",
+      "to": "analytics_sessions",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "analytics_events_session_id_fkey"
+    },
+    {
+      "from": "bank_verifications",
+      "fromColumn": "bank_detail_id",
+      "to": "vendor_bank_details",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "bank_verifications_bank_detail_id_fkey"
+    },
+    {
+      "from": "bank_verifications",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "bank_verifications_vendor_id_fkey"
+    },
+    {
+      "from": "banner_analytics",
+      "fromColumn": "banner_id",
+      "to": "banners",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "banner_analytics_banner_id_fkey"
+    },
+    {
+      "from": "banner_analytics",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "banner_analytics_customer_id_fkey"
+    },
+    {
+      "from": "boarding_facilities",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "boarding_facilities_vendor_id_fkey"
+    },
+    {
+      "from": "boarding_rooms",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "boarding_rooms_vendor_id_fkey"
+    },
+    {
+      "from": "booking_cancellation_rules",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "booking_cancellation_rules_vendor_id_fkey"
+    },
+    {
+      "from": "booking_policies",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "booking_policies_vendor_id_fkey"
+    },
+    {
+      "from": "booking_staff_assignments",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "booking_staff_assignments_booking_fkey"
+    },
+    {
+      "from": "booking_staff_assignments",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "booking_staff_assignments_staff_fkey"
+    },
+    {
+      "from": "booking_status_history",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "booking_status_history_booking_id_fkey"
+    },
+    {
+      "from": "booking_status_transitions",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "booking_status_transitions_booking_fkey"
+    },
+    {
+      "from": "bookings",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "bookings_customer_id_fkey"
+    },
+    {
+      "from": "bookings",
+      "fromColumn": "parent_booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "bookings_parent_booking_id_fkey"
+    },
+    {
+      "from": "bookings",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "bookings_pet_id_fkey"
+    },
+    {
+      "from": "bookings",
+      "fromColumn": "rescheduled_from_booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "bookings_rescheduled_from_fkey"
+    },
+    {
+      "from": "bookings",
+      "fromColumn": "service_id",
+      "to": "vendor_services",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "bookings_service_id_vendor_services_fkey"
+    },
+    {
+      "from": "bookings",
+      "fromColumn": "settlement_id",
+      "to": "settlements",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "bookings_settlement_id_fkey"
+    },
+    {
+      "from": "bookings",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "bookings_staff_id_fkey"
+    },
+    {
+      "from": "bookings",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "bookings_vendor_id_fkey"
+    },
+    {
+      "from": "breeder_profiles",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "breeder_profiles_vendor_id_fkey"
+    },
+    {
+      "from": "cafe_tables",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "cafe_tables_vendor_id_fkey"
+    },
+    {
+      "from": "chat_messages",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "chat_messages_booking_id_fkey"
+    },
+    {
+      "from": "coupon_usages",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "coupon_usages_booking_id_fkey"
+    },
+    {
+      "from": "coupon_usages",
+      "fromColumn": "coupon_id",
+      "to": "coupons",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "coupon_usages_coupon_id_fkey"
+    },
+    {
+      "from": "coupon_usages",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "coupon_usages_customer_id_fkey"
+    },
+    {
+      "from": "coupon_usages",
+      "fromColumn": "order_id",
+      "to": "orders",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "coupon_usages_order_id_fkey"
+    },
+    {
+      "from": "customer_addresses",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_addresses_customer_id_fkey"
+    },
+    {
+      "from": "customer_admin_portal_codes",
+      "fromColumn": "created_by_admin_id",
+      "to": "admins",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_admin_portal_codes_created_by_admin_id_fkey"
+    },
+    {
+      "from": "customer_admin_portal_codes",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_admin_portal_codes_customer_id_fkey"
+    },
+    {
+      "from": "customer_compliance_issues",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_compliance_issues_customer_id_fkey"
+    },
+    {
+      "from": "customer_deactivation_requests",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_deactivation_requests_customer_id_fkey"
+    },
+    {
+      "from": "customer_identity",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_identity_customer_id_fkey"
+    },
+    {
+      "from": "customer_payment_methods",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_payment_methods_customer_id_fkey"
+    },
+    {
+      "from": "customer_profile_completion",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_profile_completion_customer_id_fkey"
+    },
+    {
+      "from": "customer_provider_history",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_provider_history_customer_id_fkey"
+    },
+    {
+      "from": "customer_provider_history",
+      "fromColumn": "last_booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_provider_history_last_booking_id_fkey"
+    },
+    {
+      "from": "customer_provider_history",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_provider_history_vendor_id_fkey"
+    },
+    {
+      "from": "customer_referrals",
+      "fromColumn": "referred_customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_referrals_referred_customer_id_fkey"
+    },
+    {
+      "from": "customer_referrals",
+      "fromColumn": "referrer_customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_referrals_referrer_customer_id_fkey"
+    },
+    {
+      "from": "customer_referrals",
+      "fromColumn": "referrer_vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_referrals_referrer_vendor_id_fkey"
+    },
+    {
+      "from": "customer_segment_assignments",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_segment_assignments_customer_id_fkey"
+    },
+    {
+      "from": "customer_segment_assignments",
+      "fromColumn": "segment_id",
+      "to": "loyalty_segments",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_segment_assignments_segment_id_fkey"
+    },
+    {
+      "from": "customer_subscriptions",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_subscriptions_customer_id_fkey"
+    },
+    {
+      "from": "customer_subscriptions",
+      "fromColumn": "plan_id",
+      "to": "vendor_subscription_plans",
+      "toColumn": "plan_id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_subscriptions_plan_id_fkey"
+    },
+    {
+      "from": "customer_subscriptions",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_subscriptions_vendor_id_fkey"
+    },
+    {
+      "from": "customer_tiers",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_tiers_customer_id_fkey"
+    },
+    {
+      "from": "customer_wallets",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "customer_wallets_customer_id_fkey"
+    },
+    {
+      "from": "customers",
+      "fromColumn": "customer_identity_id",
+      "to": "customer_identity",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "customers_customer_identity_id_fkey"
+    },
+    {
+      "from": "dating_chat_messages",
+      "fromColumn": "match_id",
+      "to": "dating_matches",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_chat_messages_match_id_fkey"
+    },
+    {
+      "from": "dating_chat_messages",
+      "fromColumn": "sender_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_chat_messages_sender_id_fkey"
+    },
+    {
+      "from": "dating_matches",
+      "fromColumn": "chat_unlocked_by",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_matches_chat_unlocked_by_fkey"
+    },
+    {
+      "from": "dating_matches",
+      "fromColumn": "customer1_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_matches_customer1_id_fkey"
+    },
+    {
+      "from": "dating_matches",
+      "fromColumn": "customer2_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_matches_customer2_id_fkey"
+    },
+    {
+      "from": "dating_meetups",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_meetups_booking_id_fkey"
+    },
+    {
+      "from": "dating_meetups",
+      "fromColumn": "cafe_vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_meetups_cafe_vendor_id_fkey"
+    },
+    {
+      "from": "dating_meetups",
+      "fromColumn": "customer1_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_meetups_customer1_id_fkey"
+    },
+    {
+      "from": "dating_meetups",
+      "fromColumn": "customer2_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_meetups_customer2_id_fkey"
+    },
+    {
+      "from": "dating_meetups",
+      "fromColumn": "initiated_by",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_meetups_initiated_by_fkey"
+    },
+    {
+      "from": "dating_meetups",
+      "fromColumn": "match_id",
+      "to": "dating_matches",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_meetups_match_id_fkey"
+    },
+    {
+      "from": "dating_profiles_owner",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_profiles_owner_customer_id_fkey"
+    },
+    {
+      "from": "dating_profiles_pet",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_profiles_pet_customer_id_fkey"
+    },
+    {
+      "from": "dating_profiles_pet",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "dating_profiles_pet_pet_id_fkey"
+    },
+    {
+      "from": "deliveries",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "deliveries_customer_id_fkey"
+    },
+    {
+      "from": "deliveries",
+      "fromColumn": "delivery_partner_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "deliveries_delivery_partner_id_fkey"
+    },
+    {
+      "from": "deliveries",
+      "fromColumn": "nutritionist_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "deliveries_nutritionist_id_fkey"
+    },
+    {
+      "from": "deliveries",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "deliveries_vendor_id_fkey"
+    },
+    {
+      "from": "delivery_location_history",
+      "fromColumn": "tracking_id",
+      "to": "delivery_tracking",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "delivery_location_history_tracking_id_fkey"
+    },
+    {
+      "from": "delivery_partners",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "delivery_partners_vendor_id_fkey"
+    },
+    {
+      "from": "delivery_routes",
+      "fromColumn": "partner_id",
+      "to": "delivery_partners",
+      "toColumn": "partner_id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "delivery_routes_partner_id_fkey"
+    },
+    {
+      "from": "delivery_settlements",
+      "fromColumn": "meal_order_id",
+      "to": "meal_orders",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "delivery_settlements_meal_order_id_fkey"
+    },
+    {
+      "from": "delivery_settlements",
+      "fromColumn": "pharmacy_order_id",
+      "to": "pharmacy_orders",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "delivery_settlements_pharmacy_order_id_fkey"
+    },
+    {
+      "from": "delivery_settlements",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "delivery_settlements_vendor_id_fkey"
+    },
+    {
+      "from": "delivery_tracking",
+      "fromColumn": "logistics_partner_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "delivery_tracking_logistics_partner_id_fkey"
+    },
+    {
+      "from": "delivery_tracking",
+      "fromColumn": "pharmacy_order_id",
+      "to": "pharmacy_orders",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "delivery_tracking_pharmacy_order_id_fkey"
+    },
+    {
+      "from": "delivery_tracking",
+      "fromColumn": "subscription_delivery_id",
+      "to": "meal_subscription_deliveries",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "delivery_tracking_subscription_delivery_fk"
+    },
+    {
+      "from": "diagnostic_bookings",
+      "fromColumn": "collector_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "diagnostic_bookings_collector_id_fkey"
+    },
+    {
+      "from": "diagnostic_bookings",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "diagnostic_bookings_customer_id_fkey"
+    },
+    {
+      "from": "diagnostic_bookings",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "diagnostic_bookings_pet_id_fkey"
+    },
+    {
+      "from": "diagnostic_bookings",
+      "fromColumn": "prescription_id",
+      "to": "prescriptions",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "diagnostic_bookings_prescription_id_fkey"
+    },
+    {
+      "from": "diagnostic_bookings",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "diagnostic_bookings_vendor_id_fkey"
+    },
+    {
+      "from": "diagnostic_reports",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "diagnostic_reports_booking_id_fkey"
+    },
+    {
+      "from": "diagnostic_reports",
+      "fromColumn": "diagnostic_booking_id",
+      "to": "diagnostic_bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "diagnostic_reports_diagnostic_booking_id_fkey"
+    },
+    {
+      "from": "diagnostic_reports",
+      "fromColumn": "previous_version_id",
+      "to": "diagnostic_reports",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "diagnostic_reports_previous_version_id_fkey"
+    },
+    {
+      "from": "diagnostic_reports",
+      "fromColumn": "uploaded_by",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "diagnostic_reports_uploaded_by_fkey"
+    },
+    {
+      "from": "diagnostic_tests",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "diagnostic_tests_vendor_id_fkey"
+    },
+    {
+      "from": "disputes",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "disputes_booking_id_fkey"
+    },
+    {
+      "from": "disputes",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "disputes_customer_id_fkey"
+    },
+    {
+      "from": "disputes",
+      "fromColumn": "order_id",
+      "to": "orders",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "disputes_order_id_fkey"
+    },
+    {
+      "from": "disputes",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "disputes_vendor_id_fkey"
+    },
+    {
+      "from": "ecommerce_categories",
+      "fromColumn": "parent_category_id",
+      "to": "ecommerce_categories",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "ecommerce_categories_parent_fkey"
+    },
+    {
+      "from": "ecommerce_policies",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "ecommerce_policies_vendor_id_fkey"
+    },
+    {
+      "from": "emergency_booking_queue",
+      "fromColumn": "assigned_vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "emergency_booking_queue_vendor_id_fkey"
+    },
+    {
+      "from": "emergency_booking_queue",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "emergency_booking_queue_booking_id_fkey"
+    },
+    {
+      "from": "error_case_occurrences",
+      "fromColumn": "case_id",
+      "to": "product_error_cases",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "error_case_occurrences_case_id_fkey"
+    },
+    {
+      "from": "error_case_occurrences",
+      "fromColumn": "event_id",
+      "to": "analytics_events",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "error_case_occurrences_event_id_fkey"
+    },
+    {
+      "from": "featured_vendors",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "featured_vendors_vendor_id_fkey"
+    },
+    {
+      "from": "gps_location_history",
+      "fromColumn": "session_id",
+      "to": "gps_tracking_sessions",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "gps_location_history_session_id_fkey"
+    },
+    {
+      "from": "gps_tracking_sessions",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "gps_tracking_sessions_booking_id_fkey"
+    },
+    {
+      "from": "groomer_gallery",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "groomer_gallery_booking_id_fkey"
+    },
+    {
+      "from": "groomer_gallery",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "groomer_gallery_pet_id_fkey"
+    },
+    {
+      "from": "groomer_gallery",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "groomer_gallery_vendor_id_fkey"
+    },
+    {
+      "from": "gst_rules",
+      "fromColumn": "tax_category_id",
+      "to": "tax_categories",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "gst_rules_tax_category_id_fkey"
+    },
+    {
+      "from": "holiday_bookings",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "holiday_bookings_customer_id_fkey"
+    },
+    {
+      "from": "holiday_bookings",
+      "fromColumn": "package_id",
+      "to": "holiday_packages",
+      "toColumn": "package_id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "holiday_bookings_package_id_fkey"
+    },
+    {
+      "from": "holiday_bookings",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "holiday_bookings_vendor_id_fkey"
+    },
+    {
+      "from": "holiday_packages",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "holiday_packages_vendor_id_fkey"
+    },
+    {
+      "from": "hsn_codes",
+      "fromColumn": "category_id",
+      "to": "tax_categories",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "hsn_codes_category_id_fkey"
+    },
+    {
+      "from": "insurance_claims",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "insurance_claims_booking_fkey"
+    },
+    {
+      "from": "insurance_claims",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "insurance_claims_customer_fkey"
+    },
+    {
+      "from": "invoices",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "invoices_customer_id_fkey"
+    },
+    {
+      "from": "invoices",
+      "fromColumn": "order_id",
+      "to": "orders",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "invoices_order_id_fkey"
+    },
+    {
+      "from": "invoices",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "invoices_vendor_id_fkey"
+    },
+    {
+      "from": "loyalty_transactions",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "loyalty_transactions_customer_id_fkey"
+    },
+    {
+      "from": "loyalty_transactions",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "loyalty_transactions_vendor_id_fkey"
+    },
+    {
+      "from": "mating_appointments",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "mating_appointments_booking_id_fkey"
+    },
+    {
+      "from": "mating_appointments",
+      "fromColumn": "customer1_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "mating_appointments_customer1_id_fkey"
+    },
+    {
+      "from": "mating_appointments",
+      "fromColumn": "customer2_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "mating_appointments_customer2_id_fkey"
+    },
+    {
+      "from": "mating_appointments",
+      "fromColumn": "match_id",
+      "to": "dating_matches",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "mating_appointments_match_id_fkey"
+    },
+    {
+      "from": "mating_appointments",
+      "fromColumn": "pet1_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "mating_appointments_pet1_id_fkey"
+    },
+    {
+      "from": "mating_appointments",
+      "fromColumn": "pet2_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "mating_appointments_pet2_id_fkey"
+    },
+    {
+      "from": "mating_appointments",
+      "fromColumn": "requested_by",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "mating_appointments_requested_by_fkey"
+    },
+    {
+      "from": "mating_appointments",
+      "fromColumn": "vet_vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "mating_appointments_vet_vendor_id_fkey"
+    },
+    {
+      "from": "meal_orders",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_orders_customer_id_fkey"
+    },
+    {
+      "from": "meal_orders",
+      "fromColumn": "logistics_partner_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_orders_logistics_partner_id_fkey"
+    },
+    {
+      "from": "meal_orders",
+      "fromColumn": "meal_plan_id",
+      "to": "meal_plans",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_orders_meal_plan_id_fkey"
+    },
+    {
+      "from": "meal_orders",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_orders_pet_id_fkey"
+    },
+    {
+      "from": "meal_orders",
+      "fromColumn": "subscription_id",
+      "to": "meal_subscriptions",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_orders_subscription_id_fkey"
+    },
+    {
+      "from": "meal_orders",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_orders_vendor_id_fkey"
+    },
+    {
+      "from": "meal_plans",
+      "fromColumn": "service_catalog_category_id",
+      "to": "service_categories",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_plans_service_catalog_category_id_fkey"
+    },
+    {
+      "from": "meal_plans",
+      "fromColumn": "tax_category_id",
+      "to": "tax_categories",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_plans_tax_category_id_fkey"
+    },
+    {
+      "from": "meal_plans",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_plans_vendor_id_fkey"
+    },
+    {
+      "from": "meal_refund_cases",
+      "fromColumn": "meal_order_id",
+      "to": "meal_orders",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_refund_cases_meal_order_id_fkey"
+    },
+    {
+      "from": "meal_refund_cases",
+      "fromColumn": "pidge_webhook_event_id",
+      "to": "pidge_hyperlocal_webhook_events",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_refund_cases_pidge_webhook_event_id_fkey"
+    },
+    {
+      "from": "meal_refund_cases",
+      "fromColumn": "refunds_row_id",
+      "to": "refunds",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_refund_cases_refunds_row_id_fkey"
+    },
+    {
+      "from": "meal_rider_reassign_requests",
+      "fromColumn": "delivery_tracking_id",
+      "to": "delivery_tracking",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_rider_reassign_requests_delivery_tracking_id_fkey"
+    },
+    {
+      "from": "meal_rider_reassign_requests",
+      "fromColumn": "meal_order_id",
+      "to": "meal_orders",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_rider_reassign_requests_meal_order_id_fkey"
+    },
+    {
+      "from": "meal_subscription_deliveries",
+      "fromColumn": "subscription_id",
+      "to": "meal_subscriptions",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_subscription_deliveries_subscription_id_fkey"
+    },
+    {
+      "from": "meal_subscription_deliveries",
+      "fromColumn": "tracking_id",
+      "to": "delivery_tracking",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_subscription_deliveries_tracking_fk"
+    },
+    {
+      "from": "meal_subscription_payments",
+      "fromColumn": "subscription_id",
+      "to": "meal_subscriptions",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_subscription_payments_subscription_id_fkey"
+    },
+    {
+      "from": "meal_subscriptions",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_subscriptions_pet_id_fkey"
+    },
+    {
+      "from": "meal_subscriptions",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "meal_subscriptions_vendor_id_fkey"
+    },
+    {
+      "from": "medical_records",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "medical_records_booking_id_fkey"
+    },
+    {
+      "from": "medical_records",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "medical_records_customer_id_fkey"
+    },
+    {
+      "from": "medical_records",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "medical_records_pet_id_fkey"
+    },
+    {
+      "from": "medical_records",
+      "fromColumn": "previous_version_id",
+      "to": "medical_records",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "medical_records_previous_version_id_fkey"
+    },
+    {
+      "from": "medical_records",
+      "fromColumn": "referred_from_booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "medical_records_referred_from_booking_id_fkey"
+    },
+    {
+      "from": "medical_records",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "medical_records_staff_id_fkey"
+    },
+    {
+      "from": "medical_records",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "medical_records_vendor_id_fkey"
+    },
+    {
+      "from": "medicine_orders",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "medicine_orders_customer_id_fkey"
+    },
+    {
+      "from": "medicine_orders",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "medicine_orders_pet_id_fkey"
+    },
+    {
+      "from": "medicine_orders",
+      "fromColumn": "pharmacy_vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "medicine_orders_pharmacy_vendor_id_fkey"
+    },
+    {
+      "from": "medicine_orders",
+      "fromColumn": "prescription_id",
+      "to": "prescriptions",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "medicine_orders_prescription_id_fkey"
+    },
+    {
+      "from": "notification_campaign_cities",
+      "fromColumn": "campaign_id",
+      "to": "notification_campaigns",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "notification_campaign_cities_campaign_id_fkey"
+    },
+    {
+      "from": "notification_campaign_deliveries",
+      "fromColumn": "campaign_id",
+      "to": "notification_campaigns",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "notification_campaign_deliveries_campaign_id_fkey"
+    },
+    {
+      "from": "notification_campaign_events",
+      "fromColumn": "campaign_id",
+      "to": "notification_campaigns",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "notification_campaign_events_campaign_id_fkey"
+    },
+    {
+      "from": "notification_campaign_regions",
+      "fromColumn": "campaign_id",
+      "to": "notification_campaigns",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "notification_campaign_regions_campaign_id_fkey"
+    },
+    {
+      "from": "notification_campaign_users",
+      "fromColumn": "campaign_id",
+      "to": "notification_campaigns",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "notification_campaign_users_campaign_id_fkey"
+    },
+    {
+      "from": "notification_delivery_log",
+      "fromColumn": "notification_id",
+      "to": "notifications",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "notification_delivery_log_notification_id_fkey"
+    },
+    {
+      "from": "notification_logs",
+      "fromColumn": "template_id",
+      "to": "notification_templates_enhanced",
+      "toColumn": "template_id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "notification_logs_template_id_fkey"
+    },
+    {
+      "from": "notification_segment_rules",
+      "fromColumn": "segment_id",
+      "to": "notification_segments",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "notification_segment_rules_segment_id_fkey"
+    },
+    {
+      "from": "notification_segment_targets",
+      "fromColumn": "campaign_id",
+      "to": "notification_campaigns",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "notification_segment_targets_campaign_id_fkey"
+    },
+    {
+      "from": "notification_segment_targets",
+      "fromColumn": "segment_id",
+      "to": "notification_segments",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "notification_segment_targets_segment_id_fkey"
+    },
+    {
+      "from": "nutrition_consultation_requests",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "nutrition_consultation_requests_customer_id_fkey"
+    },
+    {
+      "from": "nutrition_consultation_requests",
+      "fromColumn": "meal_plan_id",
+      "to": "meal_plans",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "nutrition_consultation_requests_meal_plan_id_fkey"
+    },
+    {
+      "from": "nutrition_consultation_requests",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "nutrition_consultation_requests_pet_id_fkey"
+    },
+    {
+      "from": "nutrition_consultation_requests",
+      "fromColumn": "reviewed_by",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "nutrition_consultation_requests_reviewed_by_fkey"
+    },
+    {
+      "from": "nutrition_consultation_requests",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "nutrition_consultation_requests_vendor_id_fkey"
+    },
+    {
+      "from": "order_item_commission",
+      "fromColumn": "order_item_id",
+      "to": "order_items",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "order_item_commission_order_item_id_fkey"
+    },
+    {
+      "from": "order_items",
+      "fromColumn": "order_id",
+      "to": "orders",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "order_items_order_id_fkey"
+    },
+    {
+      "from": "order_items",
+      "fromColumn": "product_sku_id",
+      "to": "product_skus",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "order_items_product_sku_id_fkey"
+    },
+    {
+      "from": "order_items",
+      "fromColumn": "service_id",
+      "to": "services",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "order_items_service_id_fkey"
+    },
+    {
+      "from": "orders",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "orders_customer_id_fkey"
+    },
+    {
+      "from": "orders",
+      "fromColumn": "payment_id",
+      "to": "payments",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "orders_payment_id_fkey"
+    },
+    {
+      "from": "orders",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "orders_vendor_id_fkey"
+    },
+    {
+      "from": "package_milestones",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_milestones_booking_fkey"
+    },
+    {
+      "from": "package_purchases",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_purchases_customer_id_fkey"
+    },
+    {
+      "from": "package_purchases",
+      "fromColumn": "preferred_vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_purchases_preferred_vendor_id_fkey"
+    },
+    {
+      "from": "package_purchases",
+      "fromColumn": "settlement_id",
+      "to": "settlements",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_purchases_settlement_id_fkey"
+    },
+    {
+      "from": "package_purchases",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_purchases_vendor_id_fkey"
+    },
+    {
+      "from": "package_scheduled_sessions",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_scheduled_sessions_booking_id_fkey"
+    },
+    {
+      "from": "package_scheduled_sessions",
+      "fromColumn": "package_purchase_id",
+      "to": "package_purchases",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_scheduled_sessions_package_purchase_id_fkey"
+    },
+    {
+      "from": "package_services",
+      "fromColumn": "service_id",
+      "to": "services",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_services_service_id_fkey"
+    },
+    {
+      "from": "package_sessions",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_sessions_booking_id_fkey"
+    },
+    {
+      "from": "package_sessions",
+      "fromColumn": "package_purchase_id",
+      "to": "package_purchases",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_sessions_package_purchase_id_fkey"
+    },
+    {
+      "from": "package_sessions",
+      "fromColumn": "package_purchase_id",
+      "to": "package_purchases",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "fk_package_sessions_purchase"
+    },
+    {
+      "from": "package_usage_log",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_usage_log_booking_id_fkey"
+    },
+    {
+      "from": "package_usage_log",
+      "fromColumn": "package_purchase_id",
+      "to": "package_purchases",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "package_usage_log_package_purchase_id_fkey"
+    },
+    {
+      "from": "payment_history",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "payment_history_customer_id_fkey"
+    },
+    {
+      "from": "payment_history",
+      "fromColumn": "payment_id",
+      "to": "payments",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "payment_history_payment_id_fkey"
+    },
+    {
+      "from": "payment_history",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "payment_history_vendor_id_fkey"
+    },
+    {
+      "from": "payment_retry_log",
+      "fromColumn": "payment_id",
+      "to": "payments",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "payment_retry_log_payment_fkey"
+    },
+    {
+      "from": "payments",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "payments_booking_id_fkey"
+    },
+    {
+      "from": "payments",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "payments_customer_id_fkey"
+    },
+    {
+      "from": "payments",
+      "fromColumn": "gst_rule_id",
+      "to": "gst_rules",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "payments_gst_rule_id_fkey"
+    },
+    {
+      "from": "payments",
+      "fromColumn": "order_id",
+      "to": "orders",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "payments_order_id_fkey"
+    },
+    {
+      "from": "payments",
+      "fromColumn": "pharmacy_order_id",
+      "to": "pharmacy_orders",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "payments_pharmacy_order_id_fkey"
+    },
+    {
+      "from": "payments",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "payments_vendor_id_fkey"
+    },
+    {
+      "from": "payouts",
+      "fromColumn": "settlement_id",
+      "to": "settlements",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "payouts_settlement_id_fkey"
+    },
+    {
+      "from": "payouts",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "payouts_vendor_id_fkey"
+    },
+    {
+      "from": "pending_payouts",
+      "fromColumn": "payout_id",
+      "to": "payouts",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pending_payouts_payout_id_fkey"
+    },
+    {
+      "from": "pending_payouts",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "pending_payouts_vendor_id_fkey"
+    },
+    {
+      "from": "pending_reschedules",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pending_reschedules_booking_id_fkey"
+    },
+    {
+      "from": "pet_inquiries",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "pet_inquiries_customer_id_fkey"
+    },
+    {
+      "from": "pet_inquiries",
+      "fromColumn": "listing_id",
+      "to": "pet_listings",
+      "toColumn": "listing_id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pet_inquiries_listing_id_fkey"
+    },
+    {
+      "from": "pet_listings",
+      "fromColumn": "breeder_id",
+      "to": "breeder_profiles",
+      "toColumn": "breeder_id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pet_listings_breeder_id_fkey"
+    },
+    {
+      "from": "pet_skill_progress",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pet_skill_progress_pet_id_fkey"
+    },
+    {
+      "from": "pet_skill_progress",
+      "fromColumn": "skill_id",
+      "to": "training_skills",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pet_skill_progress_skill_id_fkey"
+    },
+    {
+      "from": "pet_skill_progress",
+      "fromColumn": "trainer_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "pet_skill_progress_trainer_id_fkey"
+    },
+    {
+      "from": "pet_skill_progress",
+      "fromColumn": "training_package_id",
+      "to": "package_purchases",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "pet_skill_progress_training_package_id_fkey"
+    },
+    {
+      "from": "pet_vaccination_reminder_log",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pet_vaccination_reminder_log_customer_id_fkey"
+    },
+    {
+      "from": "pet_vaccination_reminder_log",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pet_vaccination_reminder_log_pet_id_fkey"
+    },
+    {
+      "from": "pets",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pets_customer_id_fkey"
+    },
+    {
+      "from": "pharmacy_broadcasts",
+      "fromColumn": "order_id",
+      "to": "pharmacy_orders",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pharmacy_broadcasts_order_id_fkey"
+    },
+    {
+      "from": "pharmacy_broadcasts",
+      "fromColumn": "pharmacy_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "pharmacy_broadcasts_pharmacy_id_fkey"
+    },
+    {
+      "from": "pharmacy_orders",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "pharmacy_orders_customer_id_fkey"
+    },
+    {
+      "from": "pharmacy_orders",
+      "fromColumn": "logistics_partner_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "pharmacy_orders_logistics_partner_id_fkey"
+    },
+    {
+      "from": "pharmacy_orders",
+      "fromColumn": "pharmacy_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "pharmacy_orders_pharmacy_id_fkey"
+    },
+    {
+      "from": "pharmacy_orders",
+      "fromColumn": "prescription_id",
+      "to": "prescriptions",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "pharmacy_orders_prescription_id_fkey"
+    },
+    {
+      "from": "pharmacy_quotes",
+      "fromColumn": "medicine_order_id",
+      "to": "medicine_orders",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pharmacy_quotes_medicine_order_id_fkey"
+    },
+    {
+      "from": "pharmacy_quotes",
+      "fromColumn": "pharmacy_vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "pharmacy_quotes_pharmacy_vendor_id_fkey"
+    },
+    {
+      "from": "pidge_hyperlocal_webhook_events",
+      "fromColumn": "delivery_tracking_id",
+      "to": "delivery_tracking",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "pidge_hyperlocal_webhook_events_delivery_tracking_id_fkey"
+    },
+    {
+      "from": "pidge_hyperlocal_webhook_events",
+      "fromColumn": "meal_order_id",
+      "to": "meal_orders",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "pidge_hyperlocal_webhook_events_meal_order_id_fkey"
+    },
+    {
+      "from": "platform_tax_document_lines",
+      "fromColumn": "tax_document_id",
+      "to": "platform_tax_documents",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "platform_tax_document_lines_tax_document_id_fkey"
+    },
+    {
+      "from": "platform_tax_documents",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "platform_tax_documents_vendor_id_fkey"
+    },
+    {
+      "from": "policy_acceptances",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "policy_acceptances_customer_id_fkey"
+    },
+    {
+      "from": "policy_acceptances",
+      "fromColumn": "order_id",
+      "to": "orders",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "policy_acceptances_order_id_fkey"
+    },
+    {
+      "from": "policy_acceptances",
+      "fromColumn": "policy_id",
+      "to": "ecommerce_policies",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "policy_acceptances_policy_id_fkey"
+    },
+    {
+      "from": "post_service_payments",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "post_service_payments_booking_fkey"
+    },
+    {
+      "from": "post_service_payments",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "post_service_payments_customer_fkey"
+    },
+    {
+      "from": "post_service_payments",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "post_service_payments_vendor_fkey"
+    },
+    {
+      "from": "prescription_submissions",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "prescription_submissions_customer_id_fkey"
+    },
+    {
+      "from": "prescription_submissions",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "prescription_submissions_pet_id_fkey"
+    },
+    {
+      "from": "prescription_submissions",
+      "fromColumn": "pharmacy_vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "prescription_submissions_pharmacy_vendor_id_fkey"
+    },
+    {
+      "from": "prescription_submissions",
+      "fromColumn": "verified_by",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "prescription_submissions_verified_by_fkey"
+    },
+    {
+      "from": "prescriptions",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "prescriptions_booking_id_fkey"
+    },
+    {
+      "from": "prescriptions",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "prescriptions_customer_id_fkey"
+    },
+    {
+      "from": "prescriptions",
+      "fromColumn": "finalized_by",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "prescriptions_finalized_by_fkey"
+    },
+    {
+      "from": "prescriptions",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "prescriptions_pet_id_fkey"
+    },
+    {
+      "from": "prescriptions",
+      "fromColumn": "previous_version_id",
+      "to": "prescriptions",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "prescriptions_previous_version_id_fkey"
+    },
+    {
+      "from": "prescriptions",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "prescriptions_staff_id_fkey"
+    },
+    {
+      "from": "prescriptions",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "prescriptions_vendor_id_fkey"
+    },
+    {
+      "from": "pricing_rules",
+      "fromColumn": "room_id",
+      "to": "boarding_rooms",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pricing_rules_room_id_fkey"
+    },
+    {
+      "from": "pricing_rules",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "pricing_rules_vendor_id_fkey"
+    },
+    {
+      "from": "product_commission_overrides",
+      "fromColumn": "product_id",
+      "to": "products",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "product_commission_overrides_product_id_fkey"
+    },
+    {
+      "from": "product_error_cases",
+      "fromColumn": "assigned_admin_id",
+      "to": "admins",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "product_error_cases_assigned_admin_id_fkey"
+    },
+    {
+      "from": "product_policies",
+      "fromColumn": "policy_id",
+      "to": "ecommerce_policies",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "product_policies_policy_id_fkey"
+    },
+    {
+      "from": "product_policies",
+      "fromColumn": "product_id",
+      "to": "products",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "product_policies_product_id_fkey"
+    },
+    {
+      "from": "product_skus",
+      "fromColumn": "product_id",
+      "to": "products",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "product_skus_product_id_fkey"
+    },
+    {
+      "from": "product_skus",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "product_skus_vendor_id_fkey"
+    },
+    {
+      "from": "products",
+      "fromColumn": "category_id",
+      "to": "ecommerce_categories",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "products_category_id_fkey"
+    },
+    {
+      "from": "products",
+      "fromColumn": "registered_brand_id",
+      "to": "vendor_registered_brands",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "products_registered_brand_id_fkey"
+    },
+    {
+      "from": "products",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "products_vendor_id_fkey"
+    },
+    {
+      "from": "rbac_audit_logs",
+      "fromColumn": "role_id",
+      "to": "roles",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "rbac_audit_logs_role_id_fkey"
+    },
+    {
+      "from": "referral_redemptions",
+      "fromColumn": "referral_id",
+      "to": "referrals",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "referral_redemptions_referral_id_fkey"
+    },
+    {
+      "from": "referral_redemptions",
+      "fromColumn": "referred_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "referral_redemptions_referred_id_fkey"
+    },
+    {
+      "from": "referrals",
+      "fromColumn": "referred_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "referrals_referred_id_fkey"
+    },
+    {
+      "from": "referrals",
+      "fromColumn": "referred_vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "referrals_referred_vendor_id_fkey"
+    },
+    {
+      "from": "referrals",
+      "fromColumn": "referrer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "referrals_referrer_id_fkey"
+    },
+    {
+      "from": "refunds",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "refunds_booking_id_fkey"
+    },
+    {
+      "from": "refunds",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "refunds_customer_id_fkey"
+    },
+    {
+      "from": "refunds",
+      "fromColumn": "meal_refund_case_id",
+      "to": "meal_refund_cases",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "refunds_meal_refund_case_id_fkey"
+    },
+    {
+      "from": "refunds",
+      "fromColumn": "payment_id",
+      "to": "payments",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "refunds_payment_id_fkey"
+    },
+    {
+      "from": "refunds",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "refunds_vendor_id_fkey"
+    },
+    {
+      "from": "reminder_queue",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "reminder_queue_booking_id_fkey"
+    },
+    {
+      "from": "return_requests",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "return_requests_customer_id_fkey"
+    },
+    {
+      "from": "return_requests",
+      "fromColumn": "exchange_product_id",
+      "to": "products",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "return_requests_exchange_product_id_fkey"
+    },
+    {
+      "from": "return_requests",
+      "fromColumn": "order_id",
+      "to": "orders",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "return_requests_order_id_fkey"
+    },
+    {
+      "from": "return_requests",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "return_requests_vendor_id_fkey"
+    },
+    {
+      "from": "reviews",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "reviews_booking_id_fkey"
+    },
+    {
+      "from": "reviews",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "reviews_customer_id_fkey"
+    },
+    {
+      "from": "reviews",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "reviews_vendor_id_fkey"
+    },
+    {
+      "from": "reward_catalog_links",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "reward_catalog_links_customer_id_fkey"
+    },
+    {
+      "from": "reward_catalog_links",
+      "fromColumn": "redemption_id",
+      "to": "reward_redemptions",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "reward_catalog_links_redemption_id_fkey"
+    },
+    {
+      "from": "reward_catalog_links",
+      "fromColumn": "reward_id",
+      "to": "rewards_catalog",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "reward_catalog_links_reward_id_fkey"
+    },
+    {
+      "from": "reward_redemptions",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "reward_redemptions_customer_id_fkey"
+    },
+    {
+      "from": "reward_redemptions",
+      "fromColumn": "reward_id",
+      "to": "rewards_catalog",
+      "toColumn": "id",
+      "onDelete": "RESTRICT",
+      "onUpdate": "NO ACTION",
+      "constraint": "reward_redemptions_reward_id_fkey"
+    },
+    {
+      "from": "role_permissions",
+      "fromColumn": "role_id",
+      "to": "roles",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "role_permissions_role_id_fkey"
+    },
+    {
+      "from": "sample_collection_assignments",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "sample_collection_assignments_booking_id_fkey"
+    },
+    {
+      "from": "sample_collection_assignments",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "sample_collection_assignments_customer_id_fkey"
+    },
+    {
+      "from": "sample_collection_assignments",
+      "fromColumn": "diagnostic_booking_id",
+      "to": "diagnostic_bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "sample_collection_assignments_diagnostic_booking_id_fkey"
+    },
+    {
+      "from": "sample_collection_assignments",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "sample_collection_assignments_pet_id_fkey"
+    },
+    {
+      "from": "sample_collection_assignments",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "sample_collection_assignments_staff_id_fkey"
+    },
+    {
+      "from": "sample_collection_assignments",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "sample_collection_assignments_vendor_id_fkey"
+    },
+    {
+      "from": "search_history",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "search_history_customer_id_fkey"
+    },
+    {
+      "from": "service_catalog",
+      "fromColumn": "hsn_code_id",
+      "to": "hsn_codes",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "service_catalog_hsn_code_id_fkey"
+    },
+    {
+      "from": "service_catalog",
+      "fromColumn": "tax_category_id",
+      "to": "tax_categories",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "service_catalog_tax_category_id_fkey"
+    },
+    {
+      "from": "service_packages",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "service_packages_vendor_id_fkey"
+    },
+    {
+      "from": "service_publishing",
+      "fromColumn": "service_id",
+      "to": "services",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "service_publishing_service_id_fkey"
+    },
+    {
+      "from": "service_publishing",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "service_publishing_vendor_id_fkey"
+    },
+    {
+      "from": "services",
+      "fromColumn": "gst_config_id",
+      "to": "gst_configs",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "services_gst_config_id_fkey"
+    },
+    {
+      "from": "services",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "services_vendor_id_fkey"
+    },
+    {
+      "from": "settlement_schedules",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "settlement_schedules_vendor_id_fkey"
+    },
+    {
+      "from": "settlements",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "settlements_booking_id_fkey"
+    },
+    {
+      "from": "settlements",
+      "fromColumn": "payment_id",
+      "to": "payments",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "settlements_payment_id_fkey"
+    },
+    {
+      "from": "settlements",
+      "fromColumn": "payout_id",
+      "to": "payouts",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "settlements_payout_id_fkey"
+    },
+    {
+      "from": "settlements",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "settlements_vendor_id_fkey"
+    },
+    {
+      "from": "shipment_tracking_events",
+      "fromColumn": "shipment_id",
+      "to": "shipments",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "shipment_tracking_events_shipment_fkey"
+    },
+    {
+      "from": "shipments",
+      "fromColumn": "logistics_partner_id",
+      "to": "logistics_partners",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "shipments_partner_fkey"
+    },
+    {
+      "from": "shipments",
+      "fromColumn": "order_id",
+      "to": "orders",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "shipments_order_fkey"
+    },
+    {
+      "from": "shopping_carts",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "shopping_carts_customer_id_fkey"
+    },
+    {
+      "from": "specialization_symptoms",
+      "fromColumn": "specialization_id",
+      "to": "specialization_master",
+      "toColumn": "specialization_id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "specialization_symptoms_specialization_id_fkey"
+    },
+    {
+      "from": "spotlight_analytics",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "spotlight_analytics_customer_id_fkey"
+    },
+    {
+      "from": "spotlight_analytics",
+      "fromColumn": "spotlight_id",
+      "to": "spotlight_offers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "spotlight_analytics_spotlight_id_fkey"
+    },
+    {
+      "from": "staff",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "staff_vendor_id_fkey"
+    },
+    {
+      "from": "staff_availability",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "staff_availability_staff_id_fkey"
+    },
+    {
+      "from": "staff_availability_per_style",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "staff_availability_per_style_staff_id_fkey"
+    },
+    {
+      "from": "staff_certifications",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "staff_certifications_staff_id_fkey"
+    },
+    {
+      "from": "staff_schedules",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "staff_schedules_staff_id_fkey"
+    },
+    {
+      "from": "staff_services",
+      "fromColumn": "service_id",
+      "to": "services",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "staff_services_service_id_fkey"
+    },
+    {
+      "from": "staff_services",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "staff_services_staff_id_fkey"
+    },
+    {
+      "from": "staff_specializations",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "staff_specializations_staff_id_fkey"
+    },
+    {
+      "from": "subscription_deliveries",
+      "fromColumn": "subscription_id",
+      "to": "subscriptions",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "subscription_deliveries_subscription_fkey"
+    },
+    {
+      "from": "subscription_payments",
+      "fromColumn": "payment_id",
+      "to": "payments",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "subscription_payments_payment_fkey"
+    },
+    {
+      "from": "subscription_payments",
+      "fromColumn": "subscription_id",
+      "to": "subscriptions",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "subscription_payments_subscription_fkey"
+    },
+    {
+      "from": "subscription_plans",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "subscription_plans_vendor_id_fkey"
+    },
+    {
+      "from": "subscriptions",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "subscriptions_booking_fkey"
+    },
+    {
+      "from": "subscriptions",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "subscriptions_customer_fkey"
+    },
+    {
+      "from": "subscriptions",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "subscriptions_vendor_fkey"
+    },
+    {
+      "from": "support_ticket_activity",
+      "fromColumn": "ticket_id",
+      "to": "support_tickets",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "support_ticket_activity_ticket_id_fkey"
+    },
+    {
+      "from": "support_ticket_responses",
+      "fromColumn": "ticket_id",
+      "to": "support_tickets",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "support_ticket_responses_ticket_id_fkey"
+    },
+    {
+      "from": "support_tickets",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "support_tickets_booking_id_fkey"
+    },
+    {
+      "from": "support_tickets",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "support_tickets_customer_id_fkey"
+    },
+    {
+      "from": "support_tickets",
+      "fromColumn": "meal_order_id",
+      "to": "meal_orders",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "support_tickets_meal_order_id_fkey"
+    },
+    {
+      "from": "support_tickets",
+      "fromColumn": "order_id",
+      "to": "orders",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "support_tickets_order_id_fkey"
+    },
+    {
+      "from": "support_tickets",
+      "fromColumn": "refund_id",
+      "to": "refunds",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "support_tickets_refund_id_fkey"
+    },
+    {
+      "from": "support_tickets",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "support_tickets_vendor_id_fkey"
+    },
+    {
+      "from": "tax_categories",
+      "fromColumn": "catalog_category_id",
+      "to": "service_categories",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "tax_categories_catalog_category_id_fkey"
+    },
+    {
+      "from": "tax_category_roles",
+      "fromColumn": "catalog_category_id",
+      "to": "service_categories",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "tax_category_roles_catalog_category_id_fkey"
+    },
+    {
+      "from": "tax_category_roles",
+      "fromColumn": "role_id",
+      "to": "roles",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "tax_category_roles_role_id_fkey"
+    },
+    {
+      "from": "tax_category_roles",
+      "fromColumn": "tax_category_id",
+      "to": "tax_categories",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "tax_category_roles_tax_category_id_fkey"
+    },
+    {
+      "from": "tele_queues",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "tele_queues_booking_id_fkey"
+    },
+    {
+      "from": "tele_queues",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "tele_queues_customer_id_fkey"
+    },
+    {
+      "from": "tele_sessions",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "tele_sessions_booking_id_fkey"
+    },
+    {
+      "from": "tele_sessions",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "tele_sessions_customer_id_fkey"
+    },
+    {
+      "from": "tele_sessions",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "tele_sessions_staff_id_fkey"
+    },
+    {
+      "from": "training_session_skills",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "training_session_skills_booking_id_fkey"
+    },
+    {
+      "from": "training_session_skills",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "training_session_skills_pet_id_fkey"
+    },
+    {
+      "from": "training_session_skills",
+      "fromColumn": "session_id",
+      "to": "package_sessions",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "training_session_skills_session_id_fkey"
+    },
+    {
+      "from": "training_session_skills",
+      "fromColumn": "skill_id",
+      "to": "training_skills",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "training_session_skills_skill_id_fkey"
+    },
+    {
+      "from": "user_roles",
+      "fromColumn": "role_id",
+      "to": "roles",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "user_roles_role_id_fkey"
+    },
+    {
+      "from": "user_subscriptions",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "user_subscriptions_customer_id_fkey"
+    },
+    {
+      "from": "user_subscriptions",
+      "fromColumn": "tier_id",
+      "to": "subscription_tiers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "user_subscriptions_tier_id_fkey"
+    },
+    {
+      "from": "vendor_admin_portal_codes",
+      "fromColumn": "created_by_admin_id",
+      "to": "admins",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_admin_portal_codes_created_by_admin_id_fkey"
+    },
+    {
+      "from": "vendor_admin_portal_codes",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_admin_portal_codes_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_availability_v2",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_availability_v2_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_bank_accounts",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_bank_accounts_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_bank_details",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_bank_details_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_breaks",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_breaks_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_category_commission_rates",
+      "fromColumn": "category_id",
+      "to": "ecommerce_categories",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_category_commission_rates_category_id_fkey"
+    },
+    {
+      "from": "vendor_category_commission_rates",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_category_commission_rates_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_commission_config",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_commission_config_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_daily_accrual",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_daily_accrual_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_documents",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_documents_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_holidays_enhanced",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_holidays_enhanced_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_identity",
+      "fromColumn": "selected_role_id",
+      "to": "roles",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_identity_selected_role_id_fkey"
+    },
+    {
+      "from": "vendor_identity",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_identity_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_onboarding_applications",
+      "fromColumn": "role_id",
+      "to": "roles",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_onboarding_applications_role_id_fkey"
+    },
+    {
+      "from": "vendor_onboarding_applications",
+      "fromColumn": "vendor_identity_id",
+      "to": "vendor_identity",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_onboarding_applications_vendor_identity_id_fkey"
+    },
+    {
+      "from": "vendor_onboarding_comments",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_onboarding_comments_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_onboarding_steps",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_onboarding_steps_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_onboarding_transitions",
+      "fromColumn": "vendor_identity_id",
+      "to": "vendor_identity",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_onboarding_transitions_vendor_identity_id_fkey"
+    },
+    {
+      "from": "vendor_policies",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_policies_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_portfolio",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_portfolio_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_referrals",
+      "fromColumn": "referred_vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "SET NULL",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_referrals_referred_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_referrals",
+      "fromColumn": "referrer_vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_referrals_referrer_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_registered_brands",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_registered_brands_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_segment_assignments",
+      "fromColumn": "segment_id",
+      "to": "loyalty_segments",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_segment_assignments_segment_id_fkey"
+    },
+    {
+      "from": "vendor_segment_assignments",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_segment_assignments_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_service_areas",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_service_areas_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_services",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_services_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_setup_completion",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_setup_completion_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_specializations",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_specializations_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_subscription_plans",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_subscription_plans_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_tier_subscriptions",
+      "fromColumn": "tier_id",
+      "to": "vendor_tiers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_tier_subscriptions_tier_id_fkey"
+    },
+    {
+      "from": "vendor_tier_subscriptions",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_tier_subscriptions_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_wallet_transactions",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_wallet_transactions_vendor_id_fkey"
+    },
+    {
+      "from": "vendor_wallet_transactions",
+      "fromColumn": "wallet_id",
+      "to": "vendor_wallets",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_wallet_transactions_wallet_id_fkey"
+    },
+    {
+      "from": "vendor_wallets",
+      "fromColumn": "vendor_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendor_wallets_vendor_id_fkey"
+    },
+    {
+      "from": "vendors",
+      "fromColumn": "current_tier_id",
+      "to": "vendor_tiers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendors_current_tier_id_fkey"
+    },
+    {
+      "from": "vendors",
+      "fromColumn": "role_id",
+      "to": "roles",
+      "toColumn": "id",
+      "onDelete": "RESTRICT",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendors_role_id_fkey"
+    },
+    {
+      "from": "vendors",
+      "fromColumn": "tier_subscription_id",
+      "to": "vendor_tier_subscriptions",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendors_tier_subscription_id_fkey"
+    },
+    {
+      "from": "vendors",
+      "fromColumn": "vendor_identity_id",
+      "to": "vendor_identity",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "vendors_vendor_identity_id_fkey"
+    },
+    {
+      "from": "video_call_history",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "video_call_history_booking_id_fkey"
+    },
+    {
+      "from": "video_call_history",
+      "fromColumn": "room_id",
+      "to": "video_call_rooms",
+      "toColumn": "room_id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "video_call_history_room_id_fkey"
+    },
+    {
+      "from": "video_call_rooms",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "video_call_rooms_booking_id_fkey"
+    },
+    {
+      "from": "video_call_sessions",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "video_call_sessions_booking_id_fkey"
+    },
+    {
+      "from": "video_call_sessions",
+      "fromColumn": "staff_id",
+      "to": "staff",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "video_call_sessions_staff_id_fkey"
+    },
+    {
+      "from": "walk_routes",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "walk_routes_booking_id_fkey"
+    },
+    {
+      "from": "walk_routes",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "walk_routes_customer_id_fkey"
+    },
+    {
+      "from": "walk_routes",
+      "fromColumn": "pet_id",
+      "to": "pets",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "walk_routes_pet_id_fkey"
+    },
+    {
+      "from": "walk_routes",
+      "fromColumn": "walker_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "walk_routes_walker_id_fkey"
+    },
+    {
+      "from": "walker_live_sessions",
+      "fromColumn": "booking_id",
+      "to": "bookings",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "walker_live_sessions_booking_id_fkey"
+    },
+    {
+      "from": "walker_live_sessions",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "walker_live_sessions_customer_id_fkey"
+    },
+    {
+      "from": "walker_live_sessions",
+      "fromColumn": "walker_id",
+      "to": "vendors",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "walker_live_sessions_walker_id_fkey"
+    },
+    {
+      "from": "wallet_transactions",
+      "fromColumn": "wallet_id",
+      "to": "customer_wallets",
+      "toColumn": "id",
+      "onDelete": "NO ACTION",
+      "onUpdate": "NO ACTION",
+      "constraint": "wallet_transactions_wallet_id_fkey"
+    },
+    {
+      "from": "wishlists",
+      "fromColumn": "customer_id",
+      "to": "customers",
+      "toColumn": "id",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO ACTION",
+      "constraint": "wishlists_customer_id_fkey"
+    }
+  ]
+}

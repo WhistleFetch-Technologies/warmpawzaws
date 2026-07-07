@@ -1,0 +1,6289 @@
+[
+  {
+    "table": "action_sources",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 17,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty-action-sources-management.ts",
+      "backend/lambda/src/middleware/action-source-middleware.ts"
+    ]
+  },
+  {
+    "table": "ad_budget_transactions",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/ads-recommendations.ts"
+    ]
+  },
+  {
+    "table": "ad_clicks",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/ads-recommendations.ts"
+    ]
+  },
+  {
+    "table": "ad_impressions",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/ads-recommendations.ts"
+    ]
+  },
+  {
+    "table": "ad_performance_analytics",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "admin_ai_audit",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-ai-copilot.ts"
+    ]
+  },
+  {
+    "table": "admin_audit_log",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance.ts",
+      "backend/lambda/src/endpoints/admin-governance.ts"
+    ]
+  },
+  {
+    "table": "admin_settings",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/config-policies.ts",
+      "backend/lambda/src/endpoints/pharmacy-orders.ts",
+      "backend/lambda/src/utils/admin-fee-settings-db.ts"
+    ]
+  },
+  {
+    "table": "admins",
+    "rows": 0,
+    "codeFiles": 13,
+    "migrations": 8,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/admin-resolve-permissions-from-request.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/Auth/auth-enhanced.ts",
+      "backend/lambda/src/endpoints/product-analytics/routes.ts",
+      "backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts",
+      "backend/lambda/src/endpoints/supportCrm/support-ticket-activity.ts"
+    ]
+  },
+  {
+    "table": "adoption_applications",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/specialized-service-flows.customer.ts",
+      "backend/lambda/src/endpoints/specialized-service-flows.ts"
+    ]
+  },
+  {
+    "table": "adoption_center_profiles",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "adoption_listings",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "advertising_campaigns",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/ads-recommendations.ts"
+    ]
+  },
+  {
+    "table": "ai_booking_wizard_sessions",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "AI"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/aiChatbot/ai-booking-wizard-session.ts"
+    ]
+  },
+  {
+    "table": "ai_chatbot_conversations",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "AI"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/aiChatbot/ai-chatbot.ts",
+      "backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts"
+    ]
+  },
+  {
+    "table": "ambulance_vehicles",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/specialized-services.ts"
+    ]
+  },
+  {
+    "table": "analytics_events",
+    "rows": 130,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": "Analytics",
+    "domains": [
+      "Analytics"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/product-analytics/routes.ts",
+      "backend/lambda/src/endpoints/product-analytics/service-ingest.ts",
+      "backend/lambda/src/jobs/analytics-retention.ts"
+    ]
+  },
+  {
+    "table": "analytics_sessions",
+    "rows": 937,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": "Analytics",
+    "domains": [
+      "Analytics"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/product-analytics/service-ingest.ts",
+      "backend/lambda/src/jobs/analytics-retention.ts"
+    ]
+  },
+  {
+    "table": "appointment_reminders",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": []
+  },
+  {
+    "table": "audit_logs",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/lib/services/vendor-security-service.ts"
+    ]
+  },
+  {
+    "table": "audit_trail",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": "Duplicate-candidate",
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "auth_operation_rate_events",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/lib/services/auth/customer-forgot-password.ts",
+      "backend/lambda/src/lib/services/auth/vendor-forgot-password.ts"
+    ]
+  },
+  {
+    "table": "automation_jobs",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "aws_settings",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "bank_verifications",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "banner_analytics",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "banner_clicks",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 0,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/admin-governance-enhanced.ts"
+    ]
+  },
+  {
+    "table": "banners",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 11,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-content.ts",
+      "backend/lambda/src/endpoints/customer-content.ts"
+    ]
+  },
+  {
+    "table": "behavior_journal",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/behavior-journal.ts"
+    ]
+  },
+  {
+    "table": "boarding_facilities",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 3,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "boarding_rooms",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/specialized-services.ts"
+    ]
+  },
+  {
+    "table": "booking_cancellation_rules",
+    "rows": 0,
+    "codeFiles": 6,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/endpoints/refund-policy-engine.ts",
+      "backend/lambda/src/endpoints/refunds.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-policies.ts",
+      "backend/lambda/src/endpoints/vendor-policies.ts",
+      "backend/lambda/src/lib/services/cancellation-policy-service.ts"
+    ]
+  },
+  {
+    "table": "booking_conflicts",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": []
+  },
+  {
+    "table": "booking_limits",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": []
+  },
+  {
+    "table": "booking_rules",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts"
+    ]
+  },
+  {
+    "table": "booking_services",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": [
+      "backend/lambda/src/lib/booking-service-duration.ts"
+    ]
+  },
+  {
+    "table": "booking_slot_capacity",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": []
+  },
+  {
+    "table": "booking_staff_assignments",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": []
+  },
+  {
+    "table": "booking_state_transitions",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 8,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": []
+  },
+  {
+    "table": "booking_status_history",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 7,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/bookings.ts",
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/utils/audit-log.ts"
+    ]
+  },
+  {
+    "table": "booking_status_transitions",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": []
+  },
+  {
+    "table": "booking_timeout_config",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": []
+  },
+  {
+    "table": "booking_transaction_log",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": []
+  },
+  {
+    "table": "bookings",
+    "rows": 0,
+    "codeFiles": 133,
+    "migrations": 119,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-customer-endpoints.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-vendor-daily-accrual.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/analytics.admin.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/ads-recommendations.ts"
+    ]
+  },
+  {
+    "table": "breeder_profiles",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "cache_stats",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "cache_tokens",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "cafe_tables",
+    "rows": 0,
+    "codeFiles": 6,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/pet-cafe.ts",
+      "backend/lambda/src/endpoints/role-seeding.ts",
+      "backend/lambda/src/endpoints/roles.ts",
+      "backend/lambda/src/endpoints/specialized-services.ts",
+      "backend/lambda/src/utils/capability-filter.ts"
+    ]
+  },
+  {
+    "table": "cancellation_policies",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/settlement&payouts/endpoints/settlements.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-policies.ts",
+      "backend/lambda/src/endpoints/vendor-policies.ts"
+    ]
+  },
+  {
+    "table": "capabilities",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 13,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts"
+    ]
+  },
+  {
+    "table": "care_plan_items",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/care-plans.ts"
+    ]
+  },
+  {
+    "table": "care_plan_templates",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/care-plans.ts"
+    ]
+  },
+  {
+    "table": "cart_items",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Ecommerce"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/ecommerce/endpoints/ecommerce.ts",
+      "backend/lambda/src/endpoints/ecommerce.ts",
+      "backend/lambda/src/endpoints/wishlist.ts"
+    ]
+  },
+  {
+    "table": "chart_of_accounts",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "chat_messages",
+    "rows": 0,
+    "codeFiles": 9,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/appointment-reminders.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/booking-details-enhanced.ts",
+      "backend/lambda/src/endpoints/chat.ts",
+      "backend/lambda/src/endpoints/diagnostics-reports.ts",
+      "backend/lambda/src/endpoints/prescription/endpoints/prescriptions.ts",
+      "backend/lambda/src/endpoints/prescriptions.ts",
+      "backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-bookings.ts"
+    ]
+  },
+  {
+    "table": "chat_sessions",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts"
+    ]
+  },
+  {
+    "table": "commercial_campaign_audit_log",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "commercial_campaign_promotion_links",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "commercial_discount_campaigns",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "commission_tiers",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-commission-analytics.ts",
+      "backend/lambda/src/utils/seller-commission-rate.ts"
+    ]
+  },
+  {
+    "table": "commute_time_cache",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "compliance_issues",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts"
+    ]
+  },
+  {
+    "table": "content_assets",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "content_pages",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-content.ts",
+      "backend/lambda/src/endpoints/customer-content.ts",
+      "backend/lambda/src/utils/content-page-articles.ts"
+    ]
+  },
+  {
+    "table": "coupon_usage",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 6,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Loyalty"
+    ],
+    "files": [
+      "backend/lambda/src/lib/services/discount-calculation-service.ts"
+    ]
+  },
+  {
+    "table": "coupon_usages",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": "Duplicate-candidate",
+    "domains": [
+      "Loyalty"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/promotions.ts"
+    ]
+  },
+  {
+    "table": "coupons",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 6,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Loyalty"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/promotions.ts",
+      "backend/lambda/src/endpoints/roles.ts",
+      "backend/lambda/src/lib/services/discount-calculation-service.ts"
+    ]
+  },
+  {
+    "table": "customer_addresses",
+    "rows": 0,
+    "codeFiles": 15,
+    "migrations": 6,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/addresses.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/addresses.customer.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-profile.customer.ts",
+      "backend/lambda/src/endpoints/gps-tracking.ts",
+      "backend/lambda/src/endpoints/gpsTracking/endpoints/gps-tracking.ts"
+    ]
+  },
+  {
+    "table": "customer_addresses_dedupe_backup",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": "Backup",
+    "domains": [
+      "Customer"
+    ],
+    "files": []
+  },
+  {
+    "table": "customer_admin_portal_codes",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/lib/services/admin/customer-portal-session-service.ts"
+    ]
+  },
+  {
+    "table": "customer_favorites",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": []
+  },
+  {
+    "table": "customer_identity",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/Auth/auth-enhanced.ts",
+      "backend/lambda/src/utils/customer-state.ts"
+    ]
+  },
+  {
+    "table": "customer_loyalty_points",
+    "rows": 0,
+    "codeFiles": 6,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty.ts",
+      "backend/lambda/src/endpoints/rewards.ts",
+      "backend/lambda/src/endpoints/wallet-diagnostic.ts",
+      "backend/lambda/src/lib/services/loyalty&reward/loyalty-points-service.ts",
+      "backend/lambda/src/lib/services/loyalty-segmentation-service.ts",
+      "backend/lambda/src/lib/services/referral-service.ts"
+    ]
+  },
+  {
+    "table": "customer_notification_settings",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": []
+  },
+  {
+    "table": "customer_payment_methods",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts"
+    ]
+  },
+  {
+    "table": "customer_preferences",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer-enhanced.ts"
+    ]
+  },
+  {
+    "table": "customer_profile_completion",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/utils/customer-state.ts"
+    ]
+  },
+  {
+    "table": "customer_provider_history",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/package-booking.ts"
+    ]
+  },
+  {
+    "table": "customer_questionnaires",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": []
+  },
+  {
+    "table": "customer_referrals",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/referrals.ts",
+      "backend/lambda/src/handler/index.ts",
+      "backend/lambda/src/lib/services/referral-service.ts"
+    ]
+  },
+  {
+    "table": "customer_search_history",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": []
+  },
+  {
+    "table": "customer_segment_assignments",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/lib/services/loyalty-segmentation-service.ts"
+    ]
+  },
+  {
+    "table": "customer_subscriptions",
+    "rows": 0,
+    "codeFiles": 9,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/package-booking.ts",
+      "backend/lambda/src/endpoints/subscription-booking.ts",
+      "backend/lambda/src/endpoints/subscription-plans-admin.ts",
+      "backend/lambda/src/endpoints/subscriptions.ts"
+    ]
+  },
+  {
+    "table": "customer_wallets",
+    "rows": 0,
+    "codeFiles": 20,
+    "migrations": 7,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/analytics.admin.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-profile.customer.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty.ts",
+      "backend/lambda/src/endpoints/package-booking.ts",
+      "backend/lambda/src/endpoints/payments-enhanced.ts"
+    ]
+  },
+  {
+    "table": "customer_wishlist",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/wishlist.ts"
+    ]
+  },
+  {
+    "table": "customers",
+    "rows": 0,
+    "codeFiles": 125,
+    "migrations": 98,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/addresses.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-customer-endpoints.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-referrals.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/analytics.admin.ts"
+    ]
+  },
+  {
+    "table": "data_deletion_log",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "dating_analytics",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": "Experimental/Dating",
+    "domains": [
+      "Dating"
+    ],
+    "files": []
+  },
+  {
+    "table": "dating_chat_messages",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": "Experimental/Dating",
+    "domains": [
+      "Dating"
+    ],
+    "files": []
+  },
+  {
+    "table": "dating_matches",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": "Experimental/Dating",
+    "domains": [
+      "Dating"
+    ],
+    "files": []
+  },
+  {
+    "table": "dating_meetups",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": "Experimental/Dating",
+    "domains": [
+      "Dating"
+    ],
+    "files": []
+  },
+  {
+    "table": "dating_profiles_owner",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": "Experimental/Dating",
+    "domains": [
+      "Dating"
+    ],
+    "files": []
+  },
+  {
+    "table": "dating_profiles_pet",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": "Experimental/Dating",
+    "domains": [
+      "Dating"
+    ],
+    "files": []
+  },
+  {
+    "table": "deliveries",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 10,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "delivery_location_history",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/delivery-tracking.ts",
+      "backend/lambda/src/endpoints/logistics-webhooks.ts",
+      "backend/lambda/src/endpoints/tracking.ts"
+    ]
+  },
+  {
+    "table": "delivery_partners",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/delivery-otp.ts",
+      "backend/lambda/src/endpoints/delivery-partner-automation.ts",
+      "backend/lambda/src/endpoints/delivery-tracking.ts"
+    ]
+  },
+  {
+    "table": "delivery_routes",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": []
+  },
+  {
+    "table": "delivery_settlements",
+    "rows": 0,
+    "codeFiles": 8,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-vendor-daily-accrual.ts",
+      "backend/lambda/src/endpoints/orders/endpoint/pharmacy-orders.ts",
+      "backend/lambda/src/endpoints/pharmacy-orders.ts",
+      "backend/lambda/src/endpoints/settlement&payouts/endpoints/settlements.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-dashboard-enhanced.ts",
+      "backend/lambda/src/utils/delivery-settlement-finance.ts",
+      "backend/lambda/src/utils/meal-order-settlement.ts",
+      "backend/lambda/src/utils/vendor-accrual-fee-breakdown.ts"
+    ]
+  },
+  {
+    "table": "delivery_tracking",
+    "rows": 0,
+    "codeFiles": 19,
+    "migrations": 11,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer-orders.ts",
+      "backend/lambda/src/endpoints/delivery-otp.ts",
+      "backend/lambda/src/endpoints/delivery-tracking.ts",
+      "backend/lambda/src/endpoints/logistics-webhooks.ts",
+      "backend/lambda/src/endpoints/logistics.ts",
+      "backend/lambda/src/endpoints/meal-plans.ts"
+    ]
+  },
+  {
+    "table": "device_tokens",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/aws/aws-sns-notification-service.ts",
+      "backend/lambda/src/endpoints/push-notifications.ts",
+      "backend/lambda/src/utils/device-token-hygiene.ts",
+      "backend/lambda/src/utils/notification-campaign-audience.ts",
+      "backend/lambda/src/utils/notification-dispatch.ts"
+    ]
+  },
+  {
+    "table": "diagnostic_bookings",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Diagnostics"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/diagnostics-reports.ts"
+    ]
+  },
+  {
+    "table": "diagnostic_packages",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Diagnostics"
+    ],
+    "files": []
+  },
+  {
+    "table": "diagnostic_reports",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 8,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Diagnostics"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/diagnostics-reports.ts",
+      "backend/lambda/src/endpoints/specialized-services.ts"
+    ]
+  },
+  {
+    "table": "diagnostic_samples",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Diagnostics"
+    ],
+    "files": []
+  },
+  {
+    "table": "diagnostic_tests",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 8,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Diagnostics"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/specialized-services.ts"
+    ]
+  },
+  {
+    "table": "discovery_rules",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Discovery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/discovery-rules-admin.ts",
+      "backend/lambda/src/lib/rule-engine.ts"
+    ]
+  },
+  {
+    "table": "disputes",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 3,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "donation_campaigns",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/donations.ts"
+    ]
+  },
+  {
+    "table": "donations",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/donations.ts"
+    ]
+  },
+  {
+    "table": "ecommerce_categories",
+    "rows": 0,
+    "codeFiles": 10,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Ecommerce"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/bulk-product-upload.ts",
+      "backend/lambda/src/endpoints/ecommerce/endpoints/ecommerce.ts",
+      "backend/lambda/src/endpoints/ecommerce.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-products.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendorAnalytics.vendor.ts",
+      "backend/lambda/src/endpoints/vendor-analytics.ts",
+      "backend/lambda/src/endpoints/vendor-products.ts"
+    ]
+  },
+  {
+    "table": "ecommerce_commission_settings",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Ecommerce"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/ecommerce/endpoints/ecommerce.ts",
+      "backend/lambda/src/endpoints/ecommerce.ts",
+      "backend/lambda/src/utils/seller-commission-rate.ts"
+    ]
+  },
+  {
+    "table": "ecommerce_loyalty_pending_awards",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Ecommerce"
+    ],
+    "files": []
+  },
+  {
+    "table": "ecommerce_policies",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Ecommerce"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-policies.ts",
+      "backend/lambda/src/endpoints/vendor-policies.ts"
+    ]
+  },
+  {
+    "table": "emergency_booking_queue",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 3,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "entity_audit_log",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/utils/audit-log.ts"
+    ]
+  },
+  {
+    "table": "error_case_occurrences",
+    "rows": 3,
+    "codeFiles": 2,
+    "migrations": 0,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/product-analytics/error-case-ingest.ts",
+      "backend/lambda/src/endpoints/product-analytics/routes.ts"
+    ]
+  },
+  {
+    "table": "event_registrations",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/events.ts"
+    ]
+  },
+  {
+    "table": "events",
+    "rows": 0,
+    "codeFiles": 7,
+    "migrations": 34,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/events.ts",
+      "backend/lambda/src/endpoints/role-seeding.ts",
+      "backend/lambda/src/endpoints/roles.ts",
+      "backend/lambda/src/endpoints/specialization-master.ts",
+      "backend/lambda/src/lib/capability-guard.tsx"
+    ]
+  },
+  {
+    "table": "featured_vendors",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "general_ledger",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "generated_reports",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts"
+    ]
+  },
+  {
+    "table": "google_maps_settings",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "gps_location_history",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/gpsTracking/endpoints/gps-tracking.ts",
+      "backend/lambda/src/endpoints/gpsTracking/endpoints/vendor.gpstracking.ts",
+      "backend/lambda/src/lib/services/gps-tracking-service.ts",
+      "backend/lambda/src/lib/services/gpsServices/gps-tracking-service.ts"
+    ]
+  },
+  {
+    "table": "gps_tracking",
+    "rows": 0,
+    "codeFiles": 9,
+    "migrations": 16,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/role-seeding.ts",
+      "backend/lambda/src/endpoints/roles.ts",
+      "backend/lambda/src/endpoints/specialized-services.ts",
+      "backend/lambda/src/lib/capability-guard.tsx",
+      "backend/lambda/src/utils/capability-filter.ts"
+    ]
+  },
+  {
+    "table": "gps_tracking_points",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "gps_tracking_sessions",
+    "rows": 0,
+    "codeFiles": 10,
+    "migrations": 10,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/gps-tracking.ts",
+      "backend/lambda/src/endpoints/gpsTracking/endpoints/gps-tracking.ts",
+      "backend/lambda/src/endpoints/gpsTracking/endpoints/vendor.gpstracking.ts",
+      "backend/lambda/src/endpoints/vendor-booking-actions.ts",
+      "backend/lambda/src/endpoints/vendor-bookings.ts"
+    ]
+  },
+  {
+    "table": "groomer_gallery",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "gst_configs",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts"
+    ]
+  },
+  {
+    "table": "gst_configurations",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": "Duplicate-candidate",
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "gst_rules",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/tax-management.ts",
+      "backend/lambda/src/lib/services/tax-calculation-service.ts"
+    ]
+  },
+  {
+    "table": "health_checks",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "healthcare_access_logs",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "holiday_packages",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/specialized-service-flows.customer.ts",
+      "backend/lambda/src/endpoints/pet-holidays.ts",
+      "backend/lambda/src/endpoints/specialized-service-flows.ts",
+      "backend/lambda/src/endpoints/specialized-services.ts"
+    ]
+  },
+  {
+    "table": "home_service_sessions",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "hsn_codes",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 7,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/tax-invoice-pdf.ts",
+      "backend/lambda/src/endpoints/tax-management.ts",
+      "backend/lambda/src/lib/services/tax-calculation-service.ts"
+    ]
+  },
+  {
+    "table": "idempotency_keys",
+    "rows": 1,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/utils/error-recovery.ts",
+      "backend/lambda/src/utils/idempotency.ts"
+    ]
+  },
+  {
+    "table": "idempotency_records",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "insurance_claims",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Insurance"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/insurance.ts"
+    ]
+  },
+  {
+    "table": "insurance_plans",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 8,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Insurance"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/insurance.ts",
+      "backend/lambda/src/endpoints/role-seeding.ts",
+      "backend/lambda/src/endpoints/roles.ts"
+    ]
+  },
+  {
+    "table": "insurance_policies",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Insurance"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/insurance.ts"
+    ]
+  },
+  {
+    "table": "invoices",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 7,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/tax-invoice-pdf.ts"
+    ]
+  },
+  {
+    "table": "item_stats",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "kyc_verification_audit_log",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/utils/kyc-verification-client.ts"
+    ]
+  },
+  {
+    "table": "logistics_partners",
+    "rows": 0,
+    "codeFiles": 6,
+    "migrations": 7,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-integrations.ts",
+      "backend/lambda/src/endpoints/logistics-management.ts",
+      "backend/lambda/src/endpoints/logistics.ts",
+      "backend/lambda/src/lib/services/logistics-partner-service.ts",
+      "backend/lambda/src/lib/services/pidge-logistics.ts"
+    ]
+  },
+  {
+    "table": "logistics_rules",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/config-policies.ts",
+      "backend/lambda/src/endpoints/logistics-management.ts",
+      "backend/lambda/src/lib/services/logistics-partner-service.ts"
+    ]
+  },
+  {
+    "table": "loyalty_action_rules",
+    "rows": 0,
+    "codeFiles": 7,
+    "migrations": 13,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Loyalty"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty-action-rules-management.ts",
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty-segments-management.ts",
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty.ts",
+      "backend/lambda/src/endpoints/referrals.ts",
+      "backend/lambda/src/lib/services/loyalty&reward/loyalty-points-service.ts",
+      "backend/lambda/src/lib/services/loyalty-rules-init-service.ts"
+    ]
+  },
+  {
+    "table": "loyalty_rules",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Loyalty"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty.ts",
+      "backend/lambda/src/endpoints/rewards.ts",
+      "backend/lambda/src/endpoints/wallet-checkout-rules-endpoints.ts",
+      "backend/lambda/src/lib/services/loyalty&reward/loyalty-points-service.ts",
+      "backend/lambda/src/lib/services/wallet-checkout-min-balance.ts"
+    ]
+  },
+  {
+    "table": "loyalty_segments",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Loyalty"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty-action-rules-management.ts",
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty-segments-management.ts",
+      "backend/lambda/src/lib/services/loyalty-segmentation-service.ts"
+    ]
+  },
+  {
+    "table": "loyalty_transactions",
+    "rows": 0,
+    "codeFiles": 9,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Loyalty"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-referrals.ts",
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty.ts",
+      "backend/lambda/src/endpoints/referrals.ts",
+      "backend/lambda/src/endpoints/rewards.ts",
+      "backend/lambda/src/endpoints/wallet-diagnostic.ts",
+      "backend/lambda/src/Lambdas/loyalty-events-consumer.ts",
+      "backend/lambda/src/lib/services/loyalty&reward/loyalty-points-service.ts",
+      "backend/lambda/src/lib/services/loyalty-segmentation-service.ts"
+    ]
+  },
+  {
+    "table": "mating_appointments",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "mating_requests",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/specialized-service-flows.customer.ts",
+      "backend/lambda/src/endpoints/specialized-service-flows.ts"
+    ]
+  },
+  {
+    "table": "meal_orders",
+    "rows": 0,
+    "codeFiles": 37,
+    "migrations": 17,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-vendor-daily-accrual.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/delivery-tracking.ts",
+      "backend/lambda/src/endpoints/logistics-webhooks.ts",
+      "backend/lambda/src/endpoints/meal-plans.ts",
+      "backend/lambda/src/endpoints/meal-subscriptions.ts",
+      "backend/lambda/src/endpoints/nutrition-orders.ts"
+    ]
+  },
+  {
+    "table": "meal_plans",
+    "rows": 0,
+    "codeFiles": 20,
+    "migrations": 17,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/logistics-webhooks.ts",
+      "backend/lambda/src/endpoints/meal-plans.ts",
+      "backend/lambda/src/endpoints/meal-subscriptions.ts",
+      "backend/lambda/src/endpoints/role-seeding.ts",
+      "backend/lambda/src/endpoints/roles.ts"
+    ]
+  },
+  {
+    "table": "meal_refund_cases",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": [
+      "backend/lambda/src/utils/admin-refund-hub.ts",
+      "backend/lambda/src/utils/meal-refund-case-execution.ts",
+      "backend/lambda/src/utils/meal-refund-cases.ts"
+    ]
+  },
+  {
+    "table": "meal_rider_reassign_requests",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": []
+  },
+  {
+    "table": "meal_subscription_deliveries",
+    "rows": 0,
+    "codeFiles": 7,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/specialized-services.ts",
+      "backend/lambda/src/lib/vendor-appointment-sms.ts",
+      "backend/lambda/src/services/meal-subscription/meal-subscription-canonical-service.ts",
+      "backend/lambda/src/services/meal-subscription/meal-subscription-operations-service.ts",
+      "backend/lambda/src/services/meal-subscription/meal-subscription-session-generation.ts",
+      "backend/lambda/src/utils/meal-subscription-refund.ts",
+      "backend/lambda/src/utils/payments/meal-order-original-refund.ts"
+    ]
+  },
+  {
+    "table": "meal_subscription_payments",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": [
+      "backend/lambda/src/services/meal-subscription/meal-subscription-canonical-service.ts",
+      "backend/lambda/src/services/meal-subscription/meal-subscription-operations-service.ts",
+      "backend/lambda/src/utils/meal-subscription-parent-booking-refund.ts",
+      "backend/lambda/src/utils/meal-subscription-refund.ts",
+      "backend/lambda/src/utils/payments/meal-order-original-refund.ts"
+    ]
+  },
+  {
+    "table": "meal_subscriptions",
+    "rows": 0,
+    "codeFiles": 12,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/meal-plans.ts",
+      "backend/lambda/src/endpoints/meal-subscriptions.ts",
+      "backend/lambda/src/lib/vendor-appointment-sms.ts",
+      "backend/lambda/src/services/meal-subscription/meal-subscription-canonical-service.ts",
+      "backend/lambda/src/services/meal-subscription/meal-subscription-operations-service.ts",
+      "backend/lambda/src/services/meal-subscription/meal-subscription-session-generation.ts",
+      "backend/lambda/src/utils/meal-delivery-notifications.ts",
+      "backend/lambda/src/utils/meal-plan-vendor-delete.ts"
+    ]
+  },
+  {
+    "table": "medical_records",
+    "rows": 0,
+    "codeFiles": 16,
+    "migrations": 14,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/booking-details-enhanced.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-appointments.ts",
+      "backend/lambda/src/endpoints/diagnostics-reports.ts",
+      "backend/lambda/src/endpoints/medical-records.ts",
+      "backend/lambda/src/endpoints/pets.ts"
+    ]
+  },
+  {
+    "table": "medicine_order_pharmacy_broadcasts",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Pharmacy"
+    ],
+    "files": []
+  },
+  {
+    "table": "medicine_orders",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Pharmacy"
+    ],
+    "files": []
+  },
+  {
+    "table": "no_show_policies",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-policies.ts",
+      "backend/lambda/src/endpoints/vendor-policies.ts"
+    ]
+  },
+  {
+    "table": "notification_campaign_cities",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/notification-campaigns.ts",
+      "backend/lambda/src/utils/notification-campaign-targeting.ts"
+    ]
+  },
+  {
+    "table": "notification_campaign_deliveries",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/notification-campaigns.ts",
+      "backend/lambda/src/utils/notification-campaign-processor.ts"
+    ]
+  },
+  {
+    "table": "notification_campaign_events",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/notification-campaigns.ts",
+      "backend/lambda/src/utils/notification-campaign-processor.ts"
+    ]
+  },
+  {
+    "table": "notification_campaign_regions",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/notification-campaigns.ts",
+      "backend/lambda/src/utils/notification-campaign-targeting.ts"
+    ]
+  },
+  {
+    "table": "notification_campaign_templates",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/notification-campaigns.ts"
+    ]
+  },
+  {
+    "table": "notification_campaign_users",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/notification-campaigns.ts",
+      "backend/lambda/src/utils/notification-campaign-targeting.ts"
+    ]
+  },
+  {
+    "table": "notification_campaigns",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/notification-campaigns.ts",
+      "backend/lambda/src/utils/notification-campaign-processor.ts",
+      "backend/lambda/src/utils/scheduled-notification-drain.ts"
+    ]
+  },
+  {
+    "table": "notification_channel_settings",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/notification-campaigns.ts",
+      "backend/lambda/src/utils/notification-campaign-processor.ts",
+      "backend/lambda/src/utils/notification-dispatch.ts"
+    ]
+  },
+  {
+    "table": "notification_delivery_log",
+    "rows": 4,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-notification-delivery.ts",
+      "backend/lambda/src/utils/notification-delivery.ts",
+      "backend/lambda/src/utils/scheduled-notification-drain.ts"
+    ]
+  },
+  {
+    "table": "notification_logs",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": []
+  },
+  {
+    "table": "notification_segment_rules",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/notification-campaigns.ts",
+      "backend/lambda/src/utils/notification-campaign-audience.ts"
+    ]
+  },
+  {
+    "table": "notification_segment_targets",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/notification-campaigns.ts",
+      "backend/lambda/src/utils/notification-campaign-targeting.ts"
+    ]
+  },
+  {
+    "table": "notification_segments",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/notification-campaigns.ts",
+      "backend/lambda/src/utils/notification-campaign-audience.ts"
+    ]
+  },
+  {
+    "table": "notification_state_transitions",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": []
+  },
+  {
+    "table": "notification_templates",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts"
+    ]
+  },
+  {
+    "table": "notification_templates_enhanced",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": "Enhanced/Versioned",
+    "domains": [
+      "Notifications"
+    ],
+    "files": []
+  },
+  {
+    "table": "notifications",
+    "rows": 2,
+    "codeFiles": 43,
+    "migrations": 19,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Notifications"
+    ],
+    "files": [
+      "backend/lambda/src/aws/aws-sns-notification-service.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-notification-delivery.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-sellers.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-sellers.ts"
+    ]
+  },
+  {
+    "table": "nutrition_consultation_requests",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "onboarding_forms",
+    "rows": 0,
+    "codeFiles": 12,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/kyc-verification.ts",
+      "backend/lambda/src/endpoints/onboarding-form-management.ts",
+      "backend/lambda/src/endpoints/role-seeding.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-onboarding-enhanced.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-onboarding-fixes.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-onboarding.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-profile.vendor.ts"
+    ]
+  },
+  {
+    "table": "optimization_tasks",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "order_item_commission",
+    "rows": 1,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Ecommerce"
+    ],
+    "files": []
+  },
+  {
+    "table": "order_items",
+    "rows": 1,
+    "codeFiles": 19,
+    "migrations": 6,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Ecommerce"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-orders.ts",
+      "backend/lambda/src/endpoints/customer-orders.ts",
+      "backend/lambda/src/endpoints/ecommerce/endpoints/ecommerce.ts",
+      "backend/lambda/src/endpoints/ecommerce.ts",
+      "backend/lambda/src/endpoints/logistics-webhooks.ts",
+      "backend/lambda/src/endpoints/order-management.ts",
+      "backend/lambda/src/endpoints/product-reviews.ts",
+      "backend/lambda/src/endpoints/recommendations.ts"
+    ]
+  },
+  {
+    "table": "order_status_history",
+    "rows": 0,
+    "codeFiles": 6,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Ecommerce"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-orders.ts",
+      "backend/lambda/src/endpoints/customer-orders.ts",
+      "backend/lambda/src/endpoints/delivery-otp.ts",
+      "backend/lambda/src/endpoints/self-managed-logistics.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-orders.ts",
+      "backend/lambda/src/utils/logistics/vendor-mark-shipped.ts"
+    ]
+  },
+  {
+    "table": "orders",
+    "rows": 1,
+    "codeFiles": 46,
+    "migrations": 64,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Ecommerce"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/analytics.admin.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-orders.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-profile.customer.ts",
+      "backend/lambda/src/endpoints/customer-enhanced.ts"
+    ]
+  },
+  {
+    "table": "otp_tokens",
+    "rows": 0,
+    "codeFiles": 15,
+    "migrations": 6,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/Auth/auth-enhanced.ts",
+      "backend/lambda/src/endpoints/Auth/auth.ts",
+      "backend/lambda/src/endpoints/auth.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-booking-history.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/gpsTracking/endpoints/vendor.gpstracking.ts",
+      "backend/lambda/src/endpoints/otp-enhanced.ts",
+      "backend/lambda/src/endpoints/package-booking.ts"
+    ]
+  },
+  {
+    "table": "package_milestones",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "package_purchases",
+    "rows": 0,
+    "codeFiles": 15,
+    "migrations": 11,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/endpoints/chat.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/package-booking.ts",
+      "backend/lambda/src/endpoints/packages.ts"
+    ]
+  },
+  {
+    "table": "package_scheduled_sessions",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/package-booking.ts",
+      "backend/lambda/src/utils/package-bookings.ts",
+      "backend/lambda/src/utils/package-session-eligibility.ts",
+      "backend/lambda/src/utils/package-session-sync.ts"
+    ]
+  },
+  {
+    "table": "package_services",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts"
+    ]
+  },
+  {
+    "table": "package_sessions",
+    "rows": 0,
+    "codeFiles": 6,
+    "migrations": 7,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Booking"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/package-booking.ts",
+      "backend/lambda/src/endpoints/package-sessions.ts",
+      "backend/lambda/src/endpoints/packages.ts",
+      "backend/lambda/src/endpoints/training-progress.ts"
+    ]
+  },
+  {
+    "table": "package_usage_log",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/utils/package-session-sync.ts"
+    ]
+  },
+  {
+    "table": "payment_gateway_settings",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/payment-gateway-management.ts",
+      "backend/lambda/src/lib/services/payment-gateway-service.ts"
+    ]
+  },
+  {
+    "table": "payment_history",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 3,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "payment_retry_log",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "payment_status_history",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/payments-enhanced.ts",
+      "backend/lambda/src/endpoints/payments.ts",
+      "backend/lambda/src/utils/audit-log.ts"
+    ]
+  },
+  {
+    "table": "payment_timeout_rules",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "payment_transaction_log",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "payments",
+    "rows": 1,
+    "codeFiles": 43,
+    "migrations": 34,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Payments"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/analytics.admin.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-appointments.ts",
+      "backend/lambda/src/endpoints/order-management.ts",
+      "backend/lambda/src/endpoints/orders/endpoint/pharmacy-orders.ts",
+      "backend/lambda/src/endpoints/otp-enhanced.ts",
+      "backend/lambda/src/endpoints/package-booking.ts"
+    ]
+  },
+  {
+    "table": "payout_locks",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Payments"
+    ],
+    "files": []
+  },
+  {
+    "table": "payout_policies",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Payments"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-policies.ts",
+      "backend/lambda/src/endpoints/vendor-policies.ts"
+    ]
+  },
+  {
+    "table": "payout_rules",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Payments"
+    ],
+    "files": []
+  },
+  {
+    "table": "payouts",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 12,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Payments"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/razorpay-settlements.ts",
+      "backend/lambda/src/endpoints/settlement&payouts/endpoints/settlements.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-dashboard-enhanced.ts",
+      "backend/lambda/src/utils/payments/payout-status-sync-service.ts"
+    ]
+  },
+  {
+    "table": "pending_payouts",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "pending_reschedules",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "performance_metrics",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "pet_care_plans",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/care-plans.ts"
+    ]
+  },
+  {
+    "table": "pet_inquiries",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "pet_listings",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "pet_skill_progress",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts"
+    ]
+  },
+  {
+    "table": "pets",
+    "rows": 0,
+    "codeFiles": 53,
+    "migrations": 45,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Customer"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/analytics.admin.ts",
+      "backend/lambda/src/endpoints/aiChatbot/ai-booking-wizard-session.ts",
+      "backend/lambda/src/endpoints/aiChatbot/ai-chatbot.ts",
+      "backend/lambda/src/endpoints/behavior-journal.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/booking-details-enhanced.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts"
+    ]
+  },
+  {
+    "table": "pets_dedupe_backup",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": "Backup",
+    "domains": [
+      "Customer"
+    ],
+    "files": []
+  },
+  {
+    "table": "pharmacy_broadcasts",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Pharmacy"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/orders/endpoint/pharmacy-orders.ts",
+      "backend/lambda/src/endpoints/pharmacy-broadcast.ts",
+      "backend/lambda/src/endpoints/pharmacy-orders.ts",
+      "backend/lambda/src/jobs/pharmacy-broadcast-expansion-processor.ts",
+      "backend/lambda/src/jobs/scheduled-notification-processor.ts"
+    ]
+  },
+  {
+    "table": "pharmacy_order_broadcasts",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Pharmacy"
+    ],
+    "files": []
+  },
+  {
+    "table": "pharmacy_orders",
+    "rows": 0,
+    "codeFiles": 16,
+    "migrations": 9,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Pharmacy"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/delivery-otp.ts",
+      "backend/lambda/src/endpoints/delivery-partner-automation.ts",
+      "backend/lambda/src/endpoints/delivery-tracking.ts",
+      "backend/lambda/src/endpoints/logistics-webhooks.ts",
+      "backend/lambda/src/endpoints/orders/endpoint/pharmacy-orders.ts",
+      "backend/lambda/src/endpoints/pharmacy-broadcast.ts"
+    ]
+  },
+  {
+    "table": "pharmacy_quotes",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Pharmacy"
+    ],
+    "files": []
+  },
+  {
+    "table": "pidge_hyperlocal_webhook_events",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": [
+      "backend/lambda/src/utils/meal-refund-cases.ts"
+    ]
+  },
+  {
+    "table": "pidge_partial_delivery_workflows",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": []
+  },
+  {
+    "table": "pidge_support_tickets",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Delivery"
+    ],
+    "files": []
+  },
+  {
+    "table": "platform_integrations",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/utils/kyc-verification-client.ts",
+      "backend/lambda/src/utils/payments/razorpay-client.ts"
+    ]
+  },
+  {
+    "table": "platform_policies",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 0,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/platform-policies.ts"
+    ]
+  },
+  {
+    "table": "platform_promotions",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/promotions.ts"
+    ]
+  },
+  {
+    "table": "platform_revenue",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 4,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": []
+  },
+  {
+    "table": "platform_revenue_monthly",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": []
+  },
+  {
+    "table": "platform_settings",
+    "rows": 0,
+    "codeFiles": 42,
+    "migrations": 8,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-ai-copilot.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-integrations.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-integrations.ts",
+      "backend/lambda/src/endpoints/Auth/auth.ts",
+      "backend/lambda/src/endpoints/auth.ts"
+    ]
+  },
+  {
+    "table": "platform_tax_document_lines",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": [
+      "backend/lambda/src/lib/platform-tax/platform-tax-api.service.ts",
+      "backend/lambda/src/lib/platform-tax/platform-tax-issue.service.ts"
+    ]
+  },
+  {
+    "table": "platform_tax_documents",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": [
+      "backend/lambda/src/lib/platform-tax/platform-tax-api.service.ts",
+      "backend/lambda/src/lib/platform-tax/platform-tax-issue.service.ts"
+    ]
+  },
+  {
+    "table": "platform_tax_products",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": [
+      "backend/lambda/src/lib/platform-tax/platform-tax-api.service.ts"
+    ]
+  },
+  {
+    "table": "policy_acceptances",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "popular_searches",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "post_service_payments",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "prescription_audit_log",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "prescription_submissions",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "prescriptions",
+    "rows": 0,
+    "codeFiles": 22,
+    "migrations": 18,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/booking-details-enhanced.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-appointments.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-booking-history.ts",
+      "backend/lambda/src/endpoints/customer-booking-history.ts",
+      "backend/lambda/src/endpoints/diagnostics-reports.ts"
+    ]
+  },
+  {
+    "table": "pricing_rules",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts"
+    ]
+  },
+  {
+    "table": "problem_grid_mappings",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 15,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Discovery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/problem-grid.ts"
+    ]
+  },
+  {
+    "table": "processed_events",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 0,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/Lambdas/loyalty-events-consumer.ts"
+    ]
+  },
+  {
+    "table": "product_commission_overrides",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "product_error_cases",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 0,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/product-analytics/error-case-ingest.ts",
+      "backend/lambda/src/endpoints/product-analytics/routes.ts"
+    ]
+  },
+  {
+    "table": "product_policies",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "product_reviews",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/product-reviews.ts"
+    ]
+  },
+  {
+    "table": "product_skus",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/utils/product-sku-order.ts",
+      "backend/lambda/src/utils/product-sku-service.ts"
+    ]
+  },
+  {
+    "table": "product_variation_options",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "product_variations",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "product_views",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/product-variations.ts",
+      "backend/lambda/src/endpoints/recommendations.ts"
+    ]
+  },
+  {
+    "table": "products",
+    "rows": 0,
+    "codeFiles": 46,
+    "migrations": 38,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Ecommerce"
+    ],
+    "files": [
+      "backend/lambda/src/database/rds-connection.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/ads-recommendations.ts",
+      "backend/lambda/src/endpoints/aiChatbot/ai-chatbot.ts",
+      "backend/lambda/src/endpoints/bulk-product-upload.ts",
+      "backend/lambda/src/endpoints/bulk-product-xlsx.ts"
+    ]
+  },
+  {
+    "table": "promotion_clicks",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 0,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/admin-governance-enhanced.ts"
+    ]
+  },
+  {
+    "table": "promotion_usages",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/promotions.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-promotions.ts",
+      "backend/lambda/src/endpoints/vendor-promotions.ts",
+      "backend/lambda/src/utils/vendor-promotion-usage.ts"
+    ]
+  },
+  {
+    "table": "promotions",
+    "rows": 0,
+    "codeFiles": 10,
+    "migrations": 15,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-content.ts",
+      "backend/lambda/src/endpoints/customer-content.ts",
+      "backend/lambda/src/endpoints/promotions.ts",
+      "backend/lambda/src/endpoints/roles.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-promotions.ts"
+    ]
+  },
+  {
+    "table": "rbac_audit_logs",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": []
+  },
+  {
+    "table": "rbac_permissions_catalog",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": []
+  },
+  {
+    "table": "rbac_policies",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Admin"
+    ],
+    "files": []
+  },
+  {
+    "table": "referral_program_settings",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-referrals.ts",
+      "backend/lambda/src/lib/services/referral-program-settings.ts"
+    ]
+  },
+  {
+    "table": "referral_redemptions",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-referrals.ts",
+      "backend/lambda/src/endpoints/referrals.ts",
+      "backend/lambda/src/endpoints/rewards.ts",
+      "backend/lambda/src/lib/services/referral-service.ts"
+    ]
+  },
+  {
+    "table": "referrals",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 14,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-referrals.ts",
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty.ts",
+      "backend/lambda/src/endpoints/referrals.ts",
+      "backend/lambda/src/endpoints/rewards.ts",
+      "backend/lambda/src/lib/services/referral-service.ts"
+    ]
+  },
+  {
+    "table": "refund_rules",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-policies.ts",
+      "backend/lambda/src/endpoints/vendor-policies.ts"
+    ]
+  },
+  {
+    "table": "refund_tiers",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 11,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "refunds",
+    "rows": 0,
+    "codeFiles": 12,
+    "migrations": 18,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Payments"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/order-management.ts",
+      "backend/lambda/src/endpoints/razorpay/endpoints/razorpay.razorpay.ts",
+      "backend/lambda/src/endpoints/refunds.ts",
+      "backend/lambda/src/endpoints/reports.ts",
+      "backend/lambda/src/endpoints/supportCrm/support-ticket-helpers.ts",
+      "backend/lambda/src/endpoints/transaction-monitoring.ts",
+      "backend/lambda/src/utils/admin-refund-hub.ts"
+    ]
+  },
+  {
+    "table": "regions",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-integrations.ts",
+      "backend/lambda/src/endpoints/regions.ts",
+      "backend/lambda/src/utils/notification-campaign-audience.ts"
+    ]
+  },
+  {
+    "table": "reminder_queue",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "report_templates",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts"
+    ]
+  },
+  {
+    "table": "rescheduling_policies",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts"
+    ]
+  },
+  {
+    "table": "resort_availability_calendar",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "resort_room_configurations",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "return_items",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/returns-enhanced.ts"
+    ]
+  },
+  {
+    "table": "return_requests",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/returns-enhanced.ts"
+    ]
+  },
+  {
+    "table": "returns",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 54,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/returns.ts"
+    ]
+  },
+  {
+    "table": "review_helpful_votes",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/product-reviews.ts"
+    ]
+  },
+  {
+    "table": "reviews",
+    "rows": 0,
+    "codeFiles": 37,
+    "migrations": 8,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/analytics.admin.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-booking-history.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts"
+    ]
+  },
+  {
+    "table": "reward_catalog_links",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/rewards.ts"
+    ]
+  },
+  {
+    "table": "reward_redemptions",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/rewards.ts"
+    ]
+  },
+  {
+    "table": "rewards_catalog",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Loyalty"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/rewards.ts"
+    ]
+  },
+  {
+    "table": "role_capabilities",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "role_mappings",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "role_permissions",
+    "rows": 0,
+    "codeFiles": 21,
+    "migrations": 20,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/prescription/endpoints/prescriptions.ts",
+      "backend/lambda/src/endpoints/prescriptions.ts",
+      "backend/lambda/src/endpoints/role-seeding.ts",
+      "backend/lambda/src/endpoints/roles.ts",
+      "backend/lambda/src/endpoints/service-catalog.ts",
+      "backend/lambda/src/endpoints/specialized-services.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-dashboard.ts"
+    ]
+  },
+  {
+    "table": "roles",
+    "rows": 0,
+    "codeFiles": 78,
+    "migrations": 64,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-custom-services.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-sellers.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/analytics.admin.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts"
+    ]
+  },
+  {
+    "table": "sample_collection_assignments",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/diagnostics-reports.ts",
+      "backend/lambda/src/endpoints/specialized-services.ts"
+    ]
+  },
+  {
+    "table": "saved_reports",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts"
+    ]
+  },
+  {
+    "table": "scheduled_notifications",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/aws/aws-sns-notification-service.ts",
+      "backend/lambda/src/jobs/scheduled-notification-processor.ts",
+      "backend/lambda/src/utils/scheduled-notification-drain.ts"
+    ]
+  },
+  {
+    "table": "scheduling_policies",
+    "rows": 0,
+    "codeFiles": 9,
+    "migrations": 6,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/scheduling-policies.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-policies.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-schedule.ts",
+      "backend/lambda/src/endpoints/vendor-policies.ts",
+      "backend/lambda/src/endpoints/vendor-schedule.ts"
+    ]
+  },
+  {
+    "table": "search_analytics",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "search_history",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 5,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "search_index",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 6,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Discovery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/problem-grid.ts",
+      "backend/lambda/src/lib/sql-search-fts.ts"
+    ]
+  },
+  {
+    "table": "search_taxonomy_keywords",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-profile.customer.ts",
+      "backend/lambda/src/endpoints/search.ts",
+      "backend/lambda/src/lib/search-taxonomy/cache.ts"
+    ]
+  },
+  {
+    "table": "service_catalog",
+    "rows": 0,
+    "codeFiles": 34,
+    "migrations": 15,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Discovery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-booking-history.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/payments-enhanced.ts",
+      "backend/lambda/src/endpoints/problem-grid.ts",
+      "backend/lambda/src/endpoints/razorpay/endpoints/razorpay.razorpay.ts"
+    ]
+  },
+  {
+    "table": "service_categories",
+    "rows": 0,
+    "codeFiles": 13,
+    "migrations": 23,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Discovery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/service-catalog.ts",
+      "backend/lambda/src/endpoints/service-launch-config.ts",
+      "backend/lambda/src/endpoints/specialization-master.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-services.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendorServices.vendor.ts",
+      "backend/lambda/src/handler/index.ts"
+    ]
+  },
+  {
+    "table": "service_categories_backup",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": "Backup",
+    "domains": [
+      "Discovery"
+    ],
+    "files": []
+  },
+  {
+    "table": "service_dashboard_mappings",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "service_packages",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 7,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/package-booking.ts",
+      "backend/lambda/src/endpoints/packages.ts",
+      "backend/lambda/src/lib/vendor-progress-from-bookings.ts",
+      "backend/lambda/src/utils/vendor-package-razorpay-flow.ts"
+    ]
+  },
+  {
+    "table": "service_publishing",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "service_style_mappings",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "services",
+    "rows": 0,
+    "codeFiles": 74,
+    "migrations": 98,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-custom-services.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-custom-services.ts",
+      "backend/lambda/src/endpoints/admin-governance-enhanced.ts"
+    ]
+  },
+  {
+    "table": "settlement_booking_mappings",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "settlement_schedules",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts"
+    ]
+  },
+  {
+    "table": "settlements",
+    "rows": 0,
+    "codeFiles": 16,
+    "migrations": 23,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Payments"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/ecommerce/endpoints/ecommerce.ts",
+      "backend/lambda/src/endpoints/razorpay/endpoints/razorpay.razorpay.ts",
+      "backend/lambda/src/endpoints/razorpay-settlements.ts",
+      "backend/lambda/src/endpoints/reports.ts",
+      "backend/lambda/src/endpoints/role-seeding.ts"
+    ]
+  },
+  {
+    "table": "shipment_tracking_events",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/logistics-webhooks.ts",
+      "backend/lambda/src/utils/logistics/shipment-order-sync.ts"
+    ]
+  },
+  {
+    "table": "shipments",
+    "rows": 0,
+    "codeFiles": 10,
+    "migrations": 7,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-orders.ts",
+      "backend/lambda/src/endpoints/logistics-webhooks.ts",
+      "backend/lambda/src/endpoints/logistics.ts",
+      "backend/lambda/src/endpoints/order-management.ts",
+      "backend/lambda/src/endpoints/self-managed-logistics.ts",
+      "backend/lambda/src/endpoints/tracking-webhooks.ts",
+      "backend/lambda/src/jobs/vendor-shipment-tracking-processor.ts"
+    ]
+  },
+  {
+    "table": "shopping_carts",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "slot_reservations",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "specialization_master",
+    "rows": 0,
+    "codeFiles": 6,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Discovery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/problem-grid.ts",
+      "backend/lambda/src/endpoints/service-catalog.ts",
+      "backend/lambda/src/endpoints/specialization-master.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendorServices.vendor.ts"
+    ]
+  },
+  {
+    "table": "specialization_symptoms",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Discovery"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/specialization-master.ts"
+    ]
+  },
+  {
+    "table": "spotlight_analytics",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "spotlight_offers",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-content.ts",
+      "backend/lambda/src/endpoints/customer-content.ts",
+      "backend/lambda/src/endpoints/promotions.ts"
+    ]
+  },
+  {
+    "table": "staff",
+    "rows": 0,
+    "codeFiles": 60,
+    "migrations": 64,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": [
+      "backend/lambda/src/aws/constatns/interface.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/appointment-reminders.ts",
+      "backend/lambda/src/endpoints/auth.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/booking-details-enhanced.ts"
+    ]
+  },
+  {
+    "table": "staff_availability",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 12,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/staff.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-live-status.ts",
+      "backend/lambda/src/endpoints/vendor-live-status.ts"
+    ]
+  },
+  {
+    "table": "staff_availability_per_style",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/staff.ts"
+    ]
+  },
+  {
+    "table": "staff_availability_slots",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/staff.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-live-status.ts",
+      "backend/lambda/src/endpoints/vendor-live-status.ts"
+    ]
+  },
+  {
+    "table": "staff_breaks",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": []
+  },
+  {
+    "table": "staff_certifications",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": []
+  },
+  {
+    "table": "staff_holidays",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/staff.ts"
+    ]
+  },
+  {
+    "table": "staff_location_assignments",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": []
+  },
+  {
+    "table": "staff_schedules",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-schedule.ts",
+      "backend/lambda/src/endpoints/vendor-schedule.ts"
+    ]
+  },
+  {
+    "table": "staff_services",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 7,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/problem-grid.ts",
+      "backend/lambda/src/endpoints/staff.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-live-status.ts",
+      "backend/lambda/src/endpoints/vendor-live-status.ts"
+    ]
+  },
+  {
+    "table": "staff_slot_breaks",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/staff.ts"
+    ]
+  },
+  {
+    "table": "staff_slot_services",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/staff.ts"
+    ]
+  },
+  {
+    "table": "staff_specializations",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/problem-grid.ts",
+      "backend/lambda/src/endpoints/staff.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-live-status.ts",
+      "backend/lambda/src/endpoints/vendor-live-status.ts"
+    ]
+  },
+  {
+    "table": "staff_tele_availability",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Staff"
+    ],
+    "files": []
+  },
+  {
+    "table": "subscription_deliveries",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 5,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "subscription_payments",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "subscription_plans",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/subscription-plans-admin.ts",
+      "backend/lambda/src/endpoints/subscriptions.ts",
+      "backend/lambda/src/endpoints/time-window-subscription.ts",
+      "backend/lambda/src/lib/services/loyalty-segmentation-service.ts"
+    ]
+  },
+  {
+    "table": "subscription_slot_reservations",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "subscription_tiers",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 3,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "subscriptions",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 18,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/promotions.ts",
+      "backend/lambda/src/endpoints/roles.ts",
+      "backend/lambda/src/endpoints/subscriptions.ts"
+    ]
+  },
+  {
+    "table": "support_agents",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Support"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts",
+      "backend/lambda/src/endpoints/supportCrm/support-ticket-auto-assign.ts",
+      "backend/lambda/src/endpoints/supportCrm/support-ticket-notification-dispatch.ts"
+    ]
+  },
+  {
+    "table": "support_categories",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Support"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts"
+    ]
+  },
+  {
+    "table": "support_escalation_rules",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Support"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts",
+      "backend/lambda/src/endpoints/supportCrm/support-ticket-escalation-processor.ts"
+    ]
+  },
+  {
+    "table": "support_reply_templates",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Support"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts"
+    ]
+  },
+  {
+    "table": "support_routing_settings",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Support"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/supportCrm/support-ticket-auto-assign.ts"
+    ]
+  },
+  {
+    "table": "support_sla_config",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Support"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts",
+      "backend/lambda/src/endpoints/supportCrm/support-ticket-escalation-processor.ts"
+    ]
+  },
+  {
+    "table": "support_ticket_activity",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Support"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/supportCrm/support-ticket-activity.ts"
+    ]
+  },
+  {
+    "table": "support_ticket_responses",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Support"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts",
+      "backend/lambda/src/endpoints/supportCrm/support-ticket-ai-ack.ts",
+      "backend/lambda/src/endpoints/supportCrm/support-ticket-escalation-processor.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-support.ts",
+      "backend/lambda/src/endpoints/vendor-support.ts"
+    ]
+  },
+  {
+    "table": "support_tickets",
+    "rows": 0,
+    "codeFiles": 14,
+    "migrations": 13,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Support"
+    ],
+    "files": [
+      "backend/lambda/src/database/rds-connection.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-customer-endpoints.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/aiChatbot/ai-chatbot.ts",
+      "backend/lambda/src/endpoints/supportCrm/build-support-tickets-list-query.ts"
+    ]
+  },
+  {
+    "table": "tax_categories",
+    "rows": 0,
+    "codeFiles": 7,
+    "migrations": 10,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/tax-invoice-pdf.ts",
+      "backend/lambda/src/endpoints/tax-management.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-commission-analytics.ts",
+      "backend/lambda/src/lib/services/gst-catalog-role-resolution.ts",
+      "backend/lambda/src/lib/services/tax-calculation-service.ts",
+      "backend/lambda/src/utils/meal-plan-gst.ts"
+    ]
+  },
+  {
+    "table": "tax_category_roles",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/lib/services/gst-catalog-role-resolution.ts"
+    ]
+  },
+  {
+    "table": "tax_flexible_rules",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 0,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin-comprehensive.ts"
+    ]
+  },
+  {
+    "table": "tele_queue",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Tele"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/teleCommunication/endpoints/instant-tele-queue.teleconsultation.ts"
+    ]
+  },
+  {
+    "table": "tele_queues",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 3,
+    "status": "Migration-only",
+    "tag": "Duplicate-candidate",
+    "domains": [
+      "Tele"
+    ],
+    "files": []
+  },
+  {
+    "table": "tele_sessions",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 3,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Tele"
+    ],
+    "files": []
+  },
+  {
+    "table": "tier_deduction_transactions",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/jobs/settlement-processor.ts"
+    ]
+  },
+  {
+    "table": "tier_upgrade_deductions",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/tier-system.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-dashboard-enhanced.ts",
+      "backend/lambda/src/endpoints/vendor-dashboard-enhanced.ts",
+      "backend/lambda/src/jobs/settlement-processor.ts"
+    ]
+  },
+  {
+    "table": "tier_upgrade_payments",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/tier-system.ts"
+    ]
+  },
+  {
+    "table": "training_milestones",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/training-progress.ts"
+    ]
+  },
+  {
+    "table": "training_outcomes",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "training_package_progress",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "training_session_skills",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "training_sessions",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "training_skills",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts"
+    ]
+  },
+  {
+    "table": "transactions",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 16,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-customer-endpoints.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts"
+    ]
+  },
+  {
+    "table": "ui_configs",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "user_consents",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "user_devices",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/aws/aws-sns-notification-service.ts",
+      "backend/lambda/src/jobs/notification-processor.ts"
+    ]
+  },
+  {
+    "table": "user_roles",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts",
+      "backend/lambda/src/utils/admin-rbac-permissions.ts"
+    ]
+  },
+  {
+    "table": "user_subscriptions",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "v_commission_revenue_account",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": "View",
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "v_customer_wallet_account",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": "View",
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "v_gateway_expense_account",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": "View",
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "v_has_dependent_objects",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": "View",
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "v_vendor_payable_account",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": "View",
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_admin_portal_codes",
+    "rows": 1,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/lib/services/admin/vendor-portal-session-service.ts"
+    ]
+  },
+  {
+    "table": "vendor_availability_v2",
+    "rows": 0,
+    "codeFiles": 17,
+    "migrations": 10,
+    "status": "Active",
+    "tag": "Enhanced/Versioned",
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts",
+      "backend/lambda/src/endpoints/bookings-enhanced.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/followup-reschedule.ts",
+      "backend/lambda/src/endpoints/problem-grid.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-live-status.ts"
+    ]
+  },
+  {
+    "table": "vendor_bank_accounts",
+    "rows": 0,
+    "codeFiles": 13,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-vendor-daily-accrual.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/settlement&payouts/endpoints/settlements.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-bank-accounts.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-live-status.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-profile.vendor.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-setup.ts"
+    ]
+  },
+  {
+    "table": "vendor_bank_details",
+    "rows": 0,
+    "codeFiles": 11,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-vendor-daily-accrual.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/settlement&payouts/endpoints/settlements.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-bank-accounts.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-live-status.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-profile.vendor.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendorProfile.vendor.ts"
+    ]
+  },
+  {
+    "table": "vendor_breaks",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-schedule.ts",
+      "backend/lambda/src/endpoints/vendor-schedule.ts",
+      "backend/lambda/src/utils/intelligent-scheduling-engine.ts"
+    ]
+  },
+  {
+    "table": "vendor_category_commission_rates",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_commission_config",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_daily_accrual",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-vendor-daily-accrual.ts"
+    ]
+  },
+  {
+    "table": "vendor_declarations",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/kyc-verification.ts"
+    ]
+  },
+  {
+    "table": "vendor_discounts",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/lib/services/discount-calculation-service.ts"
+    ]
+  },
+  {
+    "table": "vendor_distance_pricing",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-distance-pricing.ts",
+      "backend/lambda/src/endpoints/vendor-distance-pricing.ts"
+    ]
+  },
+  {
+    "table": "vendor_documents",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/document-expiry.ts"
+    ]
+  },
+  {
+    "table": "vendor_earnings",
+    "rows": 0,
+    "codeFiles": 10,
+    "migrations": 5,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-vendor-daily-accrual.ts",
+      "backend/lambda/src/endpoints/settlement&payouts/endpoints/settlements.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-dashboard-enhanced.ts",
+      "backend/lambda/src/endpoints/vendor-dashboard-enhanced.ts",
+      "backend/lambda/src/lib/platform-tax/platform-tax-issue.service.ts",
+      "backend/lambda/src/utils/package-session-sync.ts",
+      "backend/lambda/src/utils/vendor-accrual-fee-breakdown.ts"
+    ]
+  },
+  {
+    "table": "vendor_holidays",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-schedule.ts",
+      "backend/lambda/src/endpoints/vendor-schedule.ts",
+      "backend/lambda/src/utils/intelligent-scheduling-engine.ts"
+    ]
+  },
+  {
+    "table": "vendor_holidays_enhanced",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 1,
+    "status": "Active",
+    "tag": "Enhanced/Versioned",
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-schedule.ts",
+      "backend/lambda/src/endpoints/vendor-schedule.ts",
+      "backend/lambda/src/utils/intelligent-scheduling-engine.ts"
+    ]
+  },
+  {
+    "table": "vendor_identity",
+    "rows": 0,
+    "codeFiles": 48,
+    "migrations": 11,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/Auth/auth-enhanced.ts",
+      "backend/lambda/src/endpoints/Auth/auth.ts",
+      "backend/lambda/src/endpoints/auth.ts",
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts"
+    ]
+  },
+  {
+    "table": "vendor_kyc_verifications",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/kyc-verification.ts"
+    ]
+  },
+  {
+    "table": "vendor_live_locations",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_loyalty_points",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_loyalty_transactions",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_onboarding_applications",
+    "rows": 0,
+    "codeFiles": 23,
+    "migrations": 7,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/kyc-verification.ts",
+      "backend/lambda/src/endpoints/settlement&payouts/endpoints/settlements.ts",
+      "backend/lambda/src/endpoints/teleCommunication/endpoints/instant-tele-queue.teleconsultation.ts",
+      "backend/lambda/src/endpoints/teleCommunication/endpoints/instant-tele-v3.teleconsultation.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-bank-accounts.ts"
+    ]
+  },
+  {
+    "table": "vendor_onboarding_comments",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts"
+    ]
+  },
+  {
+    "table": "vendor_onboarding_steps",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_onboarding_transitions",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_payment_rules",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 3,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts"
+    ]
+  },
+  {
+    "table": "vendor_policies",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-policies.ts",
+      "backend/lambda/src/endpoints/vendor-policies.ts"
+    ]
+  },
+  {
+    "table": "vendor_portfolio",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/specialized-services.ts"
+    ]
+  },
+  {
+    "table": "vendor_promotions",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/ads-recommendations.ts",
+      "backend/lambda/src/endpoints/ecommerce/endpoints/ecommerce.ts",
+      "backend/lambda/src/endpoints/promotions.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-promotions.ts",
+      "backend/lambda/src/endpoints/vendor-promotions.ts"
+    ]
+  },
+  {
+    "table": "vendor_referrals",
+    "rows": 0,
+    "codeFiles": 6,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/Auth/auth-enhanced.ts",
+      "backend/lambda/src/endpoints/referrals.ts",
+      "backend/lambda/src/handler/index.ts",
+      "backend/lambda/src/lib/services/referral-service.ts"
+    ]
+  },
+  {
+    "table": "vendor_refund_tiers",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 10,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/refund-policy-engine.ts",
+      "backend/lambda/src/lib/services/cancellation-policy-service.ts",
+      "backend/lambda/src/lib/services/provider-booking-cancel-refund.ts"
+    ]
+  },
+  {
+    "table": "vendor_registered_brands",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 0,
+    "status": "Unknown",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_segment_assignments",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/lib/services/loyalty-segmentation-service.ts"
+    ]
+  },
+  {
+    "table": "vendor_service_areas",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_service_promotions",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-promotions.ts",
+      "backend/lambda/src/endpoints/vendor-promotions.ts"
+    ]
+  },
+  {
+    "table": "vendor_services",
+    "rows": 0,
+    "codeFiles": 75,
+    "migrations": 18,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Discovery",
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-custom-services.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-custom-services.ts",
+      "backend/lambda/src/endpoints/ads-recommendations.ts",
+      "backend/lambda/src/endpoints/aiChatbot/ai-booking-wizard-session.ts"
+    ]
+  },
+  {
+    "table": "vendor_settings",
+    "rows": 0,
+    "codeFiles": 8,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/booking/endpoints/bookings.ts",
+      "backend/lambda/src/endpoints/staff.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-profile.vendor.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-radar.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendorProfile.vendor.ts",
+      "backend/lambda/src/endpoints/vendor-radar.ts",
+      "backend/lambda/src/endpoints/vendor-security.ts"
+    ]
+  },
+  {
+    "table": "vendor_settlements",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/razorpay-settlements.ts",
+      "backend/lambda/src/endpoints/reports.ts"
+    ]
+  },
+  {
+    "table": "vendor_setup_completion",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 0,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-live-status.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-onboarding.ts",
+      "backend/lambda/src/endpoints/vendor-live-status.ts",
+      "backend/lambda/src/endpoints/vendor-onboarding.ts"
+    ]
+  },
+  {
+    "table": "vendor_slot_breaks",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-schedule.ts",
+      "backend/lambda/src/endpoints/vendor-schedule.ts"
+    ]
+  },
+  {
+    "table": "vendor_slot_services",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-schedule.ts",
+      "backend/lambda/src/endpoints/vendor-schedule.ts"
+    ]
+  },
+  {
+    "table": "vendor_specializations",
+    "rows": 0,
+    "codeFiles": 4,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Discovery",
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/service-discovery.customer.ts",
+      "backend/lambda/src/endpoints/problem-grid.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendor-profile.vendor.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/vendorProfile.vendor.ts"
+    ]
+  },
+  {
+    "table": "vendor_stats",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_store_banners",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_subscription_plans",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 2,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": []
+  },
+  {
+    "table": "vendor_support_requests",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts"
+    ]
+  },
+  {
+    "table": "vendor_tier_acceptances",
+    "rows": 0,
+    "codeFiles": 1,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/tier-system.ts"
+    ]
+  },
+  {
+    "table": "vendor_tier_subscriptions",
+    "rows": 0,
+    "codeFiles": 5,
+    "migrations": 4,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/razorpay/endpoints/razorpay.razorpay.ts",
+      "backend/lambda/src/endpoints/razorpay-settlements.ts",
+      "backend/lambda/src/endpoints/tier-system.ts",
+      "backend/lambda/src/lib/services/loyalty-segmentation-service.ts"
+    ]
+  },
+  {
+    "table": "vendor_tiers",
+    "rows": 0,
+    "codeFiles": 22,
+    "migrations": 8,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/orders/endpoint/pharmacy-orders.ts",
+      "backend/lambda/src/endpoints/pharmacy-orders.ts",
+      "backend/lambda/src/endpoints/razorpay/endpoints/razorpay.razorpay.ts",
+      "backend/lambda/src/endpoints/razorpay-settlements.ts",
+      "backend/lambda/src/endpoints/reports.ts"
+    ]
+  },
+  {
+    "table": "vendor_wallet_transactions",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/wallet.ts",
+      "backend/lambda/src/lib/services/loyalty&reward/loyalty-points-service.ts"
+    ]
+  },
+  {
+    "table": "vendor_wallets",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/wallet.ts",
+      "backend/lambda/src/lib/services/loyalty&reward/loyalty-points-service.ts"
+    ]
+  },
+  {
+    "table": "vendors",
+    "rows": 0,
+    "codeFiles": 202,
+    "migrations": 157,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Vendor"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/admin/endpoints/admin-advanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-comprehensive.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-custom-services.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance-enhanced.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-governance.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-sellers.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin-vendor-daily-accrual.ts",
+      "backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts"
+    ]
+  },
+  {
+    "table": "video_call_history",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Tele"
+    ],
+    "files": []
+  },
+  {
+    "table": "video_call_rooms",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Tele"
+    ],
+    "files": []
+  },
+  {
+    "table": "video_call_sessions",
+    "rows": 0,
+    "codeFiles": 7,
+    "migrations": 8,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Tele"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/teleCommunication/endpoints/instant-tele-queue.teleconsultation.ts",
+      "backend/lambda/src/endpoints/teleCommunication/endpoints/instant-tele-v3.teleconsultation.ts",
+      "backend/lambda/src/endpoints/teleCommunication/endpoints/video-call.teleCommunication.ts",
+      "backend/lambda/src/endpoints/teleCommunication/repository/repository.telecommunication.ts",
+      "backend/lambda/src/endpoints/vendor/endpoints/video-call-enhanced.ts",
+      "backend/lambda/src/endpoints/video-call-enhanced.ts",
+      "backend/lambda/src/utils/tele-completion-service.ts"
+    ]
+  },
+  {
+    "table": "walk_routes",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/walker-gps.ts"
+    ]
+  },
+  {
+    "table": "walker_live_sessions",
+    "rows": 0,
+    "codeFiles": 3,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/walker-gps.ts"
+    ]
+  },
+  {
+    "table": "wallet_checkout_rules",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 1,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/wallet-checkout-rules-endpoints.ts",
+      "backend/lambda/src/lib/services/wallet-checkout-min-balance.ts"
+    ]
+  },
+  {
+    "table": "wallet_transaction_locks",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "wallet_transaction_log",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  },
+  {
+    "table": "wallet_transactions",
+    "rows": 0,
+    "codeFiles": 18,
+    "migrations": 6,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/loyalty&reward/endpoints/loyalty.ts",
+      "backend/lambda/src/endpoints/package-booking.ts",
+      "backend/lambda/src/endpoints/returns-enhanced.ts",
+      "backend/lambda/src/endpoints/rewards.ts",
+      "backend/lambda/src/endpoints/settlement&payouts/endpoints/settlements.ts",
+      "backend/lambda/src/endpoints/wallet-diagnostic.ts"
+    ]
+  },
+  {
+    "table": "wishlists",
+    "rows": 0,
+    "codeFiles": 2,
+    "migrations": 2,
+    "status": "Active",
+    "tag": null,
+    "domains": [
+      "Ecommerce"
+    ],
+    "files": [
+      "backend/lambda/src/endpoints/customer/customerEndpoint/customer-phone-convenience.ts",
+      "backend/lambda/src/endpoints/customer-phone-convenience.ts"
+    ]
+  },
+  {
+    "table": "zero_result_searches",
+    "rows": 0,
+    "codeFiles": 0,
+    "migrations": 1,
+    "status": "Migration-only",
+    "tag": null,
+    "domains": [
+      "Other"
+    ],
+    "files": []
+  }
+]
