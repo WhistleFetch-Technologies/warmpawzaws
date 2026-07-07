@@ -71,6 +71,7 @@
     "@aws-sdk/client-cloudfront": "^3.993.0",
     "@aws-sdk/client-s3": "^3.993.0",
     "@capacitor/cli": "^6.0.0",
+    "@next/bundle-analyzer": "^16.2.10",
     "@testing-library/jest-dom": "^6.1.0",
     "@testing-library/react": "^14.1.0",
     "@types/node": "^20.10.0",

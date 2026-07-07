@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, X, Clock, MapPin, Star, ChevronRight, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
@@ -74,8 +74,21 @@ export function EnhancedSearchBar({
   const autocompleteRequestSeqRef = useRef(0);
   /** Always invoke latest `performSearch` from debounce (stable closure). */
   const performSearchRef = useRef<(q: string) => void>(() => {});
+  /** Phase 6.7.2A.2 — defer search setup until the user shows search intent. */
+  const searchInitializedRef = useRef(false);
+  const [searchInitialized, setSearchInitialized] = useState(false);
+  const userEngagedRef = useRef(false);
+  const mountTracedRef = useRef(false);
+
+  const ensureSearchInitialized = useCallback(() => {
+    if (searchInitializedRef.current) return;
+    searchInitializedRef.current = true;
+    setSearchInitialized(true);
+  }, []);
 
   useEffect(() => {
+    if (!searchInitialized || mountTracedRef.current) return;
+    mountTracedRef.current = true;
     logSearchLocalStorageOnLoad(customerId);
     traceSearch('EnhancedSearchBar.mount', {
       query,
@@ -83,11 +96,12 @@ export function EnhancedSearchBar({
       recentSearchesCount: recentSearches.length,
       recentSearchesPreview: recentSearches.slice(0, 5),
     });
-  }, []);
+  }, [searchInitialized, customerId, placeholder, query, recentSearches]);
 
   useEffect(() => {
+    if (!searchInitialized) return;
     traceSearch('EnhancedSearchBar.query-changed', { query, placeholder });
-  }, [query, placeholder]);
+  }, [searchInitialized, query, placeholder]);
 
   useEffect(() => {
     userLocationRef.current = userLocation;
@@ -95,6 +109,7 @@ export function EnhancedSearchBar({
 
   // Get user location (silent fallback when permission denied)
   useEffect(() => {
+    if (!searchInitialized) return;
     const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
     getCurrentPositionSafe(
       (coords: { lat: number; lng: number }) => {
@@ -103,24 +118,35 @@ export function EnhancedSearchBar({
       },
       () => {} // Fallback handled by onSuccess with default coords
     );
-  }, []);
+  }, [searchInitialized]);
 
   // Load recent searches
   useEffect(() => {
+    if (!searchInitialized) return;
     loadRecentSearches();
-  }, [customerId]);
+  }, [searchInitialized, customerId]);
 
   // Click outside handler
   useEffect(() => {
+    if (!searchInitialized) return;
+
     function handleClickOutside(event: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     }
-    
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [searchInitialized]);
+
+  // After deferred hydration, open recent searches when the user already engaged.
+  useEffect(() => {
+    if (!searchInitialized || !userEngagedRef.current) return;
+    if (!query.trim() && recentSearches.length > 0) {
+      setIsOpen(true);
+    }
+  }, [searchInitialized, recentSearches, query]);
 
   const loadRecentSearches = async () => {
     traceSearchPersistence('loadRecentSearches.start', { customerId: customerId || null });
@@ -219,6 +245,8 @@ export function EnhancedSearchBar({
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    ensureSearchInitialized();
+    userEngagedRef.current = true;
     const value = e.target.value;
     traceSearch('EnhancedSearchBar.handleInputChange', { value, placeholder });
     setQuery(value);
@@ -517,6 +545,8 @@ export function EnhancedSearchBar({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    ensureSearchInitialized();
+    userEngagedRef.current = true;
     traceHomeSearchUpstream('EnhancedSearchBar.handleSubmit', {
       query,
       placeholder,
@@ -532,15 +562,17 @@ export function EnhancedSearchBar({
   const showAutocomplete = query.trim().length >= 2 && autocompleteSuggestions.length > 0;
 
   useEffect(() => {
+    if (!searchInitialized) return;
     traceSearchPersistence('recentSearches.stateAfterHydration', {
       customerId: customerId || null,
       recentSearches,
       recentSearchesCount: recentSearches.length,
       targetInState: recentSearches.filter((q) => searchPersistenceContainsTarget(q)),
     });
-  }, [recentSearches, customerId]);
+  }, [searchInitialized, recentSearches, customerId]);
 
   useEffect(() => {
+    if (!searchInitialized) return;
     if (!showRecentSearches) return;
     const renderedRecentItems = recentSearches.map((term, idx) => ({
       index: idx,
@@ -553,7 +585,7 @@ export function EnhancedSearchBar({
         searchPersistenceContainsTarget(r.term)
       ),
     });
-  }, [showRecentSearches, recentSearches, customerId]);
+  }, [searchInitialized, showRecentSearches, recentSearches, customerId]);
   const hasContent =
     showRecentSearches || showAutocomplete || results.length > 0 || loading;
   
@@ -578,6 +610,8 @@ export function EnhancedSearchBar({
             value={query}
             onChange={handleInputChange}
             onFocus={() => {
+              ensureSearchInitialized();
+              userEngagedRef.current = true;
               // Only open if we have content to show
               const hasContent = query.trim().length > 0 || recentSearches.length > 0 || results.length > 0;
               setIsOpen(hasContent);

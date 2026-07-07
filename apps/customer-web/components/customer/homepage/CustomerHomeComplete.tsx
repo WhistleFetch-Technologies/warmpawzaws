@@ -74,6 +74,7 @@ import {
   readCachedProfileName,
 } from '../home/hooks/useHomePageData';
 import { HOME_CONTENT_SHELL_CLASS } from '../home/shared/HomeContentShell';
+import { ViewportSection } from '../home/shared/ViewportSection';
 import { buildHomeTopCarouselBanners } from '../home/utils/banner-utils';
 import { buildBannerBackgroundStyle } from '@/lib/customer-banner-surface';
 import { ShopCategoryGrid } from '@/components/shop/ShopCategoryGrid';
@@ -502,6 +503,9 @@ export function CustomerHomeComplete({
   /** Vendor booking chat + support ticket threads (see `fetchCustomerMessageUnreadBreakdown`). */
   const [combinedMessageUnreadCount, setCombinedMessageUnreadCount] = useState(0);
 
+  /** Upcoming tele within tracker window (60 min); drives UnifiedAppointmentTracker mount gate. */
+  const [hasUpcomingTeleCalls, setHasUpcomingTeleCalls] = useState(false);
+
   // ✅ FIX GAP-6.2: 5-minute notification state
   const [upcomingCall, setUpcomingCall] = useState<{
     id: string;
@@ -832,6 +836,16 @@ export function CustomerHomeComplete({
     enabled: !!customerId,
     pollingIntervalMs: 10000,
   });
+
+  const shouldMountUnifiedAppointmentTracker = useMemo(
+    () =>
+      !!phone &&
+      (hasUpcomingTeleCalls ||
+        activeBookings.length > 0 ||
+        hasGpsTracking ||
+        !!vendorOnTheWay),
+    [phone, hasUpcomingTeleCalls, activeBookings.length, hasGpsTracking, vendorOnTheWay]
+  );
 
   // Dynamic categories from admin catalog (fallback to hardcoded list if API fails or returns empty)
   const { quickServiceTiles } = useCustomerCategories(phone);
@@ -1760,11 +1774,20 @@ export function CustomerHomeComplete({
   const checkUpcomingCalls = async () => {
     try {
       const response = await apiClient.get<any>(
-        `/customer/${phone}/bookings/upcoming-calls?minutes=5&includeLive=true`
+        `/customer/${phone}/bookings/upcoming-calls?minutes=60&includeLive=true`
       );
 
-      if (response.success && response.bookings && response.bookings.length > 0) {
-        const nextCall = response.bookings[0];
+      const bookings =
+        response.success && Array.isArray(response.bookings) ? response.bookings : [];
+      const activeTeleBookings = bookings.filter(
+        (booking: { status?: string }) =>
+          booking.status !== 'completed' && booking.status !== 'cancelled'
+      );
+
+      setHasUpcomingTeleCalls(activeTeleBookings.length > 0);
+
+      if (activeTeleBookings.length > 0) {
+        const nextCall = activeTeleBookings[0];
         const scheduledAt = new Date(nextCall.scheduledAt || nextCall.bookingDate);
         const now = new Date();
         const minutesUntil = Math.round((scheduledAt.getTime() - now.getTime()) / 60000);
@@ -1789,6 +1812,7 @@ export function CustomerHomeComplete({
       }
     } catch (error) {
       console.error('Error checking upcoming calls:', error);
+      setHasUpcomingTeleCalls(false);
       setUpcomingCall(null);
     }
   };
@@ -3008,6 +3032,7 @@ export function CustomerHomeComplete({
         {!newHomeUi && !reviewDemoAccount ? (
         <>
         {/* Adoption — full section coming soon (not launched) */}
+        <ViewportSection placeholderMinHeight={300}>
         <div className="mb-6" aria-label="Adoption — coming soon">
           <div className="px-6 mb-4">
             <div className="flex items-start justify-between gap-2 mb-2">
@@ -3045,8 +3070,10 @@ export function CustomerHomeComplete({
             ))}
           </div>
         </div>
+        </ViewportSection>
 
         {/* Premium Pet Food */}
+        <ViewportSection placeholderMinHeight={250}>
         <div className="mb-6" aria-label="Premium Pet Food">
           <div className="px-6 mb-4">
             <div className="flex items-start justify-between gap-2 mb-2">
@@ -3083,9 +3110,11 @@ export function CustomerHomeComplete({
             ))}
           </div>
         </div>
+        </ViewportSection>
 
         {/* Pet Articles - ✅ FIX: Only show if admin-created articles exist */}
         {articles.length > 0 && (
+          <ViewportSection placeholderMinHeight={88 + articles.length * 100}>
           <div className="mb-6">
             <div className="px-6 mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -3135,13 +3164,24 @@ export function CustomerHomeComplete({
               ))}
             </div>
           </div>
+          </ViewportSection>
         )}
 
+        <ViewportSection placeholderMinHeight={720}>
         <MoreServicesSection onNavigate={handleNavigation} />
+        </ViewportSection>
         </>
         ) : null}
 
-        {!newHomeUi && reviewSafeFeaturedLowerBanners.length > 0 ? (
+        {!newHomeUi ? (
+        <ViewportSection
+          placeholderMinHeight={
+            reviewSafeFeaturedLowerBanners.length > 0
+              ? 24 + reviewSafeFeaturedLowerBanners.length * 192
+              : 608
+          }
+        >
+        {reviewSafeFeaturedLowerBanners.length > 0 ? (
           <div className="px-6 mb-6 space-y-4">
             {reviewSafeFeaturedLowerBanners.map((banner, index) => {
               const slotComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
@@ -3191,7 +3231,7 @@ export function CustomerHomeComplete({
               );
             })}
           </div>
-        ) : !newHomeUi ? (
+        ) : (
           <>
             {/* Training Services */}
             <div className="px-6 mb-6">
@@ -3262,10 +3302,13 @@ export function CustomerHomeComplete({
               </div>
             </div>
           </>
+        )}
+        </ViewportSection>
         ) : null}
 
         {/* Bottom CTA — legacy layout only */}
         {!newHomeUi ? (
+        <ViewportSection placeholderMinHeight={190}>
         <div className="px-6">
           <div className="bg-gradient-to-r from-orange-100 to-pink-100 rounded-3xl p-6 border-2 border-[#FF8C42] text-center">
             <h2 className="text-black font-bold text-lg mb-2">Need Help? 🤝</h2>
@@ -3292,6 +3335,7 @@ export function CustomerHomeComplete({
             </div>
           </div>
         </div>
+        </ViewportSection>
         ) : null}
       </div>
 
@@ -3388,36 +3432,38 @@ export function CustomerHomeComplete({
 
       {/* ✅ FIX #6: Unified Appointment Tracker Widget - Shows upcoming appointments and active bookings */}
       {/* ✅ FIX: Chat opens chat window with vendor (not My Bookings); View Details handled by wrapper → my-bookings with booking detail modal */}
-      <UnifiedAppointmentTracker
-        customerPhone={phone}
-        onJoinCall={(bookingId, meetingId) => {
-          handleNavigation('video-call', { bookingId, meetingId });
-          if (!onNavigate) {
-            if (phone) {
-              localStorage.setItem('customerPhone', phone);
-              localStorage.setItem('phone', phone);
+      {shouldMountUnifiedAppointmentTracker && (
+        <UnifiedAppointmentTracker
+          customerPhone={phone}
+          onJoinCall={(bookingId, meetingId) => {
+            handleNavigation('video-call', { bookingId, meetingId });
+            if (!onNavigate) {
+              if (phone) {
+                localStorage.setItem('customerPhone', phone);
+                localStorage.setItem('phone', phone);
+              }
+              router.push(`/video/${bookingId}`);
             }
-            router.push(`/video/${bookingId}`);
-          }
-        }}
-        onOpenChat={async (bookingId) => {
-          try {
-            const data = await apiClient.get<{ booking?: { vendorName?: string; vendorPhoto?: string }; vendorName?: string }>(`/customer/bookings/${bookingId}`) as any;
-            const booking = data?.booking || data;
-            const vendorName = booking?.vendorName || data?.vendorName || 'Service Provider';
-            const vendorPhoto = booking?.vendorPhoto || booking?.vendorPhoto;
-            setChatFromNotification({ isOpen: true, bookingId, vendorName, vendorPhoto });
-          } catch {
-            if (onViewBooking) onViewBooking(bookingId);
-            else handleNavigation('my-bookings', { bookingId });
-          }
-        }}
-        onCallProvider={(phone) => {
-          window.open(`tel:${phone}`, '_self');
-        }}
-        onNavigate={handleNavigation}
-        className={hideHeaderFooter ? 'bottom-6' : ''}
-      />
+          }}
+          onOpenChat={async (bookingId) => {
+            try {
+              const data = await apiClient.get<{ booking?: { vendorName?: string; vendorPhoto?: string }; vendorName?: string }>(`/customer/bookings/${bookingId}`) as any;
+              const booking = data?.booking || data;
+              const vendorName = booking?.vendorName || data?.vendorName || 'Service Provider';
+              const vendorPhoto = booking?.vendorPhoto || booking?.vendorPhoto;
+              setChatFromNotification({ isOpen: true, bookingId, vendorName, vendorPhoto });
+            } catch {
+              if (onViewBooking) onViewBooking(bookingId);
+              else handleNavigation('my-bookings', { bookingId });
+            }
+          }}
+          onCallProvider={(phone) => {
+            window.open(`tel:${phone}`, '_self');
+          }}
+          onNavigate={handleNavigation}
+          className={hideHeaderFooter ? 'bottom-6' : ''}
+        />
+      )}
 
       {/* ✅ NEW: Vendor On The Way Popup - Shows when vendor is en-route or has arrived */}
       {vendorOnTheWay && (
