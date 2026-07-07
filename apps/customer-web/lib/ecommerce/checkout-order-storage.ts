@@ -10,6 +10,7 @@ export type StoredCheckoutOrderResponse = {
   status?: string;
   paymentMethod?: 'online';
   shippingMethod?: 'standard' | 'express' | 'scheduled';
+  trackingUrl?: string | null;
 };
 
 export const WARMPAWZ_CHECKOUT_ORDER_KEY = 'warmpawz_checkout_order_response';

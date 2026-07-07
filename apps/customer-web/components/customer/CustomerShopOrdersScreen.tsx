@@ -233,9 +233,16 @@ export interface CustomerShopOrdersScreenProps {
   onCloseToHome?: () => void;
   /** When My Orders lives on `/` (profile), remember this SPA screen so `/shop` back restores it. */
   spaShopReturnScreen?: ShopReturnSpaScreen;
+  /** Expand a specific order card on load (e.g. post-checkout track flow). */
+  initialExpandedOrderId?: string | null;
 }
 
-export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnScreen }: CustomerShopOrdersScreenProps) {
+export function CustomerShopOrdersScreen({
+  onBack,
+  onCloseToHome,
+  spaShopReturnScreen,
+  initialExpandedOrderId,
+}: CustomerShopOrdersScreenProps) {
   const router = useRouter();
 
   const goToShop = () => {
@@ -307,6 +314,14 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
   useEffect(() => {
     loadOrders();
   }, [loadOrders]);
+
+  useEffect(() => {
+    const id = initialExpandedOrderId?.trim();
+    if (!id) return;
+    if (orders.some((order) => order.id === id)) {
+      setExpandedOrder(id);
+    }
+  }, [initialExpandedOrderId, orders]);
 
   const cancelOrder = async (orderId: string) => {
     if (!confirm('Are you sure you want to cancel this order?')) return;

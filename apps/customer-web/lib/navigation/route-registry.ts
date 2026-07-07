@@ -43,8 +43,8 @@ export const CUSTOMER_ROUTES = {
   }),
 
   orderTracking: (orderId: string): CustomerRouteDef => ({
-    path: `/orders/${encodeURIComponent(String(orderId).trim())}/tracking`,
-    shell: 'order_tracking',
+    path: `/orders?expand=${encodeURIComponent(String(orderId).trim())}`,
+    shell: 'order_history',
     policy: 'replace',
     key: routeKey.order(orderId),
   }),
