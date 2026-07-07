@@ -1,0 +1,314 @@
+table_name,total_bytes,table_bytes,index_bytes,toast_bytes,total_mb
+analytics_events,26812416,35119104,40960,Append-only events. For monthly partitions: migrate table to PARTITION BY RANGE (occurred_at); recreate indexes below on each partition.,25.5703
+audit_logs,8052736,1163264,147456,Complete audit trail for all operations,7.6797
+analytics_sessions,1171456,1392640,163840,Product analytics sessions; partition parent N/A.,1.1172
+vendor_services,581632,1187840,40960,Vendor published services (replaces KV store),0.5547
+notifications,1253376,229376,40960,,1.1953
+notification_delivery_log,704512,499712,40960,Append-only per-channel delivery history; do not conflate with legacy notification_logs,0.6719
+vendors,270336,770048,139264,Vendor profiles - includes availability_configured flag for tracking availability setup completion,0.2578
+vendor_onboarding_applications,163840,81920,876544,Vendor application submissions - stores dynamic form data and admin review status,0.1563
+processed_events,679936,385024,40960,,0.6484
+bookings,376832,606208,57344,Bookings - maps from booking:{id} KV keys,0.3594
+search_index,598016,163840,57344,,0.5703
+otp_tokens,286720,458752,40960,OTP tokens for authentication and verification,0.2734
+vendor_availability_v2,352256,376832,40960,Vendor and staff availability schedules,0.3359
+vendor_admin_portal_codes,360448,311296,32768,Short-lived single-use codes for admin-open-vendor-portal; consumed by /auth/vendor-portal-session,0.3438
+vendor_earnings,524288,131072,40960,Vendor earnings per booking,0.5000
+service_catalog,188416,327680,32768,Master service catalog - replaces platform:service_catalog KV,0.1797
+role_permissions,90112,311296,40960,,0.0859
+onboarding_forms,139264,81920,204800,,0.1328
+customers,106496,196608,122880,Customer profiles - maps from customer:{id} KV keys,0.1016
+pets,172032,16384,196608,Pet profiles - maps from customer:{id}:pets KV keys,0.1641
+notification_campaign_deliveries,114688,188416,40960,,0.1094
+vendor_identity,90112,212992,40960,Vendor authentication and onboarding state - tracks OTP verification and onboarding progress,0.0859
+services,229376,73728,32768,Services catalog - maps from service:{id} KV keys,0.2188
+auth_operation_rate_events,106496,172032,32768,Append-only events for auth rate limits (e.g. customer password reset OTP sends).,0.1016
+payments,114688,155648,40960,Payments - maps from payment:{id} KV keys,0.1094
+vendor_specializations,90112,180224,40960,Vendor specializations - many-to-many relationship with problem grid IDs,0.0859
+meal_orders,106496,163840,40960,,0.1016
+vendor_onboarding_transitions,114688,155648,40960,Audit trail of all onboarding state transitions,0.1094
+pharmacy_orders,16384,196608,90112,Pharmacy orders with broadcast and tracking fields,0.0156
+support_tickets,57344,188416,57344,Support tickets for customer and vendor issues - used by /admin/support/* endpoints,0.0547
+roles,65536,180224,40960,Maps from admin:roles:list KV key,0.0625
+device_tokens,81920,147456,40960,Stores FCM tokens for push notifications to mobile/web devices,0.0781
+customer_admin_portal_codes,90112,131072,32768,Short-lived single-use codes for admin-open-customer-portal; consumed by /auth/customer-portal-session,0.0859
+content_pages,16384,81920,147456,,0.0156
+platform_settings,16384,32768,188416,,0.0156
+customer_identity,114688,81920,40960,Customer identity and onboarding state - tracks OTP/auth and onboarding progress,0.1094
+loyalty_transactions,122880,73728,40960,,0.1172
+specialization_master,40960,147456,32768,"Master table for all specializations (problem grid items), managed via Admin Categories tab",0.0391
+specialization_symptoms,32768,139264,32768,Symptoms/conditions linked to each specialization for customer search and discovery,0.0313
+package_purchases,16384,155648,32768,,0.0156
+video_call_sessions,57344,98304,40960,Video call sessions for tele consultations using AWS Chime,0.0547
+vendor_refund_tiers,57344,106496,32768,,0.0547
+gps_tracking_sessions,8192,139264,40960,GPS tracking sessions for home service bookings - replaces session:tracking:{trackingId} KV keys,0.0078
+platform_policies,8192,32768,147456,,0.0078
+error_case_occurrences,32768,122880,24576,Links analytics_events error rows to product_error_cases; CASCADE delete when event removed by retention job.,0.0313
+meal_plans,16384,122880,32768,,0.0156
+problem_grid_mappings,16384,106496,40960,,0.0156
+loyalty_action_rules,16384,114688,32768,,0.0156
+vendor_wallet_transactions,65536,65536,32768,Vendor wallet ledger (credits/debits); source e.g. loyalty_points,0.0625
+customer_loyalty_points,40960,81920,32768,,0.0391
+customer_addresses,65536,49152,40960,Customer delivery addresses,0.0625
+banners,8192,131072,8192,"Marketing banners displayed in customer app (main carousel, category-specific, etc.)",0.0078
+admins,8192,131072,8192,Admin user accounts for platform administration,0.0078
+prescriptions,8192,131072,8192,Prescriptions with immutability after finalization (NO KV STORE),0.0078
+package_scheduled_sessions,24576,81920,40960,Pre-scheduled sessions for package purchases,0.0234
+service_categories,8192,114688,24576,,0.0078
+discovery_rules,8192,114688,24576,"Rule book: discovery radius, max results, sort, broadcast steps, follow-up/chat/review/booking timing per role",0.0078
+ai_booking_wizard_sessions,40960,65536,32768,Server-backed booking draft for in-chat wizard; slots_snapshot is JSON from available-slots for commit validation when self-HTTP is unavailable,0.0391
+wallet_transactions,73728,32768,32768,,0.0703
+meal_refund_cases,8192,114688,8192,Admin meal refund review + execution; approved flows run via meal-order-original-refund and webhooks reconcile terminal status.,0.0078
+vendor_referrals,8192,114688,8192,,0.0078
+reviews,8192,114688,8192,Customer reviews and ratings for vendors,0.0078
+ai_chatbot_conversations,49152,49152,32768,Per-turn AI assistant log; escalation_ticket_id links open tickets for agent transcript,0.0469
+regions,24576,49152,49152,"Maps from region_india, region:{id} KV keys",0.0234
+action_sources,24576,65536,32768,,0.0234
+vendor_daily_accrual,16384,65536,40960,"Per-vendor accrual for calendar day in Asia/Kolkata; sums vendor_earnings by realized_at in [day 00:00, next day 00:00) IST.",0.0156
+products,16384,73728,32768,,0.0156
+vendor_bank_details,16384,65536,40960,Vendor bank account details for payouts,0.0156
+customer_profile_completion,24576,65536,32768,Tracks customer profile completion status - gates full platform access,0.0234
+gps_location_history,32768,65536,24576,,0.0313
+support_ticket_responses,24576,65536,32768,,0.0234
+support_ticket_activity,40960,49152,32768,Admin operational timeline for support tickets (not customer-facing),0.0391
+delivery_tracking,8192,106496,8192,,0.0078
+medical_records,8192,98304,8192,Immutable medical records (NO KV STORE),0.0078
+pidge_hyperlocal_webhook_events,16384,65536,32768,Idempotent archive of Pidge hyperlocal webhooks (e.g. meal logistics cancel); payload retained for ops/disputes.,0.0156
+banner_clicks,40960,40960,32768,,0.0391
+product_error_cases,16384,57344,40960,Allyticas error triage: one row per fingerprint; occurrence_count increments on ingest (may exceed remaining rows after analytics retention deletes events).,0.0156
+customer_subscriptions,0,106496,8192,Customer subscriptions to vendor-created plans,0.0000
+chat_messages,16384,65536,32768,,0.0156
+loyalty_segments,8192,98304,8192,Customer/vendor segments for loyalty rule targeting,0.0078
+vendor_tiers,8192,81920,8192,Vendor subscription tiers with commission rates,0.0078
+vendor_wallets,16384,49152,32768,Vendor INR wallet; loyalty points convert to balance (100 pts = 1 INR),0.0156
+diagnostic_tests,8192,81920,8192,,0.0078
+product_skus,8192,81920,8192,"Sellable SKU rows per product (size/color combos with own price, stock, images)",0.0078
+payouts,16384,49152,32768,Payouts - maps from payout:{id} KV keys,0.0156
+tax_categories,8192,81920,8192,,0.0078
+sample_collection_assignments,0,81920,8192,"Stores staff assignments for home diagnostic sample collection, replacing KV store usage",0.0000
+customer_segment_assignments,8192,81920,0,Cached customer segment memberships for performance,0.0078
+vendor_breaks,32768,16384,40960,,0.0313
+pet_listings,0,81920,8192,Pet listings for sale - maps from pet:listing:{listingId} KV keys,0.0000
+user_roles,8192,81920,0,"Stores user role assignments, replacing KV store usage (user:{userId}:roles keys)",0.0078
+service_packages,8192,65536,8192,,0.0078
+reward_catalog_links,8192,65536,8192,Pool of unique coupon URLs per catalog reward; one link assigned per customer redemption,0.0078
+reward_redemptions,8192,65536,8192,History of catalog reward redemptions per customer,0.0078
+logistics_partners,8192,65536,8192,"Logistics partners configuration for Shiprocket, Delhivery, Dunzo, etc.",0.0078
+meal_subscription_deliveries,0,73728,8192,Canonical per-delivery operational sessions for meal subscriptions,0.0000
+settlements,8192,65536,8192,,0.0078
+delivery_settlements,8192,65536,8192,,0.0078
+ecommerce_policies,8192,65536,8192,"Ecommerce policies for vendors - return, shipping, warranty, refund",0.0078
+coupons,8192,65536,8192,Coupon codes for discounts,0.0078
+gst_rules,8192,65536,8192,,0.0078
+support_agents,8192,65536,8192,"Support CRM agents (user_id = admins.id, staff_id legacy)",0.0078
+referral_redemptions,8192,65536,8192,Peer uses of a customer referral code (one row per friend; referred_id unique globally),0.0078
+training_skills,8192,65536,8192,Master list of trainable skills/commands,0.0078
+package_usage_log,8192,65536,8192,Audit trail for package session usage,0.0078
+notification_templates_enhanced,0,65536,8192,Enhanced notification templates - maps from notification-template:{templateId} and notification-template:code:{code} KV keys,0.0000
+notification_campaigns,8192,57344,8192,,0.0078
+customer_referrals,8192,57344,8192,,0.0078
+meal_subscriptions,0,65536,8192,,0.0000
+cancellation_policies,8192,49152,8192,,0.0078
+hsn_codes,8192,49152,8192,,0.0078
+scheduling_policies,8192,49152,8192,,0.0078
+promotions,0,57344,8192,,0.0000
+ecommerce_commission_settings,8192,49152,8192,Ecommerce commission settings - replaces ecommerce:commission_settings KV key,0.0078
+vendor_bank_accounts,8192,49152,8192,,0.0078
+prescription_submissions,0,57344,8192,"Stores prescription submissions for pharmacy verification, replacing KV store usage",0.0000
+commission_tiers,8192,49152,8192,,0.0078
+meal_rider_reassign_requests,8192,49152,8192,Audit trail when admin triggers Pidge fulfillment unallocate for meal hyperlocal reassign.,0.0078
+medicine_orders,0,57344,8192,Medicine order flow with state transitions (NO KV STORE),0.0000
+diagnostic_bookings,0,57344,8192,Diagnostic bookings with state transitions (NO KV STORE),0.0000
+admin_ai_audit,8192,49152,8192,,0.0078
+platform_tax_products,8192,49152,8192,"Billable platform charge catalog (SAC, GST rate) — admin-configurable via DB",0.0078
+referrals,8192,49152,8192,,0.0078
+dating_profiles_pet,0,57344,8192,Pet dating profiles for P2P matching,0.0000
+support_reply_templates,8192,49152,8192,,0.0078
+holiday_bookings,0,57344,8192,Holiday package bookings - replaces holiday_booking_{id} KV keys,0.0000
+pharmacy_broadcasts,8192,49152,8192,,0.0078
+invoices,0,57344,8192,GST invoices for orders - auto-generated on order completion,0.0000
+notification_logs,0,57344,8192,Notification logs - maps from notification-log:{logId} KV keys,0.0000
+deliveries,0,49152,8192,Deliveries - maps from delivery:{deliveryId} KV keys,0.0000
+tax_category_roles,8192,49152,0,Which vendor roles a GST tax_categories row applies to; empty junction = all roles (wildcard) for that catalogue category,0.0078
+holiday_packages,0,49152,8192,Holiday packages - replaces holiday-package:{id} KV keys,0.0000
+delivery_location_history,8192,49152,0,,0.0078
+user_subscriptions,0,49152,8192,User subscriptions for P2P service access,0.0000
+dating_matches,0,49152,8192,Matches between profiles,0.0000
+booking_policies,0,49152,8192,,0.0000
+staff_availability_per_style,0,57344,0,,0.0000
+breeder_profiles,0,49152,8192,Breeder profiles - maps from breeder:profile:{breederId} KV keys,0.0000
+nutrition_consultation_requests,0,49152,8192,Stores customer consultation requests for nutrition vendors,0.0000
+adoption_center_profiles,0,49152,8192,Adoption center profiles - maps from adoption:center:{centerId} KV keys,0.0000
+pet_inquiries,0,49152,8192,Pet inquiries - maps from pet:inquiry:{inquiryId} KV keys,0.0000
+staff,0,49152,8192,Staff members - maps from staff:{id} KV keys,0.0000
+groomer_gallery,0,49152,8192,Groomer gallery photos - before/after photos from completed bookings,0.0000
+booking_cancellation_rules,8192,49152,0,,0.0078
+return_requests,0,49152,8192,,0.0000
+logistics_rules,8192,32768,8192,Hyperlocal logistics pricing rules - per km or flat rate by distance slab,0.0078
+mating_appointments,0,40960,8192,Vet clinic mating appointments,0.0000
+ui_configs,0,40960,8192,UI configuration per role - replaces config:ui:dashboard KV keys,0.0000
+refund_tiers,8192,32768,8192,,0.0078
+admin_settings,8192,32768,8192,,0.0078
+gst_configs,8192,32768,8192,,0.0078
+payment_gateway_settings,8192,32768,8192,,0.0078
+payout_rules,8192,32768,8192,,0.0078
+booking_rules,8192,32768,8192,,0.0078
+cafe_tables,0,40960,8192,,0.0000
+rbac_policies,0,40960,8192,"Stores RBAC access control policies, replacing KV store usage (policy:* keys)",0.0000
+platform_integrations,8192,32768,8192,,0.0078
+banner_analytics,0,40960,8192,Banner view and click tracking,0.0000
+service_style_mappings,8192,32768,8192,,0.0078
+subscriptions,0,40960,8192,,0.0000
+package_milestones,0,40960,8192,,0.0000
+audit_trail,0,40960,8192,Comprehensive audit trail for all regulated operations (NO KV STORE),0.0000
+spotlight_offers,0,40960,8192,Spotlight/promotional offers shown on service landing pages,0.0000
+dating_meetups,0,40960,8192,Café meet-up bookings from matches,0.0000
+payout_policies,8192,32768,8192,Payout processing policies,0.0078
+tele_sessions,0,40960,8192,Tele consultation video call sessions - replaces tele_session:{sessionId} KV keys,0.0000
+tele_queues,0,40960,8192,Queue management for instant tele consultations - replaces tele:queue:{queueId} KV keys,0.0000
+rbac_audit_logs,0,40960,8192,"Stores RBAC audit logs, replacing KV store usage (rbac:audit:* keys)",0.0000
+advertising_campaigns,0,40960,8192,Advertising campaigns for vendors - PPC and impression-based,0.0000
+ad_impressions,0,40960,8192,Track each ad impression for billing and analytics,0.0000
+ad_clicks,0,40960,8192,Track each ad click for billing and conversion tracking,0.0000
+performance_metrics,0,40960,8192,,0.0000
+optimization_tasks,0,40960,8192,Optimization task tracking - maps from optimization-task:{taskId} KV keys,0.0000
+video_call_rooms,0,40960,8192,WebRTC video call rooms - replaces video:room:{id} KV keys,0.0000
+vendor_portfolio,0,40960,8192,Vendor portfolio items - maps from portfolio:{vendorId}:{itemId} KV keys,0.0000
+vendor_subscription_plans,0,40960,8192,"Vendor-created subscription plans (e.g., Premium Grooming Membership)",0.0000
+customer_payment_methods,8192,32768,8192,,0.0078
+pet_skill_progress,0,40960,8192,Per-pet progress on each training skill,0.0000
+customer_provider_history,0,40960,8192,Customer interaction history with vendors for rebooking,0.0000
+customer_deactivation_requests,8192,32768,8192,,0.0078
+rewards_catalog,8192,32768,8192,Points-based rewards offered to customers (Warmpawz rewards UI),0.0078
+delivery_partners,0,40960,8192,Delivery partners - maps from delivery:partner:{partnerId} KV keys,0.0000
+delivery_routes,0,40960,8192,Delivery routes - maps from delivery:route:{routeId} KV keys,0.0000
+notification_state_transitions,8192,32768,8192,Allowed delivery_status transitions for notifications aggregate state,0.0078
+refunds,8192,32768,8192,Refunds - maps from refund:{id} KV keys,0.0078
+loyalty_rules,8192,32768,8192,,0.0078
+ecommerce_categories,8192,32768,8192,,0.0078
+notification_campaign_events,8192,32768,8192,,0.0078
+diagnostic_reports,0,40960,8192,Diagnostic reports with access control (NO KV STORE),0.0000
+platform_tax_documents,0,40960,8192,WarmPawz → vendor GST tax invoices and credit notes,0.0000
+adoption_applications,0,32768,8192,,0.0000
+pidge_support_tickets,0,32768,8192,Pidge issue/ticket webhook snapshots; ticket_id is Pidge external id,0.0000
+ad_budget_transactions,0,32768,8192,Track all budget spending transactions,0.0000
+user_devices,0,32768,8192,,0.0000
+insurance_claims,0,32768,8192,,0.0000
+vendor_setup_completion,0,32768,8192,Tracks post-activation setup completion - gates go-live,0.0000
+pharmacy_quotes,0,32768,8192,Pharmacy quotes for medicine orders (NO KV STORE),0.0000
+scheduled_notifications,0,32768,8192,,0.0000
+walk_routes,0,32768,8192,GPS route data and statistics for completed walks,0.0000
+package_sessions,0,32768,8192,Individual sessions within a package booking,0.0000
+ad_performance_analytics,0,40960,0,Daily aggregated performance metrics for campaigns,0.0000
+booking_staff_assignments,0,32768,8192,,0.0000
+ambulance_vehicles,0,32768,8192,,0.0000
+orders,0,32768,8192,E-commerce orders - maps from order:{id} KV keys,0.0000
+vendor_policies,0,32768,8192,"Stores vendor insurance/coverage policies, replacing KV store usage (policy:{vendorId}:* keys)",0.0000
+product_policies,0,32768,8192,Link products to specific policies,0.0000
+vendor_segment_assignments,0,40960,0,Cached vendor segment memberships for performance,0.0000
+ecommerce_loyalty_pending_awards,0,32768,8192,,0.0000
+rbac_permissions_catalog,0,32768,8192,"Stores available permissions catalog, replacing KV store usage (rbac:permissions:list key)",0.0000
+pricing_rules,0,32768,8192,Boarding pricing rules per vendor/room - replaces vendor:{id}:boarding_pricing KV keys,0.0000
+vendor_registered_brands,0,32768,8192,Vendor-owned brand names for auto-detecting own_brand vs third_party listings,0.0000
+notification_channel_settings,8192,32768,0,,0.0078
+dating_analytics,0,32768,8192,Analytics data for dating service,0.0000
+customer_wallets,8192,32768,0,,0.0078
+shipments,0,32768,8192,,0.0000
+dating_chat_messages,0,32768,8192,Chat messages between matched users,0.0000
+policy_acceptances,0,32768,8192,Track customer acceptance of policies,0.0000
+service_publishing,0,32768,8192,Service publishing status - replaces vendor_services KV pattern,0.0000
+spotlight_analytics,0,32768,8192,"Spotlight offer view, click, and apply tracking",0.0000
+gst_configurations,0,32768,8192,GST tax configurations - replaces platform:gst_configs KV keys,0.0000
+dating_profiles_owner,0,32768,8192,Pet owner dating profiles,0.0000
+wallet_checkout_rules,8192,32768,0,Checkout policy: minimum customer wallet balance before applying wallet to bookings,0.0078
+post_service_payments,0,32768,8192,,0.0000
+pet_vaccination_reminder_log,0,24576,8192,Sent vaccination reminder notifications (FCM/in-app) for dedupe and audit,0.0000
+boarding_facilities,0,24576,8192,,0.0000
+gps_tracking_points,0,32768,0,,0.0000
+vendor_tier_subscriptions,0,24576,8192,,0.0000
+mating_requests,8192,16384,8192,,0.0078
+shopping_carts,0,24576,8192,Shopping cart for ecommerce,0.0000
+booking_status_history,0,24576,8192,Audit trail of booking status changes,0.0000
+booking_state_transitions,8192,16384,8192,Valid booking state transitions (incl. pending_payment paths after migration 735),0.0078
+subscription_tiers,0,24576,8192,,0.0000
+platform_tier_onboarding,8192,16384,8192,Singleton row: decrements when a new eligible vendor is assigned Tier F100 at onboarding.,0.0078
+shipment_tracking_events,0,24576,8192,Tracking history for shipments,0.0000
+walker_live_sessions,0,32768,0,Real-time walker location during active walks,0.0000
+vendor_category_commission_rates,0,32768,0,Enterprise commission overrides: per-vendor rate for a specific ecommerce category,0.0000
+training_session_skills,0,24576,8192,Skills practiced in each training session,0.0000
+booking_status_transitions,0,24576,8192,,0.0000
+automation_jobs,0,24576,8192,,0.0000
+customer_compliance_issues,0,24576,8192,,0.0000
+vendor_discounts,0,24576,8192,,0.0000
+pidge_partial_delivery_workflows,0,24576,8192,Tracks Pidge partial delivery: original DELIVERED with return_order_info until return leg RTO_DELIVERED,0.0000
+vendor_documents,8192,16384,8192,Maps from DynamicVendorOnboardingForm document uploads,0.0078
+notification_segments,8192,16384,8192,,0.0078
+notification_campaign_templates,8192,16384,8192,,0.0078
+support_routing_settings,8192,16384,8192,Singleton config for support ticket round-robin auto-assignment,0.0078
+boarding_rooms,0,24576,8192,Boarding rooms per vendor - replaces vendor:{id}:boarding_rooms KV keys,0.0000
+referral_program_settings,8192,16384,8192,"Singleton referral program configuration (enable switch, caps, action names)",0.0078
+vendor_onboarding_comments,0,24576,8192,Admin comments during vendor onboarding process,0.0000
+vendor_onboarding_steps,0,24576,8192,Tracks completed steps in vendor onboarding process,0.0000
+vendor_payment_rules,0,24576,8192,,0.0000
+subscription_plans,0,24576,8192,,0.0000
+video_call_history,0,24576,8192,Video call history records - replaces call:{id} KV keys,0.0000
+settlement_rules,0,24576,8192,,0.0000
+vendor_holidays_enhanced,8192,16384,8192,,0.0078
+wishlists,0,24576,0,Customer wishlists,0.0000
+support_sla_config,0,16384,8192,,0.0000
+vendor_commission_config,0,16384,8192,Ecommerce commission V2: one commission model per vendor (category or ownership),0.0000
+report_templates,0,16384,8192,,0.0000
+platform_tax_document_lines,0,16384,8192,,0.0000
+meal_subscription_payments,0,16384,8192,,0.0000
+support_categories,0,16384,8192,,0.0000
+popular_searches,0,16384,8192,,0.0000
+customer_tiers,0,16384,8192,,0.0000
+search_analytics,0,16384,8192,,0.0000
+cache_tokens,0,16384,8192,Cache tokens with expiration - replaces KV TTL logic,0.0000
+subscription_payments,0,16384,8192,,0.0000
+product_commission_overrides,0,16384,8192,Highest-priority ecommerce commission override per product,0.0000
+notification_templates,0,16384,8192,,0.0000
+payment_timeout_rules,0,16384,8192,,0.0000
+coupon_usages,0,24576,0,Coupon usage tracking,0.0000
+no_show_policies,0,16384,8192,,0.0000
+rescheduling_policies,0,16384,8192,,0.0000
+payment_retry_log,0,16384,8192,,0.0000
+subscription_deliveries,0,16384,8192,,0.0000
+google_maps_settings,0,16384,8192,,0.0000
+schema_migrations,0,16384,8192,,0.0000
+coupon_usage,0,24576,0,,0.0000
+aws_settings,0,16384,8192,,0.0000
+notification_campaign_cities,0,16384,8192,,0.0000
+order_item_commission,0,16384,8192,Audit trail: resolved commission per order line at payment time,0.0000
+order_items,0,16384,8192,,0.0000
+support_escalation_rules,0,16384,8192,,0.0000
+notification_segment_rules,0,16384,8192,,0.0000
+item_stats,0,16384,8192,,0.0000
+staff_availability,0,16384,0,,0.0000
+reminder_queue,0,8192,8192,,0.0000
+featured_vendors,0,16384,0,,0.0000
+health_checks,0,8192,8192,,0.0000
+cache_stats,0,16384,0,,0.0000
+search_history,0,8192,8192,,0.0000
+vendor_stats,0,16384,0,,0.0000
+zero_result_searches,0,8192,8192,,0.0000
+staff_certifications,0,8192,8192,,0.0000
+package_services,0,16384,0,Package to service mapping - replaces package KV structure,0.0000
+notification_campaign_regions,0,16384,0,,0.0000
+bank_verifications,0,8192,8192,,0.0000
+notification_campaign_users,0,16384,0,,0.0000
+tax_flexible_rules,0,8192,8192,,0.0000
+notification_segment_targets,0,16384,0,,0.0000
+platform_revenue,0,16384,0,Daily platform revenue tracking,0.0000
+settlement_schedules,0,8192,8192,,0.0000
+vendor_service_areas,0,8192,8192,,0.0000
+refund_rules,0,8192,8192,,0.0000
+disputes,0,8192,8192,Customer-vendor disputes,0.0000
+pending_reschedules,0,8192,8192,,0.0000
+staff_services,0,16384,0,Maps from staff:{id}:service:{id} KV keys,0.0000
+staff_specializations,0,8192,8192,,0.0000
+booking_limits,0,8192,8192,,0.0000
+staff_schedules,0,16384,0,,0.0000
+payment_history,0,8192,0,,0.0000
+pending_payouts,0,8192,0,,0.0000
+emergency_booking_queue,0,8192,0,,0.0000
