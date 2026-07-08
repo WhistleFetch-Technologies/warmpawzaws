@@ -10,6 +10,8 @@ type RecommendationProductScrollerProps = {
   onAdd?: (product: ShopProduct) => void;
   onProductClick?: (product: ShopProduct) => void;
   showAddButton?: boolean;
+  getCartQuantity?: (productId: string) => number;
+  onQuantityChange?: (product: ShopProduct, quantity: number) => void;
   className?: string;
 };
 
@@ -20,6 +22,8 @@ export function RecommendationProductScroller({
   onAdd,
   onProductClick,
   showAddButton = true,
+  getCartQuantity,
+  onQuantityChange,
   className = '',
 }: RecommendationProductScrollerProps) {
   if (!loading && products.length === 0) {
@@ -40,7 +44,13 @@ export function RecommendationProductScroller({
               key={product.id}
               product={product}
               showAddButton={showAddButton}
+              cartQuantity={getCartQuantity?.(product.id) ?? 0}
               onAdd={onAdd ? () => onAdd(product) : undefined}
+              onQuantityChange={
+                onQuantityChange
+                  ? (quantity) => onQuantityChange(product, quantity)
+                  : undefined
+              }
               onClick={onProductClick ? () => onProductClick(product) : undefined}
             />
           ))}
