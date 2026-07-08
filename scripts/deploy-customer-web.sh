@@ -89,8 +89,12 @@ fi
 RESOLVED_API_BASE_URL="${RESOLVED_API_BASE_URL%/}"
 
 # Customer marketplace toggle (shop / cart / wishlist / shop orders / checkout).
-# Enabled by default; set CUSTOMER_ECOMMERCE_ENABLED=false to disable for a deploy.
-CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-true}"
+# Dev: enabled by default. Prod: disabled by default unless CUSTOMER_ECOMMERCE_ENABLED=true.
+if [ "$PROD" = true ]; then
+  CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-false}"
+else
+  CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-true}"
+fi
 if [ "$CEE_RAW" = "true" ] || [ "$CEE_RAW" = "1" ]; then
   CEE_JS="true"
 else

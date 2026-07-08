@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
   canSyncWishlistToApi,
+  isProductWishlisted,
   readWishlistIds,
   setWishlistIds,
   WISHLIST_UPDATED_EVENT,
@@ -45,20 +47,43 @@ export function WishlistProductHeartButton({
   heartClassName = 'w-3.5 h-3.5',
   verifyAfterAdd = true,
 }: WishlistProductHeartButtonProps) {
+  const pathname = usePathname();
   const [isWishlisted, setIsWishlisted] = useState(false);
   const syncInFlightByProduct = useRef<Map<string, boolean>>(new Map());
 
   const pid = (productId || '').trim();
 
-  useEffect(() => {
-    if (!pid || typeof window === 'undefined') return;
-    const sync = () => {
-      setIsWishlisted(readWishlistIds().some((id: string) => String(id) === String(pid)));
-    };
-    sync();
-    window.addEventListener(WISHLIST_UPDATED_EVENT, sync);
-    return () => window.removeEventListener(WISHLIST_UPDATED_EVENT, sync);
+  const syncFromStorage = useCallback(() => {
+    if (!pid) return;
+    setIsWishlisted(isProductWishlisted(pid));
   }, [pid]);
+
+  useEffect(() => {
+    if (!pid || typeof window === 'undefined') return undefined;
+
+    syncFromStorage();
+    window.addEventListener(WISHLIST_UPDATED_EVENT, syncFromStorage);
+
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) syncFromStorage();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') syncFromStorage();
+    };
+
+    window.addEventListener('pageshow', onPageShow);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      window.removeEventListener(WISHLIST_UPDATED_EVENT, syncFromStorage);
+      window.removeEventListener('pageshow', onPageShow);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [pid, syncFromStorage]);
+
+  useEffect(() => {
+    syncFromStorage();
+  }, [pathname, syncFromStorage]);
 
   const onClick = useCallback(
     async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -69,7 +94,7 @@ export function WishlistProductHeartButton({
       }
 
       const wishlist = readWishlistIds();
-      const wasInList = wishlist.some((id: string) => String(id) === String(pid));
+      const wasInList = isProductWishlisted(pid, wishlist);
 
       if (wasInList) {
         setWishlistIds(wishlist.filter((id: string) => String(id) !== String(pid)));

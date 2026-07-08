@@ -38,6 +38,11 @@ export default function RootLayout({
   ).toLowerCase();
   const customerMealPlansEnabled =
     customerMealPlansEnabledRaw === 'true' || customerMealPlansEnabledRaw === '1';
+  const customerEcommerceEnabledRaw = (
+    process.env.NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED ?? 'true'
+  ).toLowerCase();
+  const customerEcommerceEnabled =
+    customerEcommerceEnabledRaw === 'true' || customerEcommerceEnabledRaw === '1';
 
   return (
     <html lang="en">
@@ -110,7 +115,8 @@ export default function RootLayout({
                   apiBaseUrl: ${JSON.stringify(prodApiUrl)},
                   environment: ${JSON.stringify(isProd ? 'production' : 'development')},
                   uatMode: ${JSON.stringify(!isProd)},
-                  customerMealPlansEnabled: ${JSON.stringify(customerMealPlansEnabled)}
+                  customerMealPlansEnabled: ${JSON.stringify(customerMealPlansEnabled)},
+                  customerEcommerceEnabled: ${JSON.stringify(customerEcommerceEnabled)}
                 };
               `,
           }}

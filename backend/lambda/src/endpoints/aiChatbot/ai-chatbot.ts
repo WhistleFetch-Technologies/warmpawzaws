@@ -660,11 +660,11 @@ export function registerAIChatbotEndpoints(app: Hono) {
       if (!isVendorSession) {
         try {
           const products = await query(
-            `SELECT name, sale_price, base_price FROM products WHERE is_active = true ORDER BY created_at DESC LIMIT 4`
+            `SELECT name, price FROM products WHERE is_active = true ORDER BY created_at DESC LIMIT 4`
           );
           if (products.rows && products.rows.length > 0) {
             storeContext = `Featured Products:\n${products.rows
-              .map((p: any) => `- ${String(p.name || '').slice(0, 56)} (₹${p.sale_price || p.base_price || 0})`)
+              .map((p: any) => `- ${String(p.name || '').slice(0, 56)} (₹${p.price ?? 0})`)
               .join('\n')}`.slice(0, 400);
           }
         } catch (e) {

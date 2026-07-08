@@ -12,18 +12,18 @@
  * rewrites the DB row to reference the new S3 URL — nothing else changes.
  * Already-managed S3 URLs are left untouched (no re-download, no orphan).
  *
- * Requires network access to the RDS cluster on port 5432 (this could not be
- * verified from the current sandbox — its outbound port 5432 is blocked even
- * though the AWS-side security group already allows public access) and to
- * AWS Secrets Manager / S3 via the AWS CLI credentials in your environment.
+ * DB access: direct Postgres (port 5432) or `--use-rds-data-api` when 5432 is
+ * blocked locally (common on Windows). Also needs AWS Secrets Manager / S3.
  *
  * Usage:
  *   ENVIRONMENT=dev node scripts/backfill-product-images-to-s3.js            # dry run (default)
  *   ENVIRONMENT=dev node scripts/backfill-product-images-to-s3.js --apply    # actually rewrite rows
  *   ENVIRONMENT=dev node scripts/backfill-product-images-to-s3.js --apply --vendor-id=<uuid>
+ *   ENVIRONMENT=prod node scripts/backfill-product-images-to-s3.js --use-rds-data-api --apply --vendor-id=<uuid>
  */
 
 const { Pool } = require('pg');
+const { RDSDataClient, ExecuteStatementCommand } = require('@aws-sdk/client-rds-data');
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { execSync } = require('child_process');
@@ -42,6 +42,7 @@ const { Jimp, JimpMime } = require(
 const ENVIRONMENT = process.env.ENVIRONMENT || 'dev';
 const REGION = process.env.AWS_REGION || 'ap-south-1';
 const APPLY = process.argv.includes('--apply');
+const USE_RDS_DATA_API = process.argv.includes('--use-rds-data-api');
 const VENDOR_FILTER = (process.argv.find((a) => a.startsWith('--vendor-id=')) || '').split('=')[1] || null;
 
 const PRODUCT_S3_PREFIX = 'products/';
@@ -199,7 +200,8 @@ async function ingestList(vendorId, urls, stats) {
   const out = [];
   for (const url of urls) {
     if (!url || !/^https?:\/\//i.test(url)) continue;
-    if (isManaged(url, null)) {
+    // Only skip URLs already on this vendor's own S3 prefix (not orphan dev imports).
+    if (isManaged(url, vendorId)) {
       out.push(url);
       continue;
     }
@@ -262,67 +264,192 @@ async function connectPool() {
   return pool;
 }
 
-async function main() {
-  console.log('🖼️  Product image S3 backfill');
-  console.log('================================');
-  console.log(`Environment: ${ENVIRONMENT}`);
-  console.log(`Mode: ${APPLY ? 'APPLY (will write to DB + S3)' : 'DRY RUN (no writes)'}`);
-  if (VENDOR_FILTER) console.log(`Vendor filter: ${VENDOR_FILTER}`);
-  console.log('');
+function rowsFromRdsDataResult(result) {
+  if (result.formattedRecords) {
+    try {
+      return JSON.parse(result.formattedRecords);
+    } catch {
+      /* fall through */
+    }
+  }
+  const cols = (result.columnMetadata || []).map((c) => c.name);
+  return (result.records || []).map((rec) => {
+    const row = {};
+    rec.forEach((field, i) => {
+      const key = cols[i] || `col_${i}`;
+      if (field == null || field.isNull) row[key] = null;
+      else if (field.stringValue !== undefined) row[key] = field.stringValue;
+      else if (field.longValue !== undefined) row[key] = field.longValue;
+      else if (field.doubleValue !== undefined) row[key] = field.doubleValue;
+      else if (field.booleanValue !== undefined) row[key] = field.booleanValue;
+      else row[key] = null;
+    });
+    return row;
+  });
+}
 
-  const pool = await connectPool();
-  const stats = { productsScanned: 0, productsUpdated: 0, skusScanned: 0, skusUpdated: 0, externalFound: 0, externalIngested: 0, externalFailed: 0 };
+async function connectRdsDataApi() {
+  const clusterId = `warmpawz-${ENVIRONMENT}-cluster`;
+  const clusterInfo = JSON.parse(
+    execSync(`aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --output json`, {
+      encoding: 'utf8',
+    }),
+  );
+  const cluster = clusterInfo.DBClusters[0];
+  if (!cluster.HttpEndpointEnabled) {
+    throw new Error(`RDS Data API not enabled on ${clusterId}`);
+  }
+  const secretsClient = new SecretsManagerClient({ region: REGION });
+  const secretName =
+    ENVIRONMENT === 'prod'
+      ? 'warmpawz-prod-rds-master-20260207201049162400000001'
+      : `warmpawz-${ENVIRONMENT}-rds-master-20260106164510791100000002`;
+  const secretValue = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretName }));
+  return {
+    client: new RDSDataClient({ region: REGION }),
+    meta: {
+      resourceArn: cluster.DBClusterArn,
+      secretArn: secretValue.ARN,
+      database: cluster.DatabaseName || 'warmpawz',
+    },
+  };
+}
 
-  try {
-    const productRows = await pool.query(
-      VENDOR_FILTER
-        ? `SELECT id, vendor_id, images FROM products WHERE images IS NOT NULL AND jsonb_array_length(images) > 0 AND vendor_id = $1`
-        : `SELECT id, vendor_id, images FROM products WHERE images IS NOT NULL AND jsonb_array_length(images) > 0`,
-      VENDOR_FILTER ? [VENDOR_FILTER] : [],
-    );
+async function rdsDataQuery(db, sql, parameters = []) {
+  const res = await db.client.send(
+    new ExecuteStatementCommand({
+      ...db.meta,
+      sql,
+      parameters,
+      formatRecordsAs: 'JSON',
+      includeResultMetadata: true,
+    }),
+  );
+  return rowsFromRdsDataResult(res);
+}
 
-    for (const row of productRows.rows) {
-      stats.productsScanned++;
-      const before = normalizeImages(row.images);
-      const hasExternal = before.some((u) => /^https?:\/\//i.test(u) && !isManaged(u, null));
-      if (!hasExternal) continue;
+async function rdsDataUpdateImages(db, table, id, imagesJson) {
+  await db.client.send(
+    new ExecuteStatementCommand({
+      ...db.meta,
+      sql: `UPDATE ${table} SET images = :images::jsonb, updated_at = NOW() WHERE id = :id::uuid`,
+      parameters: [
+        { name: 'images', value: { stringValue: imagesJson } },
+        { name: 'id', value: { stringValue: id } },
+      ],
+    }),
+  );
+}
 
-      console.log(`Product ${row.id} (vendor ${row.vendor_id}): ${before.length} image(s), backfilling…`);
-      const after = await ingestList(row.vendor_id, before, stats);
+async function processRow(kind, row, stats, persist) {
+  if (kind === 'products') stats.productsScanned++;
+  else stats.skusScanned++;
+
+  const before = normalizeImages(row.images);
+  const hasExternal = before.some((u) => /^https?:\/\//i.test(u) && !isManaged(u, row.vendor_id));
+  if (!hasExternal) return;
+
+  console.log(`${kind === 'products' ? 'Product' : 'SKU'} ${row.id} (vendor ${row.vendor_id}): ${before.length} image(s), backfilling…`);
+  const after = await ingestList(row.vendor_id, before, stats);
+  await persist(after);
+  if (kind === 'products') stats.productsUpdated++;
+  else stats.skusUpdated++;
+}
+
+async function runBackfillWithPool(pool, stats) {
+  const productRows = await pool.query(
+    VENDOR_FILTER
+      ? `SELECT id, vendor_id, images FROM products WHERE images IS NOT NULL AND jsonb_array_length(images) > 0 AND vendor_id = $1`
+      : `SELECT id, vendor_id, images FROM products WHERE images IS NOT NULL AND jsonb_array_length(images) > 0`,
+    VENDOR_FILTER ? [VENDOR_FILTER] : [],
+  );
+
+  for (const row of productRows.rows) {
+    await processRow('products', row, stats, async (after) => {
       if (APPLY) {
         await pool.query('UPDATE products SET images = $1::jsonb, updated_at = NOW() WHERE id = $2', [
           JSON.stringify(after),
           row.id,
         ]);
       }
-      stats.productsUpdated++;
-    }
+    });
+  }
 
-    const skuRows = await pool.query(
-      VENDOR_FILTER
-        ? `SELECT id, vendor_id, images FROM product_skus WHERE images IS NOT NULL AND jsonb_array_length(images) > 0 AND vendor_id = $1`
-        : `SELECT id, vendor_id, images FROM product_skus WHERE images IS NOT NULL AND jsonb_array_length(images) > 0`,
-      VENDOR_FILTER ? [VENDOR_FILTER] : [],
-    );
+  const skuRows = await pool.query(
+    VENDOR_FILTER
+      ? `SELECT id, vendor_id, images FROM product_skus WHERE images IS NOT NULL AND jsonb_array_length(images) > 0 AND vendor_id = $1`
+      : `SELECT id, vendor_id, images FROM product_skus WHERE images IS NOT NULL AND jsonb_array_length(images) > 0`,
+    VENDOR_FILTER ? [VENDOR_FILTER] : [],
+  );
 
-    for (const row of skuRows.rows) {
-      stats.skusScanned++;
-      const before = normalizeImages(row.images);
-      const hasExternal = before.some((u) => /^https?:\/\//i.test(u) && !isManaged(u, null));
-      if (!hasExternal) continue;
-
-      console.log(`SKU ${row.id} (vendor ${row.vendor_id}): ${before.length} image(s), backfilling…`);
-      const after = await ingestList(row.vendor_id, before, stats);
+  for (const row of skuRows.rows) {
+    await processRow('product_skus', row, stats, async (after) => {
       if (APPLY) {
         await pool.query('UPDATE product_skus SET images = $1::jsonb, updated_at = NOW() WHERE id = $2', [
           JSON.stringify(after),
           row.id,
         ]);
       }
-      stats.skusUpdated++;
+    });
+  }
+}
+
+async function runBackfillWithRdsDataApi(db, stats) {
+  const vendorClause = VENDOR_FILTER ? ' AND vendor_id = :vendor_id::uuid' : '';
+  const vendorParams = VENDOR_FILTER
+    ? [{ name: 'vendor_id', value: { stringValue: VENDOR_FILTER } }]
+    : [];
+
+  const productRows = await rdsDataQuery(
+    db,
+    `SELECT id::text AS id, vendor_id::text AS vendor_id, images::text AS images
+     FROM products
+     WHERE images IS NOT NULL AND jsonb_array_length(images) > 0${vendorClause}`,
+    vendorParams,
+  );
+
+  for (const row of productRows) {
+    await processRow('products', row, stats, async (after) => {
+      if (APPLY) await rdsDataUpdateImages(db, 'products', row.id, JSON.stringify(after));
+    });
+  }
+
+  const skuRows = await rdsDataQuery(
+    db,
+    `SELECT id::text AS id, vendor_id::text AS vendor_id, images::text AS images
+     FROM product_skus
+     WHERE images IS NOT NULL AND jsonb_array_length(images) > 0${vendorClause}`,
+    vendorParams,
+  );
+
+  for (const row of skuRows) {
+    await processRow('product_skus', row, stats, async (after) => {
+      if (APPLY) await rdsDataUpdateImages(db, 'product_skus', row.id, JSON.stringify(after));
+    });
+  }
+}
+
+async function main() {
+  console.log('🖼️  Product image S3 backfill');
+  console.log('================================');
+  console.log(`Environment: ${ENVIRONMENT}`);
+  console.log(`Mode: ${APPLY ? 'APPLY (will write to DB + S3)' : 'DRY RUN (no writes)'}`);
+  console.log(`DB access: ${USE_RDS_DATA_API ? 'RDS Data API' : 'direct Postgres'}`);
+  if (VENDOR_FILTER) console.log(`Vendor filter: ${VENDOR_FILTER}`);
+  console.log('');
+
+  const stats = { productsScanned: 0, productsUpdated: 0, skusScanned: 0, skusUpdated: 0, externalFound: 0, externalIngested: 0, externalFailed: 0 };
+
+  if (USE_RDS_DATA_API) {
+    const db = await connectRdsDataApi();
+    await runBackfillWithRdsDataApi(db, stats);
+  } else {
+    const pool = await connectPool();
+    try {
+      await runBackfillWithPool(pool, stats);
+    } finally {
+      await pool.end();
     }
-  } finally {
-    await pool.end();
   }
 
   console.log('');
