@@ -34,6 +34,7 @@ function Deploy-App($Name, $Bucket, $CfId, $BuildEnv) {
   if (Test-Path .next) { Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue }
   $env:NODE_ENV = "production"
   foreach ($kv in $BuildEnv.GetEnumerator()) { Set-Item -Path "env:$($kv.Key)" -Value $kv.Value }
+  npm ci --include=dev
   npm run build
   if (-not (Test-Path dist)) { throw "dist missing after $Name build" }
   if ($Name -ne "customer-web") { Write-RuntimeConfig $appDir $true }
@@ -74,8 +75,8 @@ v.DISCOUNT_ENGINE_V2_SETTLEMENT_MODE = 'AUTHORITATIVE';
 v.DISCOUNT_ENGINE_V2_ANALYTICS_MODE = v.DISCOUNT_ENGINE_V2_ANALYTICS_MODE || 'AUTHORITATIVE';
 v.DISCOUNT_ENGINE_V2_CAMPAIGN_MODE = v.DISCOUNT_ENGINE_V2_CAMPAIGN_MODE || 'AUTHORITATIVE';
 v.COMMERCIAL_AI_COPILOT_ENABLED = v.COMMERCIAL_AI_COPILOT_ENABLED || 'true';
-# Prefer Terraform as source of truth for CAMPAIGN_MODE (OFF → SHADOW → AUTHORITATIVE).
-# This deploy script only fills a default if the variable is missing on the function.
+// Prefer Terraform as source of truth for CAMPAIGN_MODE (OFF -> SHADOW -> AUTHORITATIVE).
+// This deploy script only fills a default if the variable is missing on the function.
 fs.writeFileSync(envFile, JSON.stringify({ Variables: v }));
 execSync('aws lambda update-function-configuration --function-name ' + fn + ' --region ap-south-1 --environment file://' + envFile.replace(/\\\\/g, '/'), { stdio: 'inherit' });
 console.log('Dev Lambda V2 modes: RESOLVER/STACK/PRIORITY/SETTLEMENT/ANALYTICS/CAMPAIGN (Terraform-aligned defaults)');
