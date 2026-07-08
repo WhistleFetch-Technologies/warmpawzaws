@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import type { ShopProduct } from '@/components/shop/shop-types';
+import { ShopCartQuantityControl } from '@/components/shop/ShopCartQuantityControl';
 
 type RecommendationProductTileProps = {
   product: ShopProduct;
   onAdd?: () => void;
   onClick?: () => void;
   showAddButton?: boolean;
+  cartQuantity?: number;
+  onQuantityChange?: (quantity: number) => void;
 };
 
 export function RecommendationProductTile({
@@ -15,6 +18,8 @@ export function RecommendationProductTile({
   onAdd,
   onClick,
   showAddButton = true,
+  cartQuantity = 0,
+  onQuantityChange,
 }: RecommendationProductTileProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const primaryImage =
@@ -48,16 +53,12 @@ export function RecommendationProductTile({
       </p>
       <p className="text-sm font-bold text-[#FF8C42] mt-1">₹{product.price}</p>
       {showAddButton && onAdd ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onAdd();
-          }}
-          className="mt-2 w-full text-xs font-semibold py-1.5 rounded-lg border border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
-        >
-          Add
-        </button>
+        <ShopCartQuantityControl
+          variant="grid"
+          quantity={cartQuantity}
+          onAdd={onAdd}
+          onQuantityChange={onQuantityChange ?? (() => {})}
+        />
       ) : null}
     </>
   );
