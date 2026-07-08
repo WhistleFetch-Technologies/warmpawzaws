@@ -110,7 +110,7 @@ export function ProductDetailPage({
   const [relatedProducts, setRelatedProducts] = useState<ShopProduct[]>([]);
   const [recsLoading, setRecsLoading] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
-  const { addToCart, cart } = useCart();
+  const { addToCart, cart, updateQuantity } = useCart();
   const router = useRouter();
 
   const loadProductDetails = async () => {
@@ -195,6 +195,34 @@ export function ProductDetailPage({
   useEffect(() => {
     setDescriptionExpanded(false);
   }, [product?.id, product?.productId]);
+
+  useEffect(() => {
+    const nextId =
+      canonicalProductId(initialProduct) ||
+      initialProduct?.productId ||
+      initialProduct?.id ||
+      initialProduct?.product_id ||
+      '';
+    const currentId =
+      canonicalProductId(product) ||
+      product?.productId ||
+      product?.id ||
+      product?.product_id ||
+      '';
+    if (!nextId || nextId === currentId) return;
+    setProduct(initialProduct);
+    setSelectedImageIndex(0);
+    setQuantity(1);
+    setDescriptionExpanded(false);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, [
+    initialProduct,
+    product?.id,
+    product?.productId,
+    product?.product_id,
+  ]);
 
   const buildCartItemForContext = () => {
     if (!product) return null;
@@ -653,7 +681,9 @@ export function ProductDetailPage({
             products={relatedProducts}
             loading={recsLoading}
             className="border-0 shadow-none p-0"
+            getCartQuantity={(id) => cart.find((i) => i.id === id)?.quantity ?? 0}
             onAdd={(p) => addToCart(shopProductToCartItem(p))}
+            onQuantityChange={(p, quantity) => updateQuantity(p.id, quantity)}
             onProductClick={(p) => {
               if (onNavigate) {
                 onNavigate('product_detail', { product: p });

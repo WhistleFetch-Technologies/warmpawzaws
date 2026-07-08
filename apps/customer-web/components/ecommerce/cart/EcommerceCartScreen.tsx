@@ -516,7 +516,10 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             <RecommendationProductScroller
               products={recommendations}
               loading={recsLoading}
+              getCartQuantity={(id) => cart.find((i) => i.id === id)?.quantity ?? 0}
               onAdd={(product) => addToCart(shopProductToCartItem(product))}
+              onQuantityChange={(product, quantity) => updateQuantity(product.id, quantity)}
+              onProductClick={(product) => nav.goToProduct(product.id)}
             />
 
             <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm lg:hidden">

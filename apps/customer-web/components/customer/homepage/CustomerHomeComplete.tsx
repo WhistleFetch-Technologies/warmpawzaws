@@ -30,6 +30,7 @@ import { ForYouSection } from '../ForYouSection';
 import { ServicesByProblem } from '../ServicesByProblem';
 import { TrendingProblems, type TrendingProblem } from '../TrendingProblems';
 import { CustomerNotificationModal } from '../CustomerNotificationModal';
+import { EcommerceLaunchPopup } from '../EcommerceLaunchPopup';
 import { getServiceStyleIcon, getPetIcon } from '@/lib/icon-utils';
 import { Dog, Cat, UtensilsCrossed, Shirt, Watch, Bed, Store } from 'lucide-react';
 import { useActiveGpsTracking, ActiveTrackingSession } from '@/hooks/useActiveGpsTracking';
@@ -56,6 +57,7 @@ import { buildCustomerLaunchTiles } from '@/lib/customer-launch-tiles';
 import { traceHomeSearchUpstream } from '@/lib/search-trace';
 import { mapApiServiceToRow } from '@/lib/clinic-service-row-mapper';
 import { launchSearchServiceBooking } from '@/lib/search-booking-launch';
+import { isBoardingCategory, isGroomingCategory, isNutritionCategory, isSittingCategory, isTrainingCategory, isWalkerCategory, isVetLikeCategory } from '@/lib/search-category-detect';
 import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
@@ -728,9 +730,73 @@ export function CustomerHomeComplete({
             0
           );
           const cat = category.toLowerCase();
-          const isVetLike =
-            cat.includes('vet') || cat.includes('veterinar') || cat.includes('clinic') || !cat;
-          if (isVetLike) {
+          if (isNutritionCategory(cat)) {
+            launchSearchServiceBooking({
+              vendorId,
+              vendorName: String(d.businessName || d.name || 'Provider'),
+              service,
+              category,
+              router,
+              returnSearchUrl: '/',
+            });
+            return;
+          }
+          if (isTrainingCategory(cat)) {
+            launchSearchServiceBooking({
+              vendorId,
+              vendorName: String(d.businessName || d.name || 'Provider'),
+              service,
+              category,
+              router,
+              returnSearchUrl: '/',
+            });
+            return;
+          }
+          if (isGroomingCategory(cat)) {
+            launchSearchServiceBooking({
+              vendorId,
+              vendorName: String(d.businessName || d.name || 'Provider'),
+              service,
+              category,
+              router,
+              returnSearchUrl: '/',
+            });
+            return;
+          }
+          if (isBoardingCategory(cat)) {
+            launchSearchServiceBooking({
+              vendorId,
+              vendorName: String(d.businessName || d.name || 'Provider'),
+              service,
+              category,
+              router,
+              returnSearchUrl: '/',
+            });
+            return;
+          }
+          if (isWalkerCategory(cat)) {
+            launchSearchServiceBooking({
+              vendorId,
+              vendorName: String(d.businessName || d.name || 'Provider'),
+              service,
+              category,
+              router,
+              returnSearchUrl: '/',
+            });
+            return;
+          }
+          if (isSittingCategory(cat)) {
+            launchSearchServiceBooking({
+              vendorId,
+              vendorName: String(d.businessName || d.name || 'Provider'),
+              service,
+              category,
+              router,
+              returnSearchUrl: '/',
+            });
+            return;
+          }
+          if (isVetLikeCategory(cat)) {
             launchSearchServiceBooking({
               vendorId,
               vendorName: String(d.businessName || d.name || 'Provider'),
@@ -3708,6 +3774,11 @@ export function CustomerHomeComplete({
             onViewBooking(bookingId);
           }
         }}
+      />
+
+      <EcommerceLaunchPopup
+        enabled={customerCommerceEnabled}
+        onExploreShop={() => handleNavigation('shop')}
       />
     </div>
   );

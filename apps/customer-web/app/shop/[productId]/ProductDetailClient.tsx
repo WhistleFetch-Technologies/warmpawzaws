@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
-import { resolveShopProductIdFromLocation } from '@/lib/resolve-shop-product-id';
+import { useShopProductId } from '@/lib/use-shop-product-id';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { useDeepLinkBackStack } from '@/lib/navigation/use-deep-link-back-stack';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
@@ -209,12 +209,11 @@ const DESCRIPTION_TOGGLE_MIN_LEN = 120;
 // ============================================================================
 
 export default function ProductDetailClient() {
-  const params = useParams();
   const router = useRouter();
   const nav = useCustomerNavigation();
   useDeepLinkBackStack();
-  const { addToCart: addRecommendationToCart } = useCart();
-  const productId = resolveShopProductIdFromLocation(params.productId as string);
+  const { cart, addToCart: addRecommendationToCart, updateQuantity } = useCart();
+  const productId = useShopProductId();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [productSkus, setProductSkus] = useState<ClientProductSku[]>([]);
@@ -296,6 +295,18 @@ export default function ProductDetailClient() {
   // ============================================================================
   // DATA LOADING
   // ============================================================================
+
+  useEffect(() => {
+    setSelectedImage(0);
+    setQuantity(1);
+    setShowReviews(false);
+    setSelectedVariations({});
+    userTouchedVariationsRef.current = false;
+    defaultVariationsAppliedRef.current = false;
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, [productId]);
 
   useEffect(() => {
     if (!productId) {
@@ -1354,8 +1365,16 @@ export default function ProductDetailClient() {
           products={recommendations}
           loading={recsLoading}
           className="mt-12 mb-8"
+          getCartQuantity={(id) => cart.find((i) => i.id === id)?.quantity ?? 0}
           onAdd={(p) => addRecommendationToCart(shopProductToCartItem(p))}
-          onProductClick={(p) => nav.goToProduct(p.id)}
+          onQuantityChange={(p, quantity) => updateQuantity(p.id, quantity)}
+          onProductClick={(p) => {
+            if (p.id === productId) {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              return;
+            }
+            nav.goToProduct(p.id);
+          }}
         />
       </main>
     </div>

@@ -14,6 +14,12 @@ import {
   vendorShareParamsToInitialNavigation,
   type VendorShareNavigationParams,
 } from '@/lib/vendor-profile-share';
+import { BoardingVendorProfileView } from '@/components/customer/boarding/BoardingVendorProfileView';
+import {
+  SEARCH_BOARDING_BOOKING_INTENT_KEY,
+  SEARCH_BOARDING_CENTER_RETURN_KEY,
+  type SearchBoardingBookingIntent,
+} from '@/lib/search-booking-launch';
 
 interface CustomerSession {
   phone: string;
@@ -24,6 +30,18 @@ interface CustomerSession {
   isNewUser?: boolean;
   hasCompletedOnboarding?: boolean;
   hasPets?: boolean;
+}
+
+function readBoardingReturnSearchUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(SEARCH_BOARDING_CENTER_RETURN_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { returnSearchUrl?: string };
+    return parsed.returnSearchUrl || '/search?category=boarding';
+  } catch {
+    return null;
+  }
 }
 
 function readBoardingShareParams(searchParams: URLSearchParams): VendorShareNavigationParams {
@@ -167,6 +185,40 @@ function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
       <CustomerApp
         initialSession={session}
         initialBannerNavigation={initialBannerNavigation}
+      />
+    );
+  }
+
+  const returnSearchUrl = readBoardingReturnSearchUrl();
+  if (returnSearchUrl) {
+    return (
+      <BoardingVendorProfileView
+        phone={session.phone}
+        vendorId={vendorId}
+        serviceSlug={serviceSlug}
+        onBack={() => router.push(returnSearchUrl)}
+        onNavigate={(screen, data) => {
+          if (screen === 'boarding-booking') {
+            const intent: SearchBoardingBookingIntent = {
+              vendorId: String(data?.vendorId || vendorId),
+              vendorName: data?.vendorName ? String(data.vendorName) : undefined,
+              serviceId: data?.serviceId ? String(data.serviceId) : undefined,
+              serviceName: data?.serviceName ? String(data.serviceName) : undefined,
+              price: typeof data?.price === 'number' ? data.price : undefined,
+              duration: typeof data?.duration === 'number' ? data.duration : undefined,
+              serviceStyle: data?.serviceStyle ? String(data.serviceStyle) : 'at_center',
+              serviceType: 'boarding',
+              returnSearchUrl,
+              facility: data?.facility,
+            };
+            try {
+              sessionStorage.setItem(SEARCH_BOARDING_BOOKING_INTENT_KEY, JSON.stringify(intent));
+            } catch {
+              /* ignore */
+            }
+            router.push('/booking/boarding');
+          }
+        }}
       />
     );
   }

@@ -4464,6 +4464,13 @@ export function CustomerHomeWrapper({
       product={selectedProduct} 
       phone={phone}
       onBack={() => goToShopFromParent()} 
+      onNavigate={(screen, data) => {
+        if (screen === 'product_detail' && data?.product) {
+          setSelectedProduct(data.product);
+          const pid = String(data.product.id ?? data.product.productId ?? '').trim();
+          navigateToScreen('product_detail', pid ? routeKey.product(pid) : undefined);
+        }
+      }}
       onReviewsClick={() => {
         navigateToScreen('product_reviews');
       }} 

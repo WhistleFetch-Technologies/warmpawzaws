@@ -542,7 +542,7 @@ function vendorShareBookIntentScreen(persona: string): string | null {
     case 'nutritionist':
     case 'nutrition':
     case 'pet_nutritionist':
-      return 'vet-booking';
+      return 'nutritionist-booking';
     default:
       return null;
   }
