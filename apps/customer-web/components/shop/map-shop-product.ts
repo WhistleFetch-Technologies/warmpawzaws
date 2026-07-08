@@ -1,4 +1,5 @@
 import { canonicalProductId } from '@/lib/product-id';
+import { normalizeOptionValues } from '@/lib/product-sku-client';
 import {
   getProductDiscountPercent as discountPercentFromPrices,
   listPriceForDiscountDisplay,
@@ -16,6 +17,17 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
   const rc = Number(p.review_count ?? 0) || 0;
   const rawRating = p.rating != null ? Number(p.rating) : NaN;
   const rating = rc > 0 && Number.isFinite(rawRating) && rawRating > 0 ? rawRating : 0;
+  const hasVariants = Boolean(p.has_variants ?? p.has_variations);
+  const listingSkuIdRaw = p.listing_sku_id ?? p.default_sku_id;
+  const listingSkuId =
+    listingSkuIdRaw != null && String(listingSkuIdRaw).trim()
+      ? String(listingSkuIdRaw).trim()
+      : undefined;
+  const listingOptionValues = normalizeOptionValues(
+    (p.listing_option_values ?? p.default_option_values) as
+      | Record<string, unknown>
+      | undefined,
+  );
 
   return {
     ...(p as unknown as ShopProduct),
@@ -33,7 +45,12 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
     vendor_id: String(p.vendor_id ?? ''),
     vendor_name: '',
     is_active: p.is_active !== false,
-    has_variants: Boolean(p.has_variants ?? p.has_variations),
+    has_variants: hasVariants,
+    listing_sku_id: hasVariants ? listingSkuId : undefined,
+    listing_option_values:
+      hasVariants && Object.keys(listingOptionValues).length > 0
+        ? listingOptionValues
+        : undefined,
     price_from: Boolean(p.price_from),
     min_price:
       p.min_price != null && Number.isFinite(Number(p.min_price))

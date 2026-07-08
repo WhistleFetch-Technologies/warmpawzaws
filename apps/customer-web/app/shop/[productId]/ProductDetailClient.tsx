@@ -47,6 +47,7 @@ import {
 import {
   readCheckoutAddressId,
 } from '@/lib/ecommerce/checkout-address-storage';
+import { ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL } from '@/lib/ecommerce/cart-pricing';
 import {
   loadCustomerDeliveryAddresses,
   pickDefaultDeliveryAddress,
@@ -69,7 +70,7 @@ import { useCart } from '@/context/CartContext';
 import {
   ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
   Package, Check, Plus, Minus, Share2, ChevronRight,
-  Clock, ThumbsUp, User, AlertCircle, RefreshCcw
+  Clock, ThumbsUp, User, AlertCircle
 } from 'lucide-react';
 
 // ============================================================================
@@ -174,6 +175,35 @@ function displaySpecValue(value: unknown): string {
   }
 }
 
+const TEMPLATE_SPEC_DIM_KEYS = new Set([
+  'length_cm',
+  'breadth_cm',
+  'height_cm',
+  'length',
+  'breadth',
+  'height',
+  'width',
+]);
+
+function templateSpecEntriesFromSpecs(
+  specifications: Record<string, unknown> | undefined,
+): [string, unknown][] {
+  if (
+    !specifications ||
+    typeof specifications !== 'object' ||
+    Array.isArray(specifications)
+  ) {
+    return [];
+  }
+  return Object.entries(specifications).filter(([key, value]) => {
+    if (TEMPLATE_SPEC_DIM_KEYS.has(key)) return false;
+    if (value == null || String(value).trim() === '' || value === 0) return false;
+    return true;
+  });
+}
+
+const DESCRIPTION_TOGGLE_MIN_LEN = 120;
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -201,6 +231,7 @@ export default function ProductDetailClient() {
   const [showReviews, setShowReviews] = useState(false);
   const [isInCart, setIsInCart] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [customerCity, setCustomerCity] = useState<string | null>(null);
   const userTouchedVariationsRef = useRef(false);
   const defaultVariationsAppliedRef = useRef(false);
@@ -507,6 +538,11 @@ export default function ProductDetailClient() {
     return ensureImageUrls(product?.images);
   }, [matchedSku, product?.images]);
 
+  const templateSpecEntries = useMemo(
+    () => templateSpecEntriesFromSpecs(product?.specifications),
+    [product?.specifications],
+  );
+
   useEffect(() => {
     if (userTouchedVariationsRef.current || defaultVariationsAppliedRef.current) return;
     if (productSkus.length === 0) return;
@@ -521,6 +557,10 @@ export default function ProductDetailClient() {
       defaultVariationsAppliedRef.current = true;
     }
   }, [productSkus, product?.variations]);
+
+  useEffect(() => {
+    setDescriptionExpanded(false);
+  }, [product?.id]);
 
   useEffect(() => {
     if (displayImages.length > 0 && selectedImage >= displayImages.length) {
@@ -709,6 +749,7 @@ export default function ProductDetailClient() {
     reviewDisplayCount = productReviewCount;
   }
   const showProductRatingRow = displayAvg > 0 && reviewDisplayCount > 0;
+  const descriptionText = product?.description?.trim() ?? '';
 
   // ============================================================================
   // RENDER
@@ -887,19 +928,52 @@ export default function ProductDetailClient() {
             </div>
 
             {/* Price */}
-            <div className="flex items-center gap-4 flex-wrap">
-              <span className="text-3xl font-bold text-slate-900">
-                {showFromPrice ? 'From ' : ''}₹{headerPrice.toLocaleString()}
-              </span>
-              {!showFromPrice && displayOriginalPrice && displayOriginalPrice > displayPrice && (
-                <>
-                  <span className="text-lg text-slate-400 line-through">₹{displayOriginalPrice.toLocaleString()}</span>
-                  <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-sm font-semibold rounded-lg">
-                    Save ₹{(displayOriginalPrice - displayPrice).toLocaleString()}
-                  </span>
-                </>
+            <div className="flex flex-row items-baseline justify-between gap-3">
+              <div className="flex items-center gap-4 flex-wrap min-w-0">
+                <span className="text-3xl font-bold text-slate-900">
+                  {showFromPrice ? 'From ' : ''}₹{headerPrice.toLocaleString()}
+                </span>
+                {!showFromPrice && displayOriginalPrice && displayOriginalPrice > displayPrice && (
+                  <>
+                    <span className="text-lg text-slate-400 line-through">₹{displayOriginalPrice.toLocaleString()}</span>
+                    <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-sm font-semibold rounded-lg">
+                      Save ₹{(displayOriginalPrice - displayPrice).toLocaleString()}
+                    </span>
+                  </>
+                )}
+              </div>
+              {templateSpecEntries.length > 0 && (
+                <div className="flex flex-col gap-0.5 items-end text-right shrink-0">
+                  {templateSpecEntries.map(([key, value]) => (
+                    <div key={key} className="text-sm whitespace-nowrap">
+                      <span className="text-slate-500">{key}: </span>
+                      <span className="font-medium text-slate-900">{displaySpecValue(value)}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
+
+            {descriptionText && (
+              <div>
+                <p
+                  className={`text-sm text-slate-600 leading-relaxed whitespace-pre-line ${
+                    descriptionExpanded ? '' : 'line-clamp-3'
+                  }`}
+                >
+                  {descriptionText}
+                </p>
+                {descriptionText.length > DESCRIPTION_TOGGLE_MIN_LEN && (
+                  <button
+                    type="button"
+                    onClick={() => setDescriptionExpanded((v) => !v)}
+                    className="mt-1 text-sm font-medium text-orange-600 hover:text-orange-700"
+                  >
+                    {descriptionExpanded ? 'Show less' : 'Show more'}
+                  </button>
+                )}
+              </div>
+            )}
 
             <SellerProductPromotions vendorId={product.vendor_id} />
 
@@ -1110,14 +1184,9 @@ export default function ProductDetailClient() {
                 <Truck className="w-5 h-5 text-emerald-500" />
                 <div>
                   <p className="font-medium text-slate-900">Free Delivery</p>
-                  <p className="text-sm text-slate-500">On orders above ₹499</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <RefreshCcw className="w-5 h-5 text-blue-500" />
-                <div>
-                  <p className="font-medium text-slate-900">Easy Returns</p>
-                  <p className="text-sm text-slate-500">7 days return policy</p>
+                  <p className="text-sm text-slate-500">
+                    On orders above ₹{ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL.toLocaleString('en-IN')}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -1131,17 +1200,8 @@ export default function ProductDetailClient() {
           </div>
         </div>
 
-        {/* Description & Specifications */}
-        <div className="mt-12 grid lg:grid-cols-2 gap-8">
-          {/* Description */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm">
-            <h2 className="text-xl font-bold text-slate-900 mb-4">Description</h2>
-            <p className="text-slate-600 leading-relaxed whitespace-pre-line">
-              {product.description || 'No description available.'}
-            </p>
-          </div>
-
-          {/* Specifications */}
+        {/* Specifications */}
+        <div className="mt-12">
           <div className="bg-white rounded-2xl p-6 shadow-sm">
             <h2 className="text-xl font-bold text-slate-900 mb-4">Specifications</h2>
             <div className="space-y-3">

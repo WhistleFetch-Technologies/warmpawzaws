@@ -11,7 +11,6 @@ import {
   ShoppingCart, 
   Truck, 
   Shield, 
-  RotateCcw, 
   CheckCircle2,
   Store,
   MapPin,
@@ -41,8 +40,50 @@ import {
 import { RecommendationProductScroller } from '@/components/ecommerce/shared/RecommendationProductScroller';
 import type { ShopProduct } from '@/components/shop/shop-types';
 import { shopProductToCartItem } from '@/lib/ecommerce/cart-product-helpers';
+import { ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL } from '@/lib/ecommerce/cart-pricing';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
 import { ProductImageGallery } from '@/components/ecommerce/ProductImageGallery';
+
+function displaySpecValue(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+const TEMPLATE_SPEC_DIM_KEYS = new Set([
+  'length_cm',
+  'breadth_cm',
+  'height_cm',
+  'length',
+  'breadth',
+  'height',
+  'width',
+]);
+
+function templateSpecEntriesFromSpecs(
+  specifications: Record<string, unknown> | undefined,
+): [string, unknown][] {
+  if (
+    !specifications ||
+    typeof specifications !== 'object' ||
+    Array.isArray(specifications)
+  ) {
+    return [];
+  }
+  return Object.entries(specifications).filter(([key, value]) => {
+    if (TEMPLATE_SPEC_DIM_KEYS.has(key)) return false;
+    if (value == null || String(value).trim() === '' || value === 0) return false;
+    return true;
+  });
+}
+
+const DESCRIPTION_TOGGLE_MIN_LEN = 120;
 
 interface ProductDetailPageProps {
   phone?: string;
@@ -68,6 +109,7 @@ export function ProductDetailPage({
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [relatedProducts, setRelatedProducts] = useState<ShopProduct[]>([]);
   const [recsLoading, setRecsLoading] = useState(false);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const { addToCart, cart } = useCart();
   const router = useRouter();
 
@@ -149,6 +191,10 @@ export function ProductDetailPage({
     initialProduct?._id,
     initialProduct?.fullDetails,
   ]);
+
+  useEffect(() => {
+    setDescriptionExpanded(false);
+  }, [product?.id, product?.productId]);
 
   const buildCartItemForContext = () => {
     if (!product) return null;
@@ -292,6 +338,8 @@ export function ProductDetailPage({
   const rating = Number(product.rating || product.average_rating || 0);
   const reviewCount = product.reviews || product.review_count || 0;
   const inStock = product.in_stock !== false && (product.stock_quantity > 0 || product.stock !== 'Out of Stock');
+  const templateSpecEntries = templateSpecEntriesFromSpecs(product.specifications);
+  const descriptionText = String(product.description ?? '').trim();
   
   // Render product details
   return (
@@ -379,17 +427,50 @@ export function ProductDetailPage({
           </div>
 
           {/* Price */}
-          <div className="flex items-baseline gap-3">
-            <span className="text-3xl font-bold text-[#FF8C42]">₹{price.toLocaleString()}</span>
-            {originalPrice && originalPrice > price && (
-              <>
-                <span className="text-lg text-gray-400 line-through">₹{originalPrice.toLocaleString()}</span>
-                <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200">
-                  Save ₹{(originalPrice - price).toLocaleString()}
-                </Badge>
-              </>
+          <div className="flex flex-row items-baseline justify-between gap-3">
+            <div className="flex items-baseline gap-3 flex-wrap min-w-0">
+              <span className="text-3xl font-bold text-[#FF8C42]">₹{price.toLocaleString()}</span>
+              {originalPrice && originalPrice > price && (
+                <>
+                  <span className="text-lg text-gray-400 line-through">₹{originalPrice.toLocaleString()}</span>
+                  <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200">
+                    Save ₹{(originalPrice - price).toLocaleString()}
+                  </Badge>
+                </>
+              )}
+            </div>
+            {templateSpecEntries.length > 0 && (
+              <div className="flex flex-col gap-0.5 items-end text-right shrink-0">
+                {templateSpecEntries.map(([key, value]) => (
+                  <div key={key} className="text-sm whitespace-nowrap">
+                    <span className="text-gray-500">{key}: </span>
+                    <span className="font-medium text-gray-900">{displaySpecValue(value)}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
+
+          {descriptionText && (
+            <div>
+              <p
+                className={`text-sm text-gray-600 leading-relaxed whitespace-pre-line ${
+                  descriptionExpanded ? '' : 'line-clamp-3'
+                }`}
+              >
+                {descriptionText}
+              </p>
+              {descriptionText.length > DESCRIPTION_TOGGLE_MIN_LEN && (
+                <button
+                  type="button"
+                  onClick={() => setDescriptionExpanded((v) => !v)}
+                  className="mt-1 text-sm font-medium text-[#FF8C42] hover:text-orange-700"
+                >
+                  {descriptionExpanded ? 'Show less' : 'Show more'}
+                </button>
+              )}
+            </div>
+          )}
 
           <SellerProductPromotions
             vendorId={resolveVendorIdFromProduct(product)}
@@ -486,17 +567,12 @@ export function ProductDetailPage({
                 <Truck className="w-5 h-5 text-blue-600 mt-0.5" />
                 <div className="flex-1">
                   <p className="font-semibold text-gray-900 text-sm">Free Delivery</p>
-                  <p className="text-xs text-gray-600">On orders above ₹499</p>
+                  <p className="text-xs text-gray-600">
+                    On orders above ₹{ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL.toLocaleString('en-IN')}
+                  </p>
                   <p className="text-xs text-gray-500 mt-1">
                     {product.vendor?.deliveryTime || '2-3 days'} delivery
                   </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <RotateCcw className="w-5 h-5 text-blue-600 mt-0.5" />
-                <div className="flex-1">
-                  <p className="font-semibold text-gray-900 text-sm">Easy Returns</p>
-                  <p className="text-xs text-gray-600">7 days return policy</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -508,19 +584,6 @@ export function ProductDetailPage({
               </div>
             </div>
           </Card>
-
-          {/* Description */}
-          {product.description && (
-            <>
-              <Separator />
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2">Description</h3>
-                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
-                  {product.description}
-                </p>
-              </div>
-            </>
-          )}
 
           {/* Specifications */}
           {(product.specifications || product.specs || product.weight || product.dimensions) && (

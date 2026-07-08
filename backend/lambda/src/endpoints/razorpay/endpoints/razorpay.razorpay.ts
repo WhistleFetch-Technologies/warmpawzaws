@@ -37,6 +37,10 @@ export { getVendorTierCommission } from '../../../utils/vendor-tier-commission';
 import { logBookingStatusChange } from '../../../utils/audit-log';
 import { notifyBookingCreated } from '../../../utils/booking-notifications';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
+import {
+  discardUnpaidShopOrder,
+  isShopOrderPaymentHoldExpired,
+} from '../../../utils/shop-payment-hold';
 import { PaymentTransactionStatus, BookingPaymentStatus } from '../../constants';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipment';
@@ -384,6 +388,16 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         if (payStatus === 'paid' || payStatus === 'completed') {
           return this.error('Order is already paid', 400);
         }
+        const orderSt = String(shopOrder.order_status || '').toLowerCase();
+        if (orderSt === 'cancelled' || ['failed', 'expired'].includes(payStatus)) {
+          return this.error('Order payment window has expired or order was cancelled. Please place a new order.', 410);
+        }
+        if (isShopOrderPaymentHoldExpired(shopOrder)) {
+          await discardUnpaidShopOrder(String(shopOrder.id), 'payment_window_expired', {
+            paymentStatus: 'expired',
+          });
+          return this.error('Payment window expired. Please place a new order.', 410);
+        }
         const pm = String(shopOrder.payment_method || '').toLowerCase();
         if (pm === 'cod' || pm === 'cash_on_delivery') {
           return this.error('This order uses cash on delivery; online payment is not required.', 400);
@@ -424,14 +438,22 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           ((parseFloat(String(shopOrder.total_amount ?? 0)) || 0) - walletApplied) * 100
         ) / 100;
         if (chargeAmount < 0) chargeAmount = 0;
-        // Fully covered by wallet — mark order as paid without Razorpay
+        // Fully covered by wallet — mark order as paid without Razorpay and surface to vendor
         if (chargeAmount <= 0) {
           await import('../../database/rds-connection').then(({ query: dbQuery }) =>
             dbQuery(
-              `UPDATE orders SET payment_status = 'paid', updated_at = NOW() WHERE id = $1`,
+              `UPDATE orders SET
+                 payment_status = 'paid',
+                 order_status = CASE WHEN order_status = 'pending_payment' THEN 'pending' ELSE order_status END,
+                 payment_hold_expires_at = NULL,
+                 updated_at = NOW()
+               WHERE id = $1`,
               [shopOrder.id]
             )
           ).catch(() => {});
+          void notifyShopOrderPaid(String(shopOrder.id)).catch((e) =>
+            console.warn('[RAZORPAY-CREATE-ORDER] notifyShopOrderPaid (wallet-full) failed:', e)
+          );
           return this.success({ fullyCoveredByWallet: true, orderId: shopOrder.id });
         }
         if (amount != null) {
@@ -952,6 +974,7 @@ class VerifyPaymentHandler extends BaseHandler {
         });
 
         // ✅ ROLLBACK: booking delete or ecommerce cancel + remove payment row
+        let shopOrderToDiscard: string | null = null;
         try {
           await withTransaction(async (client) => {
             const { rows: payments } = await client.query(
@@ -962,16 +985,7 @@ class VerifyPaymentHandler extends BaseHandler {
             if (payments.length > 0) {
               const row = payments[0];
               if (row.order_id && !row.booking_id) {
-                await client.query(
-                  `UPDATE orders SET
-                    order_status = 'cancelled',
-                    payment_status = 'failed',
-                    cancelled_at = COALESCE(cancelled_at, NOW()),
-                    updated_at = NOW()
-                  WHERE id = $1::uuid AND order_status = 'pending'`,
-                  [row.order_id]
-                );
-                console.log('[PAYMENT-VERIFY] ❌ Payment failed - ecommerce order cancelled:', row.order_id);
+                shopOrderToDiscard = String(row.order_id);
               } else if (row.booking_id) {
                 await client.query(`DELETE FROM bookings WHERE id = $1`, [row.booking_id]);
                 console.log('[PAYMENT-VERIFY] ❌ Payment failed - booking rolled back:', row.booking_id);
@@ -983,6 +997,12 @@ class VerifyPaymentHandler extends BaseHandler {
           });
         } catch (rollbackError: any) {
           console.error('[PAYMENT-VERIFY] Error during rollback:', rollbackError);
+        }
+
+        if (shopOrderToDiscard) {
+          await discardUnpaidShopOrder(shopOrderToDiscard, 'payment_signature_invalid', {
+            paymentStatus: 'failed',
+          }).catch((e) => console.warn('[PAYMENT-VERIFY] discardUnpaidShopOrder failed:', e));
         }
 
         return this.error('Invalid payment signature. Payment could not be verified.', 400);
@@ -1096,6 +1116,25 @@ class VerifyPaymentHandler extends BaseHandler {
             orderId: razorpay_order_id,
           });
 
+          const { rows: shopRows } = await client.query(
+            `SELECT id, order_status, payment_status, payment_method, payment_hold_expires_at, created_at
+             FROM orders WHERE id = $1::uuid FOR UPDATE`,
+            [ecommerceOrderId]
+          );
+          if (shopRows.length === 0) {
+            console.error('[PAYMENT-VERIFY] ❌ Ecommerce order not found:', ecommerceOrderId);
+            throw new Error(`Order ${ecommerceOrderId} not found`);
+          }
+          const shopRow = shopRows[0];
+          const shopPs = String(shopRow.payment_status || '').toLowerCase();
+          const shopSt = String(shopRow.order_status || '').toLowerCase();
+          if (shopSt === 'cancelled' || ['failed', 'expired'].includes(shopPs)) {
+            throw new Error('Order payment window has expired or order was cancelled');
+          }
+          if (isShopOrderPaymentHoldExpired(shopRow) && shopPs !== 'paid' && shopPs !== 'completed') {
+            throw new Error('PAYMENT_HOLD_EXPIRED');
+          }
+
           let commissionRate: number | null = null;
           let commissionAmount: number | null = null;
           const vendorIdForCommission = payment.vendor_id ? String(payment.vendor_id) : null;
@@ -1116,10 +1155,15 @@ class VerifyPaymentHandler extends BaseHandler {
             updateResult = await client.query(
               `UPDATE orders SET
                 payment_status = 'paid',
+                order_status = CASE
+                  WHEN order_status = 'pending_payment' THEN 'pending'
+                  ELSE order_status
+                END,
                 payment_method = COALESCE($3, payment_method),
                 payment_id = COALESCE(payment_id, $2),
                 commission_rate = COALESCE($4, commission_rate),
                 commission_amount = COALESCE($5, commission_amount),
+                payment_hold_expires_at = NULL,
                 updated_at = NOW()
               WHERE id = $1::uuid
               RETURNING id, payment_status, order_status`,
@@ -1139,8 +1183,13 @@ class VerifyPaymentHandler extends BaseHandler {
               updateResult = await client.query(
                 `UPDATE orders SET
                   payment_status = 'paid',
+                  order_status = CASE
+                    WHEN order_status = 'pending_payment' THEN 'pending'
+                    ELSE order_status
+                  END,
                   payment_method = COALESCE($3, payment_method),
                   payment_id = COALESCE(payment_id, $2),
+                  payment_hold_expires_at = NULL,
                   updated_at = NOW()
                 WHERE id = $1::uuid
                 RETURNING id, payment_status, order_status`,
@@ -1391,6 +1440,31 @@ class VerifyPaymentHandler extends BaseHandler {
     } catch (error: any) {
       console.error('[PAYMENT-VERIFY] Verification error:', error);
 
+      const holdExpired =
+        String(error?.message || '') === 'PAYMENT_HOLD_EXPIRED' ||
+        String(error?.message || '').includes('payment window has expired');
+
+      if (holdExpired) {
+        const body = this.parseBody(context.event);
+        try {
+          const { rows: paymentRows } = await query(
+            `SELECT order_id FROM payments WHERE razorpay_order_id = $1 AND order_id IS NOT NULL LIMIT 1`,
+            [body?.razorpay_order_id]
+          );
+          if (paymentRows[0]?.order_id) {
+            await discardUnpaidShopOrder(String(paymentRows[0].order_id), 'payment_window_expired', {
+              paymentStatus: 'expired',
+            });
+          }
+        } catch (discardErr) {
+          console.warn('[PAYMENT-VERIFY] discard after hold expiry failed:', discardErr);
+        }
+        return this.error(
+          'Payment window expired. Please place a new order. If you were charged, contact support for a refund.',
+          410
+        );
+      }
+
       // ✅ CRITICAL: This catch block runs AFTER signature verification passed.
       // The customer has genuinely paid money on Razorpay. We must NEVER delete the
       // booking or payment. The Razorpay webhook (payment.captured) will act as a
@@ -1422,8 +1496,15 @@ class VerifyPaymentHandler extends BaseHandler {
             await query(
               `UPDATE orders SET
                 payment_status = 'paid',
+                order_status = CASE
+                  WHEN order_status = 'pending_payment' THEN 'pending'
+                  ELSE order_status
+                END,
+                payment_hold_expires_at = NULL,
                 updated_at = NOW()
-              WHERE id = $1::uuid AND payment_status != 'paid'`,
+              WHERE id = $1::uuid
+                AND payment_status != 'paid'
+                AND LOWER(COALESCE(order_status, '')) NOT IN ('cancelled', 'returned')`,
               [paymentRows[0].order_id]
             );
             console.log('[PAYMENT-VERIFY] ⚠️ Best-effort ecommerce payment update:', paymentRows[0].order_id);
@@ -1582,10 +1663,17 @@ class RazorpayWebhookHandler extends BaseHandler {
           const orderUpdate = await client.query(
             `UPDATE orders SET
               payment_status = 'paid',
+              order_status = CASE
+                WHEN order_status = 'pending_payment' THEN 'pending'
+                ELSE order_status
+              END,
               payment_id = COALESCE(payment_id, $2),
+              payment_hold_expires_at = NULL,
               updated_at = NOW()
-            WHERE id = $1::uuid AND payment_status != 'paid'
-            RETURNING id, vendor_id`,
+            WHERE id = $1::uuid
+              AND payment_status != 'paid'
+              AND LOWER(COALESCE(order_status, '')) NOT IN ('cancelled', 'returned')
+            RETURNING id, vendor_id, order_status`,
             [paymentRecord.order_id, paymentRecord.id]
           );
           if (orderUpdate.rows.length > 0) {
@@ -1663,6 +1751,7 @@ class RazorpayWebhookHandler extends BaseHandler {
     } else if (event === 'payment.failed') {
       const payment = payload_data.payment.entity;
       const failedRazorpayOrderId = payment.order_id;
+      let shopOrderToDiscard: string | null = null;
 
       await withTransaction(async (client) => {
         await client.query(
@@ -1688,16 +1777,7 @@ class RazorpayWebhookHandler extends BaseHandler {
         if (payments.length > 0) {
           const row = payments[0];
           if (row.order_id && !row.booking_id) {
-            await client.query(
-              `UPDATE orders SET
-                order_status = 'cancelled',
-                payment_status = 'failed',
-                cancelled_at = COALESCE(cancelled_at, NOW()),
-                updated_at = NOW()
-              WHERE id = $1::uuid AND order_status = 'pending' AND payment_status != 'paid'`,
-              [row.order_id]
-            );
-            console.log('[PAYMENT-FAILED] ✅ Ecommerce order cancelled:', row.order_id);
+            shopOrderToDiscard = String(row.order_id);
           } else if (row.booking_id) {
             const bookingId = row.booking_id;
 
@@ -1727,6 +1807,13 @@ class RazorpayWebhookHandler extends BaseHandler {
           }
         }
       });
+
+      if (shopOrderToDiscard) {
+        await discardUnpaidShopOrder(shopOrderToDiscard, 'razorpay_payment_failed', {
+          paymentStatus: 'failed',
+        }).catch((e) => console.warn('[PAYMENT-FAILED] discardUnpaidShopOrder failed:', e));
+        console.log('[PAYMENT-FAILED] ✅ Ecommerce order discarded:', shopOrderToDiscard);
+      }
     } else if (event === 'refund.created' || event === 'refund.processed') {
       const refund = payload_data.refund.entity;
       

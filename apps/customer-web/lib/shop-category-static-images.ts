@@ -29,6 +29,32 @@ export function slugifyShopCategoryName(nameOrSlug: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+/** Short CTA aliases / plurals → canonical static display slug (e.g. food → pet-food). */
+const SHOP_CATEGORY_SLUG_ALIASES: Record<string, string> = {
+  food: 'pet-food',
+  foods: 'pet-food',
+  accessories: 'pet-accessories',
+  toys: 'pet-toys',
+  grooming: 'pet-grooming',
+  health: 'pet-health',
+  clothing: 'pet-clothing',
+  clothings: 'pet-clothing',
+  'pet-clothings': 'pet-clothing',
+  travel: 'pet-travel',
+  pharmacy: 'pet-pharmacy',
+  training: 'pet-training',
+  'pet-beds-furnitures': 'pet-beds-furniture',
+  beds: 'pet-beds-furniture',
+  furniture: 'pet-beds-furniture',
+};
+
+/** Normalize a name or slug to a canonical shop category slug for matching. */
+export function canonicalizeShopCategorySlug(nameOrSlug: string): string {
+  const slug = slugifyShopCategoryName(nameOrSlug);
+  if (!slug) return '';
+  return SHOP_CATEGORY_SLUG_ALIASES[slug] || slug;
+}
+
 /** Resolve static image URL for a shop category name or slug. */
 export function getShopCategoryStaticImageUrl(nameOrSlug: string): string | undefined {
   const raw = String(nameOrSlug ?? '').trim();
@@ -39,22 +65,8 @@ export function getShopCategoryStaticImageUrl(nameOrSlug: string): string | unde
     return SHOP_CATEGORY_IMAGE_BY_SLUG[slug];
   }
 
-  // Plural/singular aliases from API names
-  const aliases: Record<string, string> = {
-    food: 'pet-food',
-    foods: 'pet-food',
-    accessories: 'pet-accessories',
-    toys: 'pet-toys',
-    grooming: 'pet-grooming',
-    health: 'pet-health',
-    clothing: 'pet-clothing',
-    clothings: 'pet-clothing',
-    travel: 'pet-travel',
-    pharmacy: 'pet-pharmacy',
-    training: 'pet-training',
-  };
-  const aliasSlug = aliases[slug];
-  if (aliasSlug && SHOP_CATEGORY_IMAGE_BY_SLUG[aliasSlug]) {
+  const aliasSlug = canonicalizeShopCategorySlug(slug);
+  if (aliasSlug && aliasSlug !== slug && SHOP_CATEGORY_IMAGE_BY_SLUG[aliasSlug]) {
     return SHOP_CATEGORY_IMAGE_BY_SLUG[aliasSlug];
   }
 
