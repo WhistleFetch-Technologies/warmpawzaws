@@ -642,7 +642,7 @@ jobs:
           done
           D="apps/customer-web/dist"
           if [ -d "$D" ]; then
-            printf '%s\n' "(function(){var u=\"$API\";window.__WARMPAWZ_RUNTIME_CONFIG__={apiBaseUrl:u,uatMode:false,environment:\"production\",customerEcommerceEnabled:false};if(typeof __API_BASE_URL__===\"undefined\"){window.__API_BASE_URL__=u;}}());" > "$D/runtime-config.js"
+            printf '%s\n' "(function(){var u=\"$API\";window.__WARMPAWZ_RUNTIME_CONFIG__=Object.assign(window.__WARMPAWZ_RUNTIME_CONFIG__||{},{apiBaseUrl:u,uatMode:false,environment:\"production\",customerEcommerceEnabled:false});if(typeof __API_BASE_URL__===\"undefined\"){window.__API_BASE_URL__=u;}}());" > "$D/runtime-config.js"
             echo "✅ Injected runtime-config.js into $D (customer ecommerce disabled)"
           else
             echo "⚠️  Warning: $D does not exist, skipping runtime-config injection"
