@@ -27,13 +27,17 @@ function parseExplicitEnv(raw: string | undefined): boolean | null {
 
 /** When false, shop/cart/checkout/wishlist/orders show Coming Soon. */
 export function isCustomerEcommerceEnabled(): boolean {
-  const rc = getRuntimeConfig().customerEcommerceEnabled;
-  if (typeof rc === 'boolean') return rc;
+  const rc = getRuntimeConfig();
+  if (typeof rc.customerEcommerceEnabled === 'boolean') return rc.customerEcommerceEnabled;
 
   const explicit = parseExplicitEnv(
     typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED : undefined
   );
   if (explicit !== null) return explicit;
+
+  // Fail-closed on production: deployed runtime-config often omits the key and would
+  // otherwise fall through to default true (shop stays live after a prod deploy).
+  if (rc.environment === 'production') return false;
 
   return true;
 }
