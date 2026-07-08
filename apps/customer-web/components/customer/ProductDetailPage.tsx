@@ -193,10 +193,6 @@ export function ProductDetailPage({
   ]);
 
   useEffect(() => {
-    setDescriptionExpanded(false);
-  }, [product?.id, product?.productId]);
-
-  useEffect(() => {
     const nextId =
       canonicalProductId(initialProduct) ||
       initialProduct?.productId ||
