@@ -120,6 +120,7 @@ esbuild.build({
     'aws-lambda',     // Provided by Lambda runtime
     'pg-native',      // Native PostgreSQL module (we use pure JS pg instead)
     'firebase-admin', // Loaded at runtime from dist/node_modules (see scripts/package-lambda.js)
+    'sharp',          // Native bindings — installed linux x64 in package-lambda.js
     '@grpc/grpc-js',  // Has corrupt source map; not needed at Lambda runtime
     // ✅ FIX: These MUST be bundled for Lambda to work:
     // - 'pg' - PostgreSQL driver (removed from external)

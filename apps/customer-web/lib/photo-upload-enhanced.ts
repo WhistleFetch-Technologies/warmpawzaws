@@ -34,6 +34,8 @@ export interface PhotoUploadResult {
   url?: string;
   publicUrl?: string;
   fileName?: string;
+  /** Stable S3 key — persist this in DB, not presigned URL */
+  imageKey?: string;
   error?: string;
   retries?: number;
 }
@@ -105,7 +107,8 @@ export async function uploadPhotoWithProgress(
           success: true,
           url: uploadResult.url,
           publicUrl: uploadResult.publicUrl,
-          fileName: uploadResult.fileName,
+          fileName: uploadResult.imageKey || uploadResult.fileName,
+          imageKey: uploadResult.imageKey || uploadResult.fileName,
           retries,
         };
       }
@@ -158,12 +161,18 @@ async function uploadWithXHR(
         try {
           const response = JSON.parse(xhr.responseText);
           const resolvedUrl = response.url || response.publicUrl;
+          const imageKey =
+            response.imageKey ||
+            response.asset?.imageKey ||
+            response.key ||
+            response.fileName;
           if (response.success && resolvedUrl) {
             resolve({
               success: true,
               url: response.url,
               publicUrl: response.publicUrl,
-              fileName: response.fileName,
+              fileName: imageKey || response.fileName,
+              imageKey: imageKey || undefined,
             });
           } else {
             resolve({

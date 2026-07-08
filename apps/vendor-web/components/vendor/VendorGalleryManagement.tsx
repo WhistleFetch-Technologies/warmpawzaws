@@ -19,8 +19,8 @@ interface VendorGalleryManagementProps {
   onBack?: () => void;
 }
 
-const MAX_PHOTOS = 10;
-const MAX_FILE_MB = 5;
+const MAX_PHOTOS = 20;
+const MAX_FILE_MB = 25;
 
 export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManagementProps) {
   const effectiveVendorId = resolveFacilityGalleryVendorId(vendorId);
