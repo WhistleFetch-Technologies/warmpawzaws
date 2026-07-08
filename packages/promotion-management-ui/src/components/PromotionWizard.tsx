@@ -97,10 +97,16 @@ export function PromotionWizard({
   }, [open, initial, initialStep]);
 
   const validationAudience = scope.mode === 'platform' ? 'admin' : 'vendor';
+  const smartTargetSurface = scope.smartTargetSurface;
 
   const issues = useMemo(
-    () => validatePromotionWizard(form, { existingCodes, audience: validationAudience }),
-    [form, existingCodes, validationAudience]
+    () =>
+      validatePromotionWizard(form, {
+        existingCodes,
+        audience: validationAudience,
+        smartTargetSurface,
+      }),
+    [form, existingCodes, validationAudience, smartTargetSurface]
   );
 
   if (!open) return null;
@@ -152,7 +158,13 @@ export function PromotionWizard({
 
   const handlePublish = async (asDraft: boolean) => {
     const payload = { ...form, uiStatus: asDraft ? ('draft' as const) : ('active' as const) };
-    if (hasValidationErrors(validatePromotionWizard(payload, { existingCodes, audience: validationAudience }))) return;
+    if (hasValidationErrors(
+      validatePromotionWizard(payload, {
+        existingCodes,
+        audience: validationAudience,
+        smartTargetSurface,
+      })
+    )) return;
     await onSave(payload, !asDraft);
     baselineRef.current = snapshotForm(payload);
     setStep(0);

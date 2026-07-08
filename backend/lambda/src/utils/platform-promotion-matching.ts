@@ -1,8 +1,5 @@
 import { customerServicesForCatalogCategorySlug } from './catalog-category-customer-service-map';
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Admin catalogue category slugs (e.g. veterinary) vs customer booking category (e.g. vet).
  */
@@ -76,29 +73,41 @@ export function platformPromotionAppliesToBooking(row: Record<string, unknown>):
   return true;
 }
 
-/** Expand catalog service_id tokens to vendor_services.id for a vendor. */
+/** Expand catalog service tokens to vendor_services.id for a vendor (all publishers of that catalogue service). */
 export async function expandPromotionServiceTokensForVendor(
   vendorId: string,
   tokens: string[],
   queryFn: (text: string, params?: unknown[]) => Promise<{ rows?: Record<string, unknown>[] }>
 ): Promise<Set<string>> {
   const expanded = new Set(tokens.map((t) => String(t)));
-  const uuids = tokens.filter((t) => UUID_RE.test(t));
-  if (!vendorId || uuids.length === 0) return expanded;
+  const candidates = tokens
+    .map((t) => String(t).trim())
+    .filter((t) => t && !t.startsWith('style:'));
+  if (!vendorId || candidates.length === 0) return expanded;
 
   try {
     const res = await queryFn(
-      `SELECT id::text AS vendor_service_id, service_id::text AS catalog_service_id
-       FROM vendor_services
-       WHERE vendor_id = $1::uuid
-         AND (id::text = ANY($2::text[]) OR service_id::text = ANY($2::text[]))`,
-      [vendorId, uuids]
+      `SELECT vs.id::text AS vendor_service_id,
+              vs.service_id::text AS catalog_service_id,
+              sc.service_id::text AS catalog_service_code
+       FROM vendor_services vs
+       LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+       WHERE vs.vendor_id = $1::uuid
+         AND (
+           vs.id::text = ANY($2::text[])
+           OR vs.service_id::text = ANY($2::text[])
+           OR sc.id::text = ANY($2::text[])
+           OR sc.service_id = ANY($2::text[])
+         )`,
+      [vendorId, candidates]
     );
     for (const row of res.rows || []) {
       const vsId = String(row.vendor_service_id || '');
       const catalogId = row.catalog_service_id ? String(row.catalog_service_id) : '';
+      const catalogCode = row.catalog_service_code ? String(row.catalog_service_code) : '';
       if (vsId) expanded.add(vsId);
       if (catalogId) expanded.add(catalogId);
+      if (catalogCode) expanded.add(catalogCode);
     }
   } catch {
     /* keep original tokens */

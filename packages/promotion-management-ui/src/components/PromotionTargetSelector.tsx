@@ -224,6 +224,8 @@ function SmartPromotionTargetSelector({
   const [inventoryPage, setInventoryPage] = useState(0);
   const [categoryQuery, setCategoryQuery] = useState('');
   const [categoryPage, setCategoryPage] = useState(0);
+  const [catalogServiceQuery, setCatalogServiceQuery] = useState('');
+  const [catalogServicePage, setCatalogServicePage] = useState(0);
 
   const [partnerResults, setPartnerResults] = useState<TargetOption[] | null>(null);
   const [partnerLoading, setPartnerLoading] = useState(false);
@@ -233,8 +235,13 @@ function SmartPromotionTargetSelector({
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryError, setInventoryError] = useState<string | null>(null);
 
+  const [catalogServiceOptions, setCatalogServiceOptions] = useState<TargetOption[]>([]);
+  const [catalogServicesLoading, setCatalogServicesLoading] = useState(false);
+  const [catalogServicesError, setCatalogServicesError] = useState<string | null>(null);
+
   const debouncedPartnerQuery = useDebouncedValue(partnerQuery);
   const debouncedInventoryQuery = useDebouncedValue(inventoryQuery);
+  const debouncedCatalogServiceQuery = useDebouncedValue(catalogServiceQuery);
 
   const selectedPartnerId = selectedTargets.vendors?.[0];
   const selectedPartner = useMemo(() => {
@@ -246,27 +253,50 @@ function SmartPromotionTargetSelector({
   const inventoryScope: TargetScopeId =
     adminSurface === 'ecommerce' ? 'products' : inventoryType;
 
+  const selectedCategoryIds = selectedTargets.categories ?? [];
+  const includeCatalogServices =
+    adminSurface === 'marketing' &&
+    flow === 'categories' &&
+    selectedCategoryIds.length > 0;
+
   const applyFlow = useCallback(
     (nextFlow: SmartTargetFlowId, resetTargets = true) => {
       setFlow(nextFlow);
       setPartnerPage(0);
       setInventoryPage(0);
       setCategoryPage(0);
+      setCatalogServicePage(0);
       setInventoryOptions([]);
+      setCatalogServiceOptions([]);
+      setCatalogServiceQuery('');
       if (resetTargets) {
         onTargetsChange({});
       }
-      onScopesChange(buildSmartTargetScopes(nextFlow, inventoryType, optionalStyles && nextFlow === 'categories'));
+      onScopesChange(
+        buildSmartTargetScopes(nextFlow, inventoryType, optionalStyles && nextFlow === 'categories', {
+          includeCatalogServices: false,
+        })
+      );
     },
     [inventoryType, onScopesChange, onTargetsChange, optionalStyles]
   );
 
   const syncScopes = useCallback(
-    (nextTargets: Partial<Record<TargetScopeId, string[]>>, stylesEnabled = optionalStyles) => {
-      onScopesChange(buildSmartTargetScopes(flow, inventoryType, stylesEnabled && flow === 'categories'));
+    (
+      nextTargets: Partial<Record<TargetScopeId, string[]>>,
+      stylesEnabled = optionalStyles
+    ) => {
+      const hasCats = (nextTargets.categories?.length ?? 0) > 0;
+      const hasCatalogServices =
+        adminSurface === 'marketing' && flow === 'categories' && hasCats;
+      onScopesChange(
+        buildSmartTargetScopes(flow, inventoryType, stylesEnabled && flow === 'categories', {
+          includeCatalogServices: hasCatalogServices,
+        })
+      );
       onTargetsChange(nextTargets);
     },
-    [flow, inventoryType, onScopesChange, onTargetsChange, optionalStyles]
+    [adminSurface, flow, inventoryType, onScopesChange, onTargetsChange, optionalStyles]
   );
 
   useEffect(() => {
@@ -343,6 +373,58 @@ function SmartPromotionTargetSelector({
     }
   }, [flow, selectedPartnerId, inventoryType, debouncedInventoryQuery, loadInventory]);
 
+  const loadCatalogServices = useCallback(async () => {
+    if (!includeCatalogServices) {
+      setCatalogServiceOptions([]);
+      return;
+    }
+    setCatalogServicesLoading(true);
+    setCatalogServicesError(null);
+    try {
+      let rows: TargetOption[] = [];
+      if (adapter?.loadCatalogServicesByCategory) {
+        rows = await adapter.loadCatalogServicesByCategory(
+          selectedCategoryIds,
+          debouncedCatalogServiceQuery
+        );
+      } else {
+        rows = filterOptionsByQuery(
+          (catalog.services ?? []).filter(
+            (s) =>
+              !s.group ||
+              selectedCategoryIds.some(
+                (c) =>
+                  s.group?.toLowerCase() === c.toLowerCase() ||
+                  s.subtitle?.toLowerCase().includes(c.toLowerCase())
+              )
+          ),
+          debouncedCatalogServiceQuery
+        );
+      }
+      setCatalogServiceOptions(rows);
+      setCatalogServicePage(0);
+    } catch {
+      setCatalogServicesError('Could not load catalogue services. Try again.');
+      setCatalogServiceOptions([]);
+    } finally {
+      setCatalogServicesLoading(false);
+    }
+  }, [
+    adapter,
+    catalog.services,
+    debouncedCatalogServiceQuery,
+    includeCatalogServices,
+    selectedCategoryIds,
+  ]);
+
+  useEffect(() => {
+    if (includeCatalogServices) {
+      void loadCatalogServices();
+    } else {
+      setCatalogServiceOptions([]);
+    }
+  }, [includeCatalogServices, selectedCategoryIds.join('|'), debouncedCatalogServiceQuery, loadCatalogServices]);
+
   const partnerOptions = partnerResults ?? catalog.vendors ?? [];
   const partnerPageItems = partnerOptions.slice(
     partnerPage * SMART_PAGE_SIZE,
@@ -367,6 +449,15 @@ function SmartPromotionTargetSelector({
   );
   const categoryTotalPages = Math.max(1, Math.ceil(categoryFiltered.length / SMART_PAGE_SIZE));
 
+  const catalogServicePageItems = catalogServiceOptions.slice(
+    catalogServicePage * SMART_PAGE_SIZE,
+    (catalogServicePage + 1) * SMART_PAGE_SIZE
+  );
+  const catalogServiceTotalPages = Math.max(
+    1,
+    Math.ceil(catalogServiceOptions.length / SMART_PAGE_SIZE)
+  );
+
   const summary = formatSmartTargetSummary(
     { targetScopes: selectedScopes, selectedTargets } as Parameters<typeof formatSmartTargetSummary>[0],
     adminSurface,
@@ -377,9 +468,24 @@ function SmartPromotionTargetSelector({
     const set = new Set(selectedTargets.categories ?? []);
     if (set.has(id)) set.delete(id);
     else set.add(id);
-    const next = { ...selectedTargets, categories: Array.from(set) };
+    const nextCats = Array.from(set);
+    const next = { ...selectedTargets, categories: nextCats };
+    // Drop service picks when categories change — must re-select from the new catalogue list.
+    delete next.services;
     if (!optionalStyles) delete next.styles;
     syncScopes(next);
+    setCatalogServicePage(0);
+  };
+
+  const toggleCatalogService = (id: string) => {
+    const set = new Set(selectedTargets.services ?? []);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    syncScopes({
+      ...selectedTargets,
+      categories: selectedCategoryIds,
+      services: Array.from(set),
+    });
   };
 
   const toggleStyle = (id: string) => {
@@ -456,7 +562,9 @@ function SmartPromotionTargetSelector({
           flow === 'entire_platform'
             ? 'This promotion applies across the whole marketplace — no inventory selection needed.'
             : flow === 'categories'
-              ? 'Pick one or more categories. Service selection is optional only if you expand styles below.'
+              ? adminSurface === 'marketing'
+                ? '1) Select a category → 2) Select catalogue services. The offer applies for every vendor who published those services.'
+                : 'Pick one or more retail categories for this offer.'
               : undefined
         }
       />
@@ -467,7 +575,11 @@ function SmartPromotionTargetSelector({
           flow !== 'entire_platform'
             ? () => {
                 onTargetsChange({});
-                onScopesChange(buildSmartTargetScopes(flow, inventoryType, false));
+                onScopesChange(
+                  buildSmartTargetScopes(flow, inventoryType, false, {
+                    includeCatalogServices: false,
+                  })
+                );
               }
             : undefined
         }
@@ -482,31 +594,86 @@ function SmartPromotionTargetSelector({
       ) : null}
 
       {flow === 'categories' ? (
-        <div className="space-y-3">
-          <SearchField
-            value={categoryQuery}
-            onChange={(v) => {
-              setCategoryQuery(v);
-              setCategoryPage(0);
-            }}
-            placeholder="Search categories…"
-          />
-          {categories.length === 0 ? (
-            <TargetEmptyState
-              message="No categories available."
-              hint="Check catalog configuration or refresh the page."
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              {adminSurface === 'marketing' ? '1. Select category' : 'Select categories'}
+            </p>
+            <SearchField
+              value={categoryQuery}
+              onChange={(v) => {
+                setCategoryQuery(v);
+                setCategoryPage(0);
+              }}
+              placeholder="Search categories…"
             />
-          ) : categoryPageItems.length === 0 ? (
-            <TargetEmptyState message="No categories match your search." />
-          ) : (
-            <CheckboxList
-              items={categoryPageItems}
-              selected={selectedTargets.categories ?? []}
-              onToggle={toggleCategory}
-              namePrefix="category"
-            />
-          )}
-          <Paginator page={categoryPage} totalPages={categoryTotalPages} onPageChange={setCategoryPage} />
+            {categories.length === 0 ? (
+              <TargetEmptyState
+                message="No categories available."
+                hint="Check catalog configuration or refresh the page."
+              />
+            ) : categoryPageItems.length === 0 ? (
+              <TargetEmptyState message="No categories match your search." />
+            ) : (
+              <CheckboxList
+                items={categoryPageItems}
+                selected={selectedTargets.categories ?? []}
+                onToggle={toggleCategory}
+                namePrefix="category"
+              />
+            )}
+            <Paginator page={categoryPage} totalPages={categoryTotalPages} onPageChange={setCategoryPage} />
+          </div>
+
+          {adminSurface === 'marketing' ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                2. Select catalogue services *
+              </p>
+              <p className="text-xs text-slate-500">
+                Applies to all vendors who published the selected services from the admin catalogue.
+              </p>
+              {selectedCategoryIds.length === 0 ? (
+                <TargetEmptyState message="Select a category first to load linked catalogue services." />
+              ) : (
+                <>
+                  <SearchField
+                    value={catalogServiceQuery}
+                    onChange={(v) => {
+                      setCatalogServiceQuery(v);
+                      setCatalogServicePage(0);
+                    }}
+                    placeholder="Search catalogue services…"
+                  />
+                  {catalogServicesLoading ? (
+                    <TargetListSkeleton />
+                  ) : catalogServicesError ? (
+                    <TargetEmptyState
+                      message={catalogServicesError}
+                      onRetry={() => void loadCatalogServices()}
+                    />
+                  ) : catalogServicePageItems.length === 0 ? (
+                    <TargetEmptyState
+                      message="No catalogue services found for the selected category."
+                      hint="Add or publish services in Catalog & Services, then retry."
+                    />
+                  ) : (
+                    <CheckboxList
+                      items={catalogServicePageItems}
+                      selected={selectedTargets.services ?? []}
+                      onToggle={toggleCatalogService}
+                      namePrefix="catalog-service"
+                    />
+                  )}
+                  <Paginator
+                    page={catalogServicePage}
+                    totalPages={catalogServiceTotalPages}
+                    onPageChange={setCatalogServicePage}
+                  />
+                </>
+              )}
+            </div>
+          ) : null}
 
           {adminSurface === 'marketing' ? (
             <div className="rounded-xl border border-slate-100 p-3 space-y-2">

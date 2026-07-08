@@ -1,4 +1,4 @@
-import type { PromotionWizardForm, TargetScopeId } from './types';
+import type { PromotionWizardForm, SmartTargetSurface, TargetScopeId } from './types';
 
 export type ValidationIssue = { field: string; message: string; severity: 'error' | 'warning' };
 
@@ -27,10 +27,11 @@ export function hasConcreteTargetSelection(form: PromotionWizardForm): boolean {
  */
 export function validatePromotionTargeting(
   form: PromotionWizardForm,
-  options?: { audience?: 'admin' | 'vendor' }
+  options?: { audience?: 'admin' | 'vendor'; smartTargetSurface?: SmartTargetSurface }
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const audience = options?.audience ?? 'admin';
+  const smartSurface = options?.smartTargetSurface;
   const scopes = form.targetScopes ?? [];
   const selected = form.selectedTargets ?? {};
 
@@ -70,8 +71,32 @@ export function validatePromotionTargeting(
     });
   }
 
+  // Admin marketing: category → catalogue services is required (applies to all vendors with those services).
+  if (
+    audience === 'admin' &&
+    smartSurface === 'marketing' &&
+    (selected.categories?.length ?? 0) > 0 &&
+    (selected.services?.length ?? 0) === 0
+  ) {
+    issues.push({
+      field: 'target',
+      message:
+        'Select at least one catalogue service under the chosen category. The offer applies for every vendor who published that service.',
+      severity: 'error',
+    });
+  }
+
   for (const scope of scopes) {
     if (scope === 'entire_platform') continue;
+    // Marketing categories: services are validated above (must pick catalogue services).
+    if (
+      audience === 'admin' &&
+      smartSurface === 'marketing' &&
+      scope === 'services' &&
+      (selected.categories?.length ?? 0) > 0
+    ) {
+      continue;
+    }
     const count = selected[scope]?.length ?? 0;
     if (count === 0) {
       const labels: Partial<Record<TargetScopeId, string>> = {
@@ -110,6 +135,7 @@ export function validatePromotionWizard(
     existingCodes?: string[];
     editingId?: string;
     audience?: 'admin' | 'vendor';
+    smartTargetSurface?: SmartTargetSurface;
   }
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
@@ -166,7 +192,12 @@ export function validatePromotionWizard(
     issues.push({ field: 'schedule', message: 'End date must be after start date', severity: 'error' });
   }
 
-  issues.push(...validatePromotionTargeting(form, { audience: options?.audience }));
+  issues.push(
+    ...validatePromotionTargeting(form, {
+      audience: options?.audience,
+      smartTargetSurface: options?.smartTargetSurface,
+    })
+  );
 
   return issues;
 }

@@ -97,6 +97,38 @@ export function createAdminSmartTargetAdapter(
       return filterOptionsByQuery(rows, q);
     },
 
+    async loadCatalogServicesByCategory(
+      categoryIds: string[],
+      search: string
+    ): Promise<TargetOption[]> {
+      if (surface !== 'marketing') return [];
+      const ids = categoryIds.map((c) => String(c).trim()).filter(Boolean);
+      if (ids.length === 0) return [];
+
+      const allRows: TargetOption[] = [];
+      const seen = new Set<string>();
+
+      await Promise.all(
+        ids.map(async (categoryId) => {
+          const res = await apiClient
+            .get<{
+              services?: Record<string, unknown>[];
+              data?: Record<string, unknown>[];
+            }>(`/admin/service-catalog?categoryId=${encodeURIComponent(categoryId)}&groupBy=none`)
+            .catch(() => ({ services: [], data: [] }));
+          const raw = res.services ?? res.data ?? [];
+          for (const row of Array.isArray(raw) ? raw : []) {
+            const option = mapCatalogServiceRow(row);
+            if (!option || seen.has(option.id)) continue;
+            seen.add(option.id);
+            allRows.push(option);
+          }
+        })
+      );
+
+      return filterOptionsByQuery(allRows, search);
+    },
+
     async loadVendorInventory(
       vendorId: string,
       inventoryType: VendorInventoryType,
@@ -169,3 +201,31 @@ export function createAdminSmartTargetAdapter(
     },
   };
 }
+
+/** Prefer UUID `id` (vendor_services.service_id FK) plus text service_id as subtitle. */
+function mapCatalogServiceRow(s: Record<string, unknown>): TargetOption | null {
+  const uuid = String(s.id ?? '').trim();
+  const textId = String(s.service_id ?? s.serviceId ?? '').trim();
+  // Persist UUID when present so booking can expand via vendor_services.service_id
+  const id = UUID_RE.test(uuid) ? uuid : textId || uuid;
+  if (!id || id === 'undefined') return null;
+  const label = String(
+    s.display_name ?? s.displayName ?? s.service_name ?? s.serviceName ?? s.name ?? id
+  ).trim();
+  const categoryName = s.category_name ?? s.categoryName;
+  const style = s.service_style ?? s.serviceStyle;
+  const subtitleParts = [
+    categoryName ? String(categoryName) : '',
+    style ? String(style).replace(/_/g, ' ') : '',
+    textId && textId !== id ? textId : '',
+  ].filter(Boolean);
+  return {
+    id,
+    label: label || id,
+    subtitle: subtitleParts.length ? subtitleParts.join(' · ') : undefined,
+    group: categoryName ? String(categoryName) : undefined,
+  };
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

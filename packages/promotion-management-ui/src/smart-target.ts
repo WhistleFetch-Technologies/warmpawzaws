@@ -127,11 +127,15 @@ export function inferInventoryTypeFromForm(
 export function buildSmartTargetScopes(
   flow: SmartTargetFlowId,
   inventoryType: VendorInventoryType,
-  includeOptionalStyles: boolean
+  includeOptionalStyles: boolean,
+  options?: { includeCatalogServices?: boolean }
 ): TargetScopeId[] {
   if (flow === 'entire_platform') return ['entire_platform'];
   if (flow === 'categories') {
-    return includeOptionalStyles ? ['categories', 'styles'] : ['categories'];
+    const scopes: TargetScopeId[] = ['categories'];
+    if (options?.includeCatalogServices) scopes.push('services');
+    if (includeOptionalStyles) scopes.push('styles');
+    return scopes;
   }
   if (flow === 'vendor_inventory') {
     return ['vendors', inventoryTypeToScope(inventoryType)];
@@ -162,8 +166,14 @@ export function formatSmartTargetSummary(
     const names = cats
       .map((id) => catalog?.categories?.find((c) => c.id === id)?.label ?? id)
       .slice(0, 3);
+    const serviceCount = form.selectedTargets.services?.length ?? 0;
     const styleCount = form.selectedTargets.styles?.length ?? 0;
-    const base = cats.length ? `${cats.length} categor${cats.length === 1 ? 'y' : 'ies'}${names.length ? `: ${names.join(', ')}` : ''}` : 'Categories';
+    let base = cats.length
+      ? `${cats.length} categor${cats.length === 1 ? 'y' : 'ies'}${names.length ? `: ${names.join(', ')}` : ''}`
+      : 'Categories';
+    if (serviceCount > 0) {
+      base += ` · ${serviceCount} catalogue service${serviceCount === 1 ? '' : 's'}`;
+    }
     return styleCount ? `${base} · ${styleCount} style${styleCount === 1 ? '' : 's'}` : base;
   }
 

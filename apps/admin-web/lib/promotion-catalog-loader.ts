@@ -22,7 +22,9 @@ function mapCategoryOption(cat: Record<string, unknown>): TargetOption | null {
 }
 
 function mapServiceOption(s: Record<string, unknown>): TargetOption | null {
-  const id = String(s.service_id ?? s.id ?? '').trim();
+  const uuid = String(s.id ?? '').trim();
+  const textId = String(s.service_id ?? '').trim();
+  const id = /^[0-9a-f-]{36}$/i.test(uuid) ? uuid : textId || uuid;
   if (!id) return null;
   return {
     id,

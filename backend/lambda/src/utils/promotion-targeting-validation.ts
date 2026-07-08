@@ -100,6 +100,16 @@ export function validateAdminPromotionTargeting(body: PromotionTargetingInput): 
     return 'Select at least one category.';
   }
 
+  // Category + services scope ⇒ catalogue services must be chosen (apply across vendors).
+  if (
+    hasCategorySelection(selected) &&
+    scopeList.includes('services') &&
+    (selected.services?.length ?? 0) === 0 &&
+    !hasApplicableServicesList(body)
+  ) {
+    return 'Select at least one catalogue service under the chosen category. The offer applies for every vendor who published that service.';
+  }
+
   const hasVendor = (selected.vendors?.length ?? 0) > 0;
   if (hasVendor && !hasInventorySelection(selected) && !hasApplicableServicesList(body)) {
     return 'Select at least one inventory item for the chosen vendor or seller.';

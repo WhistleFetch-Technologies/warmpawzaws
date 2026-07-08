@@ -71,6 +71,14 @@ export type SmartTargetCatalogAdapter = {
     search: string
   ) => Promise<TargetOption[]>;
   loadSellerProducts?: (sellerId: string, search: string) => Promise<TargetOption[]>;
+  /**
+   * Catalogue services under an admin category (service marketplace).
+   * Selected IDs apply to every vendor who published that catalogue service.
+   */
+  loadCatalogServicesByCategory?: (
+    categoryIds: string[],
+    search: string
+  ) => Promise<TargetOption[]>;
 };
 
 export type TargetOption = {
