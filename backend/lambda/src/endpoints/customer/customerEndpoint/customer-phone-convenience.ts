@@ -685,7 +685,8 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
 
   /**
    * GET /customer/saved/:phone
-   * Get saved items by phone (convenience endpoint)
+   * E-commerce wishlist products for profile "Saved Items" (legacy phone convenience route).
+   * Uses `customer_wishlist` + core `products` columns only (no sale_price / wishlists table).
    */
   app.get("/customer/saved/:phone", async (c) => {
     try {
@@ -696,20 +697,32 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      // Get wishlist items
-      const savedItems = await query(
-        `SELECT w.*, p.name as product_name, p.sale_price, p.base_price, p.image_url, v.business_name as vendor_name
-         FROM wishlists w
-         LEFT JOIN products p ON w.product_id = p.id
-         LEFT JOIN vendors v ON p.vendor_id = v.id
+      const savedResult = await query(
+        `SELECT
+           w.id,
+           w.product_id,
+           w.created_at,
+           p.name,
+           p.price
+         FROM customer_wishlist w
+         INNER JOIN products p ON w.product_id = p.id
          WHERE w.customer_id = $1
          ORDER BY w.created_at DESC`,
         [customerId]
       );
 
+      const savedItems = (savedResult.rows || []).map((row: any) => ({
+        itemId: row.id,
+        type: 'product' as const,
+        name: row.name || 'Product',
+        savedAt: row.created_at,
+        product_id: row.product_id,
+        price: row.price != null ? parseFloat(String(row.price)) : 0,
+      }));
+
       return c.json({
         success: true,
-        savedItems: savedItems.rows,
+        savedItems,
       });
     } catch (error: any) {
       console.error('Error fetching saved items by phone:', error);
@@ -719,7 +732,7 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
 
   /**
    * DELETE /customer/saved/:phone/items/:itemId
-   * Remove saved item by phone (convenience endpoint)
+   * Remove e-commerce wishlist row by wishlist id or product id.
    */
   app.delete("/customer/saved/:phone/items/:itemId", async (c) => {
     try {
@@ -730,9 +743,15 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
+      const id = String(itemId || '').trim();
+      if (!id) {
+        return c.json({ error: 'Item id is required' }, 400);
+      }
+
       await query(
-        'DELETE FROM wishlists WHERE id = $1 AND customer_id = $2',
-        [itemId, customerId]
+        `DELETE FROM customer_wishlist
+         WHERE customer_id = $1 AND (id = $2 OR product_id = $2)`,
+        [customerId, id]
       );
 
       return c.json({ success: true, message: 'Item removed from saved' });

@@ -64,6 +64,19 @@ export async function markOrderShippedByVendor(input: MarkShippedInput): Promise
   }
 
   const currentStatus = order.order_status;
+  const payStatus = String(order.payment_status || '').toLowerCase();
+  const payMethod = String(order.payment_method || 'online').toLowerCase();
+  const isCod = payMethod === 'cod' || payMethod === 'cash_on_delivery';
+  if (
+    currentStatus === 'pending_payment' ||
+    (!isCod && !['paid', 'completed'].includes(payStatus))
+  ) {
+    return {
+      success: false,
+      error: 'Order payment is not confirmed yet. Shipping is blocked until payment succeeds.',
+      statusCode: 409,
+    };
+  }
 
   const lockedError = getShipmentTrackingLockedError(currentStatus);
   if (lockedError) {

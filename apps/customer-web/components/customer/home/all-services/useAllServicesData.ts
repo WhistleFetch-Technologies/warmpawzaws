@@ -308,7 +308,7 @@ export function useAllServicesData({ phone }: UseAllServicesDataOptions) {
             visible: visibleLaunch,
             comingSoon: comingSoonLaunch,
             hidden: hiddenLaunch,
-            includeHiddenAsComingSoon: true,
+            includeHiddenAsComingSoon: false,
             dedupeByLaunchServiceId: true,
           });
           if (resultTiles.length > 0) {
@@ -435,18 +435,8 @@ export function useAllServicesData({ phone }: UseAllServicesDataOptions) {
     [petFilteredServices]
   );
 
-  const secondaryServices = useMemo(
-    () =>
-      petFilteredServices.filter((s) => {
-        const screen = String(s.screen || '').toLowerCase();
-        return !PRIMARY_SERVICE_SCREENS.has(screen);
-      }),
-    [petFilteredServices]
-  );
-
   return {
     primaryServices,
-    secondaryServices,
     petFilteredServices,
     petFilter,
     setPetFilter,

@@ -75,6 +75,8 @@ import {
   persistOrderItemCommission,
   loadOrderItemIds,
 } from '../../../utils/resolve-ecommerce-commission-rate';
+import { paymentHoldExpiresAt, expireShopPaymentHolds } from '../../../utils/shop-payment-hold';
+import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
 
 const ADMIN_CATEGORY_SELECT = `
   SELECT id::text AS id, name, description, display_order, is_active, image_url,
@@ -571,7 +573,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       const customerPhone = orderData.customer_phone || orderData.customerPhone;
       const items = orderData.items || [];
       const shippingAddress = orderData.shipping_address || orderData.shippingAddress || {};
-      const paymentMethod = orderData.payment_method || orderData.paymentMethod || 'cod';
+      // Shop checkout is online/Razorpay; do not default to COD (unpaid COD would skip hold).
+      const paymentMethod = orderData.payment_method || orderData.paymentMethod || 'online';
       const couponCode = orderData.coupon_code || orderData.couponCode;
       const walletAmountApplied = Math.max(0, parseFloat(String(orderData.walletAmountApplied || orderData.wallet_amount_applied || '0')) || 0);
 
@@ -977,13 +980,25 @@ export function registerEcommerceEndpoints(app: Hono) {
         couponCode: couponCode || null,
       };
 
+      const pmLower = String(paymentMethod || 'online').toLowerCase();
+      const isCod = pmLower === 'cod' || pmLower === 'cash_on_delivery';
+      const amountDueAfterWallet = Math.max(0, Math.round((totalAmount - effectiveWalletApplied) * 100) / 100);
+      const fullyCoveredByWallet = !isCod && amountDueAfterWallet <= 0;
+      const holdStarted = new Date();
+      const draftOrderStatus = fullyCoveredByWallet
+        ? 'pending'
+        : isCod
+          ? 'pending'
+          : 'pending_payment';
+      const draftPaymentStatus = fullyCoveredByWallet ? 'paid' : 'pending';
+
       const order: Record<string, unknown> = {
         id: orderId,
         order_number: orderNumber,
         customer_id: customerId,
         vendor_id: firstVendorId,
-        order_status: 'pending',
-        payment_status: 'pending',
+        order_status: draftOrderStatus,
+        payment_status: draftPaymentStatus,
         payment_method: paymentMethod,
         subtotal: subtotal,
         shipping_amount: shippingAmount,
@@ -1000,6 +1015,11 @@ export function registerEcommerceEndpoints(app: Hono) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
+
+      if (draftOrderStatus === 'pending_payment') {
+        order.payment_checkout_started_at = holdStarted.toISOString();
+        order.payment_hold_expires_at = paymentHoldExpiresAt(holdStarted).toISOString();
+      }
 
       const normalizedTaxBreakdown = normalizeTaxBreakdownForDb(taxBreakdown);
       if (normalizedTaxBreakdown) {
@@ -1121,14 +1141,18 @@ export function registerEcommerceEndpoints(app: Hono) {
         order: {
           id: orderId,
           order_number: orderNumber,
-          status: 'pending',
+          status: draftOrderStatus,
+          payment_status: draftPaymentStatus,
+          payment_hold_expires_at: order.payment_hold_expires_at ?? null,
           total: totalAmount,
           items: orderItems,
           shipping_address: shippingAddress,
           payment_method: paymentMethod,
           created_at: order.created_at,
         },
-        message: 'Order placed successfully!',
+        message: fullyCoveredByWallet
+          ? 'Order placed successfully!'
+          : 'Order created — complete payment within 5 minutes.',
       };
 
       // Persist idempotency key so a replayed checkout attempt returns the same order (30 min TTL).
@@ -1145,6 +1169,12 @@ export function registerEcommerceEndpoints(app: Hono) {
         } catch (idemErr) {
           console.warn('[ecommerce/orders] idempotency key store failed (non-fatal):', idemErr);
         }
+      }
+
+      if (fullyCoveredByWallet) {
+        void notifyShopOrderPaid(orderId).catch((e) =>
+          console.warn('[ecommerce/orders] notifyShopOrderPaid (wallet-full) failed:', e)
+        );
       }
 
       return c.json(successResponse, 201);
@@ -1601,6 +1631,10 @@ export function registerEcommerceEndpoints(app: Hono) {
     try {
       const { customerId } = c.req.param();
 
+      await expireShopPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
+        console.warn('[orders/customer] expireShopPaymentHolds failed:', e)
+      );
+
       const orders = await query(
         `SELECT o.*, v.business_name as vendor_name
          FROM orders o
@@ -1618,6 +1652,20 @@ export function registerEcommerceEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching customer orders:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /ecommerce/process-payment-hold-expiry
+   * Sweep unpaid shop checkout drafts past the 5-minute hold (EventBridge / manual).
+   */
+  app.post('/ecommerce/process-payment-hold-expiry', async (c) => {
+    try {
+      const results = await expireShopPaymentHolds({ limit: 200, requestId: randomUUID() });
+      return c.json({ success: true, ...results });
+    } catch (error: any) {
+      console.error('[ecommerce] process-payment-hold-expiry failed:', error);
+      return c.json({ error: error.message || 'Failed to expire payment holds' }, 500);
     }
   });
 

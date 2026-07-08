@@ -12,8 +12,72 @@ import { applyHubCategoryFilter } from '@/lib/search-hub-category-filter';
 import { formatCustomerApiError } from '@/lib/format-api-error';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
-import { ServiceEvents } from '@/components/customer/ServiceEvents';
-import { CustomerSearchListingCard } from '@/components/customer/search/CustomerSearchListingCard';
+import {
+  SearchVendorExpandableCard,
+  type SearchVendorCardData,
+} from '@/components/customer/search/SearchVendorExpandableCard';
+import {
+  mapApiServicesToRows,
+  type ClinicServiceRow,
+} from '@/lib/clinic-service-row-mapper';
+import {
+  buildSearchVendorDetailsUrl,
+  launchSearchNutritionBooking,
+  launchSearchNutritionMealPlans,
+  launchSearchServiceBooking,
+  launchSearchGroomingBooking,
+  launchSearchGroomingCenterProfile,
+  launchSearchBoardingBooking,
+  launchSearchBoardingCenterProfile,
+  launchSearchWalkerBooking,
+  launchSearchWalkerCenterProfile,
+  launchSearchSittingBooking,
+  launchSearchSittingCenterProfile,
+  launchSearchTrainingBooking,
+  launchSearchTrainingCenterProfile,
+} from '@/lib/search-booking-launch';
+import {
+  isBoardingCategory,
+  isBoardingHub,
+  isBoardingVendorResult,
+  isGroomingCategory,
+  isGroomingHub,
+  isGroomingVendorResult,
+  isNutritionCategory,
+  isNutritionHub,
+  isNutritionVendorResult,
+  isSittingCategory,
+  isSittingHub,
+  isSittingVendorResult,
+  isTrainingCategory,
+  isTrainingHub,
+  isTrainingVendorResult,
+  isWalkerCategory,
+  isWalkerHub,
+  isWalkerVendorResult,
+  isCafeCategory,
+  isResortCategory,
+  isPharmacyCategory,
+  resolveEffectiveSearchCategory,
+} from '@/lib/search-category-detect';
+import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
+import {
+  nutritionVendorFromDiscoveryRow,
+  type NutritionVendorCardModel,
+} from '@/components/customer/nutrition/NutritionVendorDetailsCard';
+import { SearchNutritionVendorCard } from '@/components/customer/search/SearchNutritionVendorCard';
+import { SearchTrainingVendorCard } from '@/components/customer/search/SearchTrainingVendorCard';
+import { SearchGroomingVendorCard } from '@/components/customer/search/SearchGroomingVendorCard';
+import { SearchBoardingVendorCard } from '@/components/customer/search/SearchBoardingVendorCard';
+import { SearchWalkerVendorCard } from '@/components/customer/search/SearchWalkerVendorCard';
+import { SearchSittingVendorCard } from '@/components/customer/search/SearchSittingVendorCard';
+import {
+  mapServicesApiResponseToPlanRows,
+  type BoardingListVendor,
+  type BoardingPlanRow,
+} from '@/lib/boarding-vendor-discovery-map';
+import { searchCardToBoardingListVendor } from '@/lib/search-training-vendor-map';
+import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import {
   formatVendorAddressLine,
   haversineDistanceKm,
@@ -205,8 +269,22 @@ function SearchContent() {
   const [apiResults, setApiResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [vendorServices, setVendorServices] = useState<any[]>([]);
-  const [showVendorServices, setShowVendorServices] = useState(!!vendorIdParam);
+  const [expandedVendorId, setExpandedVendorId] = useState<string | null>(vendorIdParam);
+  const [vendorServicesById, setVendorServicesById] = useState<Record<string, ClinicServiceRow[]>>({});
+  const [servicesLoadingVendorId, setServicesLoadingVendorId] = useState<string | null>(null);
+  /** Merged nutrition providers (all service styles) — same source as Home Expert Nutritionists. */
+  const [nutritionVendors, setNutritionVendors] = useState<NutritionVendorCardModel[]>([]);
+  /** Training vendors as BoardingListVendor — same card model as TrainingServiceRouter. */
+  const [trainingVendors, setTrainingVendors] = useState<BoardingListVendor[]>([]);
+  const [fetchingTrainingPlansFor, setFetchingTrainingPlansFor] = useState<string | null>(null);
+  const [groomingVendors, setGroomingVendors] = useState<BoardingListVendor[]>([]);
+  const [fetchingGroomingPlansFor, setFetchingGroomingPlansFor] = useState<string | null>(null);
+  const [boardingVendors, setBoardingVendors] = useState<BoardingListVendor[]>([]);
+  const [fetchingBoardingPlansFor, setFetchingBoardingPlansFor] = useState<string | null>(null);
+  const [walkerVendors, setWalkerVendors] = useState<BoardingListVendor[]>([]);
+  const [fetchingWalkerPlansFor, setFetchingWalkerPlansFor] = useState<string | null>(null);
+  const [sittingVendors, setSittingVendors] = useState<BoardingListVendor[]>([]);
+  const [fetchingSittingPlansFor, setFetchingSittingPlansFor] = useState<string | null>(null);
   /** Bumps on explicit Search submit / Try again so the same query refetches. */
   const [searchNonce, setSearchNonce] = useState(0);
 
@@ -308,6 +386,7 @@ function SearchContent() {
     { id: 'grooming', label: 'Grooming', icon: '✂️' },
     { id: 'training', label: 'Training', icon: '🎓' },
     { id: 'boarding', label: 'Boarding', icon: '🏨' },
+    { id: 'sitting', label: 'Pet Sitter', icon: '🏠' },
     { id: 'walker', label: 'Walker', icon: '🚶' },
     { id: 'cafe', label: 'Pet Cafe', icon: '☕' },
     { id: 'resort', label: 'Resort', icon: '🏝️' },
@@ -315,19 +394,76 @@ function SearchContent() {
     { id: 'nutritionist', label: 'Nutritionist', icon: '🥗' },
   ];
 
+  const buildReturnSearchUrl = () => {
+    const params = new URLSearchParams();
+    const q = (query || '').trim();
+    if (q) params.set('q', q);
+    if (category) params.set('category', category);
+    const qs = params.toString();
+    return qs ? `/search?${qs}` : '/search';
+  };
+
+  const roleDisplayNameForCategory = (effectiveCategory: string, fallback?: string) => {
+    if (effectiveCategory === 'training' || isTrainingCategory(effectiveCategory)) return 'Training';
+    if (effectiveCategory === 'grooming' || isGroomingCategory(effectiveCategory)) return 'Grooming';
+    if (effectiveCategory === 'boarding' || isBoardingCategory(effectiveCategory)) return 'Boarding';
+    if (effectiveCategory === 'walker' || isWalkerCategory(effectiveCategory)) return 'Walker';
+    if (effectiveCategory === 'sitting' || isSittingCategory(effectiveCategory)) return 'Sitting';
+    if (effectiveCategory === 'nutritionist' || effectiveCategory === 'nutrition' || isNutritionCategory(effectiveCategory)) {
+      return 'Nutritionist';
+    }
+    if (effectiveCategory === 'cafe' || isCafeCategory(effectiveCategory)) return 'Pet Cafe';
+    if (effectiveCategory === 'resort' || isResortCategory(effectiveCategory)) return 'Resort';
+    if (effectiveCategory === 'pharmacy' || isPharmacyCategory(effectiveCategory)) return 'Pharmacy';
+    return fallback || effectiveCategory || undefined;
+  };
+
   useEffect(() => {
     if (vendorIdParam) {
-      loadVendorServices(vendorIdParam);
-      setShowVendorServices(true);
-    } else {
-      setShowVendorServices(false);
+      setExpandedVendorId(vendorIdParam);
+      const effectiveHub = resolveEffectiveSearchCategory('', category, query);
+      if (isTrainingHub(category) || effectiveHub === 'training' || isTrainingCategory(effectiveHub)) {
+        void loadTrainingVendorPlans(vendorIdParam);
+      } else if (
+        isGroomingHub(category) ||
+        effectiveHub === 'grooming' ||
+        isGroomingCategory(effectiveHub)
+      ) {
+        void loadGroomingVendorPlans(vendorIdParam);
+      } else if (
+        isBoardingHub(category) ||
+        effectiveHub === 'boarding' ||
+        isBoardingCategory(effectiveHub)
+      ) {
+        void loadBoardingVendorPlans(vendorIdParam);
+      } else if (
+        isWalkerHub(category) ||
+        effectiveHub === 'walker' ||
+        isWalkerCategory(effectiveHub)
+      ) {
+        void loadWalkerVendorPlans(vendorIdParam);
+      } else if (
+        isSittingHub(category) ||
+        effectiveHub === 'sitting' ||
+        isSittingCategory(effectiveHub)
+      ) {
+        void loadSittingVendorPlans(vendorIdParam);
+      } else {
+        void loadVendorServices(vendorIdParam);
+      }
     }
-  }, [vendorIdParam]);
+  }, [vendorIdParam, category, query]);
 
   useEffect(() => {
     if (vendorIdParam) return;
     if (!searchFetchTrigger) {
       setApiResults([]);
+      setNutritionVendors([]);
+      setTrainingVendors([]);
+      setGroomingVendors([]);
+      setBoardingVendors([]);
+      setWalkerVendors([]);
+      setSittingVendors([]);
       setError(null);
       return;
     }
@@ -358,6 +494,31 @@ function SearchContent() {
         const response = await apiClient.get<any>(`/search?${params.toString()}`);
         if (cancelled) return;
         const mapped = mapSearchApiToResults(response);
+
+        let mergedNutrition: NutritionVendorCardModel[] = [];
+        const hub = categoryRef.current.trim();
+        if (isNutritionHub(hub)) {
+          const phone =
+            typeof window !== 'undefined'
+              ? localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || ''
+              : '';
+          const rawProviders = await fetchMergedNutritionProviders({ customerPhone: phone });
+          if (cancelled) return;
+          mergedNutrition = rawProviders.map((row) =>
+            nutritionVendorFromDiscoveryRow(row as Record<string, unknown>)
+          );
+          const qLower = (queryRef.current || '').trim().toLowerCase();
+          if (qLower) {
+            mergedNutrition = mergedNutrition.filter((v) => {
+              const label = (v.businessName || v.name || v.vendor_name || '').toLowerCase();
+              const city = (v.city || '').toLowerCase();
+              return label.includes(qLower) || city.includes(qLower);
+            });
+          }
+        }
+        if (cancelled) return;
+
+        setNutritionVendors(mergedNutrition);
         setApiResults(mapped);
         if (searchFetchTrigger.kind === 'keyword') {
           const qStr = searchFetchTrigger.q;
@@ -372,10 +533,18 @@ function SearchContent() {
             timestamp: Date.now(),
           });
         } else if (searchFetchTrigger.kind === 'hub') {
+          const hubResults = isNutritionHub(searchFetchTrigger.c)
+            ? mergedNutrition.map((v) => ({
+                id: String(v.id || v.vendorId || ''),
+                type: 'vendor' as const,
+                name: v.businessName || v.name || 'Nutritionist',
+                category: 'pet_nutritionist',
+              }))
+            : mapped;
           saveSearchContext({
             query: '',
             category: searchFetchTrigger.c,
-            results: mapped,
+            results: hubResults,
             timestamp: Date.now(),
           });
         } else {
@@ -391,6 +560,7 @@ function SearchContent() {
           console.error('Search error:', err);
           setError(formatCustomerApiError(err.message || 'Search failed'));
           setApiResults([]);
+          setNutritionVendors([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -420,12 +590,12 @@ function SearchContent() {
   }, [category, vendorIdParam]);
 
   const loadVendorServices = async (vendorId: string) => {
+    if (servicesLoadingVendorId === vendorId) return;
+    if (vendorServicesById[vendorId] !== undefined) return;
     try {
-      setLoading(true);
-      // Update search context with vendor selection
+      setServicesLoadingVendorId(vendorId);
       updateSearchContextSelection(vendorId, undefined);
-      
-      // Prefer customer endpoint (only published, vendor price)
+
       let response: any;
       try {
         response = await apiClient.get<any>(`/customer/vendor/${vendorId}/services`);
@@ -438,17 +608,18 @@ function SearchContent() {
             response?.services?.at_center?.services ||
             response?.services?.tele?.services ||
             []);
-      if (serviceList.length) {
-        setVendorServices(serviceList);
+      const mapped = mapApiServicesToRows(serviceList, vendorId);
+      setVendorServicesById((prev) => ({ ...prev, [vendorId]: mapped }));
+      if (mapped.length) {
         saveSearchContext({
           query: query || '',
           category: category || undefined,
           selectedVendorId: vendorId,
           timestamp: Date.now(),
-          results: serviceList.map((s: any) => ({
-            id: s.id || s.service_id,
+          results: mapped.map((s) => ({
+            id: String(s.vendorServiceId),
             type: 'service' as const,
-            name: s.name || s.service_name,
+            name: s.name,
             category: s.category,
           })),
         });
@@ -457,8 +628,671 @@ function SearchContent() {
       console.error('Error loading vendor services:', err);
       setError(err.message || 'Failed to load vendor services');
     } finally {
-      setLoading(false);
+      setServicesLoadingVendorId((cur) => (cur === vendorId ? null : cur));
     }
+  };
+
+  const searchResultToVendorCard = (result: SearchResult): SearchVendorCardData => {
+    const effectiveCategory = resolveEffectiveSearchCategory(result.category, category, query);
+    return {
+      id: result.id,
+      name: result.name,
+      category: effectiveCategory,
+      address:
+        result.addressDisplay ||
+        [result.city, result.state].filter(Boolean).join(', ') ||
+        'Address on file',
+      rating: result.rating,
+      reviewCount: result.reviewCount,
+      distanceKm: result.distanceKm ?? null,
+      photo: result.imageUrl,
+      roleDisplayName: roleDisplayNameForCategory(effectiveCategory, result.category || effectiveCategory),
+    };
+  };
+
+  const serviceResultToVendorCard = (result: SearchResult): SearchVendorCardData | null => {
+    const vendorId = result.vendorOwnerId?.trim();
+    if (!vendorId) return null;
+    const effectiveCategory = resolveEffectiveSearchCategory(result.category, category, query);
+    return {
+      id: vendorId,
+      name: result.vendorBusinessName || 'Service provider',
+      category: effectiveCategory,
+      address:
+        result.addressDisplay ||
+        [result.city, result.state].filter(Boolean).join(', ') ||
+        'Address on file',
+      rating: result.rating,
+      reviewCount: result.reviewCount,
+      distanceKm: result.distanceKm ?? null,
+      photo: result.imageUrl,
+      roleDisplayName: roleDisplayNameForCategory(effectiveCategory, result.category || effectiveCategory),
+    };
+  };
+
+  const vendorCardsToRender = useMemo(() => {
+    const withDistance = displayedWithDistance;
+    const vendorRows = withDistance.filter((r) => r.type === 'vendor');
+    const vendorIds = new Set(vendorRows.map((v) => v.id));
+
+    const orphanServices = withDistance.filter(
+      (r) => r.type === 'service' && r.vendorOwnerId && !vendorIds.has(r.vendorOwnerId)
+    );
+    const syntheticFromServices: SearchVendorCardData[] = [];
+    const seenOrphanVendor = new Set<string>();
+    for (const svc of orphanServices) {
+      const vid = svc.vendorOwnerId!;
+      if (seenOrphanVendor.has(vid)) continue;
+      seenOrphanVendor.add(vid);
+      const card = serviceResultToVendorCard(svc);
+      if (card) syntheticFromServices.push(card);
+    }
+
+    const cards: SearchVendorCardData[] = [
+      ...vendorRows.map(searchResultToVendorCard),
+      ...syntheticFromServices,
+    ];
+
+    if (vendorIdParam && !cards.some((c) => c.id === vendorIdParam)) {
+      cards.unshift({
+        id: vendorIdParam,
+        name: 'Provider',
+        category: resolveEffectiveSearchCategory('', category, query) || category || 'vet',
+        address: 'Address on file',
+        rating: 0,
+        reviewCount: 0,
+        distanceKm: null,
+      });
+    }
+
+    return cards;
+  }, [displayedWithDistance, vendorIdParam, category, query]);
+
+  const productResults = useMemo(
+    () => displayedWithDistance.filter((r) => r.type === 'product'),
+    [displayedWithDistance]
+  );
+
+  const nutritionHubActive = isNutritionHub(category);
+  const trainingHubActive = isTrainingHub(category);
+  const groomingHubActive = isGroomingHub(category);
+  const boardingHubActive = isBoardingHub(category);
+  const walkerHubActive = isWalkerHub(category);
+  const sittingHubActive = isSittingHub(category);
+
+  const nonNutritionVendorCards = useMemo(() => {
+    if (
+      nutritionHubActive ||
+      trainingHubActive ||
+      groomingHubActive ||
+      boardingHubActive ||
+      walkerHubActive ||
+      sittingHubActive
+    ) {
+      return [];
+    }
+    return vendorCardsToRender.filter((v) => {
+      const effective = resolveEffectiveSearchCategory(v.category, category, query);
+      return (
+        !isNutritionVendorResult(v) &&
+        !isTrainingVendorResult(v) &&
+        !isGroomingVendorResult(v) &&
+        !isBoardingVendorResult(v) &&
+        !isWalkerVendorResult(v) &&
+        !isSittingVendorResult(v) &&
+        !isNutritionCategory(effective) &&
+        !isTrainingCategory(effective) &&
+        !isGroomingCategory(effective) &&
+        !isBoardingCategory(effective) &&
+        !isWalkerCategory(effective) &&
+        !isSittingCategory(effective)
+      );
+    });
+  }, [
+    vendorCardsToRender,
+    nutritionHubActive,
+    trainingHubActive,
+    groomingHubActive,
+    boardingHubActive,
+    walkerHubActive,
+    sittingHubActive,
+    category,
+    query,
+  ]);
+
+  const inlineNutritionVendorCards = useMemo(() => {
+    if (nutritionHubActive) return [];
+    return vendorCardsToRender
+      .filter((v) => isNutritionVendorResult(v))
+      .map((v) =>
+        nutritionVendorFromDiscoveryRow({
+          id: v.id,
+          vendorId: v.id,
+          businessName: v.name,
+          name: v.name,
+          rating: v.rating,
+          reviewCount: v.reviewCount,
+          address: v.address,
+          photo: v.photo,
+        })
+      );
+  }, [vendorCardsToRender, nutritionHubActive]);
+
+  const nutritionCardsToRender = nutritionHubActive
+    ? nutritionVendors
+    : inlineNutritionVendorCards;
+
+  const trainingCardsBase = useMemo(() => {
+    if (nutritionHubActive || groomingHubActive || boardingHubActive || walkerHubActive || sittingHubActive) {
+      return [];
+    }
+    const source = trainingHubActive
+      ? vendorCardsToRender
+      : vendorCardsToRender.filter((v) => isTrainingVendorResult(v));
+    return source.map((card) => searchCardToBoardingListVendor(card, category, query));
+  }, [vendorCardsToRender, trainingHubActive, nutritionHubActive, groomingHubActive, boardingHubActive, walkerHubActive, sittingHubActive, category, query]);
+
+  const trainingCardsToRender = useMemo(() => {
+    if (!trainingCardsBase.length) return [];
+    const byId = new Map(trainingVendors.map((v) => [v.id, v]));
+    return trainingCardsBase.map((base) => byId.get(base.id) ?? base);
+  }, [trainingCardsBase, trainingVendors]);
+
+  const groomingCardsBase = useMemo(() => {
+    if (nutritionHubActive || trainingHubActive || boardingHubActive || walkerHubActive || sittingHubActive) {
+      return [];
+    }
+    const source = groomingHubActive
+      ? vendorCardsToRender
+      : vendorCardsToRender.filter(
+          (v) =>
+            isGroomingVendorResult(v) ||
+            isGroomingCategory(resolveEffectiveSearchCategory(v.category, category, query))
+        );
+    return source.map((card) => searchCardToBoardingListVendor(card, category, query));
+  }, [vendorCardsToRender, groomingHubActive, nutritionHubActive, trainingHubActive, boardingHubActive, walkerHubActive, sittingHubActive, category, query]);
+
+  const groomingCardsToRender = useMemo(() => {
+    if (!groomingCardsBase.length) return [];
+    const byId = new Map(groomingVendors.map((v) => [v.id, v]));
+    return groomingCardsBase.map((base) => byId.get(base.id) ?? base);
+  }, [groomingCardsBase, groomingVendors]);
+
+  const boardingCardsBase = useMemo(() => {
+    if (nutritionHubActive || trainingHubActive || groomingHubActive || walkerHubActive || sittingHubActive) {
+      return [];
+    }
+    const source = boardingHubActive
+      ? vendorCardsToRender
+      : vendorCardsToRender.filter(
+          (v) =>
+            isBoardingVendorResult(v) ||
+            isBoardingCategory(resolveEffectiveSearchCategory(v.category, category, query))
+        );
+    return source.map((card) => searchCardToBoardingListVendor(card, category, query));
+  }, [vendorCardsToRender, boardingHubActive, nutritionHubActive, trainingHubActive, groomingHubActive, walkerHubActive, sittingHubActive, category, query]);
+
+  const boardingCardsToRender = useMemo(() => {
+    if (!boardingCardsBase.length) return [];
+    const byId = new Map(boardingVendors.map((v) => [v.id, v]));
+    return boardingCardsBase.map((base) => byId.get(base.id) ?? base);
+  }, [boardingCardsBase, boardingVendors]);
+
+  const walkerCardsBase = useMemo(() => {
+    if (nutritionHubActive || trainingHubActive || groomingHubActive || boardingHubActive || sittingHubActive) {
+      return [];
+    }
+    const source = walkerHubActive
+      ? vendorCardsToRender
+      : vendorCardsToRender.filter(
+          (v) =>
+            isWalkerVendorResult(v) ||
+            isWalkerCategory(resolveEffectiveSearchCategory(v.category, category, query))
+        );
+    return source.map((card) => searchCardToBoardingListVendor(card, category, query));
+  }, [vendorCardsToRender, walkerHubActive, nutritionHubActive, trainingHubActive, groomingHubActive, boardingHubActive, sittingHubActive, category, query]);
+
+  const walkerCardsToRender = useMemo(() => {
+    if (!walkerCardsBase.length) return [];
+    const byId = new Map(walkerVendors.map((v) => [v.id, v]));
+    return walkerCardsBase.map((base) => byId.get(base.id) ?? base);
+  }, [walkerCardsBase, walkerVendors]);
+
+  const sittingCardsBase = useMemo(() => {
+    if (nutritionHubActive || trainingHubActive || groomingHubActive || boardingHubActive || walkerHubActive) {
+      return [];
+    }
+    const source = sittingHubActive
+      ? vendorCardsToRender
+      : vendorCardsToRender.filter(
+          (v) =>
+            isSittingVendorResult(v) ||
+            isSittingCategory(resolveEffectiveSearchCategory(v.category, category, query))
+        );
+    return source.map((card) => searchCardToBoardingListVendor(card, category, query));
+  }, [vendorCardsToRender, sittingHubActive, nutritionHubActive, trainingHubActive, groomingHubActive, boardingHubActive, walkerHubActive, category, query]);
+
+  const sittingCardsToRender = useMemo(() => {
+    if (!sittingCardsBase.length) return [];
+    const byId = new Map(sittingVendors.map((v) => [v.id, v]));
+    return sittingCardsBase.map((base) => byId.get(base.id) ?? base);
+  }, [sittingCardsBase, sittingVendors]);
+
+  useEffect(() => {
+    if (!groomingCardsBase.length) {
+      setGroomingVendors([]);
+      return;
+    }
+    setGroomingVendors((prev) => {
+      const prevById = new Map(prev.map((v) => [v.id, v]));
+      return groomingCardsBase.map((base) => {
+        const existing = prevById.get(base.id);
+        if (existing) {
+          return { ...base, planRows: existing.planRows, needsServiceFetch: existing.needsServiceFetch };
+        }
+        return base;
+      });
+    });
+  }, [groomingCardsBase]);
+
+  useEffect(() => {
+    if (!boardingCardsBase.length) {
+      setBoardingVendors([]);
+      return;
+    }
+    setBoardingVendors((prev) => {
+      const prevById = new Map(prev.map((v) => [v.id, v]));
+      return boardingCardsBase.map((base) => {
+        const existing = prevById.get(base.id);
+        if (existing) {
+          return { ...base, planRows: existing.planRows, needsServiceFetch: existing.needsServiceFetch };
+        }
+        return base;
+      });
+    });
+  }, [boardingCardsBase]);
+
+  useEffect(() => {
+    if (!trainingCardsBase.length) {
+      setTrainingVendors([]);
+      return;
+    }
+    setTrainingVendors((prev) => {
+      const prevById = new Map(prev.map((v) => [v.id, v]));
+      return trainingCardsBase.map((base) => {
+        const existing = prevById.get(base.id);
+        if (existing) {
+          return { ...base, planRows: existing.planRows, needsServiceFetch: existing.needsServiceFetch };
+        }
+        return base;
+      });
+    });
+  }, [trainingCardsBase]);
+
+  useEffect(() => {
+    if (!walkerCardsBase.length) {
+      setWalkerVendors([]);
+      return;
+    }
+    setWalkerVendors((prev) => {
+      const prevById = new Map(prev.map((v) => [v.id, v]));
+      return walkerCardsBase.map((base) => {
+        const existing = prevById.get(base.id);
+        if (existing) {
+          return { ...base, planRows: existing.planRows, needsServiceFetch: existing.needsServiceFetch };
+        }
+        return base;
+      });
+    });
+  }, [walkerCardsBase]);
+
+  useEffect(() => {
+    if (!sittingCardsBase.length) {
+      setSittingVendors([]);
+      return;
+    }
+    setSittingVendors((prev) => {
+      const prevById = new Map(prev.map((v) => [v.id, v]));
+      return sittingCardsBase.map((base) => {
+        const existing = prevById.get(base.id);
+        if (existing) {
+          return { ...base, planRows: existing.planRows, needsServiceFetch: existing.needsServiceFetch };
+        }
+        return base;
+      });
+    });
+  }, [sittingCardsBase]);
+
+  const hasVendorResults =
+    nutritionCardsToRender.length > 0 ||
+    trainingCardsToRender.length > 0 ||
+    groomingCardsToRender.length > 0 ||
+    boardingCardsToRender.length > 0 ||
+    walkerCardsToRender.length > 0 ||
+    sittingCardsToRender.length > 0 ||
+    nonNutritionVendorCards.length > 0;
+
+  const loadBoardingVendorPlans = async (vendorId: string) => {
+    if (fetchingBoardingPlansFor === vendorId) return;
+    const existing = boardingVendors.find((v) => v.id === vendorId);
+    if (existing && existing.planRows.length > 0 && !existing.needsServiceFetch) return;
+    try {
+      setFetchingBoardingPlansFor(vendorId);
+      const servicesResponse = await apiClient
+        .get<any>(`/customer/vendor/${vendorId}/services?category=boarding`)
+        .catch(() =>
+          apiClient.get<any>(`/customer/vendor/${vendorId}/services?serviceStyle=at_center`)
+        );
+      const rows = mapServicesApiResponseToPlanRows(servicesResponse);
+      setBoardingVendors((prev) =>
+        prev.map((v) =>
+          v.id === vendorId ? { ...v, planRows: rows, needsServiceFetch: false } : v
+        )
+      );
+    } catch (err: any) {
+      console.error('Error loading boarding vendor services:', err);
+      setError(err.message || 'Failed to load boarding services');
+    } finally {
+      setFetchingBoardingPlansFor((cur) => (cur === vendorId ? null : cur));
+    }
+  };
+
+  const handleExpandBoardingVendor = (vendorId: string) => {
+    setExpandedVendorId(vendorId);
+    updateSearchContextSelection(vendorId, undefined);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('vendorId', vendorId);
+    router.replace(`/search?${params.toString()}`, { scroll: false });
+    void loadBoardingVendorPlans(vendorId);
+  };
+
+  const handleCollapseBoardingVendor = (vendorId: string) => {
+    setExpandedVendorId((cur) => (cur === vendorId ? null : cur));
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('vendorId');
+    const qs = params.toString();
+    router.replace(qs ? `/search?${qs}` : '/search', { scroll: false });
+  };
+
+  const handleBookBoardingPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    updateSearchContextSelection(v.id, plan.rowId);
+    launchSearchBoardingBooking({
+      vendorId: v.id,
+      vendorName: v.name,
+      serviceId: plan.rowId,
+      serviceName: plan.name,
+      price: plan.price,
+      duration: plan.duration,
+      serviceStyle: plan.serviceStyle || 'at_center',
+      facility: { id: v.id, vendorId: v.id, name: v.name, businessName: v.name },
+      router,
+      returnSearchUrl: buildReturnSearchUrl(),
+    });
+  };
+
+  const loadWalkerVendorPlans = async (vendorId: string) => {
+    if (fetchingWalkerPlansFor === vendorId) return;
+    const existing = walkerVendors.find((v) => v.id === vendorId);
+    if (existing && existing.planRows.length > 0 && !existing.needsServiceFetch) return;
+    try {
+      setFetchingWalkerPlansFor(vendorId);
+      const servicesResponse = await apiClient
+        .get<any>(`/customer/vendor/${vendorId}/services?category=walking`)
+        .catch(() =>
+          apiClient.get<any>(`/customer/vendor/${vendorId}/services?category=walker&serviceStyle=at_home`)
+        );
+      const rows = mapServicesApiResponseToPlanRows(servicesResponse);
+      setWalkerVendors((prev) =>
+        prev.map((v) =>
+          v.id === vendorId ? { ...v, planRows: rows, needsServiceFetch: false } : v
+        )
+      );
+    } catch (err: any) {
+      console.error('Error loading walker vendor services:', err);
+      setError(err.message || 'Failed to load walker services');
+    } finally {
+      setFetchingWalkerPlansFor((cur) => (cur === vendorId ? null : cur));
+    }
+  };
+
+  const handleExpandWalkerVendor = (vendorId: string) => {
+    setExpandedVendorId(vendorId);
+    updateSearchContextSelection(vendorId, undefined);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('vendorId', vendorId);
+    router.replace(`/search?${params.toString()}`, { scroll: false });
+    void loadWalkerVendorPlans(vendorId);
+  };
+
+  const handleCollapseWalkerVendor = (vendorId: string) => {
+    setExpandedVendorId((cur) => (cur === vendorId ? null : cur));
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('vendorId');
+    const qs = params.toString();
+    router.replace(qs ? `/search?${qs}` : '/search', { scroll: false });
+  };
+
+  const handleBookWalkerPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    updateSearchContextSelection(v.id, plan.rowId);
+    launchSearchWalkerBooking({
+      vendorId: v.id,
+      vendorName: v.name,
+      serviceId: plan.rowId,
+      serviceName: plan.name,
+      price: plan.price,
+      duration: plan.duration,
+      serviceStyle: plan.serviceStyle || 'at_home',
+      walker: { id: v.id, vendorId: v.id, name: v.name, businessName: v.name },
+      router,
+      returnSearchUrl: buildReturnSearchUrl(),
+    });
+  };
+
+  const loadSittingVendorPlans = async (vendorId: string) => {
+    if (fetchingSittingPlansFor === vendorId) return;
+    const existing = sittingVendors.find((v) => v.id === vendorId);
+    if (existing && existing.planRows.length > 0 && !existing.needsServiceFetch) return;
+    try {
+      setFetchingSittingPlansFor(vendorId);
+      const servicesResponse = await apiClient
+        .get<any>(`/customer/vendor/${vendorId}/services?category=sitting`)
+        .catch(() =>
+          apiClient.get<any>(`/customer/vendor/${vendorId}/services?serviceStyle=at_home`)
+        );
+      const rows = mapServicesApiResponseToPlanRows(servicesResponse);
+      setSittingVendors((prev) =>
+        prev.map((v) =>
+          v.id === vendorId ? { ...v, planRows: rows, needsServiceFetch: false } : v
+        )
+      );
+    } catch (err: any) {
+      console.error('Error loading sitting vendor services:', err);
+      setError(err.message || 'Failed to load sitting services');
+    } finally {
+      setFetchingSittingPlansFor((cur) => (cur === vendorId ? null : cur));
+    }
+  };
+
+  const handleExpandSittingVendor = (vendorId: string) => {
+    setExpandedVendorId(vendorId);
+    updateSearchContextSelection(vendorId, undefined);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('vendorId', vendorId);
+    router.replace(`/search?${params.toString()}`, { scroll: false });
+    void loadSittingVendorPlans(vendorId);
+  };
+
+  const handleCollapseSittingVendor = (vendorId: string) => {
+    setExpandedVendorId((cur) => (cur === vendorId ? null : cur));
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('vendorId');
+    const qs = params.toString();
+    router.replace(qs ? `/search?${qs}` : '/search', { scroll: false });
+  };
+
+  const handleBookSittingPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    updateSearchContextSelection(v.id, plan.rowId);
+    launchSearchSittingBooking({
+      vendorId: v.id,
+      vendorName: v.name,
+      serviceId: plan.rowId,
+      serviceName: plan.name,
+      price: plan.price,
+      duration: plan.duration,
+      serviceStyle: plan.serviceStyle || 'at_home',
+      sitter: { id: v.id, vendorId: v.id, name: v.name, businessName: v.name },
+      router,
+      returnSearchUrl: buildReturnSearchUrl(),
+    });
+  };
+
+  const loadGroomingVendorPlans = async (vendorId: string) => {
+    if (fetchingGroomingPlansFor === vendorId) return;
+    const existing = groomingVendors.find((v) => v.id === vendorId);
+    if (existing && existing.planRows.length > 0 && !existing.needsServiceFetch) return;
+    try {
+      setFetchingGroomingPlansFor(vendorId);
+      const servicesResponse = await apiClient
+        .get<any>(`/customer/vendor/${vendorId}/services?category=grooming`)
+        .catch(() =>
+          apiClient.get<any>(`/customer/vendor/${vendorId}/services?serviceStyle=at_center`)
+        );
+      const rows = mapServicesApiResponseToPlanRows(servicesResponse);
+      setGroomingVendors((prev) =>
+        prev.map((v) =>
+          v.id === vendorId ? { ...v, planRows: rows, needsServiceFetch: false } : v
+        )
+      );
+    } catch (err: any) {
+      console.error('Error loading grooming vendor services:', err);
+      setError(err.message || 'Failed to load grooming services');
+    } finally {
+      setFetchingGroomingPlansFor((cur) => (cur === vendorId ? null : cur));
+    }
+  };
+
+  const handleExpandGroomingVendor = (vendorId: string) => {
+    setExpandedVendorId(vendorId);
+    updateSearchContextSelection(vendorId, undefined);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('vendorId', vendorId);
+    router.replace(`/search?${params.toString()}`, { scroll: false });
+    void loadGroomingVendorPlans(vendorId);
+  };
+
+  const handleCollapseGroomingVendor = (vendorId: string) => {
+    setExpandedVendorId((cur) => (cur === vendorId ? null : cur));
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('vendorId');
+    const qs = params.toString();
+    router.replace(qs ? `/search?${qs}` : '/search', { scroll: false });
+  };
+
+  const handleBookGroomingPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    updateSearchContextSelection(v.id, plan.rowId);
+    launchSearchGroomingBooking({
+      vendorId: v.id,
+      vendorName: v.name,
+      serviceId: plan.rowId,
+      serviceName: plan.name,
+      price: plan.price,
+      duration: plan.duration,
+      serviceStyle: plan.serviceStyle || 'at_center',
+      groomer: { id: v.id, vendorId: v.id, name: v.name, businessName: v.name },
+      router,
+      returnSearchUrl: buildReturnSearchUrl(),
+    });
+  };
+
+  const loadTrainingVendorPlans = async (vendorId: string) => {
+    if (fetchingTrainingPlansFor === vendorId) return;
+    const existing = trainingVendors.find((v) => v.id === vendorId);
+    if (existing && existing.planRows.length > 0 && !existing.needsServiceFetch) return;
+    try {
+      setFetchingTrainingPlansFor(vendorId);
+      const servicesResponse = await apiClient
+        .get<any>(`/customer/vendor/${vendorId}/services?category=training`)
+        .catch(() =>
+          apiClient.get<any>(`/customer/vendor/${vendorId}/services?serviceStyle=at_center`)
+        );
+      const rows = mapServicesApiResponseToPlanRows(servicesResponse);
+      setTrainingVendors((prev) =>
+        prev.map((v) =>
+          v.id === vendorId ? { ...v, planRows: rows, needsServiceFetch: false } : v
+        )
+      );
+    } catch (err: any) {
+      console.error('Error loading training vendor services:', err);
+      setError(err.message || 'Failed to load training services');
+    } finally {
+      setFetchingTrainingPlansFor((cur) => (cur === vendorId ? null : cur));
+    }
+  };
+
+  const handleExpandTrainingVendor = (vendorId: string) => {
+    setExpandedVendorId(vendorId);
+    updateSearchContextSelection(vendorId, undefined);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('vendorId', vendorId);
+    router.replace(`/search?${params.toString()}`, { scroll: false });
+    void loadTrainingVendorPlans(vendorId);
+  };
+
+  const handleCollapseTrainingVendor = (vendorId: string) => {
+    setExpandedVendorId((cur) => (cur === vendorId ? null : cur));
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('vendorId');
+    const qs = params.toString();
+    router.replace(qs ? `/search?${qs}` : '/search', { scroll: false });
+  };
+
+  const handleBookTrainingPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    updateSearchContextSelection(v.id, plan.rowId);
+    launchSearchTrainingBooking({
+      vendorId: v.id,
+      vendorName: v.name,
+      serviceId: plan.rowId,
+      serviceName: plan.name,
+      price: plan.price,
+      duration: plan.duration,
+      serviceStyle: plan.serviceStyle || 'at_center',
+      trainer: { id: v.id, vendorId: v.id, name: v.name, businessName: v.name },
+      router,
+      returnSearchUrl: buildReturnSearchUrl(),
+    });
+  };
+
+  const handleExpandVendor = (vendorId: string) => {
+    setExpandedVendorId(vendorId);
+    updateSearchContextSelection(vendorId, undefined);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('vendorId', vendorId);
+    router.replace(`/search?${params.toString()}`, { scroll: false });
+    void loadVendorServices(vendorId);
+  };
+
+  const handleCollapseVendor = (vendorId: string) => {
+    setExpandedVendorId((cur) => (cur === vendorId ? null : cur));
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('vendorId');
+    const qs = params.toString();
+    router.replace(qs ? `/search?${qs}` : '/search', { scroll: false });
+  };
+
+  const handleBookFromSearch = (vendor: SearchVendorCardData, service: ClinicServiceRow) => {
+    updateSearchContextSelection(vendor.id, String(service.vendorServiceId));
+    const effectiveCategory = resolveEffectiveSearchCategory(vendor.category, category, query);
+    launchSearchServiceBooking({
+      vendorId: vendor.id,
+      vendorName: vendor.name,
+      service,
+      category: effectiveCategory,
+      address: vendor.address,
+      rating: vendor.rating,
+      reviewCount: vendor.reviewCount,
+      router,
+      returnSearchUrl: buildReturnSearchUrl(),
+    });
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -556,63 +1390,7 @@ function SearchContent() {
       <main
         className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-4 [-webkit-overflow-scrolling:touch] ${mainBottomPad}`}
       >
-        {showVendorServices && vendorIdParam ? (
-          // Show vendor services
-          <div>
-            <div className="mb-3">
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-9 -ml-2 gap-1 px-2 text-[#FF8C42] hover:text-[#E67A35]"
-                onClick={() => {
-                  setShowVendorServices(false);
-                  router.push('/search');
-                }}
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </Button>
-            </div>
-            {loading ? (
-              <div className="text-center py-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-                <p className="mt-4 text-gray-600">Loading services...</p>
-              </div>
-            ) : vendorServices.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-gray-500">No services available for this vendor</p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 gap-3">
-                  {vendorServices.map((service: any) => (
-                    <a
-                      key={service.id}
-                      href={`/booking/${service.id}`}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        updateSearchContextSelection(vendorIdParam, service.id);
-                        router.push(`/booking/${service.id}`);
-                      }}
-                      className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer"
-                    >
-                      <div className="p-4">
-                        <h3 className="font-semibold text-gray-900">{service.service_name}</h3>
-                        {service.price && (
-                          <p className="text-orange-500 font-semibold mt-2">₹{service.price}</p>
-                        )}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-                {/* Show events related to vendor services */}
-                {vendorServices.length > 0 && vendorIdParam && (
-                  <ServiceEvents serviceId={vendorServices[0]?.id} vendorId={vendorIdParam} />
-                )}
-              </div>
-            )}
-          </div>
-        ) : loading ? (
+        {loading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
             <p className="mt-4 text-gray-600">Searching...</p>
@@ -631,7 +1409,7 @@ function SearchContent() {
               Try Again
             </button>
           </div>
-        ) : displayedWithDistance.length === 0 ? (
+        ) : !hasVendorResults && productResults.length === 0 ? (
           <div className="flex min-h-[45vh] flex-col items-center justify-center px-2 py-10 text-center">
             <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-3xl bg-white shadow-sm ring-1 ring-orange-100">
               <Search className="h-10 w-10 text-[#FF8C42]" strokeWidth={1.75} />
@@ -642,105 +1420,303 @@ function SearchContent() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3">
-            {displayedWithDistance.map((result) =>
-              result.type === 'vendor' ? (
-                <button
-                  key={`vendor-${result.id}`}
-                  type="button"
-                  className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
-                  onClick={() => {
-                    updateSearchContextSelection(result.id, undefined);
-                    router.push(`/search?vendorId=${result.id}`);
+          <div className="space-y-3">
+            {nutritionCardsToRender.map((vendor) => {
+              const vendorId = String(vendor.id || vendor.vendorId || '').trim();
+              if (!vendorId) return null;
+              const vendorName =
+                vendor.businessName || vendor.name || vendor.vendor_name || 'Nutritionist';
+              return (
+                <SearchNutritionVendorCard
+                  key={`nutrition-${vendorId}`}
+                  vendor={vendor}
+                  onViewMealPlans={() =>
+                    launchSearchNutritionMealPlans({
+                      vendorId,
+                      vendorSnapshot: vendor,
+                      router,
+                    })
+                  }
+                  onViewServices={() =>
+                    launchSearchNutritionBooking({
+                      vendorId,
+                      vendorName,
+                      nutritionist: { ...vendor, id: vendorId, vendorId },
+                      router,
+                      returnSearchUrl: buildReturnSearchUrl(),
+                    })
+                  }
+                />
+              );
+            })}
+            {trainingCardsToRender.map((vendor) => {
+              const expanded = expandedVendorId === vendor.id;
+              const minP = minPriceForVendor(vendor);
+              return (
+                <SearchTrainingVendorCard
+                  key={`training-${vendor.id}`}
+                  vendor={vendor}
+                  expanded={expanded}
+                  fetchingPlansFor={fetchingTrainingPlansFor}
+                  minPrice={minP}
+                  onToggleHeader={() => {
+                    if (expanded) {
+                      handleCollapseTrainingVendor(vendor.id);
+                    } else {
+                      handleExpandTrainingVendor(vendor.id);
+                    }
                   }}
-                >
-                  <CustomerSearchListingCard
-                    title={result.name}
-                    category={result.category}
-                    imageUrl={result.imageUrl}
-                    addressLine={
-                      result.addressDisplay ||
-                      [result.city, result.state].filter(Boolean).join(', ') ||
-                      'Address on file'
-                    }
-                    distanceKm={result.distanceKm}
-                    rating={result.rating}
-                    reviewCount={result.reviewCount}
-                    badgeLabel={result.category || undefined}
-                  />
-                </button>
-              ) : result.type === 'service' ? (
-                <button
-                  key={`service-${result.id}`}
-                  type="button"
-                  className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    updateSearchContextSelection(undefined, result.id);
-                    router.push(`/booking/${result.id}`);
+                  onViewServices={(e) => {
+                    e.stopPropagation();
+                    handleExpandTrainingVendor(vendor.id);
                   }}
-                >
-                  <CustomerSearchListingCard
-                    title={
-                      result.vendorBusinessName ||
-                      [result.city, result.state].filter(Boolean).join(', ') ||
-                      'Service provider'
+                  onDetails={(e, vendorId) => {
+                    e.stopPropagation();
+                    launchSearchTrainingCenterProfile({
+                      vendorId,
+                      router,
+                      returnSearchUrl: buildReturnSearchUrl(),
+                    });
+                  }}
+                  onBookPlan={handleBookTrainingPlan}
+                  onOpenCenterDetails={(e, vendorId) => {
+                    e.stopPropagation();
+                    launchSearchTrainingCenterProfile({
+                      vendorId,
+                      router,
+                      returnSearchUrl: buildReturnSearchUrl(),
+                    });
+                  }}
+                />
+              );
+            })}
+            {groomingCardsToRender.map((vendor) => {
+              const expanded = expandedVendorId === vendor.id;
+              const minP = minPriceForVendor(vendor);
+              return (
+                <SearchGroomingVendorCard
+                  key={`grooming-${vendor.id}`}
+                  vendor={vendor}
+                  expanded={expanded}
+                  fetchingPlansFor={fetchingGroomingPlansFor}
+                  minPrice={minP}
+                  onToggleHeader={() => {
+                    if (expanded) {
+                      handleCollapseGroomingVendor(vendor.id);
+                    } else {
+                      handleExpandGroomingVendor(vendor.id);
                     }
-                    subtitle={result.vendorBusinessName ? result.name : undefined}
-                    category={result.category}
-                    imageUrl={result.imageUrl}
-                    addressLine={
-                      result.addressDisplay ||
-                      [result.city, result.state].filter(Boolean).join(', ') ||
-                      'Address on file'
+                  }}
+                  onViewServices={(e) => {
+                    e.stopPropagation();
+                    handleExpandGroomingVendor(vendor.id);
+                  }}
+                  onDetails={(e, vendorId) => {
+                    e.stopPropagation();
+                    launchSearchGroomingCenterProfile({
+                      vendorId,
+                      router,
+                      returnSearchUrl: buildReturnSearchUrl(),
+                    });
+                  }}
+                  onBookPlan={handleBookGroomingPlan}
+                  onOpenCenterDetails={(e, vendorId) => {
+                    e.stopPropagation();
+                    launchSearchGroomingCenterProfile({
+                      vendorId,
+                      router,
+                      returnSearchUrl: buildReturnSearchUrl(),
+                    });
+                  }}
+                />
+              );
+            })}
+            {boardingCardsToRender.map((vendor) => {
+              const expanded = expandedVendorId === vendor.id;
+              const minP = minPriceForVendor(vendor);
+              return (
+                <SearchBoardingVendorCard
+                  key={`boarding-${vendor.id}`}
+                  vendor={vendor}
+                  expanded={expanded}
+                  fetchingPlansFor={fetchingBoardingPlansFor}
+                  minPrice={minP}
+                  onToggleHeader={() => {
+                    if (expanded) {
+                      handleCollapseBoardingVendor(vendor.id);
+                    } else {
+                      handleExpandBoardingVendor(vendor.id);
                     }
-                    distanceKm={result.distanceKm}
-                    rating={result.rating}
-                    reviewCount={result.reviewCount}
-                    price={result.price}
-                    badgeLabel={result.category || undefined}
-                  />
-                </button>
-              ) : (
-                /* Product card */
-                <button
-                  key={`product-${result.id}`}
-                  type="button"
-                  className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
-                  onClick={() => router.push(shopProductDetailPath(String(result.id)))}
-                >
-                  <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-100">
-                    {result.imageUrl ? (
-                      <img
-                        src={result.imageUrl}
-                        alt={result.name}
-                        className="h-16 w-16 shrink-0 rounded-xl object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-2xl">
-                        🛍️
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-gray-900">{result.name}</p>
-                      {result.sellerName && (
-                        <p className="truncate text-xs text-gray-500">{result.sellerName}</p>
-                      )}
-                      {result.category && (
-                        <span className="mt-1 inline-block rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600">
-                          {result.category}
-                        </span>
-                      )}
+                  }}
+                  onViewServices={(e) => {
+                    e.stopPropagation();
+                    handleExpandBoardingVendor(vendor.id);
+                  }}
+                  onDetails={(e, vendorId) => {
+                    e.stopPropagation();
+                    launchSearchBoardingCenterProfile({
+                      vendorId,
+                      router,
+                      returnSearchUrl: buildReturnSearchUrl(),
+                    });
+                  }}
+                  onBookPlan={handleBookBoardingPlan}
+                  onOpenCenterDetails={(e, vendorId) => {
+                    e.stopPropagation();
+                    launchSearchBoardingCenterProfile({
+                      vendorId,
+                      router,
+                      returnSearchUrl: buildReturnSearchUrl(),
+                    });
+                  }}
+                />
+              );
+            })}
+            {walkerCardsToRender.map((vendor) => {
+              const expanded = expandedVendorId === vendor.id;
+              const minP = minPriceForVendor(vendor);
+              return (
+                <SearchWalkerVendorCard
+                  key={`walker-${vendor.id}`}
+                  vendor={vendor}
+                  expanded={expanded}
+                  fetchingPlansFor={fetchingWalkerPlansFor}
+                  minPrice={minP}
+                  onToggleHeader={() => {
+                    if (expanded) {
+                      handleCollapseWalkerVendor(vendor.id);
+                    } else {
+                      handleExpandWalkerVendor(vendor.id);
+                    }
+                  }}
+                  onViewServices={(e) => {
+                    e.stopPropagation();
+                    handleExpandWalkerVendor(vendor.id);
+                  }}
+                  onDetails={(e, vendorId) => {
+                    e.stopPropagation();
+                    launchSearchWalkerCenterProfile({
+                      vendorId,
+                      router,
+                      returnSearchUrl: buildReturnSearchUrl(),
+                    });
+                  }}
+                  onBookPlan={handleBookWalkerPlan}
+                  onOpenCenterDetails={(e, vendorId) => {
+                    e.stopPropagation();
+                    launchSearchWalkerCenterProfile({
+                      vendorId,
+                      router,
+                      returnSearchUrl: buildReturnSearchUrl(),
+                    });
+                  }}
+                />
+              );
+            })}
+            {sittingCardsToRender.map((vendor) => {
+              const expanded = expandedVendorId === vendor.id;
+              const minP = minPriceForVendor(vendor);
+              return (
+                <SearchSittingVendorCard
+                  key={`sitting-${vendor.id}`}
+                  vendor={vendor}
+                  expanded={expanded}
+                  fetchingPlansFor={fetchingSittingPlansFor}
+                  minPrice={minP}
+                  onToggleHeader={() => {
+                    if (expanded) {
+                      handleCollapseSittingVendor(vendor.id);
+                    } else {
+                      handleExpandSittingVendor(vendor.id);
+                    }
+                  }}
+                  onViewServices={(e) => {
+                    e.stopPropagation();
+                    handleExpandSittingVendor(vendor.id);
+                  }}
+                  onDetails={(e, vendorId) => {
+                    e.stopPropagation();
+                    launchSearchSittingCenterProfile({
+                      vendorId,
+                      router,
+                      returnSearchUrl: buildReturnSearchUrl(),
+                    });
+                  }}
+                  onBookPlan={handleBookSittingPlan}
+                  onOpenCenterDetails={(e, vendorId) => {
+                    e.stopPropagation();
+                    launchSearchSittingCenterProfile({
+                      vendorId,
+                      router,
+                      returnSearchUrl: buildReturnSearchUrl(),
+                    });
+                  }}
+                />
+              );
+            })}
+            {nonNutritionVendorCards.map((vendor) => {
+              const expanded = expandedVendorId === vendor.id;
+              const services = vendorServicesById[vendor.id] ?? [];
+              const loadingServices = servicesLoadingVendorId === vendor.id;
+              return (
+                <SearchVendorExpandableCard
+                  key={`vendor-${vendor.id}`}
+                  vendor={vendor}
+                  services={services}
+                  expanded={expanded}
+                  loadingServices={loadingServices}
+                  onViewServices={(e) => {
+                    e.stopPropagation();
+                    handleExpandVendor(vendor.id);
+                  }}
+                  onDetails={(e) => {
+                    e.stopPropagation();
+                    const effectiveCategory = resolveEffectiveSearchCategory(vendor.category, category, query);
+                    router.push(buildSearchVendorDetailsUrl(vendor.id, vendor.name, effectiveCategory));
+                  }}
+                  onBookService={(service) => handleBookFromSearch(vendor, service)}
+                  onToggleCollapse={() => handleCollapseVendor(vendor.id)}
+                />
+              );
+            })}
+            {productResults.map((result) => (
+              <button
+                key={`product-${result.id}`}
+                type="button"
+                className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
+                onClick={() => router.push(shopProductDetailPath(String(result.id)))}
+              >
+                <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-100">
+                  {result.imageUrl ? (
+                    <img
+                      src={result.imageUrl}
+                      alt={result.name}
+                      className="h-16 w-16 shrink-0 rounded-xl object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-2xl">
+                      🛍️
                     </div>
-                    {result.price != null && (
-                      <p className="shrink-0 text-sm font-bold text-[#FF8C42]">
-                        ₹{result.price.toLocaleString('en-IN')}
-                      </p>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-gray-900">{result.name}</p>
+                    {result.sellerName && (
+                      <p className="truncate text-xs text-gray-500">{result.sellerName}</p>
+                    )}
+                    {result.category && (
+                      <span className="mt-1 inline-block rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600">
+                        {result.category}
+                      </span>
                     )}
                   </div>
-                </button>
-              )
-            )}
+                  {result.price != null && (
+                    <p className="shrink-0 text-sm font-bold text-[#FF8C42]">
+                      ₹{result.price.toLocaleString('en-IN')}
+                    </p>
+                  )}
+                </div>
+              </button>
+            ))}
           </div>
         )}
       </main>

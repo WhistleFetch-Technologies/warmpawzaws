@@ -25,6 +25,7 @@ import {
 } from '../../../utils/product-sku-order';
 import { assertProductDeliverableToCity } from '../../../utils/product-delivery-regions';
 import { resolveReturnWindowDays, isReturnWindowExpired } from '../../../utils/return-window';
+import { computeEcommerceDeliveryFee } from '../../../utils/ecommerce/delivery-fee';
 
 /** Maps checkout address shapes to NOT NULL `orders.shipping_*`; full object also in `metadata.address_snapshot`. */
 function shippingColumnsFromAddress(
@@ -223,7 +224,7 @@ class CreateCustomerOrderHandler extends BaseHandler {
       }
 
       const calculatedSubtotal = orderItems.reduce((s, l) => s + l.total_price, 0);
-      const shippingAmount = calculatedSubtotal > 499 ? 0 : 49;
+      const shippingAmount = computeEcommerceDeliveryFee(calculatedSubtotal);
       const calculatedTaxAmount =
         Number.isFinite(bodyTax) && bodyTax >= 0 ? bodyTax : calculatedSubtotal * 0.18;
       const recomputedTotal = calculatedSubtotal + shippingAmount + calculatedTaxAmount;

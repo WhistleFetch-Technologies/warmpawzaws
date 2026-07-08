@@ -103,6 +103,18 @@ export async function resolveEcommerceOrderLine(
   };
 }
 
+async function syncParentProductStockFromSkus(productId: string): Promise<void> {
+  await query(
+    `UPDATE products p
+     SET stock = COALESCE((
+       SELECT SUM(stock) FROM product_skus WHERE product_id = p.id AND is_active = true
+     ), 0),
+     updated_at = NOW()
+     WHERE p.id = $1 AND COALESCE(p.has_variations, false) = true`,
+    [productId],
+  );
+}
+
 export async function decrementSkuStock(skuRowId: string, quantity: number): Promise<void> {
   await query(
     `UPDATE product_skus
@@ -113,14 +125,22 @@ export async function decrementSkuStock(skuRowId: string, quantity: number): Pro
   const parent = await query(`SELECT product_id FROM product_skus WHERE id = $1`, [skuRowId]);
   const productId = parent.rows[0]?.product_id;
   if (productId) {
-    await query(
-      `UPDATE products p
-       SET stock = COALESCE((
-         SELECT SUM(stock) FROM product_skus WHERE product_id = p.id AND is_active = true
-       ), 0),
-       updated_at = NOW()
-       WHERE p.id = $1 AND COALESCE(p.has_variations, false) = true`,
-      [productId],
-    );
+    await syncParentProductStockFromSkus(String(productId));
+  }
+}
+
+/** Restore SKU stock after an unpaid checkout draft is discarded. */
+export async function incrementSkuStock(skuRowId: string, quantity: number): Promise<void> {
+  if (!skuRowId || quantity <= 0) return;
+  await query(
+    `UPDATE product_skus
+     SET stock = stock + $2, updated_at = NOW()
+     WHERE id = $1`,
+    [skuRowId, quantity],
+  );
+  const parent = await query(`SELECT product_id FROM product_skus WHERE id = $1`, [skuRowId]);
+  const productId = parent.rows[0]?.product_id;
+  if (productId) {
+    await syncParentProductStockFromSkus(String(productId));
   }
 }

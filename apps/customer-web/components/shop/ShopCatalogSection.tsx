@@ -55,14 +55,7 @@ export function ShopCatalogSection({
   return (
     <div id="shop-all-products" className="mt-5 px-4 scroll-mt-4">
       <div className="flex items-center justify-between mb-3">
-        <div>
-          <h2 className="text-sm font-bold text-slate-900">All Products</h2>
-          {!loading && !error && (
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              <span className="font-semibold text-slate-700">{products.length}</span> products loaded
-            </p>
-          )}
-        </div>
+        <h2 className="text-sm font-bold text-slate-900">All Products</h2>
       </div>
 
       {loading ? (
@@ -116,13 +109,9 @@ export function ShopCatalogSection({
             </div>
           )}
 
-          {!hasMore && products.length > 0 && (
-            <p className="text-center text-slate-400 text-xs py-6">
-              All {products.length} products loaded
-            </p>
-          )}
         </>
       )}
+
     </div>
   );
 }

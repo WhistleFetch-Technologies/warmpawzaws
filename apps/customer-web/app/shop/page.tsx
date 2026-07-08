@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { BottomNavigation } from '@/components/customer/bottomNavigation/BottomNavigation';
@@ -19,13 +19,17 @@ import { AddAddressModal } from '@/components/customer/shared/AddAddressModal';
 import { mapApiProductsList } from '@/components/shop/map-shop-product';
 import type { ShopCartItem, ShopCategory, ShopProduct } from '@/components/shop/shop-types';
 import { apiClient } from '@/lib/api-client';
-import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
+import {
+  mapApiCategoriesToShop,
+  resolveShopCategoryParam,
+} from '@/lib/shop-category-display';
 import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { isShopUiVisibleForAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
 import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { handleShopPageBack } from '@/lib/go-back-or-replace';
 import { emitWarmpawzCartUpdated, CART_UPDATED_EVENT, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
+import { cartLineKey } from '@/lib/product-sku-client';
 import {
   loadCustomerDeliveryAddresses,
   pickDefaultDeliveryAddress,
@@ -37,6 +41,14 @@ import {
   writeCheckoutAddressId,
 } from '@/lib/ecommerce/checkout-address-storage';
 import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
+
+/** Shop listing cart line: parent id, or parent::listingSku when product has variants. */
+function shopListingLineId(product: ShopProduct): string {
+  if (product.has_variants && product.listing_sku_id) {
+    return cartLineKey(product.id, product.listing_sku_id);
+  }
+  return product.id;
+}
 
 function deliveryAddressToLabel(addr: DeliveryAddress): string {
   const area = (addr.addressLine1 || addr.street || '').trim();
@@ -59,12 +71,22 @@ function clearShopCategoryFromUrl() {
   window.history.replaceState({}, '', next);
 }
 
+function setShopCategoryInUrl(categoryId: string) {
+  if (typeof window === 'undefined' || !categoryId) return;
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('category') === categoryId) return;
+  url.searchParams.set('category', categoryId);
+  window.history.replaceState({}, '', url.pathname + url.search);
+}
+
 /** Full-viewport column — same width token as home + BottomNavigation (no grey outer frame). */
 const SHOP_PAGE_SHELL =
   'relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-customer mx-auto flex-col overflow-hidden bg-white';
 
 export default function ShopPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const categoryFromUrl = searchParams.get('category') ?? '';
   const nav = useCustomerNavigation();
   const { accountSidebar, handleTabbedBottomNav, openAccountMenu } = useCustomerAccountSidebarHost();
 
@@ -102,6 +124,17 @@ export default function ShopPage() {
 
   const selectedDeliveryAddressRef = useRef<DeliveryAddress | null>(null);
   const loadProductsGenRef = useRef(0);
+  /** Last ?category= value applied from Next searchParams (skip chip/local changes). */
+  const lastAppliedUrlCategoryRef = useRef<string | null>(null);
+  /** UUID after slug resolve — used to ignore stale slug still held by useSearchParams. */
+  const resolvedCategoryRef = useRef<string>('');
+
+  const applyCategorySelection = useCallback((categoryId: string) => {
+    resolvedCategoryRef.current = categoryId;
+    setSelectedCategory(categoryId);
+    if (categoryId) setShopCategoryInUrl(categoryId);
+    else clearShopCategoryFromUrl();
+  }, []);
 
   const loadCustomerData = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -168,6 +201,27 @@ export default function ShopPage() {
   }, [searchTerm]);
 
   /**
+   * Apply ?category= only when the Next.js search param actually changes
+   * (e.g. home tile navigation while /shop is mounted). Chip clicks update state
+   * via applyCategorySelection and must not be overwritten by a stale param.
+   */
+  useEffect(() => {
+    if (lastAppliedUrlCategoryRef.current === categoryFromUrl) return;
+    lastAppliedUrlCategoryRef.current = categoryFromUrl;
+
+    if (
+      resolvedCategoryRef.current &&
+      categoryFromUrl &&
+      (categoryFromUrl === resolvedCategoryRef.current ||
+        resolveShopCategoryParam(categoryFromUrl, categories) === resolvedCategoryRef.current)
+    ) {
+      return;
+    }
+
+    setSelectedCategory(categoryFromUrl);
+  }, [categoryFromUrl, categories]);
+
+  /**
    * Fetch one page of products and either replace (reset=true) or append (reset=false).
    * Uses a stable ref for currentOffset to avoid stale-closure issues on append.
    */
@@ -199,13 +253,23 @@ export default function ShopPage() {
 
           if (gen !== loadProductsGenRef.current) return;
 
-          if (
-            effectiveCategory &&
-            !mappedCategories.some((c) => c.id === effectiveCategory)
-          ) {
-            effectiveCategory = '';
-            setSelectedCategory('');
-            clearShopCategoryFromUrl();
+          if (effectiveCategory) {
+            const resolved = resolveShopCategoryParam(effectiveCategory, mappedCategories);
+            if (resolved) {
+              if (resolved !== effectiveCategory) {
+                effectiveCategory = resolved;
+                resolvedCategoryRef.current = resolved;
+                setSelectedCategory(resolved);
+                setShopCategoryInUrl(resolved);
+              } else {
+                resolvedCategoryRef.current = resolved;
+              }
+            } else {
+              effectiveCategory = '';
+              resolvedCategoryRef.current = '';
+              setSelectedCategory('');
+              clearShopCategoryFromUrl();
+            }
           }
         }
 
@@ -364,36 +428,71 @@ export default function ShopPage() {
   };
 
   const updateProductQuantity = (product: ShopProduct, quantity: number) => {
+    const lineId = shopListingLineId(product);
     const nextQty = Math.max(0, Math.floor(quantity));
-    const existing = cart.find((item) => item.product_id === product.id);
+    const existing = cart.find((item) => item.product_id === lineId);
     if (nextQty <= 0) {
-      if (existing) saveCart(cart.filter((item) => item.product_id !== product.id));
+      if (existing) saveCart(cart.filter((item) => item.product_id !== lineId));
       return;
     }
     const capped = product.stock > 0 ? Math.min(nextQty, product.stock) : nextQty;
+    const skuId =
+      product.has_variants && product.listing_sku_id
+        ? product.listing_sku_id
+        : undefined;
+    const selectedVariations =
+      skuId &&
+      product.listing_option_values &&
+      Object.keys(product.listing_option_values).length > 0
+        ? product.listing_option_values
+        : undefined;
     const newCart = existing
       ? cart.map((item) =>
-          item.product_id === product.id ? { ...item, quantity: capped } : item
+          item.product_id === lineId
+            ? {
+                ...item,
+                quantity: capped,
+                product,
+                product_sku_id: skuId ?? item.product_sku_id,
+                selected_variations: selectedVariations ?? item.selected_variations,
+              }
+            : item
         )
-      : [...cart, { product_id: product.id, product, quantity: capped }];
+      : [
+          ...cart,
+          {
+            product_id: lineId,
+            product,
+            quantity: capped,
+            product_sku_id: skuId,
+            selected_variations: selectedVariations,
+          },
+        ];
     saveCart(newCart);
   };
 
   const addToCart = (product: ShopProduct) => {
-    if (product.has_variants) {
+    // Variant products need a SKU. Prefer the API listing SKU (lowest in-stock price);
+    // only open PDP when we cannot resolve one.
+    if (product.has_variants && !product.listing_sku_id) {
       nav.goToProduct(product.id);
       return;
     }
+    const lineId = shopListingLineId(product);
     updateProductQuantity(
       product,
-      (cart.find((item) => item.product_id === product.id)?.quantity ?? 0) + 1
+      (cart.find((item) => item.product_id === lineId)?.quantity ?? 0) + 1
     );
   };
 
   const getCartQuantity = useCallback(
-    (productId: string) =>
-      cart.find((item) => item.product_id === productId)?.quantity ?? 0,
-    [cart]
+    (productId: string) => {
+      const product = products.find((p) => p.id === productId)
+        ?? featuredProducts.find((p) => p.id === productId);
+      const lineId = product ? shopListingLineId(product) : productId;
+      return cart.find((item) => item.product_id === lineId)?.quantity ?? 0;
+    },
+    [cart, products, featuredProducts]
   );
 
   const cartSubtotal = cart.reduce(
@@ -453,7 +552,7 @@ export default function ShopPage() {
             <ShopCategoryScroller
               categories={categories}
               selectedCategory={selectedCategory}
-              onSelectCategory={setSelectedCategory}
+              onSelectCategory={applyCategorySelection}
             />
           </div>
         </header>

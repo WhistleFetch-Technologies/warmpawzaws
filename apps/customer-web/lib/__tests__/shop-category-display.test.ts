@@ -2,6 +2,7 @@ import {
   isShopCategoryActive,
   mapApiCategoriesToShop,
   normalizeShopCategoryRow,
+  resolveShopCategoryParam,
   sortShopCategories,
 } from '../shop-category-display';
 
@@ -62,5 +63,37 @@ describe('shop-category-display', () => {
     ]);
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('active');
+  });
+
+  describe('resolveShopCategoryParam', () => {
+    const categories = [
+      { id: 'uuid-food', name: 'Pet Food' },
+      { id: 'uuid-toys', name: 'Pet Toys' },
+      { id: 'uuid-beds', name: 'Pet Beds & Furniture' },
+    ];
+
+    it('passes through matching UUID ids', () => {
+      expect(resolveShopCategoryParam('uuid-food', categories)).toBe('uuid-food');
+    });
+
+    it('resolves static slug pet-food to API id', () => {
+      expect(resolveShopCategoryParam('pet-food', categories)).toBe('uuid-food');
+    });
+
+    it('resolves short alias food to Pet Food id', () => {
+      expect(resolveShopCategoryParam('food', categories)).toBe('uuid-food');
+    });
+
+    it('resolves beds furniture slug variants', () => {
+      expect(resolveShopCategoryParam('pet-beds-furniture', categories)).toBe('uuid-beds');
+    });
+
+    it('returns empty for unknown slug', () => {
+      expect(resolveShopCategoryParam('not-a-category', categories)).toBe('');
+    });
+
+    it('returns empty when categories list is empty', () => {
+      expect(resolveShopCategoryParam('pet-food', [])).toBe('');
+    });
   });
 });

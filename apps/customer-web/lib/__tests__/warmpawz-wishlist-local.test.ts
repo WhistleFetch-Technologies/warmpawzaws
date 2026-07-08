@@ -1,8 +1,12 @@
 import {
   canSyncWishlistToApi,
   extractWishlistProductId,
+  isProductWishlisted,
+  isWishlistIdMatch,
   mergeWishlistIds,
+  resolveWishlistIdsForDisplay,
   sameWishlistIdSet,
+  WARMPAWZ_WISHLIST_KEY,
 } from '../warmpawz-wishlist-local';
 
 const PRODUCT_A = '11111111-1111-4111-8111-111111111111';
@@ -81,6 +85,50 @@ describe('warmpawz-wishlist-local', () => {
       expect(localAfterAdd).toEqual([PRODUCT_A]);
       const afterFailedSync = mergeWishlistIds(localAfterAdd, []);
       expect(afterFailedSync).toEqual([PRODUCT_A]);
+    });
+  });
+
+  describe('isWishlistIdMatch / isProductWishlisted', () => {
+    it('matches ids by string equality', () => {
+      expect(isWishlistIdMatch(PRODUCT_A, PRODUCT_A)).toBe(true);
+      expect(isWishlistIdMatch(PRODUCT_A, PRODUCT_B)).toBe(false);
+    });
+
+    it('detects membership in a provided id list', () => {
+      expect(isProductWishlisted(PRODUCT_A, [PRODUCT_A, PRODUCT_B])).toBe(true);
+      expect(isProductWishlisted(PRODUCT_B, [PRODUCT_A])).toBe(false);
+    });
+  });
+
+  describe('removeWishlistProductIds', () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it('removes all alias candidate ids from storage', () => {
+      localStorage.setItem(
+        WARMPAWZ_WISHLIST_KEY,
+        JSON.stringify([PRODUCT_A, PRODUCT_B])
+      );
+      const { removeWishlistProductIds } = require('../warmpawz-wishlist-local');
+      removeWishlistProductIds(PRODUCT_A);
+      expect(JSON.parse(localStorage.getItem(WARMPAWZ_WISHLIST_KEY) || '[]')).toEqual([
+        PRODUCT_B,
+      ]);
+    });
+  });
+
+  describe('resolveWishlistIdsForDisplay', () => {
+    it('refresh mode uses local ids only and ignores API items', () => {
+      expect(resolveWishlistIdsForDisplay('refresh', [PRODUCT_A], [{ product_id: PRODUCT_B }])).toEqual([
+        PRODUCT_A,
+      ]);
+    });
+
+    it('initial mode unions API product ids', () => {
+      expect(
+        resolveWishlistIdsForDisplay('initial', [PRODUCT_A], [{ product_id: PRODUCT_B }])
+      ).toEqual([PRODUCT_A, PRODUCT_B]);
     });
   });
 });

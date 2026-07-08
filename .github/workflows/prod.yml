@@ -544,6 +544,8 @@ jobs:
           cd apps/customer-web && npm ci && npm run build
         env:
           NEXT_PUBLIC_API_BASE_URL: ${{ needs.terraform-apply.outputs.api_endpoint }}
+          NEXT_PUBLIC_ENVIRONMENT: production
+          NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED: false
       - name: Verify build outputs exist
         run: |
           for app in admin-web vendor-web customer-web; do
@@ -629,7 +631,7 @@ jobs:
       - name: Inject runtime-config.js (prod API URL)
         run: |
           API="${{ needs.terraform-apply.outputs.api_endpoint }}"
-          for app in admin-web vendor-web customer-web; do
+          for app in admin-web vendor-web; do
             D="apps/${app}/dist"
             if [ ! -d "$D" ]; then
               echo "⚠️  Warning: $D does not exist, skipping runtime-config injection"
@@ -638,6 +640,13 @@ jobs:
             printf '%s\n' "(function(){var u=\"$API\";window.__WARMPAWZ_RUNTIME_CONFIG__={apiBaseUrl:u,uatMode:false};if(typeof __API_BASE_URL__===\"undefined\"){window.__API_BASE_URL__=u;}}());" > "$D/runtime-config.js"
             echo "✅ Injected runtime-config.js into $D"
           done
+          D="apps/customer-web/dist"
+          if [ -d "$D" ]; then
+            printf '%s\n' "(function(){var u=\"$API\";window.__WARMPAWZ_RUNTIME_CONFIG__=Object.assign(window.__WARMPAWZ_RUNTIME_CONFIG__||{},{apiBaseUrl:u,uatMode:false,environment:\"production\",customerEcommerceEnabled:false});if(typeof __API_BASE_URL__===\"undefined\"){window.__API_BASE_URL__=u;}}());" > "$D/runtime-config.js"
+            echo "✅ Injected runtime-config.js into $D (customer ecommerce disabled)"
+          else
+            echo "⚠️  Warning: $D does not exist, skipping runtime-config injection"
+          fi
       - name: Deploy admin-web to S3
         run: |
           if [ ! -d "apps/admin-web/dist" ]; then

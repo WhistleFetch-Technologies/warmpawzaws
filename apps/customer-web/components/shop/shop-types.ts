@@ -15,6 +15,9 @@ export interface ShopProduct {
   is_active: boolean;
   delivery_regions?: string[];
   has_variants?: boolean;
+  /** Default / listing SKU (lowest in-stock selling price) when has_variants. */
+  listing_sku_id?: string;
+  listing_option_values?: Record<string, string>;
   price_from?: boolean;
   min_price?: number;
 }
@@ -29,9 +32,12 @@ export interface ShopCategory {
 }
 
 export interface ShopCartItem {
+  /** Line key: product id, or `productId::skuId` for variant lines. */
   product_id: string;
   product: ShopProduct;
   quantity: number;
+  product_sku_id?: string;
+  selected_variations?: Record<string, string>;
 }
 
 export interface ShopCoupon {

@@ -45,12 +45,16 @@ if ([string]::IsNullOrEmpty($API_BASE_URL)) {
 }
 $API_BASE_URL = $API_BASE_URL.TrimEnd('/')
 
+# Customer marketplace: disabled on prod unless CUSTOMER_ECOMMERCE_ENABLED=true|1
+$customerEcommerceJs = if ($env:CUSTOMER_ECOMMERCE_ENABLED -eq 'true' -or $env:CUSTOMER_ECOMMERCE_ENABLED -eq '1') { 'true' } else { 'false' }
+
 Write-Host "Production Configuration:" -ForegroundColor Blue
 Write-Host "   S3 Bucket: $S3_BUCKET"
 Write-Host "   CloudFront ID: $CLOUDFRONT_DIST_ID"
 Write-Host "   CloudFront URL: $CLOUDFRONT_URL"
 Write-Host "   Alternate Domain: customer.warmpawz.com"
 Write-Host "   API Endpoint: $API_BASE_URL"
+Write-Host "   Customer ecommerce: $customerEcommerceJs" -ForegroundColor Gray
 Write-Host ""
 
 Set-Location $PROJECT_ROOT
@@ -71,7 +75,7 @@ if ($DeployOnly -and (Test-Path "dist")) {
     $env:NEXT_PUBLIC_ENVIRONMENT = 'production'
     $env:NEXT_PUBLIC_API_BASE_URL = $API_BASE_URL
     $env:NEXT_PUBLIC_FIREBASE_VAPID_KEY = 'BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw'
-    $env:NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED = 'true'
+    $env:NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED = $customerEcommerceJs
     $env:NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED = 'true'
 
     # Build with retry on failure (prod NEXT_PUBLIC_* baked into static export)
@@ -105,7 +109,7 @@ $runtimeConfig = "// Runtime Configuration for Warmpawz $APP_NAME (PRODUCTION)`n
 "    apiBaseUrl: `"$API_BASE_URL`",`n" +
 "    uatMode: false,`n" +
 "    environment: `"production`",`n" +
-"    customerEcommerceEnabled: true,`n" +
+"    customerEcommerceEnabled: $customerEcommerceJs,`n" +
 "    customerMealPlansEnabled: true`n" +
 "  };`n" +
 "  console.log('Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);`n" +
@@ -117,7 +121,7 @@ Write-Host "runtime-config.js injected (apiBaseUrl -> API Gateway)" -ForegroundC
 
 # Step 1.6: Replace inline runtime-config in HTML files
 Write-Host "Replacing inline runtime-config in HTML files..." -ForegroundColor Blue
-$INLINE_CONFIG = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$API_BASE_URL', uatMode: false, environment: 'production', customerEcommerceEnabled: true, customerMealPlansEnabled: true };"
+$INLINE_CONFIG = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$API_BASE_URL', uatMode: false, environment: 'production', customerEcommerceEnabled: $customerEcommerceJs, customerMealPlansEnabled: true };"
 Get-ChildItem -Path "apps\$APP_NAME\dist" -Filter "*.html" -Recurse | ForEach-Object {
     $content = Get-Content $_.FullName -Raw
     if ($content -match 'runtime-config-inline') {
