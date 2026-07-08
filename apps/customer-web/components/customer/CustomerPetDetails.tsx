@@ -23,6 +23,7 @@ import {
   deriveNextDueDate,
   formatDisplayDate,
   formatHealthFieldText,
+  formatBloodType,
   normalizeVaccinationsFromApi,
   normalizeVaccinationDateToIso,
   extractVaccinationEntriesFromApi,
@@ -31,6 +32,9 @@ import {
   type VaccinationEntryDisplay,
 } from '@/lib/pet-profile-display';
 import { flatMapFromVaccinationEntries } from '@/lib/vaccine-label-mapping';
+import { BloodTypeSelector } from '@/components/customer/pet-blood-type';
+import { normalizeBloodTypeKey } from '@/lib/pet-blood-types';
+import { normalizePetSpecies } from '@/lib/pet-vaccination-schedule';
 
 interface Pet {
   id: string;
@@ -43,6 +47,7 @@ interface Pet {
   photo?: string;
   color?: string;
   microchipId?: string;
+  bloodType?: string;
   dateOfBirth?: string;
   ageUnit?: 'months' | 'years';
   healthRecords?: {
@@ -136,6 +141,8 @@ function mapApiPetToPet(raw: any): Pet {
     species === 'dog' ? 'Dog' : species === 'cat' ? 'Cat' : raw.type || (species ? species.charAt(0).toUpperCase() + species.slice(1) : 'Pet');
   const hr = raw.healthRecords ?? raw.health_records ?? raw.medical_history ?? {};
   const { age, ageUnit } = resolveAgeFromRaw(raw);
+  const speciesForBlood = normalizePetSpecies(typeDisplay);
+  const rawBloodType = hr.bloodType ?? raw.bloodType ?? raw.medical_history?.bloodType;
   return {
     ...raw,
     id: String(raw.id),
@@ -148,6 +155,8 @@ function mapApiPetToPet(raw: any): Pet {
     weight: raw.weight != null && raw.weight !== '' ? String(raw.weight).replace(/[^\d.]/g, '') || String(raw.weight) : '',
     photo: photoUrlFromPet(raw),
     dateOfBirth: raw.dateOfBirth ?? raw.date_of_birth,
+    microchipId: raw.microchipId ?? raw.microchip_id ?? hr.microchipId ?? '',
+    bloodType: normalizeBloodTypeKey(rawBloodType, speciesForBlood),
     healthRecords: {
       lastCheckup: hr.lastCheckup ?? hr.last_checkup ?? '',
       allergies: formatHealthFieldText(hr.allergies),
@@ -430,7 +439,10 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
         dateOfBirth: pet.dateOfBirth,
         photo: pet.photo,
         microchipId: pet.microchipId,
-        healthRecords,
+        healthRecords: {
+          ...healthRecords,
+          ...(pet.bloodType ? { bloodType: pet.bloodType } : {}),
+        },
         vaccinations,
       };
 
@@ -829,6 +841,18 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     placeholder="Optional"
                   />
                 </div>
+
+                <div>
+                  <ProfileFieldLabel>
+                    Blood Type <span className="text-gray-400 text-xs font-normal">(Optional)</span>
+                  </ProfileFieldLabel>
+                  <BloodTypeSelector
+                    species={normalizePetSpecies(pet.type)}
+                    value={pet.bloodType || ''}
+                    onChange={(key) => setPet({ ...pet, bloodType: key })}
+                    name="profileBloodType"
+                  />
+                </div>
               </div>
             ) : (
               <ProfileGridFields>
@@ -838,6 +862,14 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                 <ProfileGridField label="Gender" value={pet.gender || 'Not specified'} />
                 <ProfileGridField label="Age" value={formatPetAge(pet)} />
                 <ProfileGridField label="Weight" value={formatPetWeight(pet.weight)} />
+                <ProfileGridField
+                  label="Microchip ID"
+                  value={pet.microchipId?.trim() ? pet.microchipId : 'Not recorded'}
+                />
+                <ProfileGridField
+                  label="Blood Type"
+                  value={formatBloodType(pet.bloodType, normalizePetSpecies(pet.type))}
+                />
               </ProfileGridFields>
             )}
           </ProfileSectionCard>

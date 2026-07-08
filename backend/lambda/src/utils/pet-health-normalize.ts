@@ -2,6 +2,8 @@
  * Normalize pet health / vaccination fields between DB storage and customer-app UI.
  */
 
+import { normalizeBloodTypeForStorage } from '../lib/pet-blood-types';
+
 export type PetVaccinationMap = {
   rabies?: string;
   distemper?: string;
@@ -130,7 +132,8 @@ export function extractVaccinationsForClient(pet: {
 /** Merge health record fields for medical_history JSONB. */
 export function mergeHealthRecordsForStorage(
   existing: Record<string, unknown> | null | undefined,
-  incoming: Record<string, unknown> | null | undefined
+  incoming: Record<string, unknown> | null | undefined,
+  species?: string
 ): Record<string, unknown> {
   const base = { ...(existing || {}) };
   const hr = incoming || {};
@@ -142,6 +145,21 @@ export function mergeHealthRecordsForStorage(
     medications: hr.medications ?? base.medications,
     conditions: hr.conditions ?? base.conditions,
   };
+
+  if (Object.prototype.hasOwnProperty.call(hr, 'bloodType')) {
+    if (hr.bloodType == null || hr.bloodType === '') {
+      delete merged.bloodType;
+    } else {
+      merged.bloodType = hr.bloodType;
+    }
+  } else {
+    const baseBlood = normalizeBloodTypeForStorage(base.bloodType, species || '');
+    if (baseBlood) {
+      merged.bloodType = baseBlood;
+    } else {
+      delete merged.bloodType;
+    }
+  }
 
   if (hr.vaccinationDates && typeof hr.vaccinationDates === 'object' && !Array.isArray(hr.vaccinationDates)) {
     const prev =
@@ -175,13 +193,19 @@ export function buildVaccinationStorage(
 }
 
 export function extractHealthRecordsForClient(
-  medicalHistory: Record<string, unknown> | null | undefined
+  medicalHistory: Record<string, unknown> | null | undefined,
+  species?: string
 ): Record<string, unknown> {
   const mh = medicalHistory || {};
-  return {
+  const result: Record<string, unknown> = {
     lastCheckup: mh.lastCheckup ?? mh.last_checkup ?? '',
     allergies: formatHealthListField(mh.allergies),
     medications: formatHealthListField(mh.medications ?? mh.currentMedications ?? mh.current_medications),
     conditions: formatHealthListField(mh.conditions ?? mh.chronicConditions ?? mh.chronic_conditions),
   };
+  const bloodType = normalizeBloodTypeForStorage(mh.bloodType, species || '');
+  if (bloodType) {
+    result.bloodType = bloodType;
+  }
+  return result;
 }

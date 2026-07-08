@@ -25,6 +25,8 @@ import {
   statusBadgeLabel,
 } from '@/lib/pet-vaccination-schedule';
 import { toast } from 'sonner';
+import { BloodTypeSelector } from '@/components/customer/pet-blood-type';
+import { getBloodTypeLabel, normalizeBloodTypeKey } from '@/lib/pet-blood-types';
 
 // ============================================================================
 // TYPES
@@ -161,10 +163,15 @@ function createEmptyPetData(): PetData {
 }
 
 function petDataFromEdit(editPet: PetData): PetData {
+  const petType = editPet.type || 'Dog';
+  const rawBloodType =
+    editPet.bloodType ||
+    (editPet as PetData & { medicalHistory?: { bloodType?: string } }).medicalHistory?.bloodType ||
+    '';
   return {
     id: editPet.id,
     name: editPet.name || '',
-    type: editPet.type || 'Dog',
+    type: petType,
     breed: editPet.breed || '',
     dateOfBirth: editPet.dateOfBirth || '',
     gender: editPet.gender || 'Male',
@@ -178,7 +185,7 @@ function petDataFromEdit(editPet: PetData): PetData {
     eyeColor: editPet.eyeColor || '',
     distinguishingMarks: editPet.distinguishingMarks || '',
     isSpayedNeutered: editPet.isSpayedNeutered || false,
-    bloodType: editPet.bloodType || '',
+    bloodType: normalizeBloodTypeKey(rawBloodType, petType) || '',
     allergies: editPet.allergies || [],
     currentMedications: editPet.currentMedications || [],
     chronicConditions: editPet.chronicConditions || [],
@@ -276,6 +283,7 @@ export function EnhancedAddPetModal({
     const prefix = petData.type === 'Dog' ? 'dog:' : 'cat:';
     setPetData((prev) => ({
       ...prev,
+      bloodType: '',
       vaccinations: prev.vaccinations.filter(
         (v) => !v.vaccineKey || v.vaccineKey.startsWith(prefix)
       ),
@@ -607,7 +615,7 @@ export function EnhancedAddPetModal({
           coatType: petData.coatType || undefined,
           eyeColor: petData.eyeColor || undefined,
           distinguishingMarks: petData.distinguishingMarks || undefined,
-          bloodType: petData.bloodType || undefined,
+          ...(petData.bloodType ? { bloodType: petData.bloodType } : {}),
           hasInsurance: petData.hasInsurance,
           insuranceProvider: petData.insuranceProvider || undefined,
           insurancePolicyNumber: petData.insurancePolicyNumber || undefined,
@@ -940,6 +948,19 @@ export function EnhancedAddPetModal({
                   onChange={(e) => setPetData(prev => ({ ...prev, microchipId: e.target.value }))}
                   placeholder="15-digit microchip number"
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none"
+                />
+              </div>
+
+              {/* Blood Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Blood Type <span className="text-gray-400 text-xs">(Optional)</span>
+                </label>
+                <BloodTypeSelector
+                  species={petData.type}
+                  value={petData.bloodType || ''}
+                  onChange={(key) => setPetData((prev) => ({ ...prev, bloodType: key }))}
+                  name="addPetBloodType"
                 />
               </div>
             </div>
@@ -1454,6 +1475,12 @@ export function EnhancedAddPetModal({
                   <p className="text-xs text-gray-500">Insurance</p>
                   <p className="font-bold text-gray-900">
                     {petData.hasInsurance ? petData.insuranceProvider || 'Yes' : 'No'}
+                  </p>
+                </div>
+                <div className="bg-white rounded-xl p-3 border">
+                  <p className="text-xs text-gray-500">Blood Type</p>
+                  <p className="font-bold text-gray-900">
+                    {petData.bloodType ? getBloodTypeLabel(petData.bloodType) : 'Not recorded'}
                   </p>
                 </div>
               </div>

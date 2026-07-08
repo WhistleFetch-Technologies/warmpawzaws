@@ -38,6 +38,11 @@ import {
   petPayloadHasVaccinations,
   petVaccinationsMeaningfullyUpdated,
 } from '../lib/pet-vaccination-loyalty';
+import {
+  normalizeBloodTypeForStorage,
+  resolveBloodTypeFromPayload,
+  wasBloodTypeInPayload,
+} from '../lib/pet-blood-types';
 
 export function registerPetEndpoints(app: Hono) {
   /**
@@ -140,6 +145,7 @@ export function registerPetEndpoints(app: Hono) {
       const photo =
         (await presignS3GetUrlIfApplicable(pet.profile_photo_url)) || pet.profile_photo_url;
       const vaccinations = extractVaccinationsForClient(pet);
+      const bloodType = normalizeBloodTypeForStorage(pet.medical_history?.bloodType, pet.species);
 
       // Map to frontend-expected format
       return c.json({
@@ -159,7 +165,8 @@ export function registerPetEndpoints(app: Hono) {
           photo,
           profile_photo_url: photo,
           microchipId: pet.microchip_id,
-          healthRecords: extractHealthRecordsForClient(pet.medical_history),
+          ...(bloodType ? { bloodType } : {}),
+          healthRecords: extractHealthRecordsForClient(pet.medical_history, pet.species),
           vaccinations,
           medical_history: pet.medical_history || {},
           createdAt: pet.created_at,
@@ -275,6 +282,14 @@ export function registerPetEndpoints(app: Hono) {
         }, 400);
       }
 
+      const bloodTypeResult = resolveBloodTypeFromPayload(petData, petTypeToValidate);
+      if (!bloodTypeResult.ok) {
+        return c.json({ error: bloodTypeResult.error }, 400);
+      }
+
+      const medicalHistoryWithoutBlood = { ...(medicalHistory || {}) };
+      delete medicalHistoryWithoutBlood.bloodType;
+
       // Schema uses: species, age_years, age_months, weight_kg, profile_photo_url
       // Convert age to years/months if needed
       let age_years = null;
@@ -302,7 +317,7 @@ export function registerPetEndpoints(app: Hono) {
 
       // ✅ NEW: Build comprehensive medical history JSONB
       const enhancedMedicalHistory = {
-        ...medicalHistory,
+        ...medicalHistoryWithoutBlood,
         dob: dob || null,
         microchipId: microchipId || microchipped || null,
         allergies: allergies || [],
@@ -318,6 +333,9 @@ export function registerPetEndpoints(app: Hono) {
         color: color || null,
         size: size || null,
       };
+      if (bloodTypeResult.value) {
+        enhancedMedicalHistory.bloodType = bloodTypeResult.value;
+      }
 
       const flatFromWizard = flatMapFromVaccinationEntries(vaccinations || []);
       const { vaccination_records, medical_history } = buildVaccinationStorage(
@@ -374,11 +392,21 @@ export function registerPetEndpoints(app: Hono) {
       // Get existing pet to merge medical history
       const existingPets = await select('pets', { id: petId });
       const existingMedicalHistory = existingPets.length > 0 ? existingPets[0].medical_history || {} : {};
+      const existingSpecies = existingPets.length > 0 ? existingPets[0].species : undefined;
+      const speciesForBlood = petData.species || petData.petType || petData.type || existingSpecies || 'Dog';
+
+      const bloodTypeResult = resolveBloodTypeFromPayload(petData, speciesForBlood);
+      if (!bloodTypeResult.ok) {
+        return c.json({ error: bloodTypeResult.error }, 400);
+      }
+
+      const incomingMedicalHistory = { ...(petData.medicalHistory || petData.medical_history || {}) };
+      delete incomingMedicalHistory.bloodType;
 
       // ✅ NEW: Build comprehensive medical history JSONB by merging with existing
       const enhancedMedicalHistory = {
         ...existingMedicalHistory,
-        ...(petData.medicalHistory || petData.medical_history || {}),
+        ...incomingMedicalHistory,
         dob: petData.dob ?? existingMedicalHistory.dob ?? null,
         microchipId: petData.microchipId ?? existingMedicalHistory.microchipId ?? null,
         allergies: petData.allergies ?? existingMedicalHistory.allergies ?? [],
@@ -394,6 +422,20 @@ export function registerPetEndpoints(app: Hono) {
         color: petData.color ?? existingMedicalHistory.color ?? null,
         size: petData.size ?? existingMedicalHistory.size ?? null,
       };
+      if (wasBloodTypeInPayload(petData)) {
+        if (bloodTypeResult.value) {
+          enhancedMedicalHistory.bloodType = bloodTypeResult.value;
+        } else {
+          delete enhancedMedicalHistory.bloodType;
+        }
+      } else {
+        const existingBlood = normalizeBloodTypeForStorage(existingMedicalHistory.bloodType, speciesForBlood);
+        if (existingBlood) {
+          enhancedMedicalHistory.bloodType = existingBlood;
+        } else {
+          delete enhancedMedicalHistory.bloodType;
+        }
+      }
 
       // Convert age if provided
       const updateData: any = {
@@ -540,10 +582,29 @@ export function registerPetEndpoints(app: Hono) {
 
       const existingPet = pets[0];
       const existingMedicalHistory = (existingPet.medical_history || {}) as Record<string, unknown>;
+      const speciesForBlood =
+        petData.species || petData.petType || petData.type || existingPet.species || 'Dog';
+
+      const bloodTypeResult = resolveBloodTypeFromPayload(petData, speciesForBlood);
+      if (!bloodTypeResult.ok) {
+        return c.json({ error: bloodTypeResult.error }, 400);
+      }
 
       const incomingHealth =
         petData.healthRecords || petData.medicalHistory || petData.medical_history || {};
-      const mergedHealth = mergeHealthRecordsForStorage(existingMedicalHistory, incomingHealth);
+      const incomingHealthRecord = { ...(incomingHealth as Record<string, unknown>) };
+      if (wasBloodTypeInPayload(petData)) {
+        if (bloodTypeResult.value) {
+          incomingHealthRecord.bloodType = bloodTypeResult.value;
+        } else {
+          incomingHealthRecord.bloodType = '';
+        }
+      }
+      const mergedHealth = mergeHealthRecordsForStorage(
+        existingMedicalHistory,
+        incomingHealthRecord,
+        speciesForBlood
+      );
 
       const incomingVacArray = Array.isArray(petData.vaccinations)
         ? petData.vaccinations
@@ -627,6 +688,7 @@ export function registerPetEndpoints(app: Hono) {
 
       const pet = updated[0];
       const vaccinations = extractVaccinationsForClient(pet);
+      const bloodType = normalizeBloodTypeForStorage(pet.medical_history?.bloodType, pet.species);
       return c.json({
         success: true,
         pet: {
@@ -641,7 +703,8 @@ export function registerPetEndpoints(app: Hono) {
           gender: pet.gender,
           weight: pet.weight_kg?.toString() || '',
           photo: pet.profile_photo_url,
-          healthRecords: extractHealthRecordsForClient(pet.medical_history),
+          ...(bloodType ? { bloodType } : {}),
+          healthRecords: extractHealthRecordsForClient(pet.medical_history, pet.species),
           vaccinations,
         },
         message: 'Pet updated successfully',
