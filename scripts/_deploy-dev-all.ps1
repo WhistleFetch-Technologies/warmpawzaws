@@ -73,9 +73,11 @@ v.DISCOUNT_ENGINE_V2_PRIORITY_MODE = 'AUTHORITATIVE';
 v.DISCOUNT_ENGINE_V2_SETTLEMENT_MODE = 'AUTHORITATIVE';
 v.DISCOUNT_ENGINE_V2_ANALYTICS_MODE = v.DISCOUNT_ENGINE_V2_ANALYTICS_MODE || 'AUTHORITATIVE';
 v.DISCOUNT_ENGINE_V2_CAMPAIGN_MODE = v.DISCOUNT_ENGINE_V2_CAMPAIGN_MODE || 'AUTHORITATIVE';
+# Prefer Terraform as source of truth for CAMPAIGN_MODE (OFF → SHADOW → AUTHORITATIVE).
+# This deploy script only fills a default if the variable is missing on the function.
 fs.writeFileSync(envFile, JSON.stringify({ Variables: v }));
 execSync('aws lambda update-function-configuration --function-name ' + fn + ' --region ap-south-1 --environment file://' + envFile.replace(/\\\\/g, '/'), { stdio: 'inherit' });
-console.log('Dev Lambda V2 modes: RESOLVER/STACK/PRIORITY/SETTLEMENT=AUTHORITATIVE');
+console.log('Dev Lambda V2 modes: RESOLVER/STACK/PRIORITY/SETTLEMENT/ANALYTICS/CAMPAIGN (Terraform-aligned defaults)');
 "@ $envFile
 Pop-Location
 

@@ -272,6 +272,9 @@ module "lambda" {
       DELIVERY_SERVICE_BASE_URL = "http://${module.delivery_service_ecs[0].internal_alb_dns_name}"
     } : {},
     { MEAL_DELIVERY_NOTIFY_SECRET = "warmpawz-dev-meal-delivery-notify-2026" },
+    # Commercial Engine V2 feature flags (Terraform-managed — do not set manually in Lambda console).
+    # Campaign rollout: OFF → SHADOW → AUTHORITATIVE (same pattern as Resolver / Settlement / Analytics).
+    # Reader: backend/lambda/src/discount-engine/campaign/campaign-mode.ts
     {
       DISCOUNT_ENGINE_V2_RESOLVER_MODE    = "AUTHORITATIVE"
       DISCOUNT_ENGINE_V2_PRIORITY_MODE    = "AUTHORITATIVE"

@@ -15,18 +15,25 @@ export async function fetchCampaignMode(): Promise<CampaignModeResponse & { succ
   return apiClient.get(`${BASE}/mode`);
 }
 
-export async function fetchCampaignRegistry(): Promise<CampaignRegistryResponse> {
-  const res = await apiClient.get<{ templates: CampaignRegistryResponse['templates']; campaignTypes: CampaignRegistryResponse['campaignTypes'] }>(`${BASE}/registry`);
+export async function fetchCampaignRegistry(surface?: 'marketing' | 'ecommerce'): Promise<CampaignRegistryResponse> {
+  const params = new URLSearchParams();
+  if (surface) params.set('surface', surface);
+  const q = params.toString() ? `?${params}` : '';
+  const res = await apiClient.get<{ templates: CampaignRegistryResponse['templates']; campaignTypes: CampaignRegistryResponse['campaignTypes'] }>(`${BASE}/registry${q}`);
   return { templates: res.templates ?? [], campaignTypes: res.campaignTypes ?? {} };
 }
 
 export async function listCommercialCampaigns(filters?: {
   status?: string;
   vendorId?: string;
+  discountDomain?: 'SERVICE' | 'ECOMMERCE';
+  surface?: 'marketing' | 'ecommerce';
 }): Promise<CommercialCampaignRecord[]> {
   const params = new URLSearchParams();
   if (filters?.status) params.set('status', filters.status);
   if (filters?.vendorId) params.set('vendorId', filters.vendorId);
+  if (filters?.discountDomain) params.set('discount_domain', filters.discountDomain);
+  if (filters?.surface) params.set('surface', filters.surface);
   const q = params.toString() ? `?${params}` : '';
   const res = await apiClient.get<{ campaigns: CommercialCampaignRecord[] }>(`${BASE}${q}`);
   return res.campaigns ?? [];
@@ -84,6 +91,24 @@ export async function fetchCampaignAnalytics(id: string): Promise<unknown> {
 export async function fetchCampaignSettlementAttribution(id: string): Promise<unknown> {
   const res = await apiClient.get<{ attribution: unknown }>(`${BASE}/${id}/settlement-attribution`);
   return res.attribution;
+}
+
+export async function attachCampaignOffers(
+  id: string,
+  body: { promotionIds?: string[]; couponIds?: string[] }
+): Promise<{ campaign: CommercialCampaignRecord; links: CampaignOrchestrationResult['links'] }> {
+  return apiClient.post(`${BASE}/${id}/links`, body);
+}
+
+export async function detachCampaignOffer(
+  id: string,
+  opts: { promotionId?: string; couponId?: string }
+): Promise<void> {
+  const params = new URLSearchParams();
+  if (opts.promotionId) params.set('promotionId', opts.promotionId);
+  if (opts.couponId) params.set('couponId', opts.couponId);
+  const q = params.toString() ? `?${params}` : '';
+  await apiClient.delete(`${BASE}/${id}/links${q}`);
 }
 
 export async function listNotificationCampaigns(): Promise<Array<{ id: string; name?: string; title?: string; status?: string }>> {

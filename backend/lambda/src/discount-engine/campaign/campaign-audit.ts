@@ -24,6 +24,12 @@ export function buildPolicyFingerprint(input: {
 }
 
 export function buildCampaignAttribution(campaign: CommercialCampaignRecord): CampaignAttributionMetadata {
+  const budgetCap = campaign.budgetCap ?? null;
+  const budgetSpent = Number(campaign.budgetSpent ?? 0);
+  const budgetRemaining =
+    budgetCap != null && Number.isFinite(budgetCap)
+      ? Math.max(0, Number(budgetCap) - budgetSpent)
+      : null;
   return {
     campaignId: campaign.id,
     campaignName: campaign.name,
@@ -31,6 +37,11 @@ export function buildCampaignAttribution(campaign: CommercialCampaignRecord): Ca
     campaignTemplate: campaign.templateId,
     campaignType: campaign.campaignType,
     fundingPolicy: campaign.funding,
+    discountDomain: campaign.discountDomain,
+    surface: campaign.surface,
+    budgetCap,
+    budgetSpent,
+    budgetRemaining,
   };
 }
 

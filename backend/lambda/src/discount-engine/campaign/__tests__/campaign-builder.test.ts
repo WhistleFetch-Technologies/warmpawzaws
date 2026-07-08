@@ -9,7 +9,20 @@ describe('campaign-builder', () => {
     expect(built.record.campaignType).toBe('flash_sale');
     expect(built.record.status).toBe('draft');
     expect(built.record.funding.type).toBe(DiscountFunding.PLATFORM);
+    expect(built.record.discountDomain).toBe('SERVICE');
+    expect(built.record.surface).toBe('marketing');
     expect(built.record).not.toHaveProperty('discount_value');
+  });
+
+  it('stamps ECOMMERCE domain from surface', () => {
+    const built = campaignBuilder.fromInput({
+      name: 'Shop Sale',
+      campaignType: 'flash_sale',
+      surface: 'ecommerce',
+      discountDomain: 'ECOMMERCE',
+    });
+    expect(built.record.discountDomain).toBe('ECOMMERCE');
+    expect(built.record.surface).toBe('ecommerce');
   });
 
   it('uses custom campaign type for unknown types', () => {

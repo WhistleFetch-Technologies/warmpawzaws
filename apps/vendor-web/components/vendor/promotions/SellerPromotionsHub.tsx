@@ -14,10 +14,12 @@ import {
   type PromotionTargetCatalog,
   type PromotionWizardForm,
 } from '@warmpawz/promotion-management-ui';
+import { VendorCommercialCampaigns } from '@/components/vendor/campaigns/VendorCommercialCampaigns';
 
 const SELLER_PROMOTION_DOMAINS: PromotionDomain[] = ['product'];
 
 export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
+  const [view, setView] = useState<'promotions' | 'campaigns'>('promotions');
   const [promotions, setPromotions] = useState<NormalizedPromotionItem[]>([]);
   const [coupons, setCoupons] = useState<NormalizedCouponItem[]>([]);
   const [catalog, setCatalog] = useState<PromotionTargetCatalog>({});
@@ -100,29 +102,58 @@ export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
   };
 
   return (
-    <PromotionDashboard
-      scope={scope}
-      promotions={promotions}
-      coupons={coupons}
-      catalog={catalog}
-      loading={loading}
-      error={error}
-      existingCodes={existingCodes}
-      onRefresh={load}
-      onSave={savePromotion}
-      onDeletePromotion={async (id) => {
-        await apiClient.delete(`/vendor/${sellerId}/promotions/${id}`);
-      }}
-      onTogglePromotion={async (id, active) => {
-        await apiClient.put(`/vendor/${sellerId}/promotions/${id}`, { is_active: active });
-      }}
-      onDeleteCoupon={async (id) => {
-        await apiClient.delete(`/vendor/${sellerId}/promotions/${id}`);
-      }}
-      onToggleCoupon={async (id, active) => {
-        await apiClient.put(`/vendor/${sellerId}/promotions/${id}`, { is_active: active });
-      }}
-    />
+    <div className="min-h-screen bg-slate-50">
+      <div className="border-b bg-white px-4 py-2">
+        <div className="mx-auto flex max-w-6xl gap-2">
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-1.5 text-sm ${
+              view === 'promotions' ? 'bg-orange-50 font-semibold text-orange-800' : 'text-slate-600'
+            }`}
+            onClick={() => setView('promotions')}
+          >
+            Promotions
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-1.5 text-sm ${
+              view === 'campaigns' ? 'bg-orange-50 font-semibold text-orange-800' : 'text-slate-600'
+            }`}
+            onClick={() => setView('campaigns')}
+          >
+            Campaigns
+          </button>
+        </div>
+      </div>
+
+      {view === 'campaigns' ? (
+        <VendorCommercialCampaigns vendorId={sellerId} surface="ecommerce" />
+      ) : (
+        <PromotionDashboard
+          scope={scope}
+          promotions={promotions}
+          coupons={coupons}
+          catalog={catalog}
+          loading={loading}
+          error={error}
+          existingCodes={existingCodes}
+          onRefresh={load}
+          onSave={savePromotion}
+          onDeletePromotion={async (id) => {
+            await apiClient.delete(`/vendor/${sellerId}/promotions/${id}`);
+          }}
+          onTogglePromotion={async (id, active) => {
+            await apiClient.put(`/vendor/${sellerId}/promotions/${id}`, { is_active: active });
+          }}
+          onDeleteCoupon={async (id) => {
+            await apiClient.delete(`/vendor/${sellerId}/promotions/${id}`);
+          }}
+          onToggleCoupon={async (id, active) => {
+            await apiClient.put(`/vendor/${sellerId}/promotions/${id}`, { is_active: active });
+          }}
+        />
+      )}
+    </div>
   );
 }
 

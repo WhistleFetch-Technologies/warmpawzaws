@@ -3,6 +3,11 @@ import { normalizeCampaignFunding } from './campaign-funding';
 import { resolveCampaignSchedule } from './campaign-scheduler';
 import { resolveCampaignType } from './campaign-configuration';
 import { buildPolicyFingerprint } from './campaign-audit';
+import {
+  enrichAiReadyCampaignMetadata,
+  resolveCampaignDiscountDomain,
+  resolveCampaignSurface,
+} from './campaign-domain';
 import { DiscountFunding } from '../enums/discount-funding';
 import type {
   CampaignAudience,
@@ -49,6 +54,33 @@ export class CampaignBuilder {
       version,
     });
 
+    const discountDomain = resolveCampaignDiscountDomain({
+      discountDomain: input.discountDomain,
+      surface: input.surface,
+      metadata: input.metadata,
+    });
+    const surface = resolveCampaignSurface({
+      surface: input.surface,
+      discountDomain,
+      metadata: input.metadata,
+    });
+
+    const partial = {
+      funding,
+      audience,
+      discountDomain,
+      surface,
+      budgetCap: input.budgetCap ?? null,
+      budgetSpent: 0,
+      goal: input.goal ?? null,
+      objective: input.objective ?? null,
+      policyFingerprint,
+      metadata: {
+        ...(input.metadata ?? {}),
+        builderSource: template ? 'template' : 'manual',
+      },
+    };
+
     return {
       record: {
         name: input.name,
@@ -66,10 +98,15 @@ export class CampaignBuilder {
         notificationCampaignId: input.notificationCampaignId ?? null,
         vendorId: input.vendorId ?? null,
         version,
-        metadata: {
-          ...(input.metadata ?? {}),
+        discountDomain,
+        surface,
+        budgetCap: input.budgetCap ?? null,
+        budgetSpent: 0,
+        goal: input.goal ?? null,
+        objective: input.objective ?? null,
+        metadata: enrichAiReadyCampaignMetadata(partial, {
           builderSource: template ? 'template' : 'manual',
-        },
+        }),
         policyFingerprint,
       },
     };

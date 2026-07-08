@@ -268,6 +268,9 @@ module "lambda" {
     var.meal_delivery_notify_secret != "" ? {
       MEAL_DELIVERY_NOTIFY_SECRET = var.meal_delivery_notify_secret
     } : {},
+    # Commercial Engine V2 — prod campaign mode stays OFF until SHADOW validation, then AUTHORITATIVE.
+    # Flip only via Terraform (infra/envs/prod/main.tf); never manual Lambda console edits.
+    # Rollout: OFF → SHADOW → AUTHORITATIVE
     {
       DISCOUNT_ENGINE_V2_RESOLVER_MODE    = "OFF"
       DISCOUNT_ENGINE_V2_PRIORITY_MODE    = "AUTHORITATIVE"

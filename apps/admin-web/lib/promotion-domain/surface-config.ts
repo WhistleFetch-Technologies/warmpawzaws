@@ -98,7 +98,19 @@ export function filterCampaigns(
   campaigns: CommercialCampaignRecord[],
   surface: AdminPromoSurface
 ): CommercialCampaignRecord[] {
+  const expected = discountDomainForSurface(surface);
   return campaigns.filter((c) => {
+    const row = c as CommercialCampaignRecord & { discount_domain?: string };
+    const persisted = readDiscountDomain({
+      discountDomain: c.discountDomain,
+      discount_domain: row.discount_domain,
+      domain: c.metadata?.domain,
+    });
+    if (persisted) return persisted === expected;
+    if (c.surface === 'ecommerce' || c.surface === 'marketing') {
+      return c.surface === surface;
+    }
+
     const metaDomain = String(c.metadata?.domain ?? c.metadata?.surface ?? '').toLowerCase();
     if (metaDomain === 'ecommerce' || metaDomain === 'product') {
       return surface === 'ecommerce';

@@ -19,6 +19,10 @@ export type CampaignNotificationMode = 'skip' | 'create' | 'link';
 
 export type CampaignFundingType = DiscountFunding | 'CUSTOM';
 
+export type CampaignDiscountDomain = 'SERVICE' | 'ECOMMERCE';
+
+export type CampaignSurface = 'marketing' | 'ecommerce';
+
 export interface CampaignFundingSplit {
   platformPercent: number;
   vendorPercent: number;
@@ -72,6 +76,13 @@ export interface CommercialCampaignRecord {
   notificationCampaignId?: string | null;
   vendorId?: string | null;
   version: number;
+  /** First-class commercial domain — SERVICES vs Shop. */
+  discountDomain: CampaignDiscountDomain;
+  surface: CampaignSurface;
+  budgetCap?: number | null;
+  budgetSpent: number;
+  goal?: string | null;
+  objective?: string | null;
   metadata: Record<string, unknown>;
   policyFingerprint?: string | null;
   createdAt: string;
@@ -84,11 +95,17 @@ export interface CampaignPromotionLink {
   promotionId?: string | null;
   couponId?: string | null;
   linkType: 'promotion' | 'coupon';
+  isActive?: boolean;
 }
 
 export interface OrchestrateCampaignInput {
   promotions?: Array<Record<string, unknown>>;
   coupons?: Array<Record<string, unknown>>;
+}
+
+export interface AttachCampaignOffersInput {
+  promotionIds?: string[];
+  couponIds?: string[];
 }
 
 export interface CreateCampaignInput {
@@ -104,6 +121,11 @@ export interface CreateCampaignInput {
   notificationMode?: CampaignNotificationMode;
   notificationCampaignId?: string;
   vendorId?: string;
+  discountDomain?: CampaignDiscountDomain;
+  surface?: CampaignSurface;
+  budgetCap?: number | null;
+  goal?: string | null;
+  objective?: string | null;
   metadata?: Record<string, unknown>;
   promotions?: Array<Record<string, unknown>>;
   coupons?: Array<Record<string, unknown>>;
@@ -116,6 +138,11 @@ export interface CampaignAttributionMetadata {
   campaignTemplate?: string | null;
   campaignType: string;
   fundingPolicy: CampaignFundingPolicy;
+  discountDomain?: CampaignDiscountDomain;
+  surface?: CampaignSurface;
+  budgetCap?: number | null;
+  budgetSpent?: number;
+  budgetRemaining?: number | null;
 }
 
 export interface CampaignAudit {

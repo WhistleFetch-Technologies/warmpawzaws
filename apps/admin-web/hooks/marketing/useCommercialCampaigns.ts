@@ -11,8 +11,14 @@ import type {
   CampaignRegistryResponse,
   CommercialCampaignRecord,
 } from '@/lib/commercial-campaign/types';
+import {
+  discountDomainForSurface,
+  type AdminPromoSurface,
+} from '@/lib/promotion-domain/surface-config';
 
-export function useCommercialCampaigns() {
+export function useCommercialCampaigns(opts?: { surface?: AdminPromoSurface }) {
+  const surface = opts?.surface;
+  const discountDomain = surface ? discountDomainForSurface(surface) : undefined;
   const [campaigns, setCampaigns] = useState<CommercialCampaignRecord[]>([]);
   const [mode, setMode] = useState<CampaignModeResponse | null>(null);
   const [registry, setRegistry] = useState<CampaignRegistryResponse | null>(null);
@@ -32,9 +38,18 @@ export function useCommercialCampaigns() {
         setRegistry(null);
         return;
       }
+      const listFilters: {
+        status?: string;
+        discountDomain?: 'SERVICE' | 'ECOMMERCE';
+        surface?: AdminPromoSurface;
+      } = {};
+      if (statusFilter) listFilters.status = statusFilter;
+      if (discountDomain) listFilters.discountDomain = discountDomain;
+      if (surface) listFilters.surface = surface;
+
       const [list, reg] = await Promise.all([
-        listCommercialCampaigns(statusFilter ? { status: statusFilter } : undefined),
-        fetchCampaignRegistry(),
+        listCommercialCampaigns(Object.keys(listFilters).length ? listFilters : undefined),
+        fetchCampaignRegistry(surface),
       ]);
       setCampaigns(list);
       setRegistry(reg);
@@ -44,7 +59,7 @@ export function useCommercialCampaigns() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, surface, discountDomain]);
 
   useEffect(() => {
     void reload();

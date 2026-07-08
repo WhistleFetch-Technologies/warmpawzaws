@@ -35,10 +35,14 @@ export async function createPromotionForCampaign(
     funding_type: campaign.funding.type,
     funding_split: campaign.funding.split ?? undefined,
     vendor_id: campaign.vendorId ?? body.vendor_id,
+    discount_domain: campaign.discountDomain,
+    domain: campaign.discountDomain,
+    surface: campaign.surface,
   };
 
   const record = buildPromotionPersistenceFromAdminBody(mergedBody) as Record<string, unknown>;
   record.metadata = metadata;
+  record.discount_domain = campaign.discountDomain;
 
   const rows = await insert('promotions', record);
   const created = rows[0] as Record<string, unknown>;
@@ -66,11 +70,35 @@ export async function createCouponForCampaign(
       body.valid_until ??
       new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     is_active: body.is_active ?? true,
+    discount_domain: campaign.discountDomain,
+    applicable_to: campaign.discountDomain === 'ECOMMERCE' ? 'products' : body.applicable_to ?? 'bookings',
+    metadata: {
+      ...(typeof body.metadata === 'object' && body.metadata ? (body.metadata as object) : {}),
+      commercialCampaignId: campaign.id,
+      discount_domain: campaign.discountDomain,
+      domain: campaign.discountDomain === 'ECOMMERCE' ? 'ecommerce' : 'service',
+      surface: campaign.surface,
+      funding: campaign.funding,
+    },
   };
 
-  const rows = await insert('coupons', couponData);
-  const created = rows[0] as Record<string, unknown>;
-  return { couponId: String(created.id), record: created };
+  try {
+    const rows = await insert('coupons', couponData);
+    const created = rows[0] as Record<string, unknown>;
+    return { couponId: String(created.id), record: created };
+  } catch (err: unknown) {
+    const msg = String((err as Error)?.message ?? err);
+    if (msg.includes('discount_domain') || msg.includes('column')) {
+      const fallback = { ...couponData };
+      delete fallback.discount_domain;
+      delete fallback.applicable_to;
+      delete fallback.metadata;
+      const rows = await insert('coupons', fallback);
+      const created = rows[0] as Record<string, unknown>;
+      return { couponId: String(created.id), record: created };
+    }
+    throw err;
+  }
 }
 
 /** Test doubles — no DB. */

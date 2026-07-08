@@ -16,6 +16,7 @@ import {
 import { StatCard } from '@/components/admin/shared/StatCard';
 import type { CommercialCampaignRecord, CampaignLifecycleStatus } from '@/lib/commercial-campaign/types';
 import { CampaignStatusBadge } from './CampaignStatusBadge';
+import { formatInr } from '@/lib/marketing-analytics/format';
 
 const STATUS_BUCKETS: CampaignLifecycleStatus[] = [
   'running',
@@ -40,7 +41,16 @@ export function CampaignDashboard({ campaigns }: { campaigns: CommercialCampaign
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 5);
 
-    return { byStatus, recent, top, total: campaigns.length };
+    const budgetSpentTotal = campaigns.reduce((sum, c) => sum + Number(c.budgetSpent ?? 0), 0);
+    const budgetCapTotal = campaigns.reduce((sum, c) => {
+      const cap = c.budgetCap;
+      return sum + (cap != null && Number.isFinite(Number(cap)) ? Number(cap) : 0);
+    }, 0);
+    const hasBudget = campaigns.some(
+      (c) => (c.budgetSpent != null && Number(c.budgetSpent) > 0) || c.budgetCap != null
+    );
+
+    return { byStatus, recent, top, total: campaigns.length, budgetSpentTotal, budgetCapTotal, hasBudget };
   }, [campaigns]);
 
   return (
@@ -61,18 +71,27 @@ export function CampaignDashboard({ campaigns }: { campaigns: CommercialCampaign
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
-          title="Campaign revenue"
-          value="—"
+          title={stats.hasBudget ? 'Budget spent' : 'Campaign revenue'}
+          value={stats.hasBudget ? formatInr(stats.budgetSpentTotal) : '—'}
           icon={TrendingUp}
           iconColor="green"
           className="opacity-90"
         />
-        <StatCard title="Customer savings" value="—" icon={PiggyBank} iconColor="purple" className="opacity-90" />
+        <StatCard
+          title={stats.hasBudget ? 'Budget cap (total)' : 'Customer savings'}
+          value={stats.hasBudget && stats.budgetCapTotal > 0 ? formatInr(stats.budgetCapTotal) : '—'}
+          icon={PiggyBank}
+          iconColor="purple"
+          className="opacity-90"
+        />
         <StatCard title="Funding mix" value="See details" icon={Megaphone} iconColor="orange" className="opacity-90" />
       </div>
       <p className="text-xs text-slate-500">
-        Revenue, savings, and funding aggregates appear per-campaign on Analytics tab (Phase 9 bridge) when analytics
-        mode is AUTHORITATIVE.
+        {stats.hasBudget
+          ? `Budget spent ${formatInr(stats.budgetSpentTotal)}${
+              stats.budgetCapTotal > 0 ? ` of ${formatInr(stats.budgetCapTotal)} cap` : ''
+            } across listed campaigns.`
+          : 'Revenue, savings, and funding aggregates appear per-campaign on Analytics tab (Phase 9 bridge) when analytics mode is AUTHORITATIVE.'}
       </p>
 
       <div className="grid gap-6 lg:grid-cols-2">

@@ -150,23 +150,28 @@ export function CampaignBuilderDialog({
     setDirty(true);
   }, []);
 
-  const buildInput = (): CreateCampaignInput => ({
-    name: draft.name.trim(),
-    campaignType: draft.campaignType,
-    templateId: draft.templateId,
-    funding: draft.funding,
-    scheduleType: draft.scheduleType,
-    startAt: draft.startAt,
-    endAt: draft.endAt,
-    audience: draft.audience,
-    notificationMode: draft.notificationMode,
-    notificationCampaignId: draft.notificationCampaignId ?? undefined,
-    metadata: {
-      domain: surface === 'ecommerce' ? 'ecommerce' : 'service',
+  const buildInput = (): CreateCampaignInput => {
+    const discountDomain = surface === 'ecommerce' ? 'ECOMMERCE' : 'SERVICE';
+    return {
+      name: draft.name.trim(),
+      campaignType: draft.campaignType,
+      templateId: draft.templateId,
+      funding: draft.funding,
+      scheduleType: draft.scheduleType,
+      startAt: draft.startAt,
+      endAt: draft.endAt,
+      audience: draft.audience,
+      notificationMode: draft.notificationMode,
+      notificationCampaignId: draft.notificationCampaignId ?? undefined,
+      discountDomain,
       surface,
-      discount_domain: surface === 'ecommerce' ? 'ECOMMERCE' : 'SERVICE',
-    },
-  });
+      metadata: {
+        domain: surface === 'ecommerce' ? 'ecommerce' : 'service',
+        surface,
+        discount_domain: discountDomain,
+      },
+    };
+  };
 
   const handlePublish = async () => {
     if (!draft.name.trim()) {

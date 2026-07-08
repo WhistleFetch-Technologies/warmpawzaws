@@ -3,6 +3,11 @@ import { buildCampaignAudit } from './campaign-audit';
 import { assertLifecycleTransition } from './campaign-lifecycle';
 import { resolveCampaignSchedule } from './campaign-scheduler';
 import { globalCampaignRegistry } from './campaign-registry';
+import { enrichAiReadyCampaignMetadata, isBudgetExhausted } from './campaign-domain';
+import { syncOffersForLifecycle } from './campaign-offer-sync';
+import { evaluateCampaignHealth } from './campaign-health';
+import { validateCampaignForPublish } from './campaign-validation';
+import { notifyCampaignEnrollment } from './campaign-enrollment-notify';
 import {
   getCampaignMode,
   isCampaignAuthoritative,
@@ -11,6 +16,7 @@ import {
 } from './campaign-mode';
 import {
   getCampaignRepository,
+  type CampaignListFilters,
   type CampaignRepository,
 } from './repositories/campaign-repository';
 import {
@@ -23,6 +29,7 @@ import { linkNotificationCampaign } from './integrations/notification-bridge';
 import { fetchCampaignAnalytics } from './integrations/analytics-bridge';
 import { buildSettlementAttribution } from './integrations/settlement-bridge';
 import type {
+  AttachCampaignOffersInput,
   CampaignLifecycleStatus,
   CampaignOrchestrationResult,
   CampaignPromotionLink,
@@ -30,6 +37,11 @@ import type {
   CreateCampaignInput,
   OrchestrateCampaignInput,
 } from './types';
+
+export interface DuplicateCampaignOptions {
+  includeSchedule?: boolean;
+  nameSuffix?: string;
+}
 
 export interface CampaignEngineOptions {
   repository?: CampaignRepository;
@@ -81,7 +93,7 @@ export class CampaignEngine {
     return this.repository.findById(id);
   }
 
-  async listCampaigns(filters?: { status?: string; vendorId?: string }) {
+  async listCampaigns(filters?: CampaignListFilters) {
     return this.repository.list(filters);
   }
 
@@ -92,8 +104,203 @@ export class CampaignEngine {
     const campaign = await this.repository.findById(id);
     if (!campaign) return null;
     assertLifecycleTransition(campaign.status, to);
-    const updated = await this.repository.update(id, { status: to, version: campaign.version });
-    if (updated) globalCampaignRegistry.register(updated);
+
+    const publishStatuses: CampaignLifecycleStatus[] = ['approved', 'scheduled', 'running'];
+    if (publishStatuses.includes(to) && !publishStatuses.includes(campaign.status)) {
+      const links = await this.repository.getLinks(id, { includeInactive: true });
+      const validation = await validateCampaignForPublish(campaign, links);
+      if (!validation.valid) {
+        throw new Error(
+          `Campaign publish validation failed: ${validation.errors.map((e) => e.message).join('; ')}`
+        );
+      }
+      // Overlaps warn in validation response / audit metadata — do not block unless forced elsewhere
+      if (validation.warnings.length) {
+        console.warn(
+          `[campaign] publish warnings for ${id}:`,
+          validation.warnings.map((w) => w.message).join('; ')
+        );
+      }
+    }
+
+    if (to === 'running' && isBudgetExhausted(campaign)) {
+      throw new Error('Campaign budget exhausted — cannot resume until budget is increased');
+    }
+
+    const timelineEntry = {
+      status: to,
+      at: new Date().toISOString(),
+      from: campaign.status,
+    };
+    const priorTimeline = Array.isArray(campaign.metadata?.timeline)
+      ? [...(campaign.metadata.timeline as unknown[])]
+      : [];
+    priorTimeline.push(timelineEntry);
+
+    const linksForHealth = await this.repository.getLinks(id, { includeInactive: true });
+    const health = evaluateCampaignHealth({ ...campaign, status: to }, linksForHealth);
+
+    const updated = await this.repository.update(id, {
+      status: to,
+      version: campaign.version,
+      metadata: enrichAiReadyCampaignMetadata(
+        { ...campaign, status: to, healthStatus: health.status, timeline: priorTimeline },
+        {
+          timeline: priorTimeline,
+          campaignHealth: health,
+        }
+      ),
+    });
+    if (!updated) return null;
+
+    const links = await this.repository.getLinks(id, { includeInactive: false });
+    await syncOffersForLifecycle(links, to);
+
+    if (publishStatuses.includes(to) && !publishStatuses.includes(campaign.status)) {
+      await notifyCampaignEnrollment(updated).catch((err) =>
+        console.warn('[campaign] enrollment notify failed', err)
+      );
+    }
+
+    globalCampaignRegistry.register(updated);
+    return updated;
+  }
+
+  async validateForPublish(id: string) {
+    const campaign = await this.repository.findById(id);
+    if (!campaign) return null;
+    const links = await this.repository.getLinks(id, { includeInactive: true });
+    return validateCampaignForPublish(campaign, links);
+  }
+
+  async getHealth(id: string) {
+    const campaign = await this.repository.findById(id);
+    if (!campaign) return null;
+    const links = await this.repository.getLinks(id, { includeInactive: true });
+    return evaluateCampaignHealth(campaign, links);
+  }
+
+  /**
+   * Duplicate campaign into a new Draft — copies schedule (optional), funding,
+   * audience, offer links, notification settings, goal, budget. Resets spend.
+   */
+  async duplicateCampaign(
+    id: string,
+    options: DuplicateCampaignOptions = {}
+  ): Promise<CommercialCampaignRecord | null> {
+    const source = await this.repository.findById(id);
+    if (!source) return null;
+    const includeSchedule = options.includeSchedule !== false;
+    const links = await this.repository.getLinks(id, { includeInactive: false });
+
+    const created = await this.createCampaign({
+      name: `${source.name}${options.nameSuffix ?? ' (Copy)'}`,
+      campaignType: source.campaignType,
+      templateId: source.templateId ?? undefined,
+      funding: source.funding,
+      scheduleType: includeSchedule ? source.scheduleType : 'immediate',
+      startAt: includeSchedule ? source.startAt ?? undefined : undefined,
+      endAt: includeSchedule ? source.endAt ?? undefined : undefined,
+      recurringRule: includeSchedule ? source.recurringRule ?? undefined : undefined,
+      audience: source.audience,
+      notificationMode: source.notificationMode,
+      notificationCampaignId: source.notificationCampaignId ?? undefined,
+      vendorId: source.vendorId ?? undefined,
+      discountDomain: source.discountDomain,
+      surface: source.surface,
+      budgetCap: source.budgetCap ?? null,
+      goal: source.goal ?? null,
+      objective: source.objective ?? null,
+      metadata: {
+        ...(source.metadata ?? {}),
+        duplicatedFrom: source.id,
+        businessObjective: source.metadata?.businessObjective ?? source.objective ?? source.goal,
+        expectedOutcome: source.metadata?.expectedOutcome ?? null,
+        owner: source.metadata?.owner ?? source.vendorId ?? 'platform',
+        notes: source.metadata?.notes ?? null,
+        successCriteria: source.metadata?.successCriteria ?? null,
+        timeline: [{ status: 'draft', at: new Date().toISOString(), from: null }],
+      },
+    });
+
+    if (links.length) {
+      await this.attachOffers(created.id, {
+        promotionIds: links.map((l) => l.promotionId).filter(Boolean) as string[],
+        couponIds: links.map((l) => l.couponId).filter(Boolean) as string[],
+      });
+    }
+
+    return this.repository.findById(created.id);
+  }
+
+  /** Attach existing platform promotions/coupons to a campaign (no duplicate create). */
+  async attachOffers(
+    id: string,
+    input: AttachCampaignOffersInput
+  ): Promise<{ campaign: CommercialCampaignRecord; links: CampaignPromotionLink[] } | null> {
+    const campaign = await this.repository.findById(id);
+    if (!campaign) return null;
+    const links = await this.repository.getLinks(id, { includeInactive: true });
+
+    for (const promotionId of input.promotionIds ?? []) {
+      const exists = links.some((l) => l.promotionId === promotionId && l.isActive !== false);
+      if (exists) continue;
+      const link = await this.repository.addLink({
+        campaignId: id,
+        promotionId,
+        linkType: 'promotion',
+        isActive: true,
+      });
+      links.push(link);
+    }
+
+    for (const couponId of input.couponIds ?? []) {
+      const exists = links.some((l) => l.couponId === couponId && l.isActive !== false);
+      if (exists) continue;
+      const link = await this.repository.addLink({
+        campaignId: id,
+        couponId,
+        linkType: 'coupon',
+        isActive: true,
+      });
+      links.push(link);
+    }
+
+    const active = links.filter((l) => l.isActive !== false);
+    if (['approved', 'scheduled', 'running'].includes(campaign.status)) {
+      await notifyCampaignEnrollment(campaign).catch((err) =>
+        console.warn('[campaign] enrollment notify on attach failed', err)
+      );
+    }
+
+    return {
+      campaign,
+      links: active,
+    };
+  }
+
+  async detachOffer(
+    id: string,
+    opts: { promotionId?: string; couponId?: string }
+  ): Promise<boolean> {
+    return this.repository.detachLink(id, opts);
+  }
+
+  /**
+   * Record campaign spend (discount $ attributed). Auto-pauses when budget exhausted.
+   * Settlement / analytics callers invoke this — no pricing logic here.
+   */
+  async recordCampaignSpend(
+    id: string,
+    amount: number
+  ): Promise<CommercialCampaignRecord | null> {
+    const campaign = await this.repository.findById(id);
+    if (!campaign) return null;
+    const nextSpent = Number(campaign.budgetSpent ?? 0) + Math.max(0, Number(amount) || 0);
+    let updated = await this.repository.update(id, { budgetSpent: nextSpent });
+    if (updated && isBudgetExhausted(updated) && updated.status === 'running') {
+      updated = await this.transitionLifecycle(id, 'paused');
+    }
     return updated;
   }
 

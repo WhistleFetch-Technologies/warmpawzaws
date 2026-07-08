@@ -32,6 +32,9 @@ import { MetricTable } from '../analytics/MetricTable';
 import { SavingsByMonthChart } from '../analytics/DiscountAnalyticsCharts';
 import { ComingSoonPanel } from '../policyCenter/shared/ApiPendingBanner';
 import { formatInr } from '@/lib/marketing-analytics/format';
+import { StatCard } from '@/components/admin/shared/StatCard';
+import type { AdminPromoSurface } from '@/lib/promotion-domain/surface-config';
+import { Megaphone, PiggyBank, TrendingUp, Wallet } from 'lucide-react';
 
 const LIFECYCLE_ACTIONS: Partial<Record<CampaignLifecycleStatus, CampaignLifecycleStatus[]>> = {
   draft: ['review', 'cancelled'],
@@ -51,12 +54,14 @@ export function CampaignDetailsDrawer({
   onClose,
   onUpdated,
   onClone,
+  surface = 'marketing',
 }: {
   campaignId: string | null;
   open: boolean;
   onClose: () => void;
   onUpdated: () => void;
   onClone: (c: CommercialCampaignRecord) => void;
+  surface?: AdminPromoSurface;
 }) {
   const [campaign, setCampaign] = useState<CommercialCampaignRecord | null>(null);
   const [analytics, setAnalytics] = useState<Record<string, unknown> | null>(null);
@@ -103,6 +108,16 @@ export function CampaignDetailsDrawer({
   const analyticsReport = analytics?.report as Record<string, unknown> | undefined;
   const promoRows = (analyticsReport?.promotions as Array<Record<string, unknown>>) ?? [];
   const couponRows = (analyticsReport?.coupons as Array<Record<string, unknown>>) ?? [];
+  const kpis = analytics?.kpis as
+    | {
+        redemptions?: number;
+        discountSpend?: number;
+        platformSpend?: number;
+        vendorSpend?: number;
+        budgetRemaining?: number | null;
+        roi?: number | null;
+      }
+    | undefined;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -166,6 +181,7 @@ export function CampaignDetailsDrawer({
 
               <TabsContent value="promotions" className="pt-4">
                 <CampaignOrchestrationPanel
+                  surface={surface}
                   pendingPromotions={[]}
                   pendingCoupons={[]}
                   onPromotionsChange={() => {}}
@@ -206,6 +222,45 @@ export function CampaignDetailsDrawer({
                   />
                 ) : (
                   <>
+                    {kpis ? (
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <StatCard title="Redemptions" value={Number(kpis.redemptions ?? 0)} icon={Megaphone} iconColor="orange" />
+                        <StatCard
+                          title="Discount spend"
+                          value={formatInr(Number(kpis.discountSpend ?? 0))}
+                          icon={PiggyBank}
+                          iconColor="purple"
+                        />
+                        <StatCard
+                          title="Platform spend"
+                          value={formatInr(Number(kpis.platformSpend ?? 0))}
+                          icon={Wallet}
+                          iconColor="blue"
+                        />
+                        <StatCard
+                          title="Vendor spend"
+                          value={formatInr(Number(kpis.vendorSpend ?? 0))}
+                          icon={Wallet}
+                          iconColor="orange"
+                        />
+                        <StatCard
+                          title="Budget remaining"
+                          value={
+                            kpis.budgetRemaining == null
+                              ? '—'
+                              : formatInr(Number(kpis.budgetRemaining))
+                          }
+                          icon={Wallet}
+                          iconColor="green"
+                        />
+                        <StatCard
+                          title="ROI"
+                          value={kpis.roi == null ? '—' : Number(kpis.roi).toFixed(2)}
+                          icon={TrendingUp}
+                          iconColor="green"
+                        />
+                      </div>
+                    ) : null}
                     <MetricTable
                       rows={promoRows}
                       searchKeys={['promotionId', 'name']}
