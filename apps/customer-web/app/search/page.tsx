@@ -12,8 +12,18 @@ import { applyHubCategoryFilter } from '@/lib/search-hub-category-filter';
 import { formatCustomerApiError } from '@/lib/format-api-error';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
-import { ServiceEvents } from '@/components/customer/ServiceEvents';
-import { CustomerSearchListingCard } from '@/components/customer/search/CustomerSearchListingCard';
+import {
+  SearchVendorExpandableCard,
+  type SearchVendorCardData,
+} from '@/components/customer/search/SearchVendorExpandableCard';
+import {
+  mapApiServicesToRows,
+  type ClinicServiceRow,
+} from '@/lib/clinic-service-row-mapper';
+import {
+  buildSearchVendorDetailsUrl,
+  launchSearchServiceBooking,
+} from '@/lib/search-booking-launch';
 import {
   formatVendorAddressLine,
   haversineDistanceKm,
@@ -205,8 +215,9 @@ function SearchContent() {
   const [apiResults, setApiResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [vendorServices, setVendorServices] = useState<any[]>([]);
-  const [showVendorServices, setShowVendorServices] = useState(!!vendorIdParam);
+  const [expandedVendorId, setExpandedVendorId] = useState<string | null>(vendorIdParam);
+  const [vendorServicesById, setVendorServicesById] = useState<Record<string, ClinicServiceRow[]>>({});
+  const [servicesLoadingVendorId, setServicesLoadingVendorId] = useState<string | null>(null);
   /** Bumps on explicit Search submit / Try again so the same query refetches. */
   const [searchNonce, setSearchNonce] = useState(0);
 
@@ -315,12 +326,19 @@ function SearchContent() {
     { id: 'nutritionist', label: 'Nutritionist', icon: '🥗' },
   ];
 
+  const buildReturnSearchUrl = () => {
+    const params = new URLSearchParams();
+    const q = (query || '').trim();
+    if (q) params.set('q', q);
+    if (category) params.set('category', category);
+    const qs = params.toString();
+    return qs ? `/search?${qs}` : '/search';
+  };
+
   useEffect(() => {
     if (vendorIdParam) {
-      loadVendorServices(vendorIdParam);
-      setShowVendorServices(true);
-    } else {
-      setShowVendorServices(false);
+      setExpandedVendorId(vendorIdParam);
+      void loadVendorServices(vendorIdParam);
     }
   }, [vendorIdParam]);
 
@@ -420,12 +438,12 @@ function SearchContent() {
   }, [category, vendorIdParam]);
 
   const loadVendorServices = async (vendorId: string) => {
+    if (servicesLoadingVendorId === vendorId) return;
+    if (vendorServicesById[vendorId] !== undefined) return;
     try {
-      setLoading(true);
-      // Update search context with vendor selection
+      setServicesLoadingVendorId(vendorId);
       updateSearchContextSelection(vendorId, undefined);
-      
-      // Prefer customer endpoint (only published, vendor price)
+
       let response: any;
       try {
         response = await apiClient.get<any>(`/customer/vendor/${vendorId}/services`);
@@ -438,17 +456,18 @@ function SearchContent() {
             response?.services?.at_center?.services ||
             response?.services?.tele?.services ||
             []);
-      if (serviceList.length) {
-        setVendorServices(serviceList);
+      const mapped = mapApiServicesToRows(serviceList, vendorId);
+      setVendorServicesById((prev) => ({ ...prev, [vendorId]: mapped }));
+      if (mapped.length) {
         saveSearchContext({
           query: query || '',
           category: category || undefined,
           selectedVendorId: vendorId,
           timestamp: Date.now(),
-          results: serviceList.map((s: any) => ({
-            id: s.id || s.service_id,
+          results: mapped.map((s) => ({
+            id: String(s.vendorServiceId),
             type: 'service' as const,
-            name: s.name || s.service_name,
+            name: s.name,
             category: s.category,
           })),
         });
@@ -457,8 +476,117 @@ function SearchContent() {
       console.error('Error loading vendor services:', err);
       setError(err.message || 'Failed to load vendor services');
     } finally {
-      setLoading(false);
+      setServicesLoadingVendorId((cur) => (cur === vendorId ? null : cur));
     }
+  };
+
+  const searchResultToVendorCard = (result: SearchResult): SearchVendorCardData => ({
+    id: result.id,
+    name: result.name,
+    category: result.category,
+    address:
+      result.addressDisplay ||
+      [result.city, result.state].filter(Boolean).join(', ') ||
+      'Address on file',
+    rating: result.rating,
+    reviewCount: result.reviewCount,
+    distanceKm: result.distanceKm ?? null,
+    photo: result.imageUrl,
+    roleDisplayName: result.category || undefined,
+  });
+
+  const serviceResultToVendorCard = (result: SearchResult): SearchVendorCardData | null => {
+    const vendorId = result.vendorOwnerId?.trim();
+    if (!vendorId) return null;
+    return {
+      id: vendorId,
+      name: result.vendorBusinessName || 'Service provider',
+      category: result.category,
+      address:
+        result.addressDisplay ||
+        [result.city, result.state].filter(Boolean).join(', ') ||
+        'Address on file',
+      rating: result.rating,
+      reviewCount: result.reviewCount,
+      distanceKm: result.distanceKm ?? null,
+      photo: result.imageUrl,
+      roleDisplayName: result.category || undefined,
+    };
+  };
+
+  const vendorCardsToRender = useMemo(() => {
+    const withDistance = displayedWithDistance;
+    const vendorRows = withDistance.filter((r) => r.type === 'vendor');
+    const vendorIds = new Set(vendorRows.map((v) => v.id));
+
+    const orphanServices = withDistance.filter(
+      (r) => r.type === 'service' && r.vendorOwnerId && !vendorIds.has(r.vendorOwnerId)
+    );
+    const syntheticFromServices: SearchVendorCardData[] = [];
+    const seenOrphanVendor = new Set<string>();
+    for (const svc of orphanServices) {
+      const vid = svc.vendorOwnerId!;
+      if (seenOrphanVendor.has(vid)) continue;
+      seenOrphanVendor.add(vid);
+      const card = serviceResultToVendorCard(svc);
+      if (card) syntheticFromServices.push(card);
+    }
+
+    const cards: SearchVendorCardData[] = [
+      ...vendorRows.map(searchResultToVendorCard),
+      ...syntheticFromServices,
+    ];
+
+    if (vendorIdParam && !cards.some((c) => c.id === vendorIdParam)) {
+      cards.unshift({
+        id: vendorIdParam,
+        name: 'Provider',
+        category: category || 'vet',
+        address: 'Address on file',
+        rating: 0,
+        reviewCount: 0,
+        distanceKm: null,
+      });
+    }
+
+    return cards;
+  }, [displayedWithDistance, vendorIdParam, category]);
+
+  const productResults = useMemo(
+    () => displayedWithDistance.filter((r) => r.type === 'product'),
+    [displayedWithDistance]
+  );
+
+  const handleExpandVendor = (vendorId: string) => {
+    setExpandedVendorId(vendorId);
+    updateSearchContextSelection(vendorId, undefined);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('vendorId', vendorId);
+    router.replace(`/search?${params.toString()}`, { scroll: false });
+    void loadVendorServices(vendorId);
+  };
+
+  const handleCollapseVendor = (vendorId: string) => {
+    setExpandedVendorId((cur) => (cur === vendorId ? null : cur));
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('vendorId');
+    const qs = params.toString();
+    router.replace(qs ? `/search?${qs}` : '/search', { scroll: false });
+  };
+
+  const handleBookFromSearch = (vendor: SearchVendorCardData, service: ClinicServiceRow) => {
+    updateSearchContextSelection(vendor.id, String(service.vendorServiceId));
+    launchSearchServiceBooking({
+      vendorId: vendor.id,
+      vendorName: vendor.name,
+      service,
+      category: vendor.category,
+      address: vendor.address,
+      rating: vendor.rating,
+      reviewCount: vendor.reviewCount,
+      router,
+      returnSearchUrl: buildReturnSearchUrl(),
+    });
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -556,63 +684,7 @@ function SearchContent() {
       <main
         className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-4 [-webkit-overflow-scrolling:touch] ${mainBottomPad}`}
       >
-        {showVendorServices && vendorIdParam ? (
-          // Show vendor services
-          <div>
-            <div className="mb-3">
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-9 -ml-2 gap-1 px-2 text-[#FF8C42] hover:text-[#E67A35]"
-                onClick={() => {
-                  setShowVendorServices(false);
-                  router.push('/search');
-                }}
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </Button>
-            </div>
-            {loading ? (
-              <div className="text-center py-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-                <p className="mt-4 text-gray-600">Loading services...</p>
-              </div>
-            ) : vendorServices.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-gray-500">No services available for this vendor</p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 gap-3">
-                  {vendorServices.map((service: any) => (
-                    <a
-                      key={service.id}
-                      href={`/booking/${service.id}`}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        updateSearchContextSelection(vendorIdParam, service.id);
-                        router.push(`/booking/${service.id}`);
-                      }}
-                      className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer"
-                    >
-                      <div className="p-4">
-                        <h3 className="font-semibold text-gray-900">{service.service_name}</h3>
-                        {service.price && (
-                          <p className="text-orange-500 font-semibold mt-2">₹{service.price}</p>
-                        )}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-                {/* Show events related to vendor services */}
-                {vendorServices.length > 0 && vendorIdParam && (
-                  <ServiceEvents serviceId={vendorServices[0]?.id} vendorId={vendorIdParam} />
-                )}
-              </div>
-            )}
-          </div>
-        ) : loading ? (
+        {loading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
             <p className="mt-4 text-gray-600">Searching...</p>
@@ -631,7 +703,7 @@ function SearchContent() {
               Try Again
             </button>
           </div>
-        ) : displayedWithDistance.length === 0 ? (
+        ) : vendorCardsToRender.length === 0 && productResults.length === 0 ? (
           <div className="flex min-h-[45vh] flex-col items-center justify-center px-2 py-10 text-center">
             <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-3xl bg-white shadow-sm ring-1 ring-orange-100">
               <Search className="h-10 w-10 text-[#FF8C42]" strokeWidth={1.75} />
@@ -642,105 +714,69 @@ function SearchContent() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3">
-            {displayedWithDistance.map((result) =>
-              result.type === 'vendor' ? (
-                <button
-                  key={`vendor-${result.id}`}
-                  type="button"
-                  className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
-                  onClick={() => {
-                    updateSearchContextSelection(result.id, undefined);
-                    router.push(`/search?vendorId=${result.id}`);
+          <div className="space-y-3">
+            {vendorCardsToRender.map((vendor) => {
+              const expanded = expandedVendorId === vendor.id;
+              const services = vendorServicesById[vendor.id] ?? [];
+              const loadingServices = servicesLoadingVendorId === vendor.id;
+              return (
+                <SearchVendorExpandableCard
+                  key={`vendor-${vendor.id}`}
+                  vendor={vendor}
+                  services={services}
+                  expanded={expanded}
+                  loadingServices={loadingServices}
+                  onViewServices={(e) => {
+                    e.stopPropagation();
+                    handleExpandVendor(vendor.id);
                   }}
-                >
-                  <CustomerSearchListingCard
-                    title={result.name}
-                    category={result.category}
-                    imageUrl={result.imageUrl}
-                    addressLine={
-                      result.addressDisplay ||
-                      [result.city, result.state].filter(Boolean).join(', ') ||
-                      'Address on file'
-                    }
-                    distanceKm={result.distanceKm}
-                    rating={result.rating}
-                    reviewCount={result.reviewCount}
-                    badgeLabel={result.category || undefined}
-                  />
-                </button>
-              ) : result.type === 'service' ? (
-                <button
-                  key={`service-${result.id}`}
-                  type="button"
-                  className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    updateSearchContextSelection(undefined, result.id);
-                    router.push(`/booking/${result.id}`);
+                  onDetails={(e) => {
+                    e.stopPropagation();
+                    router.push(buildSearchVendorDetailsUrl(vendor.id, vendor.name, vendor.category));
                   }}
-                >
-                  <CustomerSearchListingCard
-                    title={
-                      result.vendorBusinessName ||
-                      [result.city, result.state].filter(Boolean).join(', ') ||
-                      'Service provider'
-                    }
-                    subtitle={result.vendorBusinessName ? result.name : undefined}
-                    category={result.category}
-                    imageUrl={result.imageUrl}
-                    addressLine={
-                      result.addressDisplay ||
-                      [result.city, result.state].filter(Boolean).join(', ') ||
-                      'Address on file'
-                    }
-                    distanceKm={result.distanceKm}
-                    rating={result.rating}
-                    reviewCount={result.reviewCount}
-                    price={result.price}
-                    badgeLabel={result.category || undefined}
-                  />
-                </button>
-              ) : (
-                /* Product card */
-                <button
-                  key={`product-${result.id}`}
-                  type="button"
-                  className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
-                  onClick={() => router.push(shopProductDetailPath(String(result.id)))}
-                >
-                  <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-100">
-                    {result.imageUrl ? (
-                      <img
-                        src={result.imageUrl}
-                        alt={result.name}
-                        className="h-16 w-16 shrink-0 rounded-xl object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-2xl">
-                        🛍️
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-gray-900">{result.name}</p>
-                      {result.sellerName && (
-                        <p className="truncate text-xs text-gray-500">{result.sellerName}</p>
-                      )}
-                      {result.category && (
-                        <span className="mt-1 inline-block rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600">
-                          {result.category}
-                        </span>
-                      )}
+                  onBookService={(service) => handleBookFromSearch(vendor, service)}
+                  onToggleCollapse={() => handleCollapseVendor(vendor.id)}
+                />
+              );
+            })}
+            {productResults.map((result) => (
+              <button
+                key={`product-${result.id}`}
+                type="button"
+                className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
+                onClick={() => router.push(shopProductDetailPath(String(result.id)))}
+              >
+                <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-100">
+                  {result.imageUrl ? (
+                    <img
+                      src={result.imageUrl}
+                      alt={result.name}
+                      className="h-16 w-16 shrink-0 rounded-xl object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-2xl">
+                      🛍️
                     </div>
-                    {result.price != null && (
-                      <p className="shrink-0 text-sm font-bold text-[#FF8C42]">
-                        ₹{result.price.toLocaleString('en-IN')}
-                      </p>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-gray-900">{result.name}</p>
+                    {result.sellerName && (
+                      <p className="truncate text-xs text-gray-500">{result.sellerName}</p>
+                    )}
+                    {result.category && (
+                      <span className="mt-1 inline-block rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600">
+                        {result.category}
+                      </span>
                     )}
                   </div>
-                </button>
-              )
-            )}
+                  {result.price != null && (
+                    <p className="shrink-0 text-sm font-bold text-[#FF8C42]">
+                      ₹{result.price.toLocaleString('en-IN')}
+                    </p>
+                  )}
+                </div>
+              </button>
+            ))}
           </div>
         )}
       </main>

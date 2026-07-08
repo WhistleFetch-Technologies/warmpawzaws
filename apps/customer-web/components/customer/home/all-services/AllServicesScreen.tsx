@@ -8,7 +8,6 @@ import { AllServicesFeaturedBanner } from './AllServicesFeaturedBanner';
 import { AllServicesTrustBar } from './AllServicesTrustBar';
 import { CategoryFilterChips } from './CategoryFilterChips';
 import { ServiceCardLarge } from './ServiceCardLarge';
-import { ServiceCardSmall } from './ServiceCardSmall';
 import { useAllServicesData, type AllServicesTile } from './useAllServicesData';
 import { COMING_SOON_HOME_SERVICE_SCREENS } from '../types';
 
@@ -53,8 +52,6 @@ function AllServicesScreenComponent({
 }: AllServicesScreenProps) {
   const {
     primaryServices,
-    secondaryServices,
-    petFilteredServices,
     petFilter,
     setPetFilter,
     loading,
@@ -88,7 +85,7 @@ function AllServicesScreenComponent({
     [onNavigate, phone]
   );
 
-  const showEmptyState = !loading && petFilteredServices.length === 0;
+  const showEmptyState = !loading && primaryServices.length === 0;
 
   return (
     <div className="mx-auto flex min-h-[100dvh] max-w-customer flex-col bg-[#FF8C42]">
@@ -125,9 +122,9 @@ function AllServicesScreenComponent({
                   <h1 className="truncate text-xl font-extrabold tracking-tight text-white">
                     All Services
                   </h1>
-                  {!loading && petFilteredServices.length > 0 ? (
+                  {!loading && primaryServices.length > 0 ? (
                     <span className="hidden shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm sm:inline">
-                      {petFilteredServices.length} available
+                      {primaryServices.length} available
                     </span>
                   ) : null}
                 </div>
@@ -173,14 +170,6 @@ function AllServicesScreenComponent({
                   />
                 ))}
               </div>
-              <div className="flex gap-4">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={`sk-small-${i}`} className="flex flex-col items-center gap-2">
-                    <div className="h-[4.25rem] w-[4.25rem] animate-pulse rounded-2xl bg-gray-200/70" />
-                    <div className="h-3 w-14 animate-pulse rounded bg-gray-200/70" />
-                  </div>
-                ))}
-              </div>
             </div>
           ) : showEmptyState ? (
             <div className="py-20 text-center">
@@ -208,26 +197,6 @@ function AllServicesScreenComponent({
                   <div className="grid grid-cols-2 gap-3">
                     {primaryServices.map((service, index) => (
                       <ServiceCardLarge
-                        key={service.screen || index}
-                        service={service}
-                        onPress={handleServicePress}
-                        index={index}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-
-              {secondaryServices.length > 0 ? (
-                <section className="mb-2" aria-label="More Services">
-                  <SectionHeading
-                    title="More Services"
-                    count={secondaryServices.length}
-                    accent="bg-gradient-to-b from-violet-400 to-purple-500"
-                  />
-                  <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 scrollbar-hide">
-                    {secondaryServices.map((service, index) => (
-                      <ServiceCardSmall
                         key={service.screen || index}
                         service={service}
                         onPress={handleServicePress}
