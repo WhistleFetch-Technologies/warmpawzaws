@@ -73,3 +73,39 @@ export function canSyncWishlistToApi(
   const pid = (productId || '').trim();
   return isCustomerDatabaseUuid(cid) && isCustomerDatabaseUuid(pid);
 }
+
+export function isWishlistIdMatch(storedId: string, productId: string): boolean {
+  return String(storedId) === String(productId);
+}
+
+export function isProductWishlisted(productId: string, ids?: string[]): boolean {
+  const pid = (productId || '').trim();
+  if (!pid) return false;
+  const list = ids ?? readWishlistIds();
+  return list.some((id) => isWishlistIdMatch(id, pid));
+}
+
+/** Remove all matching ids from localStorage and dispatch wishlist-updated. */
+export function removeWishlistProductIds(
+  ...candidateIds: Array<string | null | undefined>
+): string[] {
+  const remove = new Set(
+    candidateIds.map((x) => String(x || '').trim()).filter(Boolean)
+  );
+  if (remove.size === 0) return readWishlistIds();
+  const next = readWishlistIds().filter((id) => !remove.has(String(id)));
+  setWishlistIds(next);
+  return next;
+}
+
+/**
+ * Resolve ids to render: initial load unions API additions; refresh is local-only.
+ */
+export function resolveWishlistIdsForDisplay(
+  mode: 'initial' | 'refresh',
+  localIds: string[],
+  apiItems: WishlistApiItem[]
+): string[] {
+  if (mode === 'refresh') return [...new Set(localIds.map(String).filter(Boolean))];
+  return mergeWishlistIds(localIds, apiItems);
+}

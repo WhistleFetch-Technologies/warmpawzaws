@@ -5,71 +5,30 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Heart, Loader2, ShoppingBag, Trash2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import {
+  fetchWishlistProductSummary,
+  type WishlistProductRow,
+} from '@/lib/wishlist-product-fetch';
 import { goBackOrHome, consumeWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
 import {
   canSyncWishlistToApi,
-  mergeWishlistIds,
   readWishlistIds,
+  removeWishlistProductIds,
+  resolveWishlistIdsForDisplay,
   sameWishlistIdSet,
   setWishlistIds,
   WISHLIST_UPDATED_EVENT,
   type WishlistApiItem,
 } from '@/lib/warmpawz-wishlist-local';
 
-type WishlistRow = {
-  /** Id as stored in `warmpawz_wishlist` — stable React key + localStorage removal. */
-  storageKey: string;
-  /** Canonical id for `/shop/[id]` and API. */
-  id: string;
-  name: string;
-  price: number;
-  image?: string;
-  emoji?: string;
-  missing?: boolean;
-};
+type WishlistRow = WishlistProductRow;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-async function fetchProductSummary(storageKey: string): Promise<WishlistRow> {
-  const paths = [
-    `/ecommerce/products/${encodeURIComponent(storageKey)}`,
-    `/products/${encodeURIComponent(storageKey)}`,
-  ];
-  for (const path of paths) {
-    try {
-      const res = await apiClient.get<{ product?: Record<string, unknown> }>(path);
-      const p = res?.product;
-      if (!p || typeof p !== 'object') continue;
-      const id = canonicalProductId(p as Record<string, unknown>) || storageKey;
-      const images = p.images as unknown;
-      const firstImg =
-        Array.isArray(images) && images[0] != null ? String(images[0]) : undefined;
-      return {
-        storageKey,
-        id,
-        name: String(p.name ?? 'Product'),
-        price: parseFloat(String(p.price ?? '0')) || 0,
-        image: firstImg,
-        emoji: p.emoji != null ? String(p.emoji) : undefined,
-      };
-    } catch {
-      continue;
-    }
-  }
-  return {
-    storageKey,
-    id: storageKey,
-    name: 'Product unavailable',
-    price: 0,
-    missing: true,
-  };
-}
 
 export default function WishlistPage() {
   return (
@@ -99,27 +58,32 @@ function WishlistPageContent() {
 
     try {
       const localIds = [...new Set(readWishlistIds())];
-      let merged = [...localIds];
-      const customerId = getResolvedCustomerId();
+      let idsToRender = [...localIds];
 
-      if (customerId && UUID_RE.test(customerId)) {
-        try {
-          const res = await apiClient.get<{
-            wishlist?: { items?: WishlistApiItem[] };
-          }>(`/customer/${encodeURIComponent(customerId)}/wishlist`);
-          const items = res?.wishlist?.items ?? [];
-          merged = mergeWishlistIds(localIds, items);
-          if (!sameWishlistIdSet(localIds, merged)) {
-            setWishlistIds(merged);
+      if (mode === 'initial') {
+        const customerId = getResolvedCustomerId();
+        if (customerId && UUID_RE.test(customerId)) {
+          try {
+            const res = await apiClient.get<{
+              wishlist?: { items?: WishlistApiItem[] };
+            }>(`/customer/${encodeURIComponent(customerId)}/wishlist`);
+            const items = res?.wishlist?.items ?? [];
+            const merged = resolveWishlistIdsForDisplay('initial', localIds, items);
+            if (!sameWishlistIdSet(localIds, merged)) {
+              setWishlistIds(merged);
+            }
+            idsToRender = merged;
+          } catch {
+            /* ignore API merge failure — local ids remain source of truth */
           }
-        } catch {
-          /* ignore API merge failure — local ids remain source of truth */
         }
       }
 
       if (gen !== loadGenRef.current) return;
 
-      const summaries = await Promise.all(merged.map((storageKey) => fetchProductSummary(storageKey)));
+      const summaries = await Promise.all(
+        idsToRender.map((storageKey) => fetchWishlistProductSummary(storageKey))
+      );
       if (gen !== loadGenRef.current) return;
       setRows(summaries);
     } catch (err) {
@@ -132,7 +96,7 @@ function WishlistPageContent() {
       }
       try {
         const summaries = await Promise.all(
-          fallbackIds.map((storageKey) => fetchProductSummary(storageKey))
+          fallbackIds.map((storageKey) => fetchWishlistProductSummary(storageKey))
         );
         if (gen !== loadGenRef.current) return;
         setRows(summaries);
@@ -180,11 +144,7 @@ function WishlistPageContent() {
   }, [loadWishlist]);
 
   const removeRow = async (row: WishlistRow) => {
-    const next = readWishlistIds().filter((id) => {
-      const s = String(id);
-      return s !== String(row.storageKey) && s !== String(row.id);
-    });
-    setWishlistIds(next);
+    removeWishlistProductIds(row.storageKey, row.id);
     setRows((r) => r.filter((x) => x.storageKey !== row.storageKey));
 
     const customerId = getResolvedCustomerId();

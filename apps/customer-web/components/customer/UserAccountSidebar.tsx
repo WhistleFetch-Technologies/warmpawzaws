@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { filterAccountMenuForReviewAccount } from '@/lib/app-review-demo-account';
 import { Button } from '@/components/ui/button';
@@ -34,7 +34,25 @@ import {
 import { formatIstInstantDisplay } from '@/lib/ist-display-format';
 import { invalidateCustomerLocationCache } from '@/lib/customer-location';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import {
+  canSyncWishlistToApi,
+  readWishlistIds,
+  removeWishlistProductIds,
+  resolveWishlistIdsForDisplay,
+  sameWishlistIdSet,
+  setWishlistIds,
+  WISHLIST_UPDATED_EVENT,
+  type WishlistApiItem,
+} from '@/lib/warmpawz-wishlist-local';
+import {
+  fetchWishlistProductSummary,
+  type WishlistProductRow,
+} from '@/lib/wishlist-product-fetch';
 const CUSTOMER_SUPPORT_EMAIL = 'support@warmpawz.com';
+
+const WISHLIST_CUSTOMER_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function setSupportInitialTab(tab: 'faq' | 'contact' | 'tickets') {
   try {
@@ -114,15 +132,6 @@ interface CartItem {
   details?: any;
 }
 
-interface SavedItem {
-  itemId: string;
-  type: 'product' | 'service' | 'vendor';
-  name: string;
-  photo?: string;
-  savedAt: string;
-  details?: any;
-}
-
 interface Address {
   id: string;
   label: string;
@@ -137,8 +146,6 @@ interface Address {
   floor?: string;
   coordinates?: { lat: number; lng: number };
   isDefault: boolean;
-  createdAt: string;
-  updatedAt: string;
 }
 
 interface PaymentMethod {
@@ -525,8 +532,11 @@ export function UserAccountSidebar({
   const [cartTotal, setCartTotal] = useState(0);
   
   // Saved items states
-  const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
+  const [savedItems, setSavedItems] = useState<WishlistProductRow[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(true);
+  const [savedBadgeCount, setSavedBadgeCount] = useState(0);
+  const savedLoadGenRef = useRef(0);
+  const savedRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Address states
   const [addresses, setAddresses] = useState<Address[]>([]);
@@ -567,6 +577,86 @@ export function UserAccountSidebar({
   const [loading, setLoading] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  const loadSaved = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
+    if (!isCustomerEcommerceEnabled()) {
+      setSavedItems([]);
+      setLoadingSaved(false);
+      return;
+    }
+
+    const gen = ++savedLoadGenRef.current;
+    if (mode === 'initial') setLoadingSaved(true);
+
+    try {
+      const localIds = [...new Set(readWishlistIds())];
+      let idsToRender = [...localIds];
+
+      if (mode === 'initial') {
+        const customerId = getResolvedCustomerId();
+        if (customerId && WISHLIST_CUSTOMER_UUID_RE.test(customerId)) {
+          try {
+            const res = await apiClient.get<{
+              wishlist?: { items?: WishlistApiItem[] };
+            }>(`/customer/${encodeURIComponent(customerId)}/wishlist`);
+            const items = res?.wishlist?.items ?? [];
+            const merged = resolveWishlistIdsForDisplay('initial', localIds, items);
+            if (!sameWishlistIdSet(localIds, merged)) {
+              setWishlistIds(merged);
+            }
+            idsToRender = merged;
+          } catch {
+            /* local ids remain source of truth */
+          }
+        }
+      }
+
+      if (gen !== savedLoadGenRef.current) return;
+
+      const summaries = await Promise.all(
+        idsToRender.map((storageKey) => fetchWishlistProductSummary(storageKey))
+      );
+      if (gen !== savedLoadGenRef.current) return;
+      setSavedItems(summaries);
+    } catch (error) {
+      console.error('Error loading saved items:', error);
+      if (gen !== savedLoadGenRef.current) return;
+      const fallbackIds = [...new Set(readWishlistIds())];
+      if (fallbackIds.length === 0) {
+        setSavedItems([]);
+        return;
+      }
+      try {
+        const summaries = await Promise.all(
+          fallbackIds.map((storageKey) => fetchWishlistProductSummary(storageKey))
+        );
+        if (gen !== savedLoadGenRef.current) return;
+        setSavedItems(summaries);
+      } catch {
+        if (gen !== savedLoadGenRef.current) return;
+        setSavedItems([]);
+      }
+    } finally {
+      if (mode === 'initial') setLoadingSaved(false);
+    }
+  }, []);
+
+  const removeFromSaved = async (row: WishlistProductRow) => {
+    removeWishlistProductIds(row.storageKey, row.id);
+    setSavedItems((items) => items.filter((x) => x.storageKey !== row.storageKey));
+
+    const customerId = getResolvedCustomerId();
+    if (canSyncWishlistToApi(customerId, row.id)) {
+      try {
+        await apiClient.post(`/customer/${encodeURIComponent(customerId!)}/wishlist`, {
+          productId: row.id,
+          action: 'remove',
+        });
+      } catch {
+        /* local removal already applied */
+      }
+    }
+  };
+
   useEffect(() => {
     setTimeout(() => setIsOpen(true), 50);
     loadProfile();
@@ -590,12 +680,39 @@ export function UserAccountSidebar({
 
   useEffect(() => {
     if (activeView === 'cart') loadCart();
-    if (activeView === 'saved') loadSaved();
+    if (activeView === 'saved') void loadSaved('initial');
     if (activeView === 'addresses') loadAddresses();
     if (activeView === 'payments') loadPayments();
     if (activeView === 'notifications') loadNotificationSettings();
     if (activeView === 'bookings') loadBookings(); // Reload bookings when viewing bookings tab
-  }, [activeView]);
+  }, [activeView, loadSaved]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const syncBadge = () => setSavedBadgeCount(readWishlistIds().length);
+    syncBadge();
+    window.addEventListener(WISHLIST_UPDATED_EVENT, syncBadge as EventListener);
+    return () => window.removeEventListener(WISHLIST_UPDATED_EVENT, syncBadge as EventListener);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || activeView !== 'saved') return undefined;
+
+    const scheduleRefresh = () => {
+      if (savedRefreshDebounceRef.current) clearTimeout(savedRefreshDebounceRef.current);
+      savedRefreshDebounceRef.current = setTimeout(() => {
+        savedRefreshDebounceRef.current = null;
+        void loadSaved('refresh');
+      }, 120);
+    };
+
+    window.addEventListener(WISHLIST_UPDATED_EVENT, scheduleRefresh as EventListener);
+    return () => {
+      window.removeEventListener(WISHLIST_UPDATED_EVENT, scheduleRefresh as EventListener);
+      if (savedRefreshDebounceRef.current) clearTimeout(savedRefreshDebounceRef.current);
+    };
+  }, [activeView, loadSaved]);
 
   // ============================================
   // PROFILE FUNCTIONS
@@ -716,29 +833,8 @@ export function UserAccountSidebar({
   };
 
   // ============================================
-  // SAVED ITEMS FUNCTIONS
+  // SAVED ITEMS FUNCTIONS — loadSaved/removeFromSaved defined above (before effects)
   // ============================================
-  
-  const loadSaved = async () => {
-    try {
-      setLoadingSaved(true);
-      const result = await apiClient.get<{ savedItems?: SavedItem[] }>(`/customer/saved/${phone}`);
-      setSavedItems(result.savedItems || []);
-    } catch (error) {
-      console.error('Error loading saved items:', error);
-    } finally {
-      setLoadingSaved(false);
-    }
-  };
-
-  const removeFromSaved = async (itemId: string, type: string) => {
-    try {
-      await apiClient.delete(`/customer/saved/${phone}/items/${itemId}`);
-      await loadSaved();
-    } catch (error) {
-      console.error('Error removing from saved:', error);
-    }
-  };
 
   // ============================================
   // ADDRESS FUNCTIONS
@@ -1237,7 +1333,7 @@ export function UserAccountSidebar({
       iconBg: 'bg-pink-100',
       iconColor: 'text-pink-600',
       view: 'saved' as const,
-      badge: savedItems.length,
+      badge: savedBadgeCount,
       comingSoon: !isCustomerEcommerceEnabled(),
     },
     {
@@ -1652,13 +1748,20 @@ export function UserAccountSidebar({
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   {savedItems.map((item) => (
-                    <div key={`${item.itemId}-${item.type}`} className="bg-white border border-gray-200 rounded-2xl p-3">
+                    <div key={item.storageKey} className="bg-white border border-gray-200 rounded-2xl p-3">
                       <div className="w-full aspect-square bg-gray-200 rounded-xl overflow-hidden mb-3">
-                        {item.photo && <img src={item.photo} alt={item.name} className="w-full h-full object-cover" />}
+                        {item.image ? (
+                          <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                        ) : item.emoji ? (
+                          <div className="flex h-full w-full items-center justify-center text-4xl">{item.emoji}</div>
+                        ) : null}
                       </div>
-                      <h4 className="font-semibold text-gray-800 text-sm mb-3 line-clamp-2 min-h-[40px]">{item.name}</h4>
+                      <h4 className="font-semibold text-gray-800 text-sm mb-1 line-clamp-2 min-h-[40px]">{item.name}</h4>
+                      <p className="text-sm text-[#FF8C42] font-medium mb-3">
+                        {item.missing ? 'Unavailable' : `₹${Math.round(item.price)}`}
+                      </p>
                       <button
-                        onClick={() => removeFromSaved(item.itemId, item.type)}
+                        onClick={() => removeFromSaved(item)}
                         className="w-full py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl active:bg-red-100 transition-colors"
                       >
                         Remove

@@ -44,6 +44,7 @@ import { ProfileQuickActions } from '@/components/customer/profile/ProfileQuickA
 import { ProfileInfoSection } from '@/components/customer/profile/ProfileInfoSection';
 import { ProfileFieldLabel } from '@/components/customer/profile/ProfileFieldLabel';
 import { ProfileReadOnlyField } from '@/components/customer/profile/ProfileReadOnlyField';
+import { readWishlistIds, WISHLIST_UPDATED_EVENT } from '@/lib/warmpawz-wishlist-local';
 
 interface UserProfile {
   firstName: string;
@@ -151,10 +152,9 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSp
       .then((r) => setCount('pets', Array.isArray(r.pets) ? r.pets.length : 0))
       .catch(() => setCount('pets', 0));
 
-    const savedPromise = apiClient
-      .get<{ savedItems?: unknown[] }>(`/customer/saved/${phone}`)
-      .then((r) => setCount('saved', Array.isArray(r.savedItems) ? r.savedItems.length : 0))
-      .catch(() => setCount('saved', 0));
+    const savedPromise = Promise.resolve().then(() =>
+      setCount('saved', readWishlistIds().length)
+    );
 
     const ordersPromise = (async () => {
       try {
@@ -179,6 +179,18 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome, ordersBackSp
       loadStatCounts();
     }
   }, [loading, profile, loadStatCounts]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const refreshSavedCount = () => {
+      setStatCounts((prev) => ({ ...prev, saved: readWishlistIds().length }));
+    };
+
+    window.addEventListener(WISHLIST_UPDATED_EVENT, refreshSavedCount as EventListener);
+    return () =>
+      window.removeEventListener(WISHLIST_UPDATED_EVENT, refreshSavedCount as EventListener);
+  }, []);
 
   const fetchAndApplyProfile = async (showLoadingSpinner: boolean) => {
     try {
