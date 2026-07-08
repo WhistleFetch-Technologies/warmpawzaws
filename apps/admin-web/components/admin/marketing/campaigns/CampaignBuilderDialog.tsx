@@ -161,7 +161,11 @@ export function CampaignBuilderDialog({
     audience: draft.audience,
     notificationMode: draft.notificationMode,
     notificationCampaignId: draft.notificationCampaignId ?? undefined,
-    metadata: { domain: surface === 'ecommerce' ? 'ecommerce' : 'service', surface },
+    metadata: {
+      domain: surface === 'ecommerce' ? 'ecommerce' : 'service',
+      surface,
+      discount_domain: surface === 'ecommerce' ? 'ECOMMERCE' : 'SERVICE',
+    },
   });
 
   const handlePublish = async () => {

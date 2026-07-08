@@ -15,9 +15,13 @@ export const SMART_FLOW_LABELS: Record<
     marketing: 'Entire platform',
     ecommerce: 'Entire marketplace',
   },
+  all_products: {
+    marketing: 'All Products',
+    ecommerce: 'All Products',
+  },
   categories: {
     marketing: 'Categories',
-    ecommerce: 'Categories',
+    ecommerce: 'Product Categories',
   },
   vendor_inventory: {
     marketing: 'Vendor inventory',
@@ -81,24 +85,33 @@ export function inferSmartFlowFromForm(
   form: Pick<PromotionWizardForm, 'targetScopes' | 'selectedTargets'>,
   surface: SmartTargetSurface
 ): SmartTargetFlowId {
-  if (form.targetScopes.includes('entire_platform')) return 'entire_platform';
-
-  const hasVendor = (form.selectedTargets.vendors?.length ?? 0) > 0;
-  const hasProducts = (form.selectedTargets.products?.length ?? 0) > 0;
-  const hasServiceInventory =
-    (form.selectedTargets.services?.length ?? 0) > 0 ||
-    (form.selectedTargets.packages?.length ?? 0) > 0 ||
-    (form.selectedTargets.meal_plans?.length ?? 0) > 0;
-
   if (surface === 'ecommerce') {
+    if (
+      form.targetScopes.includes('all_products') ||
+      form.targetScopes.includes('entire_platform')
+    ) {
+      return 'all_products';
+    }
+
+    const hasVendor = (form.selectedTargets.vendors?.length ?? 0) > 0;
+    const hasProducts = (form.selectedTargets.products?.length ?? 0) > 0;
+
     if (hasVendor || hasProducts || form.targetScopes.includes('products')) {
       return 'vendor_inventory';
     }
     if (form.targetScopes.includes('categories') || (form.selectedTargets.categories?.length ?? 0) > 0) {
       return 'categories';
     }
-    return 'entire_platform';
+    return 'all_products';
   }
+
+  if (form.targetScopes.includes('entire_platform')) return 'entire_platform';
+
+  const hasVendor = (form.selectedTargets.vendors?.length ?? 0) > 0;
+  const hasServiceInventory =
+    (form.selectedTargets.services?.length ?? 0) > 0 ||
+    (form.selectedTargets.packages?.length ?? 0) > 0 ||
+    (form.selectedTargets.meal_plans?.length ?? 0) > 0;
 
   if (hasVendor || hasServiceInventory || form.targetScopes.some((s) => ['services', 'packages', 'meal_plans'].includes(s))) {
     return 'vendor_inventory';
@@ -128,9 +141,10 @@ export function buildSmartTargetScopes(
   flow: SmartTargetFlowId,
   inventoryType: VendorInventoryType,
   includeOptionalStyles: boolean,
-  options?: { includeCatalogServices?: boolean }
+  options?: { includeCatalogServices?: boolean; ecommerceProducts?: boolean }
 ): TargetScopeId[] {
   if (flow === 'entire_platform') return ['entire_platform'];
+  if (flow === 'all_products') return ['all_products'];
   if (flow === 'categories') {
     const scopes: TargetScopeId[] = ['categories'];
     if (options?.includeCatalogServices) scopes.push('services');
@@ -138,7 +152,9 @@ export function buildSmartTargetScopes(
     return scopes;
   }
   if (flow === 'vendor_inventory') {
-    return ['vendors', inventoryTypeToScope(inventoryType)];
+    return options?.ecommerceProducts
+      ? ['vendors', 'products']
+      : ['vendors', inventoryTypeToScope(inventoryType)];
   }
   return ['entire_platform'];
 }
@@ -147,7 +163,7 @@ export function countSmartSelections(
   selectedTargets: Partial<Record<TargetScopeId, string[]>>,
   flow: SmartTargetFlowId
 ): number {
-  if (flow === 'entire_platform') return 0;
+  if (flow === 'entire_platform' || flow === 'all_products') return 0;
   return Object.values(selectedTargets).reduce((sum, ids) => sum + (ids?.length ?? 0), 0);
 }
 
@@ -159,7 +175,7 @@ export function formatSmartTargetSummary(
   const flow = inferSmartFlowFromForm(form, surface);
   const flowLabel = SMART_FLOW_LABELS[flow][surface === 'ecommerce' ? 'ecommerce' : 'marketing'];
 
-  if (flow === 'entire_platform') return flowLabel;
+  if (flow === 'entire_platform' || flow === 'all_products') return flowLabel;
 
   if (flow === 'categories') {
     const cats = form.selectedTargets.categories ?? [];

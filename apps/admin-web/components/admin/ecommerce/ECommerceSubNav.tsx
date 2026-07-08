@@ -37,7 +37,7 @@ const NAV: ECommerceNavItem[] = [
   { id: 'promotion-analytics', label: 'Analytics', href: '/ecommerce/analytics', icon: LineChart, matchPrefix: '/ecommerce/analytics' },
   { id: 'commission', label: 'Commission', href: '/ecommerce?tab=commission', icon: Percent },
   { id: 'marketplace-analytics', label: 'Marketplace Analytics', href: '/ecommerce?tab=analytics', icon: BarChart3 },
-  { id: 'policies', label: 'Policies', href: '/ecommerce?tab=policies', icon: Settings },
+  { id: 'policies', label: 'Policies', href: '/ecommerce/policy', icon: Settings, matchPrefix: '/ecommerce/policy' },
 ];
 
 function isActive(

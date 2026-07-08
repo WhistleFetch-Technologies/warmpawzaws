@@ -10,6 +10,7 @@ import { loadSmartTargetBaseCatalogWithErrors } from '@/lib/promotion-catalog-lo
 import { createAdminSmartTargetAdapter } from '@/lib/smart-target-catalog-adapter';
 import {
   catalogForSurface,
+  discountDomainForSurface,
   filterCouponRows,
   filterPromotionRows,
   scopeForSurface,
@@ -45,6 +46,7 @@ export function CampaignOrchestrationPanel({
   readOnly?: boolean;
 }) {
   const scope = scopeForSurface(surface);
+  const discountDomain = discountDomainForSurface(surface);
   const promoHubHref = surface === 'ecommerce' ? '/ecommerce/promotions' : '/promotions';
   const [catalog, setCatalog] = useState<PromotionTargetCatalog>({});
   const [existingPromotions, setExistingPromotions] = useState<ReturnType<typeof normalizePromotionRow>[]>([]);
@@ -53,10 +55,11 @@ export function CampaignOrchestrationPanel({
   const [wizardKind, setWizardKind] = useState<'promotion' | 'coupon'>('promotion');
 
   const loadCatalog = useCallback(async () => {
+    const domainQuery = `discount_domain=${discountDomain}`;
     const [catalogResult, promotionsRes, couponsRes] = await Promise.all([
-      loadSmartTargetBaseCatalogWithErrors(apiClient),
-      apiClient.get<{ promotions?: unknown[] }>('/admin/promotions'),
-      apiClient.get<{ coupons?: unknown[] }>('/admin/coupons?limit=100'),
+      loadSmartTargetBaseCatalogWithErrors(apiClient, surface),
+      apiClient.get<{ promotions?: unknown[] }>(`/admin/promotions?${domainQuery}`),
+      apiClient.get<{ coupons?: unknown[] }>(`/admin/coupons?limit=100&${domainQuery}`),
     ]);
     setCatalog(catalogForSurface(catalogResult.catalog, surface));
     const promoRows = promotionsRes.promotions ?? [];
@@ -69,7 +72,7 @@ export function CampaignOrchestrationPanel({
     );
     setExistingPromotions(filterPromotionRows(normalizedPromos, surface));
     setExistingCoupons(filterCouponRows(normalizedCoupons, surface));
-  }, [surface]);
+  }, [surface, discountDomain]);
 
   useEffect(() => {
     void loadCatalog();
@@ -100,12 +103,13 @@ export function CampaignOrchestrationPanel({
 
   const handleWizardSave = async (form: PromotionWizardForm) => {
     try {
+      const mapperOptions = { discountDomain };
       if (form.createKind === 'coupon') {
-        const payload = wizardToAdminCouponPayload(form);
+        const payload = wizardToAdminCouponPayload(form, mapperOptions);
         onCouponsChange([...pendingCoupons, payload as Record<string, unknown>]);
         toast.success('Coupon queued for orchestration');
       } else {
-        const payload = wizardToAdminPromotionPayload(form);
+        const payload = wizardToAdminPromotionPayload(form, mapperOptions);
         onPromotionsChange([...pendingPromotions, payload as Record<string, unknown>]);
         toast.success('Promotion queued for orchestration');
       }

@@ -57,6 +57,9 @@ export function promotionServiceTokensMatch(
 }
 
 export function platformPromotionAppliesToBooking(row: Record<string, unknown>): boolean {
+  const domain = String(row.discount_domain ?? row.discountDomain ?? '').trim().toUpperCase();
+  if (domain === 'ECOMMERCE' || domain === 'PRODUCT') return false;
+
   const applicableTo = String(row.applicable_to ?? '').trim().toLowerCase();
   if (applicableTo === 'products') return false;
 
@@ -64,11 +67,21 @@ export function platformPromotionAppliesToBooking(row: Record<string, unknown>):
     row.metadata && typeof row.metadata === 'object'
       ? (row.metadata as Record<string, unknown>)
       : {};
+  const metaDomain = String(meta.discount_domain ?? meta.domain ?? meta.surface ?? '')
+    .trim()
+    .toLowerCase();
+  if (metaDomain === 'ecommerce' || metaDomain === 'product') return false;
+
   const metaApplicableTo = String(meta.applicableTo ?? '').trim().toLowerCase();
   if (metaApplicableTo === 'products') return false;
 
   const targetScopes = parsePromotionServicesList(meta.targetScopes);
-  if (targetScopes.length === 1 && targetScopes[0] === 'products') return false;
+  if (
+    targetScopes.length > 0 &&
+    targetScopes.every((s) => s === 'products' || s === 'all_products')
+  ) {
+    return false;
+  }
 
   return true;
 }

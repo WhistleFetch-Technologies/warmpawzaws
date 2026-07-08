@@ -28,14 +28,16 @@ export function PromotionSummary({
 
   const targets = smartSurface
     ? formatSmartTargetSummary(form, smartSurface, catalog)
-    : form.targetScopes.includes('entire_platform')
-      ? 'Entire platform'
-      : form.targetScopes
-          .map((s) => {
-            const n = form.selectedTargets[s]?.length ?? 0;
-            return n > 0 ? `${n} ${s.replace(/_/g, ' ')}` : s.replace(/_/g, ' ');
-          })
-          .join(', ');
+    : form.targetScopes.includes('all_products')
+      ? 'All Products'
+      : form.targetScopes.includes('entire_platform')
+        ? 'Entire platform'
+        : form.targetScopes
+            .map((s) => {
+              const n = form.selectedTargets[s]?.length ?? 0;
+              return n > 0 ? `${n} ${s.replace(/_/g, ' ')}` : s.replace(/_/g, ' ');
+            })
+            .join(', ');
 
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-1">
@@ -63,6 +65,7 @@ export function promotionTargetSummaryLabel(
   if (smartSurface) {
     return formatSmartTargetSummary(form, smartSurface, catalog);
   }
+  if (form.targetScopes.includes('all_products')) return 'All Products';
   if (form.targetScopes.includes('entire_platform')) return 'Entire platform';
   return inferSmartFlowFromForm(form, smartSurface ?? 'marketing');
 }

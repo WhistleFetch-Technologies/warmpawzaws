@@ -10,6 +10,7 @@ const ITEM_LEVEL_SCOPES: TargetScopeId[] = ['services', 'packages', 'meal_plans'
 
 const SCOPE_LABELS: Record<TargetScopeId, string> = {
   entire_platform: 'platform',
+  all_products: 'all products',
   vendors: 'vendors',
   categories: 'categories',
   services: 'services',

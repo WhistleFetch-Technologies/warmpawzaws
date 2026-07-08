@@ -1,154 +1,116 @@
 # Campaign Current State
 
-**Sprint:** E — Analysis only  
-**Date:** 2026-07-03
+**Status:** Analysis only (no implementation)  
+**Date:** 2026-07-08  
+**Engine:** Commercial Discount Campaigns (Phase 10) — distinct from Notification Campaign Engine  
 
 ---
 
 ## Executive summary
 
-Warmpawz has **three distinct "campaign" concepts** that are not unified:
+Warmpawz has a **built Phase 10 Campaign Engine**: DB schema, backend orchestration modules, gated admin APIs, and a shared `CommercialCampaignHub` used from both Marketing → Campaigns and E-commerce → Campaigns.
 
-1. **Commercial promotions** — discounts, flash sales, seasonal offers (discount-engine + promotion wizard)
-2. **Push notification campaigns** — audience targeting, schedule, send (notification-engine)
-3. **Content marketing** — banners, articles, spotlight (marketing hub)
+It is **not production-active by default**. Feature flag `DISCOUNT_ENGINE_V2_CAMPAIGN_MODE` defaults to **`OFF`** → admin shows Coming Soon; mutating/list APIs return 503.
 
-There is **no unified campaign builder** for commercial promotions. Flash sale and seasonal are **promotion types**, not separate products.
+Campaigns are an **orchestration layer** that can create and link promotions/coupons. They do **not** replace the Discount Engine resolver. Checkout does not call `CampaignResolver`. Settlement receives attribution metadata only.
 
----
-
-## Commercial promotions (discount campaigns)
-
-### Existing features
-
-| Feature | Location | Status |
-|---------|----------|--------|
-| Platform promotion wizard | `/promotions` → `AdminPromotionHub` | **Production-ready** (Sprint A) |
-| Vendor service promos | `ServicePromotionsHub` | **Production-ready** (Sprint B) |
-| Vendor seller promos | `SellerPromotionsHub` | **Production-ready** (Sprint B) |
-| Coupon CRUD | Admin + vendor hubs | **Supported** |
-| Promotion types | `flash_sale`, `seasonal`, `first_order`, `combo`, etc. | **Supported** in engine + UI badges |
-| Auto-apply vs code | Discount engine stack | **Supported** |
-| Funding (platform/vendor/shared) | Phase 7 settlement preview | **Backend** — not in campaign UI |
-| Scheduling (start/end dates) | Promotion tables | **Supported** |
-| Lifecycle (draft/active/expired) | `PromotionDashboard` tabs | **Supported** |
-
-### Missing for "campaign builder"
-
-| Capability | Status |
-|------------|--------|
-| Multi-step campaign journeys | **Missing** |
-| A/B test variants | **Missing** |
-| Campaign-level budget caps | **Partial** — max_discount, usage_limit per promo |
-| Cross-channel orchestration (push + discount) | **Missing** |
-| Campaign analytics dashboard | **Missing** (Phase 9 API only) |
-| Recurring / Black Friday templates | **Missing** — manual promo creation |
-| Audience segmentation for promos | **Missing** — notification campaigns have this |
+Domain (SERVICE vs ECOMMERCE) is **metadata-only**, filtered client-side — same pattern Campaigns must catch up to Phase E1 durable `discount_domain` on promotions/coupons.
 
 ---
 
-## Push notification campaigns
+## What already exists (inventory)
 
-### Existing features
+### Backend modules (`backend/lambda/src/discount-engine/campaign/`)
 
-| Feature | Location | Status |
-|---------|----------|--------|
-| Campaign CRUD | `/notification-engine` | **Supported** |
-| Draft → validate → schedule → send | API + UI | **Supported** |
-| Targeting | Broadcast, segments, regions, cities, users | **Supported** |
-| Templates | Template picker | **Supported** |
-| Audience estimate | Pre-send estimate API | **Supported** |
-| Scheduled delivery | DB + `process-scheduled` + EventBridge processor | **Supported** |
-| Campaign preview | `CampaignPreview.tsx` | **Supported** |
-| Per-campaign analytics API | `/campaigns/:id/analytics` | **API exists** — **no UI** |
-| RBAC | create/edit/approve/send/analytics permissions | **Supported** |
+| Module | Role |
+|--------|------|
+| `campaign-engine.ts` | Orchestrate create + link offers |
+| `campaign-mode.ts` | OFF / SHADOW / AUTHORITATIVE |
+| `campaign-builder.ts` | Build record from request |
+| `campaign-lifecycle.ts` | Status transitions |
+| `campaign-configuration.ts` | Allowed transitions |
+| `campaign-funding.ts` | PLATFORM / VENDOR / SHARED / CUSTOM |
+| `campaign-scheduler.ts` | Immediate / scheduled / recurring (derivation helpers) |
+| `campaign-template.ts` + `campaign-registry.ts` | Templates / types |
+| `campaign-resolver.ts` | **Exported unused** at checkout |
+| `campaign-audit.ts` | Fingerprint / attribution |
+| `repositories/campaign-repository.ts` | Persistence |
+| Bridges | promotion, coupon, notification, analytics, settlement |
 
-### Integration with promotions
+HTTP: `endpoints/commercial-campaign.endpoints.ts`  
+Migration: `db/migrations/1046_commercial_discount_campaigns.sql`
 
-| Integration | Status |
-|-------------|--------|
-| Deep link to promo code | **Partial** — manual in template body |
-| Auto-create promo from campaign | **Missing** |
-| Unified campaign ID across promo + push | **Missing** |
+### Admin UI
 
----
+| Piece | Path |
+|-------|------|
+| Hub | `CommercialCampaignHub` |
+| Builder | `CampaignBuilderDialog` |
+| Orchestration | `CampaignOrchestrationPanel` (embeds Promotion Wizard) |
+| Details | `CampaignDetailsDrawer` |
+| List / Dashboard / Templates / Funding / Audience / Schedule / Notification editors | `campaigns/` |
+| Marketing entry | Promotion Center `?tab=campaigns` |
+| Ecommerce entry | `/ecommerce/campaigns` |
 
-## Content / banner marketing
+### Separate product (do not confuse)
 
-| Feature | Location | Status |
-|---------|----------|--------|
-| Banner CRUD | `/marketing`, `/banners` | **Supported** |
-| Banner analytics API | `/admin/banners/analytics` | **API exists** — limited UI |
-| Spotlight | Marketing hub | **Supported** |
-| Articles / announcements | Marketing hub | **Supported** |
-
----
-
-## Scheduling & automation
-
-| Mechanism | Domain | Status |
-|-----------|--------|--------|
-| Promotion start/end dates | Commercial | **Supported** |
-| Notification campaign schedule | Push | **Supported** |
-| EventBridge settlement daily | Finance | **Supported** — unrelated to promos |
-| EventBridge analytics retention | Product telemetry | **Supported** |
-| Scheduled promo auto-activation | Commercial | **Implicit** via date fields — no job dashboard |
-| Recurring promotions | Commercial | **Missing** |
-| Drip / multi-touch automation | — | **Missing** |
+**Notification Campaign Engine** (`1024_notification_campaign_engine.sql`, Notification Engine admin) — push/SMS/email campaigns. Commercial campaigns can **link** an existing notification campaign id; auto-create is stubbed.
 
 ---
 
-## Promotion & coupon integration
+## Production readiness matrix
 
-| Path | Status |
+| Area | Ready? | Notes |
+|------|--------|-------|
+| Schema 1046 | Yes (if applied) | Additive |
+| Engine + unit tests | Yes | Orchestration logic |
+| Admin UI shell | Yes | Behind flag |
+| Flag default OFF | Hidden | Intentional rollout gate |
+| SHADOW orchestrate | Stub | Mock promo/coupon IDs |
+| AUTHORITATIVE orchestrate | Ready | Inserts real offers |
+| Checkout / CampaignResolver | Dead | Not wired |
+| Settlement consume | Stub | Attribution payload only |
+| Notification create | Stub | Link mode works |
+| Domain column | Missing | Metadata only |
+| Dashboard revenue KPIs | Stub | `"—"` placeholders |
+| Phase 9 Campaign Analytics tab | Proxy | Top promotions, not commercial campaigns |
+
+---
+
+## Feature flag
+
+```
+DISCOUNT_ENGINE_V2_CAMPAIGN_MODE = OFF | SHADOW | AUTHORITATIVE
+Default: OFF
+```
+
+| Mode | Effect |
 |------|--------|
-| Customer discovery `/promotions` | **Supported** |
-| Checkout coupon (Sprint C.1) | **Supported** — booking/meal/products |
-| Discount engine stack | **Complete through Phase 7** |
-| Phase 9 analytics | **Backend** — feature-flagged |
-| Campaign → checkout attribution | **Missing** |
+| OFF | Coming Soon; APIs disabled |
+| SHADOW | Create/list/lifecycle; orchestrate mocks links |
+| AUTHORITATIVE | Orchestrate materializes promotions/coupons + links |
 
 ---
 
-## Funding readiness
+## Domain awareness today
 
-| Area | Readiness |
-|------|-----------|
-| Funding config in engine | **Ready** — `FundingConfiguration` |
-| Settlement preview | **Ready** — Phase 7 |
-| Admin funding visibility | **Not ready** — no UI |
-| Vendor funding cost view | **Not ready** |
-| Finance report integration | **Not ready** |
+- Builder stamps `metadata.domain`, `metadata.surface`, `metadata.discount_domain`.
+- List API: **no** `?domain=` / `discount_domain`.
+- UI: `filterCampaigns(surface)` heuristics.
+- No first-class `domain` column on `commercial_discount_campaigns`.
 
 ---
 
-## Future campaign support (extension points)
+## Related docs (this review package)
 
-1. **Unified campaign entity** — optional `campaigns` table linking promos + notification + banners (deferred).
-2. **Phase 9 analytics UI** — first commercial campaign performance surface.
-3. **Notification-engine analytics tab** — reuse admin analytics patterns.
-4. **Promotion wizard** — add "Campaign package" preset (flash sale / seasonal templates).
-5. **Segment-based promos** — reuse notification segment infrastructure.
-6. **Persist settlement audit** — enable historical campaign ROI.
+| Doc | Focus |
+|-----|-------|
+| `CAMPAIGN_ARCHITECTURE_ANALYSIS.md` | Architecture & modules |
+| `CAMPAIGN_RUNTIME_ANALYSIS.md` | Runtime flow |
+| `CAMPAIGN_UX_ANALYSIS.md` | Services + Ecommerce UX |
+| `CAMPAIGN_ANALYTICS_ANALYSIS.md` | KPIs & reports |
+| `CAMPAIGN_GAP_REPORT.md` | Gaps + final answers |
+| `CAMPAIGN_REUSE_MATRIX.md` | Shared vs domain-aware |
+| `CAMPAIGN_IMPLEMENTATION_BLUEPRINT.md` | Recommended build order |
 
----
-
-## Reuse opportunities
-
-| From | Reuse for commercial campaigns |
-|------|-------------------------------|
-| Notification campaign schedule/send pipeline | Pattern for scheduled promo broadcasts (not merge tables) |
-| `PromotionDashboard` lifecycle tabs | Campaign status UX |
-| Phase 9 `campaign-analytics.ts` | Performance rollup (promotion-as-campaign) |
-| Banner analytics API | Content campaign metrics pattern |
-| `@warmpawz/promotion-management-ui` wizard | Template steps for seasonal/flash presets |
-
----
-
-## Deferred work (roadmap — not current gaps)
-
-- Full campaign builder with visual workflow
-- Black Friday / festive campaign wizards
-- Loyalty + campaign intersection
-- Wallet/cashback campaigns
-- Vendor self-serve campaign budgets with platform co-funding UI
+*Note: older narrative in this file (pre–Phase 10 “no builder”) is obsolete — Phase 10 UI exists.*

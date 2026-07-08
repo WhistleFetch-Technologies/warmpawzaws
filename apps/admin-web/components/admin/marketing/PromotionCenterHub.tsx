@@ -96,7 +96,7 @@ export function PromotionCenterHub() {
             />
           </div>
         ) : null}
-        {activeTab === 'policy' ? <PolicyCenter embedded /> : null}
+        {activeTab === 'policy' ? <PolicyCenter embedded surface="marketing" /> : null}
         {activeTab === 'analytics' ? (
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
             <MarketingAnalyticsHub surface="marketing" />

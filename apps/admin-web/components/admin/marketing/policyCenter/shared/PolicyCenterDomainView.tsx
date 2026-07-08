@@ -14,9 +14,12 @@ const OPTIONS: { value: PolicyViewDomain; label: string; description: string }[]
 export function PolicyCenterDomainView({
   value,
   onChange,
+  locked = false,
 }: {
   value: PolicyViewDomain;
   onChange: (v: PolicyViewDomain) => void;
+  /** When true, hide the domain switcher (surface is fixed by the host page). */
+  locked?: boolean;
 }) {
   const active = OPTIONS.find((o) => o.value === value);
 
@@ -26,26 +29,30 @@ export function PolicyCenterDomainView({
         <div>
           <p className="text-sm font-semibold text-slate-900">Policy domain view</p>
           <p className="text-xs text-slate-500">
-            Single Policy Center — switch context without duplicating configuration screens.
+            {locked
+              ? 'Domain is fixed for this surface.'
+              : 'Single Policy Center — switch context without duplicating configuration screens.'}
           </p>
         </div>
-        <div className="space-y-1">
-          <Label htmlFor="policy-view-domain" className="sr-only">
-            Domain view
-          </Label>
-          <Select value={value} onValueChange={(v) => onChange(v as PolicyViewDomain)}>
-            <SelectTrigger id="policy-view-domain" className="w-full sm:w-56 bg-white">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {!locked ? (
+          <div className="space-y-1">
+            <Label htmlFor="policy-view-domain" className="sr-only">
+              Domain view
+            </Label>
+            <Select value={value} onValueChange={(v) => onChange(v as PolicyViewDomain)}>
+              <SelectTrigger id="policy-view-domain" className="w-full sm:w-56 bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
       </div>
       {active ? (
         <p className="mt-3 text-sm text-slate-600">

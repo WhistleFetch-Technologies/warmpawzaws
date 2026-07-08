@@ -30,6 +30,7 @@ import {
 
 const SCOPE_LABELS: Record<TargetScopeId, string> = {
   entire_platform: 'Entire platform',
+  all_products: 'All Products',
   vendors: 'Vendors',
   categories: 'Categories',
   services: 'Services',
@@ -207,7 +208,10 @@ function SmartPromotionTargetSelector({
   onTargetsChange: (targets: Partial<Record<TargetScopeId, string[]>>) => void;
 }) {
   const adminSurface = surface === 'ecommerce' ? 'ecommerce' : 'marketing';
-  const flows: SmartTargetFlowId[] = ['entire_platform', 'categories', 'vendor_inventory'];
+  const flows: SmartTargetFlowId[] =
+    adminSurface === 'ecommerce'
+      ? ['all_products', 'categories', 'vendor_inventory']
+      : ['entire_platform', 'categories', 'vendor_inventory'];
 
   const [flow, setFlow] = useState<SmartTargetFlowId>(() =>
     inferSmartFlowFromForm({ targetScopes: selectedScopes, selectedTargets }, adminSurface)
@@ -275,10 +279,11 @@ function SmartPromotionTargetSelector({
       onScopesChange(
         buildSmartTargetScopes(nextFlow, inventoryType, optionalStyles && nextFlow === 'categories', {
           includeCatalogServices: false,
+          ecommerceProducts: adminSurface === 'ecommerce',
         })
       );
     },
-    [inventoryType, onScopesChange, onTargetsChange, optionalStyles]
+    [adminSurface, inventoryType, onScopesChange, onTargetsChange, optionalStyles]
   );
 
   const syncScopes = useCallback(
@@ -292,6 +297,7 @@ function SmartPromotionTargetSelector({
       onScopesChange(
         buildSmartTargetScopes(flow, inventoryType, stylesEnabled && flow === 'categories', {
           includeCatalogServices: hasCatalogServices,
+          ecommerceProducts: adminSurface === 'ecommerce',
         })
       );
       onTargetsChange(nextTargets);
@@ -524,7 +530,11 @@ function SmartPromotionTargetSelector({
       meal_plans: [],
       vendors: selectedPartnerId ? [selectedPartnerId] : selectedTargets.vendors,
     };
-    onScopesChange(buildSmartTargetScopes('vendor_inventory', type, false));
+    onScopesChange(
+      buildSmartTargetScopes('vendor_inventory', type, false, {
+        ecommerceProducts: adminSurface === 'ecommerce',
+      })
+    );
     onTargetsChange(cleared);
   };
 
@@ -559,12 +569,14 @@ function SmartPromotionTargetSelector({
         partnerLabel={selectedPartner?.label}
         inventoryType={adminSurface === 'marketing' ? inventoryType : undefined}
         stepHint={
-          flow === 'entire_platform'
-            ? 'This promotion applies across the whole marketplace — no inventory selection needed.'
+          flow === 'entire_platform' || flow === 'all_products'
+            ? adminSurface === 'ecommerce'
+              ? 'This offer applies to all products in the shop — no inventory selection needed.'
+              : 'This promotion applies across the whole marketplace — no inventory selection needed.'
             : flow === 'categories'
               ? adminSurface === 'marketing'
                 ? '1) Select a category → 2) Select catalogue services. The offer applies for every vendor who published those services.'
-                : 'Pick one or more retail categories for this offer.'
+                : 'Pick one or more product categories for this offer.'
               : undefined
         }
       />
@@ -572,12 +584,13 @@ function SmartPromotionTargetSelector({
       <TargetSelectionSummary
         summary={summary}
         onClear={
-          flow !== 'entire_platform'
+          flow !== 'entire_platform' && flow !== 'all_products'
             ? () => {
                 onTargetsChange({});
                 onScopesChange(
                   buildSmartTargetScopes(flow, inventoryType, false, {
                     includeCatalogServices: false,
+                    ecommerceProducts: adminSurface === 'ecommerce',
                   })
                 );
               }
@@ -585,10 +598,10 @@ function SmartPromotionTargetSelector({
         }
       />
 
-      {flow === 'entire_platform' ? (
+      {flow === 'entire_platform' || flow === 'all_products' ? (
         <p className="text-sm text-slate-600 rounded-xl border border-emerald-100 bg-emerald-50/50 px-4 py-3">
-          {adminSurface === 'ecommerce'
-            ? 'Applies to the entire retail marketplace. Continue to the next step.'
+          {flow === 'all_products' || adminSurface === 'ecommerce'
+            ? 'Applies to all products in the retail marketplace. Continue to the next step.'
             : 'Applies to the entire service marketplace. Continue to the next step.'}
         </p>
       ) : null}
@@ -829,17 +842,17 @@ function StaticPromotionTargetSelector({
   onTargetsChange: (targets: Partial<Record<TargetScopeId, string[]>>) => void;
 }) {
   const [activeScope, setActiveScope] = useState<TargetScopeId>(
-    enabledScopes.find((s) => s !== 'entire_platform') ?? 'services'
+    enabledScopes.find((s) => s !== 'entire_platform' && s !== 'all_products') ?? 'services'
   );
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
 
   const toggleScope = (scope: TargetScopeId) => {
-    // entire_platform is disabled — users must pick concrete scopes + items.
-    if (scope === 'entire_platform') {
+    // Broad apply-all scopes are disabled in static mode.
+    if (scope === 'entire_platform' || scope === 'all_products') {
       return;
     }
-    const next = selectedScopes.filter((s) => s !== 'entire_platform');
+    const next = selectedScopes.filter((s) => s !== 'entire_platform' && s !== 'all_products');
     if (next.includes(scope)) {
       onScopesChange(next.filter((s) => s !== scope));
     } else {

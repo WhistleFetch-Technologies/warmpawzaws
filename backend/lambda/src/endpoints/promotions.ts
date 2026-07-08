@@ -45,6 +45,13 @@ import {
   couponRowMatchesService,
 } from '../utils/coupon-targeting';
 import { validateAdminPromotionTargeting } from '../utils/promotion-targeting-validation';
+import {
+  appendDiscountDomainFilter,
+  inferLegacyDiscountDomain,
+  parseDiscountDomainInput,
+  rowMatchesDiscountDomain,
+  type CommercialDiscountDomain,
+} from '../utils/commercial-discount-domain';
 
 async function persistPromotionInsert(promotionData: Record<string, unknown>) {
   const payload = { ...promotionData };
@@ -56,6 +63,19 @@ async function persistPromotionInsert(promotionData: Record<string, unknown>) {
       if (msg.includes('column "code"') && payload.code) {
         console.warn('[Promotions] Code column does not exist, retrying without code');
         delete payload.code;
+        continue;
+      }
+      if (msg.includes('column "discount_domain"') && payload.discount_domain !== undefined) {
+        console.warn('[Promotions] discount_domain column missing, persisting in metadata');
+        const baseMeta =
+          payload.metadata && typeof payload.metadata === 'object'
+            ? { ...(payload.metadata as Record<string, unknown>) }
+            : {};
+        baseMeta.discount_domain = payload.discount_domain;
+        baseMeta.domain =
+          payload.discount_domain === 'ECOMMERCE' ? 'ecommerce' : 'service';
+        payload.metadata = baseMeta;
+        delete payload.discount_domain;
         continue;
       }
       if (msg.includes('column "applicable_to"') && payload.applicable_to !== undefined) {
@@ -102,6 +122,19 @@ async function persistPromotionUpdate(id: string, updateData: Record<string, unk
       return;
     } catch (updateError: unknown) {
       const msg = String((updateError as { message?: string })?.message || '');
+      if (msg.includes('column "discount_domain"') && payload.discount_domain !== undefined) {
+        console.warn('[Promotions] discount_domain column missing on update, persisting in metadata');
+        const baseMeta =
+          payload.metadata && typeof payload.metadata === 'object'
+            ? { ...(payload.metadata as Record<string, unknown>) }
+            : {};
+        baseMeta.discount_domain = payload.discount_domain;
+        baseMeta.domain =
+          payload.discount_domain === 'ECOMMERCE' ? 'ecommerce' : 'service';
+        payload.metadata = baseMeta;
+        delete payload.discount_domain;
+        continue;
+      }
       if (msg.includes('column "applicable_to"') && payload.applicable_to !== undefined) {
         console.warn('[Promotions] applicable_to column missing on update, persisting in metadata');
         const baseMeta =
@@ -259,6 +292,24 @@ export function registerPromotionEndpoints(app: Hono) {
       }
     }
     return shadowPlatformInlineEligibility(promotion, { ...params, now }, legacy);
+  };
+
+  /** Active-list service bucket filter (customer gallery / discovery). */
+  const promotionMatchesListService = (promotion: any, serviceBucket: string | undefined): boolean => {
+    if (!serviceBucket || serviceBucket === 'all') return true;
+    const category = String(serviceBucket).trim().toLowerCase();
+    const { eligible } = isPromotionEligible(promotion, { category });
+    return eligible;
+  };
+
+  /** Discovery auto-apply: coded/coupon offers are checkout-only. */
+  const isDiscoveryAutoApplyPromotionRow = (promotion: any): boolean => {
+    const type = String(promotion.promotion_type ?? '').trim().toLowerCase();
+    if (type === 'coupon' || type === 'platform_coupon') return false;
+    if (String(promotion.source ?? '').trim().toLowerCase() === 'platform_coupon') return false;
+    const code = String(promotion.code ?? '').trim();
+    if (code.length > 0) return false;
+    return true;
   };
 
   // ============================================================================
@@ -422,11 +473,21 @@ export function registerPromotionEndpoints(app: Hono) {
    */
   const loadActivePlatformCouponsAsPromotions = async (
     now: string,
-    serviceBucket?: string
+    serviceBucket?: string,
+    commercialDomain?: CommercialDiscountDomain | null
   ): Promise<Record<string, unknown>[]> => {
     const mapCouponRows = (rows: Record<string, unknown>[]) =>
       rows
-        .filter((row) => couponRowMatchesService(row, serviceBucket))
+        .filter((row) => {
+          if (commercialDomain && !rowMatchesDiscountDomain(row, commercialDomain)) {
+            return false;
+          }
+          // Shop galleries: never spill service-bucket coupons when no bucket is provided.
+          if (commercialDomain === 'ECOMMERCE') {
+            return true;
+          }
+          return couponRowMatchesService(row, serviceBucket);
+        })
         .map((c) => ({
           id: c.id,
           code: c.code,
@@ -448,16 +509,18 @@ export function registerPromotionEndpoints(app: Hono) {
           applicable_to: c.applicable_to,
           service_category: c.service_category,
           applicable_services: c.applicable_services,
+          discount_domain: c.discount_domain ?? inferLegacyDiscountDomain(c),
+          metadata: c.metadata,
         }));
 
-    const fullQuery = `
+    let fullQuery = `
         SELECT id, code, name, description, discount_type, discount_value,
                min_order_amount,
                max_discount_amount,
                start_date, end_date,
                max_uses,
                COALESCE(usage_count, uses_count, 0) AS usage_count,
-               applicable_to, service_category, applicable_services, metadata
+               applicable_to, service_category, applicable_services, metadata, discount_domain
          FROM coupons
          WHERE is_active = true
            AND (start_date IS NULL OR start_date::date <= $1::date)
@@ -479,18 +542,24 @@ export function registerPromotionEndpoints(app: Hono) {
 
     const minimalQuery = `
         SELECT id, code, name, discount_type, discount_value,
-               min_order_amount,
-               start_date, end_date,
-               max_uses,
-               COALESCE(uses_count, 0) AS usage_count
+               start_date, end_date
          FROM coupons
-         WHERE is_active = true
-           AND (start_date IS NULL OR start_date::date <= $1::date)
-           AND (end_date IS NULL OR end_date::date >= $1::date)
-           AND (max_uses IS NULL OR COALESCE(uses_count, 0) < max_uses)`;
+         WHERE is_active = true`;
+
+    const params: unknown[] = [now];
+    if (commercialDomain) {
+      const filtered = appendDiscountDomainFilter({
+        queryStr: fullQuery,
+        params,
+        paramIndex: 2,
+        domain: commercialDomain,
+        includeLegacyHeuristics: true,
+      });
+      fullQuery = filtered.queryStr;
+    }
 
     try {
-      const couponResult = await query(fullQuery, [now]);
+      const couponResult = await query(fullQuery, params);
       return mapCouponRows((couponResult.rows ?? []) as Record<string, unknown>[]);
     } catch (couponErr) {
       const msg = String((couponErr as Error)?.message ?? couponErr);
@@ -523,6 +592,15 @@ export function registerPromotionEndpoints(app: Hono) {
       const includeCodedPromotions =
         c.req.query('includeCodedPromotions') === 'true' || includeCoupons;
 
+      const isProductScope =
+        serviceType === 'product' || serviceType === 'shop' || serviceType === 'ecommerce';
+      const domainOverride = parseDiscountDomainInput(
+        c.req.query('discount_domain') || c.req.query('discountDomain') || c.req.query('domain')
+      );
+      const commercialDomain: CommercialDiscountDomain | null =
+        domainOverride ??
+        (isProductScope ? 'ECOMMERCE' : serviceType !== 'all' ? 'SERVICE' : null);
+
       const now = new Date().toISOString().split('T')[0];
 
       let promotionsQuery = `
@@ -538,25 +616,46 @@ export function registerPromotionEndpoints(app: Hono) {
       const params: any[] = [now];
       let paramIndex = 2;
 
-      if (serviceType !== 'all') {
-        const isProductScope = serviceType === 'product' || serviceType === 'shop';
+      if (commercialDomain) {
+        const filtered = appendDiscountDomainFilter({
+          queryStr: promotionsQuery,
+          params,
+          paramIndex,
+          domain: commercialDomain,
+          includeLegacyHeuristics: true,
+        });
+        promotionsQuery = filtered.queryStr;
+        paramIndex = filtered.paramIndex;
+      }
+
+      if (isProductScope) {
+        // Shop: product-scoped rows only — do not admit bare services/bookings NULL "all".
         promotionsQuery += ` AND (
-          applicable_services IS NULL
-          OR COALESCE(LOWER(applicable_to), 'all') IN ('all', 'products')
+          UPPER(COALESCE(discount_domain, '')) = 'ECOMMERCE'
+          OR LOWER(COALESCE(applicable_to, '')) = 'products'
           OR (
             metadata IS NOT NULL
             AND (
               metadata->'targetScopes' @> '"products"'::jsonb
+              OR metadata->'targetScopes' @> '"all_products"'::jsonb
               OR LOWER(COALESCE(metadata->>'applicableTo', '')) = 'products'
+              OR LOWER(COALESCE(metadata->>'discount_domain', '')) = 'ecommerce'
             )
           )
+          OR (
+            (discount_domain IS NULL OR TRIM(COALESCE(discount_domain, '')) = '')
+            AND LOWER(COALESCE(service_category, '')) IN ('shop','ecommerce','product','retail','marketplace','pet-shop','pet_shop','petshop')
+          )
+        )`;
+      } else if (serviceType !== 'all') {
+        promotionsQuery += ` AND (
+          applicable_services IS NULL
+          OR COALESCE(LOWER(applicable_to), 'all') IN ('all', 'bookings', 'services')
           OR EXISTS (
             SELECT 1 FROM jsonb_array_elements_text(
               CASE WHEN jsonb_typeof(applicable_services) = 'array' THEN applicable_services ELSE '[]'::jsonb END
             ) AS svc(val)
             WHERE svc.val = $${paramIndex}
-               OR (${isProductScope} AND svc.val IN ('product', 'shop', 'ecom', 'ecommerce'))
-               OR (${isProductScope} AND svc.val ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
           )
         )`;
         params.push(serviceType);
@@ -583,11 +682,14 @@ export function registerPromotionEndpoints(app: Hono) {
       const promotionRows = promotions.rows ?? [];
 
       const couponAsPromotions = includeCoupons
-        ? await loadActivePlatformCouponsAsPromotions(now, serviceBucket)
+        ? await loadActivePlatformCouponsAsPromotions(now, serviceBucket, commercialDomain)
         : [];
 
       const filterPromotionRowsForActive = (rows: Record<string, unknown>[]) => {
         let filtered = rows;
+        if (commercialDomain) {
+          filtered = filtered.filter((promo) => rowMatchesDiscountDomain(promo, commercialDomain));
+        }
         if (serviceBucket) {
           filtered = filtered.filter((promo) =>
             promotionMatchesListService(promo, serviceBucket)
@@ -623,70 +725,11 @@ export function registerPromotionEndpoints(app: Hono) {
       console.error('Error fetching promotions:', error);
       const msg = String(error?.message ?? error);
       if (
-        msg.includes('applicable_to') &&
+        (msg.includes('applicable_to') || msg.includes('discount_domain')) &&
         (msg.includes('does not exist') || msg.includes('column'))
       ) {
-        console.warn('[promotions/active] applicable_to missing — retry without column');
-        try {
-          const serviceType = c.req.query('serviceType') || 'all';
-          const vendorRoleId = c.req.query('vendorRoleId');
-          const now = new Date().toISOString().split('T')[0];
-          let fallbackQuery = `
-            SELECT * FROM promotions
-            WHERE is_active = true
-            AND published = true
-            AND start_date <= $1
-            AND (end_date IS NULL OR end_date >= $1)
-            AND (usage_limit IS NULL OR usage_count < usage_limit)
-            AND (max_uses IS NULL OR usage_count < max_uses)
-          `;
-          const fallbackParams: unknown[] = [now];
-          let fallbackIndex = 2;
-          if (serviceType !== 'all') {
-            const isProductScope = serviceType === 'product' || serviceType === 'shop';
-            fallbackQuery += ` AND (
-              applicable_services IS NULL
-              OR (
-                metadata IS NOT NULL
-                AND (
-                  metadata->'targetScopes' @> '"products"'::jsonb
-                  OR LOWER(COALESCE(metadata->>'applicableTo', '')) = 'products'
-                )
-              )
-              OR EXISTS (
-                SELECT 1 FROM jsonb_array_elements_text(
-                  CASE WHEN jsonb_typeof(applicable_services) = 'array' THEN applicable_services ELSE '[]'::jsonb END
-                ) AS svc(val)
-                WHERE svc.val = $${fallbackIndex}
-                   OR (${isProductScope} AND svc.val IN ('product', 'shop', 'ecom', 'ecommerce'))
-                   OR (${isProductScope} AND svc.val ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
-              )
-            )`;
-            fallbackParams.push(serviceType);
-            fallbackIndex++;
-          }
-          if (vendorRoleId) {
-            fallbackQuery += ` AND (
-              applicable_roles IS NULL
-              OR EXISTS (
-                SELECT 1 FROM jsonb_array_elements_text(
-                  CASE WHEN jsonb_typeof(applicable_roles) = 'array' THEN applicable_roles ELSE '[]'::jsonb END
-                ) AS role(val)
-                WHERE role.val = $${fallbackIndex}
-              )
-            )`;
-            fallbackParams.push(vendorRoleId);
-          }
-          fallbackQuery += ` ORDER BY priority DESC, created_at DESC`;
-          const fallbackRows = (await query(fallbackQuery, fallbackParams)).rows ?? [];
-          const includeCouponsFallback = c.req.query('includeCoupons') === 'true';
-          const filteredFallback = includeCouponsFallback
-            ? fallbackRows
-            : fallbackRows.filter(isDiscoveryAutoApplyPromotionRow);
-          return c.json({ success: true, promotions: filteredFallback, total: filteredFallback.length });
-        } catch (retryErr: unknown) {
-          console.error('[promotions/active] fallback query failed:', retryErr);
-        }
+        console.warn('[promotions/active] column missing — returning empty safe fallback');
+        return c.json({ success: true, promotions: [], total: 0 });
       }
       return c.json({ error: error.message }, 500);
     }
@@ -1609,6 +1652,9 @@ export function registerPromotionEndpoints(app: Hono) {
   app.get("/admin/promotions", async (c) => {
     try {
       const { type, status } = c.req.query();
+      const discountDomain = parseDiscountDomainInput(
+        c.req.query('discount_domain') || c.req.query('discountDomain') || c.req.query('domain')
+      );
       
       let queryStr = 'SELECT * FROM promotions WHERE 1=1';
       const params: any[] = [];
@@ -1628,10 +1674,28 @@ export function registerPromotionEndpoints(app: Hono) {
         queryStr += ` AND end_date < NOW()`;
       }
 
+      if (discountDomain) {
+        const filtered = appendDiscountDomainFilter({
+          queryStr,
+          params,
+          paramIndex,
+          domain: discountDomain,
+          includeLegacyHeuristics: true,
+        });
+        queryStr = filtered.queryStr;
+        params.splice(0, params.length, ...filtered.params);
+        paramIndex = filtered.paramIndex;
+      }
+
       queryStr += ` ORDER BY created_at DESC`;
 
       const result = await query(queryStr, params);
-      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      let rows = Array.isArray(result) ? result : (result as any).rows || [];
+      if (discountDomain) {
+        rows = rows.filter((r: Record<string, unknown>) =>
+          rowMatchesDiscountDomain(r, discountDomain)
+        );
+      }
 
       return c.json({
         success: true,
@@ -1644,6 +1708,13 @@ export function registerPromotionEndpoints(app: Hono) {
       if (error.message && error.message.includes('operator does not exist')) {
         console.warn('⚠️ Schema issue with promotions query - returning empty array');
         return c.json({ success: true, promotions: [], total: 0 });
+      }
+      if (
+        error.message &&
+        error.message.includes('discount_domain') &&
+        (error.message.includes('does not exist') || error.message.includes('column'))
+      ) {
+        console.warn('[admin/promotions] discount_domain missing — returning unfiltered (pre-migration)');
       }
       return c.json({ error: error.message }, 500);
     }
@@ -1828,6 +1899,7 @@ export function registerPromotionEndpoints(app: Hono) {
       applicable_to: targeting.applicable_to,
       service_category: targeting.service_category,
       applicable_services: targeting.applicable_services,
+      discount_domain: targeting.discount_domain,
       metadata: targeting.metadata,
     };
 
@@ -1848,6 +1920,9 @@ export function registerPromotionEndpoints(app: Hono) {
   app.get("/admin/coupons", async (c) => {
     try {
       const { type, status } = c.req.query();
+      const discountDomain = parseDiscountDomainInput(
+        c.req.query('discount_domain') || c.req.query('discountDomain') || c.req.query('domain')
+      );
       
       let queryStr = 'SELECT * FROM coupons WHERE 1=1';
       const params: any[] = [];
@@ -1867,10 +1942,28 @@ export function registerPromotionEndpoints(app: Hono) {
         queryStr += ` AND end_date < NOW()`;
       }
 
+      if (discountDomain) {
+        const filtered = appendDiscountDomainFilter({
+          queryStr,
+          params,
+          paramIndex,
+          domain: discountDomain,
+          includeLegacyHeuristics: true,
+        });
+        queryStr = filtered.queryStr;
+        params.splice(0, params.length, ...filtered.params);
+        paramIndex = filtered.paramIndex;
+      }
+
       queryStr += ` ORDER BY created_at DESC`;
 
       const result = await query(queryStr, params);
-      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      let rows = Array.isArray(result) ? result : (result as any).rows || [];
+      if (discountDomain) {
+        rows = rows.filter((r: Record<string, unknown>) =>
+          rowMatchesDiscountDomain(r, discountDomain)
+        );
+      }
 
       // Map database fields to frontend format
       const mappedCoupons = rows.map((coupon: any) => ({
@@ -1895,6 +1988,7 @@ export function registerPromotionEndpoints(app: Hono) {
     }
   });
 
+
   /**
    * POST /admin/coupons
    * Create coupon (admin)
@@ -1915,11 +2009,22 @@ export function registerPromotionEndpoints(app: Hono) {
         coupon = await insert('coupons', couponData);
       } catch (insertErr: unknown) {
         const msg = String((insertErr as Error)?.message ?? insertErr);
-        if (msg.includes('does not exist') || msg.includes('column')) {
+        if (msg.includes('column "discount_domain"') && couponData.discount_domain !== undefined) {
+          const fallback = { ...couponData };
+          const baseMeta =
+            fallback.metadata && typeof fallback.metadata === 'object'
+              ? { ...(fallback.metadata as Record<string, unknown>) }
+              : {};
+          baseMeta.discount_domain = fallback.discount_domain;
+          fallback.metadata = baseMeta;
+          delete fallback.discount_domain;
+          coupon = await insert('coupons', fallback);
+        } else if (msg.includes('does not exist') || msg.includes('column')) {
           const fallback = { ...couponData };
           delete fallback.applicable_to;
           delete fallback.service_category;
           delete fallback.applicable_services;
+          delete fallback.discount_domain;
           delete fallback.metadata;
           delete fallback.description;
           coupon = await insert('coupons', fallback);
@@ -1959,11 +2064,22 @@ export function registerPromotionEndpoints(app: Hono) {
         coupon = await insert('coupons', couponData);
       } catch (insertErr: unknown) {
         const msg = String((insertErr as Error)?.message ?? insertErr);
-        if (msg.includes('does not exist') || msg.includes('column')) {
+        if (msg.includes('column "discount_domain"') && couponData.discount_domain !== undefined) {
+          const fallback = { ...couponData };
+          const baseMeta =
+            fallback.metadata && typeof fallback.metadata === 'object'
+              ? { ...(fallback.metadata as Record<string, unknown>) }
+              : {};
+          baseMeta.discount_domain = fallback.discount_domain;
+          fallback.metadata = baseMeta;
+          delete fallback.discount_domain;
+          coupon = await insert('coupons', fallback);
+        } else if (msg.includes('does not exist') || msg.includes('column')) {
           const fallback = { ...couponData };
           delete fallback.applicable_to;
           delete fallback.service_category;
           delete fallback.applicable_services;
+          delete fallback.discount_domain;
           delete fallback.metadata;
           delete fallback.description;
           coupon = await insert('coupons', fallback);

@@ -23,9 +23,30 @@ import { PolicyHistorySection } from './sections/PolicyHistorySection';
 import { PolicySimulatorSection } from './sections/PolicySimulatorSection';
 import { AuditViewerSection } from './sections/AuditViewerSection';
 
-export function PolicyCenter({ embedded = false }: { embedded?: boolean }) {
+function seedDomainFromSurface(
+  surface?: 'marketing' | 'ecommerce',
+  initialDomain?: PolicyViewDomain
+): PolicyViewDomain {
+  if (initialDomain) return initialDomain;
+  if (surface === 'ecommerce') return 'ecommerce';
+  if (surface === 'marketing') return 'services';
+  return 'services';
+}
+
+export function PolicyCenter({
+  embedded = false,
+  surface,
+  initialDomain,
+}: {
+  embedded?: boolean;
+  surface?: 'marketing' | 'ecommerce';
+  initialDomain?: PolicyViewDomain;
+}) {
   const [activeTab, setActiveTab] = useState<PolicyCenterTabId>('stack');
-  const [viewDomain, setViewDomain] = useState<PolicyViewDomain>('services');
+  const [viewDomain, setViewDomain] = useState<PolicyViewDomain>(() =>
+    seedDomainFromSurface(surface, initialDomain)
+  );
+  const domainLocked = Boolean(surface);
   const {
     draft,
     capabilities,
@@ -101,7 +122,11 @@ export function PolicyCenter({ embedded = false }: { embedded?: boolean }) {
           </div>
         ) : null}
 
-        <PolicyCenterDomainView value={viewDomain} onChange={setViewDomain} />
+        <PolicyCenterDomainView
+          value={viewDomain}
+          onChange={setViewDomain}
+          locked={domainLocked}
+        />
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as PolicyCenterTabId)}>
           <TabsList className="mb-6 flex h-auto flex-wrap justify-start gap-1 bg-white p-1">

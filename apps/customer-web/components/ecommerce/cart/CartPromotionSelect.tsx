@@ -83,7 +83,7 @@ export function CartPromotionSelect({
       const merged: PromoOption[] = [];
 
       const platformRes = await apiClient.get<{ promotions?: PromoOption[] }>(
-        '/ecommerce/promotions/active?serviceType=product&includeCoupons=true'
+        '/ecommerce/promotions/active?serviceType=product&includeCoupons=true&discount_domain=ECOMMERCE'
       );
       for (const p of platformRes?.promotions ?? []) {
         merged.push({ ...p, source: 'platform' });

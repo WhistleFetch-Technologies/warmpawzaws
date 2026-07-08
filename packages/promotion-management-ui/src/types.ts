@@ -35,6 +35,7 @@ export type AudienceId = 'all' | 'new_users' | 'returning_users' | 'vip' | 'segm
 
 export type TargetScopeId =
   | 'entire_platform'
+  | 'all_products'
   | 'vendors'
   | 'categories'
   | 'services'
@@ -46,7 +47,11 @@ export type TargetScopeId =
 /** Service marketplace vs retail marketplace operator UX — shared engine, different flows. */
 export type SmartTargetSurface = 'marketing' | 'ecommerce' | 'vendor';
 
-export type SmartTargetFlowId = 'entire_platform' | 'categories' | 'vendor_inventory';
+export type SmartTargetFlowId =
+  | 'entire_platform'
+  | 'all_products'
+  | 'categories'
+  | 'vendor_inventory';
 
 export type VendorInventoryType = 'services' | 'packages' | 'meal_plans';
 

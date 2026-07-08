@@ -12,6 +12,7 @@ import {
   couponValidateOrderTypeForCheckout,
   type AppliedCheckoutCoupon,
 } from '@/lib/pricing/coupon-validation';
+import { couponOfferMatchesService } from '@/lib/pricing/coupon-targeting';
 import { fetchBookingDiscountQuote } from '@/lib/service-booking-pricing';
 import { couponRejectionMessageFromQuote } from '@/lib/pricing/coupon-policy-messages';
 import type { UnifiedResolverResponse } from '@/lib/pricing/unified-resolver-response';
@@ -30,6 +31,9 @@ interface Promotion {
   max_discount_amount?: number;
   end_date: string;
   promo_category?: 'product' | 'service' | 'platform';
+  applicable_services?: unknown;
+  service_category?: string;
+  applicable_to?: string;
 }
 
 export type AppliedCoupon = AppliedCheckoutCoupon;
@@ -113,13 +117,15 @@ export function CouponSection({
     try {
       const [vendorRes, platformRes] = await Promise.all([
         apiClient.get<any>(`/vendors/${vendorId}/active-promotions?type=${orderType === 'booking' ? 'service' : 'product'}`),
-        orderType === 'booking'
+        orderType === 'order'
           ? apiClient.get<any>(
-              `/promotions/active?includeCoupons=true&includeCodedPromotions=true${
+              '/promotions/active?includeCoupons=true&includeCodedPromotions=true&discount_domain=ECOMMERCE'
+            )
+          : apiClient.get<any>(
+              `/promotions/active?includeCoupons=true&includeCodedPromotions=true&discount_domain=SERVICE${
                 serviceCategory ? `&service=${encodeURIComponent(serviceCategory)}` : ''
               }`
-            )
-          : apiClient.get<any>('/promotions/active?includeCoupons=true&includeCodedPromotions=true'),
+            ),
       ]);
       const vendorPromotions = Array.isArray((vendorRes as any)?.promotions) ? (vendorRes as any).promotions : [];
       const platformRows = Array.isArray((platformRes as any)?.promotions) ? (platformRes as any).promotions : [];
@@ -134,6 +140,9 @@ export function CouponSection({
       });
       const coded = dedupedPromotions
         .filter((promo: Promotion) => Boolean(promo.code?.trim()))
+        .filter((promo: Promotion) =>
+          orderType === 'order' ? true : couponOfferMatchesService(promo, serviceCategory)
+        )
         .map((promo: Promotion) => ({
           ...promo,
           discount_value: toFiniteNumber(promo.discount_value),
@@ -180,8 +189,12 @@ export function CouponSection({
         })
       );
 
+      // Gallery: only show coupons that probe as eligible (hide greyed cross-category / inapplicable).
+      const eligiblePromotions = coded.filter(
+        (promo: Promotion) => eligibility[promo.id]?.eligible === true
+      );
       setPromoEligibility(eligibility);
-      setAvailablePromotions(coded);
+      setAvailablePromotions(eligiblePromotions);
     } catch (error) {
       console.error('Error fetching promotions:', error);
     } finally {
@@ -388,19 +401,11 @@ export function CouponSection({
                 {availablePromotions.map((promo) => {
                   const minValue = resolveMinOrderValue(promo);
                   const eligibility = promoEligibility[promo.id];
-                  const isEligible =
-                    eligibility?.eligible === true ||
-                    (eligibility == null && orderAmount >= minValue);
-                  const blockReason =
-                    eligibility?.reason ??
-                    (orderAmount < minValue ? `Min ₹${minValue}` : 'Not applicable');
                   
                   return (
                     <div 
                       key={promo.id}
-                      className={`border rounded-xl overflow-hidden ${
-                        isEligible ? 'border-slate-200' : 'border-slate-100 opacity-60'
-                      }`}
+                      className="border border-slate-200 rounded-xl overflow-hidden"
                     >
                       {/* Promo Header */}
                       <div className={`p-2 bg-gradient-to-r ${getPromoTypeGradient(promo.promotion_type)} text-white flex items-center justify-between`}>
@@ -444,18 +449,12 @@ export function CouponSection({
                           
                           <button
                             onClick={() => applyPromotion(promo)}
-                            disabled={!isEligible || loading}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                              isEligible
-                                ? 'bg-orange-500 text-white hover:bg-orange-600'
-                                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            }`}
+                            disabled={loading}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-orange-500 text-white hover:bg-orange-600"
                           >
-                            {isEligible
-                              ? eligibility?.discountAmount
-                                ? `Apply (−₹${formatAmount(eligibility.discountAmount)})`
-                                : 'Apply'
-                              : blockReason}
+                            {eligibility?.discountAmount
+                              ? `Apply (−₹${formatAmount(eligibility.discountAmount)})`
+                              : 'Apply'}
                           </button>
                         </div>
                       </div>

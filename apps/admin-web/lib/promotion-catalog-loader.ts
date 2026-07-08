@@ -288,9 +288,20 @@ export async function loadPromotionTargetCatalogWithErrors(
   };
 }
 
+function mapEcommerceCategoryOption(cat: Record<string, unknown>): TargetOption | null {
+  const id = String(cat.id ?? cat.slug ?? cat.category_id ?? cat.categoryId ?? '').trim();
+  if (!id) return null;
+  return {
+    id,
+    label: String(cat.name ?? cat.label ?? id),
+    subtitle: cat.description ? String(cat.description) : undefined,
+  };
+}
+
 /** Lightweight catalog for Smart Context — categories, partners, styles only (no bulk inventory). */
 export async function loadSmartTargetBaseCatalogWithErrors(
-  apiClient: ApiClientLike
+  apiClient: ApiClientLike,
+  surface?: 'marketing' | 'ecommerce'
 ): Promise<PromotionCatalogLoadResult> {
   const errors: string[] = [];
   const wrap = async <T>(label: string, fn: () => Promise<T>, fallback: T): Promise<T> => {
@@ -302,6 +313,42 @@ export async function loadSmartTargetBaseCatalogWithErrors(
       return fallback;
     }
   };
+
+  if (surface === 'ecommerce') {
+    const [categoriesRes, vendorsRes] = await Promise.all([
+      wrap('categories', () => apiClient.get<any>('/admin/ecommerce/categories'), {
+        categories: [],
+        data: { categories: [] },
+      }),
+      wrap('vendors', () => apiClient.get<any>('/admin/vendors?limit=200'), { vendors: [] }),
+    ]);
+
+    const categoryRows =
+      categoriesRes?.data?.categories ??
+      categoriesRes?.categories ??
+      (Array.isArray(categoriesRes) ? categoriesRes : []);
+
+    const categories = (Array.isArray(categoryRows) ? categoryRows : [])
+      .map(mapEcommerceCategoryOption)
+      .filter(Boolean) as TargetOption[];
+
+    const uniqueCategories = Array.from(
+      new Map(categories.map((c) => [c.id, c])).values()
+    ).sort((a, b) => a.label.localeCompare(b.label));
+
+    const vendorsRaw = vendorsRes.vendors ?? vendorsRes.data ?? [];
+    const vendors = (Array.isArray(vendorsRaw) ? vendorsRaw : [])
+      .map(mapVendorOption)
+      .filter(Boolean) as TargetOption[];
+
+    return {
+      catalog: {
+        categories: uniqueCategories,
+        vendors,
+      },
+      errors,
+    };
+  }
 
   const [categoriesRes, vendorsRes, stylesRes, bannerDestRes] = await Promise.all([
     wrap('categories', () => apiClient.get<any>('/admin/catalog/categories'), { categories: [] }),

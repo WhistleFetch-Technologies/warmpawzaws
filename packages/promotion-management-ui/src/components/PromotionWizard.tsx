@@ -23,12 +23,12 @@ import { PromotionPreview } from './PromotionPreview';
 const LAST_STEP = WIZARD_STEP_LABELS.length - 1;
 
 function enabledScopes(scope: PromotionManagementScope): TargetScopeId[] {
-  // Never offer entire_platform — blank/apply-all targeting is disallowed for promos & coupons.
-  const withoutEntire = (scopes: TargetScopeId[]) =>
-    scopes.filter((s) => s !== 'entire_platform');
+  // Never offer entire_platform / all_products as static tabs — Smart Context owns those flows.
+  const withoutBroad = (scopes: TargetScopeId[]) =>
+    scopes.filter((s) => s !== 'entire_platform' && s !== 'all_products');
 
   if (scope.enabledTargetScopes?.length) {
-    return withoutEntire(scope.enabledTargetScopes);
+    return withoutBroad(scope.enabledTargetScopes);
   }
   if (scope.mode === 'platform') {
     return [
@@ -329,7 +329,13 @@ export function PromotionWizard({
                   selectedTargets={form.selectedTargets}
                   onScopesChange={(targetScopes) =>
                     patch({
-                      targetScopes: targetScopes.filter((s) => s !== 'entire_platform'),
+                      // Smart Context owns broad scopes (entire_platform / all_products).
+                      // Static vendor mode still strips broad apply-all scopes.
+                      targetScopes: scope.smartTargetSurface
+                        ? targetScopes
+                        : targetScopes.filter(
+                            (s) => s !== 'entire_platform' && s !== 'all_products'
+                          ),
                     })
                   }
                   onTargetsChange={(selectedTargets) => patch({ selectedTargets })}

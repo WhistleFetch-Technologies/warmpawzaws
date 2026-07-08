@@ -4,6 +4,7 @@
  */
 
 import { isValidUUID } from '../types/entities';
+import { resolvePersistedDiscountDomain } from './commercial-discount-domain';
 import { promotionEndDateToIso, promotionStartDateToIso } from './promotion-date-bounds';
 
 export function normalizePromotionDiscountType(raw: unknown): 'percentage' | 'fixed' {
@@ -167,6 +168,19 @@ export function buildPromotionPersistenceFromAdminBody(
     body.applicable_products ?? (selectedTargets as any).products
   );
 
+  const discountDomain = resolvePersistedDiscountDomain(body, 'SERVICE');
+  // Ecommerce must never persist bare shared "all" — that collapses into Services lists.
+  let applicableTo = String(
+    body.applicable_to ?? (applicableServices.length === 0 ? 'all' : 'bookings')
+  )
+    .trim()
+    .toLowerCase();
+  if (discountDomain === 'ECOMMERCE') {
+    if (!applicableTo || applicableTo === 'all' || applicableTo === 'bookings' || applicableTo === 'services') {
+      applicableTo = 'products';
+    }
+  }
+
   const usageLimit =
     body.usage_limit != null
       ? Number(body.usage_limit)
@@ -210,7 +224,8 @@ export function buildPromotionPersistenceFromAdminBody(
       applicableServices.length > 0 ? JSON.stringify(applicableServices) : null,
     service_category: serviceCategory && serviceCategory !== 'all' ? serviceCategory : null,
     service_style: serviceStyle && serviceStyle !== 'all' ? serviceStyle : null,
-    applicable_to: body.applicable_to ?? (applicableServices.length === 0 ? 'all' : 'bookings'),
+    applicable_to: applicableTo,
+    discount_domain: discountDomain,
     max_uses: usageLimit,
     max_uses_per_user: usageLimitPerUser,
     usage_limit: usageLimit,
@@ -222,6 +237,9 @@ export function buildPromotionPersistenceFromAdminBody(
       applicableProducts,
       targetScopes,
       selectedTargets,
+      discount_domain: discountDomain,
+      domain: discountDomain === 'ECOMMERCE' ? 'ecommerce' : 'service',
+      surface: discountDomain === 'ECOMMERCE' ? 'ecommerce' : 'marketing',
       promotionTarget: {
         ...(((baseMetadata as any)?.promotionTarget || {}) as Record<string, unknown>),
         ...(((incomingMetadata as any)?.promotionTarget || {}) as Record<string, unknown>),
@@ -229,6 +247,7 @@ export function buildPromotionPersistenceFromAdminBody(
         selectedTargets,
         serviceCategory: serviceCategory || 'all',
         serviceStyle: serviceStyle || 'all',
+        discountDomain,
       },
       serviceCategory: serviceCategory || 'all',
       serviceStyle: serviceStyle || 'all',
@@ -279,6 +298,12 @@ export function mergeAdminPromotionUpdateBody(
     metadata: body.metadata ?? existingMeta,
     priority: body.priority ?? existing.priority,
     applicable_to: body.applicable_to ?? existing.applicable_to,
+    discount_domain:
+      body.discount_domain ??
+      body.discountDomain ??
+      body.domain ??
+      existing.discount_domain ??
+      existing.discountDomain,
   };
 
   if (body.code !== undefined) mergedInput.code = body.code;

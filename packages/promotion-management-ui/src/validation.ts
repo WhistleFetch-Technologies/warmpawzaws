@@ -35,6 +35,16 @@ export function validatePromotionTargeting(
   const scopes = form.targetScopes ?? [];
   const selected = form.selectedTargets ?? {};
 
+  const isEcommerceAllProducts =
+    smartSurface === 'ecommerce' &&
+    (scopes.includes('all_products') ||
+      (scopes.length === 1 && scopes.includes('entire_platform')));
+
+  // Ecommerce "All Products" is an explicit shop-wide choice (maps to applicable_to products).
+  if (isEcommerceAllProducts) {
+    return issues;
+  }
+
   const onlyEntirePlatform =
     scopes.length === 0 ||
     (scopes.length === 1 && scopes.includes('entire_platform'));
@@ -87,7 +97,7 @@ export function validatePromotionTargeting(
   }
 
   for (const scope of scopes) {
-    if (scope === 'entire_platform') continue;
+    if (scope === 'entire_platform' || scope === 'all_products') continue;
     // Marketing categories: services are validated above (must pick catalogue services).
     if (
       audience === 'admin' &&
@@ -107,6 +117,7 @@ export function validatePromotionTargeting(
         categories: 'category',
         styles: 'service style',
         vendors: 'vendor',
+        all_products: 'product',
       };
       issues.push({
         field: 'target',

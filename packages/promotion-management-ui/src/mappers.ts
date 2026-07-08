@@ -1,6 +1,12 @@
 import type { PromotionWizardForm } from './types';
 import { buildApplicableServicesFromForm, normalizeStyleToken } from './targeting';
 
+export type DiscountDomainOption = 'SERVICE' | 'ECOMMERCE';
+
+export type WizardAdminPayloadOptions = {
+  discountDomain?: DiscountDomainOption;
+};
+
 function autoCode(form: PromotionWizardForm): string {
   if (form.code?.trim()) return form.code.trim().toUpperCase();
   const prefix = form.name.replace(/\s+/g, '').slice(0, 6).toUpperCase() || 'PROMO';
@@ -21,17 +27,29 @@ function mapPromotionTypeToLegacy(type: string): string {
   return map[type] ?? type;
 }
 
-function applicableTo(form: PromotionWizardForm): string {
-  if (form.targetScopes.includes('entire_platform')) return 'all';
+function applicableTo(
+  form: PromotionWizardForm,
+  discountDomain: DiscountDomainOption = 'SERVICE'
+): string {
+  if (form.targetScopes.includes('all_products')) return 'products';
+  if (form.targetScopes.includes('entire_platform')) {
+    return discountDomain === 'ECOMMERCE' ? 'products' : 'all';
+  }
   if (form.targetScopes.includes('products')) return 'products';
   if (form.targetScopes.includes('services')) return 'services';
   if (form.targetScopes.includes('packages')) return 'services';
   if (form.targetScopes.includes('meal_plans')) return 'services';
+  // Ecommerce category / seller scopes still map to products domain
+  if (discountDomain === 'ECOMMERCE') return 'products';
   return 'bookings';
 }
 
 /** Admin `/admin/promotions` payload — canonical create/update shape for Sprint A. */
-export function wizardToAdminPromotionPayload(form: PromotionWizardForm) {
+export function wizardToAdminPromotionPayload(
+  form: PromotionWizardForm,
+  options?: WizardAdminPayloadOptions
+) {
+  const discountDomain = options?.discountDomain ?? 'SERVICE';
   const isCoupon = form.createKind === 'coupon';
   const applicableServices = buildApplicableServicesFromForm(form);
   const primaryCategory = form.selectedTargets.categories?.[0];
@@ -49,7 +67,7 @@ export function wizardToAdminPromotionPayload(form: PromotionWizardForm) {
     valid_until: form.endDate,
     usage_limit: form.usageLimit,
     usage_limit_per_user: form.usageLimitPerUser,
-    applicable_to: applicableTo(form),
+    applicable_to: applicableTo(form, discountDomain),
     applicable_service_ids: form.selectedTargets.services ?? [],
     applicable_category_ids: form.selectedTargets.categories ?? [],
     applicable_products: form.selectedTargets.products ?? [],
@@ -71,11 +89,16 @@ export function wizardToAdminPromotionPayload(form: PromotionWizardForm) {
     applicable_services: applicableServices,
     is_spotlight: form.audience === 'vip',
     priority: 0,
+    discount_domain: discountDomain,
   };
 }
 
 /** Admin `/admin/coupons/create` payload — includes optional service targeting. */
-export function wizardToAdminCouponPayload(form: PromotionWizardForm) {
+export function wizardToAdminCouponPayload(
+  form: PromotionWizardForm,
+  options?: WizardAdminPayloadOptions
+) {
+  const discountDomain = options?.discountDomain ?? 'SERVICE';
   const applicableServices = buildApplicableServicesFromForm(form);
   const primaryCategory = form.selectedTargets.categories?.[0];
 
@@ -91,11 +114,12 @@ export function wizardToAdminCouponPayload(form: PromotionWizardForm) {
     validUntil: form.endDate,
     usageLimit: form.usageLimit ?? 0,
     isActive: form.uiStatus !== 'draft' && form.uiStatus !== 'paused',
-    applicable_to: applicableTo(form),
+    applicable_to: applicableTo(form, discountDomain),
     applicable_services: applicableServices,
     service_category: primaryCategory && primaryCategory !== 'all' ? primaryCategory : undefined,
     target_scopes: form.targetScopes,
     selected_targets: form.selectedTargets,
+    discount_domain: discountDomain,
   };
 }
 

@@ -8,6 +8,7 @@ import { createAdminSmartTargetAdapter } from '@/lib/smart-target-catalog-adapte
 import {
   type AdminPromoSurface,
   catalogForSurface,
+  discountDomainForSurface,
   filterCouponRows,
   filterPromotionRows,
   scopeForSurface,
@@ -44,15 +45,17 @@ export function AdminPromotionHub({
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const scope = useMemo(() => scopeForSurface(surface), [surface]);
+  const discountDomain = useMemo(() => discountDomainForSurface(surface), [surface]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
+      const domainQuery = `discount_domain=${discountDomain}`;
       const [catalogResult, promotionsRes, couponsRes] = await Promise.all([
-        loadSmartTargetBaseCatalogWithErrors(apiClient),
-        apiClient.get<{ promotions?: unknown[] }>('/admin/promotions'),
-        apiClient.get<{ coupons?: unknown[] }>('/admin/coupons?limit=200'),
+        loadSmartTargetBaseCatalogWithErrors(apiClient, surface),
+        apiClient.get<{ promotions?: unknown[] }>(`/admin/promotions?${domainQuery}`),
+        apiClient.get<{ coupons?: unknown[] }>(`/admin/coupons?limit=200&${domainQuery}`),
       ]);
 
       setCatalog(catalogForSurface(catalogResult.catalog, surface));
@@ -67,6 +70,7 @@ export function AdminPromotionHub({
         normalizeCouponRow(r as Record<string, unknown>)
       );
 
+      // Safety net — prefer API `discount_domain` filter; client filter covers legacy rows.
       setPromotions(filterPromotionRows(normalizedPromos, surface));
       setCoupons(filterCouponRows(normalizedCoupons, surface));
     } catch (e) {
@@ -77,7 +81,7 @@ export function AdminPromotionHub({
     } finally {
       setLoading(false);
     }
-  }, [surface]);
+  }, [surface, discountDomain]);
 
   useEffect(() => {
     void load();
@@ -93,8 +97,9 @@ export function AdminPromotionHub({
 
   const handleSave = async (form: PromotionWizardForm, _publish: boolean, editingId?: string) => {
     try {
+      const mapperOptions = { discountDomain };
       if (form.createKind === 'coupon') {
-        const payload = wizardToAdminCouponPayload(form);
+        const payload = wizardToAdminCouponPayload(form, mapperOptions);
         if (editingId) {
           await apiClient.put(`/admin/coupons/${editingId}`, payload);
           toast.success('Coupon updated');
@@ -104,7 +109,7 @@ export function AdminPromotionHub({
         }
         return;
       }
-      const payload = wizardToAdminPromotionPayload(form);
+      const payload = wizardToAdminPromotionPayload(form, mapperOptions);
       if (editingId) {
         await apiClient.put(`/admin/promotions/${editingId}`, payload);
         toast.success('Promotion updated');

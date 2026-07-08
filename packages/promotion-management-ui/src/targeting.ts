@@ -29,6 +29,7 @@ export function parseJsonArray(raw: unknown): string[] {
 /** Build `applicable_services` tokens persisted on platform promotions. */
 export function buildApplicableServicesFromForm(form: PromotionWizardForm): string[] {
   if (form.targetScopes.includes('entire_platform')) return [];
+  if (form.targetScopes.includes('all_products')) return [];
 
   const tokens: string[] = [];
 
@@ -218,6 +219,7 @@ export function summarizeTargetsFromRow(
   const parts: string[] = [];
   const scopeLabels: Record<TargetScopeId, string> = {
     entire_platform: 'Entire marketplace',
+    all_products: 'All products',
     categories: 'categories',
     services: 'services',
     packages: 'packages',

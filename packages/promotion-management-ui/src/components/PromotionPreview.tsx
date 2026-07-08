@@ -87,9 +87,11 @@ export function PromotionPreview({
         <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm space-y-2">
           <p className="font-semibold text-slate-900">Applicable to</p>
           <p className="text-slate-600">
-            {form.targetScopes.includes('entire_platform')
-              ? 'Entire platform'
-              : form.targetScopes.join(', ').replace(/_/g, ' ')}
+            {form.targetScopes.includes('all_products')
+              ? 'All Products'
+              : form.targetScopes.includes('entire_platform')
+                ? 'Entire platform'
+                : form.targetScopes.join(', ').replace(/_/g, ' ')}
           </p>
           <p className="font-semibold text-slate-900 pt-2">Schedule</p>
           <p className="text-slate-600">

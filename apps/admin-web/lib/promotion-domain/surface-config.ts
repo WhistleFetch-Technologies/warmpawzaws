@@ -1,6 +1,6 @@
 /**
  * Admin UI domain separation — Marketing (services) vs E-Commerce (marketplace).
- * Client-side filtering only; same APIs and Discount Engine V2.
+ * Prefer persisted `discount_domain`; heuristics are legacy fallback only.
  */
 import type { PromotionManagementScope, PromotionTargetCatalog } from '@warmpawz/promotion-management-ui';
 import type { AnalyticsDomainFilter } from '@/lib/marketing-analytics/types';
@@ -8,8 +8,24 @@ import type { CommercialCampaignRecord } from '@/lib/commercial-campaign/types';
 
 export type AdminPromoSurface = 'marketing' | 'ecommerce';
 
+export type DiscountDomain = 'SERVICE' | 'ECOMMERCE';
+
 const ECOMMERCE_CATEGORY_HINTS = new Set(['shop', 'ecommerce', 'product', 'retail', 'marketplace']);
 
+export function discountDomainForSurface(surface: AdminPromoSurface): DiscountDomain {
+  return surface === 'ecommerce' ? 'ECOMMERCE' : 'SERVICE';
+}
+
+function readDiscountDomain(row: Record<string, unknown>): DiscountDomain | null {
+  const raw = row.discount_domain ?? row.discountDomain ?? row.domain;
+  if (raw == null || raw === '') return null;
+  const domain = String(raw).toUpperCase();
+  if (domain === 'ECOMMERCE' || domain === 'PRODUCT') return 'ECOMMERCE';
+  if (domain === 'SERVICE' || domain === 'SERVICES' || domain === 'BOOKING') return 'SERVICE';
+  return null;
+}
+
+/** Legacy heuristics — used only when `discount_domain` is absent. */
 export function isEcommercePromotionRow(row: Record<string, unknown>): boolean {
   const products = row.applicable_products ?? row.applicableProducts;
   if (Array.isArray(products) && products.length > 0) return true;
@@ -44,24 +60,30 @@ export function isMarketingCouponRow(row: Record<string, unknown>): boolean {
   return true;
 }
 
+function rowMatchesSurface(
+  row: Record<string, unknown>,
+  surface: AdminPromoSurface,
+  legacyIsEcommerce: (r: Record<string, unknown>) => boolean
+): boolean {
+  const expected = discountDomainForSurface(surface);
+  const persisted = readDiscountDomain(row);
+  if (persisted) return persisted === expected;
+  const inferredEcommerce = legacyIsEcommerce(row);
+  return surface === 'ecommerce' ? inferredEcommerce : !inferredEcommerce;
+}
+
 export function filterPromotionRows<T extends { raw?: Record<string, unknown> }>(
   rows: T[],
   surface: AdminPromoSurface
 ): T[] {
-  return rows.filter((r) => {
-    const raw = r.raw ?? {};
-    return surface === 'ecommerce' ? isEcommercePromotionRow(raw) : isMarketingPromotionRow(raw);
-  });
+  return rows.filter((r) => rowMatchesSurface(r.raw ?? {}, surface, isEcommercePromotionRow));
 }
 
 export function filterCouponRows<T extends { raw?: Record<string, unknown> }>(
   rows: T[],
   surface: AdminPromoSurface
 ): T[] {
-  return rows.filter((r) => {
-    const raw = r.raw ?? {};
-    return surface === 'ecommerce' ? isEcommerceCouponRow(raw) : isMarketingCouponRow(raw);
-  });
+  return rows.filter((r) => rowMatchesSurface(r.raw ?? {}, surface, isEcommerceCouponRow));
 }
 
 const ECOMMERCE_CAMPAIGN_TYPES = new Set([
@@ -78,10 +100,14 @@ export function filterCampaigns(
 ): CommercialCampaignRecord[] {
   return campaigns.filter((c) => {
     const metaDomain = String(c.metadata?.domain ?? c.metadata?.surface ?? '').toLowerCase();
+    if (metaDomain === 'ecommerce' || metaDomain === 'product') {
+      return surface === 'ecommerce';
+    }
+    if (metaDomain === 'service' || metaDomain === 'marketing' || metaDomain === 'services') {
+      return surface === 'marketing';
+    }
     const isEcommerce =
       ECOMMERCE_CAMPAIGN_TYPES.has(c.campaignType) ||
-      metaDomain === 'ecommerce' ||
-      metaDomain === 'product' ||
       Boolean(c.vendorId && c.metadata?.marketplace);
     return surface === 'ecommerce' ? isEcommerce : !isEcommerce;
   });
