@@ -1,4 +1,5 @@
 import { flatMapFromVaccinationEntries } from './vaccine-label-mapping';
+import { getBloodTypeLabel, normalizeBloodTypeKey } from './pet-blood-types';
 import {
   getEarliestUpcomingDue,
   normalizePetSpecies,
@@ -397,4 +398,12 @@ export function genderSymbol(gender?: string): { symbol: string; colorClass: str
   if (g === 'male' || g === 'm') return { symbol: '♂', colorClass: 'text-blue-500' };
   if (g === 'female' || g === 'f') return { symbol: '♀', colorClass: 'text-pink-500' };
   return null;
+}
+
+export function formatBloodType(key?: string, species?: 'Dog' | 'Cat'): string {
+  if (!key) return 'Not recorded';
+  const normalized = normalizeBloodTypeKey(key, species);
+  if (!normalized) return 'Not recorded';
+  if (normalized.endsWith(':unknown')) return 'Not tested / Unknown';
+  return getBloodTypeLabel(normalized);
 }

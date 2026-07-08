@@ -3,6 +3,7 @@ import {
   extractVaccinationsForClient,
   flatMapFromVaccinationEntries,
   mapVaccineLabelToSlot,
+  mergeHealthRecordsForStorage,
 } from '../pet-health-normalize';
 
 describe('mapVaccineLabelToSlot', () => {
@@ -48,5 +49,47 @@ describe('extractHealthRecordsForClient', () => {
       extractHealthRecordsForClient({ allergies: ['chicken', 'pollen'] }).allergies
     ).toBe('chicken, pollen');
     expect(extractHealthRecordsForClient({ allergies: ['None'] }).allergies).toBe('');
+  });
+
+  it('includes valid bloodType and omits invalid keys', () => {
+    expect(
+      extractHealthRecordsForClient({ bloodType: 'dog:dea4' }, 'Dog').bloodType
+    ).toBe('dog:dea4');
+    expect(
+      extractHealthRecordsForClient({ bloodType: 'dog:dea4' }, 'Cat').bloodType
+    ).toBeUndefined();
+    expect(
+      extractHealthRecordsForClient({ bloodType: 'legacy' }, 'Dog').bloodType
+    ).toBeUndefined();
+  });
+});
+
+describe('mergeHealthRecordsForStorage', () => {
+  it('merges bloodType from incoming health records', () => {
+    const merged = mergeHealthRecordsForStorage(
+      { bloodType: 'dog:dea3' },
+      { bloodType: 'dog:dea1_negative' },
+      'Dog'
+    );
+    expect(merged.bloodType).toBe('dog:dea1_negative');
+  });
+
+  it('clears bloodType when incoming value is empty', () => {
+    const merged = mergeHealthRecordsForStorage(
+      { bloodType: 'dog:dea3' },
+      { bloodType: '' },
+      'Dog'
+    );
+    expect(merged.bloodType).toBeUndefined();
+  });
+
+  it('strips invalid legacy bloodType from base when not overwritten', () => {
+    const merged = mergeHealthRecordsForStorage(
+      { bloodType: 'legacy-value' },
+      { allergies: 'pollen' },
+      'Dog'
+    );
+    expect(merged.bloodType).toBeUndefined();
+    expect(merged.allergies).toBe('pollen');
   });
 });

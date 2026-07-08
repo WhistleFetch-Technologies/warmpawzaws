@@ -35,6 +35,10 @@ import {
   extractHealthRecordsForClient,
   extractVaccinationsForClient,
 } from '../../../utils/pet-health-normalize';
+import {
+  normalizeBloodTypeForStorage,
+  resolveBloodTypeFromPayload,
+} from '../../../lib/pet-blood-types';
 import { findCustomerByPhone } from '../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import {
@@ -842,6 +846,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         const pet = rows[0];
         const rawPhoto = pet.profile_photo_url;
         const photoUrl = (await presignS3GetUrlIfApplicable(rawPhoto)) || rawPhoto;
+        const bloodType = normalizeBloodTypeForStorage(pet.medical_history?.bloodType, pet.species);
         return c.json({
           success: true,
           pet: {
@@ -859,7 +864,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
             photo: photoUrl,
             profile_photo_url: photoUrl,
             microchipId: pet.microchip_id,
-            healthRecords: extractHealthRecordsForClient(pet.medical_history),
+            ...(bloodType ? { bloodType } : {}),
+            healthRecords: extractHealthRecordsForClient(pet.medical_history, pet.species),
             vaccinations: extractVaccinationsForClient(pet),
             createdAt: pet.created_at,
           },
@@ -881,6 +887,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         pets.map(async (pet: any) => {
           const rawPhoto = pet.profile_photo_url;
           const photoUrl = (await presignS3GetUrlIfApplicable(rawPhoto)) || rawPhoto;
+          const bloodType = normalizeBloodTypeForStorage(pet.medical_history?.bloodType, pet.species);
           return {
             id: pet.id,
             name: pet.name,
@@ -894,7 +901,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
             image: photoUrl,
             profile_photo_url: photoUrl,
             microchipId: pet.microchip_id,
-            healthRecords: extractHealthRecordsForClient(pet.medical_history),
+            ...(bloodType ? { bloodType } : {}),
+            healthRecords: extractHealthRecordsForClient(pet.medical_history, pet.species),
             vaccinations: extractVaccinationsForClient(pet),
             createdAt: pet.created_at,
           };
@@ -984,6 +992,14 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           
           // Build pet data matching the pets table schema
           // ✅ ENHANCED: Now supports vaccination records, allergies, chronic conditions, behavior notes
+          const bloodTypeResult = resolveBloodTypeFromPayload(pet, petSpecies);
+          if (!bloodTypeResult.ok) {
+            return c.json({ error: bloodTypeResult.error }, 400);
+          }
+
+          const healthRecords = { ...(pet.healthRecords || {}) };
+          delete healthRecords.bloodType;
+
           const petData: Record<string, any> = {
             customer_id: customer.id,
             name: pet.name,
@@ -996,7 +1012,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
             profile_photo_url: pet.photo || null,
             // Store health records and vaccinations in medical_history JSONB
             medical_history: {
-              ...pet.healthRecords,
+              ...healthRecords,
               dob: pet.dob || null,
               microchipId: pet.microchipId || null,
               allergies: pet.allergies || [],
@@ -1012,6 +1028,9 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
               size: pet.size || null,
             },
           };
+          if (bloodTypeResult.value) {
+            petData.medical_history.bloodType = bloodTypeResult.value;
+          }
 
           if (existingPets.length > 0) {
             // Update existing pet
