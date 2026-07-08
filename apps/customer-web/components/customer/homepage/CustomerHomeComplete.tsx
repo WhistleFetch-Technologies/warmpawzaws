@@ -30,6 +30,7 @@ import { ForYouSection } from '../ForYouSection';
 import { ServicesByProblem } from '../ServicesByProblem';
 import { TrendingProblems, type TrendingProblem } from '../TrendingProblems';
 import { CustomerNotificationModal } from '../CustomerNotificationModal';
+import { EcommerceLaunchPopup } from '../EcommerceLaunchPopup';
 import { getServiceStyleIcon, getPetIcon } from '@/lib/icon-utils';
 import { Dog, Cat, UtensilsCrossed, Shirt, Watch, Bed, Store } from 'lucide-react';
 import { useActiveGpsTracking, ActiveTrackingSession } from '@/hooks/useActiveGpsTracking';
@@ -3708,6 +3709,11 @@ export function CustomerHomeComplete({
             onViewBooking(bookingId);
           }
         }}
+      />
+
+      <EcommerceLaunchPopup
+        enabled={customerCommerceEnabled}
+        onExploreShop={() => handleNavigation('shop')}
       />
     </div>
   );
