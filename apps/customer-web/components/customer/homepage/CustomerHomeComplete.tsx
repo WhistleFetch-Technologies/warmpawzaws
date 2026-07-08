@@ -54,6 +54,8 @@ import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { mapCatalogSlugToLaunchServiceId } from '@warmpawz/service-launch-mappings';
 import { buildCustomerLaunchTiles } from '@/lib/customer-launch-tiles';
 import { traceHomeSearchUpstream } from '@/lib/search-trace';
+import { mapApiServiceToRow } from '@/lib/clinic-service-row-mapper';
+import { launchSearchServiceBooking } from '@/lib/search-booking-launch';
 import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
@@ -709,6 +711,39 @@ export function CustomerHomeComplete({
       }
       if (result.type === 'service') {
         const sid = String(result.id || '').trim();
+        const d = result.data || {};
+        const vendorId = String(d.vendorId || '').trim();
+        const category = String(result.category || d.serviceType || 'vet');
+        if (vendorId && sid) {
+          const service = mapApiServiceToRow(
+            {
+              id: sid,
+              serviceId: sid,
+              service_name: d.name,
+              name: d.name,
+              price: d.price,
+              vendorId,
+            },
+            vendorId,
+            0
+          );
+          const cat = category.toLowerCase();
+          const isVetLike =
+            cat.includes('vet') || cat.includes('veterinar') || cat.includes('clinic') || !cat;
+          if (isVetLike) {
+            launchSearchServiceBooking({
+              vendorId,
+              vendorName: String(d.businessName || d.name || 'Provider'),
+              service,
+              category,
+              router,
+              returnSearchUrl: '/',
+            });
+            return;
+          }
+          router.push(`/search?vendorId=${encodeURIComponent(vendorId)}`);
+          return;
+        }
         if (sid) {
           router.push(`/booking/${encodeURIComponent(sid)}`);
         }
