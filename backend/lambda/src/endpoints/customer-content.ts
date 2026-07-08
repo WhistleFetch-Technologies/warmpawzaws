@@ -368,7 +368,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
    * GET /customer/featured-vendors
    * Spotlight/featured vendor cards for service dashboards only (not global home).
    * Query: `service` — required for a non-empty list (e.g. grooming, vet, boarding, training, sitting, veterinary).
-   *        Mirrors PromotionBanner `service` and promotion-navigation slugs. Omit or unknown → { vendors: [] }.
+   *        Same service context as service-dashboard spotlights / promotion-navigation slugs. Omit or unknown → { vendors: [] }.
    * Reads from spotlight_offers (admin-configured); does not use payment policy.
    */
   app.get("/customer/featured-vendors", async (c) => {

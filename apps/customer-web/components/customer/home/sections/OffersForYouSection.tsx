@@ -1,13 +1,10 @@
 'use client';
 
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useMemo } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/api-client';
 import { clickHomeBannerCta } from '@/lib/banner-cta-navigation';
 import { PresignableImage } from '@/components/shared/PresignableImage';
-import { resolvePromotionDestination } from '@/lib/promotion-navigation';
-import { parsePromotionApplicableServices } from '@/lib/promotion-banner-filter';
 import {
   DEFAULT_FEATURED_OFFER,
   DEFAULT_FEATURED_OFFER_IMAGE_URL,
@@ -18,17 +15,6 @@ import {
 } from '@/lib/customer-banner-surface';
 import type { FeaturedLowerBanner } from './FeaturedOfferSection';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
-
-interface SpotlightPromotion {
-  id: string;
-  name: string;
-  description?: string;
-  imageUrl?: string;
-  service_category?: string;
-  service_style?: string;
-  applicable_services?: string[] | unknown;
-  metadata?: Record<string, unknown>;
-}
 
 interface ResolvedOffer {
   id?: string | number;
@@ -80,7 +66,8 @@ function CmsBannerImage({ src, alt }: { src: string; alt: string }) {
     <PresignableImage
       src={src}
       alt={alt}
-      className="absolute inset-0 h-full w-full object-cover object-center"
+      fill
+      className="object-cover object-center"
     />
   );
 }
@@ -97,85 +84,8 @@ function OffersForYouSectionComponent({
   className = '',
 }: OffersForYouSectionProps) {
   const router = useRouter();
-  const [spotlight, setSpotlight] = useState<SpotlightPromotion | null>(null);
-  const [spotlightLoaded, setSpotlightLoaded] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadSpotlight = async () => {
-      try {
-        const params = new URLSearchParams({
-          service: 'all',
-          published: 'true',
-          spotlight: 'true',
-        });
-        const response = await apiClient.get<{ promotions?: SpotlightPromotion[]; success?: boolean }>(
-          `/promotions/list?${params.toString()}`
-        );
-        if (cancelled) return;
-        const promos = response?.promotions;
-        if (Array.isArray(promos) && promos.length > 0) {
-          setSpotlight(promos[0]);
-        }
-      } catch {
-        /* graceful fallback */
-      } finally {
-        if (!cancelled) setSpotlightLoaded(true);
-      }
-    };
-
-    if (lowerBanners.length === 0) {
-      void loadSpotlight();
-    } else {
-      setSpotlightLoaded(true);
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [lowerBanners.length]);
-
-  const navigateSpotlight = useCallback(
-    (promo: SpotlightPromotion) => {
-      apiClient.post(`/promotions/${promo.id}/click`, { source: 'home_featured_offer' }).catch(() => {});
-      const parsedApplicable = parsePromotionApplicableServices(promo.applicable_services);
-      const styleToken = parsedApplicable.find((x) => x.startsWith('style:'));
-      const categoryToken = parsedApplicable.find((x) => !x.startsWith('style:') && x.trim() !== '');
-      const resolvedStyle = String(
-        promo.service_style ??
-          (styleToken ? styleToken.replace(/^style:/, '') : '') ??
-          (promo.metadata as { serviceStyle?: string })?.serviceStyle ??
-          ''
-      )
-        .trim()
-        .toLowerCase();
-      const resolvedCategory = String(
-        promo.service_category ??
-          categoryToken ??
-          (promo.metadata as { serviceCategory?: string })?.serviceCategory ??
-          ''
-      )
-        .trim()
-        .toLowerCase();
-      let screen = resolvePromotionDestination(
-        {
-          ...(promo as Record<string, unknown>),
-          service_category: resolvedCategory,
-          service_style: resolvedStyle,
-        },
-        'all'
-      );
-      if (screen === 'home') screen = 'services';
-      onNavigate(screen, {
-        promotionId: promo.id,
-        ...(resolvedStyle ? { serviceStyle: resolvedStyle } : {}),
-      });
-    },
-    [onNavigate]
-  );
-
-  const offer: ResolvedOffer | null = useMemo(() => {
+  const offer: ResolvedOffer = useMemo(() => {
     const banner = lowerBanners[0];
     if (banner) {
       return {
@@ -197,24 +107,6 @@ function OffersForYouSectionComponent({
       };
     }
 
-    if (!spotlightLoaded) return null;
-
-    if (spotlight) {
-      const metaImage =
-        (spotlight.metadata as { imageUrl?: string; image?: string })?.imageUrl ||
-        (spotlight.metadata as { image?: string })?.image;
-      return {
-        id: spotlight.id,
-        title: spotlight.name,
-        subtitle: spotlight.description,
-        pillLabel: 'Featured',
-        ctaText: 'Learn More',
-        ctaLink: '',
-        imageUrl: spotlight.imageUrl || metaImage || DEFAULT_FEATURED_OFFER_IMAGE_URL,
-        onCtaClick: () => navigateSpotlight(spotlight),
-      };
-    }
-
     return {
       title: DEFAULT_FEATURED_OFFER.title,
       subtitle: DEFAULT_FEATURED_OFFER.subtitle,
@@ -224,9 +116,7 @@ function OffersForYouSectionComponent({
       imageUrl: DEFAULT_FEATURED_OFFER.imageUrl,
       onCtaClick: () => onNavigate(DEFAULT_FEATURED_OFFER.ctaLink),
     };
-  }, [lowerBanners, spotlight, spotlightLoaded, navigateSpotlight, onNavigate, router]);
-
-  if (!offer) return null;
+  }, [lowerBanners, onNavigate, router]);
 
   const cmsBanner = lowerBanners[0];
   const isCmsBanner = Boolean(cmsBanner);
@@ -349,5 +239,5 @@ function OffersForYouSectionComponent({
   );
 }
 
-/** Peach featured banner — CMS lower banner, spotlight promo, or static fallback. */
+/** Peach featured banner — CMS lower banner or static fallback. */
 export const OffersForYouSection = memo(OffersForYouSectionComponent);

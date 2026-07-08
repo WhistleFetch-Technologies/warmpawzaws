@@ -23,7 +23,6 @@ import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMes
 import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
-import { PromotionBanner } from '../shared/PromotionBanner';
 import { EnhancedSearchBar } from '../EnhancedSearchBar';
 import { ProblemGridNavigation } from '../ProblemGridNavigation';
 import { ForYouSection } from '../ForYouSection';
@@ -2725,17 +2724,6 @@ export function CustomerHomeComplete({
           </div>
         </div>
         </>
-        ) : null}
-
-        {!newHomeUi ? (
-        <div className="mb-6">
-          <div className="px-6 mb-4">
-            <h2 className="text-black font-semibold">Special Offers</h2>
-          </div>
-          <div className="px-6">
-            <PromotionBanner service="all" maxPromotions={3} onNavigate={handleNavigation} />
-          </div>
-        </div>
         ) : null}
 
         {/* Featured Services Mix - Square Boxes */}

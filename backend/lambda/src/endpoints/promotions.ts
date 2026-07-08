@@ -403,110 +403,17 @@ export function registerPromotionEndpoints(app: Hono) {
   // ============================================================================
   /**
    * GET /promotions/list
-   * Phase 0.1: Get promotions filtered by service and published status
-   * Query params: service, published (true/false), spotlight (optional)
+   * Deprecated: customer discovery "Special Offers" banners were removed.
+   * Promos/coupons surface on vendor/service pages and checkout only.
+   * Kept as an empty stub so older clients do not 404.
    */
-  const mapPromotionListRow = (row: any) => {
-    const serviceCategory = extractPromotionCategory(row);
-    const serviceStyle = extractPromotionStyle(row);
-    const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
-    return {
-      ...row,
-      service_category: row.service_category ?? serviceCategory ?? null,
-      service_style: row.service_style ?? serviceStyle ?? null,
-      serviceCategory: row.serviceCategory ?? row.service_category ?? serviceCategory ?? null,
-      serviceStyle: row.serviceStyle ?? row.service_style ?? serviceStyle ?? null,
-      metadata: {
-        ...(metadata as Record<string, unknown>),
-        promotionTarget: {
-          ...(((metadata as any)?.promotionTarget || {}) as Record<string, unknown>),
-          serviceCategory: (metadata as any)?.promotionTarget?.serviceCategory ?? (metadata as any)?.serviceCategory ?? serviceCategory ?? null,
-          serviceStyle: (metadata as any)?.promotionTarget?.serviceStyle ?? (metadata as any)?.serviceStyle ?? serviceStyle ?? null,
-        },
-        serviceCategory: (metadata as any)?.serviceCategory ?? serviceCategory ?? null,
-        serviceStyle: (metadata as any)?.serviceStyle ?? serviceStyle ?? null,
-      },
-    };
-  };
-
-  const promotionMatchesListService = (promotion: any, serviceBucket: string | undefined): boolean => {
-    if (!serviceBucket || serviceBucket === 'all') return true;
-    const category = String(serviceBucket).trim().toLowerCase();
-    const { eligible } = isPromotionEligible(promotion, { category });
-    return eligible;
-  };
-
-  /** Hide stale/test rows with no customer-facing discount (e.g. legacy "one offer" 0%). */
-  const isCustomerListablePromotion = (promotion: any): boolean => {
-    const discountValue = parseFloat(String(promotion.discount_value ?? 0)) || 0;
-    return discountValue > 0;
-  };
-
-  /** Discovery surfaces: auto-apply promos only — coded/coupon offers are checkout-only. */
-  const isDiscoveryAutoApplyPromotionRow = (promotion: any): boolean => {
-    const type = String(promotion.promotion_type ?? '').trim().toLowerCase();
-    if (type === 'coupon' || type === 'platform_coupon') return false;
-    if (String(promotion.source ?? '').trim().toLowerCase() === 'platform_coupon') return false;
-    const code = String(promotion.code ?? '').trim();
-    if (code.length > 0) return false;
-    return true;
-  };
-
   app.get("/promotions/list", async (c) => {
-    try {
-      const service = c.req.query('service');
-      const published = c.req.query('published');
-      const spotlight = c.req.query('spotlight');
-
-      const now = new Date().toISOString().split('T')[0];
-
-      let queryStr = `
-        SELECT * FROM promotions
-        WHERE is_active = true
-        AND start_date <= $1
-        AND (end_date IS NULL OR end_date >= $1)
-        AND (usage_limit IS NULL OR usage_count < usage_limit)
-        AND (max_uses IS NULL OR usage_count < max_uses)
-      `;
-      const params: any[] = [now];
-
-      // Filter by published status
-      if (published === 'true') {
-        queryStr += ` AND published = true`;
-      } else if (published === 'false') {
-        queryStr += ` AND published = false`;
-      }
-
-      // Filter by spotlight
-      if (spotlight === 'true') {
-        queryStr += ` AND is_spotlight = true`;
-      }
-
-      // Order: spotlight first, then by priority (lower number = higher priority)
-      queryStr += ` ORDER BY is_spotlight DESC, priority ASC, created_at DESC`;
-
-      const result = await query(queryStr, params);
-      const rows = Array.isArray(result) ? result : (result as any).rows || [];
-      const promotions = rows
-        .map(mapPromotionListRow)
-        .filter((promo: any) => promotionMatchesListService(promo, service))
-        .filter(isCustomerListablePromotion)
-        .filter(isDiscoveryAutoApplyPromotionRow);
-
-      return c.json({
-        success: true,
-        promotions,
-        total: promotions.length,
-      });
-    } catch (error: any) {
-      console.error('Error fetching promotions list:', error);
-      // Graceful fallback if schema fields don't exist yet
-      if (error.message && (error.message.includes('does not exist') || error.message.includes('column'))) {
-        console.warn('⚠️ Schema issue - returning empty array');
-        return c.json({ success: true, promotions: [], total: 0 });
-      }
-      return c.json({ error: error.message }, 500);
-    }
+    return c.json({
+      success: true,
+      promotions: [],
+      total: 0,
+      deprecated: true,
+    });
   });
 
   /**
