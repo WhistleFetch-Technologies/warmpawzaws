@@ -199,6 +199,7 @@ class GetVendorOrdersHandler extends BaseHandler {
           LIMIT 1
         ) s ON true
         WHERE o.vendor_id = $1
+          AND o.order_status != 'pending_payment'
           ${dateFilterClause}
           ${statusFilter}
           ${searchFilter}
@@ -290,6 +291,7 @@ class GetVendorOrdersHandler extends BaseHandler {
           SELECT COUNT(*) as total
           FROM orders o
           WHERE o.vendor_id = $1
+            AND o.order_status != 'pending_payment'
             ${dateFilterClause}
             ${statusFilter}
             ${searchFilter}
@@ -386,6 +388,7 @@ class GetVendorOrderStatsHandler extends BaseHandler {
             COALESCE(SUM(total_amount) FILTER (WHERE order_status != 'cancelled'), 0) as total_revenue
           FROM orders
           WHERE vendor_id = $1
+            AND order_status != 'pending_payment'
             ${dateFilterClause}
         `;
 
@@ -549,7 +552,7 @@ export function registerVendorOrdersEndpoints(app: Hono) {
 
       // Business rules for status transitions
       const existingOrder = await query(
-        'SELECT order_status FROM orders WHERE id = $1 AND vendor_id = $2',
+        'SELECT order_status, payment_status, payment_method FROM orders WHERE id = $1 AND vendor_id = $2',
         [orderId, vendorId]
       );
 
@@ -558,6 +561,18 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       }
 
       const currentStatus = existingOrder.rows[0].order_status;
+      const payStatus = String(existingOrder.rows[0].payment_status || '').toLowerCase();
+      const payMethod = String(existingOrder.rows[0].payment_method || 'online').toLowerCase();
+      const isCod = payMethod === 'cod' || payMethod === 'cash_on_delivery';
+      if (
+        currentStatus === 'pending_payment' ||
+        (!isCod && !['paid', 'completed'].includes(payStatus) && status !== 'cancelled')
+      ) {
+        return c.json(
+          { error: 'Order payment is not confirmed yet. Fulfillment is blocked until payment succeeds.' },
+          409
+        );
+      }
 
       if (bodyContainsTrackingFields(body)) {
         const lockedError = getShipmentTrackingLockedError(currentStatus);
@@ -671,7 +686,7 @@ export function registerVendorOrdersEndpoints(app: Hono) {
 
       // Get current order status for validation
       const existingOrder = await query(
-        'SELECT order_status FROM orders WHERE id = $1 AND vendor_id = $2',
+        'SELECT order_status, payment_status, payment_method FROM orders WHERE id = $1 AND vendor_id = $2',
         [orderId, vendorId]
       );
 
@@ -680,6 +695,18 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       }
 
       const currentStatus = existingOrder.rows[0].order_status;
+      const payStatus = String(existingOrder.rows[0].payment_status || '').toLowerCase();
+      const payMethod = String(existingOrder.rows[0].payment_method || 'online').toLowerCase();
+      const isCod = payMethod === 'cod' || payMethod === 'cash_on_delivery';
+      if (
+        currentStatus === 'pending_payment' ||
+        (!isCod && !['paid', 'completed'].includes(payStatus) && status !== 'cancelled')
+      ) {
+        return c.json(
+          { error: 'Order payment is not confirmed yet. Fulfillment is blocked until payment succeeds.' },
+          409
+        );
+      }
 
       if (bodyContainsTrackingFields(body)) {
         const lockedError = getShipmentTrackingLockedError(currentStatus);

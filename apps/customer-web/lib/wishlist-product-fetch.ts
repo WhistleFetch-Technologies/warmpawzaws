@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client';
+import { extractProductImageUrl } from '@/components/customer/home/utils/product-image';
 import { canonicalProductId } from '@/lib/product-id';
 
 export type WishlistProductRow = {
@@ -13,6 +14,22 @@ export type WishlistProductRow = {
   missing?: boolean;
 };
 
+function resolveWishlistProductImage(
+  product: Record<string, unknown>,
+  skus?: unknown
+): string | undefined {
+  const fromProduct = extractProductImageUrl(product);
+  if (fromProduct) return fromProduct;
+
+  if (!Array.isArray(skus)) return undefined;
+  for (const sku of skus) {
+    if (!sku || typeof sku !== 'object') continue;
+    const fromSku = extractProductImageUrl(sku as Record<string, unknown>);
+    if (fromSku) return fromSku;
+  }
+  return undefined;
+}
+
 export async function fetchWishlistProductSummary(
   storageKey: string
 ): Promise<WishlistProductRow> {
@@ -22,19 +39,20 @@ export async function fetchWishlistProductSummary(
   ];
   for (const path of paths) {
     try {
-      const res = await apiClient.get<{ product?: Record<string, unknown> }>(path);
+      const res = await apiClient.get<{
+        product?: Record<string, unknown>;
+        skus?: unknown[];
+      }>(path);
       const p = res?.product;
       if (!p || typeof p !== 'object') continue;
       const id = canonicalProductId(p as Record<string, unknown>) || storageKey;
-      const images = p.images as unknown;
-      const firstImg =
-        Array.isArray(images) && images[0] != null ? String(images[0]) : undefined;
+      const image = resolveWishlistProductImage(p, res.skus);
       return {
         storageKey,
         id,
         name: String(p.name ?? 'Product'),
         price: parseFloat(String(p.price ?? '0')) || 0,
-        image: firstImg,
+        image,
         emoji: p.emoji != null ? String(p.emoji) : undefined,
       };
     } catch {

@@ -705,6 +705,11 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
          LEFT JOIN customers c ON o.customer_id = c.id
          WHERE o.vendor_id = $1 
          AND o.order_status = $2
+         AND o.order_status != 'pending_payment'
+         AND (
+           LOWER(COALESCE(o.payment_method, 'online')) IN ('cod', 'cash_on_delivery')
+           OR LOWER(COALESCE(o.payment_status, '')) IN ('paid', 'completed')
+         )
          ORDER BY o.created_at DESC
          LIMIT 50`,
         [vendorId, status]

@@ -54,6 +54,35 @@ const CUSTOMER_SUPPORT_EMAIL = 'support@warmpawz.com';
 const WISHLIST_CUSTOMER_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function SavedItemThumbnail({
+  image,
+  emoji,
+  name,
+}: {
+  image?: string;
+  emoji?: string;
+  name: string;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  if (image && !imageFailed) {
+    return (
+      <PresignableImage
+        src={image}
+        alt={name}
+        className="h-full w-full object-cover"
+        onUnavailable={() => setImageFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-gray-100 text-4xl">
+      {emoji || '🛍️'}
+    </div>
+  );
+}
+
 function setSupportInitialTab(tab: 'faq' | 'contact' | 'tickets') {
   try {
     sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, tab);
@@ -1750,11 +1779,11 @@ export function UserAccountSidebar({
                   {savedItems.map((item) => (
                     <div key={item.storageKey} className="bg-white border border-gray-200 rounded-2xl p-3">
                       <div className="w-full aspect-square bg-gray-200 rounded-xl overflow-hidden mb-3">
-                        {item.image ? (
-                          <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
-                        ) : item.emoji ? (
-                          <div className="flex h-full w-full items-center justify-center text-4xl">{item.emoji}</div>
-                        ) : null}
+                        <SavedItemThumbnail
+                          image={item.image}
+                          emoji={item.emoji}
+                          name={item.name}
+                        />
                       </div>
                       <h4 className="font-semibold text-gray-800 text-sm mb-1 line-clamp-2 min-h-[40px]">{item.name}</h4>
                       <p className="text-sm text-[#FF8C42] font-medium mb-3">
