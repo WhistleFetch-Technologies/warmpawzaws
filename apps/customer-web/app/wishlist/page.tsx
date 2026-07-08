@@ -12,9 +12,13 @@ import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
 import {
+  canSyncWishlistToApi,
+  mergeWishlistIds,
   readWishlistIds,
+  sameWishlistIdSet,
   setWishlistIds,
   WISHLIST_UPDATED_EVENT,
+  type WishlistApiItem,
 } from '@/lib/warmpawz-wishlist-local';
 
 type WishlistRow = {
@@ -31,15 +35,6 @@ type WishlistRow = {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function sameIdSet(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const sa = new Set(a.map(String));
-  for (const x of b) {
-    if (!sa.has(String(x))) return false;
-  }
-  return true;
-}
 
 async function fetchProductSummary(storageKey: string): Promise<WishlistRow> {
   const paths = [
@@ -110,18 +105,15 @@ function WishlistPageContent() {
       if (customerId && UUID_RE.test(customerId)) {
         try {
           const res = await apiClient.get<{
-            wishlist?: { items?: { product_id?: string; id?: string }[] };
+            wishlist?: { items?: WishlistApiItem[] };
           }>(`/customer/${encodeURIComponent(customerId)}/wishlist`);
           const items = res?.wishlist?.items ?? [];
-          for (const it of items) {
-            const pid = String(it.product_id || it.id || '').trim();
-            if (pid && !merged.some((x) => String(x) === pid)) merged.push(pid);
-          }
-          if (!sameIdSet(localIds, merged)) {
+          merged = mergeWishlistIds(localIds, items);
+          if (!sameWishlistIdSet(localIds, merged)) {
             setWishlistIds(merged);
           }
         } catch {
-          /* ignore */
+          /* ignore API merge failure — local ids remain source of truth */
         }
       }
 
@@ -130,6 +122,32 @@ function WishlistPageContent() {
       const summaries = await Promise.all(merged.map((storageKey) => fetchProductSummary(storageKey)));
       if (gen !== loadGenRef.current) return;
       setRows(summaries);
+    } catch (err) {
+      console.error('[wishlist] loadWishlist failed', err);
+      if (gen !== loadGenRef.current) return;
+      const fallbackIds = [...new Set(readWishlistIds())];
+      if (fallbackIds.length === 0) {
+        setRows([]);
+        return;
+      }
+      try {
+        const summaries = await Promise.all(
+          fallbackIds.map((storageKey) => fetchProductSummary(storageKey))
+        );
+        if (gen !== loadGenRef.current) return;
+        setRows(summaries);
+      } catch {
+        if (gen !== loadGenRef.current) return;
+        setRows(
+          fallbackIds.map((storageKey) => ({
+            storageKey,
+            id: storageKey,
+            name: 'Product unavailable',
+            price: 0,
+            missing: true,
+          }))
+        );
+      }
     } finally {
       if (mode === 'initial') setLoading(false);
     }
@@ -170,14 +188,14 @@ function WishlistPageContent() {
     setRows((r) => r.filter((x) => x.storageKey !== row.storageKey));
 
     const customerId = getResolvedCustomerId();
-    if (customerId && UUID_RE.test(customerId)) {
+    if (canSyncWishlistToApi(customerId, row.id)) {
       try {
-        await apiClient.post(`/customer/${encodeURIComponent(customerId)}/wishlist`, {
+        await apiClient.post(`/customer/${encodeURIComponent(customerId!)}/wishlist`, {
           productId: row.id,
           action: 'remove',
         });
       } catch {
-        /* ignore */
+        /* ignore — local removal already applied */
       }
     }
   };

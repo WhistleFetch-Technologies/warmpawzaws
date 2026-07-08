@@ -1,45 +1,28 @@
 /**
  * Convert 15 Furries listing XLSX → Warmpawz bulk upload template.
  *
- * ROOT CAUSE (see chat/PR notes): Google Drive links — whether a folder link
- * or a direct "uc?export=view" file link — are not reliable for hotlinking on
- * a live website. Google enforces per-file view/bandwidth quotas and bot-traffic
- * detection; once real shop traffic hits the same file repeatedly, Drive serves
- * an HTML interstitial/quota page instead of image bytes, and the <img> tag's
- * onError fires (paw placeholder). A single manual test succeeding proves
- * nothing about production reliability.
+ * Pure offline conversion utility — does NOT upload images to S3.
+ * Image storage is owned exclusively by product-image-ingest.ts at bulk upload.
  *
- * FIX: Mirror every image to the app's own private S3 uploads bucket (the same
- * bucket vendor-uploaded product photos already live in). The backend already
- * presigns any matching S3 URL at display time (see
- * backend/lambda/src/utils/s3-media-presign.ts), for both the customer shop
- * endpoint (ecommerce.ts) and vendor endpoints (vendor-products.ts). So a raw
- * `https://bucket.s3.region.amazonaws.com/key` URL stored in the bulk template
- * behaves exactly like a normal vendor photo upload — no code changes, no
- * deploy, no DB writes from this script. This script does not call any
- * Warmpawz API or touch RDS; it only (a) reads public Drive files and
- * (b) PUTs plain image objects into the existing dev uploads bucket, then
- * writes the resulting URLs into a downloadable XLSX for the user to bulk
- * upload themselves through the vendor portal.
+ * Drive folder links in the supplier Image column are expanded into direct
+ * file view URLs (comma-separated in the output template). Bulk upload then
+ * downloads, compresses, and stores images under products/{vendorId}/...
  *
  * Usage:
- *   node scripts/convert-15furries-to-warmpawz-template.js [--all]
+ *   node scripts/convert-15furries-to-warmpawz-template.js [--all] [--use-browser] [--drive-api]
  *   node scripts/convert-15furries-to-warmpawz-template.js [source.xlsx] [template.xlsx] [output.xlsx]
  *
- * Env:
- *   S3_UPLOADS_BUCKET   defaults to warmpawz-dev-user-uploads-057442119249 (dev bucket)
- *   AWS_REGION          defaults to ap-south-1
+ * Flags:
+ *   --use-browser  Fall back to puppeteer-core if HTML fetch finds no file IDs (requires local install)
+ *   --drive-api    Use Google Drive API when HTML fetch finds nothing (requires googleapis + service account)
  */
 const ExcelJS = require('exceljs');
-const puppeteer = require('puppeteer-core');
 const path = require('path');
-const fs = require('fs');
-const https = require('https');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-
-// ── Edge/Chrome path on Windows (for scraping Drive folder listings) ────────
-const EDGE_PATH = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const {
+  isDriveFolderUrl,
+  parseDriveOptions,
+  resolveFolderToDirectUrls,
+} = require('./lib/drive-folder-to-urls');
 
 const DEFAULT_SOURCES = [
   {
@@ -62,15 +45,6 @@ const BRAND = '15 Furries';
 const CATEGORY = 'Pet Clothing';
 const LISTING_OWNERSHIP = 'Own brand';
 const DEFAULT_STOCK = 100;
-
-// Same bucket already used by uploadProductImageBufferToS3() in
-// backend/lambda/src/utils/product-s3-image.ts — reusing the app's existing,
-// already-trusted image storage instead of inventing a new host.
-const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
-const S3_BUCKET = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-user-uploads-057442119249';
-const S3_KEY_PREFIX = 'products/15-furries-bulk-import';
-
-const s3Client = new S3Client({ region: AWS_REGION });
 
 const WARM_HEADERS = [
   'Title*',
@@ -102,7 +76,6 @@ const WARM_HEADERS = [
   'Listing Ownership*',
 ];
 
-// ── Cell reading ─────────────────────────────────────────────────────────────
 function cellText(cell) {
   const v = cell?.value;
   if (v === null || v === undefined) return '';
@@ -117,201 +90,6 @@ function cellText(cell) {
   return String(v).trim();
 }
 
-// ── HTTP fetch with redirect following (used both for Drive folder HTML and
-//    for downloading actual image bytes) ────────────────────────────────────
-function fetchFollow(url, depth = 0) {
-  return new Promise((resolve, reject) => {
-    if (depth > 5) {
-      reject(new Error('Too many redirects: ' + url));
-      return;
-    }
-    const req = https.get(
-      url,
-      {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36',
-          Accept: '*/*',
-        },
-        timeout: 30000,
-      },
-      (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          res.resume();
-          resolve(fetchFollow(res.headers.location, depth + 1));
-          return;
-        }
-        const chunks = [];
-        res.on('data', (d) => chunks.push(d));
-        res.on('end', () =>
-          resolve({
-            status: res.statusCode,
-            headers: res.headers,
-            body: Buffer.concat(chunks),
-          })
-        );
-        res.on('error', reject);
-      }
-    );
-    req.on('error', reject);
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('timeout: ' + url));
-    });
-  });
-}
-
-// ── Google Drive folder → individual file ID extraction (headless browser) ──
-const folderFileIdCache = new Map(); // folderId → string[] (file IDs, in DOM order)
-
-function extractFolderIdFromUrl(url) {
-  const m = url.match(/\/folders\/([A-Za-z0-9_-]{10,})/);
-  return m ? m[1] : null;
-}
-
-async function extractFileIdsFromDriveFolder(browser, folderId) {
-  if (folderFileIdCache.has(folderId)) return folderFileIdCache.get(folderId);
-
-  let page;
-  try {
-    page = await browser.newPage();
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36'
-    );
-
-    console.log(`  → Listing Drive folder: ${folderId}`);
-    await page.goto(`https://drive.google.com/drive/folders/${folderId}`, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
-    });
-    await page
-      .waitForSelector('[data-id], [data-target], .WYuW0e, .KL4PP', { timeout: 15000 })
-      .catch(() => null);
-    await new Promise((r) => setTimeout(r, 2000));
-
-    const fileIds = await page.evaluate(() => {
-      const ids = new Set();
-      document.querySelectorAll('[data-id]').forEach((el) => {
-        const id = el.getAttribute('data-id');
-        if (id && id.length > 20) ids.add(id);
-      });
-      document.querySelectorAll('a[href]').forEach((el) => {
-        const m = el.href.match(/\/file\/d\/([A-Za-z0-9_-]{20,})/);
-        if (m) ids.add(m[1]);
-      });
-      document.querySelectorAll('img[src]').forEach((el) => {
-        const src = el.src || '';
-        const m1 = src.match(/googleusercontent\.com\/d\/([A-Za-z0-9_-]{20,})/);
-        if (m1) ids.add(m1[1]);
-        const m2 = src.match(/\/thumbnail\?id=([A-Za-z0-9_-]{20,})/);
-        if (m2) ids.add(m2[1]);
-        const m3 = src.match(/id=([A-Za-z0-9_-]{25,})&/);
-        if (m3) ids.add(m3[1]);
-      });
-      const pageText = document.body.innerHTML;
-      const idRe = /"(1[A-Za-z0-9_-]{32,44})"/g;
-      for (const m of pageText.matchAll(idRe)) ids.add(m[1]);
-      return [...ids];
-    });
-
-    const filtered = fileIds.filter((id) => id !== folderId);
-    console.log(`    Found ${filtered.length} file(s) in folder`);
-    folderFileIdCache.set(folderId, filtered);
-    return filtered;
-  } catch (e) {
-    console.warn(`    Warning: could not list folder ${folderId}: ${e.message}`);
-    folderFileIdCache.set(folderId, []);
-    return [];
-  } finally {
-    if (page) await page.close().catch(() => null);
-  }
-}
-
-// ── Download real bytes for a Drive file and re-host on S3 ──────────────────
-const fileIdToS3UrlCache = new Map(); // driveFileId → s3 https url (or null on failure)
-
-function extToContentType(ext) {
-  const e = ext.toLowerCase();
-  if (e === 'png') return 'image/png';
-  if (e === 'webp') return 'image/webp';
-  if (e === 'gif') return 'image/gif';
-  return 'image/jpeg';
-}
-
-function contentTypeToExt(ct) {
-  const c = (ct || '').toLowerCase();
-  if (c.includes('png')) return 'png';
-  if (c.includes('webp')) return 'webp';
-  if (c.includes('gif')) return 'gif';
-  return 'jpg';
-}
-
-function slugifyForKey(s) {
-  return String(s || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-}
-
-async function mirrorDriveFileToS3(fileId, productSlug, indexInProduct) {
-  if (fileIdToS3UrlCache.has(fileId)) return fileIdToS3UrlCache.get(fileId);
-
-  try {
-    const r = await fetchFollow(`https://drive.google.com/uc?export=view&id=${fileId}`);
-    const contentType = String(r.headers['content-type'] || '');
-
-    if (r.status !== 200 || !contentType.startsWith('image/') || r.body.length === 0) {
-      console.warn(
-        `    Skip ${fileId}: status=${r.status} contentType=${contentType} bytes=${r.body.length}`
-      );
-      fileIdToS3UrlCache.set(fileId, null);
-      return null;
-    }
-
-    const ext = contentTypeToExt(contentType);
-    const key = `${S3_KEY_PREFIX}/${productSlug}/${String(indexInProduct).padStart(2, '0')}_${fileId.slice(
-      0,
-      8
-    )}.${ext}`;
-
-    await s3Client.send(
-      new PutObjectCommand({
-        Bucket: S3_BUCKET,
-        Key: key,
-        Body: r.body,
-        ContentType: contentType || extToContentType(ext),
-      })
-    );
-
-    const url = `https://${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`;
-    console.log(`    Mirrored ${fileId} → s3://${S3_BUCKET}/${key} (${r.body.length} bytes)`);
-    fileIdToS3UrlCache.set(fileId, url);
-    return url;
-  } catch (e) {
-    console.warn(`    Failed to mirror ${fileId}: ${e.message}`);
-    fileIdToS3UrlCache.set(fileId, null);
-    return null;
-  }
-}
-
-/** Resolve a Drive folder URL to an ordered list of permanent S3 URLs. */
-async function resolveFolderToS3Urls(browser, folderUrl, productSlug) {
-  const folderId = extractFolderIdFromUrl(folderUrl);
-  if (!folderId) return [folderUrl]; // not a Drive folder link — passthrough
-
-  const fileIds = await extractFileIdsFromDriveFolder(browser, folderId);
-  const idsToUse = fileIds.length > 0 ? fileIds : [folderId];
-
-  const urls = [];
-  for (let i = 0; i < idsToUse.length; i++) {
-    const s3Url = await mirrorDriveFileToS3(idsToUse[i], productSlug, i + 1);
-    if (s3Url) urls.push(s3Url);
-  }
-  return urls;
-}
-
-// ── Field helpers ─────────────────────────────────────────────────────────────
 function slugGroupId(title) {
   return `15F-${String(title)
     .trim()
@@ -407,7 +185,6 @@ function groupByTitle(rows) {
   return map;
 }
 
-// ── XLSX readers / writers ────────────────────────────────────────────────────
 function readSourceRows(sourcePath) {
   const wb = new ExcelJS.Workbook();
   return wb.xlsx.readFile(sourcePath).then(() => {
@@ -434,7 +211,20 @@ function readSourceRows(sourcePath) {
   });
 }
 
-async function toWarmpawzRows(sourceRows, browser) {
+async function resolveImageField(rawImageField, driveOptions) {
+  const raw = String(rawImageField ?? '').trim();
+  if (!raw) return [];
+
+  if (isDriveFolderUrl(raw)) {
+    return resolveFolderToDirectUrls(raw, driveOptions);
+  }
+  if (/^https?:\/\//i.test(raw)) {
+    return [raw];
+  }
+  return [];
+}
+
+async function toWarmpawzRows(sourceRows, driveOptions) {
   const grouped = groupByTitle(sourceRows);
   const out = [];
 
@@ -443,26 +233,16 @@ async function toWarmpawzRows(sourceRows, browser) {
     const title = String(first.Title ?? '').trim();
     const groupId = slugGroupId(title);
     const hasMultiple = variants.length > 1;
-    const productSlug = slugifyForKey(title);
 
     const colours = new Set(
       variants
         .map((r) => String(r.Colour ?? '').trim())
-        .filter((c) => c && c !== '-' && c.toLowerCase() !== 'multicolour')
+        .filter((c) => c && c !== '-' && c.toLowerCase() !== 'multicolour'),
     );
     const useColorVariant = colours.size > 1;
 
     const rawImageField = String(first['Image (1000X1000px)'] ?? '').trim();
-    let allProductImages = [];
-
-    if (rawImageField) {
-      const isDriveFolder = rawImageField.includes('drive.google.com/drive/folders');
-      if (isDriveFolder && browser) {
-        allProductImages = await resolveFolderToS3Urls(browser, rawImageField, productSlug);
-      } else if (/^https?:\/\//.test(rawImageField)) {
-        allProductImages = [rawImageField]; // already a direct, non-Drive URL — leave as-is
-      }
-    }
+    const allProductImages = await resolveImageField(rawImageField, driveOptions);
 
     for (let i = 0; i < variants.length; i++) {
       const row = variants[i];
@@ -484,7 +264,7 @@ async function toWarmpawzRows(sourceRows, browser) {
         assignedImages = allProductImages.join(', ');
       }
 
-      const warmpawz = {
+      out.push({
         'Title*': title,
         Description: String(row.Description ?? '').trim(),
         'Key Features': String(row['Key Features'] ?? '').trim(),
@@ -512,9 +292,7 @@ async function toWarmpawzRows(sourceRows, browser) {
         'Variant Attribute 3': '',
         'Variant Value 3': '',
         'Listing Ownership*': LISTING_OWNERSHIP,
-      };
-
-      out.push(warmpawz);
+      });
     }
   }
 
@@ -546,26 +324,42 @@ async function writeOutput(templatePath, outputPath, rows) {
   await wb.xlsx.writeFile(outputPath);
 }
 
-async function convertOne(sourcePath, templatePath, outputPath, browser) {
+function logImageStats(warmpawzRows) {
+  const withImages = warmpawzRows.filter((r) => r['Image (1000X1000px)*']);
+  const noImage = warmpawzRows.filter((r) => !r['Image (1000X1000px)*']);
+  const withDriveFileUrls = warmpawzRows.filter((r) =>
+    String(r['Image (1000X1000px)*'] || '').includes('drive.google.com/uc?export=view'),
+  );
+  const withFolderUrls = warmpawzRows.filter((r) =>
+    String(r['Image (1000X1000px)*'] || '').includes('drive.google.com/drive/folders'),
+  );
+  const withS3Urls = warmpawzRows.filter((r) =>
+    String(r['Image (1000X1000px)*'] || '').includes('.s3.'),
+  );
+
+  console.log(
+    `  Images: ${withImages.length}/${warmpawzRows.length} rows have URLs, ${withDriveFileUrls.length} use Drive file links, ${noImage.length} have none`,
+  );
+  if (withFolderUrls.length > 0) {
+    console.warn(`  WARNING: ${withFolderUrls.length} row(s) still contain Drive folder URLs`);
+  }
+  if (withS3Urls.length > 0) {
+    console.warn(`  WARNING: ${withS3Urls.length} row(s) contain S3 URLs (should be external only)`);
+  }
+  if (noImage.length > 0) {
+    console.log('  Rows with NO image (folder may need --use-browser or --drive-api):');
+    noImage.forEach((r) => console.log('   -', r['Title*']));
+  }
+}
+
+async function convertOne(sourcePath, templatePath, outputPath, driveOptions) {
   console.log('\nReading:', sourcePath);
   const sourceRows = await readSourceRows(sourcePath);
   console.log('15 Furries products (deduped):', sourceRows.length);
 
-  const warmpawzRows = await toWarmpawzRows(sourceRows, browser);
+  const warmpawzRows = await toWarmpawzRows(sourceRows, driveOptions);
   console.log('Warmpawz output rows:', warmpawzRows.length);
-
-  const withImages = warmpawzRows.filter((r) => r['Image (1000X1000px)*']);
-  const withS3 = warmpawzRows.filter(
-    (r) => r['Image (1000X1000px)*'] && String(r['Image (1000X1000px)*']).includes('.s3.')
-  );
-  const noImage = warmpawzRows.filter((r) => !r['Image (1000X1000px)*']);
-  console.log(
-    `  Images: ${withImages.length}/${warmpawzRows.length} rows have images, ${withS3.length} use permanent S3 URLs, ${noImage.length} have none`
-  );
-  if (noImage.length > 0) {
-    console.log('  Rows with NO image (Drive file may be non-public or non-image):');
-    noImage.forEach((r) => console.log('   -', r['Title*']));
-  }
+  logImageStats(warmpawzRows);
 
   console.log('Writing:', outputPath);
   await writeOutput(templatePath, outputPath, warmpawzRows);
@@ -573,45 +367,32 @@ async function convertOne(sourcePath, templatePath, outputPath, browser) {
 }
 
 async function main() {
-  const edgeExists = fs.existsSync(EDGE_PATH);
-  const chromeExists = fs.existsSync(CHROME_PATH);
-  const executablePath = edgeExists ? EDGE_PATH : chromeExists ? CHROME_PATH : null;
+  const argv = process.argv.slice(2);
+  const driveOptions = parseDriveOptions(argv);
+  const positional = argv.filter((a) => !a.startsWith('--'));
 
-  if (!executablePath) {
-    console.warn('Neither Edge nor Chrome found — Drive folders cannot be listed.');
-  } else {
-    console.log('Using browser for Drive folder listing:', executablePath);
+  if (driveOptions.useBrowser) {
+    console.log('Browser fallback enabled (--use-browser)');
   }
-  console.log('S3 mirror target:', `s3://${S3_BUCKET}/${S3_KEY_PREFIX}/... (${AWS_REGION})`);
-
-  let browser = null;
-  if (executablePath) {
-    browser = await puppeteer.launch({
-      executablePath,
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    });
+  if (driveOptions.useDriveApi) {
+    console.log('Drive API tier enabled (--drive-api)');
   }
+  console.log('Image mode: external URLs only (S3 ingestion happens at bulk upload)');
 
-  try {
-    const args = process.argv.slice(2);
-    if (args[0] === '--all' || args.length === 0) {
-      for (const job of DEFAULT_SOURCES) {
-        await convertOne(job.input, DEFAULT_TEMPLATE, job.output, browser);
-      }
-      console.log('\nAll conversions done.');
-    } else {
-      const sourcePath = args[0];
-      const outputPath =
-        args[2] ||
-        path.join(
-          path.dirname(sourcePath),
-          `${path.basename(sourcePath, path.extname(sourcePath))}_warmpawz_upload.xlsx`
-        );
-      await convertOne(sourcePath, args[1] || DEFAULT_TEMPLATE, outputPath, browser);
+  if (positional[0] === '--all' || positional.length === 0) {
+    for (const job of DEFAULT_SOURCES) {
+      await convertOne(job.input, DEFAULT_TEMPLATE, job.output, driveOptions);
     }
-  } finally {
-    if (browser) await browser.close().catch(() => null);
+    console.log('\nAll conversions done.');
+  } else {
+    const sourcePath = positional[0];
+    const outputPath =
+      positional[2] ||
+      path.join(
+        path.dirname(sourcePath),
+        `${path.basename(sourcePath, path.extname(sourcePath))}_warmpawz_upload.xlsx`,
+      );
+    await convertOne(sourcePath, positional[1] || DEFAULT_TEMPLATE, outputPath, driveOptions);
   }
 }
 

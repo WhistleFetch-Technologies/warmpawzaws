@@ -32,6 +32,11 @@ import {
 } from '../../../utils/product-sku-order';
 import { assertProductDeliverableToCity } from '../../../utils/product-delivery-regions';
 import {
+  getProductsColumnSet,
+  resolveStorefrontProductOrderBy,
+  resolveStorefrontSafeOrderBy,
+} from '../../../utils/products-table-columns';
+import {
   buildVariationAxes,
   mapSkusToCustomerVariations,
   buildGalleryImageUnion,
@@ -390,15 +395,6 @@ export function registerEcommerceEndpoints(app: Hono) {
     const SHOP_DEFAULT_LIMIT = 10;
     const SHOP_MAX_LIMIT = 50;
 
-    /** Maps sort param values to safe SQL ORDER BY fragments (allowlist — no interpolation). */
-    const SORT_MAP: Record<string, string> = {
-      popular:    'p.review_count DESC NULLS LAST, p.created_at DESC',
-      price_low:  'p.price ASC',
-      price_high: 'p.price DESC',
-      newest:     'p.created_at DESC',
-      rating:     'p.rating DESC NULLS LAST, p.created_at DESC',
-    };
-
     try {
       const vendorId = c.req.query('vendorId');
       const category = c.req.query('category');
@@ -414,7 +410,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
 
       const sortParam = c.req.query('sort') ?? 'popular';
-      const orderBy = SORT_MAP[sortParam] ?? SORT_MAP.popular;
+      const productCols = await getProductsColumnSet();
+      let orderBy = resolveStorefrontProductOrderBy(sortParam, productCols);
 
       const minPriceRaw = parseFloat(c.req.query('min_price') ?? '');
       const maxPriceRaw = parseFloat(c.req.query('max_price') ?? '');
@@ -462,16 +459,6 @@ export function registerEcommerceEndpoints(app: Hono) {
         paramIndex++;
       }
 
-      const productQuery = `
-        SELECT p.*, v.business_name as vendor_name
-        FROM products p
-        LEFT JOIN vendors v ON p.vendor_id = v.id
-        WHERE ${whereClause}
-        ORDER BY ${orderBy}
-        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-      `;
-      const paginatedParams = [...filterParams, limit, offset];
-
       const countQuery = `
         SELECT COUNT(*) AS count
         FROM products p
@@ -479,22 +466,44 @@ export function registerEcommerceEndpoints(app: Hono) {
         WHERE ${whereClause}
       `;
 
+      const runListQueries = async (orderByClause: string) => {
+        const listQuery = `
+        SELECT p.*, v.business_name as vendor_name
+        FROM products p
+        LEFT JOIN vendors v ON p.vendor_id = v.id
+        WHERE ${whereClause}
+        ORDER BY ${orderByClause}
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `;
+        const paginatedParams = [...filterParams, limit, offset];
+        const [productsResult, countResult] = await Promise.all([
+          query(listQuery, paginatedParams),
+          query(countQuery, filterParams),
+        ]);
+        const total = parseInt(
+          (countResult?.rows?.[0] as Record<string, string>)?.count ?? '0',
+          10,
+        );
+        return { productsResult, total };
+      };
+
       let products;
       let totalCount = 0;
       try {
-        const [productsResult, countResult] = await Promise.all([
-          query(productQuery, paginatedParams),
-          query(countQuery, filterParams),
-        ]);
-        products = productsResult;
-        totalCount = parseInt((countResult?.rows?.[0] as Record<string, string>)?.count ?? '0', 10);
+        const first = await runListQueries(orderBy);
+        products = first.productsResult;
+        totalCount = first.total;
       } catch (error: any) {
-        // Handle table not existing, column not existing, or invalid UUID
-        if (error.message?.includes('invalid input syntax for type uuid') ||
-          error.message?.includes('relation "products" does not exist') ||
-          error.message?.includes('column') ||
-          error.code === '42P01' || // undefined_table
-          error.code === '42703') { // undefined_column
+        const isMissingColumn =
+          error.code === '42703' || String(error.message ?? '').includes('column');
+        const isMissingTable =
+          error.code === '42P01' ||
+          String(error.message ?? '').includes('relation "products" does not exist');
+        const isInvalidUuid = String(error.message ?? '').includes(
+          'invalid input syntax for type uuid',
+        );
+
+        if (isMissingTable || isInvalidUuid) {
           return c.json({
             success: true,
             products: [],
@@ -502,10 +511,27 @@ export function registerEcommerceEndpoints(app: Hono) {
             offset,
             limit,
             hasMore: false,
-            message: 'No products available yet'
+            message: 'No products available yet',
           });
         }
-        throw error;
+
+        if (isMissingColumn) {
+          const safeOrderBy = resolveStorefrontSafeOrderBy(productCols);
+          if (safeOrderBy !== orderBy) {
+            console.warn(
+              '[ecommerce/products] ORDER BY failed, retrying with safe fallback',
+              { sortParam, orderBy, safeOrderBy, error: error.message },
+            );
+            orderBy = safeOrderBy;
+            const retry = await runListQueries(orderBy);
+            products = retry.productsResult;
+            totalCount = retry.total;
+          } else {
+            throw error;
+          }
+        } else {
+          throw error;
+        }
       }
 
       const rows = (products?.rows || []) as Record<string, unknown>[];
