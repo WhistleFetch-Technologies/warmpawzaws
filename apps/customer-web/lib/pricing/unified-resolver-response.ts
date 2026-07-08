@@ -25,6 +25,8 @@ export interface UnifiedResolverRejectedOffer {
   offerType?: string;
   reason: string;
   reasonCode?: string;
+  trigger?: 'AUTO' | 'CODE';
+  discountAmount?: number;
 }
 
 export interface UnifiedResolverPolicySnapshot {

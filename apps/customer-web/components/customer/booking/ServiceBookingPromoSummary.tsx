@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { fetchBookingDiscountQuote } from '@/lib/service-booking-pricing';
+import { deriveBookingDiscountFromQuote } from '@/lib/pricing/booking-discount-state';
 import { totalSavingsFromQuote } from '@/lib/pricing/unified-resolver-response';
+import type { UnifiedResolverResponse } from '@/lib/pricing/unified-resolver-response';
 import { PriceDisplay } from '@/components/customer/pricing/PriceDisplay';
 import { PromotionCard } from '@/components/customer/pricing/PromotionCard';
 import { SavingsBadge } from '@/components/customer/pricing/SavingsBadge';
@@ -18,10 +20,17 @@ type ServiceBookingPromoSummaryProps = {
   serviceCategory?: string;
   className?: string;
   onQuote?: (quote: { totalSavings: number; finalAmount: number }) => void;
+  /** When set, display uses this quote only (no separate fetch). */
+  quote?: UnifiedResolverResponse | null;
+  /** Active coupon code — used with `quote` for Best Offer display. */
+  couponCode?: string | null;
+  /** When parent owns loading state. */
+  loading?: boolean;
 };
 
 /**
- * Server-side promotion quote for booking summary (auto-apply only).
+ * Server-side promotion quote for booking summary.
+ * Pass `quote` from the parent resolver so promo/coupon never show stale combined state.
  */
 export function ServiceBookingPromoSummary({
   vendorId,
@@ -32,22 +41,25 @@ export function ServiceBookingPromoSummary({
   serviceCategory,
   className = '',
   onQuote,
+  quote: externalQuote,
+  couponCode,
+  loading: externalLoading,
 }: ServiceBookingPromoSummaryProps) {
-  const [discount, setDiscount] = useState(0);
-  const [finalAmount, setFinalAmount] = useState(baseAmount);
-  const [offers, setOffers] = useState<AppliedPromotionOffer[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [internalQuote, setInternalQuote] = useState<UnifiedResolverResponse | null>(null);
+  const [internalLoading, setInternalLoading] = useState(false);
+
+  const quote = externalQuote !== undefined ? externalQuote : internalQuote;
+  const loading = externalLoading ?? internalLoading;
 
   useEffect(() => {
+    if (externalQuote !== undefined) return;
     if (!vendorId || baseAmount <= 0) {
-      setDiscount(0);
-      setFinalAmount(baseAmount);
-      setOffers([]);
+      setInternalQuote(null);
       return;
     }
 
     let cancelled = false;
-    setLoading(true);
+    setInternalLoading(true);
 
     fetchBookingDiscountQuote({
       vendorId,
@@ -58,46 +70,68 @@ export function ServiceBookingPromoSummary({
       serviceCategory,
       displayPromotionsOnly: true,
     })
-      .then((quote) => {
-        if (cancelled || !quote) return;
-        const savings = totalSavingsFromQuote(quote);
-        setDiscount(savings);
-        setFinalAmount(quote.savings?.finalAmount ?? Math.max(0, baseAmount - savings));
-        setOffers(
-          quote.appliedOffers
-            .filter((o) => o.trigger === 'AUTO')
-            .slice(0, 1)
-            .map((winner) => ({
-              id: winner.id,
-              name: winner.name,
-              source: winner.source === 'platform' ? 'platform' : 'vendor',
-              discountAmount: winner.discountAmount,
-              autoApply: true,
-            }))
-        );
-        onQuote?.({
-          totalSavings: savings,
-          finalAmount: quote.savings?.finalAmount ?? Math.max(0, baseAmount - savings),
-        });
+      .then((q) => {
+        if (!cancelled) setInternalQuote(q);
       })
       .catch(() => {
-        if (!cancelled) {
-          setDiscount(0);
-          setFinalAmount(baseAmount);
-          setOffers([]);
-          onQuote?.({ totalSavings: 0, finalAmount: baseAmount });
-        }
+        if (!cancelled) setInternalQuote(null);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setInternalLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [vendorId, customerId, serviceIds.join(','), baseAmount, serviceStyle, serviceCategory, onQuote]);
+  }, [
+    externalQuote,
+    vendorId,
+    customerId,
+    serviceIds.join(','),
+    baseAmount,
+    serviceStyle,
+    serviceCategory,
+  ]);
 
-  const hasPromo = useMemo(() => discount > 0, [discount]);
+  const derived = useMemo(
+    () => deriveBookingDiscountFromQuote(quote, { couponCode }),
+    [quote, couponCode]
+  );
+
+  const discount = derived?.totalSavings ?? (quote ? totalSavingsFromQuote(quote) : 0);
+  const finalAmount =
+    derived?.quote.savings?.finalAmount ??
+    quote?.savings?.finalAmount ??
+    Math.max(0, baseAmount - discount);
+
+  const offers: AppliedPromotionOffer[] = useMemo(() => {
+    if (!derived) return [];
+    if (derived.couponWins && derived.appliedCoupon) {
+      return [
+        {
+          id: derived.appliedCoupon.promotionId ?? derived.appliedCoupon.code,
+          name: derived.appliedCoupon.label ?? derived.appliedCoupon.code,
+          source: 'platform',
+          discountAmount: derived.appliedCoupon.discountAmount,
+          autoApply: false,
+        },
+      ];
+    }
+    return derived.uiPromotions.map((p) => ({
+      id: p.id,
+      name: p.title,
+      source: p.type === 'spotlight' ? 'platform' : 'vendor',
+      discountAmount: p.discountAmount,
+      autoApply: true,
+    }));
+  }, [derived]);
+
+  useEffect(() => {
+    if (!quote) return;
+    onQuote?.({ totalSavings: discount, finalAmount });
+  }, [quote, discount, finalAmount, onQuote]);
+
+  const hasOffer = discount > 0;
 
   if (!vendorId || baseAmount <= 0) return null;
 
@@ -105,12 +139,22 @@ export function ServiceBookingPromoSummary({
     <div className={`space-y-3 border-t border-gray-100 pt-3 ${className}`}>
       {loading ? (
         <p className="text-xs text-gray-500">Checking offers…</p>
-      ) : hasPromo ? (
+      ) : hasOffer ? (
         <>
           <div className="flex flex-wrap items-center gap-2">
             <SavingsBadge variant="save_amount" amount={discount} />
-            <SavingsBadge variant="auto_applied" />
+            {derived?.couponWins ? (
+              <SavingsBadge variant="auto_applied" label="Coupon applied" />
+            ) : (
+              <SavingsBadge variant="auto_applied" />
+            )}
           </div>
+          {derived?.couponWins && derived.skippedAutoPromoName ? (
+            <p className="text-xs text-amber-800 bg-amber-50 rounded-lg px-2 py-1.5">
+              {derived.skippedAutoPromoName} was not applied — your coupon saves more under Best
+              Offer.
+            </p>
+          ) : null}
           {offers.map((offer) => (
             <PromotionCard key={offer.id} offer={offer} compact />
           ))}

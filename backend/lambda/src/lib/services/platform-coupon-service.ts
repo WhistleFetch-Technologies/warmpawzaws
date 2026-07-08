@@ -11,6 +11,7 @@ import {
   resolveWithProductionMode,
 } from '../../discount-engine/resolver/production-bridge';
 import { mapResolverResultToCouponValidation } from '../../discount-engine/resolver/resolver-result-mappers';
+import { couponRowMatchesService } from '../../utils/coupon-targeting';
 
 export type CouponValidationResult = {
   success: boolean;
@@ -28,13 +29,18 @@ export type CouponValidationResult = {
   error?: string;
 };
 
+export type CouponValidationOptions = {
+  serviceCategory?: string;
+};
+
 /**
  * @deprecated Inline validation path — retained for OFF/fallback; V2 authoritative via resolveWithProductionMode.
  */
 async function validateCouponLegacy(
   couponCode: string,
   amount: number,
-  domain: DiscountDomain
+  domain: DiscountDomain,
+  options?: CouponValidationOptions
 ): Promise<CouponValidationResult> {
   try {
     const coupons = await select('coupons', { code: couponCode.toUpperCase(), is_active: true });
@@ -43,6 +49,18 @@ async function validateCouponLegacy(
     }
 
     const coupon = coupons[0];
+
+    if (
+      domain === DiscountDomain.SERVICE &&
+      options?.serviceCategory &&
+      !couponRowMatchesService(coupon as Record<string, unknown>, options.serviceCategory)
+    ) {
+      return {
+        success: false,
+        valid: false,
+        error: 'This coupon is not valid for this service category',
+      };
+    }
     const now = new Date();
     const startDate = new Date(coupon.start_date);
     const endDate = coupon.end_date ? new Date(coupon.end_date) : null;
@@ -137,7 +155,8 @@ async function validateCouponLegacy(
 export async function validateCouponForAmount(
   couponCode: string,
   amount: number,
-  domain: DiscountDomain = DiscountDomain.ECOMMERCE
+  domain: DiscountDomain = DiscountDomain.ECOMMERCE,
+  options?: CouponValidationOptions
 ): Promise<CouponValidationResult> {
   const code = couponCode.trim().toUpperCase();
   if (!code) {
@@ -147,7 +166,19 @@ export async function validateCouponForAmount(
   const coupons = await select('coupons', { code, is_active: true }).catch(() => []);
   const coupon = coupons[0];
   if (!coupon) {
-    return validateCouponLegacy(code, amount, domain);
+    return validateCouponLegacy(code, amount, domain, options);
+  }
+
+  if (
+    domain === DiscountDomain.SERVICE &&
+    options?.serviceCategory &&
+    !couponRowMatchesService(coupon as Record<string, unknown>, options.serviceCategory)
+  ) {
+    return {
+      success: false,
+      valid: false,
+      error: 'This coupon is not valid for this service category',
+    };
   }
 
   let usageCount = 0;
@@ -164,7 +195,7 @@ export async function validateCouponForAmount(
   const { value } = await resolveWithProductionMode({
     label: `validateCoupon-${domain}`,
     context,
-    legacy: () => validateCouponLegacy(code, amount, domain),
+    legacy: () => validateCouponLegacy(code, amount, domain, options),
     mapResolverToLegacy: (result) => {
       const mapped = mapResolverResultToCouponValidation(result);
       if (!mapped.valid) {

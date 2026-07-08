@@ -46,6 +46,7 @@ export type BookingDiscountQuoteParams = {
   displayPromotionsOnly?: boolean;
   /** Skip in-memory cache (e.g. after coupon apply). */
   bypassCache?: boolean;
+  debugSessionId?: string;
 };
 
 export async function fetchBookingDiscountQuote(
@@ -72,6 +73,7 @@ export async function fetchBookingDiscountQuote(
           serviceCategory: params.serviceCategory,
           couponCode: params.couponCode,
           displayPromotionsOnly: params.displayPromotionsOnly ?? !params.couponCode,
+          debugSessionId: params.debugSessionId,
         }
       );
       const normalized = normalizeUnifiedQuote(res);

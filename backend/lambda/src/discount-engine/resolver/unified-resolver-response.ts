@@ -41,6 +41,8 @@ export interface UnifiedResolverRejectedOffer {
   offerType?: string;
   reason: string;
   reasonCode?: string;
+  trigger?: 'AUTO' | 'CODE';
+  discountAmount?: number;
 }
 
 export interface UnifiedResolverPolicySnapshot {
@@ -165,6 +167,48 @@ export function buildPolicySnapshot(
   };
 }
 
+function formatInr(amount: number): string {
+  return `₹${Math.max(0, amount).toFixed(0)}`;
+}
+
+function humanizeRejectionReason(
+  rejected: UnifiedResolverRejectedOffer,
+  applied: UnifiedResolverAppliedOffer[],
+  policy: UnifiedResolverPolicySnapshot
+): string {
+  const rejectedName = rejected.name?.trim() || 'This offer';
+  const winner = applied[0];
+  const winnerName = winner?.name?.trim() || 'another offer';
+  const reasonCode = String(rejected.reasonCode ?? rejected.reason ?? '').toUpperCase();
+  const rawReason = String(rejected.reason ?? '');
+
+  if (
+    policy.applicationStrategy === 'BEST_OFFER_ONLY' &&
+    (reasonCode.includes('BEST_OFFER') ||
+      rawReason.includes('BEST_OFFER_ONLY') ||
+      reasonCode === 'POLICY_REJECTED')
+  ) {
+    if (winner) {
+      return `${rejectedName} was not applied because ${winnerName} saves more under the Best Offer policy (${formatInr(winner.discountAmount)} vs this offer).`;
+    }
+    return `${rejectedName} was not applied — only the best eligible offer applies under the Best Offer policy.`;
+  }
+
+  if (reasonCode.includes('STACK') || reasonCode === 'PROMO_COUPON_PAIR_LIMIT') {
+    return `${rejectedName} cannot be combined with your current offers under the stacking policy.`;
+  }
+
+  if (reasonCode === 'INELIGIBLE') {
+    return `${rejectedName} is not eligible for this booking.`;
+  }
+
+  if (rawReason && !rawReason.includes('BEST_OFFER_ONLY_NOT_WINNER')) {
+    return rawReason;
+  }
+
+  return `${rejectedName} was not applied under the current promotion policy.`;
+}
+
 function buildDisplayMessages(
   applied: UnifiedResolverAppliedOffer[],
   rejected: UnifiedResolverRejectedOffer[],
@@ -179,13 +223,34 @@ function buildDisplayMessages(
     });
     return messages;
   }
+
+  const appliedCoupon = applied.find((o) => o.trigger === 'CODE' || o.source === 'coupon');
+  const appliedAuto = applied.find((o) => o.trigger === 'AUTO');
+  if (
+    policy.applicationStrategy === 'BEST_OFFER_ONLY' &&
+    appliedAuto &&
+    rejected.some((r) => r.trigger === 'CODE' || r.offerType?.includes('COUPON'))
+  ) {
+    const rejectedCoupon = rejected.find(
+      (r) => r.trigger === 'CODE' || r.offerType?.includes('COUPON')
+    );
+    if (rejectedCoupon) {
+      messages.push({
+        type: 'info',
+        code: 'BEST_OFFER_AUTO_WINS',
+        message: `${appliedAuto.name} is applied. ${rejectedCoupon.name ?? 'Your coupon'} saves less under the Best Offer policy.`,
+      });
+    }
+  }
+
   for (const r of rejected) {
     messages.push({
       type: 'warning',
       code: r.reasonCode ?? 'OFFER_REJECTED',
-      message: r.reason,
+      message: humanizeRejectionReason(r, applied, policy),
     });
   }
+
   if (applied.length > 1) {
     messages.push({
       type: 'success',
@@ -193,10 +258,11 @@ function buildDisplayMessages(
       message: `${applied.length} offers applied per ${policy.applicationStrategy} policy.`,
     });
   } else if (applied.length === 1) {
+    const label = appliedCoupon && !appliedAuto ? appliedCoupon.name : applied[0].name;
     messages.push({
       type: 'success',
       code: 'OFFER_APPLIED',
-      message: `${applied[0].name} applied — you save ₹${applied[0].discountAmount.toFixed(0)}.`,
+      message: `${label} applied — you save ${formatInr(applied[0].discountAmount)}.`,
     });
   }
   return messages;
@@ -216,6 +282,41 @@ function mapAppliedDiscounts(result: ResolverResult): UnifiedResolverAppliedOffe
     order: d.order ?? idx + 1,
     benefitType: d.benefitType,
   }));
+}
+
+function buildBenefitNameMap(result: ResolverResult): Map<string, { name: string; trigger: 'AUTO' | 'CODE'; discountAmount: number; offerType: string }> {
+  const map = new Map<string, { name: string; trigger: 'AUTO' | 'CODE'; discountAmount: number; offerType: string }>();
+  for (const b of result.benefitResults ?? []) {
+    const id = b.candidate?.id;
+    if (!id) continue;
+    map.set(id, {
+      name: b.candidate.name ?? 'Offer',
+      trigger: b.candidate.trigger === DiscountTrigger.CODE ? 'CODE' : 'AUTO',
+      discountAmount: b.discountAmount ?? 0,
+      offerType: mapSourceKey(
+        (b.candidate.metadata?.source as DiscountSource) ?? DiscountSource.PLATFORM_PROMOTION,
+        b.candidate.owner
+      ),
+    });
+  }
+  return map;
+}
+
+function enrichRejectedOffer(
+  partial: UnifiedResolverRejectedOffer,
+  benefitMap: Map<string, { name: string; trigger: 'AUTO' | 'CODE'; discountAmount: number; offerType: string }>
+): UnifiedResolverRejectedOffer {
+  const meta = benefitMap.get(partial.id);
+  return {
+    ...partial,
+    name: partial.name ?? meta?.name,
+    trigger: partial.trigger ?? meta?.trigger,
+    discountAmount: partial.discountAmount ?? meta?.discountAmount,
+    offerType: partial.offerType ?? meta?.offerType,
+    reasonCode:
+      partial.reasonCode ??
+      (partial.reason.includes('BEST_OFFER') ? 'BEST_OFFER_ONLY_NOT_WINNER' : 'POLICY_REJECTED'),
+  };
 }
 
 function mapRejectedFromResolver(result: ResolverResult): UnifiedResolverRejectedOffer[] {
@@ -259,17 +360,23 @@ export function mapResolverResultToUnifiedResponse(
   }
 ): UnifiedResolverResponse {
   const appliedOffers = mapAppliedDiscounts(result);
+  const benefitMap = buildBenefitNameMap(result);
   const rejectedFromResolution =
-    options?.offerResolution?.rejectedOffers?.map((r) => ({
-      id: r.candidateId,
-      reason: r.reason,
-      reasonCode: 'POLICY_REJECTED',
-    })) ?? [];
+    options?.offerResolution?.rejectedOffers?.map((r) =>
+      enrichRejectedOffer(
+        {
+          id: r.candidateId,
+          reason: r.reason,
+          reasonCode: r.reason.includes('BEST_OFFER') ? 'BEST_OFFER_ONLY_NOT_WINNER' : 'POLICY_REJECTED',
+        },
+        benefitMap
+      )
+    ) ?? [];
   const rejectedOffers = [
     ...rejectedFromResolution,
-    ...mapRejectedFromResolver(result).filter(
-      (r) => !rejectedFromResolution.some((x) => x.id === r.id)
-    ),
+    ...mapRejectedFromResolver(result)
+      .map((r) => enrichRejectedOffer(r, benefitMap))
+      .filter((r) => !rejectedFromResolution.some((x) => x.id === r.id)),
   ];
 
   const savingsSplit = splitSavings(appliedOffers);
@@ -314,7 +421,11 @@ export function mapResolverResultToUnifiedResponse(
 export function mapLegacyBookingToUnifiedResponse(
   booking: BookingPromotionResult,
   runtimePolicy: RuntimePolicy,
-  options?: { displayPromotionsOnly?: boolean; bundle?: DiscountPolicyBundle }
+  options?: {
+    displayPromotionsOnly?: boolean;
+    bundle?: DiscountPolicyBundle;
+    legacyCouponRejections?: UnifiedResolverRejectedOffer[];
+  }
 ): UnifiedResolverResponse {
   const currentPolicy = buildPolicySnapshot(runtimePolicy, options?.bundle);
   const appliedOffers: UnifiedResolverAppliedOffer[] = (booking.applied ?? []).map((a, idx) => ({
@@ -339,20 +450,21 @@ export function mapLegacyBookingToUnifiedResponse(
 
   const savingsSplit = splitSavings(appliedOffers);
   const autoPromo = appliedOffers.find((o) => o.trigger === 'AUTO') ?? appliedOffers[0] ?? null;
+  const rejectedOffers = options?.legacyCouponRejections ?? [];
 
   return {
     success: true,
     resolverSource: 'legacy',
     currentPolicy,
     appliedOffers,
-    rejectedOffers: [],
+    rejectedOffers,
     savings: {
       originalAmount: booking.originalAmount,
       totalSavings: booking.totalSavings,
       finalAmount: booking.finalAmount,
       ...savingsSplit,
     },
-    displayMessages: buildDisplayMessages(appliedOffers, [], currentPolicy),
+    displayMessages: buildDisplayMessages(appliedOffers, rejectedOffers, currentPolicy),
     settlementPreview: booking.settlement,
     vendorPromotionId: booking.vendorPromotionId,
     platformPromotionId: booking.platformPromotionId,

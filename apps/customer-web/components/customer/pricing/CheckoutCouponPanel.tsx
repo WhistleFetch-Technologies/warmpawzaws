@@ -15,10 +15,18 @@ export type CheckoutCouponPanelProps = {
   vendorId?: string;
   customerId?: string;
   serviceCategory?: string;
-  /** Subtotal after auto-promotions — coupon validates against this amount. */
+  serviceIds?: string[];
+  serviceStyle?: string;
+  /** Original booking subtotal before auto-promotions. */
+  bookingBaseAmount?: number;
+  /** Subtotal after auto-promotions — coupon validates against this amount for non-booking flows. */
   orderAmount: number;
   appliedCoupon: AppliedCheckoutCoupon | null;
-  onApplyCoupon: (coupon: AppliedCheckoutCoupon) => void;
+  onApplyCoupon: (coupon: AppliedCheckoutCoupon, quote?: import('@/lib/pricing/unified-resolver-response').UnifiedResolverResponse) => void;
+  onBookingQuote?: (
+    quote: import('@/lib/pricing/unified-resolver-response').UnifiedResolverResponse,
+    couponCode: string
+  ) => void;
   onRemoveCoupon: () => void;
   className?: string;
   /** Set false when the downstream payment API cannot accept couponCode. */
@@ -32,9 +40,13 @@ export function CheckoutCouponPanel({
   vendorId,
   customerId,
   serviceCategory,
+  serviceIds,
+  serviceStyle,
+  bookingBaseAmount,
   orderAmount,
   appliedCoupon,
   onApplyCoupon,
+  onBookingQuote,
   onRemoveCoupon,
   className = '',
   paymentSupportsCoupon = true,
@@ -77,10 +89,14 @@ export function CheckoutCouponPanel({
           vendorId={vendorId}
           customerId={customerId}
           serviceCategory={serviceCategory}
+          serviceIds={serviceIds}
+          serviceStyle={serviceStyle}
+          bookingBaseAmount={bookingBaseAmount}
           orderAmount={orderAmount}
           orderType="booking"
           appliedCoupon={appliedCoupon}
           onApplyCoupon={onApplyCoupon}
+          onBookingQuote={onBookingQuote}
           onRemoveCoupon={onRemoveCoupon}
           className={className}
           unavailableMessage={
@@ -118,10 +134,14 @@ export function CheckoutCouponPanel({
       vendorId={vendorId}
       customerId={customerId}
       serviceCategory={serviceCategory}
+      serviceIds={serviceIds}
+      serviceStyle={serviceStyle}
+      bookingBaseAmount={bookingBaseAmount}
       orderAmount={orderAmount}
       orderType={orderType}
       appliedCoupon={appliedCoupon}
       onApplyCoupon={onApplyCoupon}
+      onBookingQuote={onBookingQuote}
       onRemoveCoupon={onRemoveCoupon}
       className={className}
     />

@@ -23,10 +23,15 @@ import { PromotionPreview } from './PromotionPreview';
 const LAST_STEP = WIZARD_STEP_LABELS.length - 1;
 
 function enabledScopes(scope: PromotionManagementScope): TargetScopeId[] {
-  if (scope.enabledTargetScopes?.length) return scope.enabledTargetScopes;
+  // Never offer entire_platform — blank/apply-all targeting is disallowed for promos & coupons.
+  const withoutEntire = (scopes: TargetScopeId[]) =>
+    scopes.filter((s) => s !== 'entire_platform');
+
+  if (scope.enabledTargetScopes?.length) {
+    return withoutEntire(scope.enabledTargetScopes);
+  }
   if (scope.mode === 'platform') {
     return [
-      'entire_platform',
       'vendors',
       'categories',
       'services',
@@ -91,9 +96,11 @@ export function PromotionWizard({
     baselineRef.current = snapshotForm(next);
   }, [open, initial, initialStep]);
 
+  const validationAudience = scope.mode === 'platform' ? 'admin' : 'vendor';
+
   const issues = useMemo(
-    () => validatePromotionWizard(form, { existingCodes }),
-    [form, existingCodes]
+    () => validatePromotionWizard(form, { existingCodes, audience: validationAudience }),
+    [form, existingCodes, validationAudience]
   );
 
   if (!open) return null;
@@ -117,12 +124,35 @@ export function PromotionWizard({
     onClose();
   };
 
-  const next = () => setStep((s) => Math.min(LAST_STEP, s + 1));
+  const stepBlockingIssues = useMemo(() => {
+    if (step === 1) {
+      return issues.filter((i) => i.field === 'name' || i.field === 'code');
+    }
+    if (step === 2) {
+      return issues.filter((i) => i.field === 'target');
+    }
+    if (step === 3) {
+      return issues.filter((i) =>
+        ['discountValue', 'maxDiscount', 'minAmount', 'usageLimit', 'usageLimitPerUser', 'schedule'].includes(
+          i.field
+        )
+      );
+    }
+    return [];
+  }, [issues, step]);
+
+  const canAdvance =
+    step === 0 || !hasValidationErrors(stepBlockingIssues);
+
+  const next = () => {
+    if (!canAdvance) return;
+    setStep((s) => Math.min(LAST_STEP, s + 1));
+  };
   const back = () => (step === 0 ? requestClose() : setStep((s) => Math.max(0, s - 1)));
 
   const handlePublish = async (asDraft: boolean) => {
     const payload = { ...form, uiStatus: asDraft ? ('draft' as const) : ('active' as const) };
-    if (hasValidationErrors(validatePromotionWizard(payload, { existingCodes }))) return;
+    if (hasValidationErrors(validatePromotionWizard(payload, { existingCodes, audience: validationAudience }))) return;
     await onSave(payload, !asDraft);
     baselineRef.current = snapshotForm(payload);
     setStep(0);
@@ -273,17 +303,34 @@ export function PromotionWizard({
                 <PromotionTriggerSelector value={form.audience} onChange={(audience) => patch({ audience })} />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-slate-800 mb-2">What does this apply to?</h3>
+                <h3 className="text-sm font-semibold text-slate-800 mb-2">
+                  What does this apply to? <span className="text-red-500">*</span>
+                </h3>
+                <p className="mb-2 text-xs text-slate-500">
+                  Required — select a target type, then choose specific items. Leaving this blank would apply to
+                  all, which is not allowed.
+                </p>
                 <PromotionTargetSelector
                   enabledScopes={enabledScopes(scope)}
                   catalog={catalog}
                   selectedScopes={form.targetScopes}
                   selectedTargets={form.selectedTargets}
-                  onScopesChange={(targetScopes) => patch({ targetScopes })}
+                  onScopesChange={(targetScopes) =>
+                    patch({
+                      targetScopes: targetScopes.filter((s) => s !== 'entire_platform'),
+                    })
+                  }
                   onTargetsChange={(selectedTargets) => patch({ selectedTargets })}
                   smartTargetSurface={scope.smartTargetSurface}
                   smartTargetAdapter={smartTargetAdapter}
                 />
+                {step === 2 && stepBlockingIssues.length > 0 ? (
+                  <ul className="mt-3 space-y-1 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    {stepBlockingIssues.map((i, idx) => (
+                      <li key={idx}>{i.message}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             </div>
           )}
@@ -450,8 +497,9 @@ export function PromotionWizard({
             ) : step > 0 ? (
               <button
                 type="button"
+                disabled={!canAdvance}
                 onClick={next}
-                className="inline-flex items-center justify-center gap-1 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white"
+                className="inline-flex items-center justify-center gap-1 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
                 Next
                 <ChevronRight className="h-4 w-4" />

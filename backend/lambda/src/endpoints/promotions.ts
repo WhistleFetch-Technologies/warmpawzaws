@@ -44,6 +44,7 @@ import {
   buildCouponTargetingFromAdminBody,
   couponRowMatchesService,
 } from '../utils/coupon-targeting';
+import { validateAdminPromotionTargeting } from '../utils/promotion-targeting-validation';
 
 async function persistPromotionInsert(promotionData: Record<string, unknown>) {
   const payload = { ...promotionData };
@@ -1102,6 +1103,10 @@ export function registerPromotionEndpoints(app: Hono) {
         serviceCategory: resolvedCategory ?? undefined,
         couponCode: couponCode ? String(couponCode).trim() : undefined,
         displayPromotionsOnly,
+        debugSessionId:
+          body.debugSessionId === '3c1403' || body.debug_session_id === '3c1403'
+            ? '3c1403'
+            : undefined,
       });
 
       return c.json({
@@ -1759,6 +1764,11 @@ export function registerPromotionEndpoints(app: Hono) {
         return c.json({ error: 'name, discount_type, and discount_value are required' }, 400);
       }
 
+      const targetingError = validateAdminPromotionTargeting(body as Record<string, unknown>);
+      if (targetingError) {
+        return c.json({ error: targetingError }, 400);
+      }
+
       const promotionData: any = {
         ...record,
         created_at: new Date().toISOString(),
@@ -1795,6 +1805,11 @@ export function registerPromotionEndpoints(app: Hono) {
       const promotions = await select('promotions', { id });
       if (promotions.length === 0) {
         return c.json({ error: 'Promotion not found' }, 404);
+      }
+
+      const targetingError = validateAdminPromotionTargeting(body as Record<string, unknown>);
+      if (targetingError) {
+        return c.json({ error: targetingError }, 400);
       }
 
       const updateData = mergeAdminPromotionUpdateBody(body, promotions[0]) as Record<string, unknown>;
@@ -1983,6 +1998,10 @@ export function registerPromotionEndpoints(app: Hono) {
       if (!body.code || (body.discount_value === undefined && body.value === undefined)) {
         return c.json({ error: 'code, discount_type/type, and discount_value/value are required' }, 400);
       }
+      const targetingError = validateAdminPromotionTargeting(body as Record<string, unknown>);
+      if (targetingError) {
+        return c.json({ error: targetingError }, 400);
+      }
       const couponData = buildAdminCouponRecord(body as Record<string, unknown>);
       let coupon;
       try {
@@ -2022,6 +2041,10 @@ export function registerPromotionEndpoints(app: Hono) {
       const body = await c.req.json();
       if (!body.code || (body.discount_value === undefined && body.value === undefined)) {
         return c.json({ error: 'code, discount_type/type, and discount_value/value are required' }, 400);
+      }
+      const targetingError = validateAdminPromotionTargeting(body as Record<string, unknown>);
+      if (targetingError) {
+        return c.json({ error: targetingError }, 400);
       }
       const couponData = buildAdminCouponRecord(body as Record<string, unknown>);
       let coupon;

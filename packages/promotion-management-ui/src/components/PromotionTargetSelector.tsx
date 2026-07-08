@@ -668,9 +668,8 @@ function StaticPromotionTargetSelector({
   const [page, setPage] = useState(0);
 
   const toggleScope = (scope: TargetScopeId) => {
+    // entire_platform is disabled — users must pick concrete scopes + items.
     if (scope === 'entire_platform') {
-      onScopesChange(['entire_platform']);
-      onTargetsChange({});
       return;
     }
     const next = selectedScopes.filter((s) => s !== 'entire_platform');

@@ -22,7 +22,9 @@ import {
 } from '@/lib/available-slots-response';
 import { ServiceBookingPromoSummary } from '../booking/ServiceBookingPromoSummary';
 import { CheckoutCouponPanel } from '@/components/customer/pricing/CheckoutCouponPanel';
+import { useBookingDiscountResolver } from '@/lib/pricing/use-booking-discount-resolver';
 import type { AppliedCheckoutCoupon } from '@/lib/pricing/coupon-validation';
+import type { UnifiedResolverResponse } from '@/lib/pricing/unified-resolver-response';
 
 interface UniversalBookingRouterProps {
   roleId: RoleId; // ✅ NEW: Role ID for universal component
@@ -135,8 +137,6 @@ export function UniversalBookingRouter({
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [selectedPackageForSwitch, setSelectedPackageForSwitch] = useState<any | null>(null); // Phase 1: Package switch
-  const [summaryPromoSavings, setSummaryPromoSavings] = useState(0);
-  const [appliedBookingCoupon, setAppliedBookingCoupon] = useState<AppliedCheckoutCoupon | null>(null);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
   // ✅ NEW: Staff selection for center bookings
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
@@ -831,6 +831,58 @@ export function UniversalBookingRouter({
 
   const selectedServiceOption = getSelectedServiceOption();
 
+  const bookingSummaryServiceIds = useMemo(() => {
+    const services = allSelectedServices?.length
+      ? allSelectedServices
+      : selectedServices?.length
+        ? selectedServices
+        : [selectedServiceOption];
+    return services
+      .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+      .filter(Boolean);
+  }, [allSelectedServices, selectedServices, selectedServiceOption]);
+
+  const bookingSummaryBaseAmount = useMemo(() => {
+    if (selectedPackageForSwitch) return 0;
+    const services = allSelectedServices?.length
+      ? allSelectedServices
+      : selectedServices?.length
+        ? selectedServices
+        : [selectedServiceOption];
+    return services.reduce(
+      (sum: number, s: any) => sum + safeNumber(s?.price ?? selectedServiceOption?.price ?? 0, 0),
+      0
+    );
+  }, [allSelectedServices, selectedServices, selectedServiceOption, selectedPackageForSwitch]);
+
+  const bookingDiscountResolver = useBookingDiscountResolver({
+    enabled:
+      Boolean(vendorId || doctorId) &&
+      bookingSummaryBaseAmount > 0 &&
+      !selectedPackageForSwitch,
+    vendorId: String(vendorId || doctorId || ''),
+    serviceIds: bookingSummaryServiceIds,
+    amount: bookingSummaryBaseAmount,
+    customerId: customerId || undefined,
+    serviceStyle: selectedServiceType,
+    serviceCategory: config.category,
+  });
+
+  const handleSummaryCouponApply = (
+    coupon: AppliedCheckoutCoupon,
+    quote?: UnifiedResolverResponse
+  ) => {
+    if (quote) {
+      bookingDiscountResolver.applyCouponFromQuote(quote, coupon.code);
+      return;
+    }
+    void bookingDiscountResolver.refresh(coupon.code);
+  };
+
+  const handleSummaryBookingQuote = (quote: UnifiedResolverResponse, couponCode: string) => {
+    bookingDiscountResolver.applyCouponFromQuote(quote, couponCode);
+  };
+
   // Get header title and icon based on step and service type
   const getHeaderInfo = () => {
     if (step === 'service') {
@@ -1132,7 +1184,7 @@ export function UniversalBookingRouter({
               selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
               customerPhone={phone}
               customerId={customerId || undefined}
-              initialAppliedCoupon={appliedBookingCoupon}
+              initialAppliedCoupon={bookingDiscountResolver.appliedCoupon}
               onBack={() => setShowPaymentPage(false)}
               onPaymentAbandoned={() => {
                 if (selectedDate) void loadTimeSlots(selectedDate);
@@ -1462,19 +1514,13 @@ export function UniversalBookingRouter({
                 <ServiceBookingPromoSummary
                   vendorId={vendorId || doctorId}
                   customerId={customerId}
-                  serviceIds={(() => {
-                    const services = allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption];
-                    return services
-                      .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
-                      .filter(Boolean);
-                  })()}
-                  baseAmount={(() => {
-                    const services = allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption];
-                    return services.reduce((sum: number, s: any) => sum + safeNumber(s?.price ?? selectedServiceOption?.price ?? 0, 0), 0);
-                  })()}
+                  serviceIds={bookingSummaryServiceIds}
+                  baseAmount={bookingSummaryBaseAmount}
                   serviceStyle={selectedServiceType}
                   serviceCategory={config.category}
-                  onQuote={({ totalSavings }) => setSummaryPromoSavings(totalSavings)}
+                  quote={bookingDiscountResolver.quote}
+                  couponCode={bookingDiscountResolver.activeCouponCode}
+                  loading={bookingDiscountResolver.loading}
                 />
               ) : null}
               {!selectedPackageForSwitch && (vendorId || doctorId) ? (
@@ -1483,16 +1529,18 @@ export function UniversalBookingRouter({
                   vendorId={vendorId || doctorId}
                   customerId={customerId || undefined}
                   serviceCategory={config.category}
-                  orderAmount={Math.max(
-                    0,
-                    (() => {
-                      const services = allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption];
-                      return services.reduce((sum: number, s: any) => sum + safeNumber(s?.price ?? selectedServiceOption?.price ?? 0, 0), 0);
-                    })() - summaryPromoSavings
-                  )}
-                  appliedCoupon={appliedBookingCoupon}
-                  onApplyCoupon={setAppliedBookingCoupon}
-                  onRemoveCoupon={() => setAppliedBookingCoupon(null)}
+                  serviceIds={(allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption])
+                    .map((s: any) =>
+                      String(s?.id || s?.vendorServiceId || s?.serviceId || s?.service_id || '').trim()
+                    )
+                    .filter(Boolean)}
+                  serviceStyle={selectedServiceType}
+                  bookingBaseAmount={bookingSummaryBaseAmount}
+                  orderAmount={bookingSummaryBaseAmount}
+                  appliedCoupon={bookingDiscountResolver.appliedCoupon}
+                  onApplyCoupon={handleSummaryCouponApply}
+                  onBookingQuote={handleSummaryBookingQuote}
+                  onRemoveCoupon={() => void bookingDiscountResolver.removeCoupon()}
                   alwaysShow
                 />
               ) : null}

@@ -98,7 +98,7 @@ export function buildCheckoutPriceLines(params: BuildCheckoutPriceLinesParams): 
   }
 
   const promoSavings = vendorDiscount + platformDiscount + couponDiscount;
-  if (promoSavings > 0) {
+  if (promoSavings > 0 && !collapseAutoPromotions) {
     lines.push({
       kind: 'savings',
       label: 'Promotion savings',

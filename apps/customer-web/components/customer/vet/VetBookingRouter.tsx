@@ -13,7 +13,9 @@ import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHead
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceBookingPromoSummary } from '../booking/ServiceBookingPromoSummary';
 import { CheckoutCouponPanel } from '@/components/customer/pricing/CheckoutCouponPanel';
+import { useBookingDiscountResolver } from '@/lib/pricing/use-booking-discount-resolver';
 import type { AppliedCheckoutCoupon } from '@/lib/pricing/coupon-validation';
+import type { UnifiedResolverResponse } from '@/lib/pricing/unified-resolver-response';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { PaymentSourcesDisplay } from '../payment/PaymentSourcesDisplay';
@@ -180,8 +182,6 @@ export function VetBookingRouter({
     totalPaid?: number;
   } | null>(null);
   const [selectedPackageForSwitch, setSelectedPackageForSwitch] = useState<any | null>(null); // Phase 1: Package switch
-  const [summaryPromoSavings, setSummaryPromoSavings] = useState(0);
-  const [appliedBookingCoupon, setAppliedBookingCoupon] = useState<AppliedCheckoutCoupon | null>(null);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
   // ✅ NEW: Store all selected services for multi-service booking
   const [allSelectedServices, setAllSelectedServices] = useState<any[]>(() => {
@@ -967,6 +967,48 @@ export function VetBookingRouter({
 
   const selectedServiceOption = getSelectedServiceOption();
 
+  const bookingSummaryServiceIds = useMemo(() => {
+    const services = allSelectedServices?.length ? allSelectedServices : [selectedServiceOption];
+    return services
+      .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+      .filter(Boolean);
+  }, [allSelectedServices, selectedServiceOption]);
+
+  const bookingSummaryBaseAmount = useMemo(() => {
+    if (selectedPackageForSwitch) return 0;
+    return allSelectedServices?.length
+      ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0)
+      : (selectedServiceOption?.price ?? 0);
+  }, [allSelectedServices, selectedServiceOption, selectedPackageForSwitch]);
+
+  const bookingDiscountResolver = useBookingDiscountResolver({
+    enabled:
+      Boolean(vendorId || doctorId) &&
+      bookingSummaryBaseAmount > 0 &&
+      !selectedPackageForSwitch,
+    vendorId: String(vendorId || doctorId || ''),
+    serviceIds: bookingSummaryServiceIds,
+    amount: bookingSummaryBaseAmount,
+    customerId: customerId || undefined,
+    serviceStyle: selectedServiceType,
+    serviceCategory: 'vet',
+  });
+
+  const handleSummaryCouponApply = (
+    coupon: AppliedCheckoutCoupon,
+    quote?: UnifiedResolverResponse
+  ) => {
+    if (quote) {
+      bookingDiscountResolver.applyCouponFromQuote(quote, coupon.code);
+      return;
+    }
+    void bookingDiscountResolver.refresh(coupon.code);
+  };
+
+  const handleSummaryBookingQuote = (quote: UnifiedResolverResponse, couponCode: string) => {
+    bookingDiscountResolver.applyCouponFromQuote(quote, couponCode);
+  };
+
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
   const getServiceTitle = () => {
     if (selectedServiceType === 'at_center') return 'Clinic Visit Booking';
@@ -1093,7 +1135,7 @@ export function VetBookingRouter({
                 }
                 customerPhone={phone}
                 customerId={customerId || undefined}
-                initialAppliedCoupon={appliedBookingCoupon}
+                initialAppliedCoupon={bookingDiscountResolver.appliedCoupon}
                 flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
                 onBack={() => {
                   setShowPaymentPage(false);
@@ -1537,17 +1579,13 @@ export function VetBookingRouter({
                 <ServiceBookingPromoSummary
                   vendorId={vendorId || doctorId}
                   customerId={customerId}
-                  serviceIds={(allSelectedServices?.length ? allSelectedServices : [selectedServiceOption])
-                    .map((s: any) =>
-                      String(s?.id || s?.vendorServiceId || s?.serviceId || s?.service_id || '').trim()
-                    )
-                    .filter(Boolean)}
-                  baseAmount={allSelectedServices?.length
-                    ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0)
-                    : (selectedServiceOption?.price ?? 0)}
+                  serviceIds={bookingSummaryServiceIds}
+                  baseAmount={bookingSummaryBaseAmount}
                   serviceStyle={selectedServiceType}
                   serviceCategory="vet"
-                  onQuote={({ totalSavings }) => setSummaryPromoSavings(totalSavings)}
+                  quote={bookingDiscountResolver.quote}
+                  couponCode={bookingDiscountResolver.activeCouponCode}
+                  loading={bookingDiscountResolver.loading}
                 />
               ) : null}
               {!selectedPackageForSwitch && (vendorId || doctorId) ? (
@@ -1556,15 +1594,18 @@ export function VetBookingRouter({
                   vendorId={vendorId || doctorId}
                   customerId={customerId || undefined}
                   serviceCategory="vet"
-                  orderAmount={Math.max(
-                    0,
-                    (allSelectedServices?.length
-                      ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0)
-                      : (selectedServiceOption?.price ?? 0)) - summaryPromoSavings
-                  )}
-                  appliedCoupon={appliedBookingCoupon}
-                  onApplyCoupon={setAppliedBookingCoupon}
-                  onRemoveCoupon={() => setAppliedBookingCoupon(null)}
+                  serviceIds={(allSelectedServices?.length ? allSelectedServices : [selectedServiceOption])
+                    .map((s: any) =>
+                      String(s?.id || s?.vendorServiceId || s?.serviceId || s?.service_id || '').trim()
+                    )
+                    .filter(Boolean)}
+                  serviceStyle={selectedServiceType}
+                  bookingBaseAmount={bookingSummaryBaseAmount}
+                  orderAmount={bookingSummaryBaseAmount}
+                  appliedCoupon={bookingDiscountResolver.appliedCoupon}
+                  onApplyCoupon={handleSummaryCouponApply}
+                  onBookingQuote={handleSummaryBookingQuote}
+                  onRemoveCoupon={() => void bookingDiscountResolver.removeCoupon()}
                   alwaysShow
                 />
               ) : null}

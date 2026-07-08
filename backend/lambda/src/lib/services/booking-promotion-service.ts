@@ -45,6 +45,8 @@ export type ResolveBookingPromotionsParams = {
   serviceCategory?: string;
   /** S5 — platform / vendor coupon code applied after auto promotion stack */
   couponCode?: string;
+  /** Debug session — attaches agent diagnostics to calculate-booking when set to 3c1403 */
+  debugSessionId?: string;
 };
 
 function normalizeStyle(raw: unknown): string {
@@ -244,12 +246,16 @@ export async function resolveBookingDiscountQuote(
       resolverSource: source,
       displayPromotionsOnly: params.displayPromotionsOnly,
     });
-    if (shouldCollapseToSingleWinner(runtimePolicy) || params.displayPromotionsOnly) {
+    if (params.displayPromotionsOnly) {
       unified.appliedOffers = unified.appliedOffers.filter((o) => o.trigger === 'AUTO');
-      if (params.displayPromotionsOnly) {
-        unified.appliedOffers = unified.appliedOffers.slice(0, 1);
-        unified.winningPromotion = unified.appliedOffers[0] ?? null;
-      }
+      unified.appliedOffers = unified.appliedOffers.slice(0, 1);
+      unified.winningPromotion = unified.appliedOffers[0] ?? null;
+    } else if (shouldCollapseToSingleWinner(runtimePolicy) && unified.appliedOffers.length > 1) {
+      const winner = unified.appliedOffers.reduce((best, cur) =>
+        cur.discountAmount > best.discountAmount ? cur : best
+      );
+      unified.appliedOffers = [winner];
+      unified.winningPromotion = winner;
     }
     unified.savings = {
       originalAmount: booking.originalAmount,
@@ -265,12 +271,82 @@ export async function resolveBookingDiscountQuote(
         .filter((o) => o.source === 'coupon')
         .reduce((s, o) => s + o.discountAmount, 0),
     };
+    // #region agent log
+    console.warn(
+      '[agent-debug-3c1403]',
+      JSON.stringify({
+        hypothesisId: 'H2-H5',
+        location: 'booking-promotion-service.ts:resolveBookingDiscountQuote',
+        message: 'quote result',
+        data: {
+          source,
+          couponCode: params.couponCode,
+          applied: unified.appliedOffers.map((o) => ({
+            name: o.name,
+            amount: o.discountAmount,
+            trigger: o.trigger,
+            source: o.source,
+          })),
+          rejected: unified.rejectedOffers,
+          finalAmount: unified.savings.finalAmount,
+          strategy: unified.currentPolicy.applicationStrategy,
+        },
+        timestamp: Date.now(),
+      })
+    );
+    // #endregion
     return unified;
   }
 
   return mapLegacyBookingToUnifiedResponse(booking, runtimePolicy, {
     displayPromotionsOnly: params.displayPromotionsOnly,
+    legacyCouponRejections: await buildLegacyCouponRejections(booking, params),
   });
+}
+
+async function buildLegacyCouponRejections(
+  booking: BookingPromotionResult,
+  params: ResolveBookingPromotionsParams
+): Promise<import('../../discount-engine/resolver/unified-resolver-response').UnifiedResolverRejectedOffer[]> {
+  const code = params.couponCode?.trim();
+  if (!code) return [];
+
+  const appliedCoupon = booking.applied.find((a) => a.promotionType === 'coupon');
+  if (appliedCoupon) return [];
+
+  try {
+    const { resolveBookingCouponDiscount } = await import('./booking-coupon-resolution');
+    const originalAmount = booking.originalAmount || params.amount;
+    const resolved = await resolveBookingCouponDiscount({
+      vendorId: params.vendorId,
+      customerId: params.customerId,
+      serviceIds: params.serviceIds,
+      serviceCategory: params.serviceCategory,
+      couponCode: code,
+      amount: originalAmount,
+    });
+    if (!resolved || resolved.discountAmount <= 0) {
+      return [];
+    }
+
+    const autoWinner = booking.applied.find((a) => a.promotionType !== 'coupon');
+    if (autoWinner && resolved.discountAmount <= (autoWinner.discountAmount ?? 0)) {
+      return [
+        {
+          id: resolved.id,
+          name: resolved.name,
+          trigger: 'CODE',
+          offerType: resolved.offerType,
+          reasonCode: 'BEST_OFFER_ONLY_NOT_WINNER',
+          reason: 'BEST_OFFER_ONLY_NOT_WINNER',
+          discountAmount: resolved.discountAmount,
+        },
+      ];
+    }
+  } catch {
+    return [];
+  }
+  return [];
 }
 
 /**
@@ -319,39 +395,67 @@ async function augmentLegacyBookingWithCoupon(
   params: ResolveBookingPromotionsParams
 ): Promise<BookingPromotionResult> {
   try {
-    const { validateCouponForAmount } = await import('./platform-coupon-service');
+    const { resolveBookingCouponDiscount } = await import('./booking-coupon-resolution');
     const originalAmount = stack.originalAmount || params.amount;
-    const validation = await validateCouponForAmount(
-      params.couponCode!.trim(),
-      originalAmount,
-      DiscountDomain.SERVICE
+    const resolved = await resolveBookingCouponDiscount({
+      vendorId: params.vendorId,
+      customerId: params.customerId,
+      serviceIds: params.serviceIds,
+      serviceCategory: params.serviceCategory,
+      couponCode: params.couponCode!.trim(),
+      amount: originalAmount,
+    });
+    // #region agent log
+    console.warn(
+      '[agent-debug-3c1403]',
+      JSON.stringify({
+        hypothesisId: 'H1-fix',
+        location: 'booking-promotion-service.ts:augmentLegacyBookingWithCoupon',
+        message: 'unified booking coupon resolution',
+        data: {
+          code: params.couponCode?.trim(),
+          originalAmount,
+          resolved: resolved
+            ? {
+                discount: resolved.discountAmount,
+                offerType: resolved.offerType,
+                source: resolved.source,
+              }
+            : null,
+          promoSavings: stack.totalSavings,
+        },
+        timestamp: Date.now(),
+      })
     );
-    if (!validation.valid || !validation.discountAmount || validation.discountAmount <= 0) {
+    // #endregion
+    if (!resolved || resolved.discountAmount <= 0) {
       return stack;
     }
-    const couponDiscount = validation.discountAmount;
+    const couponDiscount = resolved.discountAmount;
     const promoSavings = stack.totalSavings;
 
     if (promoSavings > 0 && couponDiscount <= promoSavings) {
       return stack;
     }
 
+    const isVendor = resolved.source === 'vendor';
     return {
       originalAmount,
-      vendorDiscountAmount: 0,
-      platformDiscountAmount: couponDiscount,
+      vendorDiscountAmount: isVendor ? couponDiscount : 0,
+      platformDiscountAmount: isVendor ? 0 : couponDiscount,
       totalSavings: couponDiscount,
       finalAmount: Math.max(0, originalAmount - couponDiscount),
       applied: [
         {
-          source: 'platform',
-          id: validation.couponId ?? 'coupon',
-          name: validation.couponName ?? 'Coupon',
+          source: isVendor ? 'vendor' : 'platform',
+          id: resolved.id,
+          name: resolved.name,
           discountAmount: couponDiscount,
           promotionType: 'coupon',
         },
       ],
-      platformPromotionId: validation.couponId,
+      vendorPromotionId: isVendor ? resolved.id : undefined,
+      platformPromotionId: !isVendor ? resolved.id : undefined,
     };
   } catch {
     return stack;

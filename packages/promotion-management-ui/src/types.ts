@@ -184,7 +184,8 @@ export const DEFAULT_WIZARD_FORM = (): PromotionWizardForm => ({
   uiStatus: 'draft',
   promotionType: 'percentage',
   audience: 'all',
-  targetScopes: ['entire_platform'],
+  // Empty by default — user must choose "What does this apply to?" (never silent apply-all).
+  targetScopes: [],
   selectedTargets: {},
   discountType: 'percentage',
   discountValue: 10,

@@ -1,10 +1,116 @@
-import type { PromotionWizardForm } from './types';
+import type { PromotionWizardForm, TargetScopeId } from './types';
 
 export type ValidationIssue = { field: string; message: string; severity: 'error' | 'warning' };
 
+const INVENTORY_SCOPES: TargetScopeId[] = [
+  'services',
+  'packages',
+  'meal_plans',
+  'products',
+];
+
+/** Concrete catalog picks — styles & categories count; entire_platform alone does not. */
+export function hasConcreteTargetSelection(form: PromotionWizardForm): boolean {
+  const selected = form.selectedTargets ?? {};
+  if (INVENTORY_SCOPES.some((s) => (selected[s]?.length ?? 0) > 0)) return true;
+  if ((selected.categories?.length ?? 0) > 0) return true;
+  if ((selected.styles?.length ?? 0) > 0) return true;
+  if ((selected.vendors?.length ?? 0) > 0 && INVENTORY_SCOPES.some((s) => (selected[s]?.length ?? 0) > 0)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * "What does this apply to?" must be filled — never silently apply to all.
+ * Vendors and admins (service + ecommerce) must pick scopes and concrete items.
+ */
+export function validatePromotionTargeting(
+  form: PromotionWizardForm,
+  options?: { audience?: 'admin' | 'vendor' }
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const audience = options?.audience ?? 'admin';
+  const scopes = form.targetScopes ?? [];
+  const selected = form.selectedTargets ?? {};
+
+  const onlyEntirePlatform =
+    scopes.length === 0 ||
+    (scopes.length === 1 && scopes.includes('entire_platform'));
+
+  if (onlyEntirePlatform || scopes.includes('entire_platform')) {
+    issues.push({
+      field: 'target',
+      message:
+        audience === 'vendor'
+          ? 'Select what this applies to (services, packages, meal plans, products, or styles) — it cannot apply to everything by default.'
+          : 'Select what this applies to (categories, vendors, services, products, or styles) — platform-wide “apply to all” is not allowed.',
+      severity: 'error',
+    });
+    return issues;
+  }
+
+  if (scopes.length === 0) {
+    issues.push({
+      field: 'target',
+      message: 'Select at least one target under “What does this apply to?”',
+      severity: 'error',
+    });
+    return issues;
+  }
+
+  if (!hasConcreteTargetSelection(form)) {
+    issues.push({
+      field: 'target',
+      message:
+        audience === 'vendor'
+          ? 'Choose items for the selected targets (e.g. pick services or service styles). Leaving this blank applies to all — that is not allowed.'
+          : 'Choose at least one category, vendor inventory, product, service, or style. Leaving this blank applies to all — that is not allowed.',
+      severity: 'error',
+    });
+  }
+
+  for (const scope of scopes) {
+    if (scope === 'entire_platform') continue;
+    const count = selected[scope]?.length ?? 0;
+    if (count === 0) {
+      const labels: Partial<Record<TargetScopeId, string>> = {
+        services: 'service',
+        packages: 'package',
+        meal_plans: 'meal plan',
+        products: 'product',
+        categories: 'category',
+        styles: 'service style',
+        vendors: 'vendor',
+      };
+      issues.push({
+        field: 'target',
+        message: `Select at least one ${labels[scope] ?? scope.replace(/_/g, ' ')}`,
+        severity: 'error',
+      });
+    }
+  }
+
+  const hasPartner = (selected.vendors?.length ?? 0) > 0;
+  const hasInventory = INVENTORY_SCOPES.some((s) => (selected[s]?.length ?? 0) > 0);
+  if (hasPartner && !hasInventory) {
+    issues.push({
+      field: 'target',
+      message: 'Select at least one inventory item for the chosen vendor or seller',
+      severity: 'error',
+    });
+  }
+
+  return issues;
+}
+
 export function validatePromotionWizard(
   form: PromotionWizardForm,
-  options?: { existingCodes?: string[]; editingId?: string }
+  options?: {
+    existingCodes?: string[];
+    editingId?: string;
+    audience?: 'admin' | 'vendor';
+  }
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
@@ -60,47 +166,7 @@ export function validatePromotionWizard(
     issues.push({ field: 'schedule', message: 'End date must be after start date', severity: 'error' });
   }
 
-  const hasTarget =
-    form.targetScopes.includes('entire_platform') ||
-    form.targetScopes.some((s) => (form.selectedTargets[s]?.length ?? 0) > 0);
-
-  if (!hasTarget && form.createKind === 'promotion') {
-    issues.push({
-      field: 'target',
-      message: 'Select at least one target scope',
-      severity: 'error',
-    });
-  }
-
-  if (
-    form.targetScopes.includes('categories') &&
-    !form.targetScopes.includes('entire_platform') &&
-    (form.selectedTargets.categories?.length ?? 0) === 0
-  ) {
-    issues.push({
-      field: 'target',
-      message: 'Select at least one category',
-      severity: 'error',
-    });
-  }
-
-  const inventoryScopes: Array<keyof PromotionWizardForm['selectedTargets']> = [
-    'services',
-    'packages',
-    'meal_plans',
-    'products',
-  ];
-  const hasPartner = (form.selectedTargets.vendors?.length ?? 0) > 0;
-  const hasInventory = inventoryScopes.some(
-    (s) => (form.selectedTargets[s]?.length ?? 0) > 0
-  );
-  if (hasPartner && !hasInventory && form.targetScopes.includes('vendors')) {
-    issues.push({
-      field: 'target',
-      message: 'Select at least one inventory item for the chosen vendor or seller',
-      severity: 'error',
-    });
-  }
+  issues.push(...validatePromotionTargeting(form, { audience: options?.audience }));
 
   return issues;
 }

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
@@ -38,13 +38,18 @@ import {
   type AppliedCheckoutCoupon,
 } from '@/lib/pricing/coupon-validation';
 import type { CouponCheckoutKind } from '@/lib/pricing/coupon-capability';
+import { couponRejectionMessageFromQuote } from '@/lib/pricing/coupon-policy-messages';
 import {
   fetchBookingDiscountQuote,
   type BookingDiscountQuoteParams,
 } from '@/lib/service-booking-pricing';
 import {
-  couponSavingsFromQuote,
-  promoSavingsFromQuote,
+  buildBookingCreateDiscountPayload,
+  deriveBookingDiscountFromQuote,
+  syncBookingDiscountStateFromQuote,
+  type BookingDiscountUiPromotion,
+} from '@/lib/pricing/booking-discount-state';
+import {
   type UnifiedResolverResponse,
 } from '@/lib/pricing/unified-resolver-response';
 import {
@@ -287,6 +292,19 @@ interface PromotionOffer {
   minAmount?: number;
   maxDiscount?: number;
   applicable: boolean;
+}
+
+function uiPromotionToOffer(p: BookingDiscountUiPromotion): PromotionOffer {
+  return {
+    id: p.id,
+    type: p.type === 'vendor' ? 'service_discount' : 'spotlight',
+    title: p.title,
+    description: p.description,
+    discountType: p.discountType,
+    discountValue: p.discountValue,
+    discountAmount: p.discountAmount,
+    applicable: true,
+  };
 }
 
 interface RazorpayOffer {
@@ -847,6 +865,7 @@ export function UniversalPaymentPage({
     serviceId,
     selectedServices,
     initialPromotionIntent?.serviceCategory,
+    appliedCoupon?.code,
   ]);
 
   useEffect(() => {
@@ -1216,6 +1235,19 @@ export function UniversalPaymentPage({
     }
   };
 
+  const syncBookingFromQuote = useCallback(
+    (quote: UnifiedResolverResponse | null, couponCode?: string | null) => {
+      return syncBookingDiscountStateFromQuote(quote, {
+        couponCode,
+        setQuote: setDiscountQuote,
+        setPromotions: (rows) => setPromotions(rows.map(uiPromotionToOffer)),
+        setAppliedPromotion: (row) => setAppliedPromotion(row ? uiPromotionToOffer(row) : null),
+        setAppliedCoupon,
+      });
+    },
+    []
+  );
+
   const refreshBookingDiscountQuote = useCallback(
     async (couponCode?: string) => {
       if (type !== 'booking' || !vendorId) return null;
@@ -1240,7 +1272,7 @@ export function UniversalPaymentPage({
         bypassCache: Boolean(couponCode),
       };
       const quote = await fetchBookingDiscountQuote(params);
-      setDiscountQuote(quote);
+      syncBookingFromQuote(quote, couponCode ?? appliedCoupon?.code ?? null);
       return quote;
     },
     [
@@ -1254,6 +1286,8 @@ export function UniversalPaymentPage({
       category,
       initialPromotionIntent?.serviceCategory,
       serviceId,
+      appliedCoupon?.code,
+      syncBookingFromQuote,
     ]
   );
   const loadPromotions = async () => {
@@ -1263,37 +1297,14 @@ export function UniversalPaymentPage({
         .filter(Boolean);
 
       if (type === 'booking' && vendorId && baseAmount > 0) {
-        const quote = await refreshBookingDiscountQuote();
-        if (quote?.success) {
-          const autoOffers = quote.appliedOffers.filter((o) => o.trigger === 'AUTO');
-          const applicablePromos = autoOffers.map((a) => ({
-            id: a.id,
-            type: a.source === 'platform' ? 'spotlight' : 'vendor',
-            title: a.name,
-            description: a.name,
-            discountType: 'percentage' as const,
-            discountValue: 0,
-            discountAmount: a.discountAmount,
-            applicable: true,
-          }));
-          setPromotions(applicablePromos);
-
-          const promoSavings = promoSavingsFromQuote(quote);
-          if (promoSavings > 0) {
-            setAppliedPromotion({
-              id: quote.vendorPromotionId || quote.platformPromotionId || autoOffers[0]?.id || 'auto',
-              type: 'spotlight',
-              title: 'Promotion applied',
-              description: applicablePromos.map((p: PromotionOffer) => p.title).join(' + '),
-              discountType: 'percentage',
-              discountValue: 0,
-              discountAmount: promoSavings,
-              applicable: true,
-            });
-            toast.success(`You save ₹${promoSavings.toFixed(0)} on this booking`);
-          } else if (initialPromotionId) {
-            toast.info('The selected special offer is not eligible for this service/amount.');
-          }
+        const quote = await refreshBookingDiscountQuote(appliedCoupon?.code);
+        const derived = deriveBookingDiscountFromQuote(quote, {
+          couponCode: appliedCoupon?.code,
+        });
+        if (derived && !derived.couponWins && derived.promotionDiscount > 0) {
+          toast.success(`You save ₹${derived.promotionDiscount.toFixed(0)} on this booking`);
+        } else if (initialPromotionId && derived && derived.totalSavings <= 0) {
+          toast.info('The selected special offer is not eligible for this service/amount.');
         }
         return;
       }
@@ -1489,13 +1500,29 @@ export function UniversalPaymentPage({
     }
   };
 
+  const bookingDiscountDerived = useMemo(() => {
+    if (type !== 'booking') return null;
+    return deriveBookingDiscountFromQuote(discountQuote, { couponCode: appliedCoupon?.code });
+  }, [type, discountQuote, appliedCoupon?.code]);
+
   const autoPromoSavings =
     type === 'booking'
-      ? promoSavingsFromQuote(discountQuote) || appliedPromotion?.discountAmount || 0
+      ? bookingDiscountDerived?.promotionDiscount ?? 0
       : appliedPromotion?.discountAmount || 0;
 
-  const resolverCouponSavings =
-    type === 'booking' ? couponSavingsFromQuote(discountQuote) : appliedCoupon?.discountAmount || 0;
+  const couponWinsBestOffer = Boolean(bookingDiscountDerived?.couponWins);
+  const promotionDiscount =
+    type === 'booking'
+      ? bookingDiscountDerived?.promotionDiscount ?? 0
+      : appliedPromotion?.discountAmount || 0;
+  const couponDiscount =
+    type === 'booking'
+      ? bookingDiscountDerived?.couponDiscount ?? 0
+      : appliedCoupon?.discountAmount || 0;
+  const bookingDiscountTotal =
+    type === 'booking'
+      ? bookingDiscountDerived?.totalSavings ?? 0
+      : promotionDiscount + couponDiscount;
 
   const couponCheckoutKind: CouponCheckoutKind = useMemo(() => {
     if (type === 'order') return 'product_order';
@@ -1527,30 +1554,21 @@ export function UniversalPaymentPage({
   ]);
 
   const handleApplyCheckoutCoupon = useCallback(
-    async (coupon: AppliedCheckoutCoupon) => {
+    async (coupon: AppliedCheckoutCoupon, quote?: UnifiedResolverResponse) => {
       if (type === 'booking' && vendorId) {
-        const quote = await refreshBookingDiscountQuote(coupon.code);
-        const appliedCouponOffer = quote?.appliedOffers.find(
+        const resolvedQuote =
+          quote ?? (await refreshBookingDiscountQuote(coupon.code));
+        const derived = syncBookingFromQuote(resolvedQuote, coupon.code);
+        const appliedCouponOffer = resolvedQuote?.appliedOffers.find(
           (o) => o.source === 'coupon' || o.trigger === 'CODE'
         );
-        if (!appliedCouponOffer) {
-          const rejected = quote?.rejectedOffers.find((r) =>
-            r.reason.toLowerCase().includes('coupon')
-          );
-          toast.error(
-            rejected?.reason ??
-              quote?.displayMessages.find((m) => m.type === 'warning')?.message ??
-              'Coupon is not applicable with your current offers.'
-          );
+        if (!appliedCouponOffer || !derived?.couponWins) {
+          const message = couponRejectionMessageFromQuote(resolvedQuote, coupon.code);
+          toast.error(message);
           return;
         }
-        setAppliedCoupon({
-          ...coupon,
-          discountAmount: appliedCouponOffer.discountAmount,
-          promotionId: appliedCouponOffer.id,
-        });
         toast.success(
-          quote?.displayMessages.find((m) => m.type === 'success')?.message ??
+          resolvedQuote?.displayMessages.find((m) => m.type === 'success')?.message ??
             `Coupon applied! You save ₹${appliedCouponOffer.discountAmount.toFixed(0)}`
         );
         return;
@@ -1560,14 +1578,24 @@ export function UniversalPaymentPage({
         toast.success('Coupon applied successfully.');
       }
     },
-    [type, vendorId, refreshBookingDiscountQuote]
+    [type, vendorId, refreshBookingDiscountQuote, syncBookingFromQuote]
+  );
+
+  const handleBookingQuoteFromPanel = useCallback(
+    (quote: UnifiedResolverResponse, couponCode: string) => {
+      syncBookingFromQuote(quote, couponCode);
+    },
+    [syncBookingFromQuote]
   );
 
   const removeCoupon = useCallback(() => {
-    setAppliedCoupon(null);
     if (type === 'booking') {
-      void refreshBookingDiscountQuote();
+      void refreshBookingDiscountQuote().then(() => {
+        toast.info('Coupon removed');
+      });
+      return;
     }
+    setAppliedCoupon(null);
     toast.info('Coupon removed');
   }, [type, refreshBookingDiscountQuote]);
 
@@ -1608,19 +1636,11 @@ export function UniversalPaymentPage({
     let cancelled = false;
     void refreshBookingDiscountQuote(appliedCoupon.code).then((quote) => {
       if (cancelled || !quote) return;
-      const appliedCouponOffer = quote.appliedOffers.find(
-        (o) => o.source === 'coupon' || o.trigger === 'CODE'
-      );
-      if (!appliedCouponOffer) {
-        setAppliedCoupon(null);
+      const derived = deriveBookingDiscountFromQuote(quote, { couponCode: appliedCoupon.code });
+      if (!derived?.couponWins) {
+        syncBookingFromQuote(quote, null);
         toast.error('Coupon is no longer valid for this amount');
-        return;
       }
-      setAppliedCoupon((prev) =>
-        prev && prev.code === appliedCoupon.code
-          ? { ...prev, discountAmount: appliedCouponOffer.discountAmount }
-          : prev
-      );
     });
     return () => {
       cancelled = true;
@@ -1632,16 +1652,10 @@ export function UniversalPaymentPage({
     baseAmount,
     vendorId,
     refreshBookingDiscountQuote,
+    syncBookingFromQuote,
   ]);
 
-  const couponRawSavings = type === 'booking' ? resolverCouponSavings : appliedCoupon?.discountAmount || 0;
-
-  const promotionDiscount =
-    type === 'booking'
-      ? autoPromoSavings
-      : appliedPromotion?.discountAmount || 0;
-
-  const couponDiscount = couponRawSavings;
+  // promotionDiscount / couponDiscount / bookingDiscountTotal defined above (best-offer-only)
 
   const applyPromotion = (promotion: PromotionOffer) => {
     if (appliedPromotion?.id === promotion.id) {
@@ -1696,12 +1710,12 @@ export function UniversalPaymentPage({
       : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
   const checkoutVendorDiscount =
-    type === 'booking' && discountQuote
-      ? discountQuote.savings.vendorDiscountAmount
+    type === 'booking' && bookingDiscountDerived
+      ? bookingDiscountDerived.vendorDiscountLine
       : promotionDiscount;
   const checkoutPlatformDiscount =
-    type === 'booking' && discountQuote
-      ? Math.max(0, discountQuote.savings.platformDiscountAmount)
+    type === 'booking' && bookingDiscountDerived
+      ? bookingDiscountDerived.platformDiscountLine
       : 0;
 
   const finalAmount =
@@ -2400,21 +2414,7 @@ export function UniversalPaymentPage({
                 },
               }
             : {}),
-          ...(promotionDiscount > 0 || couponDiscount > 0
-            ? {
-                discountAmount: promotionDiscount + couponDiscount,
-                ...(couponDiscount > 0 ? { couponDiscount } : {}),
-                ...(discountQuote?.vendorPromotionId
-                  ? { vendorPromotionId: discountQuote.vendorPromotionId }
-                  : {}),
-                ...(discountQuote?.platformPromotionId
-                  ? { platformPromotionId: discountQuote.platformPromotionId }
-                  : {}),
-                ...(appliedCoupon?.code && couponDiscount > 0
-                  ? { couponCode: appliedCoupon.code }
-                  : {}),
-              }
-            : {}),
+          ...(buildBookingCreateDiscountPayload(discountQuote, appliedCoupon?.code) ?? {}),
           petId: effectivePetId || undefined, // âœ… Optional UUID
           petName: effectivePetName || undefined, // âœ… Pet name for booking
           customerPhone: customerPhone, // âœ… Customer phone
@@ -2636,21 +2636,36 @@ export function UniversalPaymentPage({
 
       // âœ… Additional fields (not in schema, but backend may handle from raw body)
       // These are sent but not validated by schema
-      if (appliedCoupon?.code && couponDiscount > 0) {
-        paymentPayload.couponCode = appliedCoupon.code;
-        paymentPayload.couponDiscount = couponDiscount;
-      }
-      if (promotionDiscount > 0 || couponDiscount > 0) {
-        paymentPayload.promotionDiscount = promotionDiscount || 0;
-        if (type === 'booking' && discountQuote) {
-          if (discountQuote.vendorPromotionId) {
-            paymentPayload.vendorPromotionId = discountQuote.vendorPromotionId;
+      if (type === 'booking' && bookingDiscountDerived && bookingDiscountTotal > 0) {
+        const discountPayload = buildBookingCreateDiscountPayload(
+          discountQuote,
+          appliedCoupon?.code
+        );
+        if (discountPayload) {
+          paymentPayload.promotionDiscount = discountPayload.discountAmount;
+          if (discountPayload.couponDiscount != null) {
+            paymentPayload.couponDiscount = discountPayload.couponDiscount;
           }
-          if (discountQuote.platformPromotionId) {
-            paymentPayload.platformPromotionId = discountQuote.platformPromotionId;
+          if (discountPayload.couponCode) {
+            paymentPayload.couponCode = discountPayload.couponCode;
           }
-        } else if (appliedPromotion?.id && appliedPromotion.id !== 'auto') {
-          paymentPayload.promotionId = appliedPromotion.id;
+          if (discountPayload.vendorPromotionId) {
+            paymentPayload.vendorPromotionId = discountPayload.vendorPromotionId;
+          }
+          if (discountPayload.platformPromotionId) {
+            paymentPayload.platformPromotionId = discountPayload.platformPromotionId;
+          }
+        }
+      } else {
+        if (appliedCoupon?.code && couponDiscount > 0) {
+          paymentPayload.couponCode = appliedCoupon.code;
+          paymentPayload.couponDiscount = couponDiscount;
+        }
+        if (promotionDiscount > 0 || couponDiscount > 0) {
+          paymentPayload.promotionDiscount = promotionDiscount || 0;
+          if (appliedPromotion?.id && appliedPromotion.id !== 'auto') {
+            paymentPayload.promotionId = appliedPromotion.id;
+          }
         }
       }
       if (selectedRazorpayOffer?.id) {
@@ -3609,7 +3624,7 @@ export function UniversalPaymentPage({
         )}
 
         {/* Promotions & Spotlight Offers — bookings auto-apply (read-only) */}
-        {type !== 'meal_subscription' && type !== 'meal_one_time' && promotions.length > 0 && (
+        {type !== 'meal_subscription' && type !== 'meal_one_time' && promotions.length > 0 && !couponWinsBestOffer && (
           <div className={paymentSecondaryCardClass}>
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
@@ -3671,15 +3686,46 @@ export function UniversalPaymentPage({
           </div>
         )}
 
+        {type === 'booking' && couponWinsBestOffer && discountQuote && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {discountQuote.displayMessages.find((m) => m.type === 'info')?.message ??
+              (() => {
+                const skippedPromo = discountQuote.rejectedOffers.find((r) => r.trigger === 'AUTO');
+                if (skippedPromo?.name && appliedCoupon?.code) {
+                  return `${skippedPromo.name} was not applied — ${appliedCoupon.code} saves more under Best Offer.`;
+                }
+                return 'Auto promotion was not applied — your coupon is the best offer.';
+              })()}
+          </div>
+        )}
+
         {/* Coupon — shared CheckoutCouponPanel (booking, meals, orders) */}
         <CheckoutCouponPanel
           kind={couponCheckoutKind}
           vendorId={vendorId}
           customerId={customerId}
           serviceCategory={category}
+          serviceIds={
+            type === 'booking'
+              ? (selectedServices || [])
+                  .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+                  .filter(Boolean)
+              : serviceId
+                ? [String(serviceId)]
+                : undefined
+          }
+          serviceStyle={serviceStyle}
+          bookingBaseAmount={
+            type === 'booking'
+              ? taxBreakdown.subtotal > 0
+                ? taxBreakdown.subtotal
+                : baseAmount
+              : undefined
+          }
           orderAmount={couponValidationBase}
           appliedCoupon={appliedCoupon}
           onApplyCoupon={handleApplyCheckoutCoupon}
+          onBookingQuote={type === 'booking' ? handleBookingQuoteFromPanel : undefined}
           onRemoveCoupon={removeCoupon}
           className={paymentSecondaryCardClass}
           alwaysShow={type === 'booking'}

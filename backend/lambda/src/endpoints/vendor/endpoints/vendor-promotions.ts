@@ -37,7 +37,8 @@ import {
   evaluatePlatformCodeViaProductionMode,
   evaluateProductCodeViaProductionMode,
 } from '../../../lib/services/promotion-code-validation-service';
-import { validateCouponInternal as validatePlatformCouponInternal } from '../../../lib/services/platform-coupon-service';
+import { validateVendorPromotionTargeting } from '../../../utils/promotion-targeting-validation';
+import { validateCouponForAmount } from '../../../lib/services/platform-coupon-service';
 
 export function registerVendorPromotionsEndpoints(app: Hono) {
   // ============================================================================
@@ -130,6 +131,15 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
 
       if (!name || !discount_value || !start_date || !end_date) {
         return c.json({ error: 'name, discount_value, start_date, and end_date are required' }, 400);
+      }
+
+      const targetingError = validateVendorPromotionTargeting({
+        target_scopes: body.target_scopes ?? body.targetScopes,
+        selected_targets: body.selected_targets ?? body.selectedTargets,
+        applicable_services: applicable_products,
+      });
+      if (targetingError) {
+        return c.json({ error: targetingError }, 400);
       }
 
       const resolvedDiscountValue =
@@ -365,6 +375,15 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
         return c.json({ error: 'name, start_date, and end_date are required' }, 400);
       }
 
+      const targetingError = validateVendorPromotionTargeting({
+        target_scopes: body.target_scopes ?? body.targetScopes,
+        selected_targets: body.selected_targets ?? body.selectedTargets,
+        applicable_services,
+      });
+      if (targetingError) {
+        return c.json({ error: targetingError }, 400);
+      }
+
       // Check for duplicate code
       if (code) {
         const existingCode = await query(
@@ -422,6 +441,15 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
     try {
       const { vendorId, promoId } = c.req.param();
       const body = await c.req.json();
+
+      const targetingError = validateVendorPromotionTargeting({
+        target_scopes: body.target_scopes ?? body.targetScopes,
+        selected_targets: body.selected_targets ?? body.selectedTargets,
+        applicable_services: body.applicable_services ?? body.applicableServices,
+      });
+      if (targetingError) {
+        return c.json({ error: targetingError }, 400);
+      }
 
       const updateData: any = {
         updated_at: new Date().toISOString()
@@ -704,6 +732,8 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
         orderType,
         customerId,
         items,
+        serviceCategory,
+        service_category,
       } = body;
 
       if (!code) {
@@ -853,6 +883,26 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
       
       if (platformRows.length > 0) {
         const promo = normalizeDbRow(platformRows[0]);
+        // #region agent log
+        console.warn(
+          '[agent-debug-3c1403]',
+          JSON.stringify({
+            hypothesisId: 'H1',
+            location: 'vendor-promotions.ts:validate-code:promotions-table',
+            message: 'code resolved from promotions table (not coupons)',
+            data: {
+              code: String(code).toUpperCase(),
+              amount,
+              promoId: promo.id,
+              discountType: promo.discount_type,
+              discountValue: promo.discount_value,
+              isActive: promo.is_active,
+              minOrder: promo.min_order_amount,
+            },
+            timestamp: Date.now(),
+          })
+        );
+        // #endregion
         
         // Check min order value
         if (promo.min_order_amount && amount < promo.min_order_amount) {
@@ -884,11 +934,34 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
         });
       }
 
-      const platformCoupon = await validatePlatformCouponInternal(
+      const platformCoupon = await validateCouponForAmount(
         code.toUpperCase(),
         amount,
-        orderType === 'service' ? DiscountDomain.SERVICE : DiscountDomain.ECOMMERCE
+        orderType === 'service' ? DiscountDomain.SERVICE : DiscountDomain.ECOMMERCE,
+        {
+          serviceCategory: String(serviceCategory || service_category || '').trim() || undefined,
+        }
       );
+      // #region agent log
+      console.warn(
+        '[agent-debug-3c1403]',
+        JSON.stringify({
+          hypothesisId: 'H1',
+          location: 'vendor-promotions.ts:validate-code',
+          message: 'validate-code platform lookup path',
+          data: {
+            code: String(code).toUpperCase(),
+            amount,
+            orderType,
+            foundInPromotionsTable: platformRows.length > 0,
+            platformCouponValid: platformCoupon.valid,
+            platformCouponError: platformCoupon.error,
+            platformCouponDiscount: platformCoupon.discountAmount,
+          },
+          timestamp: Date.now(),
+        })
+      );
+      // #endregion
       if (platformCoupon.valid && platformCoupon.discountAmount && platformCoupon.discountAmount > 0) {
         return c.json({
           valid: true,

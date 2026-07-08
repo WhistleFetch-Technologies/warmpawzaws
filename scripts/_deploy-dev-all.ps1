@@ -2,6 +2,7 @@ $ErrorActionPreference = "Stop"
 $Api = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
 $Region = "ap-south-1"
 $Root = Split-Path -Parent $PSScriptRoot
+Set-Location $Root
 
 function Write-RuntimeConfig($AppPath, $Uat) {
   $uatJs = if ($Uat) { "true" } else { "false" }
@@ -37,12 +38,13 @@ function Deploy-App($Name, $Bucket, $CfId, $BuildEnv) {
   if (-not (Test-Path dist)) { throw "dist missing after $Name build" }
   if ($Name -ne "customer-web") { Write-RuntimeConfig $appDir $true }
   Pop-Location
-  aws s3 sync "apps/$Name/dist/" "s3://$Bucket/" --delete --exclude "*.map" --region $Region
-  if (Test-Path "apps/$Name/dist/runtime-config.js") {
-    aws s3 cp "apps/$Name/dist/runtime-config.js" "s3://$Bucket/runtime-config.js" --cache-control "public, max-age=0, must-revalidate" --content-type "application/javascript" --region $Region
+  $distPath = Join-Path $Root "apps\$Name\dist"
+  aws s3 sync "$distPath/" "s3://$Bucket/" --delete --exclude "*.map" --region $Region
+  if (Test-Path (Join-Path $distPath "runtime-config.js")) {
+    aws s3 cp (Join-Path $distPath "runtime-config.js") "s3://$Bucket/runtime-config.js" --cache-control "public, max-age=0, must-revalidate" --content-type "application/javascript" --region $Region
   }
-  Get-ChildItem "apps/$Name/dist" -Filter *.html -Recurse | ForEach-Object {
-    $rel = $_.FullName.Substring((Join-Path $Root "apps\$Name\dist\").Length).Replace('\','/')
+  Get-ChildItem $distPath -Filter *.html -Recurse | ForEach-Object {
+    $rel = $_.FullName.Substring((Join-Path $distPath "").Length).Replace('\','/')
     aws s3 cp $_.FullName "s3://$Bucket/$rel" --cache-control "public, max-age=0, must-revalidate" --content-type "text/html" --region $Region | Out-Null
   }
   $inv = aws cloudfront create-invalidation --distribution-id $CfId --paths "/*" --region $Region --query Invalidation.Id --output text
@@ -57,7 +59,24 @@ if (Test-Path loyalty-consumer.zip) {
   aws lambda update-function-code --function-name warmpawz-dev-loyalty-events-consumer --zip-file fileb://loyalty-consumer.zip --region $Region --output text --query LastModified
 }
 $envFile = Join-Path $Root "scripts\_lambda-env-update.json"
-node -e "const {execSync}=require('child_process');const fs=require('fs');const fn='warmpawz-dev-api-handler';const envFile=process.argv[1];const r=execSync('aws lambda get-function-configuration --function-name '+fn+' --region ap-south-1 --output json',{encoding:'utf8'});const v=JSON.parse(r).Environment.Variables;v.FINANCE_FUNDING_AWARE_SETTLEMENT='SHADOW';fs.writeFileSync(envFile,JSON.stringify({Variables:v}));execSync('aws lambda update-function-configuration --function-name '+fn+' --region ap-south-1 --environment file://'+envFile.replace(/\\\\/g,'/'),{stdio:'inherit'});console.log('FINANCE_FUNDING_AWARE_SETTLEMENT=SHADOW');" $envFile
+node -e @"
+const { execSync } = require('child_process');
+const fs = require('fs');
+const fn = 'warmpawz-dev-api-handler';
+const envFile = process.argv[1];
+const r = execSync('aws lambda get-function-configuration --function-name ' + fn + ' --region ap-south-1 --output json', { encoding: 'utf8' });
+const v = JSON.parse(r).Environment.Variables;
+v.FINANCE_FUNDING_AWARE_SETTLEMENT = 'SHADOW';
+v.DISCOUNT_ENGINE_V2_RESOLVER_MODE = 'AUTHORITATIVE';
+v.DISCOUNT_ENGINE_V2_STACK_MODE = 'AUTHORITATIVE';
+v.DISCOUNT_ENGINE_V2_PRIORITY_MODE = 'AUTHORITATIVE';
+v.DISCOUNT_ENGINE_V2_SETTLEMENT_MODE = 'AUTHORITATIVE';
+v.DISCOUNT_ENGINE_V2_ANALYTICS_MODE = v.DISCOUNT_ENGINE_V2_ANALYTICS_MODE || 'AUTHORITATIVE';
+v.DISCOUNT_ENGINE_V2_CAMPAIGN_MODE = v.DISCOUNT_ENGINE_V2_CAMPAIGN_MODE || 'AUTHORITATIVE';
+fs.writeFileSync(envFile, JSON.stringify({ Variables: v }));
+execSync('aws lambda update-function-configuration --function-name ' + fn + ' --region ap-south-1 --environment file://' + envFile.replace(/\\\\/g, '/'), { stdio: 'inherit' });
+console.log('Dev Lambda V2 modes: RESOLVER/STACK/PRIORITY/SETTLEMENT=AUTHORITATIVE');
+"@ $envFile
 Pop-Location
 
 $common = @{

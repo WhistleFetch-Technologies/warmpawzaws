@@ -17,6 +17,7 @@ export type ValidateCouponCodeParams = {
   vendorId?: string;
   customerId?: string;
   orderType: CouponValidateOrderType;
+  serviceCategory?: string;
   /** Taxable subtotal after auto-promotions — used for stack ordering. */
   amount: number;
   /** Product cart lines for vendor product promos. */
@@ -75,6 +76,7 @@ export async function validateCouponCode(
       orderAmount: params.orderType === 'product' ? amount : undefined,
       bookingAmount: params.orderType === 'service' ? amount : undefined,
       orderType: params.orderType,
+      serviceCategory: params.serviceCategory,
       ...(params.cartItems?.length ? { items: params.cartItems } : {}),
     });
 
