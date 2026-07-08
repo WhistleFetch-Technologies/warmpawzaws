@@ -48,6 +48,8 @@ export interface CommercialCampaignHubProps {
   title?: string;
   subtitle?: string;
   className?: string;
+  /** Fired when campaign detail drawer opens/closes — for Commercial AI entity context. */
+  onEntityFocus?: (entity: { type: 'campaign'; id: string; name: string } | null) => void;
 }
 
 function canMutate(campaign: CommercialCampaignRecord, participantVendorId?: string, readOnly?: boolean) {
@@ -65,6 +67,7 @@ export function CommercialCampaignHub({
   title,
   subtitle,
   className = '',
+  onEntityFocus,
 }: CommercialCampaignHubProps) {
   const discountDomain = discountDomainForSurface(surface);
   const [campaigns, setCampaigns] = useState<CommercialCampaignRecord[]>([]);
@@ -137,6 +140,15 @@ export function CommercialCampaignHub({
       }
     })();
   }, [selectedId, api, readOnly]);
+
+  useEffect(() => {
+    if (!onEntityFocus) return;
+    if (detail?.id) {
+      onEntityFocus({ type: 'campaign', id: detail.id, name: detail.name });
+    } else {
+      onEntityFocus(null);
+    }
+  }, [detail, onEntityFocus]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

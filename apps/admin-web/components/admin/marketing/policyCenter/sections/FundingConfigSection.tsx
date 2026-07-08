@@ -12,6 +12,7 @@ import {
   Button,
 } from '@warmpawz/ui';
 import { PolicyHelpButton } from '@/components/PolicyHelpButton';
+import { CommercialHelpTooltip } from '@/components/admin/commercial-ai/CommercialHelpTooltip';
 import { FUNDING_PRESET_SPLITS } from '@/lib/discount-policy/option-registry';
 import type { DiscountPolicyBundle } from '@/lib/discount-policy/types';
 
@@ -45,7 +46,10 @@ export function FundingConfigSection({
               Configures shared funding defaults passed to the Settlement Engine — no payout math in UI.
             </CardDescription>
           </div>
-          <PolicyHelpButton docKey="discount-funding-policy" />
+          <div className="flex items-center gap-1">
+            <CommercialHelpTooltip glossaryId="funding" />
+            <PolicyHelpButton docKey="discount-funding-policy" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex flex-wrap gap-2">

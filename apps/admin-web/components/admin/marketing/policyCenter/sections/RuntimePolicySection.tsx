@@ -12,6 +12,7 @@ import {
 } from '@/lib/discount-policy/business-rules-mapper';
 import { FEATURE_FLAG_LABELS } from '@/lib/discount-policy/option-registry';
 import type { DiscountPolicyBundle, RuntimePolicyDiagnostics } from '@/lib/discount-policy/types';
+import { CommercialHelpTooltip } from '@/components/admin/commercial-ai/CommercialHelpTooltip';
 
 export function RuntimePolicySection({ draft }: { draft: DiscountPolicyBundle }) {
   const [diagnostics, setDiagnostics] = useState<Partial<RuntimePolicyDiagnostics> | null>(null);
@@ -46,7 +47,10 @@ export function RuntimePolicySection({ draft }: { draft: DiscountPolicyBundle })
     <div className="space-y-6">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Active policy strategy</CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-lg">
+            Active policy strategy
+            <CommercialHelpTooltip glossaryId="runtime_policy" />
+          </CardTitle>
           <Button type="button" variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
             Refresh

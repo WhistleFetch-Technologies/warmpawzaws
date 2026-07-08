@@ -18,6 +18,7 @@ import {
 } from '@warmpawz/ui';
 import { ChevronDown } from 'lucide-react';
 import { PolicyHelpButton } from '@/components/PolicyHelpButton';
+import { CommercialHelpTooltip } from '@/components/admin/commercial-ai/CommercialHelpTooltip';
 import { DomainScopeSelector } from '../shared/DomainScopeSelector';
 import { OfferCombinationMatrix } from '../shared/OfferCombinationMatrix';
 import { APPLICATION_STRATEGY_OPTIONS } from '@/lib/discount-policy/option-registry';
@@ -84,7 +85,10 @@ export function StackConfigSection({
               calculated here.
             </CardDescription>
           </div>
-          <PolicyHelpButton docKey="discount-stack-policy" />
+          <div className="flex items-center gap-1">
+            <CommercialHelpTooltip glossaryId="stack_rules" />
+            <PolicyHelpButton docKey="discount-stack-policy" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-6">
           <fieldset className="space-y-3">

@@ -12,6 +12,7 @@ import {
   Badge,
 } from '@warmpawz/ui';
 import { PolicyHelpButton } from '@/components/PolicyHelpButton';
+import { CommercialHelpTooltip } from '@/components/admin/commercial-ai/CommercialHelpTooltip';
 import { DomainScopeSelector } from '../shared/DomainScopeSelector';
 import { CustomPriorityOrder } from '../shared/CustomPriorityOrder';
 import { TIE_BREAKER_OPTIONS, WINNING_STRATEGY_OPTIONS } from '@/lib/discount-policy/option-registry';
@@ -111,7 +112,10 @@ export function PriorityConfigSection({
               Determines which offer wins when multiple promotions or coupons are applicable.
             </CardDescription>
           </div>
-          <PolicyHelpButton docKey="discount-priority-policy" />
+          <div className="flex items-center gap-1">
+            <CommercialHelpTooltip glossaryId="winning_strategy" />
+            <PolicyHelpButton docKey="discount-priority-policy" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-6">
           <fieldset className="space-y-3">

@@ -690,6 +690,30 @@ export class ApiClient {
     });
   }
 
+  async postCommercialAiCopilotChat(body: {
+    message: string;
+    pathname?: string;
+    conversationId?: string;
+    context?: Record<string, unknown>;
+  }): Promise<{
+    success: boolean;
+    conversationId?: string;
+    response?: string;
+    intent?: 'explain' | 'investigate' | 'refuse';
+    source?: 'documentation' | 'live_runtime' | 'hybrid';
+    suggestedQuestions?: string[];
+    toolNames?: string[];
+    usedBedrock?: boolean;
+    requestId?: string;
+    error?: string;
+    code?: string;
+  }> {
+    return this.request('/admin/commercial-ai-copilot/chat', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
   /** Get current API base URL (for FormData/fetch when apiClient methods don't apply) */
   getBaseUrl(): string {
     return this.baseUrl || getApiBaseUrl();

@@ -17,6 +17,7 @@ import {
 } from '@warmpawz/ui';
 import { FUNDING_PRESET_SPLITS } from '@/lib/discount-policy/option-registry';
 import type { CampaignFundingPolicy } from '@/lib/commercial-campaign/types';
+import { CommercialHelpTooltip } from '@/components/admin/commercial-ai/CommercialHelpTooltip';
 
 export function CampaignFundingEditor({
   funding,
@@ -32,7 +33,10 @@ export function CampaignFundingEditor({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Campaign funding</CardTitle>
+        <CardTitle className="flex items-center gap-1.5 text-lg">
+          Campaign funding
+          <CommercialHelpTooltip glossaryId="funding" />
+        </CardTitle>
         <CardDescription>
           Passed to Settlement Engine at orchestration — UI never calculates payouts.
         </CardDescription>

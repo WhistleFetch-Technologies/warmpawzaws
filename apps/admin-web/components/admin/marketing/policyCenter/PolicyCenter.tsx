@@ -22,6 +22,7 @@ import { PublishWorkflowSection } from './sections/PublishWorkflowSection';
 import { PolicyHistorySection } from './sections/PolicyHistorySection';
 import { PolicySimulatorSection } from './sections/PolicySimulatorSection';
 import { AuditViewerSection } from './sections/AuditViewerSection';
+import { CommercialHelpTooltip } from '@/components/admin/commercial-ai/CommercialHelpTooltip';
 
 function seedDomainFromSurface(
   surface?: 'marketing' | 'ecommerce',
@@ -105,7 +106,10 @@ export function PolicyCenter({
               <Scale className="h-6 w-6 text-violet-700" aria-hidden />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Policy Center</h1>
+              <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
+                Policy Center
+                <CommercialHelpTooltip glossaryId="discount_domain" label="Discount Domain" />
+              </h1>
               <p className="text-sm text-slate-500">
                 Configure discount application, winning offer strategy, funding, and limits for Discount
                 Engine V2.

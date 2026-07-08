@@ -35,6 +35,7 @@ import { registerOnboardingFormManagementEndpoints } from '../endpoints/onboardi
 import { registerVendorDashboardEndpoints } from '../endpoints/vendor/endpoints/vendor-dashboard';
 import { registerAdminEndpoints } from '../endpoints/admin/endpoints/admin.controller';
 import { registerAdminAiCopilotEndpoints } from '../endpoints/admin/endpoints/admin-ai-copilot';
+import { registerCommercialAiCopilotEndpoints } from '../endpoints/admin/endpoints/commercial-ai-copilot.endpoints';
 import { registerVideoCallEndpoints } from '../endpoints/teleCommunication/endpoints/video-call.teleCommunication';
 import { registerPackageSessionEndpoints } from '../endpoints/package-sessions';
 import { registerSearchEndpoints } from '../endpoints/search';
@@ -499,6 +500,19 @@ app.use(
   })
 );
 
+const commercialAiCopilotRlMaxRaw = parseInt(process.env.COMMERCIAL_AI_COPILOT_RL_MAX || '20', 10);
+const commercialAiCopilotRlMax = Number.isFinite(commercialAiCopilotRlMaxRaw)
+  ? Math.max(5, commercialAiCopilotRlMaxRaw)
+  : 20;
+app.use(
+  '/admin/commercial-ai-copilot/*',
+  slidingWindowRateLimit({
+    windowMs: 60_000,
+    maxRequests: commercialAiCopilotRlMax,
+    keyPrefix: 'commercial-ai-copilot',
+  })
+);
+
 // OTP-heavy auth routes: higher per-IP ceiling (separate from blanket /auth/* limit).
 const otpAuthRateLimit = slidingWindowRateLimit({
   windowMs: 60_000,
@@ -659,6 +673,7 @@ registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized 
 registerGpsTrackingEndpoints(app);
 registerAdminEndpoints(app);
 registerAdminAiCopilotEndpoints(app);
+registerCommercialAiCopilotEndpoints(app);
 registerAdminCustomerEndpoints(app);
 registerVideoCallEndpoints(app);
 registerPackageSessionEndpoints(app);

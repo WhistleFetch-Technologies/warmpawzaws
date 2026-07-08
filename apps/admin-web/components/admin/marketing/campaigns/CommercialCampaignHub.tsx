@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { CommercialCampaignHub as SharedCommercialCampaignHub } from '@warmpawz/commercial-campaign-ui';
 import { createAdminCampaignApi } from '@/lib/commercial-campaign/admin-campaign-api-adapter';
+import { useCommercialAiOptional } from '@/context/CommercialAiContext';
 import type { AdminPromoSurface } from '@/lib/promotion-domain/surface-config';
 import {
   ECOMMERCE_CAMPAIGN_TITLE,
@@ -19,12 +20,26 @@ import type { CommercialCampaignRecord } from '@/lib/commercial-campaign/types';
 export function CommercialCampaignHub({ surface = 'marketing' }: { surface?: AdminPromoSurface }) {
   const api = useMemo(() => createAdminCampaignApi(), []);
   const { registry, reload } = useCommercialCampaigns({ surface });
+  const commercialAi = useCommercialAiOptional();
+
+  const handleEntityFocus = useCallback(
+    (entity: { type: 'campaign'; id: string; name: string } | null) => {
+      if (!commercialAi) return;
+      if (!entity) {
+        commercialAi.setEntity(null);
+        return;
+      }
+      commercialAi.setEntity({ type: 'campaign', id: entity.id, name: entity.name });
+    },
+    [commercialAi]
+  );
 
   return (
     <SharedCommercialCampaignHub
       surface={surface}
       readOnly={false}
       api={api}
+      onEntityFocus={handleEntityFocus}
       title={surface === 'ecommerce' ? ECOMMERCE_CAMPAIGN_TITLE : MARKETING_CAMPAIGN_TITLE}
       subtitle={
         surface === 'ecommerce'
