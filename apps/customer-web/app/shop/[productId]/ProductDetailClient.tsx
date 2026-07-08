@@ -301,6 +301,7 @@ export default function ProductDetailClient() {
     setQuantity(1);
     setShowReviews(false);
     setSelectedVariations({});
+    setDescriptionExpanded(false);
     userTouchedVariationsRef.current = false;
     defaultVariationsAppliedRef.current = false;
     if (typeof window !== 'undefined') {
@@ -568,10 +569,6 @@ export default function ProductDetailClient() {
       defaultVariationsAppliedRef.current = true;
     }
   }, [productSkus, product?.variations]);
-
-  useEffect(() => {
-    setDescriptionExpanded(false);
-  }, [product?.id]);
 
   useEffect(() => {
     if (displayImages.length > 0 && selectedImage >= displayImages.length) {

@@ -178,46 +178,38 @@ export function ProductDetailPage({
       initialProduct?.productId ||
       initialProduct?.id ||
       initialProduct?.product_id;
-    if (pid && !initialProduct?.fullDetails) {
-      loadProductDetails();
-    }
-    if (pid) {
-      loadRelatedProducts();
-    }
-  }, [
-    initialProduct?.id,
-    initialProduct?.productId,
-    initialProduct?.product_id,
-    initialProduct?._id,
-    initialProduct?.fullDetails,
-  ]);
+    if (!pid) return;
 
-  useEffect(() => {
-    const nextId =
-      canonicalProductId(initialProduct) ||
-      initialProduct?.productId ||
-      initialProduct?.id ||
-      initialProduct?.product_id ||
-      '';
     const currentId =
       canonicalProductId(product) ||
       product?.productId ||
       product?.id ||
       product?.product_id ||
       '';
-    if (!nextId || nextId === currentId) return;
-    setProduct(initialProduct);
-    setSelectedImageIndex(0);
-    setQuantity(1);
-    setDescriptionExpanded(false);
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'instant' });
+
+    // New product identity (e.g. reco tap): reset UI, then load.
+    if (pid !== currentId) {
+      setProduct(initialProduct);
+      setSelectedImageIndex(0);
+      setQuantity(1);
+      setDescriptionExpanded(false);
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }
     }
+
+    if (!initialProduct?.fullDetails) {
+      void loadProductDetails();
+    }
+    void loadRelatedProducts();
+    // Intentionally keyed only on incoming product identity / detail flag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- local `product` is compared for identity change only
   }, [
-    initialProduct,
-    product?.id,
-    product?.productId,
-    product?.product_id,
+    initialProduct?.id,
+    initialProduct?.productId,
+    initialProduct?.product_id,
+    initialProduct?._id,
+    initialProduct?.fullDetails,
   ]);
 
   const buildCartItemForContext = () => {
