@@ -545,7 +545,6 @@ jobs:
         env:
           NEXT_PUBLIC_API_BASE_URL: ${{ needs.terraform-apply.outputs.api_endpoint }}
           NEXT_PUBLIC_ENVIRONMENT: production
-          NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED: false
       - name: Verify build outputs exist
         run: |
           for app in admin-web vendor-web customer-web; do
@@ -642,8 +641,8 @@ jobs:
           done
           D="apps/customer-web/dist"
           if [ -d "$D" ]; then
-            printf '%s\n' "(function(){var u=\"$API\";window.__WARMPAWZ_RUNTIME_CONFIG__=Object.assign(window.__WARMPAWZ_RUNTIME_CONFIG__||{},{apiBaseUrl:u,uatMode:false,environment:\"production\",customerEcommerceEnabled:false});if(typeof __API_BASE_URL__===\"undefined\"){window.__API_BASE_URL__=u;}}());" > "$D/runtime-config.js"
-            echo "✅ Injected runtime-config.js into $D (customer ecommerce disabled)"
+            printf '%s\n' "(function(){var u=\"$API\";window.__WARMPAWZ_RUNTIME_CONFIG__=Object.assign(window.__WARMPAWZ_RUNTIME_CONFIG__||{},{apiBaseUrl:u,uatMode:false,environment:\"production\",customerEcommerceEnabled:true});if(typeof __API_BASE_URL__===\"undefined\"){window.__API_BASE_URL__=u;}}());" > "$D/runtime-config.js"
+            echo "✅ Injected runtime-config.js into $D"
           else
             echo "⚠️  Warning: $D does not exist, skipping runtime-config injection"
           fi

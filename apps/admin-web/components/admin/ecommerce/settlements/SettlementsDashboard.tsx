@@ -4,9 +4,220 @@ import { useState, useEffect } from 'react';
 import {
   CreditCard, Search, Download, CheckCircle, Clock, AlertCircle,
   IndianRupee, TrendingUp, Store, Calendar, Eye, Send, RefreshCcw,
-  FileText, Banknote, ArrowRight
+  FileText, Banknote, ArrowRight, PlayCircle, ShoppingBag
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+
+type EcommerceSettlementBatch = {
+  id: string;
+  vendorId: string;
+  vendorName: string;
+  vendorPhone: string;
+  periodStart: string;
+  periodEnd: string;
+  orderCount: number;
+  grossMerchandiseValue: number;
+  totalCommissionAmount: number;
+  totalDiscountAmount: number;
+  totalVendorPayoutAmount: number;
+  totalPlatformNetAmount: number;
+  status: 'draft' | 'processing' | 'paid' | 'failed';
+  razorpayPayoutId?: string;
+  failureReason?: string;
+  processedAt?: string;
+  createdAt: string;
+};
+
+type EcommerceSettlementSummary = {
+  totalPaid?: number;
+  totalPending?: number;
+  totalCommission?: number;
+  totalPlatformNet?: number;
+  activeVendors?: number;
+  unbatchedOrderCount?: number;
+  unbatchedAmount?: number;
+};
+
+/**
+ * E-commerce batch settlement ledger — separate from the booking `settlements` table
+ * rendered above. See Ecommerce Settlement Engine plan §5 / migration 1064: money for
+ * e-commerce orders is pooled per vendor and paid out via RazorpayX Payouts instead of
+ * an instant per-order Razorpay Route transfer (needed so admin-funded promo subsidies,
+ * which make a single order's platform net negative, can be funded across many orders).
+ */
+function EcommerceSettlementBatches() {
+  const [batches, setBatches] = useState<EcommerceSettlementBatch[]>([]);
+  const [summary, setSummary] = useState<EcommerceSettlementSummary>({});
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+
+  const loadBatches = async () => {
+    try {
+      setLoading(true);
+      const res = await apiClient.get<{ batches?: EcommerceSettlementBatch[]; summary?: EcommerceSettlementSummary }>(
+        '/admin/ecommerce-settlements/batches?limit=50'
+      );
+      setBatches(res?.batches || []);
+      setSummary(res?.summary || {});
+    } catch (error) {
+      console.error('Error loading ecommerce settlement batches:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBatches();
+  }, []);
+
+  const runBatchJob = async (dryRun: boolean) => {
+    if (!dryRun && !confirm('This will trigger LIVE RazorpayX payouts to vendors for all pending e-commerce orders. Continue?')) {
+      return;
+    }
+    setRunning(true);
+    try {
+      await apiClient.post('/admin/ecommerce-settlements/run', { dryRun });
+      await loadBatches();
+    } catch (error) {
+      console.error('Error running ecommerce settlement batch:', error);
+      alert('Failed to run settlement batch');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const statusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      draft: 'bg-slate-100 text-slate-700',
+      processing: 'bg-blue-100 text-blue-700',
+      paid: 'bg-emerald-100 text-emerald-700',
+      failed: 'bg-red-100 text-red-700',
+    };
+    return colors[status] || 'bg-slate-100 text-slate-700';
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <ShoppingBag className="w-5 h-5 text-orange-500" />
+            E-commerce Settlement Batches
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">
+            Vendor payouts for shop orders, pooled per vendor per run (RazorpayX Payouts).
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => runBatchJob(true)}
+            disabled={running}
+            className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCcw className={`w-4 h-4 ${running ? 'animate-spin' : ''}`} />
+            Dry Run
+          </button>
+          <button
+            onClick={() => runBatchJob(false)}
+            disabled={running}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-medium shadow-lg shadow-orange-500/25 disabled:opacity-50"
+          >
+            <PlayCircle className="w-4 h-4" />
+            Run Live Payouts
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+          <p className="text-sm text-slate-500">Paid Out</p>
+          <p className="text-2xl font-bold text-emerald-600 mt-1">₹{(summary.totalPaid || 0).toLocaleString()}</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+          <p className="text-sm text-slate-500">Pending Batches</p>
+          <p className="text-2xl font-bold text-amber-600 mt-1">₹{(summary.totalPending || 0).toLocaleString()}</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+          <p className="text-sm text-slate-500">Not Yet Batched</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">
+            ₹{(summary.unbatchedAmount || 0).toLocaleString()}
+          </p>
+          <p className="text-xs text-slate-400 mt-0.5">{summary.unbatchedOrderCount || 0} orders</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+          <p className="text-sm text-slate-500">Platform Net (all batches)</p>
+          <p className={`text-2xl font-bold mt-1 ${(summary.totalPlatformNet || 0) < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+            ₹{(summary.totalPlatformNet || 0).toLocaleString()}
+          </p>
+          {(summary.totalPlatformNet || 0) < 0 && (
+            <p className="text-xs text-red-500 mt-0.5">Negative = admin promos subsidized</p>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-4 border-orange-200 border-t-orange-500 mx-auto"></div>
+          </div>
+        ) : batches.length === 0 ? (
+          <div className="p-8 text-center text-slate-500">
+            <ShoppingBag className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+            No e-commerce settlement batches yet.
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-100">
+              <tr>
+                <th className="text-left p-3 font-semibold text-slate-600">Vendor</th>
+                <th className="text-left p-3 font-semibold text-slate-600">Period</th>
+                <th className="text-right p-3 font-semibold text-slate-600">Orders</th>
+                <th className="text-right p-3 font-semibold text-slate-600">Commission</th>
+                <th className="text-right p-3 font-semibold text-slate-600">Discount</th>
+                <th className="text-right p-3 font-semibold text-slate-600">Vendor Payout</th>
+                <th className="text-right p-3 font-semibold text-slate-600">Platform Net</th>
+                <th className="text-center p-3 font-semibold text-slate-600">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {batches.map((b) => (
+                <tr key={b.id} className="hover:bg-slate-50">
+                  <td className="p-3">
+                    <p className="font-medium text-slate-900">{b.vendorName}</p>
+                    <p className="text-xs text-slate-500">{b.vendorPhone}</p>
+                  </td>
+                  <td className="p-3 text-slate-600">
+                    {b.periodStart ? new Date(b.periodStart).toLocaleDateString() : '—'} –{' '}
+                    {b.periodEnd ? new Date(b.periodEnd).toLocaleDateString() : '—'}
+                  </td>
+                  <td className="p-3 text-right text-slate-900">{b.orderCount}</td>
+                  <td className="p-3 text-right text-orange-600">₹{b.totalCommissionAmount.toLocaleString()}</td>
+                  <td className="p-3 text-right text-slate-600">₹{b.totalDiscountAmount.toLocaleString()}</td>
+                  <td className="p-3 text-right font-bold text-emerald-600">
+                    ₹{b.totalVendorPayoutAmount.toLocaleString()}
+                  </td>
+                  <td className={`p-3 text-right font-medium ${b.totalPlatformNetAmount < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                    ₹{b.totalPlatformNetAmount.toLocaleString()}
+                  </td>
+                  <td className="p-3 text-center">
+                    <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${statusColor(b.status)}`}>
+                      {b.status}
+                    </span>
+                    {b.failureReason && (
+                      <p className="text-xs text-red-500 mt-1" title={b.failureReason}>
+                        {b.failureReason.slice(0, 30)}
+                      </p>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const SETTLEMENT_STATUSES = [
   { id: 'all', label: 'All Settlements' },
@@ -302,6 +513,9 @@ export function SettlementsDashboard() {
           </table>
         )}
       </div>
+
+      {/* E-commerce batch settlement ledger (separate from booking settlements above) */}
+      <EcommerceSettlementBatches />
 
       {/* GST Summary */}
       <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-6 text-white">

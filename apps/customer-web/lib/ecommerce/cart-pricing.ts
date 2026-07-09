@@ -1,9 +1,14 @@
 /**
  * Shared marketplace cart pricing for `/cart` and checkout routes.
- * Business rules: per-vendor delivery, coupons, GST via tax-system.
+ * Business rules: per-vendor delivery, single customer-chosen promotion, GST via tax-system.
+ *
+ * GST decision (locked — see Ecommerce Settlement Engine plan): product prices are
+ * GST-inclusive MRP. GST is ALWAYS computed informationally from the ORIGINAL per-line
+ * price and is never added on top of the total, and never recomputed from a discounted
+ * amount — a discount is a separate "Less: Promotional Discount" line, not a tax adjustment.
  */
 import { calculateTax } from '@/lib/tax-system';
-import type { TaxResult } from '@/lib/tax-system/types';
+import type { TaxBreakdown, TaxByType, TaxResult } from '@/lib/tax-system/types';
 import { cartItemsToTaxableItems, type CartItem } from '@/lib/tax-system/taxCalculatorUtils';
 
 export type CartPricingCoupon = {
@@ -28,7 +33,7 @@ export type PricingCartLine = Pick<
   categoryId?: string;
 };
 
-/** Seller Hub / vendor_promotions savings (additive to legacy demo coupons). */
+/** Seller Hub / vendor_promotions or Commercial Campaign (admin) savings — ONE at a time. */
 export type SellerPromotionPricing = {
   /** Auto-applied from POST /promotions/calculate-cart (e.g. BOGO). */
   autoDiscount?: number;
@@ -37,6 +42,8 @@ export type SellerPromotionPricing = {
   label?: string;
   code?: string;
   promotionId?: string;
+  /** Which table validated this discount — required so the backend never mixes sources. */
+  source?: 'vendor' | 'admin';
 };
 
 export type CartPricingOptions = {
@@ -59,15 +66,19 @@ export type VendorPricingRow = {
 
 export type CartPricingBreakdown = {
   lineSubtotal: number;
+  /** The ONE active discount (max of legacy coupon vs seller/admin promotion — never summed). */
   discount: number;
-  /** Legacy demo / cart coupons only. */
+  /** Legacy demo / cart coupons only — informational; only applied when it is the winning discount. */
   couponDiscount?: number;
-  /** Seller auto + code (capped with coupons at subtotal). */
+  /** Seller (vendor_promotions) or admin (ecommerce_admin_promotions) — informational; only applied when winning. */
   sellerPromotionDiscount?: number;
+  /** Which source funds the winning discount, when it is the seller/admin promotion. */
+  promotionSource?: 'vendor' | 'admin';
   subtotalAfterDiscount: number;
   deliveryFees: number;
   giftWrapFee: number;
   protectionFee: number;
+  /** Informational only — already included inside lineSubtotal/subtotalAfterDiscount (GST-inclusive MRP). Never added to `total`. */
   taxAmount: number;
   taxResult: TaxResult;
   total: number;
@@ -143,6 +154,44 @@ export function computeSellerPromotionDiscount(
   return Math.max(auto, code);
 }
 
+/**
+ * GST is informational and must reflect the price being GST-INCLUSIVE — never the
+ * naive "rate% on top" math that lib/tax-system/taxCalculator.ts uses (that engine
+ * treats `amount` as tax-EXCLUSIVE, which is correct for services but wrong for
+ * product MRP). Re-derive each breakdown line as amount x rate/(100+rate).
+ */
+function toInclusiveTaxResult(result: TaxResult): TaxResult {
+  const breakdown: TaxBreakdown[] = result.breakdown.map((b) => {
+    const inclusiveTax = b.rate > 0 ? (b.baseAmount * b.rate) / (100 + b.rate) : 0;
+    return { ...b, taxAmount: Math.round(inclusiveTax * 100) / 100 };
+  });
+
+  const byTypeMap = new Map<string, TaxByType>();
+  for (const tax of breakdown) {
+    const existing = byTypeMap.get(tax.taxType);
+    if (existing) {
+      existing.totalAmount += tax.taxAmount;
+      existing.breakdown.push(tax);
+    } else {
+      byTypeMap.set(tax.taxType, { taxType: tax.taxType, totalAmount: tax.taxAmount, breakdown: [tax] });
+    }
+  }
+  const byType: TaxByType[] = Array.from(byTypeMap.values()).map((t) => ({
+    ...t,
+    totalAmount: Math.round(t.totalAmount * 100) / 100,
+  }));
+  const total = Math.round(breakdown.reduce((sum, b) => sum + b.taxAmount, 0) * 100) / 100;
+
+  return {
+    ...result,
+    breakdown,
+    byType,
+    total,
+    // Inclusive: the "grand total" IS the subtotal — GST is already inside it.
+    grandTotal: result.subtotal,
+  };
+}
+
 export function computeCouponDiscount(
   cartTotal: number,
   appliedCoupons: CartPricingCoupon[]
@@ -171,14 +220,21 @@ export function computeCartPricing(
   const lineSubtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const couponDiscount = computeCouponDiscount(lineSubtotal, appliedCoupons);
   const sellerPromotionDiscount = computeSellerPromotionDiscount(options.sellerPromotion);
-  const discount = Math.min(
-    lineSubtotal,
-    couponDiscount + sellerPromotionDiscount
-  );
+  // Only ONE promotion is ever active (customer's single choice in CartPromotionSelect) —
+  // never sum a legacy coupon with a seller/admin promotion. Whichever is larger wins for
+  // display purposes; in practice only one of the two is ever non-zero in the live UI.
+  const discount = Math.min(lineSubtotal, Math.max(couponDiscount, sellerPromotionDiscount));
+  const promotionSource =
+    sellerPromotionDiscount > 0 && sellerPromotionDiscount >= couponDiscount
+      ? options.sellerPromotion?.source
+      : undefined;
   const subtotalAfterDiscount = Math.max(0, lineSubtotal - discount);
-  const deliveryFees = computeEcommerceDeliveryFee(subtotalAfterDiscount);
+  const hasFreeDeliveryCoupon = appliedCoupons.some(
+    (c) => c.type === 'delivery' && lineSubtotal >= (c.minOrder ?? 0)
+  );
+  const deliveryFees = hasFreeDeliveryCoupon ? 0 : computeEcommerceDeliveryFee(subtotalAfterDiscount);
   const freeDeliveryGap =
-    subtotalAfterDiscount >= ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL
+    hasFreeDeliveryCoupon || subtotalAfterDiscount >= ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL
       ? 0
       : ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL - subtotalAfterDiscount;
 
@@ -201,26 +257,21 @@ export function computeCartPricing(
   const giftWrapFee = options.giftWrap ? itemCount * GIFT_WRAP_PER_ITEM : 0;
   const protectionFee = options.productProtection ? lineSubtotal * PROTECTION_RATE : 0;
 
+  // GST is ALWAYS computed on the ORIGINAL per-line price — never adjusted for the
+  // discount. It is informational (already embedded in the GST-inclusive MRP), so it
+  // is never added into `total` below.
   const taxableItems = cartItemsToTaxableItems(cart as CartItem[]);
-  const divisor = lineSubtotal > 0 ? lineSubtotal : 1;
-  const adjusted = taxableItems.map((item) => ({
-    ...item,
-    amount:
-      (item.amount * (item.quantity || 1) -
-        (discount * (item.amount * (item.quantity || 1))) / divisor) /
-      (item.quantity || 1),
-  }));
-  const taxResult = calculateTax(adjusted);
+  const taxResult = toInclusiveTaxResult(calculateTax(taxableItems));
   const taxAmount = taxResult.total;
 
-  const total =
-    subtotalAfterDiscount + deliveryFees + giftWrapFee + protectionFee + taxAmount;
+  const total = subtotalAfterDiscount + deliveryFees + giftWrapFee + protectionFee;
 
   return {
     lineSubtotal,
     discount,
     couponDiscount,
     sellerPromotionDiscount,
+    promotionSource,
     subtotalAfterDiscount,
     deliveryFees,
     giftWrapFee,

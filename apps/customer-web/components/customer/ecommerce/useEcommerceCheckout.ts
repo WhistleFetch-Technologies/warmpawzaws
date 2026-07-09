@@ -127,6 +127,9 @@ export function buildEcommerceOrderPayload(
     totalAmount: pricing.total,
     couponCode,
     promotionId: promo?.promotionId,
+    // Explicit source so the backend validates strictly against ONE table (vendor_promotions
+    // vs ecommerce_admin_promotions) instead of inferring — see Ecommerce Settlement Engine plan §3.
+    promotionSource: promo?.promotionId ? (pricing.promotionSource ?? promo?.source) : undefined,
     walletAmountApplied: walletAmountApplied ?? 0,
   };
 }

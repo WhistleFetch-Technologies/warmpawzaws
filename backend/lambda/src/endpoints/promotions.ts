@@ -404,11 +404,34 @@ export function registerPromotionEndpoints(app: Hono) {
       promotionsQuery += ` ORDER BY priority DESC, created_at DESC`;
 
       const promotions = await query(promotionsQuery, params);
+      let merged: Record<string, unknown>[] = promotions.rows || [];
+
+      // E-commerce admin promotions (ecom-scope "Commercial Campaign Engine"):
+      // canonical admin/platform product campaigns — table `ecommerce_admin_promotions`,
+      // deliberately NOT `commercial_discount_campaigns` (that name is used by the
+      // unrelated meal-plan/subscription Discount Engine V2). Additive alongside the
+      // legacy `promotions` table above during the transition — both are read here so
+      // CartPromotionSelect sees one merged list; server-side order validation
+      // (POST /ecommerce/orders, /promotions/validate-code) is what actually enforces
+      // correctness, this endpoint is display-only.
+      if (serviceType === 'all' || serviceType === 'product' || serviceType === 'shop') {
+        try {
+          const campaigns = await query(
+            `SELECT * FROM ecommerce_admin_promotions
+             WHERE is_active = true AND published = true
+               AND start_date <= NOW() AND end_date >= NOW()
+             ORDER BY created_at DESC`
+          );
+          merged = [...merged, ...(campaigns.rows || [])];
+        } catch {
+          /* table may not exist yet on older schemas */
+        }
+      }
 
       return c.json({
         success: true,
-        promotions: promotions.rows,
-        total: promotions.rows.length,
+        promotions: merged,
+        total: merged.length,
       });
     } catch (error: any) {
       console.error('Error fetching promotions:', error);
