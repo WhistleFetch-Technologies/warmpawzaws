@@ -401,3 +401,59 @@ export function resolveCustomerScreenForCategoryAndStyle(
   }
   return screen;
 }
+
+/** Canonical service styles for per-style launch configuration (Dashboard UI). */
+export type ServiceStyleLaunchKey = 'tele' | 'at_center' | 'at_home';
+
+export const SERVICE_STYLE_LAUNCH_KEYS: readonly ServiceStyleLaunchKey[] = [
+  'tele',
+  'at_center',
+  'at_home',
+] as const;
+
+export const SERVICE_STYLE_LAUNCH_LABELS: Record<ServiceStyleLaunchKey, string> = {
+  tele: 'Tele',
+  at_center: 'At Center',
+  at_home: 'At Home',
+};
+
+export type LaunchStatusValue = 'hidden' | 'coming_soon' | 'beta' | 'launched';
+
+/**
+ * Launch service ids that support per-style configuration in Marketing → Dashboard UI.
+ * Omitted ids (shop, adoption, cafes, etc.) keep parent-only launch rules.
+ */
+export const LAUNCH_SERVICE_STYLE_SUPPORT: Partial<Record<string, readonly ServiceStyleLaunchKey[]>> = {
+  vet: ['tele', 'at_center', 'at_home'],
+  grooming: ['at_center', 'at_home'],
+  training: ['at_center', 'at_home'],
+  walker: ['at_home'],
+  boarding: ['at_center', 'at_home'],
+  'pet-sitter': ['at_home'],
+  sitting: ['at_home'],
+  nutritionist: ['tele', 'at_home'],
+  ambulance: ['at_home', 'tele'],
+  pharmacy: ['at_center', 'at_home'],
+  'lab-diagnostics': ['at_center', 'at_home'],
+  diagnostics: ['at_center', 'at_home'],
+};
+
+export function supportedStylesForLaunchServiceId(serviceId: string): ServiceStyleLaunchKey[] {
+  const key = normalizeServiceKey(serviceId);
+  const styles = LAUNCH_SERVICE_STYLE_SUPPORT[key];
+  return styles ? [...styles] : [];
+}
+
+export function normalizeServiceStyleLaunchKey(raw: unknown): ServiceStyleLaunchKey | null {
+  const style = normalizeBannerServiceStyle(String(raw ?? ''));
+  if (style === 'tele' || style === 'at_center' || style === 'at_home') return style;
+  return null;
+}
+
+export function isLaunchedLaunchStatus(status: string | undefined | null): boolean {
+  return status === 'launched' || status === 'beta';
+}
+
+export function isComingSoonLaunchStatus(status: string | undefined | null): boolean {
+  return status === 'coming_soon';
+}
