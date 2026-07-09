@@ -1,5 +1,6 @@
 /**
- * Bulk + API product identity — product_group_id primary, composite fallback.
+ * Bulk upload product identity — Warmpawz Product ID (products.id) for updates;
+ * Product Group ID is upload-scoped grouping only (see bulk-product-variant-builder).
  */
 
 import { randomUUID } from 'crypto';
@@ -9,6 +10,22 @@ export function normalizeProductGroupId(raw: unknown): string {
   return String(raw ?? '').trim().toLowerCase();
 }
 
+/** In-memory upload grouping key — Product Group ID scoped to current file only. */
+export function resolveBulkUploadGroupKey(row: {
+  warmpawz_product_id?: string | null;
+  product_group_id?: string | null;
+  rowNum?: number;
+}): string {
+  const wpid = String(row.warmpawz_product_id ?? '').trim();
+  if (wpid) return `wpid::${wpid.toLowerCase()}`;
+
+  const pgid = String(row.product_group_id ?? '').trim();
+  if (pgid) return `pgid::${pgid.toLowerCase()}`;
+
+  return `row::${row.rowNum ?? 0}`;
+}
+
+/** @deprecated Upload grouping only — not used for DB identity. */
 export function productGroupIdentityKey(vendorId: string, productGroupId: string): string {
   return `${vendorId}::pgid::${normalizeProductGroupId(productGroupId)}`;
 }
@@ -33,7 +50,7 @@ export type BulkIdentityInput = {
   category_id?: string | null;
 };
 
-/** Group key for bulk rows (category name or id in composite segment). */
+/** @deprecated Use resolveBulkUploadGroupKey for in-upload grouping only. */
 export function resolveBulkGroupKey(
   vendorId: string,
   row: BulkIdentityInput,
@@ -55,10 +72,50 @@ export function generateProductGroupId(): string {
   return randomUUID();
 }
 
+export type ExistingVendorProduct = {
+  id: string;
+  sku?: string;
+  category_id?: string;
+  metadata?: unknown;
+  images?: unknown;
+};
+
+/** Lookup parent product for bulk update — vendor_id + products.id only. */
+export async function findExistingProductByWarmpawzId(
+  vendorId: string,
+  productId: string,
+): Promise<ExistingVendorProduct | null> {
+  const id = String(productId ?? '').trim();
+  if (!id) return null;
+  const r = await query(
+    `SELECT id, sku, category_id, metadata, images FROM products
+     WHERE vendor_id = $1 AND id = $2
+     LIMIT 1`,
+    [vendorId, id],
+  );
+  if (r.rows.length > 0) return r.rows[0] as ExistingVendorProduct;
+  return null;
+}
+
+/** Batch-verify Warmpawz Product IDs belong to vendor. Returns set of valid ids. */
+export async function findValidWarmpawzProductIdsForVendor(
+  vendorId: string,
+  productIds: string[],
+): Promise<Set<string>> {
+  const ids = [...new Set(productIds.map((id) => String(id ?? '').trim()).filter(Boolean))];
+  if (ids.length === 0) return new Set();
+  const r = await query(
+    `SELECT id FROM products WHERE vendor_id = $1 AND id = ANY($2::uuid[])`,
+    [vendorId, ids],
+  );
+  return new Set((r.rows as { id: string }[]).map((row) => String(row.id)));
+}
+
+/** @deprecated Bulk upload must not use metadata.product_group_id for update matching. */
 export async function findExistingProductByGroupKey(
   vendorId: string,
   groupKey: string,
-): Promise<{ id: string; sku?: string; category_id?: string; metadata?: unknown; images?: unknown } | null> {
+): Promise<ExistingVendorProduct | null> {
   if (groupKey.includes('::pgid::')) {
     const pgid = groupKey.split('::pgid::')[1] ?? '';
     if (!pgid) return null;
@@ -68,7 +125,7 @@ export async function findExistingProductByGroupKey(
        LIMIT 1`,
       [vendorId, pgid],
     );
-    if (r.rows.length > 0) return r.rows[0] as { id: string; sku?: string; category_id?: string; images?: unknown };
+    if (r.rows.length > 0) return r.rows[0] as ExistingVendorProduct;
     return null;
   }
 
@@ -88,7 +145,7 @@ export async function findExistingProductByGroupKey(
      LIMIT 1`,
     [vendorId, title, categoryKey, brand],
   );
-  if (byId.rows.length > 0) return byId.rows[0] as { id: string; sku?: string; category_id?: string; images?: unknown };
+  if (byId.rows.length > 0) return byId.rows[0] as ExistingVendorProduct;
 
   const byName = await query(
     `SELECT id, sku, category_id, metadata, images FROM products
@@ -97,7 +154,7 @@ export async function findExistingProductByGroupKey(
      LIMIT 1`,
     [vendorId, title, categoryKey, brand],
   );
-  if (byName.rows.length > 0) return byName.rows[0] as { id: string; sku?: string; category_id?: string; images?: unknown };
+  if (byName.rows.length > 0) return byName.rows[0] as ExistingVendorProduct;
 
   return null;
 }
