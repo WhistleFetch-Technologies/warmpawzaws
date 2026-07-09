@@ -15,7 +15,7 @@
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
-import { query, insert } from '../../../database/rds-connection';
+import { query, insert, update } from '../../../database/rds-connection';
 import { buildStructuredTracking } from '../../../utils/logistics/shipment-tracking';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -24,8 +24,18 @@ import {
   decrementSkuStock,
 } from '../../../utils/product-sku-order';
 import { assertProductDeliverableToCity } from '../../../utils/product-delivery-regions';
-import { resolveReturnWindowDays, isReturnWindowExpired } from '../../../utils/return-window';
+import { resolveReturnWindowDays } from '../../../utils/return-window';
+import {
+  assertReturnItemsAllowed,
+  ReturnItemsNotAllowedError,
+  buildReturnEligibilityFromJoinedRows,
+} from '../../../utils/category-return-eligibility';
 import { computeEcommerceDeliveryFee } from '../../../utils/ecommerce/delivery-fee';
+import {
+  buildShopOrderPaymentResumeContext,
+  discardUnpaidShopOrder,
+  expireShopPaymentHolds,
+} from '../../../utils/shop-payment-hold';
 
 /** Maps checkout address shapes to NOT NULL `orders.shipping_*`; full object also in `metadata.address_snapshot`. */
 function shippingColumnsFromAddress(
@@ -369,6 +379,10 @@ class GetCustomerOrdersHandler extends BaseHandler {
         return this.error('Customer ID is required', 401);
       }
 
+      await expireShopPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
+        console.warn('[customer/orders] expireShopPaymentHolds failed:', e)
+      );
+
       const status = context.event.queryStringParameters?.status;
       const limit = parseInt(context.event.queryStringParameters?.limit || '50', 10);
       const offset = parseInt(context.event.queryStringParameters?.offset || '0', 10);
@@ -397,6 +411,8 @@ class GetCustomerOrdersHandler extends BaseHandler {
           o.shipping_pincode,
           o.cancelled_at,
           o.cancellation_reason,
+          o.payment_hold_expires_at,
+          o.payment_checkout_started_at,
           o.tracking_number,
           o.delivery_partner,
           o.shipped_at,
@@ -433,7 +449,7 @@ class GetCustomerOrdersHandler extends BaseHandler {
         paramIndex++;
       }
 
-      ordersQuery += ` ORDER BY o.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      ordersQuery += ` ORDER BY CASE WHEN o.order_status = 'pending_payment' THEN 0 ELSE 1 END, o.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const orders = await query(ordersQuery, params);
@@ -445,10 +461,15 @@ class GetCustomerOrdersHandler extends BaseHandler {
           oi.*,
           s.name as service_name,
           p.name as product_name,
+          p.category_id,
+          ec.name as category_name,
+          ec.returns_enabled as category_returns_enabled,
+          p.is_returnable as product_is_returnable,
           ${SQL_PRODUCT_IMAGE_SELECT}
         FROM order_items oi
         LEFT JOIN services s ON oi.service_id = s.id
         LEFT JOIN products p ON oi.product_id = p.id
+        LEFT JOIN ecommerce_categories ec ON ec.id = p.category_id
         WHERE oi.order_id = ANY($1)
       `;
       const items = orderIds.length > 0 ? await query(itemsQuery, [orderIds]) : { rows: [] };
@@ -462,8 +483,11 @@ class GetCustomerOrdersHandler extends BaseHandler {
         itemsByOrder[item.order_id].push(item);
       });
 
+      const vendorReturnWindowCache = new Map<string, number>();
+
       // Attach items and structured tracking to orders
-      const ordersWithItems = orders.rows.map((order: any) => {
+      const ordersWithItems = await Promise.all(
+        orders.rows.map(async (order: any) => {
         const shipment = order.shipment_awb || order.shipment_carrier_id
           ? {
               awb_code: order.shipment_awb,
@@ -495,19 +519,38 @@ class GetCustomerOrdersHandler extends BaseHandler {
           ...rest
         } = order;
 
+        const vendorId = order.vendor_id != null ? String(order.vendor_id) : '';
+        let returnWindowDays = vendorReturnWindowCache.get(vendorId);
+        if (returnWindowDays == null) {
+          returnWindowDays = await resolveReturnWindowDays(vendorId || null);
+          if (vendorId) vendorReturnWindowCache.set(vendorId, returnWindowDays);
+        }
+
+        const rawItems = itemsByOrder[order.id] || [];
+        const { items: enrichedItems, hasReturnableItems } = buildReturnEligibilityFromJoinedRows(
+          order,
+          rawItems,
+          returnWindowDays
+        );
+
         return {
           ...rest,
-          items: itemsByOrder[order.id] || [],
+          paymentHoldExpiresAt: order.payment_hold_expires_at ?? null,
+          paymentCheckoutStartedAt: order.payment_checkout_started_at ?? null,
+          items: enrichedItems,
+          has_returnable_items: hasReturnableItems,
           tracking,
           tracking_number: tracking?.trackingNumber || order.tracking_number || null,
           tracking_url: tracking?.trackingUrl || order.shipment_tracking_url || null,
         };
-      });
+      })
+      );
 
       // Get statistics
       const statsQuery = await query(`
         SELECT 
           COUNT(*) as total,
+          COUNT(*) FILTER (WHERE order_status = 'pending_payment') as pending_payment,
           COUNT(*) FILTER (WHERE order_status = 'pending') as pending,
           COUNT(*) FILTER (WHERE order_status = 'confirmed') as confirmed,
           COUNT(*) FILTER (WHERE order_status = 'processing') as processing,
@@ -851,7 +894,7 @@ class CustomerReturnOrderHandler extends BaseHandler {
         return this.error('Customer ID is required', 401);
       }
 
-      let body: { reason?: string } = {};
+      let body: { reason?: string; items?: Array<{ orderItemId: string; quantity?: number }> } = {};
       if (context.event.body) {
         try {
           body = typeof context.event.body === 'string'
@@ -862,8 +905,12 @@ class CustomerReturnOrderHandler extends BaseHandler {
         }
       }
 
+      if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
+        return this.error('At least one return item is required', 400);
+      }
+
       const orderResult = await query(
-        'SELECT id, order_status, customer_id, vendor_id, delivered_at FROM orders WHERE id = $1 AND customer_id = $2',
+        'SELECT id, order_status, customer_id, vendor_id, delivered_at, shipping_address FROM orders WHERE id = $1 AND customer_id = $2',
         [orderId, customerId]
       );
 
@@ -879,12 +926,14 @@ class CustomerReturnOrderHandler extends BaseHandler {
         );
       }
 
-      const windowDays = await resolveReturnWindowDays(order.vendor_id);
-      if (isReturnWindowExpired(order.delivered_at, windowDays)) {
-        return this.error(
-          `Return window of ${windowDays} day(s) has expired. Returns must be requested within ${windowDays} day(s) of delivery.`,
-          400
-        );
+      let eligibleItems;
+      try {
+        ({ eligibleItems } = await assertReturnItemsAllowed(orderId, body.items));
+      } catch (err: unknown) {
+        if (err instanceof ReturnItemsNotAllowedError) {
+          return this.error(err.message, err.statusCode);
+        }
+        throw err;
       }
 
       // Cancel any pending loyalty award for this order — customer is initiating a return
@@ -892,17 +941,73 @@ class CustomerReturnOrderHandler extends BaseHandler {
         .then(({ cancelPendingLoyaltyAward }) => cancelPendingLoyaltyAward(orderId, 'return_initiated'))
         .catch((e) => console.warn('[CUSTOMER-ORDERS] cancelPendingLoyaltyAward failed:', e?.message));
 
-      const now = new Date().toISOString();
-      await query(
-        `UPDATE orders SET order_status = 'returned', updated_at = $2 WHERE id = $1`,
-        [orderId, now]
+      const orderItemsResult = await query(
+        `SELECT oi.*, p.name as product_name FROM order_items oi
+         LEFT JOIN products p ON oi.product_id = p.id
+         WHERE oi.order_id = $1`,
+        [orderId]
+      );
+      const orderItemMap = new Map(
+        (orderItemsResult.rows || []).map((row: Record<string, unknown>) => [String(row.id), row])
       );
 
-      const notes = body.reason?.trim() || 'Customer return request';
+      let totalRefundAmount = 0;
+      for (const item of eligibleItems) {
+        const orderItem = orderItemMap.get(item.orderItemId);
+        if (!orderItem) {
+          return this.error(`Order item ${item.orderItemId} not found`, 400);
+        }
+        const qty = item.maxReturnQuantity;
+        totalRefundAmount += parseFloat(String(orderItem.unit_price ?? '0')) * qty;
+      }
+
+      const returnNumber = `RET-${Date.now().toString(36).toUpperCase()}`;
+      const primaryReason = body.reason?.trim() || 'Customer return request';
+      const now = new Date().toISOString();
+
+      const [returnRequest] = await insert('return_requests', {
+        order_id: orderId,
+        customer_id: order.customer_id,
+        vendor_id: order.vendor_id,
+        return_number: returnNumber,
+        status: 'pending',
+        reason: primaryReason,
+        comments: null,
+        photos: JSON.stringify([]),
+        total_refund_amount: totalRefundAmount,
+        pickup_address: order.shipping_address ?? null,
+        preferred_pickup_date: null,
+        bank_account_details: null,
+        created_at: now,
+        updated_at: now,
+      });
+
+      for (const item of eligibleItems) {
+        const orderItem = orderItemMap.get(item.orderItemId)!;
+        const qty = item.maxReturnQuantity;
+        await insert('return_items', {
+          return_request_id: returnRequest.id,
+          order_item_id: item.orderItemId,
+          product_id: orderItem.product_id,
+          quantity: qty,
+          reason: primaryReason,
+          comments: null,
+          refund_amount: parseFloat(String(orderItem.unit_price ?? '0')) * qty,
+          status: 'pending',
+          created_at: now,
+        });
+      }
+
+      await update('orders', { id: orderId }, {
+        has_return_request: true,
+        return_status: 'pending',
+        updated_at: now,
+      });
+
       await insert('order_status_history', {
         order_id: orderId,
-        status: 'returned',
-        notes,
+        status: 'return_requested',
+        notes: primaryReason,
         changed_by_type: 'customer',
         created_at: now,
       });
@@ -910,12 +1015,73 @@ class CustomerReturnOrderHandler extends BaseHandler {
       return this.success({
         success: true,
         orderId,
-        status: 'returned',
+        returnRequestId: returnRequest.id,
+        returnNumber,
+        status: 'pending',
+        totalRefundAmount,
+        itemCount: eligibleItems.length,
         message: 'Return request submitted successfully',
       });
     } catch (error: any) {
       console.error('Error submitting customer return:', error);
       return this.error(error.message || 'Failed to submit return request', 500);
+    }
+  }
+}
+
+// ============================================================================
+// GET /customer/orders/:orderId/payment-resume - Resume Razorpay for unpaid shop order
+// ============================================================================
+
+class ShopOrderPaymentResumeHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      const orderId =
+        context.event.pathParameters?.orderId ||
+        context.event.pathParameters?.id;
+      const customerId =
+        context.event.pathParameters?.customerId ||
+        context.event.queryStringParameters?.customerId ||
+        context.userId;
+
+      if (!orderId) {
+        return this.error('Order ID is required', 400);
+      }
+      if (!customerId) {
+        return this.error('Customer ID is required', 401);
+      }
+
+      const ownerCheck = await query(
+        `SELECT id FROM orders WHERE id = $1::uuid AND customer_id = $2::uuid LIMIT 1`,
+        [orderId, customerId]
+      );
+      if (ownerCheck.rows.length === 0) {
+        return this.error('Order not found', 404);
+      }
+
+      const ctx = await buildShopOrderPaymentResumeContext(orderId);
+      if (!ctx) {
+        return this.error('Order is not awaiting payment', 404);
+      }
+
+      if (!ctx.canResume) {
+        await discardUnpaidShopOrder(orderId, 'payment_window_expired', {
+          requestId: randomUUID(),
+          paymentStatus: 'expired',
+        }).catch((e) =>
+          console.warn('[customer/orders/payment-resume] discard after expiry failed:', e)
+        );
+        return this.error('Payment window expired. Please place a new order.', 410);
+      }
+
+      return this.success({
+        success: true,
+        canResume: true,
+        ...ctx,
+      });
+    } catch (error: any) {
+      console.error('[customer/orders/payment-resume] failed:', error);
+      return this.error(error.message || 'Failed to load payment resume context', 500);
     }
   }
 }
@@ -930,6 +1096,7 @@ export function registerCustomerOrdersEndpoints(app: Hono) {
   const getDetailsHandler = new GetOrderDetailsHandler();
   const getInvoiceHandler = new GetOrderInvoiceHandler();
   const returnOrderHandler = new CustomerReturnOrderHandler();
+  const shopPaymentResumeHandler = new ShopOrderPaymentResumeHandler();
 
   // PHASE 1.3 FIX: Add POST /customer/orders endpoint
   app.post('/customer/orders', async (c) => {
@@ -952,6 +1119,13 @@ export function registerCustomerOrdersEndpoints(app: Hono) {
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await getOrdersHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.get('/customer/orders/:id/payment-resume', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await shopPaymentResumeHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 

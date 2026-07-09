@@ -12,6 +12,7 @@ export interface EcommerceCategoryForm {
   enabled: boolean;
   parentId?: string | null;
   commissionRate?: number | null;
+  returnsEnabled?: boolean;
 }
 
 export function mapApiCategoryToForm(row: Record<string, unknown>): EcommerceCategoryForm {
@@ -28,6 +29,10 @@ export function mapApiCategoryToForm(row: Record<string, unknown>): EcommerceCat
       ? Number(commissionRaw)
       : null;
 
+  const returnsRaw = row.returns_enabled ?? row.returnsEnabled;
+  const returnsEnabled =
+    returnsRaw === true || returnsRaw === 'true' || returnsRaw === 1 || returnsRaw === '1';
+
   return {
     id: String(row.id ?? ''),
     name,
@@ -41,6 +46,7 @@ export function mapApiCategoryToForm(row: Record<string, unknown>): EcommerceCat
     enabled,
     parentId: (row.parent_category_id ?? row.parentId ?? null) as string | null,
     commissionRate,
+    returnsEnabled,
   };
 }
 
@@ -58,6 +64,8 @@ export function mapFormCategoryToApiPayload(cat: EcommerceCategoryForm): Record<
     parent_category_id: cat.parentId ?? null,
     default_commission_rate: cat.commissionRate ?? null,
     commissionRate: cat.commissionRate ?? null,
+    returns_enabled: cat.returnsEnabled === true,
+    returnsEnabled: cat.returnsEnabled === true,
   };
 }
 

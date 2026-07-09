@@ -5,10 +5,6 @@ import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { parseCartLineKey } from '@/lib/product-sku-client';
 import {
-  buildSanitizedStandardRazorpayCheckoutOptions,
-  fetchCheckoutEmailForPrefill,
-} from '@/lib/razorpay/build-standard-checkout-options';
-import {
   computeCartPricing,
   clearPricingOptionsForCheckout,
   readPricingOptionsForCheckout,
@@ -16,7 +12,6 @@ import {
 } from '@/lib/ecommerce/cart-pricing';
 import { clearWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
 import {
-  buildRazorpayEcommerceCreateOrderPayload,
   extractEcommerceOrderIdFromResponse,
 } from '@/lib/ecommerce/ecommerce-razorpay-payload';
 import { extractHttpErrorMessage } from '@/lib/api-client';
@@ -26,6 +21,10 @@ import {
   deliveryRegionsFromCartItem,
   findUndeliverableCartItems,
 } from '@/lib/ecommerce/product-delivery-guard';
+import {
+  persistShopPendingOrderId,
+  resumeShopOrderPayment,
+} from '@/lib/ecommerce/resume-shop-order-payment';
 
 export type CheckoutAddress = {
   id?: string;
@@ -51,26 +50,6 @@ function normalizeShippingAddress(addr: CheckoutAddress) {
     pincode: addr.pincode || '',
     phone: addr.phone || '',
   };
-}
-
-function loadRazorpayScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (typeof document === 'undefined') {
-      reject(new Error('No document'));
-      return;
-    }
-    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
-    if (existing) {
-      resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Razorpay'));
-    document.body.appendChild(script);
-  });
 }
 
 export function buildEcommerceOrderPayload(
@@ -150,6 +129,7 @@ export function useEcommerceCheckout() {
       pricing,
       shippingAddress,
       onSuccess,
+      onPaymentDismiss,
       onProcessingChange,
       clearCart,
       walletAmountApplied,
@@ -159,6 +139,7 @@ export function useEcommerceCheckout() {
       pricing: CartPricingBreakdown;
       shippingAddress: CheckoutAddress;
       onSuccess: (orderId: string) => void;
+      onPaymentDismiss?: (orderId: string) => void;
       onProcessingChange?: (processing: boolean) => void;
       clearCart?: () => void;
       walletAmountApplied?: number;
@@ -198,90 +179,36 @@ export function useEcommerceCheckout() {
         // The backend reads orders.total_amount from the DB and creates a fresh Razorpay order.
         // This prevents double-order creation on transient failures between order creation and payment.
         const payAmount = Math.max(0, pricing.total - effectiveWallet);
-        const razorpayPayload = buildRazorpayEcommerceCreateOrderPayload(
-          extractEcommerceOrderIdFromResponse(result) || '',
-          payAmount,
-          getResolvedCustomerId()
-        );
-        const shopOrderId = razorpayPayload.orderId;
-        const razorpayOrder = await apiClient.post<{
-          orderId: string;
-          keyId: string;
-          amount: number;
-          currency: string;
-          fullyCoveredByWallet?: boolean;
-        }>('/razorpay/create-order', razorpayPayload);
-
-        // Wallet covered the full order — no Razorpay payment needed
-        if (razorpayOrder?.fullyCoveredByWallet) {
-          clearCart?.();
-          onSuccess(shopOrderId);
-          return;
+        const shopOrderId = extractEcommerceOrderIdFromResponse(result) || '';
+        if (!shopOrderId) {
+          throw new Error('Order was not created');
         }
 
-        if (!razorpayOrder?.orderId) {
-          throw new Error('Failed to create payment order');
-        }
+        persistShopPendingOrderId(shopOrderId);
 
-        if (!(typeof window !== 'undefined' && (window as unknown as { Razorpay?: unknown }).Razorpay)) {
-          await loadRazorpayScript();
-        }
-
-        const checkoutEmail = await fetchCheckoutEmailForPrefill(phone);
         const normalized = normalizeShippingAddress(shippingAddress);
+        const customerId = getResolvedCustomerId();
+        if (!customerId) {
+          throw new Error('Please sign in again to complete payment');
+        }
 
-        await new Promise<void>((resolve, reject) => {
-          const options = buildSanitizedStandardRazorpayCheckoutOptions({
-            key: razorpayOrder.keyId,
-            amountPaise: Math.max(1, Math.round(Number(razorpayOrder.amount) * 100)),
-            currency: razorpayOrder.currency || 'INR',
-            name: 'Warmpawz',
-            description: 'Order Payment',
-            order_id: razorpayOrder.orderId,
-            customerPhone: shippingAddress.phone || phone,
-            customerEmail: checkoutEmail,
-            prefillName: normalized.name,
-            includeInstrumentBlocks: true,
-            handler: async (response: {
-              razorpay_order_id: string;
-              razorpay_payment_id: string;
-              razorpay_signature: string;
-            }) => {
-              try {
-                await apiClient.post('/razorpay/verify-payment', {
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature: response.razorpay_signature,
-                });
-                // Navigate before clearing cart — otherwise checkout re-renders empty on ?step=review
-                onSuccess(shopOrderId);
-                resolve();
-                queueMicrotask(() => {
-                  clearWarmpawzCartStorage();
-                  clearPricingOptionsForCheckout();
-                  clearCart?.();
-                });
-              } catch (err) {
-                reject(err);
-              }
-            },
-            theme: { color: '#FF8C42' },
-            modal: {
-              ondismiss: () => {
-                onProcessingChange?.(false);
-                reject(new Error('Payment cancelled'));
-              },
-            },
-          });
-
-          const RazorpayCtor = (window as unknown as { Razorpay: new (o: unknown) => { open: () => void } })
-            .Razorpay;
-          if (!RazorpayCtor) {
-            reject(new Error('Razorpay not available'));
-            return;
-          }
-          const razorpay = new RazorpayCtor(options);
-          razorpay.open();
+        await resumeShopOrderPayment({
+          orderId: shopOrderId,
+          payableAmount: payAmount,
+          customerId,
+          phone: shippingAddress.phone || phone,
+          prefillName: normalized.name,
+          onSuccess: (paidOrderId) => {
+            onSuccess(paidOrderId);
+            queueMicrotask(() => {
+              clearWarmpawzCartStorage();
+              clearPricingOptionsForCheckout();
+              clearCart?.();
+            });
+          },
+          onDismiss: () => {
+            onPaymentDismiss?.(shopOrderId);
+          },
         });
       } catch (err: unknown) {
         const apiErr = err as { responseData?: unknown; status?: number };

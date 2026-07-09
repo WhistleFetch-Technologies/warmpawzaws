@@ -2284,6 +2284,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         if (item.default_commission_rate != null) {
           row.default_commission_rate = item.default_commission_rate;
         }
+        row.returns_enabled = item.returns_enabled === true;
 
         try {
           if (item.id && isEcommerceCategoryUuid(item.id)) {
@@ -2310,6 +2311,13 @@ export function registerEcommerceEndpoints(app: Hono) {
               await update('ecommerce_categories', { id: item.id }, rowWithoutCommission);
             } else {
               await insert('ecommerce_categories', rowWithoutCommission);
+            }
+          } else if (dbErr.message?.includes('returns_enabled') || dbErr.code === '42703') {
+            const { returns_enabled: _r, ...rowWithoutReturns } = row;
+            if (item.id && isEcommerceCategoryUuid(item.id)) {
+              await update('ecommerce_categories', { id: item.id }, rowWithoutReturns);
+            } else {
+              await insert('ecommerce_categories', rowWithoutReturns);
             }
           } else if (dbErr.message?.includes('column "image_url"') || dbErr.code === '42703') {
             const { image_url: _img, ...rowWithoutImage } = row;

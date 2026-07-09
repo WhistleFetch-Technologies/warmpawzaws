@@ -26,6 +26,7 @@ export type EcommerceCategoryPublicRow = {
   is_active: boolean;
   image_url: string | null;
   default_commission_rate: number | null;
+  returns_enabled: boolean;
   /** Storefront-active products in this category (public catalog only). */
   product_count: number;
   created_at?: string;
@@ -50,6 +51,10 @@ export async function mapCategoryRowForPublic(
       ? Number(commissionRaw)
       : null;
 
+  const returnsRaw = row.returns_enabled ?? row.returnsEnabled;
+  const returns_enabled =
+    returnsRaw === true || returnsRaw === 'true' || returnsRaw === 1 || returnsRaw === '1';
+
   const productCountRaw = row.product_count ?? row.productCount;
   const product_count =
     productCountRaw != null && productCountRaw !== ''
@@ -64,6 +69,7 @@ export async function mapCategoryRowForPublic(
     is_active: opts?.includeInactive ? isActive : true,
     image_url: imageUrl,
     default_commission_rate: defaultCommissionRate,
+    returns_enabled,
     product_count,
     created_at: row.created_at != null ? String(row.created_at) : undefined,
   };
@@ -85,6 +91,7 @@ export function parseAdminCategoryPayloadItem(item: Record<string, unknown>): {
   is_active: boolean;
   image_url: string | null;
   default_commission_rate: number | null;
+  returns_enabled: boolean;
 } {
   const name = String(item.name ?? '').trim();
   const rawId = item.id != null ? String(item.id).trim() : '';
@@ -112,5 +119,10 @@ export function parseAdminCategoryPayloadItem(item: Record<string, unknown>): {
     is_active: enabled,
     image_url,
     default_commission_rate: parseCategoryCommissionRate(item),
+    returns_enabled:
+      item.returns_enabled === true ||
+      item.returns_enabled === 'true' ||
+      item.returnsEnabled === true ||
+      item.returnsEnabled === 'true',
   };
 }

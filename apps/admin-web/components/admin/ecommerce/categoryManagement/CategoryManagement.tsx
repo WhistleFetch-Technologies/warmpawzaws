@@ -120,6 +120,7 @@ export function CategoryManagement() {
       order: categories.length + 1,
       enabled: true,
       commissionRate: null,
+      returnsEnabled: false,
     };
     setEditingCategory(newCategory);
     setShowModal(true);
@@ -497,6 +498,9 @@ function CategoryTreeItem({
               )}
               <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                 <span>
+                  Returns: {category.returnsEnabled ? 'Enabled' : 'Disabled'}
+                </span>
+                <span>
                   Commission:{' '}
                   {category.commissionRate != null ? `${category.commissionRate}%` : 'Not set'}
                 </span>
@@ -745,6 +749,28 @@ function CategoryEditorModal({
                   : 'No static image file mapped for this name yet.'}
               </span>
             </div>
+          </div>
+
+          <div className="border-t border-gray-200 pt-6">
+            <h4 className="font-semibold text-gray-900 mb-4">Returns Policy</h4>
+            <p className="text-xs text-gray-500 mb-3">
+              When enabled, customers can request returns for delivered products in this category
+              within the platform return window.
+            </p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editedCategory.returnsEnabled === true}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setEditedCategory({
+                    ...editedCategory,
+                    returnsEnabled: e.target.checked,
+                  })
+                }
+                className="w-4 h-4 rounded border-gray-300"
+              />
+              <span className="text-sm text-gray-700">Returns enabled</span>
+            </label>
           </div>
 
           <div className="border-t border-gray-200 pt-6">

@@ -13,11 +13,15 @@ export function formatPaymentHoldCountdown(secondsRemaining: number): string {
 
 export function resolvePaymentHoldExpiresAt(entity: {
   paymentHoldExpiresAt?: string | null;
+  payment_hold_expires_at?: string | null;
   createdAt?: string | null;
+  created_at?: string | null;
 }): string | null {
-  if (entity.paymentHoldExpiresAt) return entity.paymentHoldExpiresAt;
-  if (entity.createdAt) {
-    const t = new Date(entity.createdAt).getTime();
+  const explicit = entity.paymentHoldExpiresAt ?? entity.payment_hold_expires_at;
+  if (explicit) return explicit;
+  const created = entity.createdAt ?? entity.created_at;
+  if (created) {
+    const t = new Date(created).getTime();
     if (!Number.isNaN(t)) {
       return new Date(t + PAYMENT_HOLD_TTL_MS).toISOString();
     }
@@ -145,6 +149,76 @@ export function isMealPaymentHoldExpired(order: {
   const expiresAt = resolvePaymentHoldExpiresAt(order);
   if (!expiresAt) return false;
   return new Date(expiresAt).getTime() <= Date.now();
+}
+
+function isShopCod(order: { paymentMethod?: string; payment_method?: string }): boolean {
+  const pm = String(order.paymentMethod ?? order.payment_method ?? 'online').toLowerCase();
+  return pm === 'cod' || pm === 'cash_on_delivery';
+}
+
+export function isShopOrderAwaitingPayment(order: {
+  status?: string;
+  paymentStatus?: string;
+  payment_status?: string;
+  paymentMethod?: string;
+  payment_method?: string;
+}): boolean {
+  const st = String(order.status || '').toLowerCase();
+  if (st !== 'pending_payment') return false;
+  if (isShopCod(order)) return false;
+  const ps = String(order.paymentStatus ?? order.payment_status ?? '').toLowerCase();
+  return !['paid', 'completed', 'expired', 'failed', 'refunded'].includes(ps);
+}
+
+export function isShopOrderPaymentHoldExpired(order: {
+  status?: string;
+  paymentStatus?: string;
+  payment_status?: string;
+  paymentMethod?: string;
+  payment_method?: string;
+  paymentHoldExpiresAt?: string | null;
+  payment_hold_expires_at?: string | null;
+  createdAt?: string | null;
+  created_at?: string | null;
+}): boolean {
+  if (!isShopOrderAwaitingPayment(order)) return false;
+  const expiresAt = resolvePaymentHoldExpiresAt(order);
+  if (!expiresAt) return false;
+  return new Date(expiresAt).getTime() <= Date.now();
+}
+
+export function isShopOrderPaymentHoldActive(order: {
+  status?: string;
+  paymentStatus?: string;
+  payment_status?: string;
+  paymentMethod?: string;
+  payment_method?: string;
+  paymentHoldExpiresAt?: string | null;
+  payment_hold_expires_at?: string | null;
+  createdAt?: string | null;
+  created_at?: string | null;
+}): boolean {
+  if (!isShopOrderAwaitingPayment(order)) return false;
+  if (isShopOrderPaymentHoldExpired(order)) return false;
+  const expiresAt = resolvePaymentHoldExpiresAt(order);
+  if (!expiresAt) return true;
+  return new Date(expiresAt).getTime() > Date.now();
+}
+
+/** Show countdown or expired banner for unpaid shop orders. */
+export function isShopOrderPaymentHoldVisible(order: {
+  status?: string;
+  paymentStatus?: string;
+  payment_status?: string;
+  paymentMethod?: string;
+  payment_method?: string;
+  paymentHoldExpiresAt?: string | null;
+  payment_hold_expires_at?: string | null;
+  createdAt?: string | null;
+  created_at?: string | null;
+}): boolean {
+  if (!isShopOrderAwaitingPayment(order)) return false;
+  return isShopOrderPaymentHoldActive(order) || isShopOrderPaymentHoldExpired(order);
 }
 
 export function PaymentHoldBanner({

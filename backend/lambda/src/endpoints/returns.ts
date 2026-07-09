@@ -20,6 +20,11 @@ import { select, insert, update, upsert, query } from '../database/rds-connectio
 import { getRazorpayClient } from '../utils/payments/razorpay-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import {
+  loadOrderItemsWithReturnEligibility,
+  assertReturnItemsAllowed,
+  ReturnItemsNotAllowedError,
+} from '../utils/category-return-eligibility';
 
 export function registerReturnsEndpoints(app: Hono) {
   /**
@@ -47,35 +52,22 @@ export function registerReturnsEndpoints(app: Hono) {
         return c.json({ eligible: false, message: 'Order not yet delivered' });
       }
 
-      // Get return policies from platform settings
-      const settings = await select('platform_settings', { setting_key: 'admin:settings:return_policies' });
-      const policies = settings.length > 0 ? (settings[0].setting_value as any[]) : [];
-
-      // Find applicable policy (simplified - would need more complex matching)
-      const policy = policies.find((p: any) => p.global === true) || policies[0];
-
-      if (!policy) {
-        return c.json({ eligible: false, message: 'No return policy found' });
+      const itemRows = await loadOrderItemsWithReturnEligibility(orderId);
+      const productItem = itemRows.find((item) => item.productId === productId);
+      if (!productItem) {
+        return c.json({ eligible: false, message: 'Product not found on this order' });
       }
-
-      // Check return window
-      if (order.delivered_at) {
-        const deliveryDate = new Date(order.delivered_at);
-        const daysSinceDelivery = Math.floor(
-          (Date.now() - deliveryDate.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        if (daysSinceDelivery > (policy.returnWindow || 7)) {
-          return c.json({
-            eligible: false,
-            message: `Return window expired. Returns allowed within ${policy.returnWindow || 7} days of delivery.`,
-          });
-        }
+      if (!productItem.isReturnable) {
+        return c.json({
+          eligible: false,
+          message: productItem.blockReason || 'This product is not eligible for return',
+        });
       }
 
       return c.json({
         eligible: true,
-        policy,
+        returnWindowDays: productItem.returnWindowDays,
+        daysRemaining: productItem.daysRemaining,
       });
     } catch (error: any) {
       console.error('Error checking return eligibility:', error);
@@ -103,6 +95,22 @@ export function registerReturnsEndpoints(app: Hono) {
 
       if (!orderId || !customerId || !vendorId || !items || !returnReason) {
         return c.json({ error: 'orderId, customerId, vendorId, items, and returnReason are required' }, 400);
+      }
+
+      const normalizedItems = Array.isArray(items)
+        ? items.map((item: { orderItemId?: string; id?: string; quantity?: number }) => ({
+            orderItemId: String(item.orderItemId ?? item.id ?? ''),
+            quantity: item.quantity,
+          }))
+        : [];
+
+      try {
+        await assertReturnItemsAllowed(orderId, normalizedItems);
+      } catch (err: unknown) {
+        if (err instanceof ReturnItemsNotAllowedError) {
+          return c.json({ error: err.message }, err.statusCode);
+        }
+        throw err;
       }
 
       // Create return request
@@ -148,6 +156,22 @@ export function registerReturnsEndpoints(app: Hono) {
       }
 
       const order = orders[0];
+
+      const normalizedItems = Array.isArray(items)
+        ? items.map((item: { orderItemId?: string; id?: string; quantity?: number }) => ({
+            orderItemId: String(item.orderItemId ?? item.id ?? ''),
+            quantity: item.quantity,
+          }))
+        : [];
+
+      try {
+        await assertReturnItemsAllowed(orderId, normalizedItems);
+      } catch (err: unknown) {
+        if (err instanceof ReturnItemsNotAllowedError) {
+          return c.json({ error: err.message }, err.statusCode);
+        }
+        throw err;
+      }
 
       // Create return request
       const returnRequest = await insert('returns', {
