@@ -34,7 +34,14 @@ interface ValidationResult {
     message: string;
     value?: any;
   }>;
+  warnings?: Array<{
+    row: number;
+    field: string;
+    message: string;
+    value?: any;
+  }>;
   hasMoreErrors: boolean;
+  hasMoreWarnings?: boolean;
 }
 
 interface UploadResult {
@@ -495,7 +502,7 @@ export function BulkProductUpload({
                 <ul className="text-sm text-amber-700 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                   <li>• <strong>Title*</strong> — product name</li>
                   <li>• <strong>Quantity*</strong> — whole number ≥ 0</li>
-                  <li>• <strong>Image*</strong> — at least one http(s) URL per row; multiple images = comma-separated in the same cell</li>
+                  <li>• <strong>Image*</strong> — at least one http(s) URL per row; multiple images = comma-separated in the same cell. Images are shown on the storefront from your URLs (not copied to Warmpawz storage during bulk upload). Prefer direct CDN links over Google Drive.</li>
                   <li>• <strong>MRP*</strong> — maximum retail price in ₹ (&gt; 0)</li>
                   <li>• <strong>Category*</strong> — column Y (dropdown)</li>
                   <li>• <strong>Tax*</strong> — 0, 5, 12, 18, or 28%</li>
@@ -540,6 +547,30 @@ export function BulkProductUpload({
                   <p className={`text-sm ${validation.invalidRows > 0 ? 'text-red-600' : 'text-gray-500'}`}>Invalid</p>
                 </div>
               </div>
+
+              {validation.warnings && validation.warnings.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 max-h-48 overflow-y-auto">
+                  <h4 className="font-semibold text-amber-800 mb-2">Image link warnings (upload can still proceed)</h4>
+                  <ul className="text-sm text-amber-800 space-y-1">
+                    {validation.warnings.slice(0, 20).map((warn, i) => (
+                      <li key={i}>
+                        Row {warn.row}: <strong>{warn.field}</strong> — {warn.message}
+                        {warn.value !== undefined && (
+                          <span className="block text-amber-700 truncate max-w-full" title={String(warn.value)}>
+                            URL: {String(warn.value)}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                    {validation.warnings.length > 20 && (
+                      <li className="text-amber-700 font-medium">
+                        ...and {validation.warnings.length - 20} more warnings
+                        {validation.hasMoreWarnings ? ' (list truncated)' : ''}
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
 
               {validation.errors.length > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 max-h-48 overflow-y-auto">

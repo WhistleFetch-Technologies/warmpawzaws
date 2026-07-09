@@ -27,6 +27,7 @@ import {
 import { normalizeEcommerceProductPricing } from '../utils/product-ecommerce-pricing';
 import {
   bulkRowLimitResponse,
+  collectFragileImageWarnings,
   countTitledBulkRows,
   exceedsBulkRowLimit,
   generateVendorProductSku,
@@ -59,7 +60,6 @@ import {
   filterProductPayloadToColumns,
 } from '../utils/product-vendor-persist';
 import { validateAndApplyVendorDeclaredOwnership } from '../utils/compute-listing-ownership';
-import { ingestExternalProductImageUrls } from '../utils/product-image-ingest';
 import { cleanupRemovedProductS3Images, collectImageUrlsFromJsonb } from '../utils/product-s3-image';
 
 /**
@@ -114,6 +114,13 @@ interface BulkProductRow {
 }
 
 interface ValidationError {
+  row: number;
+  field: string;
+  message: string;
+  value?: any;
+}
+
+interface ValidationWarning {
   row: number;
   field: string;
   message: string;
@@ -183,6 +190,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
       }
 
       const errors: ValidationError[] = [];
+      const warnings: ValidationWarning[] = [];
       const validProducts: BulkProductRow[] = [];
 
       // Get valid categories
@@ -204,6 +212,15 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         });
         if (!validation.ok) {
           push(validation.field, validation.message, product[validation.field]);
+        }
+
+        for (const fw of collectFragileImageWarnings(product as Record<string, unknown>)) {
+          warnings.push({
+            row: rowNum,
+            field: fw.field,
+            message: fw.message,
+            value: fw.value,
+          });
         }
 
         if (product.weight !== undefined && product.weight !== null && product.weight !== '') {
@@ -301,7 +318,9 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           validRows: fullyValidProducts.length,
           invalidRows: errors.length > 0 ? [...new Set(errors.map(e => e.row))].length : 0,
           errors: errors.slice(0, 100), // Limit errors returned
+          warnings: warnings.slice(0, 100),
           hasMoreErrors: errors.length > 100,
+          hasMoreWarnings: warnings.length > 100,
         },
         validProducts: fullyValidProducts,
         productGroups: groups.map((g) => ({
@@ -433,10 +452,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           const rawParentImages = hasVariants
             ? pickGroupParentImages(group)
             : parseProductImageList(firstRow.images ?? firstRow.image_urls);
-          // Mirror any external (e.g. Google Drive) URLs onto our own S3 storage
-          // (compressed) so the storefront never depends on a third-party host
-          // staying reachable. Already-managed S3 URLs pass through untouched.
-          const parentImages = await ingestExternalProductImageUrls(vendorId, rawParentImages);
+          // Bulk upload stores vendor image URLs as-is; customer app loads them directly.
+          const parentImages = rawParentImages;
           const prevParentImages = existingProduct ? collectImageUrlsFromJsonb(existingProduct.images) : [];
 
           const productData: Record<string, unknown> = {
@@ -532,7 +549,9 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
 
           if (savedProductId && hasVariants) {
             const skuInputs = buildSkuInputsFromGroup(group);
-            await syncProductSkus(vendorId, savedProductId, skuInputs);
+            await syncProductSkus(vendorId, savedProductId, skuInputs, undefined, {
+              skipImageIngest: true,
+            });
           }
         } catch (error: any) {
           results.failed += group.rowNums.length;

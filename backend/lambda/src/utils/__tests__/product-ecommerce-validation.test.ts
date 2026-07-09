@@ -1,8 +1,10 @@
 import {
   bulkRowLimitResponse,
+  collectFragileImageWarnings,
   countTitledBulkRows,
   exceedsBulkRowLimit,
   generateVendorProductSku,
+  isFragileProductImageUrl,
   MAX_BULK_PRODUCT_ROWS,
   parseProductImageList,
   validateEcommerceProductInput,
@@ -164,5 +166,21 @@ describe('product-ecommerce-validation', () => {
     if (r.ok) {
       expect('sku' in r.normalized).toBe(false);
     }
+  });
+
+  it('flags Google Drive and Dropbox URLs as fragile', () => {
+    expect(isFragileProductImageUrl('https://drive.google.com/file/d/abc/view')).toBe(true);
+    expect(isFragileProductImageUrl('https://www.dropbox.com/s/abc/photo.jpg')).toBe(true);
+    expect(isFragileProductImageUrl('https://cdn.vendor.com/product.jpg')).toBe(false);
+  });
+
+  it('collectFragileImageWarnings returns non-blocking warnings per fragile URL', () => {
+    const warnings = collectFragileImageWarnings({
+      images:
+        'https://cdn.example.com/ok.jpg, https://drive.google.com/file/d/x/view',
+    });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].field).toBe('images');
+    expect(warnings[0].value).toContain('drive.google.com');
   });
 });
