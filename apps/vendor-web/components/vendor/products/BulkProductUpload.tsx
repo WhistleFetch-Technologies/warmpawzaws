@@ -42,11 +42,18 @@ interface UploadResult {
   updated: number;
   failed: number;
   errors: Array<{ row: number; error: string }>;
+  groups?: Array<{
+    productId: string;
+    name: string;
+    action: 'created' | 'updated';
+    rowNums: number[];
+  }>;
 }
 
 interface ProductGroupPreview {
   name: string;
   category: string;
+  warmpawz_product_id?: string;
   product_group_id?: string;
   variants: Array<{
     rowNum: number;
@@ -62,11 +69,13 @@ function groupValidProductsForPreview(rows: any[]): ProductGroupPreview[] {
     const name = String(row.name ?? '').trim();
     const category = String(row.category ?? '').trim();
     if (!name) continue;
+    const wpid = String(row.warmpawz_product_id ?? '').trim();
     const pgid = String(row.product_group_id ?? '').trim();
-    const brand = String(row.brand ?? '').trim().toLowerCase();
-    const key = pgid
-      ? `pgid::${pgid.toLowerCase()}`
-      : `${brand}::${name.toLowerCase()}::${category.toLowerCase()}`;
+    const key = wpid
+      ? `wpid::${wpid.toLowerCase()}`
+      : pgid
+        ? `pgid::${pgid.toLowerCase()}`
+        : `row::${Number(row.rowNum) || 0}`;
     const mrp = Number(row.compare_at_price) || 0;
     const spRaw = row.price;
     const sp =
@@ -84,6 +93,7 @@ function groupValidProductsForPreview(rows: any[]): ProductGroupPreview[] {
       map.set(key, {
         name,
         category,
+        warmpawz_product_id: wpid || undefined,
         product_group_id: pgid || undefined,
         variants: [variant],
       });
@@ -134,6 +144,7 @@ export function BulkProductUpload({
   const [productGroups, setProductGroups] = useState<ProductGroupPreview[]>([]);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const [updatedTemplateLoading, setUpdatedTemplateLoading] = useState(false);
   const [hintCategory, setHintCategory] = useState('Pet Food');
   const [commissionModel, setCommissionModel] = useState<'category' | 'ownership' | null>(null);
 
@@ -171,9 +182,9 @@ export function BulkProductUpload({
     setTemplateOkMessage('');
     // Compulsory headers carry `*` so the parser still maps them after
     // normalization (`*` is stripped). Order matches the XLSX template.
-    const headers = ['name*', 'description', 'key_features', 'brand*', 'category*', 'product_specifications', 'weight', 'length_cm', 'breadth_cm', 'height_cm', 'barcode', 'stock_quantity*', 'images*', 'price*', 'pet_type', 'tax*', 'hsn_code*', 'manufacturing_details', 'delivery_regions', 'product_group_id', 'variant_attr_1', 'variant_value_1', 'variant_attr_2', 'variant_value_2', 'variant_attr_3', 'variant_value_3', 'listing_ownership*'];
+    const headers = ['name*', 'description', 'key_features', 'brand*', 'category*', 'product_specifications', 'weight', 'length_cm', 'breadth_cm', 'height_cm', 'barcode', 'stock_quantity*', 'images*', 'price*', 'pet_type', 'tax*', 'hsn_code*', 'manufacturing_details', 'delivery_regions', 'warmpawz_product_id', 'product_group_id', 'variant_attr_1', 'variant_value_1', 'variant_attr_2', 'variant_value_2', 'variant_attr_3', 'variant_value_3', 'listing_ownership*'];
     const sample = [
-      '"Premium Dog Harness"', '"Comfortable and adjustable harness for everyday walks."', '"Adjustable straps"', '"Your Brand Name"', '"Pet Accessories"', '"Material:Nylon"', '0.2', '25', '15', '5', '', '50', '"https://example.com/your-product-image-1000x1000.jpg"', '599', 'Dog', '12%', '42010000', '"Country of Origin: India"', '', '', '', '', '', '', '', '', '"Third party"'
+      '"Premium Dog Harness"', '"Comfortable and adjustable harness for everyday walks."', '"Adjustable straps"', '"Your Brand Name"', '"Pet Accessories"', '"Material:Nylon"', '0.2', '25', '15', '5', '', '50', '"https://example.com/your-product-image-1000x1000.jpg"', '599', 'Dog', '12%', '42010000', '"Country of Origin: India"', '', '', '', '', '', '', '', '', '', '"Third party"'
     ];
     const csv = headers.join(',') + '\n' + sample.join(',');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -329,6 +340,54 @@ export function BulkProductUpload({
     }
   };
 
+  const handleDownloadUpdatedTemplate = async () => {
+    if (!uploadResult?.groups?.length) return;
+    setUpdatedTemplateLoading(true);
+    setError('');
+    try {
+      const vendorId = resolveVendorId();
+      if (!vendorId) {
+        throw new Error('Vendor ID not found. Please sign in again.');
+      }
+
+      const rowToProductId = new Map<number, string>();
+      for (const group of uploadResult.groups ?? []) {
+        for (const rowNum of group.rowNums) {
+          rowToProductId.set(rowNum, group.productId);
+        }
+      }
+
+      const sourceRows = validProducts.length > 0 ? validProducts : parsedProducts;
+      const productsWithIds = sourceRows.map((row) => {
+        const rowNum = Number(row.rowNum) || 0;
+        const assignedId = rowToProductId.get(rowNum);
+        return {
+          ...row,
+          warmpawz_product_id: assignedId ?? row.warmpawz_product_id ?? '',
+        };
+      });
+
+      const blob = await vendorApiClient.postBlob(
+        `/vendor/${vendorId}/products/bulk/updated-template`,
+        { products: productsWithIds },
+      );
+      if (!blob || blob.size < 500) {
+        throw new Error('Updated template from server was empty or too small.');
+      }
+      await downloadBlob({
+        blob,
+        fileName: 'product_upload_updated.xlsx',
+        title: 'Updated product upload template',
+        previewHtmlInBrowser: false,
+      });
+    } catch (err) {
+      console.error('Error downloading updated template:', err);
+      setError(err instanceof Error ? err.message : 'Failed to download updated template');
+    } finally {
+      setUpdatedTemplateLoading(false);
+    }
+  };
+
   const handleReset = () => {
     setStep('upload');
     setParsedProducts([]);
@@ -336,6 +395,7 @@ export function BulkProductUpload({
     setProductGroups([]);
     setValidation(null);
     setUploadResult(null);
+    setUpdatedTemplateLoading(false);
     setError('');
     setTemplateOkMessage('');
     setTemplateLoading(false);
@@ -509,7 +569,7 @@ export function BulkProductUpload({
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                 <h4 className="font-semibold text-gray-800 mb-2">Recommended (not required to upload)</h4>
                 <ul className="text-sm text-gray-600 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-                  <li>• Re-upload same Title to update an existing product</li>
+                  <li>• Re-upload using <strong>Warmpawz Product ID</strong> to update existing products</li>
                   <li>• Description, Brand, Barcode (EAN)</li>
                   <li>• SKU is auto-generated by the system</li>
                   <li>• SP — discount below MRP</li>
@@ -568,7 +628,10 @@ export function BulkProductUpload({
                   {productGroups.slice(0, 15).map((group, gi) => (
                     <div key={gi} className="px-4 py-3">
                       <p className="font-medium text-gray-900">{group.name}</p>
-                      <p className="text-xs text-gray-500 mb-2">{group.category || 'Uncategorized'}</p>
+                      <p className="text-xs text-gray-500 mb-2">
+                        {group.category || 'Uncategorized'}
+                        {group.warmpawz_product_id ? ` · Update: ${group.warmpawz_product_id}` : ''}
+                      </p>
                       {group.variants.length > MAX_SKUS_PER_PRODUCT && (
                         <p className="text-xs text-amber-700 font-medium mb-2">
                           Warning: {group.variants.length} variant rows exceeds max {MAX_SKUS_PER_PRODUCT} SKUs per product
@@ -704,12 +767,59 @@ export function BulkProductUpload({
                 </div>
               )}
 
-              <button
-                onClick={handleDone}
-                className="px-8 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg transition"
-              >
-                Done
-              </button>
+              {uploadResult.groups && uploadResult.groups.length > 0 && (
+                <div className="border rounded-xl overflow-hidden text-left max-w-2xl mx-auto">
+                  <div className="bg-gray-50 px-4 py-3 font-semibold text-gray-700">
+                    Uploaded products
+                  </div>
+                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-100">
+                          <th className="px-3 py-2 text-left">Product Name</th>
+                          <th className="px-3 py-2 text-left">Warmpawz Product ID</th>
+                          <th className="px-3 py-2 text-left">Rows</th>
+                          <th className="px-3 py-2 text-left">Created / Updated</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {uploadResult.groups.map((group, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-3 py-2 font-medium">{group.name}</td>
+                            <td className="px-3 py-2 font-mono text-xs text-gray-700">{group.productId}</td>
+                            <td className="px-3 py-2 text-gray-600">{group.rowNums.join(', ')}</td>
+                            <td className="px-3 py-2 capitalize text-gray-700">{group.action}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+                {uploadResult.groups && uploadResult.groups.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadUpdatedTemplate}
+                    disabled={updatedTemplateLoading}
+                    className="inline-flex items-center gap-2 px-6 py-3 border border-orange-300 text-orange-700 rounded-xl font-semibold hover:bg-orange-50 disabled:opacity-50 transition"
+                  >
+                    {updatedTemplateLoading ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Download className="w-5 h-5" />
+                    )}
+                    {updatedTemplateLoading ? 'Preparing…' : 'Download Updated Template'}
+                  </button>
+                )}
+                <button
+                  onClick={handleDone}
+                  className="px-8 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg transition"
+                >
+                  Done
+                </button>
+              </div>
             </div>
           )}
         </div>
