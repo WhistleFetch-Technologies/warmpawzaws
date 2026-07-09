@@ -10,8 +10,6 @@ import {
   listingPriceFromGroup,
 } from '../bulk-product-variant-builder';
 
-const VENDOR = 'vendor-test-id';
-
 describe('bulk-product-variant-builder', () => {
   it('normalizeProductGroupKey is case-insensitive', () => {
     expect(normalizeProductGroupKey('Dog Treats', 'Food')).toBe(
@@ -38,7 +36,7 @@ describe('bulk-product-variant-builder', () => {
     ).toEqual({ pack: '1X100' });
   });
 
-  it('groupBulkRows groups by product_group_id', () => {
+  it('groupBulkRows groups by product_group_id within upload', () => {
     const groups = groupBulkRows(
       [
         {
@@ -72,10 +70,66 @@ describe('bulk-product-variant-builder', () => {
           rowNum: 3,
         },
       ] as any,
-      VENDOR,
     );
     expect(groups).toHaveLength(2);
     expect(groups.find((g) => g.name === 'Treats')?.variants).toHaveLength(2);
+  });
+
+  it('groupBulkRows groups by Warmpawz Product ID for updates', () => {
+    const groups = groupBulkRows(
+      [
+        {
+          name: 'Treats',
+          category: 'Food',
+          warmpawz_product_id: 'prod-uuid-1',
+          brand: 'Acme',
+          price: 100,
+          stock_quantity: 5,
+          size_variant: 'S',
+          rowNum: 1,
+        },
+        {
+          name: 'Treats',
+          category: 'Food',
+          warmpawz_product_id: 'prod-uuid-1',
+          brand: 'Acme',
+          price: 110,
+          stock_quantity: 8,
+          size_variant: 'L',
+          rowNum: 2,
+        },
+      ] as any,
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].warmpawz_product_id).toBe('prod-uuid-1');
+  });
+
+  it('same Product Group ID on different rows does not merge without shared upload key when row-scoped', () => {
+    const groups = groupBulkRows(
+      [
+        {
+          name: 'Product A',
+          category: 'Food',
+          product_group_id: 'shared-id',
+          brand: 'Acme',
+          price: 100,
+          stock_quantity: 5,
+          rowNum: 1,
+        },
+        {
+          name: 'Product B',
+          category: 'Food',
+          product_group_id: 'shared-id',
+          brand: 'Other',
+          price: 50,
+          stock_quantity: 1,
+          rowNum: 2,
+        },
+      ] as any,
+    );
+    // Same pgid still groups in one upload — intentional for variant rows.
+    // Different titles with same pgid and no variants will fail validateVariantGroup.
+    expect(groups).toHaveLength(1);
   });
 
   it('buildSkuInputsFromGroup uses row MRP and SP', () => {
@@ -106,7 +160,6 @@ describe('bulk-product-variant-builder', () => {
           rowNum: 2,
         },
       ] as any,
-      VENDOR,
     );
     const skus = buildSkuInputsFromGroup(groups[0]);
     expect(skus).toHaveLength(2);
@@ -132,7 +185,6 @@ describe('bulk-product-variant-builder', () => {
           rowNum: 1,
         },
       ] as any,
-      VENDOR,
     );
     const skus = buildSkuInputsFromGroup(groups[0]);
     expect(skus[0].price).toBe(120);
@@ -165,7 +217,7 @@ describe('bulk-product-variant-builder', () => {
           rowNum: 2,
         },
       ] as any,
-      VENDOR,
+
     );
     const listing = listingPriceFromGroup(groups[0]);
     expect(listing.price).toBe(150);
@@ -202,7 +254,7 @@ describe('bulk-product-variant-builder', () => {
           rowNum: 2,
         },
       ] as any,
-      VENDOR,
+
     );
     const errors = validateVariantGroup(groups[0]);
     expect(errors.some((e) => e.message.includes('Duplicate'))).toBe(true);
@@ -234,7 +286,7 @@ describe('bulk-product-variant-builder', () => {
           rowNum: 2,
         },
       ] as any,
-      VENDOR,
+
     );
     expect(aggregateGroupStock(groups[0])).toBe(12);
   });
@@ -261,7 +313,7 @@ describe('bulk-product-variant-builder', () => {
           rowNum: 1,
         },
       ] as any,
-      VENDOR,
+
     );
     expect(groups).toHaveLength(1);
     const p = groups[0].parent;
@@ -313,5 +365,49 @@ describe('bulk-product-variant-builder', () => {
     };
     const errors = validateVariantGroup(group as any);
     expect(errors.some((e) => e.message.includes('Maximum 50 variant rows'))).toBe(true);
+  });
+
+  it('validateVariantGroup allows multi-row updates with Warmpawz Product ID and no Product Group ID', () => {
+    const group = {
+      groupKey: 'wpid::prod-1',
+      warmpawz_product_id: 'prod-1',
+      name: 'Food',
+      category: 'Pet Food',
+      parent: {
+        brand: 'Acme',
+        price: 100,
+        hsn_code: '1234',
+        gst_rate: 5,
+      },
+      variants: [
+        {
+          name: 'Food',
+          category: 'Pet Food',
+          warmpawz_product_id: 'prod-1',
+          brand: 'Acme',
+          price: 100,
+          stock_quantity: 5,
+          images: 'https://example.com/a.jpg',
+          variant_attr_1: 'Size',
+          variant_value_1: 'S',
+          rowNum: 1,
+        },
+        {
+          name: 'Food',
+          category: 'Pet Food',
+          warmpawz_product_id: 'prod-1',
+          brand: 'Acme',
+          price: 110,
+          stock_quantity: 3,
+          images: 'https://example.com/b.jpg',
+          variant_attr_1: 'Size',
+          variant_value_1: 'L',
+          rowNum: 2,
+        },
+      ] as any,
+      rowNums: [1, 2],
+    };
+    const errors = validateVariantGroup(group as any);
+    expect(errors.some((e) => e.field === 'product_group_id')).toBe(false);
   });
 });
