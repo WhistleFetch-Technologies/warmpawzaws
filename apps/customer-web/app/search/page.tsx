@@ -10,6 +10,9 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { buildSearchFetchTrigger } from '@/lib/search-fetch-trigger';
 import { applyHubCategoryFilter } from '@/lib/search-hub-category-filter';
 import { formatCustomerApiError } from '@/lib/format-api-error';
+import { loadCustomerServiceLaunchCatalog } from '@/lib/customer-service-style-launch';
+import { filterSearchRowsByLaunch } from '@/lib/search-filter-by-launch';
+import { resolveCustomerDiscoveryPhone } from '@/lib/customer-discovery-coords';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
 import {
@@ -196,6 +199,7 @@ function mapSearchApiToResults(response: any): SearchResult[] {
         s.vendorRoleName ??
         s.vendor_role_name ??
         '',
+      serviceStyle: s.serviceStyle ?? s.service_style ?? undefined,
       rating: parseFloat(s.vendorRating ?? s.vendor_rating ?? s.rating) || 0,
       reviewCount: parseInt(String(s.vendorReviewCount ?? s.total_reviews ?? 0), 10) || 0,
       city: s.city ?? '',
@@ -493,7 +497,22 @@ function SearchContent() {
         }
         const response = await apiClient.get<any>(`/search?${params.toString()}`);
         if (cancelled) return;
-        const mapped = mapSearchApiToResults(response);
+        let mapped = mapSearchApiToResults(response);
+        const launchPhone = resolveCustomerDiscoveryPhone();
+        if (launchPhone) {
+          const catalog = await loadCustomerServiceLaunchCatalog(launchPhone);
+          if (cancelled) return;
+          if (catalog.length) {
+            mapped = filterSearchRowsByLaunch(
+              catalog,
+              mapped.map((r) => ({
+                ...r,
+                serviceType: r.category,
+                serviceStyle: (r as { serviceStyle?: string }).serviceStyle,
+              }))
+            ) as SearchResult[];
+          }
+        }
 
         let mergedNutrition: NutritionVendorCardModel[] = [];
         const hub = categoryRef.current.trim();

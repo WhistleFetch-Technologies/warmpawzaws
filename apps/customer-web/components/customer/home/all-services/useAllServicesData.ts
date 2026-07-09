@@ -295,6 +295,7 @@ export function useAllServicesData({ phone }: UseAllServicesDataOptions) {
             hiddenLaunch.length > 0)
         ) {
           const usingApiCategories = quickServiceTiles.length > 0;
+          const fullCatalog = (catalog || []) as import('@/lib/customer-service-style-launch').ServiceLaunchCatalogEntry[];
           const resultTiles = buildCustomerLaunchTiles({
             tilePool: usingApiCategories ? sourceQuickServices : [...sourceQuickServices, ...quickServices],
             catalog: catalog?.map((c) => ({
@@ -305,6 +306,7 @@ export function useAllServicesData({ phone }: UseAllServicesDataOptions) {
               displayName: c.displayName,
               effectiveStatus: c.effectiveStatus,
             })),
+            fullCatalog,
             visible: visibleLaunch,
             comingSoon: comingSoonLaunch,
             hidden: hiddenLaunch,

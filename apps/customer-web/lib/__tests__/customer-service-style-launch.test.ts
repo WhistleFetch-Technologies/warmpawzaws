@@ -7,6 +7,9 @@ import {
   resolveServiceStyleLaunchFromCatalog,
   shouldBlockServiceStyleNavigation,
   serviceStyleLaunchBlockMessage,
+  isStyleLaunchedForCustomer,
+  hasAnyLaunchedStyle,
+  filterEntriesByStyleLaunch,
   type ServiceLaunchCatalogEntry,
 } from '../customer-service-style-launch';
 
@@ -55,5 +58,56 @@ describe('shouldBlockServiceStyleNavigation', () => {
     expect(serviceStyleLaunchBlockMessage('coming_soon')).toContain('coming soon');
     expect(serviceStyleLaunchBlockMessage('hidden')).toContain('not available');
     expect(serviceStyleLaunchBlockMessage('launched')).toBe('');
+  });
+});
+
+describe('isStyleLaunchedForCustomer', () => {
+  it('returns true for launched/beta styles only', () => {
+    expect(isStyleLaunchedForCustomer(catalog, 'vet', 'tele')).toBe(true);
+    expect(isStyleLaunchedForCustomer(catalog, 'vet', 'at_home')).toBe(false);
+  });
+});
+
+describe('hasAnyLaunchedStyle', () => {
+  it('keeps parent when tele is launched even if clinic/home hidden', () => {
+    expect(hasAnyLaunchedStyle(catalog, 'vet')).toBe(true);
+  });
+
+  it('returns false when all styles hidden', () => {
+    const hiddenOnly: ServiceLaunchCatalogEntry[] = [
+      {
+        serviceId: 'training',
+        effectiveStatus: 'hidden',
+        supportedStyles: ['at_center'],
+        effectiveStyles: {
+          at_center: { effectiveStatus: 'hidden', inheritsParent: false },
+        },
+      },
+    ];
+    expect(hasAnyLaunchedStyle(hiddenOnly, 'training')).toBe(false);
+  });
+});
+
+describe('filterEntriesByStyleLaunch', () => {
+  it('drops popular catalog rows for hidden styles', () => {
+    const geoCatalog: ServiceLaunchCatalogEntry[] = [
+      {
+        serviceId: 'vet',
+        effectiveStatus: 'launched',
+        supportedStyles: ['tele', 'at_center', 'at_home'],
+        effectiveStyles: {
+          tele: { effectiveStatus: 'launched', inheritsParent: true },
+          at_center: { effectiveStatus: 'hidden', inheritsParent: false },
+          at_home: { effectiveStatus: 'hidden', inheritsParent: false },
+        },
+      },
+    ];
+    const entries = [
+      { discoverCategory: 'vet', serviceStyle: 'tele' },
+      { discoverCategory: 'vet', serviceStyle: 'at_center' },
+    ];
+    const filtered = filterEntriesByStyleLaunch(geoCatalog, entries);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].serviceStyle).toBe('tele');
   });
 });

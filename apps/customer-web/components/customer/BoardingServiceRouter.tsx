@@ -487,7 +487,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         </div>
 
         <div className="space-y-8">
-            <FeaturedVendorSpotlights service="boarding" onNavigate={onNavigate} />
+            <FeaturedVendorSpotlights service="boarding" phone={phone} onNavigate={onNavigate} />
 
             {previousFacility && (
               <div className="space-y-3">

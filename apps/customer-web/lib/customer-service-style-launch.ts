@@ -3,8 +3,10 @@
 import {
   isComingSoonLaunchStatus,
   isLaunchedLaunchStatus,
+  mapCatalogSlugToLaunchServiceId,
   normalizeServiceKey,
   normalizeServiceStyleLaunchKey,
+  supportedStylesForLaunchServiceId,
   type LaunchStatusValue,
   type ServiceStyleLaunchKey,
 } from '@warmpawz/service-launch-mappings';
@@ -36,13 +38,83 @@ function locationKey(loc: CustomerLocation): string {
   return `${loc.state}|${loc.city}`.toLowerCase();
 }
 
-function catalogByServiceId(catalog: ServiceLaunchCatalogEntry[]): Map<string, ServiceLaunchCatalogEntry> {
+export function catalogByServiceId(
+  catalog: ServiceLaunchCatalogEntry[]
+): Map<string, ServiceLaunchCatalogEntry> {
   const map = new Map<string, ServiceLaunchCatalogEntry>();
   for (const entry of catalog) {
     const id = normalizeServiceKey(entry.serviceId);
     if (id) map.set(id, entry);
   }
   return map;
+}
+
+export function getCatalogEntry(
+  catalog: ServiceLaunchCatalogEntry[],
+  serviceId: string
+): ServiceLaunchCatalogEntry | undefined {
+  return catalogByServiceId(catalog).get(normalizeServiceKey(serviceId));
+}
+
+/** True when style is launched or beta for the customer's resolved geo catalog. */
+export function isStyleLaunchedForCustomer(
+  catalog: ServiceLaunchCatalogEntry[],
+  serviceId: string,
+  serviceStyle: string
+): boolean {
+  const { status } = resolveServiceStyleLaunchFromCatalog(catalog, serviceId, serviceStyle);
+  return isLaunchedLaunchStatus(status);
+}
+
+/** Parent tile visible when any supported style (or parent-only service) is launched/beta. */
+export function hasAnyLaunchedStyle(
+  catalog: ServiceLaunchCatalogEntry[],
+  serviceId: string
+): boolean {
+  const svcKey = normalizeServiceKey(serviceId);
+  const entry = getCatalogEntry(catalog, svcKey);
+  if (!entry) return false;
+
+  const supported =
+    entry.supportedStyles && entry.supportedStyles.length > 0
+      ? entry.supportedStyles
+      : supportedStylesForLaunchServiceId(svcKey);
+
+  if (!supported.length) {
+    return isLaunchedLaunchStatus(entry.effectiveStatus ?? 'hidden');
+  }
+
+  return supported.some((style) => isStyleLaunchedForCustomer(catalog, svcKey, style));
+}
+
+export type StyleLaunchFilterable = {
+  launchServiceId?: string;
+  serviceStyle?: string;
+  discoverCategory?: string;
+  category?: string;
+};
+
+/** Drop rows tied to a hidden style; keep parent-only / tele when launched. */
+export function filterEntriesByStyleLaunch<T extends StyleLaunchFilterable>(
+  catalog: ServiceLaunchCatalogEntry[],
+  entries: T[]
+): T[] {
+  if (!catalog.length) return entries;
+  return entries.filter((entry) => {
+    const serviceId = normalizeServiceKey(
+      entry.launchServiceId ||
+        mapCatalogSlugToLaunchServiceId(entry.discoverCategory || entry.category || '')
+    );
+    const style = entry.serviceStyle;
+    if (!style) {
+      return hasAnyLaunchedStyle(catalog, serviceId);
+    }
+    return isStyleLaunchedForCustomer(catalog, serviceId, style);
+  });
+}
+
+export function launchServiceIdFromCategory(category: string | undefined | null): string {
+  return normalizeServiceKey(mapCatalogSlugToLaunchServiceId(String(category || '').trim()));
 }
 
 export async function loadCustomerServiceLaunchCatalog(

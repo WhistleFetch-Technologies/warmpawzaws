@@ -1095,7 +1095,7 @@ export function HomeServiceRouter({
 
             {/* Promotions + vendor spotlights (same service context) */}
             <div className="space-y-4">
-              <FeaturedVendorSpotlights service={serviceType} onNavigate={onNavigate} />
+              <FeaturedVendorSpotlights service={serviceType} phone={phone} onNavigate={onNavigate} />
             </div>
 
             {/* Last Booked Providers */}

@@ -4,6 +4,7 @@
  */
 
 import { resolveCustomerScreenForCategoryAndStyle } from '@warmpawz/service-launch-mappings';
+import { resolveStyleLaunchTargetForScreen } from '@/lib/customer-style-screen-launch';
 
 /** Normalized service slugs / aliases → screen id. Kept in sync with `backend/lambda/src/utils/featured-vendor-service-context.ts` for GET /customer/featured-vendors. */
 const SLUG_TO_SCREEN: Record<string, string> = {
@@ -277,12 +278,19 @@ export function resolveFeaturedVendorDestination(v: Record<string, unknown>): Fe
     if (pathOnly.startsWith('/')) {
       const seg = pathOnly.replace(/^\/+/, '').split('/').filter(Boolean)[0];
       if (seg) {
+        if (resolveStyleLaunchTargetForScreen(seg)) {
+          return { kind: 'screen', screen: seg };
+        }
         const n = norm(seg);
         if (SLUG_TO_SCREEN[n]) return { kind: 'screen', screen: SLUG_TO_SCREEN[n] };
         return { kind: 'router', path: pathOnly.startsWith('/') ? pathOnly : `/${pathOnly}` };
       }
     } else {
-      const n = norm(pathOnly.split('/')[0]);
+      const rawSeg = pathOnly.split('/')[0];
+      if (rawSeg && resolveStyleLaunchTargetForScreen(rawSeg)) {
+        return { kind: 'screen', screen: rawSeg };
+      }
+      const n = norm(rawSeg);
       if (SLUG_TO_SCREEN[n]) return { kind: 'screen', screen: SLUG_TO_SCREEN[n] };
     }
   }

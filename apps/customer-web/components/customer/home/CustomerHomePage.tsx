@@ -177,6 +177,7 @@ function CustomerHomePageContentComponent({
     <>
       <SearchFilterSection
         customerId={customerId}
+        phone={phone}
         onSearch={onSearch}
         onResultSelect={onSearchResultSelect}
       />

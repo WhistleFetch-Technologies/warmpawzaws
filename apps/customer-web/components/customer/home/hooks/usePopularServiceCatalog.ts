@@ -6,6 +6,10 @@ import {
   POPULAR_SERVICE_CATALOG,
   type PopularServiceCatalogEntry,
 } from '../constants/popular-service-catalog';
+import {
+  filterEntriesByStyleLaunch,
+  loadCustomerServiceLaunchCatalog,
+} from '@/lib/customer-service-style-launch';
 
 function minPriceFromDiscoverRows(rows: Record<string, unknown>[]): number | undefined {
   let min: number | undefined;
@@ -29,11 +33,45 @@ function extractDiscoverRows(resp: Record<string, unknown> | null): Record<strin
  */
 export function usePopularServiceCatalog(phone?: string) {
   const [priceById, setPriceById] = useState<Record<string, number>>({});
+  const [launchCatalog, setLaunchCatalog] = useState<
+    Awaited<ReturnType<typeof loadCustomerServiceLaunchCatalog>>
+  >([]);
+
+  useEffect(() => {
+    if (!phone) {
+      setLaunchCatalog([]);
+      return;
+    }
+    let cancelled = false;
+    void loadCustomerServiceLaunchCatalog(phone).then((catalog) => {
+      if (!cancelled) setLaunchCatalog(catalog);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [phone]);
+
+  const visibleCatalog = useMemo(
+    () =>
+      filterEntriesByStyleLaunch(
+        launchCatalog,
+        POPULAR_SERVICE_CATALOG.map((entry) => ({
+          ...entry,
+          discoverCategory: entry.discoverCategory,
+          serviceStyle: entry.serviceStyle,
+        }))
+      ),
+    [launchCatalog]
+  );
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
+      if (!visibleCatalog.length) {
+        setPriceById({});
+        return;
+      }
       let locationParams = '';
       if (typeof window !== 'undefined') {
         try {
@@ -49,7 +87,7 @@ export function usePopularServiceCatalog(phone?: string) {
       const phoneParam = phone ? `&phone=${encodeURIComponent(phone)}` : '';
 
       const results = await Promise.allSettled(
-        POPULAR_SERVICE_CATALOG.map((entry) =>
+        visibleCatalog.map((entry) =>
           apiClient.get(
             `/customer/discover-services?category=${encodeURIComponent(entry.discoverCategory)}&serviceStyle=${encodeURIComponent(entry.serviceStyle)}${locationParams}${phoneParam}`
           )
@@ -61,7 +99,7 @@ export function usePopularServiceCatalog(phone?: string) {
       const next: Record<string, number> = {};
       results.forEach((result, index) => {
         if (result.status !== 'fulfilled') return;
-        const entry = POPULAR_SERVICE_CATALOG[index];
+        const entry = visibleCatalog[index];
         const resp = result.value as Record<string, unknown>;
         const min = minPriceFromDiscoverRows(extractDiscoverRows(resp));
         if (min !== undefined) next[entry.id] = min;
@@ -73,15 +111,15 @@ export function usePopularServiceCatalog(phone?: string) {
     return () => {
       cancelled = true;
     };
-  }, [phone]);
+  }, [phone, visibleCatalog]);
 
   const items: PopularServiceCatalogEntry[] = useMemo(
     () =>
-      POPULAR_SERVICE_CATALOG.map((entry) => ({
+      visibleCatalog.map((entry) => ({
         ...entry,
         priceFrom: priceById[entry.id],
       })),
-    [priceById]
+    [visibleCatalog, priceById]
   );
 
   return { items };
