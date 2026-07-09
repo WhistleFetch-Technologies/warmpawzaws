@@ -24,6 +24,8 @@ import {
   WISHLIST_UPDATED_EVENT,
   type WishlistApiItem,
 } from '@/lib/warmpawz-wishlist-local';
+import { useWishlistCount } from '@/lib/use-wishlist-count';
+import { WishlistCountBadge } from '@/components/customer/WishlistCountBadge';
 
 type WishlistRow = WishlistProductRow;
 
@@ -41,6 +43,7 @@ export default function WishlistPage() {
 function WishlistPageContent() {
   const router = useRouter();
   const shopEnabled = isCustomerEcommerceEnabled();
+  const wishlistCount = useWishlistCount();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<WishlistRow[]>([]);
   const loadGenRef = useRef(0);
@@ -203,7 +206,10 @@ function WishlistPageContent() {
           <ArrowLeft className="h-5 w-5 text-gray-800" />
         </button>
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Heart className="h-6 w-6 shrink-0 text-red-500" />
+          <div className="relative shrink-0">
+            <Heart className="h-6 w-6 text-red-500" />
+            <WishlistCountBadge count={wishlistCount} size="md" className="-top-1 -right-1.5" />
+          </div>
           <h1 className="truncate text-lg font-bold text-gray-900">Saved items</h1>
         </div>
       </header>
