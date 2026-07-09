@@ -1,5 +1,5 @@
 /**
- * XLSX bulk product template — unified 28-column layout for vendor product upload.
+ * XLSX bulk product template — unified 27-column layout for vendor product upload.
  * Single sheet (NPI), inline dropdowns, one demo row.
  *
  * Required (`*`): Title, Brand, Category, Quantity, Image, Price, Tax, HSN
@@ -22,7 +22,7 @@ export { getBulkProductTitle };
 export const SHEET_NAME = 'NPI';
 export const VARIANT_GUIDE_SHEET_NAME = 'Variant Guide';
 
-/** 28 columns. Compulsory ones carry a `*` suffix. */
+/** 27 columns. Compulsory ones carry a `*` suffix. */
 export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Title*',
   'Description',
@@ -43,7 +43,6 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'HSN*',
   'Manufacturing Details',
   'Delivery Regions',
-  'Warmpawz Product ID',
   'Product Group ID',
   'Variant Attribute 1',
   'Variant Value 1',
@@ -100,9 +99,8 @@ const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill
   },
   {
     start: 20,
-    end: 28,
-    title:
-      'Warmpawz Product ID = update existing product. Same Product Group ID within file = one product (variants).',
+    end: 27,
+    title: 'Same Product Group ID = one product (variants). Listing Ownership required for ownership-model sellers.',
     fill: TAN,
   },
 ];
@@ -212,7 +210,7 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     cell.value = h;
     if (c === 1) {
       cell.note =
-        'Required (*): Title, Brand, Category, Quantity, Image URL(s), Price, Tax, HSN. Use Product Group ID to group variant rows within this upload.';
+        'Required (*): Title, Brand, Category, Quantity, Image URL(s), Price, Tax, HSN. Same Product Group ID = one product (variant rows).';
     }
     if (h === 'Image (1000X1000px)*') {
       cell.note = 'One or more image URLs, comma-separated.';
@@ -237,13 +235,6 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     if (h === 'Listing Ownership*') {
       cell.note =
         'Required for ownership-model sellers: Own brand or Third party. Optional for category-model sellers.';
-    }
-    if (h === 'Warmpawz Product ID') {
-      cell.note = 'Used only when updating an existing product. Leave blank for new products.';
-    }
-    if (h === 'Product Group ID') {
-      cell.note =
-        'Used only to group variant rows within the current upload. This value is not used as the permanent identity.';
     }
     cell.font = { bold: true, size: 10, color: h.includes('*') ? { argb: 'FFFFFFFF' } : undefined };
     cell.fill = (h.includes('*') ? HEADER_REQUIRED_FILL : HEADER_ROW_FILL) as ExcelJS.Fill;
@@ -270,7 +261,7 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
   addInlineDropdown(ws, `${CATEGORY}3:${CATEGORY}500`, categories);
   addInlineDropdown(ws, `${PET_TYPE}3:${PET_TYPE}500`, STATIC_PET_TYPES);
   addInlineDropdown(ws, `${TAX}3:${TAX}500`, STATIC_TAX_LABELS);
-  addInlineDropdown(ws, `${colLetter(28)}3:${colLetter(28)}500`, ['Own brand', 'Third party']);
+  addInlineDropdown(ws, `${colLetter(27)}3:${colLetter(27)}500`, ['Own brand', 'Third party']);
 
   addVariantGuideSheet(wb);
 
@@ -389,9 +380,6 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   hsn: 'hsn_code',
   manufacturingdetails: 'manufacturing_details',
   deliveryregions: 'delivery_regions',
-  warmpawzproductid: 'warmpawz_product_id',
-  productid: 'warmpawz_product_id',
-  warmpawzid: 'warmpawz_product_id',
   productgroupid: 'product_group_id',
   variantattribute1: 'variant_attr_1',
   variantvalue1: 'variant_value_1',
@@ -554,9 +542,6 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     if (bag.delivery_regions?.trim()) {
       product.delivery_regions = parseDeliveryRegionsCsv(bag.delivery_regions);
     }
-    if (bag.warmpawz_product_id?.trim()) {
-      product.warmpawz_product_id = bag.warmpawz_product_id.trim();
-    }
     if (bag.product_group_id?.trim()) product.product_group_id = bag.product_group_id.trim();
     if (bag.colour?.trim()) product.colour = bag.colour.trim();
     if (bag.dimensions_variant?.trim()) product.size_variant = bag.dimensions_variant.trim();
@@ -571,123 +556,4 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
   });
 
   return { headers: internalByCol, products };
-}
-
-function formatGstForTemplate(raw: unknown): string {
-  if (raw == null || raw === '') return '';
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return String(raw);
-  if (n > 0 && n <= 1) return `${Math.round(n * 100)}%`;
-  return `${n}%`;
-}
-
-function formatDeliveryRegionsForTemplate(raw: unknown): string {
-  if (raw == null) return '';
-  if (Array.isArray(raw)) return raw.map((v) => String(v ?? '').trim()).filter(Boolean).join(', ');
-  return String(raw).trim();
-}
-
-/** Map a parsed bulk row (internal field names) to template column order. */
-export function bulkRowToTemplateValues(row: Record<string, unknown>): string[] {
-  const petType =
-    row.pet_type != null && String(row.pet_type).trim()
-      ? String(row.pet_type).trim()
-      : '';
-  return [
-    String(row.name ?? ''),
-    String(row.description ?? ''),
-    String(row.key_features ?? ''),
-    String(row.brand ?? ''),
-    String(row.category ?? ''),
-    String(row.product_specifications ?? ''),
-    row.weight != null && row.weight !== '' ? String(row.weight) : '',
-    row.length_cm != null && row.length_cm !== '' ? String(row.length_cm) : '',
-    row.breadth_cm != null && row.breadth_cm !== '' ? String(row.breadth_cm) : '',
-    row.height_cm != null && row.height_cm !== '' ? String(row.height_cm) : '',
-    String(row.barcode ?? ''),
-    row.stock_quantity != null && row.stock_quantity !== '' ? String(row.stock_quantity) : '',
-    String(row.images ?? row.image_urls ?? ''),
-    row.price != null && row.price !== '' ? String(row.price) : '',
-    petType,
-    formatGstForTemplate(row.gst_rate),
-    String(row.hsn_code ?? ''),
-    String(row.manufacturing_details ?? ''),
-    formatDeliveryRegionsForTemplate(row.delivery_regions),
-    String(row.warmpawz_product_id ?? ''),
-    String(row.product_group_id ?? ''),
-    String(row.variant_attr_1 ?? ''),
-    String(row.variant_value_1 ?? ''),
-    String(row.variant_attr_2 ?? ''),
-    String(row.variant_value_2 ?? ''),
-    String(row.variant_attr_3 ?? ''),
-    String(row.variant_value_3 ?? ''),
-    String(row.listing_ownership ?? ''),
-  ];
-}
-
-/** Build XLSX with uploaded rows and Warmpawz Product ID filled for re-upload. */
-export async function buildBulkProductUpdatedTemplateBuffer(
-  products: Record<string, unknown>[],
-  categoryNames: string[] = [],
-): Promise<Buffer> {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet(SHEET_NAME);
-  (ws.properties as { dyDescent: number }).dyDescent = 0.25;
-
-  ws.getRow(1).height = 30;
-  ws.getRow(2).height = 38;
-
-  for (const g of ROW1_GROUPS) {
-    ws.mergeCells(`${colLetter(g.start)}1:${colLetter(g.end)}1`);
-    const cell = ws.getCell(1, g.start);
-    cell.value = g.title;
-    cell.fill = g.fill as ExcelJS.Fill;
-    cell.font = { bold: true, size: 11 };
-    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    cell.border = THIN_BORDER as ExcelJS.Borders;
-  }
-
-  BULK_TEMPLATE_COLUMN_HEADERS.forEach((h, i) => {
-    const c = i + 1;
-    const cell = ws.getCell(2, c);
-    cell.value = h;
-    cell.font = { bold: true, size: 10, color: h.includes('*') ? { argb: 'FFFFFFFF' } : undefined };
-    cell.fill = (h.includes('*') ? HEADER_REQUIRED_FILL : HEADER_ROW_FILL) as ExcelJS.Fill;
-    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    cell.border = THIN_BORDER as ExcelJS.Borders;
-    ws.getColumn(c).width =
-      c === 1 ? 40 : c === 3 || c === 6 || c === 13 || c === 19 ? 32 : c === 2 ? 28 : 14;
-  });
-
-  const dataRows = products.filter((p) => getBulkProductTitle(p).length > 0);
-  dataRows.forEach((row, idx) => {
-    const values = bulkRowToTemplateValues(row);
-    const r = idx + 3;
-    values.forEach((v, colIdx) => {
-      const col = colIdx + 1;
-      const cell = ws.getCell(r, col);
-      cell.value = v;
-      cell.font = { size: 10 };
-      cell.alignment = {
-        vertical: 'top',
-        horizontal: 'left',
-        wrapText: WRAP_COL_INDEXES.has(col),
-      };
-      cell.border = THIN_BORDER as ExcelJS.Borders;
-    });
-  });
-
-  const cats = (categoryNames || []).map((s) => String(s ?? '').trim()).filter(Boolean);
-  const categories = cats.length > 0 ? cats : DEFAULT_CATEGORIES;
-  const { CATEGORY, PET_TYPE, TAX } = REQUIRED_COL_LETTERS;
-  const lastRow = Math.max(3 + dataRows.length - 1, 3);
-  addInlineDropdown(ws, `${CATEGORY}3:${CATEGORY}${lastRow}`, categories);
-  addInlineDropdown(ws, `${PET_TYPE}3:${PET_TYPE}${lastRow}`, STATIC_PET_TYPES);
-  addInlineDropdown(ws, `${TAX}3:${TAX}${lastRow}`, STATIC_TAX_LABELS);
-  addInlineDropdown(ws, `${colLetter(28)}3:${colLetter(28)}${lastRow}`, ['Own brand', 'Third party']);
-
-  addVariantGuideSheet(wb);
-
-  const buf = await wb.xlsx.writeBuffer();
-  return Buffer.from(buf);
 }
