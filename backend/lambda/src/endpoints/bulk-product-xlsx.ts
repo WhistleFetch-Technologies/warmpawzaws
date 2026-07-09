@@ -213,7 +213,8 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
         'Required (*): Title, Brand, Category, Quantity, Image URL(s), Price, Tax, HSN. Same Product Group ID = one product (variant rows).';
     }
     if (h === 'Image (1000X1000px)*') {
-      cell.note = 'One or more image URLs, comma-separated.';
+      cell.note =
+        'One or more direct image URLs, comma-separated. Use stable CDN or website links (not Google Drive view links). Images are shown on the storefront from these URLs.';
     }
     if (h === 'Product Specifications') {
       cell.note = 'Optional. Format: Material:Cotton, Size:Medium';

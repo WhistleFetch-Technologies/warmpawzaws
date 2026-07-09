@@ -13,6 +13,8 @@ jest.mock('../product-sku-images', () => ({
   stripPresignFromProductImagesJsonb: jest.fn((urls: string[]) => urls),
 }));
 
+import { processProductImagesForS3Storage } from '../product-sku-images';
+
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111';
 const VENDOR_ID = '22222222-2222-2222-2222-222222222222';
 const SKU_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -182,5 +184,48 @@ describe('syncProductSkus', () => {
     expect(update).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
     expect(deleteRows).not.toHaveBeenCalled();
+  });
+
+  it('skipImageIngest persists external URLs without calling S3 image pipeline', async () => {
+    const externalUrl = 'https://cdn.vendor.com/sku-red.jpg';
+    const syncedRow = {
+      id: SKU_A,
+      sku: 'WP-EXISTING',
+      option_values: { color: 'red' },
+      price: 100,
+      compare_at_price: null,
+      stock: 4,
+      images: [externalUrl],
+      is_active: true,
+      sort_order: 0,
+    };
+
+    (query as jest.Mock)
+      .mockResolvedValueOnce({ rows: [syncedRow] })
+      .mockResolvedValueOnce({ rows: [syncedRow] })
+      .mockResolvedValueOnce({ rows: [syncedRow] });
+
+    await syncProductSkus(
+      VENDOR_ID,
+      PRODUCT_ID,
+      [
+        {
+          id: SKU_A,
+          option_values: { color: 'red' },
+          price: 100,
+          stock: 4,
+          images: [externalUrl],
+        },
+      ],
+      undefined,
+      { skipImageIngest: true },
+    );
+
+    expect(processProductImagesForS3Storage).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(
+      'product_skus',
+      { id: SKU_A },
+      expect.objectContaining({ images: [externalUrl] }),
+    );
   });
 });
