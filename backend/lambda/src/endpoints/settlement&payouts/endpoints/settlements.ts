@@ -574,6 +574,110 @@ export function registerSettlementEndpoints(app: Hono) {
   });
 
   /**
+   * GET /admin/ecommerce-settlements/batches
+   * E-commerce batch settlement ledger (separate from the booking `settlements` table
+   * above) — see Ecommerce Settlement Engine plan §5 / migration 1064. Each row is one
+   * vendor's pooled payout for a settlement run; `total_platform_net_amount` can be
+   * negative when admin/platform promotions subsidized that vendor's orders.
+   */
+  app.get("/admin/ecommerce-settlements/batches", async (c) => {
+    try {
+      const status = c.req.query('status');
+      const limit = parseInt(c.req.query('limit') || '50', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      let queryStr = `
+        SELECT b.*, v.business_name AS vendor_name, v.phone AS vendor_phone
+        FROM ecommerce_settlement_batches b
+        LEFT JOIN vendors v ON b.vendor_id = v.id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+      let paramIndex = 1;
+      if (status && status !== 'all') {
+        queryStr += ` AND b.status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+      queryStr += ` ORDER BY b.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const result = await query(queryStr, params).catch(() => ({ rows: [] }));
+      const summaryResult = await query(
+        `SELECT
+           COALESCE(SUM(total_vendor_payout_amount) FILTER (WHERE status = 'paid'), 0) AS total_paid,
+           COALESCE(SUM(total_vendor_payout_amount) FILTER (WHERE status IN ('draft', 'processing')), 0) AS total_pending,
+           COALESCE(SUM(total_commission_amount), 0) AS total_commission,
+           COALESCE(SUM(total_platform_net_amount), 0) AS total_platform_net,
+           COUNT(DISTINCT vendor_id) AS active_vendors
+         FROM ecommerce_settlement_batches`
+      ).catch(() => ({ rows: [{}] }));
+      const pendingLedgerRows = await query(
+        `SELECT COUNT(*) AS count, COALESCE(SUM(vendor_payout_amount), 0) AS amount
+         FROM ecommerce_order_settlements WHERE status = 'pending_batch'`
+      ).catch(() => ({ rows: [{ count: 0, amount: 0 }] }));
+
+      return c.json({
+        success: true,
+        batches: (result.rows || []).map((b: any) => ({
+          id: String(b.id),
+          vendorId: String(b.vendor_id || ''),
+          vendorName: String(b.vendor_name || 'Unknown'),
+          vendorPhone: String(b.vendor_phone || ''),
+          periodStart: String(b.period_start || ''),
+          periodEnd: String(b.period_end || ''),
+          orderCount: parseInt(b.order_count || '0', 10),
+          grossMerchandiseValue: safeMoneyAmount(b.gross_merchandise_value),
+          totalCommissionAmount: safeMoneyAmount(b.total_commission_amount),
+          totalDiscountAmount: safeMoneyAmount(b.total_discount_amount),
+          totalVendorPayoutAmount: safeMoneyAmount(b.total_vendor_payout_amount),
+          totalPlatformNetAmount: safeMoneyAmount(b.total_platform_net_amount),
+          status: String(b.status || 'draft'),
+          razorpayPayoutId: b.razorpay_payout_id || undefined,
+          failureReason: b.failure_reason || undefined,
+          processedAt: b.processed_at ? String(b.processed_at) : undefined,
+          createdAt: String(b.created_at || ''),
+        })),
+        summary: {
+          totalPaid: safeMoneyAmount(summaryResult.rows?.[0]?.total_paid),
+          totalPending: safeMoneyAmount(summaryResult.rows?.[0]?.total_pending),
+          totalCommission: safeMoneyAmount(summaryResult.rows?.[0]?.total_commission),
+          totalPlatformNet: safeMoneyAmount(summaryResult.rows?.[0]?.total_platform_net),
+          activeVendors: parseInt(summaryResult.rows?.[0]?.active_vendors || '0', 10),
+          unbatchedOrderCount: parseInt(pendingLedgerRows.rows?.[0]?.count || '0', 10),
+          unbatchedAmount: safeMoneyAmount(pendingLedgerRows.rows?.[0]?.amount),
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching ecommerce settlement batches:', error);
+      return c.json({ success: true, batches: [], summary: {} });
+    }
+  });
+
+  /**
+   * POST /admin/ecommerce-settlements/run
+   * Manually trigger the batch settlement job (normally on an EventBridge schedule —
+   * see backend/lambda/src/jobs/ecommerce-settlement-processor.ts). Body: { dryRun?: boolean }.
+   * dryRun defaults to true unless ECOMMERCE_SETTLEMENT_LIVE_PAYOUTS=true, matching the
+   * job's own default so admins don't accidentally trigger live payouts from this button.
+   */
+  app.post("/admin/ecommerce-settlements/run", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { processEcommerceSettlementBatches } = await import(
+        '../../../jobs/ecommerce-settlement-processor'
+      );
+      const result = await processEcommerceSettlementBatches({
+        dryRun: typeof body?.dryRun === 'boolean' ? body.dryRun : undefined,
+      });
+      return c.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error('Error running ecommerce settlement batch job:', error);
+      return c.json({ success: false, error: error.message || 'Batch run failed' }, 500);
+    }
+  });
+
+  /**
    * GET /settlements/summary
    * Get settlement summary statistics
    */

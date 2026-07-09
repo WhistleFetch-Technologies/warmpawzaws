@@ -55,6 +55,7 @@ export function CheckoutPaymentStep() {
         discountAmount: coupon.discountAmount,
         promotionId: coupon.promotionId,
         label: coupon.code,
+        source: coupon.source ?? ('vendor' as const),
       }
     : null;
 
@@ -72,6 +73,7 @@ export function CheckoutPaymentStep() {
             code: p.code,
             discountAmount: p.discountAmount,
             promotionId: p.promotionId,
+            source: p.source,
           })
         }
         onRemove={removeCoupon}

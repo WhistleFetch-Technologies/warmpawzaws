@@ -538,7 +538,9 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
         SELECT
           p.hsn_code,
           SUM(oi.quantity)                                        AS total_qty,
-          SUM(oi.total_price)                                     AS taxable_value,
+          -- Ex-GST taxable value (T), not the GST-inclusive line total (P) — see migration 1065.
+          -- Legacy rows without oi.taxable_value fall back to oi.total_price (overstates T slightly).
+          SUM(COALESCE(oi.taxable_value, oi.total_price))         AS taxable_value,
           BOOL_OR(${SQL_INVOICE_IS_INTER_STATE})                  AS is_inter_state,
           COALESCE(SUM(
             CASE WHEN ${SQL_INVOICE_IS_INTER_STATE}
@@ -754,6 +756,10 @@ interface InvoiceData {
   isInterState: boolean;
   placeOfSupply: string;
   amountInWords: string;
+  /** Explicit disclosure clause shown whenever a promotional discount applied (see
+   * Ecommerce Settlement Engine plan §0: GST is fixed to the original price even when
+   * the customer paid less, which is a non-default treatment under Section 15 CGST Act). */
+  discountComplianceNote?: string;
 }
 
 /** Compatible with migration 021 invoices table; extended columns live in invoice_data until 1047 is applied. */
@@ -793,12 +799,27 @@ function buildInvoiceData(params: {
 }): InvoiceData {
   const { order, items, invoiceNumber, isInterState, shippingAddress } = params;
 
+  // GST decision (locked — see Ecommerce Settlement Engine plan §0/§1): product prices
+  // (unit_price) are GST-INCLUSIVE MRP. GST is always the amount EMBEDDED in that price
+  // (extracted via divide-out: taxableValue = grossAmount / (1 + rate/100)), never added
+  // ON TOP of it — doing so double-counts tax and was the original reported bug ("we
+  // could see the tax once again"). Also always computed on the ORIGINAL price, never
+  // reduced for a discount (see discountComplianceNote below).
   const invoiceItems = items.map((item: any) => {
     const unitPrice = parseFloat(item.unit_price) || 0;
     const quantity = parseInt(item.quantity) || 1;
     const gstRate = parseFloat(item.gst_rate) || 18;
-    const taxableValue = unitPrice * quantity;
-    const taxAmount = (taxableValue * gstRate) / 100;
+    const grossAmount = unitPrice * quantity;
+    // Prefer the ex-GST value persisted at order creation (migration 1065) — it reflects
+    // the exact rate taxCalculationService applied, not a possibly-stale product.gst_rate.
+    const persistedTaxableValue = parseFloat(item.taxable_value);
+    const taxableValue =
+      Number.isFinite(persistedTaxableValue) && persistedTaxableValue > 0
+        ? persistedTaxableValue
+        : gstRate > 0
+          ? grossAmount / (1 + gstRate / 100)
+          : grossAmount;
+    const taxAmount = Math.max(0, grossAmount - taxableValue);
 
     return {
       name: item.product_name || 'Product',
@@ -810,14 +831,16 @@ function buildInvoiceData(params: {
       cgst: isInterState ? 0 : taxAmount / 2,
       sgst: isInterState ? 0 : taxAmount / 2,
       igst: isInterState ? taxAmount : 0,
-      total: taxableValue + taxAmount,
+      // Gross line amount (= taxableValue + taxAmount) — GST is already embedded, never added again.
+      total: grossAmount,
     };
   });
 
   const subtotal = invoiceItems.reduce((sum, item) => sum + item.taxableValue, 0);
 
   // Fix B: prefer stored CGST/SGST/IGST from Phase 5 tax calculation over per-item gst_rate||18 fallbacks.
-  // Stored values are authoritative (computed by taxCalculationService at order creation time).
+  // Stored values are authoritative (computed by taxCalculationService at order creation time,
+  // also via the divide-out method — see resolve-ecommerce-product-tax-item.ts).
   const storedCgst = parseFloat(order.cgst_amount) || 0;
   const storedSgst = parseFloat(order.sgst_amount) || 0;
   const storedIgst = parseFloat(order.igst_amount) || 0;
@@ -831,7 +854,23 @@ function buildInvoiceData(params: {
   // Fix A: orders table stores shipping_amount (Phase 5); shipping_fee is legacy fallback.
   const shipping = parseFloat(order.shipping_amount) || parseFloat(order.shipping_fee) || 0;
   const discount = parseFloat(order.discount_amount) || 0;
+  // subtotal (T) + totalTax (G) + shipping (S) - discount (D) = (P - D) + S, matching
+  // exactly what the customer paid (never re-derives tax from the discounted amount).
   const total = subtotal + totalTax + shipping - discount;
+
+  const promotionSourceLabel =
+    order.promotion_source === 'admin'
+      ? 'WarmPawz platform promotion'
+      : order.promotion_source === 'vendor'
+        ? 'seller-funded promotion'
+        : 'promotion';
+  const discountComplianceNote =
+    discount > 0
+      ? `GST above is computed on the original listed price of ₹${(subtotal + totalTax).toFixed(2)}, before the ` +
+        `₹${discount.toFixed(2)} ${promotionSourceLabel} discount, in accordance with WarmPawz's platform pricing ` +
+        `policy. This may differ from the transaction (discounted) value under Section 15 of the CGST Act, 2017; ` +
+        `retained for audit transparency.`
+      : undefined;
 
   return {
     invoiceNumber,
@@ -862,6 +901,7 @@ function buildInvoiceData(params: {
     isInterState,
     placeOfSupply: shippingAddress.state || order.vendor_state,
     amountInWords: numberToWords(Math.round(total)),
+    discountComplianceNote,
   };
 }
 
@@ -1204,6 +1244,7 @@ function normalizeInvoiceDataForHtml(raw: Record<string, any>): InvoiceData {
     isInterState: Boolean(raw.isInterState ?? raw.is_inter_state),
     placeOfSupply: raw.placeOfSupply || raw.place_of_supply || '',
     amountInWords: raw.amountInWords || numberToWords(Math.round(total)),
+    discountComplianceNote: raw.discountComplianceNote || raw.discount_compliance_note || undefined,
   };
 }
 
@@ -1383,6 +1424,12 @@ function generateInvoiceHTML(data: InvoiceData): string {
     <div class="amount-words">
       <strong>Amount in Words:</strong> ${data.amountInWords} Rupees Only
     </div>
+
+    ${data.discountComplianceNote ? `
+    <div class="compliance-note" style="margin-top: 12px; padding: 10px 14px; background: #fff8e1; border: 1px solid #f0d795; border-radius: 6px; font-size: 11px; color: #5c4a1a; line-height: 1.5;">
+      <strong>Note on GST &amp; Discount:</strong> ${data.discountComplianceNote}
+    </div>
+    ` : ''}
 
     <div class="footer">
       <div class="footer-left">

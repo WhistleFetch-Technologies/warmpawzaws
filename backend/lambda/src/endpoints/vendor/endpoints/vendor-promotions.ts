@@ -31,6 +31,7 @@ import {
   incrementPromotionView,
   recordVendorPromotionUsage,
 } from '../../../utils/vendor-promotion-usage';
+import { resolveCommercialCampaignDiscount } from '../../../utils/resolve-commercial-campaign';
 
 export function registerVendorPromotionsEndpoints(app: Hono) {
   // ============================================================================
@@ -797,6 +798,29 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
             final_amount: Math.max(0, lineSubtotal - evaluation.discountAmount),
             promo_category: 'product',
             description: evaluation.description,
+          });
+        }
+      }
+
+      // Check the Commercial Campaign Engine (admin/platform-funded product promos).
+      // This is the strict server-side validation path used by CartPromotionSelect
+      // when the customer picked a promo tagged source: 'platform' — never combined
+      // with a vendor_promotions discount on the same order (see POST /ecommerce/orders).
+      if (orderType !== 'service') {
+        const campaignResult = await resolveCommercialCampaignDiscount({
+          couponCode: code,
+          cartLines,
+          customerId: customerId ? String(customerId) : null,
+        });
+        if (campaignResult.promotionId && campaignResult.discountAmount > 0) {
+          return c.json({
+            valid: true,
+            promotion: { id: campaignResult.promotionId, name: campaignResult.evaluation?.label },
+            discount_amount: campaignResult.discountAmount,
+            final_amount: Math.max(0, lineSubtotal - campaignResult.discountAmount),
+            promo_category: 'platform',
+            promotion_source: 'admin',
+            description: campaignResult.evaluation?.description,
           });
         }
       }

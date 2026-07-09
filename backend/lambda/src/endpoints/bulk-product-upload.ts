@@ -21,7 +21,6 @@ import {
 } from '../utils/ecommerce-category-resolve';
 import {
   buildBulkProductTemplateBuffer,
-  buildBulkProductUpdatedTemplateBuffer,
   getBulkProductTitle,
   parseBulkProductXlsxBuffer,
 } from './bulk-product-xlsx';
@@ -48,8 +47,10 @@ import {
   type BulkVariantRow,
 } from '../utils/bulk-product-variant-builder';
 import {
-  findExistingProductByWarmpawzId,
-  findValidWarmpawzProductIdsForVendor,
+  findExistingProductByGroupKey,
+  generateProductGroupId,
+  parseProductMetadata,
+  resolveBulkGroupKey,
 } from '../utils/product-group-identity';
 import {
   applyVendorProductExtrasToPayload,
@@ -98,7 +99,6 @@ interface BulkProductRow {
   variant_value_2?: string | null;
   variant_attr_3?: string | null;
   variant_value_3?: string | null;
-  warmpawz_product_id?: string | null;
   product_group_id?: string | null;
   barcode?: string | null;
   key_features?: string | null;
@@ -118,47 +118,6 @@ interface ValidationError {
   field: string;
   message: string;
   value?: any;
-}
-
-interface BulkUploadGroupResult {
-  productId: string;
-  name: string;
-  action: 'created' | 'updated';
-  rowNums: number[];
-}
-
-async function validateWarmpawzProductIdsForVendor(
-  vendorId: string,
-  rows: Array<{ rowNum?: number; warmpawz_product_id?: string | null }>,
-): Promise<ValidationError[]> {
-  const errors: ValidationError[] = [];
-  const idToRows = new Map<string, number[]>();
-
-  for (const row of rows) {
-    const pid = String(row.warmpawz_product_id ?? '').trim();
-    if (!pid) continue;
-    const rowNum = row.rowNum ?? 0;
-    const list = idToRows.get(pid) ?? [];
-    list.push(rowNum);
-    idToRows.set(pid, list);
-  }
-
-  if (idToRows.size === 0) return errors;
-
-  const validIds = await findValidWarmpawzProductIdsForVendor(vendorId, [...idToRows.keys()]);
-  for (const [pid, rowNums] of idToRows) {
-    if (validIds.has(pid)) continue;
-    for (const rowNum of rowNums) {
-      errors.push({
-        row: rowNum,
-        field: 'warmpawz_product_id',
-        message: 'Warmpawz Product ID not found for this seller',
-        value: pid,
-      });
-    }
-  }
-
-  return errors;
 }
 
 export function registerBulkProductUploadEndpoints(app: Hono) {
@@ -187,38 +146,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename="product_upload_template.xlsx"',
     });
-  });
-
-  // ============================================================================
-  // UPDATED TEMPLATE - Download XLSX with Warmpawz Product IDs filled in
-  // ============================================================================
-
-  app.post('/vendor/:vendorId/products/bulk/updated-template', async (c) => {
-    try {
-      void c.req.param('vendorId');
-      const body = await c.req.json();
-      const { products } = body;
-
-      if (!Array.isArray(products) || products.length === 0) {
-        return c.json({ success: false, error: 'No products provided' }, 400);
-      }
-
-      const catResult = await query(
-        `SELECT name FROM ecommerce_categories WHERE is_active = true ORDER BY display_order NULLS LAST, name ASC`,
-      );
-      const categoryNames = (catResult.rows as { name: string }[])
-        .map((row) => String(row.name ?? '').trim())
-        .filter(Boolean);
-
-      const buf = await buildBulkProductUpdatedTemplateBuffer(products, categoryNames);
-      return c.body(new Uint8Array(buf), 200, {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': 'attachment; filename="product_upload_updated.xlsx"',
-      });
-    } catch (error: any) {
-      console.error('Error building updated bulk template:', error);
-      return c.json({ success: false, error: error.message }, 500);
-    }
   });
 
   // ============================================================================
@@ -315,10 +242,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             variant_value_2: product.variant_value_2 != null ? String(product.variant_value_2).trim() : null,
             variant_attr_3: product.variant_attr_3 != null ? String(product.variant_attr_3).trim() : null,
             variant_value_3: product.variant_value_3 != null ? String(product.variant_value_3).trim() : null,
-            warmpawz_product_id:
-              product.warmpawz_product_id != null
-                ? String(product.warmpawz_product_id).trim()
-                : null,
             product_group_id:
               product.product_group_id != null ? String(product.product_group_id).trim() : null,
             barcode: product.barcode?.trim() || null,
@@ -345,10 +268,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         errors.push(...rowErrors);
       });
 
-      const warmpawzIdErrors = await validateWarmpawzProductIdsForVendor(vendorId, validProducts);
-      errors.push(...warmpawzIdErrors);
-
-      const groups = groupBulkRows(validProducts as BulkVariantRow[]);
+      const groups = groupBulkRows(validProducts as BulkVariantRow[], vendorId);
       const invalidRowSet = new Set<number>();
       for (const group of groups) {
         const groupErrors = validateVariantGroup(group);
@@ -387,7 +307,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         productGroups: groups.map((g) => ({
           name: g.name,
           category: g.category,
-          warmpawz_product_id: g.warmpawz_product_id,
           product_group_id: g.product_group_id,
           variantCount: g.variants.length,
           rowNums: g.rowNums,
@@ -430,7 +349,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         updated: 0,
         failed: 0,
         errors: [] as Array<{ row: number; error: string }>,
-        groups: [] as BulkUploadGroupResult[],
       };
 
       const categoryMap = await loadActiveEcommerceCategoryMap();
@@ -445,12 +363,10 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         rowsWithNum.push({ ...(product as BulkVariantRow), rowNum: product.rowNum ?? titledRowNum });
       }
 
-      const groups = groupBulkRows(rowsWithNum);
+      const groups = groupBulkRows(rowsWithNum, vendorId);
 
       for (const group of groups) {
         const primaryRowNum = group.rowNums[0] ?? 1;
-        let groupAction: 'created' | 'updated' = 'created';
-        let savedProductId: string | null = null;
         try {
           const groupErrors = validateVariantGroup(group);
           if (groupErrors.length > 0) {
@@ -468,9 +384,13 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           }
 
           const productTitle = group.name.trim();
-          const firstRow = group.variants[0];
-          const warmpawzProductId =
-            group.warmpawz_product_id ?? String(firstRow.warmpawz_product_id ?? '').trim();
+          const groupKey =
+            resolveBulkGroupKey(vendorId, {
+              product_group_id: group.product_group_id,
+              name: productTitle,
+              brand: group.parent.brand,
+              category_id: resolvedCategory.id,
+            }) ?? group.groupKey;
 
           let existingProduct: {
             id: string;
@@ -478,27 +398,25 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             category_id?: string;
             metadata?: unknown;
             images?: unknown;
-          } | null = null;
-
-          if (warmpawzProductId) {
-            existingProduct = await findExistingProductByWarmpawzId(vendorId, warmpawzProductId);
-            if (!existingProduct) {
-              throw new Error(
-                `Warmpawz Product ID not found for this seller: ${warmpawzProductId}`,
-              );
-            }
-          }
+          } | null = await findExistingProductByGroupKey(vendorId, groupKey);
 
           if (
             existingProduct?.category_id &&
             String(existingProduct.category_id) !== String(resolvedCategory.id)
           ) {
             throw new Error(
-              'Category cannot change when updating an existing product — create a new listing instead',
+              'Category cannot change for an existing Product Group ID — create a new group ID for a different category',
             );
           }
 
+          const firstRow = group.variants[0];
           const hasVariants = group.variants.some((r) => rowHasVariantAxes(r));
+
+          let productGroupId =
+            group.product_group_id ?? String(firstRow.product_group_id ?? '').trim();
+          if (hasVariants && !productGroupId) {
+            productGroupId = generateProductGroupId();
+          }
 
           const listingPricing = hasVariants
             ? listingPriceFromGroup(group)
@@ -560,6 +478,21 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
               upload_date: new Date().toISOString(),
             };
           }
+          if (productGroupId) {
+            productData.metadata = {
+              ...(productData.metadata as Record<string, unknown>),
+              product_group_id: productGroupId,
+            };
+          }
+          if (existingProduct) {
+            const existingMeta = parseProductMetadata(existingProduct.metadata);
+            if (existingMeta.product_group_id) {
+              productData.metadata = {
+                ...(productData.metadata as Record<string, unknown>),
+                product_group_id: existingMeta.product_group_id,
+              };
+            }
+          }
           if (typeof productData.metadata === 'object' && productData.metadata !== null) {
             productData.metadata = JSON.stringify(productData.metadata);
           }
@@ -567,12 +500,11 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             productData.specifications = JSON.stringify(productData.specifications);
           }
 
-          savedProductId = existingProduct?.id ?? null;
+          let savedProductId: string | null = existingProduct?.id ?? null;
 
           const persistPayload = filterProductPayloadToColumns(productData, productCols);
 
           if (existingProduct) {
-            groupAction = 'updated';
             const updatePayload = { ...persistPayload };
             if (!existingProduct.sku?.trim()) {
               updatePayload.sku = generateVendorProductSku(vendorId, String(primaryRowNum));
@@ -587,7 +519,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
               await cleanupRemovedProductS3Images(prevParentImages, parentImages, vendorId);
             }
           } else {
-            groupAction = 'created';
             const inserted = await insert('products', {
               ...persistPayload,
               sku: generateVendorProductSku(vendorId, String(primaryRowNum)),
@@ -602,15 +533,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           if (savedProductId && hasVariants) {
             const skuInputs = buildSkuInputsFromGroup(group);
             await syncProductSkus(vendorId, savedProductId, skuInputs);
-          }
-
-          if (savedProductId) {
-            results.groups.push({
-              productId: savedProductId,
-              name: productTitle,
-              action: groupAction,
-              rowNums: group.rowNums,
-            });
           }
         } catch (error: any) {
           results.failed += group.rowNums.length;
@@ -744,9 +666,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'variantvalue2': 'variant_value_2',
         'variantattribute3': 'variant_attr_3',
         'variantvalue3': 'variant_value_3',
-        'warmpawzproductid': 'warmpawz_product_id',
-        'productid': 'warmpawz_product_id',
-        'warmpawzid': 'warmpawz_product_id',
         'productgroupid': 'product_group_id',
         'productgroup': 'product_group_id',
         'material': 'material',

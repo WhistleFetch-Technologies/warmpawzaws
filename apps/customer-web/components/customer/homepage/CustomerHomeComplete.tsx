@@ -82,8 +82,7 @@ import { ViewportSection } from '../home/shared/ViewportSection';
 import { buildHomeTopCarouselBanners } from '../home/utils/banner-utils';
 import { buildBannerBackgroundStyle } from '@/lib/customer-banner-surface';
 import { ShopCategoryGrid } from '@/components/shop/ShopCategoryGrid';
-import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
-import { STATIC_SHOP_DISPLAY_CATEGORIES } from '@/lib/shop-category-static-images';
+import { fetchShopCategoriesWithProducts, resolveShopCategoryParam } from '@/lib/shop-category-display';
 import type { QuickServiceTile } from '../home/types';
 import { resolveCustomerLocation } from '@/lib/customer-location';
 import type { CustomerLocation } from '@/lib/customer-location';
@@ -583,24 +582,16 @@ export function CustomerHomeComplete({
   useEffect(() => {
     if (!customerCommerceEnabled) return;
     let cancelled = false;
-    const cancelIdle = scheduleIdleWork(() => {
-      void (async () => {
-        try {
-          const res = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>('/ecommerce/categories');
-          const raw = res?.categories;
-          if (cancelled || !Array.isArray(raw)) return;
-          const mapped = mapApiCategoriesToShop(
-            raw.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
-          );
-          if (!cancelled) setEcommerceShopCategories(mapped);
-        } catch {
-          if (!cancelled) setEcommerceShopCategories([]);
-        }
-      })();
-    });
+    void (async () => {
+      try {
+        const mapped = await fetchShopCategoriesWithProducts();
+        if (!cancelled) setEcommerceShopCategories(mapped);
+      } catch {
+        if (!cancelled) setEcommerceShopCategories([]);
+      }
+    })();
     return () => {
       cancelled = true;
-      cancelIdle();
     };
   }, [customerCommerceEnabled]);
 
@@ -654,6 +645,15 @@ export function CustomerHomeComplete({
     },
     [onNavigate, router]
   );
+
+  const petFoodCategoryId = useMemo(
+    () => resolveShopCategoryParam('pet-food', ecommerceShopCategories),
+    [ecommerceShopCategories]
+  );
+
+  const navigateToPetFoodShop = useCallback(() => {
+    handleNavigation('shop', petFoodCategoryId ? { category: petFoodCategoryId } : undefined);
+  }, [handleNavigation, petFoodCategoryId]);
 
   const handleSearchSubmit = useCallback(
     (searchQuery: string) => {
@@ -2599,20 +2599,18 @@ export function CustomerHomeComplete({
               </button>
             ) : null}
           </div>
+          {ecommerceShopCategories.length > 0 ? (
           <ShopCategoryGrid
             embedded
             disabled={!customerCommerceEnabled}
-            categories={
-              ecommerceShopCategories.length > 0
-                ? ecommerceShopCategories
-                : STATIC_SHOP_DISPLAY_CATEGORIES
-            }
+            categories={ecommerceShopCategories}
             onSelectCategory={
               customerCommerceEnabled
                 ? (id) => handleNavigation('shop', { category: id })
                 : () => {}
             }
           />
+          ) : null}
         </div>
         ) : null}
 
@@ -3184,7 +3182,7 @@ export function CustomerHomeComplete({
               </div>
               <button
                 type="button"
-                onClick={() => handleNavigation('shop', { category: 'food' })}
+                onClick={navigateToPetFoodShop}
                 className="text-[11px] text-[#FF8C42] font-medium shrink-0"
               >
                 Browse shop
@@ -3199,7 +3197,7 @@ export function CustomerHomeComplete({
               <button
                 key={index}
                 type="button"
-                onClick={() => handleNavigation('shop', { category: 'food' })}
+                onClick={navigateToPetFoodShop}
                 className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center transition active:scale-[0.98]"
               >
                 <div className="w-12 h-12 mx-auto mb-2 bg-yellow-100 rounded-xl flex items-center justify-center">

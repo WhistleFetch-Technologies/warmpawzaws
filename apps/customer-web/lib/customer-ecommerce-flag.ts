@@ -35,10 +35,6 @@ export function isCustomerEcommerceEnabled(): boolean {
   );
   if (explicit !== null) return explicit;
 
-  // Fail-closed on production: deployed runtime-config often omits the key and would
-  // otherwise fall through to default true (shop stays live after a prod deploy).
-  if (rc.environment === 'production') return false;
-
   return true;
 }
 

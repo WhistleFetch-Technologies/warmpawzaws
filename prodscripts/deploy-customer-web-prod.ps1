@@ -45,8 +45,8 @@ if ([string]::IsNullOrEmpty($API_BASE_URL)) {
 }
 $API_BASE_URL = $API_BASE_URL.TrimEnd('/')
 
-# Customer marketplace: disabled on prod unless CUSTOMER_ECOMMERCE_ENABLED=true|1
-$customerEcommerceJs = if ($env:CUSTOMER_ECOMMERCE_ENABLED -eq 'true' -or $env:CUSTOMER_ECOMMERCE_ENABLED -eq '1') { 'true' } else { 'false' }
+# Customer marketplace: enabled by default; set CUSTOMER_ECOMMERCE_ENABLED=false|0 to disable
+$customerEcommerceJs = if ($env:CUSTOMER_ECOMMERCE_ENABLED -eq 'false' -or $env:CUSTOMER_ECOMMERCE_ENABLED -eq '0') { 'false' } else { 'true' }
 
 Write-Host "Production Configuration:" -ForegroundColor Blue
 Write-Host "   S3 Bucket: $S3_BUCKET"

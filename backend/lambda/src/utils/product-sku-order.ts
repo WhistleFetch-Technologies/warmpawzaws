@@ -29,6 +29,9 @@ export type ResolvedOrderLine = {
   vendor_id: string | null;
   variant_info: Record<string, unknown> | null;
   skuRowIdForStock: string | null;
+  /** products.hsn_code — feeds taxCalculationService so GST rate is HSN-driven, not a flat default. */
+  hsn_code: string | null;
+  category_id: string | null;
 };
 
 export async function resolveEcommerceOrderLine(
@@ -42,7 +45,7 @@ export async function resolveEcommerceOrderLine(
     (item.selected_variations ?? item.selectedVariations) as Record<string, string> | undefined;
 
   const products = await query(
-    `SELECT id, name, price, vendor_id, hsn_code, gst_rate FROM products WHERE id = $1`,
+    `SELECT id, name, price, vendor_id, hsn_code, gst_rate, category_id FROM products WHERE id = $1`,
     [productId],
   );
   if (!products.rows.length) return null;
@@ -100,6 +103,8 @@ export async function resolveEcommerceOrderLine(
     vendor_id: product.vendor_id ? String(product.vendor_id) : null,
     variant_info,
     skuRowIdForStock: skuRow?.id ? String(skuRow.id) : null,
+    hsn_code: product.hsn_code != null ? String(product.hsn_code) : null,
+    category_id: product.category_id != null ? String(product.category_id) : null,
   };
 }
 

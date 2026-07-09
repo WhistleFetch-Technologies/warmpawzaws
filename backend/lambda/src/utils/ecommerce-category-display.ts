@@ -26,6 +26,8 @@ export type EcommerceCategoryPublicRow = {
   is_active: boolean;
   image_url: string | null;
   default_commission_rate: number | null;
+  /** Storefront-active products in this category (public catalog only). */
+  product_count: number;
   created_at?: string;
 };
 
@@ -48,6 +50,12 @@ export async function mapCategoryRowForPublic(
       ? Number(commissionRaw)
       : null;
 
+  const productCountRaw = row.product_count ?? row.productCount;
+  const product_count =
+    productCountRaw != null && productCountRaw !== ''
+      ? Math.max(0, parseInt(String(productCountRaw), 10) || 0)
+      : 0;
+
   return {
     id: String(row.id ?? ''),
     name: String(row.name ?? '').trim(),
@@ -56,6 +64,7 @@ export async function mapCategoryRowForPublic(
     is_active: opts?.includeInactive ? isActive : true,
     image_url: imageUrl,
     default_commission_rate: defaultCommissionRate,
+    product_count,
     created_at: row.created_at != null ? String(row.created_at) : undefined,
   };
 }

@@ -10,6 +10,8 @@ export type SelectedCartPromotion = {
   discountAmount: number;
   promotionId?: string;
   label: string;
+  /** Which table validated this — 'vendor' (vendor_promotions) or 'admin' (ecommerce_admin_promotions / platform). Server re-validates strictly against this source only. */
+  source: 'vendor' | 'admin';
 };
 
 type PromoOption = {
@@ -163,6 +165,7 @@ export function CartPromotionSelect({
         discountAmount: res.discount_amount ?? 0,
         promotionId: res.promotion?.id ?? promo.id,
         label: promo.name,
+        source: promo.source === 'platform' ? 'admin' : 'vendor',
       });
       toast.success('Promotion applied');
     } catch (e: unknown) {

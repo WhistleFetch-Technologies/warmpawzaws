@@ -92,6 +92,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
         discountAmount: sp.codeDiscount ?? 0,
         promotionId: sp.promotionId,
         label: sp.label || sp.code,
+        source: sp.source ?? 'vendor',
       });
     }
   }, []);
@@ -106,6 +107,9 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       label: selectedPromo?.label ?? autoPromo?.label,
       promotionId: selectedPromo?.promotionId ?? autoPromo?.promotionId,
       code: selectedPromo?.code,
+      // Auto-applied promos come from POST /promotions/calculate-cart, which only
+      // ever queries vendor_promotions — always vendor-sourced.
+      source: selectedPromo ? selectedPromo.source : 'vendor',
     };
   }, [selectedPromo, autoPromo]);
 
@@ -268,6 +272,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                 label: promo?.label ?? autoPromo?.label,
                 code: promo?.code,
                 promotionId: promo?.promotionId ?? autoPromo?.promotionId,
+                source: promo ? promo.source : 'vendor',
               }
             : undefined,
       });

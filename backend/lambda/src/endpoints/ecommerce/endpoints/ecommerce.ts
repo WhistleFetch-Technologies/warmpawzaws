@@ -52,6 +52,11 @@ import {
   type CartLineItem,
 } from '../../../utils/vendor-promotion-engine';
 import { countPriorVendorOrders, recordVendorPromotionUsage } from '../../../utils/vendor-promotion-usage';
+import {
+  resolveCommercialCampaignDiscount,
+  recordCommercialCampaignUsage,
+} from '../../../utils/resolve-commercial-campaign';
+import { buildEcommerceProductTaxItems } from '../../../utils/resolve-ecommerce-product-tax-item';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../../../utils/idempotency';
 import {
   isEcommerceCategoryUuid,
@@ -76,6 +81,7 @@ import {
 } from '../../../utils/resolve-ecommerce-commission-rate';
 import { paymentHoldExpiresAt, expireShopPaymentHolds } from '../../../utils/shop-payment-hold';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
+import { writeEcommerceOrderSettlementLedgerRow } from '../../../utils/write-ecommerce-order-settlement';
 
 const ADMIN_CATEGORY_SELECT = `
   SELECT id::text AS id, name, description, display_order, is_active, image_url,
@@ -678,6 +684,8 @@ export function registerEcommerceEndpoints(app: Hono) {
             total: resolved.total,
             variant_info: resolved.variant_info,
             skuRowIdForStock: resolved.skuRowIdForStock,
+            hsn_code: resolved.hsn_code,
+            category_id: resolved.category_id,
           });
         } catch (lineErr: unknown) {
           const msg = lineErr instanceof Error ? lineErr.message : String(lineErr);
@@ -729,6 +737,15 @@ export function registerEcommerceEndpoints(app: Hono) {
       const bodySgst = orderData.sgstAmount ?? orderData.sgst_amount;
       const bodyIgst = orderData.igstAmount ?? orderData.igst_amount;
       const promoId = orderData.promotionId ?? orderData.promotion_id ?? null;
+      // Fix D (Commercial Campaign Engine): the customer picks exactly ONE promotion in
+      // CartPromotionSelect, tagged with its source table. We validate ONLY that table
+      // server-side and never sum a vendor discount with an admin discount.
+      const requestedPromotionSource: 'vendor' | 'admin' | null = (() => {
+        const raw = String(orderData.promotionSource ?? orderData.promotion_source ?? '')
+          .trim()
+          .toLowerCase();
+        return raw === 'admin' || raw === 'vendor' ? raw : null;
+      })();
 
       const cartLines: CartLineItem[] = orderItems.map((oi) => {
         const raw = items.find(
@@ -752,11 +769,18 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       let serverPromoDiscount = 0;
       let appliedPromotionId: string | null = promoId ? String(promoId) : null;
+      let promotionSource: 'vendor' | 'admin' | null = null;
+      let campaignIsLegacy = false;
 
-      if (
-        firstVendorId &&
-        (couponCode || promoId || (Number(bodyDiscount) > 0 && cartLines.length > 0))
-      ) {
+      const wantsPromotion =
+        cartLines.length > 0 && Boolean(couponCode || promoId || Number(bodyDiscount) > 0);
+      // Strict single-source validation: a client that asked for the vendor source never
+      // touches the admin campaign tables and vice versa. When the client is legacy and
+      // did not send promotionSource, we try both but still only ever apply ONE winner.
+      const tryVendor = wantsPromotion && Boolean(firstVendorId) && requestedPromotionSource !== 'admin';
+      const tryAdmin = wantsPromotion && requestedPromotionSource !== 'vendor';
+
+      if (tryVendor) {
         try {
           const promosRes = await query(
             `SELECT * FROM vendor_promotions
@@ -791,25 +815,47 @@ export function registerEcommerceEndpoints(app: Hono) {
 
           const autoDiscount = autoResult.bestPromotion?.discountAmount ?? 0;
           const codeDiscount = codeResult?.bestPromotion?.discountAmount ?? 0;
-          serverPromoDiscount = Math.max(autoDiscount, codeDiscount);
+          const vendorDiscount = Math.max(autoDiscount, codeDiscount);
           const bestEval =
             codeDiscount >= autoDiscount
               ? codeResult?.bestPromotion
               : autoResult.bestPromotion;
-          if (bestEval) {
-            appliedPromotionId = bestEval.promotionId;
-          }
 
-          if (Number(bodyDiscount) > 0) {
-            if (
-              serverPromoDiscount === 0 ||
-              !discountsWithinTolerance(serverPromoDiscount, Number(bodyDiscount))
-            ) {
-              return c.json({ error: 'Promotion discount mismatch' }, 400);
-            }
+          if (vendorDiscount > serverPromoDiscount && bestEval) {
+            serverPromoDiscount = vendorDiscount;
+            appliedPromotionId = bestEval.promotionId;
+            promotionSource = 'vendor';
           }
         } catch (promoErr) {
-          console.warn('[ecommerce/orders] promotion validation skipped:', promoErr);
+          console.warn('[ecommerce/orders] vendor promotion validation skipped:', promoErr);
+        }
+      }
+
+      if (tryAdmin) {
+        try {
+          const campaignResult = await resolveCommercialCampaignDiscount({
+            promoId,
+            couponCode: couponCode ? String(couponCode).trim() : null,
+            cartLines,
+            customerId: customerId ? String(customerId) : null,
+          });
+          if (campaignResult.discountAmount > serverPromoDiscount && campaignResult.promotionId) {
+            serverPromoDiscount = campaignResult.discountAmount;
+            appliedPromotionId = campaignResult.promotionId;
+            promotionSource = 'admin';
+            campaignIsLegacy = campaignResult.isLegacy;
+          }
+        } catch (promoErr) {
+          console.warn('[ecommerce/orders] admin campaign validation skipped:', promoErr);
+        }
+      }
+
+      if (Number(bodyDiscount) > 0) {
+        if (
+          serverPromoDiscount === 0 ||
+          !discountsWithinTolerance(serverPromoDiscount, Number(bodyDiscount))
+        ) {
+          return c.json({ error: 'Promotion discount mismatch' }, 400);
         }
       }
 
@@ -856,21 +902,27 @@ export function registerEcommerceEndpoints(app: Hono) {
       let cgstAmount: number | null;
       let sgstAmount: number | null;
       let igstAmount: number | null;
+      // Ex-GST taxable value per order line (T), aligned by array index with `orderItems`.
+      // Persisted on order_items.taxable_value and used as the commission base below —
+      // NEVER derived from a discounted amount (see resolve-ecommerce-product-tax-item.ts).
+      let lineTaxableValues: number[];
 
-      // GST law: tax applies to transaction value AFTER commercial discount (same base the frontend uses).
-      // Prorate discount across line items proportionally by line total.
-      const discountRatio = subtotal > 0 ? discountAmount / subtotal : 0;
-
+      // Fix B (locked decision): GST is ALWAYS computed on the ORIGINAL per-line catalog
+      // price. Product MRP is GST-inclusive, so amountIsTaxInclusive is always true. A
+      // discount (vendor or admin funded) NEVER changes the tax base — it is purely a
+      // "Less: Promotional Discount" line applied after tax, not before.
       try {
         const { taxCalculationService } = await import('../../../lib/services/tax-calculation-service');
-        const backendTaxResult = await taxCalculationService.calculateTax({
-          items: orderItems.map((oi) => ({
-            id: String(oi.product_id),
-            type: 'product' as const,
-            // Apply discount proportionally so tax base = post-discount amount (matching frontend)
-            amount: oi.unit_price * (1 - discountRatio),
+        const taxItems = buildEcommerceProductTaxItems(
+          orderItems.map((oi) => ({
+            productId: String(oi.product_id),
+            unitPrice: oi.unit_price,
             quantity: oi.quantity,
-          })),
+            hsnCode: (oi as Record<string, unknown>).hsn_code as string | null,
+          }))
+        );
+        const backendTaxResult = await taxCalculationService.calculateTax({
+          items: taxItems,
           customerLocation: {
             state: shippingAddress.state || '',
             city: shippingAddress.city || '',
@@ -881,18 +933,22 @@ export function registerEcommerceEndpoints(app: Hono) {
         cgstAmount = Math.round(backendTaxResult.totalCGST * 100) / 100;
         sgstAmount = Math.round(backendTaxResult.totalSGST * 100) / 100;
         igstAmount = Math.round(backendTaxResult.totalIGST * 100) / 100;
-        console.log(`[ecommerce/orders] Tax computed: total=₹${taxAmount} CGST=₹${cgstAmount} SGST=₹${sgstAmount} IGST=₹${igstAmount} interstate=${backendTaxResult.isInterstate}`);
+        lineTaxableValues = backendTaxResult.items.map((b) => Math.round(b.baseAmount * 100) / 100);
+        console.log(`[ecommerce/orders] Tax computed (original-price basis): total=₹${taxAmount} CGST=₹${cgstAmount} SGST=₹${sgstAmount} IGST=₹${igstAmount} interstate=${backendTaxResult.isInterstate}`);
       } catch (taxErr) {
         console.error('[ecommerce/orders] taxCalculationService failed; using 18% fallback:', taxErr);
-        taxAmount = Math.round(subtotalAfterDiscount * 0.18 * 100) / 100;
+        taxAmount = Math.round(subtotal * 0.18 * 100) / 100;
         cgstAmount = null;
         sgstAmount = null;
         igstAmount = null;
+        // 18%-inclusive fallback per line, matching the aggregate fallback above.
+        lineTaxableValues = orderItems.map((oi) => Math.round(((oi.unit_price * oi.quantity) / 1.18) * 100) / 100);
       }
 
       // Fix A: total is always server-computed; reject if client supplied a value that differs by more than ₹1.
-      // Formula: discounted subtotal + shipping + tax (tax base already discounted above).
-      const recomputedTotal = Math.round((subtotalAfterDiscount + shippingAmount + taxAmount) * 100) / 100;
+      // Formula: (original subtotal - discount) + shipping. GST is already inside the
+      // GST-inclusive subtotal, so it is never added a second time.
+      const recomputedTotal = Math.round((subtotalAfterDiscount + shippingAmount) * 100) / 100;
       if (bodyTotal != null && Number.isFinite(Number(bodyTotal))) {
         const diff = Math.abs(Number(bodyTotal) - recomputedTotal);
         if (diff > 1) {
@@ -936,13 +992,10 @@ export function registerEcommerceEndpoints(app: Hono) {
         pincode: shippingAddress.pincode || '',
       };
 
-      // Fix D: record whether the discount was vendor-driven or admin (Warmpawz)-driven.
-      // serverPromoDiscount > 0 means vendor_promotions table matched; otherwise treat as admin promotion.
-      const promotionSource: 'vendor' | 'admin' | null =
-        appliedPromotionId
-          ? (serverPromoDiscount > 0 ? 'vendor' : 'admin')
-          : null;
-
+      // promotionSource was already resolved server-side above (Commercial Campaign Engine
+      // / vendor_promotions strict per-source validation) — never re-inferred from
+      // serverPromoDiscount, which would incorrectly default to 'admin' whenever the
+      // vendor table simply had no match.
       const orderMetadata = {
         checkoutSnapshot: {
           subtotal,
@@ -1018,7 +1071,8 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       await insert('orders', order);
       const insertedOrderItemIds: string[] = [];
-      for (const item of orderItems) {
+      for (let i = 0; i < orderItems.length; i++) {
+        const item = orderItems[i];
         await insert('order_items', {
           order_id: orderId,
           product_id: item.product_id,
@@ -1028,23 +1082,21 @@ export function registerEcommerceEndpoints(app: Hono) {
           unit_price: item.unit_price,
           total_price: item.total,
           variant_info: item.variant_info ?? null,
+          taxable_value: lineTaxableValues[i] ?? item.total,
         });
         if (item.skuRowIdForStock) {
           await decrementSkuStock(item.skuRowIdForStock, item.quantity);
         }
       }
 
-      // Fix B: resolve and store commission immediately at order creation so it is available
-      // before payment verification. applyOrderCommissionAudit serves as a reconcile pass later.
+      // Fix B/Phase 2: resolve and store commission immediately at order creation so it is
+      // available before payment verification. Commission is ALWAYS on the original ex-GST
+      // taxable value (T) of each line — a discount (vendor OR admin funded) never reduces
+      // it. applyOrderCommissionAudit serves as a reconcile pass later.
       if (firstVendorId) {
         try {
-          // Commission is calculated on the discounted selling price (after vendor promotion only).
-          // Admin promotions are absorbed by the platform and do not reduce the vendor's commission base.
-          const vendorPromoRatio =
-            promotionSource === 'vendor' && subtotal > 0 ? discountAmount / subtotal : 0;
-          const lineItemsForCommission = orderItems.map((item) => ({
-            lineSubtotal:
-              Math.round(Number(item.total) * (1 - vendorPromoRatio) * 100) / 100,
+          const lineItemsForCommission = orderItems.map((item, idx) => ({
+            lineSubtotal: lineTaxableValues[idx] ?? item.total,
             productId: item.product_id ?? null,
             categoryId: (item as Record<string, unknown>).category_id as string | null ?? null,
           }));
@@ -1074,13 +1126,24 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       if (appliedPromotionId && discountAmount > 0) {
         try {
-          await recordVendorPromotionUsage({
-            promotionId: appliedPromotionId,
-            orderId,
-            customerId: customerId ? String(customerId) : null,
-            discountAmount,
-            orderSubtotal: subtotal,
-          });
+          if (promotionSource === 'admin') {
+            await recordCommercialCampaignUsage({
+              promotionId: appliedPromotionId,
+              isLegacy: campaignIsLegacy,
+              orderId,
+              customerId: customerId ? String(customerId) : null,
+              discountAmount,
+              orderSubtotal: subtotal,
+            });
+          } else {
+            await recordVendorPromotionUsage({
+              promotionId: appliedPromotionId,
+              orderId,
+              customerId: customerId ? String(customerId) : null,
+              discountAmount,
+              orderSubtotal: subtotal,
+            });
+          }
         } catch (usageErr) {
           console.warn('[ecommerce/orders] promotion usage record failed:', usageErr);
         }
@@ -1153,6 +1216,11 @@ export function registerEcommerceEndpoints(app: Hono) {
         void notifyShopOrderPaid(orderId).catch((e) =>
           console.warn('[ecommerce/orders] notifyShopOrderPaid (wallet-full) failed:', e)
         );
+        // Order is paid in full at creation (no Razorpay verify-payment call happens for
+        // wallet-only checkouts) — write the batch settlement ledger row here instead.
+        void writeEcommerceOrderSettlementLedgerRow(orderId).catch((e) =>
+          console.warn('[ecommerce/orders] settlement ledger write (wallet-full) failed:', e)
+        );
       }
 
       return c.json(successResponse, 201);
@@ -1168,19 +1236,38 @@ export function registerEcommerceEndpoints(app: Hono) {
    */
   app.get("/products/:productId", (c) => handleGetPublicProductById(c, '[products/:productId]'));
 
+  /** Storefront-active product count per category (matches public product catalog rules). */
+  const STOREFRONT_CATEGORY_PRODUCT_COUNT_LATERAL = `
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS product_count
+      FROM products p
+      WHERE p.category_id = ec.id
+        AND p.is_active = true
+        AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
+    ) pc ON true`;
+
   /**
    * GET /ecommerce/categories
    * Get e-commerce product categories
+   * Query: with_products_only=true — omit categories with zero storefront-active products
    */
   app.get("/ecommerce/categories", async (c) => {
     try {
+      const withProductsOnly =
+        c.req.query('with_products_only') === 'true' ||
+        c.req.query('with_products_only') === '1';
+
       let categories;
       try {
         categories = await query(
-          `SELECT id::text AS id, name, description, display_order, is_active, image_url, created_at
-           FROM ecommerce_categories
-           WHERE is_active = true
-           ORDER BY display_order ASC, name ASC`
+          `SELECT ec.id::text AS id, ec.name, ec.description, ec.display_order, ec.is_active,
+                  ec.image_url, ec.created_at,
+                  COALESCE(pc.product_count, 0) AS product_count
+           FROM ecommerce_categories ec
+           ${STOREFRONT_CATEGORY_PRODUCT_COUNT_LATERAL}
+           WHERE ec.is_active = true
+           ${withProductsOnly ? 'AND COALESCE(pc.product_count, 0) > 0' : ''}
+           ORDER BY ec.display_order ASC, ec.name ASC`
         );
       } catch (dbError: any) {
         // Handle table not existing
@@ -1195,10 +1282,14 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
         if (dbError.message?.includes('column "image_url"') || dbError.code === '42703') {
           categories = await query(
-            `SELECT id::text AS id, name, description, display_order, is_active, created_at
-             FROM ecommerce_categories
-             WHERE is_active = true
-             ORDER BY display_order ASC, name ASC`
+            `SELECT ec.id::text AS id, ec.name, ec.description, ec.display_order, ec.is_active,
+                    ec.created_at,
+                    COALESCE(pc.product_count, 0) AS product_count
+             FROM ecommerce_categories ec
+             ${STOREFRONT_CATEGORY_PRODUCT_COUNT_LATERAL}
+             WHERE ec.is_active = true
+             ${withProductsOnly ? 'AND COALESCE(pc.product_count, 0) > 0' : ''}
+             ORDER BY ec.display_order ASC, ec.name ASC`
           );
         } else {
           throw dbError;
