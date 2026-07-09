@@ -1168,19 +1168,38 @@ export function registerEcommerceEndpoints(app: Hono) {
    */
   app.get("/products/:productId", (c) => handleGetPublicProductById(c, '[products/:productId]'));
 
+  /** Storefront-active product count per category (matches public product catalog rules). */
+  const STOREFRONT_CATEGORY_PRODUCT_COUNT_LATERAL = `
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS product_count
+      FROM products p
+      WHERE p.category_id = ec.id
+        AND p.is_active = true
+        AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
+    ) pc ON true`;
+
   /**
    * GET /ecommerce/categories
    * Get e-commerce product categories
+   * Query: with_products_only=true — omit categories with zero storefront-active products
    */
   app.get("/ecommerce/categories", async (c) => {
     try {
+      const withProductsOnly =
+        c.req.query('with_products_only') === 'true' ||
+        c.req.query('with_products_only') === '1';
+
       let categories;
       try {
         categories = await query(
-          `SELECT id::text AS id, name, description, display_order, is_active, image_url, created_at
-           FROM ecommerce_categories
-           WHERE is_active = true
-           ORDER BY display_order ASC, name ASC`
+          `SELECT ec.id::text AS id, ec.name, ec.description, ec.display_order, ec.is_active,
+                  ec.image_url, ec.created_at,
+                  COALESCE(pc.product_count, 0) AS product_count
+           FROM ecommerce_categories ec
+           ${STOREFRONT_CATEGORY_PRODUCT_COUNT_LATERAL}
+           WHERE ec.is_active = true
+           ${withProductsOnly ? 'AND COALESCE(pc.product_count, 0) > 0' : ''}
+           ORDER BY ec.display_order ASC, ec.name ASC`
         );
       } catch (dbError: any) {
         // Handle table not existing
@@ -1195,10 +1214,14 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
         if (dbError.message?.includes('column "image_url"') || dbError.code === '42703') {
           categories = await query(
-            `SELECT id::text AS id, name, description, display_order, is_active, created_at
-             FROM ecommerce_categories
-             WHERE is_active = true
-             ORDER BY display_order ASC, name ASC`
+            `SELECT ec.id::text AS id, ec.name, ec.description, ec.display_order, ec.is_active,
+                    ec.created_at,
+                    COALESCE(pc.product_count, 0) AS product_count
+             FROM ecommerce_categories ec
+             ${STOREFRONT_CATEGORY_PRODUCT_COUNT_LATERAL}
+             WHERE ec.is_active = true
+             ${withProductsOnly ? 'AND COALESCE(pc.product_count, 0) > 0' : ''}
+             ORDER BY ec.display_order ASC, ec.name ASC`
           );
         } else {
           throw dbError;

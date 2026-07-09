@@ -20,8 +20,10 @@ import { mapApiProductsList } from '@/components/shop/map-shop-product';
 import type { ShopCartItem, ShopCategory, ShopProduct } from '@/components/shop/shop-types';
 import { apiClient } from '@/lib/api-client';
 import {
+  filterShopCategoriesWithProducts,
   mapApiCategoriesToShop,
   resolveShopCategoryParam,
+  SHOP_CATEGORIES_WITH_PRODUCTS_PATH,
 } from '@/lib/shop-category-display';
 import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
@@ -121,6 +123,7 @@ export default function ShopPage() {
   const [showAddressPicker, setShowAddressPicker] = useState(false);
   const [addressPickerLoading, setAddressPickerLoading] = useState(false);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
+  const [categoriesReady, setCategoriesReady] = useState(false);
 
   const selectedDeliveryAddressRef = useRef<DeliveryAddress | null>(null);
   const loadProductsGenRef = useRef(0);
@@ -222,8 +225,27 @@ export default function ShopPage() {
   }, [categoryFromUrl, categories]);
 
   /**
+   * Load storefront category chips once per mount (categories that have products).
+   */
+  const loadCategories = useCallback(async () => {
+    const categoriesRes = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>(
+      SHOP_CATEGORIES_WITH_PRODUCTS_PATH
+    );
+    const rawCategories = categoriesRes?.categories;
+    const mapped = filterShopCategoriesWithProducts(
+      mapApiCategoriesToShop(
+        Array.isArray(rawCategories)
+          ? rawCategories.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
+          : []
+      )
+    );
+    setCategories(mapped);
+    setCategoriesReady(true);
+    return mapped;
+  }, []);
+
+  /**
    * Fetch one page of products and either replace (reset=true) or append (reset=false).
-   * Uses a stable ref for currentOffset to avoid stale-closure issues on append.
    */
   const loadProducts = useCallback(
     async (reset: boolean, currentOffset: number, currentCategory: string) => {
@@ -237,41 +259,7 @@ export default function ShopPage() {
       }
 
       try {
-        // On first call also load categories (only needed once per page mount).
-        let effectiveCategory = currentCategory;
-        if (reset) {
-          const categoriesRes = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>(
-            '/ecommerce/categories'
-          );
-          const rawCategories = categoriesRes?.categories;
-          const mappedCategories = mapApiCategoriesToShop(
-            Array.isArray(rawCategories)
-              ? rawCategories.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
-              : []
-          );
-          setCategories(mappedCategories);
-
-          if (gen !== loadProductsGenRef.current) return;
-
-          if (effectiveCategory) {
-            const resolved = resolveShopCategoryParam(effectiveCategory, mappedCategories);
-            if (resolved) {
-              if (resolved !== effectiveCategory) {
-                effectiveCategory = resolved;
-                resolvedCategoryRef.current = resolved;
-                setSelectedCategory(resolved);
-                setShopCategoryInUrl(resolved);
-              } else {
-                resolvedCategoryRef.current = resolved;
-              }
-            } else {
-              effectiveCategory = '';
-              resolvedCategoryRef.current = '';
-              setSelectedCategory('');
-              clearShopCategoryFromUrl();
-            }
-          }
-        }
+        const effectiveCategory = currentCategory;
 
         const params = new URLSearchParams();
         if (effectiveCategory) params.set('category', effectiveCategory);
@@ -362,10 +350,39 @@ export default function ShopPage() {
     return () => window.removeEventListener(CART_UPDATED_EVENT, sync);
   }, [loadCart]);
 
-  /** Reset and reload whenever filters/sort/search/category change. */
   useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const mapped = await loadCategories();
+        if (cancelled) return;
+        const fromUrl = categoryFromUrl || selectedCategory;
+        if (!fromUrl) return;
+        const resolved = resolveShopCategoryParam(fromUrl, mapped);
+        if (resolved) {
+          resolvedCategoryRef.current = resolved;
+          setSelectedCategory(resolved);
+          setShopCategoryInUrl(resolved);
+        } else {
+          resolvedCategoryRef.current = '';
+          setSelectedCategory('');
+          clearShopCategoryFromUrl();
+        }
+      } catch (err) {
+        console.error('Error loading shop categories:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadCategories]);
+
+  /** Reset and reload products when filters/sort/search/category change (after categories ready). */
+  useEffect(() => {
+    if (!categoriesReady) return;
     void loadProducts(true, 0, selectedCategory);
-  }, [selectedCategory, sortBy, debouncedSearch, priceRange, loadProducts]);
+  }, [categoriesReady, selectedCategory, sortBy, debouncedSearch, priceRange, loadProducts]);
 
   useEffect(() => {
     loadFeaturedDeals();

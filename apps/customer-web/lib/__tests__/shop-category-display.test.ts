@@ -1,5 +1,6 @@
 import {
   isShopCategoryActive,
+  filterShopCategoriesWithProducts,
   mapApiCategoriesToShop,
   normalizeShopCategoryRow,
   resolveShopCategoryParam,
@@ -94,6 +95,17 @@ describe('shop-category-display', () => {
 
     it('returns empty when categories list is empty', () => {
       expect(resolveShopCategoryParam('pet-food', [])).toBe('');
+    });
+  });
+
+  describe('filterShopCategoriesWithProducts', () => {
+    it('keeps categories with product_count > 0', () => {
+      const result = filterShopCategoriesWithProducts([
+        { id: 'a', name: 'Food', product_count: 2 },
+        { id: 'b', name: 'Empty', product_count: 0 },
+        { id: 'c', name: 'Toys' },
+      ]);
+      expect(result.map((c) => c.id)).toEqual(['a']);
     });
   });
 });
