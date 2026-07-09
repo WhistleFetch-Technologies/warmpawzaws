@@ -17,6 +17,8 @@ import {
 } from '@/lib/warmpawz-cart-storage';
 import type { WarmpawzCartProductSnapshot } from '@/lib/warmpawz-cart-storage';
 import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
+import { WishlistCountBadge } from '@/components/customer/WishlistCountBadge';
+import { useWishlistCount } from '@/lib/use-wishlist-count';
 import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
@@ -242,6 +244,8 @@ export default function ProductDetailClient() {
     }
     return (productId || '').trim();
   }, [product, productId]);
+
+  const wishlistCount = useWishlistCount();
 
   useEffect(() => {
     let cancelled = false;
@@ -833,11 +837,14 @@ export default function ProductDetailClient() {
               >
                 <Share2 className="w-5 h-5 text-slate-600" />
               </button>
-              <WishlistProductHeartButton
-                productId={wishlistProductId}
-                visualVariant="header-toolbar"
-                heartClassName="w-5 h-5"
-              />
+              <div className="relative">
+                <WishlistProductHeartButton
+                  productId={wishlistProductId}
+                  visualVariant="header-toolbar"
+                  heartClassName="w-5 h-5"
+                />
+                <WishlistCountBadge count={wishlistCount} size="md" className="-top-1 -right-1" />
+              </div>
               <button
                 onClick={() => nav.goToShop()}
                 className="relative p-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl"

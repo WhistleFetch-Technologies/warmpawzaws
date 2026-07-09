@@ -1467,7 +1467,7 @@ export function UserAccountSidebar({
                   !isComingSoon &&
                   item.badge !== undefined &&
                   item.badge > 0 &&
-                  item.label === 'My Bookings';
+                  (item.label === 'My Bookings' || item.label === 'Saved Items');
                 const showComingSoonBadge =
                   isComingSoon && (item.label === 'My Cart' || item.label === 'Saved Items');
                 return (

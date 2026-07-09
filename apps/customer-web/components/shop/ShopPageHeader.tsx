@@ -1,7 +1,7 @@
 'use client';
 
-import { ArrowLeft, Heart } from 'lucide-react';
-import { markWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
+import { ArrowLeft } from 'lucide-react';
+import { WishlistNavHeart } from '@/components/customer/WishlistNavHeart';
 
 interface ShopPageHeaderProps {
   onBack: () => void;
@@ -23,14 +23,7 @@ export function ShopPageHeader({ onBack }: ShopPageHeaderProps) {
         Pet Products
       </h1>
 
-      <a
-        href="/wishlist"
-        onClick={() => markWishlistOpenedFromShop()}
-        className="relative z-10 ml-auto shrink-0 w-10 h-10 flex items-center justify-center rounded-xl text-slate-600 active:scale-95 transition-transform"
-        aria-label="Wishlist"
-      >
-        <Heart className="w-5 h-5" />
-      </a>
+      <WishlistNavHeart variant="shop" />
     </div>
   );
 }
