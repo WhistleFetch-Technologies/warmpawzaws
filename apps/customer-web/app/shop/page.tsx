@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
@@ -86,6 +86,20 @@ const SHOP_PAGE_SHELL =
   'relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-customer mx-auto flex-col overflow-hidden bg-white';
 
 export default function ShopPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-white text-slate-500">
+          Loading shop...
+        </div>
+      }
+    >
+      <ShopPageContent />
+    </Suspense>
+  );
+}
+
+function ShopPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const categoryFromUrl = searchParams.get('category') ?? '';

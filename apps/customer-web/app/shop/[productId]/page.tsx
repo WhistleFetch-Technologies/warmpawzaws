@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import ProductDetailClient from './ProductDetailClient';
 
 // Required for static export with dynamic routes
@@ -9,6 +10,16 @@ export async function generateStaticParams() {
 // Allow dynamic params at runtime (client-side navigation)
 export const dynamicParams = true;
 
-export default function ProductPage({ params }: { params: { productId: string } }) {
-  return <ProductDetailClient />;
+export default function ProductPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-white text-slate-500">
+          Loading product...
+        </div>
+      }
+    >
+      <ProductDetailClient />
+    </Suspense>
+  );
 }

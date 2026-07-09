@@ -410,7 +410,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
 
           {/* Vendor spotlights + promotion banner - Phase 0.1 Integration */}
           <div className="space-y-4">
-            <FeaturedVendorSpotlights service="training" onNavigate={onNavigate} />
+            <FeaturedVendorSpotlights service="training" phone={phone} onNavigate={onNavigate} />
           </div>
 
           {/* Choose Training Type */}

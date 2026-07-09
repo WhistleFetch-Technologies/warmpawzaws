@@ -22,6 +22,10 @@ import {
   logSearchLocalStorageOnLoad,
   searchPersistenceContainsTarget,
 } from '@/lib/search-trace';
+import {
+  loadCustomerServiceLaunchCatalog,
+} from '@/lib/customer-service-style-launch';
+import { filterSearchRowsByLaunch } from '@/lib/search-filter-by-launch';
 
 interface SearchResult {
   id: string;
@@ -43,6 +47,8 @@ interface EnhancedSearchBarProps {
   onResultSelect?: (result: SearchResult) => void;
   placeholder?: string;
   customerId?: string;
+  /** Customer phone for geo launch post-filter (falls back to customerId). */
+  phone?: string;
   className?: string;
   /** Home/mobile compact layout — sizing only. */
   compact?: boolean;
@@ -53,6 +59,7 @@ export function EnhancedSearchBar({
   onResultSelect,
   placeholder = "Search for services, vets, trainers...",
   customerId,
+  phone: phoneProp,
   className = '',
   compact = false,
 }: EnhancedSearchBarProps) {
@@ -469,6 +476,26 @@ export function EnhancedSearchBar({
             seenVendor.add(vid);
             return true;
           });
+        }
+      }
+
+      const launchPhone = (phoneProp || customerId || '').trim();
+      if (launchPhone) {
+        const catalog = await loadCustomerServiceLaunchCatalog(launchPhone);
+        if (reqId !== searchRequestSeqRef.current) {
+          return;
+        }
+        if (catalog.length) {
+          finalResults = filterSearchRowsByLaunch(
+            catalog,
+            finalResults.map((r) => ({
+              ...r,
+              category: r.category,
+              serviceType: r.data?.serviceType,
+              serviceStyle: r.data?.serviceStyle,
+              screen: r.data?.screen,
+            }))
+          ) as SearchResult[];
         }
       }
 

@@ -8,6 +8,7 @@ import { traceHomeSearchUpstream } from '@/lib/search-trace';
 
 export interface SearchFilterSectionProps {
   customerId?: string;
+  phone?: string;
   placeholder?: string;
   onSearch?: (query: string) => void;
   onResultSelect?: (result: Parameters<NonNullable<React.ComponentProps<typeof EnhancedSearchBar>['onResultSelect']>>[0]) => void;
@@ -16,6 +17,7 @@ export interface SearchFilterSectionProps {
 
 function SearchFilterSectionComponent({
   customerId,
+  phone,
   placeholder = 'Search services, products, vets, groomers...',
   onSearch,
   onResultSelect,
@@ -39,6 +41,7 @@ function SearchFilterSectionComponent({
         <EnhancedSearchBar
           placeholder={placeholder}
           customerId={customerId}
+          phone={phone}
           onSearch={handleSearchWithTrace}
           onResultSelect={onResultSelect}
           compact
