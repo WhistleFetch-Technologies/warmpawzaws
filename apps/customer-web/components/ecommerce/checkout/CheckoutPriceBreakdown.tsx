@@ -36,19 +36,20 @@ export function CheckoutPriceBreakdown({
 
       <div className="space-y-2 text-sm">
         <div className="flex justify-between">
-          <span className="text-slate-600">Subtotal</span>
+          <span className="text-slate-600">Subtotal (GST included)</span>
           <span className="text-slate-900">₹{pricing.lineSubtotal.toFixed(0)}</span>
         </div>
-        {(pricing.couponDiscount ?? 0) > 0 && (
+        {/* Only ONE promotion is ever active — show whichever one actually won. */}
+        {pricing.discount > 0 && (
           <div className="flex justify-between text-emerald-600">
-            <span>Coupon discount</span>
-            <span>-₹{(pricing.couponDiscount ?? 0).toFixed(0)}</span>
-          </div>
-        )}
-        {(pricing.sellerPromotionDiscount ?? 0) > 0 && (
-          <div className="flex justify-between text-emerald-600">
-            <span>Store offer</span>
-            <span>-₹{(pricing.sellerPromotionDiscount ?? 0).toFixed(0)}</span>
+            <span>
+              {pricing.promotionSource === 'admin'
+                ? 'WarmPawz offer'
+                : (pricing.sellerPromotionDiscount ?? 0) >= (pricing.couponDiscount ?? 0)
+                  ? 'Store offer'
+                  : 'Coupon discount'}
+            </span>
+            <span>-₹{pricing.discount.toFixed(0)}</span>
           </div>
         )}
         {pricing.deliveryFees > 0 && (
@@ -58,9 +59,9 @@ export function CheckoutPriceBreakdown({
           </div>
         )}
         {pricing.taxAmount > 0 && (
-          <div className="flex justify-between">
-            <span className="text-slate-600">Tax</span>
-            <span className="text-slate-900">₹{pricing.taxAmount.toFixed(0)}</span>
+          <div className="flex justify-between text-slate-400">
+            <span>Includes GST</span>
+            <span>₹{pricing.taxAmount.toFixed(0)}</span>
           </div>
         )}
         <div className="flex justify-between border-t border-slate-100 pt-2 text-base font-bold">

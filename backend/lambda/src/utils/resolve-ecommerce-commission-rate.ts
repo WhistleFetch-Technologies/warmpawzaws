@@ -28,6 +28,7 @@ export interface EcommerceCommissionResult {
 }
 
 export interface OrderLineForCommission {
+  /** Ex-GST taxable value (T), never the GST-inclusive price and never discount-adjusted. */
   lineSubtotal: number;
   productId?: string | null;
   categoryId?: string | null;
@@ -282,11 +283,9 @@ export async function loadOrderLineItemsForCommission(
 ): Promise<OrderLineForCommission[]> {
   try {
     const result = await query(
-      `SELECT oi.total_price AS line_subtotal,
+      `SELECT COALESCE(oi.taxable_value, oi.total_price) AS line_subtotal,
               oi.product_id::text AS product_id,
-              p.category_id::text AS category_id,
-              o.subtotal AS order_subtotal,
-              COALESCE(o.vendor_promotion_amount, 0) AS vendor_promo_amount
+              p.category_id::text AS category_id
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
        LEFT JOIN products p ON p.id = oi.product_id
@@ -295,18 +294,16 @@ export async function loadOrderLineItemsForCommission(
     );
     if (!result.rows?.length) return [];
 
-    // Apply the vendor promotion discount ratio so commission is computed on the
-    // discounted selling price (matching order-creation logic). Admin promotions are
-    // absorbed by the platform and do not reduce the vendor's commission base.
-    const firstRow = result.rows[0] as Record<string, unknown>;
-    const orderSubtotal = parseFloat(String(firstRow.order_subtotal ?? 0)) || 0;
-    const vendorPromoAmount = parseFloat(String(firstRow.vendor_promo_amount ?? 0)) || 0;
-    const vendorPromoRatio = orderSubtotal > 0 ? vendorPromoAmount / orderSubtotal : 0;
-
+    // Commission is ALWAYS computed on the ORIGINAL ex-GST taxable value of each line —
+    // never reduced for a vendor promotion, never reduced for an admin promotion. A
+    // discount never changes commission (locked decision, see Ecommerce Settlement
+    // Engine plan §0/§1). oi.taxable_value is T (persisted at order creation); orders
+    // created before migration 1065 fall back to oi.total_price (GST-inclusive P) —
+    // slightly overstates historical commission but preserves prior behavior exactly.
     return (result.rows || []).map((row: Record<string, unknown>) => {
       const rawSubtotal = parseFloat(String(row.line_subtotal ?? 0)) || 0;
       return {
-        lineSubtotal: Math.round(rawSubtotal * (1 - vendorPromoRatio) * 100) / 100,
+        lineSubtotal: Math.round(rawSubtotal * 100) / 100,
         productId: row.product_id != null ? String(row.product_id) : null,
         categoryId: row.category_id != null ? String(row.category_id) : null,
       };
