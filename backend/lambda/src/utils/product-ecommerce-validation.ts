@@ -101,6 +101,52 @@ export function isLikelyProductImageUrl(s: string): boolean {
   return /^https?:\/\/\S+/i.test(s) || /^data:image\/[a-z0-9.+-]+;base64,/i.test(s);
 }
 
+export type FragileImageUrlWarning = {
+  field: 'images';
+  message: string;
+  value: string;
+};
+
+const FRAGILE_IMAGE_HOST_PATTERNS: RegExp[] = [
+  /drive\.google\.com/i,
+  /docs\.google\.com/i,
+  /dropbox\.com\/s\//i,
+  /www\.dropbox\.com\/s\//i,
+];
+
+/** Hosts that often block hotlinking or serve HTML instead of image bytes. */
+export function isFragileProductImageUrl(url: string): boolean {
+  const trimmed = String(url ?? '').trim();
+  if (!trimmed || !/^https?:\/\//i.test(trimmed)) return false;
+  try {
+    const hostAndPath = new URL(trimmed).hostname + new URL(trimmed).pathname;
+    return FRAGILE_IMAGE_HOST_PATTERNS.some((re) => re.test(hostAndPath) || re.test(trimmed));
+  } catch {
+    return FRAGILE_IMAGE_HOST_PATTERNS.some((re) => re.test(trimmed));
+  }
+}
+
+const FRAGILE_IMAGE_WARNING_MESSAGE =
+  'This image link may not display reliably on the storefront (e.g. Google Drive or Dropbox share links). Use a direct image URL from your CDN or website if possible.';
+
+/** Non-blocking warnings for bulk validate — does not reject the row. */
+export function collectFragileImageWarnings(
+  record: Record<string, unknown>,
+): FragileImageUrlWarning[] {
+  const imageUrls = parseProductImageList(record.images ?? record.image_urls);
+  const warnings: FragileImageUrlWarning[] = [];
+  for (const url of imageUrls) {
+    if (isFragileProductImageUrl(url)) {
+      warnings.push({
+        field: 'images',
+        message: FRAGILE_IMAGE_WARNING_MESSAGE,
+        value: url,
+      });
+    }
+  }
+  return warnings;
+}
+
 function getSingleProductName(record: Record<string, unknown>): string {
   const name = record.name;
   return typeof name === 'string' ? name.trim() : '';

@@ -129,11 +129,17 @@ function resolveSyncTargetSkuId(
   return findSkuIdByOptionValues(productId, option_values);
 }
 
+export type SyncProductSkusOptions = {
+  /** Bulk upload: persist http(s) image URLs as-is without downloading to S3. */
+  skipImageIngest?: boolean;
+};
+
 export async function syncProductSkus(
   vendorId: string,
   productId: string,
   skuInputs: SkuInput[],
   _parentDefaults?: { price: number; compare_at_price?: number | null },
+  options?: SyncProductSkusOptions,
 ): Promise<ProductSkuRow[]> {
   const existing = await loadProductSkus(productId);
   if (skuInputs.length === 0 && existing.length === 0) {
@@ -157,7 +163,9 @@ export async function syncProductSkus(
     const prevSku = targetId ? existing.find((s) => String(s.id) === targetId) : undefined;
 
     if (imagesNorm.length > 0) {
-      imagesNorm = await processProductImagesForS3Storage(vendorId, imagesNorm);
+      if (!options?.skipImageIngest) {
+        imagesNorm = await processProductImagesForS3Storage(vendorId, imagesNorm);
+      }
       imagesNorm = stripPresignFromProductImagesJsonb(imagesNorm) as string[];
       // Evict any of this SKU's previously-managed S3 images that are no
       // longer referenced after the replacement, so a swapped photo doesn't
