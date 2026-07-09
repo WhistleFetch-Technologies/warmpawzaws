@@ -16,6 +16,8 @@ import {
   bookingFormFieldsFromProceed,
   type HomeVisitWizardSnapshot,
 } from '@/lib/navigation/wizard-session-state';
+import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
+import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 
 // ============================================================================
 // TYPES
@@ -100,6 +102,7 @@ export function HomeVisitRouter({
     selectedServiceIds: restoredSnapshot?.selectedServiceIds,
     selectedAddressId: restoredSnapshot?.selectedAddressId,
   }));
+  const launchGate = useServiceStyleLaunchGate(phone, 'vet', 'at_home');
 
   useEffect(() => {
     if (restoredSnapshot) {
@@ -160,6 +163,14 @@ export function HomeVisitRouter({
   useEffect(() => {
     onInternalBackReady?.(handleBack);
   }, [handleBack, onInternalBackReady]);
+
+  if (launchGate.ready && launchGate.blocked) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <ServiceStyleLaunchBlocked message={launchGate.blockMessage} onBack={onBack} />
+      </div>
+    );
+  }
 
   // Render based on step
   switch (step) {

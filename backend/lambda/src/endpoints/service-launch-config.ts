@@ -763,6 +763,14 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
         }, 400);
       }
 
+      const supportedStyles = supportedStylesForLaunchServiceId(serviceId);
+      if (styleKey && !supportedStyles.includes(styleKey)) {
+        return c.json({
+          success: false,
+          error: `serviceStyle "${styleKey}" is not supported for service "${serviceId}"`,
+        }, 400);
+      }
+
       // Get existing config
       const configResult = await query(
         `SELECT setting_value FROM platform_settings WHERE setting_key = $1`,
@@ -807,8 +815,6 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
         }
         if (!serviceConfig.stateOverrides[stateCode]) {
           serviceConfig.stateOverrides[stateCode] = {
-            status: 'hidden',
-            rolloutPercentage: 0,
             cities: {},
           };
         }
@@ -820,8 +826,6 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
         }
         if (!serviceConfig.stateOverrides[stateCode]) {
           serviceConfig.stateOverrides[stateCode] = {
-            status: 'hidden',
-            rolloutPercentage: 0,
             cities: {},
           };
         }
@@ -933,7 +937,7 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
       return c.json({
         success: true,
         location: { state: null, stateCode: null, city: null },
-        services: { visible: [], comingSoon: [], hidden: [] },
+        services: { visible: [], comingSoon: [], hidden: [], catalog: [] },
         buttons: [],
       }, 200);
     }

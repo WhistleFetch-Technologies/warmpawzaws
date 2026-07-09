@@ -11,9 +11,10 @@ export interface CityConfig {
   rolloutPercentage: number;
 }
 
+/** State bucket may exist only to hold city overrides (no state-level status). */
 export interface StateConfig {
-  status: LaunchStatus;
-  rolloutPercentage: number;
+  status?: LaunchStatus;
+  rolloutPercentage?: number;
   cities: Record<string, CityConfig>;
 }
 
@@ -30,6 +31,13 @@ export interface ServiceLaunchGeoConfig {
   stateOverrides?: Record<string, StateConfig>;
   styleOverrides?: Partial<Record<ServiceStyleLaunchKey, GeoLaunchSlice>>;
 }
+
+const LAUNCH_STATUS_RANK: Record<LaunchStatus, number> = {
+  hidden: 0,
+  coming_soon: 1,
+  beta: 2,
+  launched: 3,
+};
 
 const CITY_NAME_ALIASES: Record<string, string> = {
   bengaluru: 'Bangalore',
@@ -76,47 +84,85 @@ export function getCityLaunchOverride(
   return undefined;
 }
 
+/** Style cannot be more visible than parent at the same geography. */
+export function lessPermissiveLaunchStatus(a: LaunchStatus, b: LaunchStatus): LaunchStatus {
+  return LAUNCH_STATUS_RANK[a] <= LAUNCH_STATUS_RANK[b] ? a : b;
+}
+
+type GeoResolved = { status: LaunchStatus; rollout: number; hasOverride: boolean };
+
+function resolveGeoSliceAtGeography(
+  slice: GeoLaunchSlice | undefined,
+  stateCode: string,
+  city: string,
+  inheritFrom: { status: LaunchStatus; rollout: number }
+): GeoResolved {
+  if (!slice) {
+    return { ...inheritFrom, hasOverride: false };
+  }
+
+  let baseStatus = slice.defaultStatus ?? inheritFrom.status;
+  let baseRollout = slice.defaultRolloutPercentage ?? inheritFrom.rollout;
+  const hasDefaultOverride =
+    slice.defaultStatus !== undefined || slice.defaultRolloutPercentage !== undefined;
+
+  if (!stateCode || !slice.stateOverrides?.[stateCode]) {
+    return {
+      status: baseStatus,
+      rollout: baseRollout,
+      hasOverride: hasDefaultOverride,
+    };
+  }
+
+  const stateConfig = slice.stateOverrides[stateCode];
+  const cityConfig = city ? getCityLaunchOverride(stateConfig.cities, city) : undefined;
+
+  if (cityConfig) {
+    return {
+      status: cityConfig.status,
+      rollout: cityConfig.rolloutPercentage,
+      hasOverride: true,
+    };
+  }
+
+  if (stateConfig.status !== undefined) {
+    return {
+      status: stateConfig.status,
+      rollout: stateConfig.rolloutPercentage ?? baseRollout,
+      hasOverride: true,
+    };
+  }
+
+  return {
+    status: baseStatus,
+    rollout: baseRollout,
+    hasOverride: hasDefaultOverride,
+  };
+}
+
 export function effectiveStatusForGeography(
   existingService: ServiceLaunchGeoConfig | undefined,
   stateCode: string,
   city: string,
   fallbackStatus: LaunchStatus = 'hidden'
 ): { status: LaunchStatus; rollout: number } {
-  let status: LaunchStatus = existingService?.defaultStatus || fallbackStatus;
-  let rollout = existingService?.defaultRolloutPercentage ?? 0;
-
-  if (stateCode && existingService?.stateOverrides?.[stateCode]) {
-    const stateConfig = existingService.stateOverrides[stateCode];
-    status = stateConfig.status;
-    rollout = stateConfig.rolloutPercentage;
-
-    const cityConfig = city ? getCityLaunchOverride(stateConfig.cities, city) : undefined;
-    if (cityConfig) {
-      status = cityConfig.status;
-      rollout = cityConfig.rolloutPercentage;
-    }
-  }
-
-  return { status, rollout };
-}
-
-function hasStyleOverrideAtGeography(
-  styleSlice: GeoLaunchSlice,
-  stateCode: string,
-  city: string
-): boolean {
-  if (styleSlice.defaultStatus !== undefined || styleSlice.defaultRolloutPercentage !== undefined) {
-    return true;
-  }
-  if (!stateCode || !styleSlice.stateOverrides?.[stateCode]) return false;
-  const sc = styleSlice.stateOverrides[stateCode];
-  if (city && getCityLaunchOverride(sc.cities, city)) return true;
-  return sc.status !== undefined || sc.rolloutPercentage !== undefined;
+  const fallback = {
+    status: existingService?.defaultStatus || fallbackStatus,
+    rollout: existingService?.defaultRolloutPercentage ?? 0,
+  };
+  const slice: GeoLaunchSlice = {
+    defaultStatus: existingService?.defaultStatus,
+    defaultRolloutPercentage: existingService?.defaultRolloutPercentage,
+    stateOverrides: existingService?.stateOverrides,
+  };
+  const resolved = resolveGeoSliceAtGeography(slice, stateCode, city, fallback);
+  return { status: resolved.status, rollout: resolved.rollout };
 }
 
 /**
  * Style inherits parent effective status unless the style has an explicit override
  * at default, state, or city level for the requested geography.
+ * Resolved style is always clamped to parent visibility (cannot exceed parent).
  */
 export function effectiveStyleStatusForGeography(
   parentService: ServiceLaunchGeoConfig | undefined,
@@ -127,41 +173,20 @@ export function effectiveStyleStatusForGeography(
 ): { status: LaunchStatus; rollout: number; inheritsParent: boolean } {
   const parent = effectiveStatusForGeography(parentService, stateCode, city, fallbackStatus);
   const styleSlice = parentService?.styleOverrides?.[styleKey];
+
   if (!styleSlice) {
     return { ...parent, inheritsParent: true };
   }
 
-  if (stateCode && city && styleSlice.stateOverrides?.[stateCode]) {
-    const cityConfig = getCityLaunchOverride(styleSlice.stateOverrides[stateCode].cities, city);
-    if (cityConfig) {
-      return {
-        status: cityConfig.status,
-        rollout: cityConfig.rolloutPercentage,
-        inheritsParent: false,
-      };
-    }
-  }
+  const resolved = resolveGeoSliceAtGeography(styleSlice, stateCode, city, parent);
+  const clampedStatus = lessPermissiveLaunchStatus(resolved.status, parent.status);
+  const clampedToParent = clampedStatus !== resolved.status;
 
-  if (stateCode && styleSlice.stateOverrides?.[stateCode]) {
-    const sc = styleSlice.stateOverrides[stateCode];
-    if (sc.status !== undefined) {
-      return {
-        status: sc.status,
-        rollout: sc.rolloutPercentage ?? parent.rollout,
-        inheritsParent: false,
-      };
-    }
-  }
-
-  if (styleSlice.defaultStatus !== undefined) {
-    return {
-      status: styleSlice.defaultStatus,
-      rollout: styleSlice.defaultRolloutPercentage ?? parent.rollout,
-      inheritsParent: !hasStyleOverrideAtGeography(styleSlice, stateCode, city),
-    };
-  }
-
-  return { ...parent, inheritsParent: true };
+  return {
+    status: clampedStatus,
+    rollout: clampedToParent ? parent.rollout : resolved.rollout,
+    inheritsParent: clampedToParent || !resolved.hasOverride,
+  };
 }
 
 export function mergeStyleOverrides(
@@ -216,7 +241,7 @@ export function applyGeographyUpdateToSlice(
 
   if (!next.stateOverrides) next.stateOverrides = {};
   if (!next.stateOverrides[stateCode]) {
-    next.stateOverrides[stateCode] = { status: 'hidden', rolloutPercentage: 0, cities: {} };
+    next.stateOverrides[stateCode] = { cities: {} };
   }
 
   if (!city) {
@@ -224,6 +249,7 @@ export function applyGeographyUpdateToSlice(
       ...next.stateOverrides[stateCode],
       status,
       rolloutPercentage,
+      cities: next.stateOverrides[stateCode].cities || {},
     };
     return next;
   }

@@ -36,6 +36,7 @@ import {
   gateServiceStyleNavigation,
   isServiceStyleComingSoon,
   isServiceStyleHidden,
+  isServiceStyleNavigable,
   loadCustomerServiceLaunchCatalog,
   resolveServiceStyleLaunchFromCatalog,
 } from '@/lib/customer-service-style-launch';
@@ -271,9 +272,14 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   };
 
   const serviceTypes = useMemo(() => {
-    const allServiceTypes = VET_SERVICE_CARDS.map((service) =>
-      service.id === 'clinic' ? { ...service, badge: vetClinicBadgeText } : service,
-    );
+    const allServiceTypes = VET_SERVICE_CARDS.map((service) => {
+      if (service.id !== 'clinic') return service;
+      const clinicStatus = styleLaunchByCard.clinic;
+      if (clinicStatus && !isServiceStyleNavigable(clinicStatus)) {
+        return { ...service, badge: undefined };
+      }
+      return { ...service, badge: vetClinicBadgeText };
+    });
 
     const launchFiltered = allServiceTypes.filter((service) => {
       const launchStatus = styleLaunchByCard[service.id];

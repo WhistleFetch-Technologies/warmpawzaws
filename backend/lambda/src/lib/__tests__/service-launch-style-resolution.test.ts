@@ -2,6 +2,7 @@ import {
   applyGeographyUpdateToSlice,
   effectiveStatusForGeography,
   effectiveStyleStatusForGeography,
+  lessPermissiveLaunchStatus,
 } from '../service-launch-style-resolution';
 
 describe('service-launch-style-resolution', () => {
@@ -59,5 +60,35 @@ describe('service-launch-style-resolution', () => {
     const next = applyGeographyUpdateToSlice({}, 'KA', undefined, 'beta', 80);
     expect(next.stateOverrides?.KA?.status).toBe('beta');
     expect(next.defaultStatus).toBeUndefined();
+  });
+
+  it('city-only style override does not hide other cities in the same state', () => {
+    const cfg = {
+      defaultStatus: 'launched' as const,
+      defaultRolloutPercentage: 100,
+      styleOverrides: {
+        at_center: applyGeographyUpdateToSlice({}, 'KA', 'Bangalore', 'hidden', 0),
+      },
+    };
+    expect(effectiveStyleStatusForGeography(cfg, 'at_center', 'KA', 'Bangalore').status).toBe('hidden');
+    expect(effectiveStyleStatusForGeography(cfg, 'at_center', 'KA', 'Mysore').status).toBe('launched');
+  });
+
+  it('style launched cannot exceed parent hidden', () => {
+    const cfg = {
+      defaultStatus: 'hidden' as const,
+      defaultRolloutPercentage: 0,
+      styleOverrides: {
+        tele: { defaultStatus: 'launched' as const, defaultRolloutPercentage: 100 },
+      },
+    };
+    const r = effectiveStyleStatusForGeography(cfg, 'tele', 'KA', 'Bangalore', 'hidden');
+    expect(r.status).toBe('hidden');
+    expect(r.inheritsParent).toBe(true);
+  });
+
+  it('lessPermissiveLaunchStatus picks stricter status', () => {
+    expect(lessPermissiveLaunchStatus('launched', 'coming_soon')).toBe('coming_soon');
+    expect(lessPermissiveLaunchStatus('hidden', 'launched')).toBe('hidden');
   });
 });
