@@ -16,7 +16,13 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
-import { resolveReturnWindowDays, isReturnWindowExpired } from '../utils/return-window';
+import { resolveReturnWindowDays } from '../utils/return-window';
+import {
+  assertReturnItemsAllowed,
+  loadOrderItemsWithReturnEligibility,
+  orderHasReturnableItems,
+  ReturnItemsNotAllowedError,
+} from '../utils/category-return-eligibility';
 
 const RETURN_REASONS = [
   { id: 'damaged', label: 'Product damaged/defective' },
@@ -52,9 +58,8 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
     try {
       const orderId = c.req.param('orderId');
 
-      // Fetch order with items
       const orderResult = await query(
-        `SELECT o.*, v.return_window_days, v.is_returnable
+        `SELECT o.id, o.order_status, o.delivered_at, o.vendor_id, v.is_returnable AS vendor_is_returnable
          FROM orders o
          LEFT JOIN vendors v ON o.vendor_id = v.id
          WHERE o.id = $1`,
@@ -66,45 +71,32 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
       }
 
       const order = orderResult.rows[0];
-      const returnWindowDays = order.return_window_days || 7;
-      const deliveredAt = order.delivered_at ? new Date(order.delivered_at) : null;
+      const itemEligibility = await loadOrderItemsWithReturnEligibility(orderId);
+      const returnWindowDays =
+        itemEligibility[0]?.returnWindowDays ?? (await resolveReturnWindowDays(order.vendor_id));
 
-      // Check eligibility conditions
       const eligibility = {
         isEligible: false,
         reasons: [] as string[],
         items: [] as any[],
         returnWindowDays,
-        daysRemaining: 0,
+        daysRemaining: itemEligibility.reduce(
+          (max, item) => Math.max(max, item.daysRemaining),
+          0
+        ),
         policy: {
-          allowReturns: order.is_returnable !== false,
-          refundMethod: 'original_payment', // or 'wallet', 'store_credit'
+          allowReturns: order.vendor_is_returnable !== false && orderHasReturnableItems(itemEligibility),
+          refundMethod: 'original_payment',
           pickupAvailable: true,
           selfShipAllowed: true,
         },
       };
 
-      // Check if order is delivered
       if (order.order_status !== 'delivered') {
         eligibility.reasons.push(`Order must be delivered to initiate return. Current status: ${order.order_status}`);
         return c.json({ success: true, eligibility });
       }
 
-      // Check return window
-      if (!deliveredAt) {
-        eligibility.reasons.push('Delivery date not recorded');
-        return c.json({ success: true, eligibility });
-      }
-
-      const daysSinceDelivery = Math.floor((Date.now() - deliveredAt.getTime()) / (1000 * 60 * 60 * 24));
-      eligibility.daysRemaining = Math.max(0, returnWindowDays - daysSinceDelivery);
-
-      if (daysSinceDelivery > returnWindowDays) {
-        eligibility.reasons.push(`Return window of ${returnWindowDays} days has expired`);
-        return c.json({ success: true, eligibility });
-      }
-
-      // Check for existing return request
       const existingReturn = await query(
         `SELECT id, status FROM return_requests WHERE order_id = $1 AND status NOT IN ('cancelled', 'rejected')`,
         [orderId]
@@ -115,31 +107,25 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
         return c.json({ success: true, eligibility });
       }
 
-      // Get order items
-      const itemsResult = await query(
-        `SELECT oi.*, p.name as product_name, p.images as product_images, p.is_returnable as product_returnable
-         FROM order_items oi
-         LEFT JOIN products p ON oi.product_id = p.id
-         WHERE oi.order_id = $1`,
-        [orderId]
-      );
-
-      eligibility.items = (itemsResult.rows || []).map((item: any) => ({
-        id: item.id,
-        productId: item.product_id,
-        productName: item.product_name,
-        productImage: typeof item.product_images === 'string'
-          ? (JSON.parse(item.product_images || '[]')[0])
-          : (item.product_images?.[0]),
-        quantity: item.quantity,
-        unitPrice: parseFloat(item.unit_price),
-        totalPrice: parseFloat(item.unit_price) * item.quantity,
-        isReturnable: item.product_returnable !== false,
-        maxReturnQuantity: item.quantity - (item.returned_quantity || 0),
-      })).filter((item: any) => item.isReturnable && item.maxReturnQuantity > 0);
+      eligibility.items = itemEligibility
+        .filter((item) => item.isReturnable)
+        .map((item) => ({
+          id: item.orderItemId,
+          productId: item.productId,
+          productName: item.productName,
+          quantity: item.quantity,
+          unitPrice: null,
+          totalPrice: null,
+          isReturnable: true,
+          maxReturnQuantity: item.maxReturnQuantity,
+          categoryName: item.categoryName,
+        }));
 
       if (eligibility.items.length === 0) {
-        eligibility.reasons.push('No returnable items in this order');
+        const blocked = itemEligibility.find((item) => item.blockReason);
+        eligibility.reasons.push(
+          blocked?.blockReason || 'No returnable items in this order (returns are available for eligible categories only)'
+        );
         return c.json({ success: true, eligibility });
       }
 
@@ -193,13 +179,20 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
         }, 400);
       }
 
-      // Enforce return window
-      const windowDays = await resolveReturnWindowDays(order.vendor_id);
-      if (isReturnWindowExpired(order.delivered_at, windowDays)) {
-        return c.json({
-          success: false,
-          error: `Return window of ${windowDays} day(s) has expired. Returns must be requested within ${windowDays} day(s) of delivery.`,
-        }, 400);
+      let eligibleItems;
+      try {
+        ({ eligibleItems } = await assertReturnItemsAllowed(
+          orderId,
+          items.map((item: { orderItemId: string; quantity?: number }) => ({
+            orderItemId: item.orderItemId,
+            quantity: item.quantity,
+          }))
+        ));
+      } catch (err: unknown) {
+        if (err instanceof ReturnItemsNotAllowedError) {
+          return c.json({ success: false, error: err.message }, err.statusCode);
+        }
+        throw err;
       }
 
       // Cancel any pending loyalty award for this order — return is being initiated
@@ -223,10 +216,12 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
         if (!orderItem) {
           return c.json({ success: false, error: `Order item ${item.orderItemId} not found` }, 400);
         }
-        if (item.quantity > orderItem.quantity) {
+        const allowed = eligibleItems.find((e) => e.orderItemId === item.orderItemId);
+        const qty = item.quantity ?? allowed?.maxReturnQuantity ?? orderItem.quantity;
+        if (qty > orderItem.quantity) {
           return c.json({ success: false, error: `Cannot return more than ordered quantity for ${orderItem.product_name}` }, 400);
         }
-        totalRefundAmount += parseFloat(orderItem.unit_price) * item.quantity;
+        totalRefundAmount += parseFloat(orderItem.unit_price) * qty;
       }
 
       // Generate return request number

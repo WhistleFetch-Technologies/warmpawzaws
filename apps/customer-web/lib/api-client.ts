@@ -1125,8 +1125,10 @@ export const ordersApi = {
     reason?: string;
   }) => apiClient.post(`/orders/${orderId}/cancel`, data),
 
-  returnOrder: (orderId: string, data?: { reason?: string }) =>
-    apiClient.post(`/customer/orders/${orderId}/return`, data ?? {}),
+  returnOrder: (
+    orderId: string,
+    data?: { reason?: string; items?: Array<{ orderItemId: string; quantity?: number }> }
+  ) => apiClient.post(`/customer/orders/${orderId}/return`, data ?? {}),
 };
 
 // ✅ NEW: Customer CRUD API

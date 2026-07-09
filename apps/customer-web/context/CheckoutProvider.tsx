@@ -371,6 +371,10 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
         onProcessingChange: setIsPlacingOrder,
         clearCart,
         walletAmountApplied,
+        onPaymentDismiss: (orderId) => {
+          toast.info('Payment not completed. You can pay from My Orders within 5 minutes.');
+          nav.afterCheckoutSuccess(orderId);
+        },
         onSuccess: (orderId) => {
           const stored: StoredCheckoutOrderResponse = {
             orderId,
