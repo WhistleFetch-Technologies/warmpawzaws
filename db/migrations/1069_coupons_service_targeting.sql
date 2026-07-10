@@ -1,4 +1,5 @@
--- Platform coupons: optional service/booking targeting (Marketing Promotion Center).
+-- MIGRATION 1069: Platform coupons service/booking targeting (Marketing Promotion Center).
+-- Renumbered from 1062 — develop owns 1062_orders_payment_hold_expires.sql
 ALTER TABLE coupons
   ADD COLUMN IF NOT EXISTS description TEXT,
   ADD COLUMN IF NOT EXISTS applicable_to TEXT,

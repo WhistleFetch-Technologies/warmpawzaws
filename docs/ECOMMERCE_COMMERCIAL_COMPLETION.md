@@ -126,7 +126,7 @@ Booking gallery **omits** ineligible codes (no greyed wall). Backend domain filt
 - [ ] Booking coupon gallery = SERVICE only  
 - [ ] Shop cart coupons = ECOMMERCE only  
 - [ ] Legacy rows without `discount_domain` still list via fallback  
-- [ ] Apply migration `1063_promotions_coupons_discount_domain.sql` on env before relying on column  
+- [ ] Apply migration `1070_promotions_coupons_discount_domain.sql` on env before relying on column  
 
 ---
 
@@ -154,7 +154,7 @@ Booking gallery **omits** ineligible codes (no greyed wall). Backend domain filt
 
 | Area | Path |
 |------|------|
-| Migration | `db/migrations/1063_promotions_coupons_discount_domain.sql` |
+| Migration | `db/migrations/1070_promotions_coupons_discount_domain.sql` |
 | Domain util | `backend/lambda/src/utils/commercial-discount-domain.ts` |
 | Persist | `promotion-admin-persistence.ts`, `coupon-targeting.ts` |
 | APIs | `backend/lambda/src/endpoints/promotions.ts` |

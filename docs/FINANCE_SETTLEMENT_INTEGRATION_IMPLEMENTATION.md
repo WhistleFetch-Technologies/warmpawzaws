@@ -131,12 +131,12 @@ Rollback: set `FINANCE_FUNDING_AWARE_SETTLEMENT=LEGACY`.
 
 | Migration | Change |
 |-----------|--------|
-| `1058_vendor_earnings_settlement_metadata.sql` | `vendor_earnings.metadata JSONB DEFAULT '{}'` |
+| `1067_vendor_earnings_settlement_metadata.sql` | `vendor_earnings.metadata JSONB DEFAULT '{}'` |
 
 Apply on dev before AUTHORITATIVE testing:
 
 ```bash
-ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1058_vendor_earnings_settlement_metadata.sql
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1067_vendor_earnings_settlement_metadata.sql
 ```
 
 ---

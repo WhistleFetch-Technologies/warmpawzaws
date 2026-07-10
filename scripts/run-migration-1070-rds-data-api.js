@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Run migration 1063 on dev via RDS Data API (ExecuteStatement, statement-by-statement).
- * Usage: ENVIRONMENT=dev node scripts/run-migration-1063-rds-data-api-dev.js
+ * Run migration 1070 via RDS Data API (ExecuteStatement, statement-by-statement).
+ * Usage: ENVIRONMENT=dev|prod node scripts/run-migration-1070-rds-data-api.js
  */
 const fs = require('fs');
 const path = require('path');
@@ -12,14 +12,14 @@ const MIGRATION_FILE = path.join(
   '..',
   'db',
   'migrations',
-  '1063_promotions_coupons_discount_domain.sql'
+  '1070_promotions_coupons_discount_domain.sql'
 );
 
 async function main() {
   const sql = fs.readFileSync(MIGRATION_FILE, 'utf8');
   const stmts = splitPostgresStatements(sql);
   console.log(
-    `Migration 1063 — ${stmts.length} statement(s) on ${process.env.ENVIRONMENT || 'dev'} via RDS Data API\n`
+    `Migration 1070 — ${stmts.length} statement(s) on ${process.env.ENVIRONMENT || 'dev'} via RDS Data API\n`
   );
 
   for (let i = 0; i < stmts.length; i++) {
@@ -38,25 +38,7 @@ async function main() {
     ORDER BY table_name
   `);
   console.log('\nVerified columns:', cols);
-
-  const checks = await query(`
-    SELECT conname, conrelid::regclass::text AS table_name
-    FROM pg_constraint
-    WHERE conname IN ('promotions_discount_domain_check', 'coupons_discount_domain_check')
-    ORDER BY 1
-  `);
-  console.log('Verified checks:', checks);
-
-  const indexes = await query(`
-    SELECT indexname
-    FROM pg_indexes
-    WHERE schemaname = 'public'
-      AND indexname IN ('idx_promotions_discount_domain', 'idx_coupons_discount_domain')
-    ORDER BY 1
-  `);
-  console.log('Verified indexes:', indexes);
-
-  console.log('\nMigration 1063 complete.');
+  console.log('\nMigration 1070 complete.');
 }
 
 main().catch((e) => {

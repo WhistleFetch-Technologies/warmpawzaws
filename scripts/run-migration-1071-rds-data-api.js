@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Run migration 1064 on env via RDS Data API (ExecuteStatement, statement-by-statement).
- * Usage: ENVIRONMENT=dev node scripts/run-migration-1064-rds-data-api.js
+ * Run migration 1071 on env via RDS Data API (ExecuteStatement, statement-by-statement).
+ * Usage: ENVIRONMENT=dev|prod node scripts/run-migration-1071-rds-data-api.js
  */
 const fs = require('fs');
 const path = require('path');
@@ -12,14 +12,14 @@ const MIGRATION_FILE = path.join(
   '..',
   'db',
   'migrations',
-  '1064_commercial_campaigns_discount_domain_budget.sql'
+  '1071_commercial_campaigns_discount_domain_budget.sql'
 );
 
 async function main() {
   const sql = fs.readFileSync(MIGRATION_FILE, 'utf8');
   const stmts = splitPostgresStatements(sql);
   console.log(
-    `Migration 1064 — ${stmts.length} statement(s) on ${process.env.ENVIRONMENT || 'dev'} via RDS Data API\n`
+    `Migration 1071 — ${stmts.length} statement(s) on ${process.env.ENVIRONMENT || 'dev'} via RDS Data API\n`
   );
 
   for (let i = 0; i < stmts.length; i++) {
@@ -38,7 +38,7 @@ async function main() {
     ORDER BY 1
   `);
   console.log('\nVerified campaign columns:', cols);
-  console.log('Migration 1064 complete.');
+  console.log('Migration 1071 complete.');
 }
 
 main().catch((e) => {

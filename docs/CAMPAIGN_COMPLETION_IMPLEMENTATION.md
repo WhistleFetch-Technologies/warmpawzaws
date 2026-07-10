@@ -39,7 +39,7 @@ Campaign Engine (orchestration only)
 
 Legacy rows: metadata fallback via `resolveCampaignDiscountDomain`.
 
-Migration: `db/migrations/1064_commercial_campaigns_discount_domain_budget.sql`
+Migration: `db/migrations/1071_commercial_campaigns_discount_domain_budget.sql` (renumbered from 1064)
 
 ---
 

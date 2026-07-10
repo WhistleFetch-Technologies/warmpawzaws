@@ -1,5 +1,6 @@
 -- ============================================================================
--- MIGRATION 1058: vendor_earnings settlement metadata (Finance S2)
+-- MIGRATION 1067: vendor_earnings settlement metadata (Finance S2)
+-- Renumbered from 1058 — develop owns 1058_vendor_return_policy_text.sql
 -- ============================================================================
 -- Stores funding-aware settlement snapshot at accrual time — Finance source of truth.
 -- ============================================================================

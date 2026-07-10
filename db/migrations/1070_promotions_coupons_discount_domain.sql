@@ -1,4 +1,5 @@
--- Phase E1: durable commercial domain on platform promotions & coupons.
+-- MIGRATION 1070: durable commercial domain on platform promotions & coupons.
+-- Renumbered from 1063 — develop owns 1063_ecommerce_admin_promotions.sql
 -- New rows must set discount_domain = SERVICE | ECOMMERCE.
 -- Legacy NULL rows use application-level fallback heuristics.
 

@@ -39,7 +39,7 @@ Customer / Admin Request
 | Business rules mapper | `backend/lambda/src/discount-engine/config/business-rules-mapper.ts` |
 | Policy persistence | `backend/lambda/src/discount-engine/policy/policy-persistence.ts` |
 | Policy APIs | `backend/lambda/src/endpoints/discount-policy.endpoints.ts` |
-| Migration | `db/migrations/1061_discount_policy_center_v2.sql` |
+| Migration | `db/migrations/1068_discount_policy_center_v2.sql` |
 
 ### Admin UI
 
@@ -142,7 +142,7 @@ cd apps/admin-web && npm test -- lib/discount-policy/__tests__/business-rules.te
 cd backend/lambda && npm run build
 
 # Migration (dev)
-ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1061_discount_policy_center_v2.sql
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1068_discount_policy_center_v2.sql
 ```
 
 ## Rollback

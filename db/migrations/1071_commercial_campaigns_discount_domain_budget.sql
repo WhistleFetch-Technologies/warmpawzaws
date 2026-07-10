@@ -1,4 +1,5 @@
--- Phase C1: Commercial campaigns — durable discount_domain + budget tracking.
+-- MIGRATION 1071: Commercial campaigns — durable discount_domain + budget tracking.
+-- Renumbered from 1064 — develop owns 1064_ecommerce_order_settlements.sql
 -- Campaigns orchestrate promotions/coupons; they do not calculate discounts.
 
 ALTER TABLE commercial_discount_campaigns

@@ -1,4 +1,5 @@
-/* Policy Center V2 — draft, published versions, history, audit */
+-- MIGRATION 1068: Policy Center V2 — draft, published versions, history, audit
+-- Renumbered from 1061 — develop owns 1061_orders_tracking_number.sql
 CREATE TABLE IF NOT EXISTS discount_policy_draft (
   id TEXT PRIMARY KEY DEFAULT 'singleton',
   bundle JSONB NOT NULL,
