@@ -20,7 +20,6 @@ import { WishlistProductHeartButton } from '@/components/customer/WishlistProduc
 import { WishlistCountBadge } from '@/components/customer/WishlistCountBadge';
 import { useWishlistCount } from '@/lib/use-wishlist-count';
 import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
-import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { isShopUiVisibleForAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
 import { AppReviewDemoRouteGuard } from '@/lib/app-review-demo-route-guard';
@@ -49,7 +48,7 @@ import {
 import {
   readCheckoutAddressId,
 } from '@/lib/ecommerce/checkout-address-storage';
-import { ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL } from '@/lib/ecommerce/cart-pricing';
+import { ECOMMERCE_DEFAULT_DELIVERY_FEE } from '@/lib/ecommerce/cart-pricing';
 import {
   displayProductSpecValue,
   isMeaningfulProductSpecValue,
@@ -528,7 +527,6 @@ export default function ProductDetailClient() {
   const showSpecificationsSection = useMemo(() => {
     if (!product) return false;
     if (isMeaningfulProductSpecValue(product.brand)) return true;
-    if (isMeaningfulProductSpecValue(product.key_features)) return true;
     if (isMeaningfulProductSpecValue(product.pet_type_display ?? product.pet_type)) return true;
     if (isMeaningfulProductSpecValue(product.manufacturing_details)) return true;
     if (isMeaningfulProductSpecValue(product.material)) return true;
@@ -732,20 +730,6 @@ export default function ProductDetailClient() {
 
   const finalPrice = displayPrice * quantity;
 
-  const loadedReviewCount = reviews.length;
-  const productReviewCount = product?.review_count ?? 0;
-  let displayAvg = 0;
-  let reviewDisplayCount = 0;
-  if (loadedReviewCount > 0) {
-    displayAvg =
-      reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / loadedReviewCount;
-    reviewDisplayCount = loadedReviewCount;
-  } else if (product && productReviewCount > 0) {
-    const pr = Number(product.rating);
-    displayAvg = Number.isFinite(pr) && pr > 0 ? pr : 0;
-    reviewDisplayCount = productReviewCount;
-  }
-  const showProductRatingRow = displayAvg > 0 && reviewDisplayCount > 0;
   const descriptionText = product?.description?.trim() ?? '';
 
   // ============================================================================
@@ -898,35 +882,6 @@ export default function ProductDetailClient() {
             {/* Title */}
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{product.name}</h1>
 
-            {/* Rating */}
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-1">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <Star
-                    key={star}
-                    className={`w-5 h-5 ${
-                      showProductRatingRow && star <= Math.round(displayAvg)
-                        ? 'text-amber-400 fill-amber-400'
-                        : 'text-slate-200'
-                    }`}
-                  />
-                ))}
-              </div>
-              {showProductRatingRow ? (
-                <>
-                  <span className="font-semibold text-slate-900">
-                    {Number(displayAvg).toFixed(1)}
-                  </span>
-                  <span className="text-slate-500">
-                    ({reviewDisplayCount}{' '}
-                    {reviewDisplayCount === 1 ? 'review' : 'reviews'})
-                  </span>
-                </>
-              ) : (
-                <span className="text-sm text-slate-500">No customer reviews</span>
-              )}
-            </div>
-
             {/* Price */}
             <div className="flex flex-row items-baseline justify-between gap-3">
               <div className="flex items-center gap-4 flex-wrap min-w-0">
@@ -942,14 +897,12 @@ export default function ProductDetailClient() {
                   </>
                 )}
               </div>
-              {templateSpecEntries.length > 0 && (
-                <div className="flex flex-col gap-0.5 items-end text-right shrink-0">
-                  {templateSpecEntries.map(([key, value]) => (
-                    <div key={key} className="text-sm whitespace-nowrap">
-                      <span className="text-slate-500">{key}: </span>
-                      <span className="font-medium text-slate-900">{displayProductSpecValue(value)}</span>
-                    </div>
-                  ))}
+              {isMeaningfulProductSpecValue(product.key_features) && (
+                <div className="flex flex-col gap-0.5 items-end text-right shrink-0 max-w-[48%]">
+                  <span className="text-xs text-slate-500">Key Features</span>
+                  <span className="text-sm font-medium text-slate-900 whitespace-pre-line">
+                    {displayProductSpecValue(product.key_features)}
+                  </span>
                 </div>
               )}
             </div>
@@ -1183,9 +1136,9 @@ export default function ProductDetailClient() {
               <div className="flex items-center gap-3">
                 <Truck className="w-5 h-5 text-emerald-500" />
                 <div>
-                  <p className="font-medium text-slate-900">Free Delivery</p>
+                  <p className="font-medium text-slate-900">Standard Delivery</p>
                   <p className="text-sm text-slate-500">
-                    On orders above ₹{ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL.toLocaleString('en-IN')}
+                    ₹{ECOMMERCE_DEFAULT_DELIVERY_FEE.toLocaleString('en-IN')} on all orders
                   </p>
                 </div>
               </div>
@@ -1210,14 +1163,6 @@ export default function ProductDetailClient() {
                   <div className="flex justify-between py-2 border-b border-slate-100">
                     <span className="text-slate-600">Brand</span>
                     <span className="font-medium text-slate-900">{product.brand}</span>
-                  </div>
-                )}
-                {isMeaningfulProductSpecValue(product.key_features) && (
-                  <div className="py-2 border-b border-slate-100">
-                    <span className="text-slate-600 block mb-1">Key Features</span>
-                    <span className="font-medium text-slate-900 whitespace-pre-line">
-                      {displayProductSpecValue(product.key_features)}
-                    </span>
                   </div>
                 )}
                 {isMeaningfulProductSpecValue(product.pet_type_display ?? product.pet_type) && (

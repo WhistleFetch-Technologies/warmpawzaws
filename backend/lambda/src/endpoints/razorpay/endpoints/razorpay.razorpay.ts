@@ -40,6 +40,7 @@ import { notifyBookingCreated } from '../../../utils/booking-notifications';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
 import {
   discardUnpaidShopOrder,
+  isShopOrderPaymentHoldActive,
   isShopOrderPaymentHoldExpired,
 } from '../../../utils/shop-payment-hold';
 import { PaymentTransactionStatus, BookingPaymentStatus } from '../../constants';
@@ -1820,10 +1821,35 @@ class RazorpayWebhookHandler extends BaseHandler {
       });
 
       if (shopOrderToDiscard) {
-        await discardUnpaidShopOrder(shopOrderToDiscard, 'razorpay_payment_failed', {
-          paymentStatus: 'failed',
-        }).catch((e) => console.warn('[PAYMENT-FAILED] discardUnpaidShopOrder failed:', e));
-        console.log('[PAYMENT-FAILED] ✅ Ecommerce order discarded:', shopOrderToDiscard);
+        try {
+          const { rows: shopHoldRows } = await query(
+            `SELECT order_status, payment_status, payment_method, payment_hold_expires_at, created_at
+             FROM orders WHERE id = $1::uuid LIMIT 1`,
+            [shopOrderToDiscard]
+          );
+          const shopHold = shopHoldRows[0];
+          const holdStillActive =
+            shopHold &&
+            isShopOrderPaymentHoldActive({
+              order_status: shopHold.order_status,
+              payment_status: shopHold.payment_status,
+              payment_method: shopHold.payment_method,
+              payment_hold_expires_at: shopHold.payment_hold_expires_at,
+            });
+          if (holdStillActive) {
+            console.log(
+              '[PAYMENT-FAILED] Shop order hold still active — skipping discard:',
+              shopOrderToDiscard
+            );
+          } else {
+            await discardUnpaidShopOrder(shopOrderToDiscard, 'razorpay_payment_failed', {
+              paymentStatus: 'failed',
+            }).catch((e) => console.warn('[PAYMENT-FAILED] discardUnpaidShopOrder failed:', e));
+            console.log('[PAYMENT-FAILED] ✅ Ecommerce order discarded:', shopOrderToDiscard);
+          }
+        } catch (discardErr) {
+          console.warn('[PAYMENT-FAILED] shop order discard check failed:', discardErr);
+        }
       }
     } else if (event === 'refund.created' || event === 'refund.processed') {
       const refund = payload_data.refund.entity;

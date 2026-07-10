@@ -25,18 +25,19 @@ describe('computeCartPricing', () => {
     expect(result.byVendor[0].subtotal).toBe(324);
   });
 
-  it('charges standard delivery when below free-delivery threshold', () => {
+  it('charges standard delivery on all order values', () => {
     const cart = [line({ id: 'a', name: 'A', price: 100, quantity: 1 })];
     const result = computeCartPricing(cart);
     expect(result.deliveryFees).toBe(150);
-    expect(result.freeDeliveryGap).toBeGreaterThan(0);
+    expect(result.freeDeliveryGap).toBe(0);
   });
 
-  it('waives delivery when vendor subtotal meets free-delivery minimum', () => {
+  it('charges delivery fee even when subtotal is high', () => {
     const cart = [line({ id: 'a', name: 'A', price: 1000, quantity: 1 })];
     const result = computeCartPricing(cart);
-    expect(result.deliveryFees).toBe(0);
+    expect(result.deliveryFees).toBe(150);
     expect(result.freeDeliveryGap).toBe(0);
+    expect(result.total).toBe(1150);
   });
 
   it('groups multi-vendor carts but charges one order-level delivery fee (never per-vendor)', () => {
@@ -46,7 +47,7 @@ describe('computeCartPricing', () => {
     ];
     const result = computeCartPricing(cart);
     expect(result.byVendor).toHaveLength(2);
-    // Order-level rule: cart subtotalAfterDiscount >= ₹1000 ? free : ₹150 — flat, not summed per vendor.
+    // Order-level rule: flat ₹150 delivery on all cart values.
     expect(result.deliveryFees).toBe(150);
   });
 
@@ -88,10 +89,9 @@ describe('computeCartPricing', () => {
   it('total = subtotalAfterDiscount + deliveryFees + giftWrapFee + protectionFee (GST is informational, never added on top)', () => {
     const cart = [line({ id: 'a', name: 'A', price: 1180, quantity: 1 })];
     const result = computeCartPricing(cart);
-    // No discount, subtotal (1180) >= free-delivery threshold (1000) -> delivery is free.
     expect(result.subtotalAfterDiscount).toBe(1180);
-    expect(result.deliveryFees).toBe(0);
-    expect(result.total).toBe(1180);
+    expect(result.deliveryFees).toBe(150);
+    expect(result.total).toBe(1330);
     // taxAmount is informational only and must not have been added into total.
     expect(result.total).not.toBe(1180 + result.taxAmount);
   });

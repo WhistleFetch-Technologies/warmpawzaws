@@ -9,10 +9,18 @@ function read(relativeFromLambdaRoot: string): string {
 }
 
 describe('shop/payment visibility guards', () => {
-  test('vendor order list hides pending_payment drafts', () => {
+  test('vendor order list hides pending_payment drafts and unpaid rows', () => {
     const file = read('src/endpoints/vendor/endpoints/vendor-orders.ts');
     expect(file).toContain("o.order_status != 'pending_payment'");
+    expect(file).toContain('SQL_SHOP_ORDER_VENDOR_VISIBLE');
+    expect(file).toContain("IN ('paid', 'completed')");
+    expect(file).toContain("IN ('cod', 'cash_on_delivery')");
+  });
+
+  test('vendor stats require payment confirmed or COD', () => {
+    const file = read('src/endpoints/vendor/endpoints/vendor-orders.ts');
     expect(file).toContain("AND order_status != 'pending_payment'");
+    expect(file).toContain("LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed')");
   });
 
   test('vendor status updates require paid (or COD) before fulfillment', () => {
@@ -35,11 +43,25 @@ describe('shop/payment visibility guards', () => {
     expect(file).toContain('expireShopPaymentHolds');
   });
 
-  test('razorpay paths promote pending_payment to pending on pay and discard on fail', () => {
+  test('razorpay paths promote pending_payment on pay; hold-aware discard on fail', () => {
     const file = read('src/endpoints/razorpay/endpoints/razorpay.razorpay.ts');
     expect(file).toContain('discardUnpaidShopOrder');
     expect(file).toContain("WHEN order_status = 'pending_payment' THEN 'pending'");
     expect(file).toContain('PAYMENT_HOLD_EXPIRED');
+    expect(file).toContain('isShopOrderPaymentHoldActive');
+    expect(file).toContain('hold still active');
+  });
+
+  test('meal vendor fetch uses payment-confirmed visibility only', () => {
+    const file = read('src/utils/fetch-vendor-meal-orders.ts');
+    expect(file).toContain('SQL_MEAL_ORDER_VENDOR_VISIBLE');
+    expect(file).not.toContain("'cancelled', 'failed'");
+  });
+
+  test('shop notifications skip vendor cancel for payment abandon', () => {
+    const file = read('src/utils/shop-order-notifications.ts');
+    expect(file).toContain('isPaymentAbandonCancellationReason');
+    expect(file).toContain('isShopOrderVendorVisible');
   });
 
   test('customer order list exposes pending_payment and payment-resume', () => {
