@@ -20,12 +20,41 @@ export const ECOMMERCE_EXCLUDED_MEAL_PURCHASE_TYPES = ['WEEKLY_PLAN', 'MONTHLY_P
 /**
  * SQL fragment (includes leading AND) for storefront product queries using alias `p`.
  * Also hides rows whose id exists in `meal_plans` (mirrored nutrition SKUs).
+ *
+ * `purchase_type` exclusion (WEEKLY_PLAN / MONTHLY_PLAN) requires migration 744 on RDS.
+ * When that column is present, use {@link storefrontExcludeMealProductsSql}.
  */
 export const STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL = `
   AND LOWER(COALESCE(NULLIF(TRIM(p.category::text), ''), '')) NOT IN ('meal_plan', 'nutrition')
   AND NOT EXISTS (SELECT 1 FROM meal_plans mp WHERE mp.id = p.id)
   AND COALESCE(UPPER(NULLIF(TRIM(p.purchase_type::text), '')), '') NOT IN ('WEEKLY_PLAN', 'MONTHLY_PLAN')
 `;
+
+export const STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL_WITHOUT_PURCHASE_TYPE = `
+  AND LOWER(COALESCE(NULLIF(TRIM(p.category::text), ''), '')) NOT IN ('meal_plan', 'nutrition')
+  AND NOT EXISTS (SELECT 1 FROM meal_plans mp WHERE mp.id = p.id)
+`;
+
+let productsPurchaseTypeColumnKnown: boolean | null = null;
+
+/** Storefront exclusion SQL — omits purchase_type when migration 744 not yet on RDS. */
+export async function storefrontExcludeMealProductsSql(): Promise<string> {
+  if (productsPurchaseTypeColumnKnown === null) {
+    try {
+      const r = await query(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'purchase_type'
+         LIMIT 1`,
+      );
+      productsPurchaseTypeColumnKnown = (r.rows?.length ?? 0) > 0;
+    } catch {
+      productsPurchaseTypeColumnKnown = false;
+    }
+  }
+  return productsPurchaseTypeColumnKnown
+    ? STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL
+    : STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL_WITHOUT_PURCHASE_TYPE;
+}
 
 export function normalizeProductCategoryToken(raw: unknown): string {
   return String(raw ?? '')
@@ -75,10 +104,9 @@ export async function productIdIsExcludedFromEcommerceStorefront(productId: stri
   }));
   if (mp.rows?.length) return true;
 
-  const pr = await query(
-    `SELECT category, purchase_type FROM products WHERE id = $1::uuid LIMIT 1`,
-    [id],
-  ).catch(() => ({ rows: [] }));
+  const pr = await query(`SELECT category FROM products WHERE id = $1::uuid LIMIT 1`, [id]).catch(
+    () => ({ rows: [] }),
+  );
 
   const row = pr.rows?.[0] as Record<string, unknown> | undefined;
   if (!row) return false;

@@ -103,9 +103,11 @@ export async function uploadDisplayImage(input: ImageUploadInput): Promise<Image
       }),
     );
     const userMessage =
-      /heif|heic/i.test(sharpMsg) || basic.detectedMime === 'image/heic'
-        ? 'HEIC/HEIF is not supported on the server. Please upload JPEG or PNG.'
-        : 'Failed to process image. Try a JPEG or PNG from your gallery.';
+      /could not load the "sharp" module/i.test(sharpMsg)
+        ? 'Image processing is temporarily unavailable. Please try again shortly.'
+        : /heif|heic/i.test(sharpMsg) || basic.detectedMime === 'image/heic'
+          ? 'HEIC/HEIF is not supported on the server. Please upload JPEG or PNG.'
+          : 'Failed to process image. Try a JPEG or PNG from your gallery.';
     await recordImageUploadFailed(assetType, userMessage);
     throw new ImageProcessingError(userMessage, 400);
   }
