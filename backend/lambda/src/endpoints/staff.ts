@@ -31,6 +31,19 @@ import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { resolveVendorById } from './vendor/endpoints/vendorProfile.vendor';
 import { ensureVendorEarningsForCompletedBooking } from '../utils/vendor-earnings-on-completion';
 import { completePackageSessionForBooking, type SqlClient } from '../utils/package-session-sync';
+import {
+  uploadDisplayImage,
+  toUploadJsonResponse,
+  ImageProcessingError,
+} from '../services/image';
+
+function bareImageKeyOrNull(value: unknown): string | null {
+  const v = typeof value === 'string' ? value.trim() : '';
+  if (!v || v.startsWith('http://') || v.startsWith('https://') || v.startsWith('data:')) {
+    return null;
+  }
+  return v;
+}
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -4451,38 +4464,31 @@ export function registerStaffEndpoints(app: Hono) {
         }
       }
 
-      // Upload to S3
-      console.log(`[STAFF PHOTO] Uploading to S3...`);
-      const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
-      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-      
-      // Generate unique filename
-      const timestamp = Date.now();
-      const randomStr = Math.random().toString(36).substring(2, 15);
-      const s3Key = `staff/${vendorId}/${timestamp}_${randomStr}.${extension}`;
-      
-      const bucket = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-      
-      try {
-        await s3Client.send(new PutObjectCommand({
-          Bucket: bucket,
-          Key: s3Key,
-          Body: buffer,
-          ContentType: contentType,
-          ACL: 'public-read', // Make publicly accessible
-        }));
-      } catch (s3Error: any) {
-        console.error('[STAFF PHOTO] S3 upload error:', s3Error);
-        return c.json({ error: `S3 upload failed: ${s3Error.message}` }, 500);
-      }
-      
-      const photoUrl = `https://${bucket}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${s3Key}`;
-      console.log(`[STAFF PHOTO] Uploaded to S3: ${photoUrl}`);
+      // Upload via Lean Asset Pipeline (WebP)
+      console.log(`[STAFF PHOTO] Processing via ImageService...`);
+      const previousKey =
+        bareImageKeyOrNull(staffMember.photo_url) || bareImageKeyOrNull(staffMember.photo);
 
-      // Update staff photo in database - use all available columns
-      const updateData: any = {
-        photo_url: photoUrl,
-        photo: photoUrl,
+      let asset;
+      try {
+        asset = await uploadDisplayImage({
+          buffer,
+          declaredContentType: contentType,
+          assetType: 'staff',
+          ownerId: staffId,
+          vendorId: String(vendorId),
+          previousImageKey: previousKey,
+        });
+      } catch (err: unknown) {
+        if (err instanceof ImageProcessingError) {
+          return c.json({ error: err.message }, err.statusCode);
+        }
+        throw err;
+      }
+
+      const updateData: Record<string, string> = {
+        photo_url: asset.imageKey,
+        photo: asset.imageKey,
       };
 
       try {
@@ -4490,18 +4496,16 @@ export function registerStaffEndpoints(app: Hono) {
         console.log(`[STAFF PHOTO] Database updated for staff: ${staffId}`);
       } catch (dbError: any) {
         console.error('[STAFF PHOTO] Database update error:', dbError);
-        // Try with just photo_url
         try {
-          await update('staff', { id: staffId }, { photo_url: photoUrl });
-        } catch (dbError2: any) {
-          // Try with just photo
-          await update('staff', { id: staffId }, { photo: photoUrl });
+          await update('staff', { id: staffId }, { photo_url: asset.imageKey });
+        } catch {
+          await update('staff', { id: staffId }, { photo: asset.imageKey });
         }
       }
 
       return c.json({
-        success: true,
-        photo_url: photoUrl,
+        ...toUploadJsonResponse(asset),
+        photo_url: asset.url,
         message: 'Photo uploaded successfully',
       });
     } catch (error: any) {

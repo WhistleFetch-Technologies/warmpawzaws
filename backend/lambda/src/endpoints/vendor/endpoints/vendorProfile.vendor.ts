@@ -2322,35 +2322,38 @@ export function registerVendorProfileEndpoints(app: Hono) {
       const MAX_LOGO_BYTES = 5 * 1024 * 1024;
       if (logoFile.size > MAX_LOGO_BYTES) return c.json({ error: 'Logo must be 5 MB or smaller' }, 400);
 
-      const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
-      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-
-      const ext = (logoFile.name.split('.').pop() || 'jpg').toLowerCase();
-      const fileName = `vendors/${vendorId}/logo/logo_${Date.now()}.${ext}`;
       const arrayBuffer = await logoFile.arrayBuffer();
-      await s3Client.send(new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: fileName,
-        Body: new Uint8Array(arrayBuffer),
-        ContentType: logoFile.type || 'image/jpeg',
-      }));
+      const buffer = Buffer.from(arrayBuffer);
+      const previousKey =
+        typeof vendor.profile_image === 'string' &&
+        !vendor.profile_image.startsWith('http')
+          ? vendor.profile_image.trim()
+          : null;
+
+      const asset = await uploadDisplayImage({
+        buffer,
+        declaredContentType: logoFile.type || undefined,
+        assetType: 'profile',
+        ownerId: vendorId,
+        vendorId,
+        previousImageKey: previousKey,
+      });
 
       const { query: dbQuery } = await import('../../../database/rds-connection');
       await dbQuery(
         `UPDATE vendors SET profile_image = $2, updated_at = NOW() WHERE id = $1::uuid`,
-        [vendorId, fileName]
+        [vendorId, asset.imageKey]
       );
 
-      const signedUrl = await getSignedUrl(
-        s3Client,
-        new GetObjectCommand({ Bucket: BUCKET_NAME, Key: fileName }),
-        { expiresIn: 604800 }
-      );
-
-      return c.json({ success: true, logo_url: signedUrl, fileKey: fileName });
+      return c.json({
+        ...toUploadJsonResponse(asset),
+        logo_url: asset.url,
+        fileKey: asset.imageKey,
+      });
     } catch (error: any) {
+      if (error instanceof ImageProcessingError) {
+        return c.json({ error: error.message }, error.statusCode);
+      }
       console.error('[VENDOR-LOGO] Error:', error);
       return c.json({ error: error.message || 'Failed to upload logo' }, 500);
     }
