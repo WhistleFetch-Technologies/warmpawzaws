@@ -20,6 +20,8 @@ export async function uploadProductImage(
     image_url?: string;
     url?: string;
     fileKey?: string;
+    imageKey?: string;
+    asset?: { imageKey?: string };
     error?: string;
   }>(`/vendor/${vendorId}/products/images`, fd);
 
@@ -27,18 +29,19 @@ export async function uploadProductImage(
     throw new Error(response.error);
   }
 
-  const s3_url = response.s3_url || '';
-  const displayUrl = response.image_url || response.url || s3_url;
-  const fileKey = response.fileKey || '';
+  const fileKey =
+    response.fileKey || response.imageKey || response.asset?.imageKey || '';
+  const displayUrl = response.image_url || response.url || '';
+  const s3_url = fileKey || response.s3_url || displayUrl;
 
   if (!s3_url && !displayUrl) {
     throw new Error('Upload succeeded but no image URL was returned');
   }
 
   return {
-    s3_url: s3_url || displayUrl,
+    s3_url: fileKey || s3_url,
     fileKey,
-    displayUrl,
+    displayUrl: displayUrl || s3_url,
   };
 }
 

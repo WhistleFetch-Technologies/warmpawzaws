@@ -1,30 +1,9 @@
 import { EventEmitter } from 'events';
 
-const uploadProductImageBufferToS3 = jest.fn();
+const uploadDisplayImage = jest.fn();
 
-jest.mock('../product-s3-image', () => {
-  const actual = jest.requireActual('../product-s3-image');
-  return {
-    ...actual,
-    uploadProductImageBufferToS3: (...args: unknown[]) => uploadProductImageBufferToS3(...args),
-  };
-});
-
-// Jimp v1 uses dynamic import() internally for format plugins, which Jest's
-// CJS test runner can't execute without extra experimental flags. That's a
-// test-tooling limitation only — Node (and esbuild's CJS Lambda bundle) both
-// support dynamic import() natively at runtime, verified manually against the
-// real package. Here we stub Jimp with a minimal fake so these tests can
-// focus on the fetch/redirect/fallback logic that IS specific to this module.
-jest.mock('jimp', () => ({
-  Jimp: {
-    fromBuffer: jest.fn(async (input: Buffer) => ({
-      bitmap: { width: 10, height: 10 },
-      scaleToFit: jest.fn(),
-      getBuffer: jest.fn(async () => Buffer.from(`compressed:${input.length}`)),
-    })),
-  },
-  JimpMime: { jpeg: 'image/jpeg' },
+jest.mock('../../services/image', () => ({
+  uploadDisplayImage: (...args: unknown[]) => uploadDisplayImage(...args),
 }));
 
 // 1x1 red pixel PNG — small enough to be a realistic "fetched" image body.
@@ -63,7 +42,7 @@ describe('product-image-ingest', () => {
     const url = `https://warmpawz-dev-uploads.s3.ap-south-1.amazonaws.com/products/${vendorId}/existing.jpg`;
     const result = await ingestExternalProductImageUrl(vendorId, url);
     expect(result).toBe(url);
-    expect(uploadProductImageBufferToS3).not.toHaveBeenCalled();
+    expect(uploadDisplayImage).not.toHaveBeenCalled();
   });
 
   it('passes through empty and non-http(s) values unchanged', async () => {
@@ -74,13 +53,12 @@ describe('product-image-ingest', () => {
   it('falls back to the original URL when the source cannot be fetched', async () => {
     const url = 'https://drive.google.com/uc?export=view&id=broken';
     mockHttpsGetOnce((respond, req) => {
-      // Simulate a network-level failure (e.g. unreachable/rate-limited host).
       process.nextTick(() => req.emit('error', new Error('socket hang up')));
     });
 
     const result = await ingestExternalProductImageUrl(vendorId, url);
     expect(result).toBe(url);
-    expect(uploadProductImageBufferToS3).not.toHaveBeenCalled();
+    expect(uploadDisplayImage).not.toHaveBeenCalled();
   });
 
   it('falls back to the original URL on a non-2xx response', async () => {
@@ -96,13 +74,16 @@ describe('product-image-ingest', () => {
 
     const result = await ingestExternalProductImageUrl(vendorId, url);
     expect(result).toBe(url);
-    expect(uploadProductImageBufferToS3).not.toHaveBeenCalled();
+    expect(uploadDisplayImage).not.toHaveBeenCalled();
   });
 
-  it('downloads, compresses, and re-hosts a reachable external image to S3', async () => {
+  it('downloads and re-hosts a reachable external image via ImageService', async () => {
     const url = 'https://example.com/original.png';
-    const hostedUrl = `https://warmpawz-dev-uploads.s3.ap-south-1.amazonaws.com/products/${vendorId}/mirrored.jpg`;
-    uploadProductImageBufferToS3.mockResolvedValueOnce(hostedUrl);
+    const imageKey = `products/${vendorId}/mirrored.webp`;
+    uploadDisplayImage.mockResolvedValueOnce({
+      imageKey,
+      url: `https://cdn.example.com/${imageKey}`,
+    });
 
     mockHttpsGetOnce((respond) => {
       const res = fakeResponse({ statusCode: 200, headers: { 'content-type': 'image/png' } });
@@ -115,20 +96,19 @@ describe('product-image-ingest', () => {
 
     const result = await ingestExternalProductImageUrl(vendorId, url);
 
-    expect(result).toBe(hostedUrl);
-    expect(uploadProductImageBufferToS3).toHaveBeenCalledTimes(1);
-    const [calledVendorId, buffer, contentType, ext] = uploadProductImageBufferToS3.mock.calls[0];
-    expect(calledVendorId).toBe(vendorId);
-    expect(Buffer.isBuffer(buffer)).toBe(true);
-    expect(contentType).toBe('image/jpeg');
-    expect(ext).toBe('jpg');
+    expect(result).toBe(imageKey);
+    expect(uploadDisplayImage).toHaveBeenCalledTimes(1);
+    const [input] = uploadDisplayImage.mock.calls[0];
+    expect(input.vendorId).toBe(vendorId);
+    expect(input.assetType).toBe('product');
+    expect(Buffer.isBuffer(input.buffer)).toBe(true);
   });
 
   it('follows a redirect before downloading', async () => {
     const url = 'https://drive.google.com/uc?export=view&id=redirected';
     const finalUrl = 'https://redirected.example.com/final.png';
-    const hostedUrl = `https://warmpawz-dev-uploads.s3.ap-south-1.amazonaws.com/products/${vendorId}/mirrored2.jpg`;
-    uploadProductImageBufferToS3.mockResolvedValueOnce(hostedUrl);
+    const imageKey = `products/${vendorId}/mirrored2.webp`;
+    uploadDisplayImage.mockResolvedValueOnce({ imageKey, url: imageKey });
 
     const https = require('https');
     (https.get as jest.Mock)
@@ -150,7 +130,7 @@ describe('product-image-ingest', () => {
       });
 
     const result = await ingestExternalProductImageUrl(vendorId, url);
-    expect(result).toBe(hostedUrl);
+    expect(result).toBe(imageKey);
     expect(https.get).toHaveBeenCalledTimes(2);
   });
 });

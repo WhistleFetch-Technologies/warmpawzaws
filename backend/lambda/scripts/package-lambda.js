@@ -22,25 +22,35 @@ if (!fs.existsSync(handlerPath)) {
 
 const firebaseVersion =
   require(path.join(lambdaRoot, 'package.json')).dependencies['firebase-admin'];
+const sharpVersion = require(path.join(lambdaRoot, 'package.json')).dependencies.sharp;
 
 const runtimePkg = {
   name: 'warmpawz-lambda-runtime-deps',
   private: true,
   dependencies: {
     'firebase-admin': firebaseVersion,
+    sharp: sharpVersion,
+  },
+  optionalDependencies: {
+    '@img/sharp-linux-x64': sharpVersion,
   },
 };
 
 fs.writeFileSync(path.join(distDir, 'package.json'), JSON.stringify(runtimePkg, null, 2));
 
-console.log('Installing firebase-admin into dist/ for Lambda runtime...');
-execSync('npm install --omit=dev --no-audit --no-fund', {
+console.log('Installing firebase-admin and sharp (linux x64) into dist/ for Lambda runtime...');
+execSync('npm install --omit=dev --no-audit --no-fund --os=linux --cpu=x64', {
   cwd: distDir,
   stdio: 'inherit',
 });
 
 if (!fs.existsSync(path.join(distDir, 'node_modules', 'firebase-admin'))) {
   console.error('firebase-admin was not installed into dist/node_modules');
+  process.exit(1);
+}
+
+if (!fs.existsSync(path.join(distDir, 'node_modules', 'sharp'))) {
+  console.error('sharp was not installed into dist/node_modules');
   process.exit(1);
 }
 

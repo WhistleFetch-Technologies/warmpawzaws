@@ -25,12 +25,15 @@ import { listVendorServicesForBannerPicker } from '../../../utils/banner-cta-res
 import { getBannerDestinationOptions } from '../../../utils/banner-destination-options';
 import { listShopBannerDestinationProducts } from '../../../utils/banner-shop-destination-options';
 import {
-  BANNER_UPLOAD_MAX_BYTES,
   cleanupBannerImageOnUrlChange,
   deleteManagedBannerS3Image,
+  extractBannerS3Key,
   presignBannerImageForDisplay,
-  uploadBannerImageToS3,
 } from '../../../utils/banner-s3-image';
+import {
+  uploadDisplayImage,
+  ImageProcessingError,
+} from '../../../services/image';
 
 // ============================================================================
 // CAPABILITY REFRESH SYSTEM
@@ -878,32 +881,29 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
       }
 
       const arrayBuffer = await uploadFile.arrayBuffer();
-      const body = new Uint8Array(arrayBuffer);
+      const body = Buffer.from(arrayBuffer);
       if (body.length === 0) {
         return c.json({ error: 'File is empty' }, 400);
       }
-      if (body.length > BANNER_UPLOAD_MAX_BYTES) {
-        return c.json(
-          {
-            error: `Image must be ${Math.floor(BANNER_UPLOAD_MAX_BYTES / 1024)} KB or smaller`,
-          },
-          400
-        );
-      }
 
       const previousImageUrl = existing[0].image_url;
-      const { fileKey } = await uploadBannerImageToS3({
+      const previousKey = extractBannerS3Key(previousImageUrl);
+
+      const asset = await uploadDisplayImage({
+        buffer: body,
+        declaredContentType: contentType,
+        assetType: 'banner',
+        ownerId: bannerId,
         bannerId,
-        body,
-        contentType,
+        previousImageKey: previousKey,
       });
 
-      await cleanupBannerImageOnUrlChange(previousImageUrl, fileKey);
+      await cleanupBannerImageOnUrlChange(previousImageUrl, asset.imageKey);
 
       await update(
         'banners',
         { id: bannerId },
-        { image_url: fileKey, updated_at: new Date().toISOString() }
+        { image_url: asset.imageKey, updated_at: new Date().toISOString() }
       );
 
       await publishToSNS('banner-change', {
@@ -914,10 +914,15 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        fileKey,
-        imageUrl: fileKey,
+        fileKey: asset.imageKey,
+        imageUrl: asset.imageKey,
+        asset,
+        url: asset.url,
       });
     } catch (error: any) {
+      if (error instanceof ImageProcessingError) {
+        return c.json({ error: error.message }, error.statusCode);
+      }
       console.error('Error uploading banner image:', error);
       return c.json({ error: error.message || 'Failed to upload banner image' }, 500);
     }

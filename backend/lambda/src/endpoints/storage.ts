@@ -21,6 +21,11 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { createPresignedCategoryStyleUploadUrls } from '../utils/s3-presign-upload';
+import {
+  uploadDisplayImage,
+  toUploadJsonResponse,
+  ImageProcessingError,
+} from '../services/image';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 // Use consistent S3_UPLOADS_BUCKET env var (set by CDK lambda-stack)
@@ -467,67 +472,33 @@ export function registerStorageEndpoints(app: Hono) {
       const file = formData.get('file') as File;
       const userId = formData.get('userId') as string; // customer phone or pet ID
       const userType = formData.get('userType') as string; // 'customer' or 'pet'
-      const folder = formData.get('folder') as string || 'media';
 
       if (!file || !userId || !userType) {
         return c.json({ error: 'Missing required fields: file, userId, userType' }, 400);
       }
 
+      if (userType !== 'customer' && userType !== 'pet') {
+        return c.json({ error: 'userType must be customer or pet' }, 400);
+      }
+
       console.log(`📤 Uploading ${userType} photo: ${file.name} for ${userId}`);
 
-      // Generate unique filename
-      const timestamp = Date.now();
-      const random = Math.random().toString(36).substring(2, 11);
-      const fileExt = file.name.split('.').pop() || 'jpg';
-      const fileName = `${folder}/${userType}/${userId}_${timestamp}_${random}.${fileExt}`;
-
-      // Convert File to ArrayBuffer
       const arrayBuffer = await file.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
+      const buffer = Buffer.from(arrayBuffer);
+      const assetType = userType === 'pet' ? 'pet' : 'profile';
 
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const contentTypeFromExt: Record<string, string> = {
-        jpg: 'image/jpeg',
-        jpeg: 'image/jpeg',
-        png: 'image/png',
-        gif: 'image/gif',
-        webp: 'image/webp',
-        heic: 'image/heic',
-        heif: 'image/heif',
-      };
-      const contentType = file.type?.trim() || contentTypeFromExt[ext] || 'application/octet-stream';
-
-      // Upload to S3
-      await s3Client.send(new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: fileName,
-        Body: uint8Array,
-        ContentType: contentType,
-      }));
-
-      console.log('✅ Media uploaded successfully:', fileName);
-
-      // Generate presigned URL (valid for 1 year)
-      const signedUrl = await getSignedUrl(
-        s3Client,
-        new GetObjectCommand({
-          Bucket: BUCKET_NAME,
-          Key: fileName,
-        }),
-        { expiresIn: 604800 } // 7 days (max for presigned URLs)
-      );
-
-      // Also generate public URL
-      const publicUrl = `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${fileName}`;
-
-      return c.json({
-        success: true,
-        fileName: fileName,
-        url: signedUrl,
-        publicUrl: publicUrl,
-        key: fileName,
+      const asset = await uploadDisplayImage({
+        buffer,
+        declaredContentType: file.type || undefined,
+        assetType,
+        ownerId: userId,
       });
+
+      return c.json(toUploadJsonResponse(asset));
     } catch (error: any) {
+      if (error instanceof ImageProcessingError) {
+        return c.json({ error: error.message }, error.statusCode);
+      }
       console.error('❌ Error uploading media:', error);
       return c.json({ error: error.message }, 500);
     }
