@@ -73,6 +73,8 @@ import {
   uploadDisplayImage,
   ImageProcessingError,
   FACILITY_MAX_PHOTOS,
+  mapWithConcurrency,
+  resolveImageForContext,
 } from '../../../services/image';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
@@ -888,14 +890,21 @@ async function presignCustomerFacilityGalleryUrls(vendorId: string, rawInput: un
   const items = dedupeGalleryInputsPreserveOrder(flattenMetadataGalleryItems(rawInput));
   if (items.length === 0) return [];
 
-  const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-  const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
-  const s3Module: any = await import('@aws-sdk/client-s3');
-  const s3Client = new s3Module.S3Client({ region: AWS_REGION });
-
-  const photos = await Promise.all(
-    items.map((photoItem) => resolveOneFacilityPhotoToPresignedUrl(vendorId, photoItem, s3Client, BUCKET_NAME))
-  );
+  const photos = await mapWithConcurrency(items, 3, async (photoItem) => {
+    const resolved = await resolveImageForContext(photoItem, {
+      assetType: 'facility',
+      ownerId: vendorId,
+      vendorId,
+      context: 'list',
+      migrate: true,
+      persist: {
+        kind: 'vendor_facility_photo',
+        vendorId,
+        legacyValue: photoItem,
+      },
+    });
+    return resolved?.displayUrl ?? null;
+  });
 
   return photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
 }

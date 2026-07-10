@@ -18,7 +18,7 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
-import { presignS3GetUrlIfApplicable } from '../utils/s3-media-presign';
+import { resolveImageForContext } from '../services/image';
 import {
   buildVaccinationStorage,
   extractHealthRecordsForClient,
@@ -43,6 +43,27 @@ import {
   resolveBloodTypeFromPayload,
   wasBloodTypeInPayload,
 } from '../lib/pet-blood-types';
+
+async function resolvePetPhotoForDisplay(
+  raw: string | null | undefined,
+  petId: string,
+): Promise<string | null | undefined> {
+  if (!raw) return raw;
+  const resolved = await resolveImageForContext(raw, {
+    assetType: 'pet',
+    ownerId: petId,
+    context: 'detail',
+    migrate: true,
+    persist: {
+      kind: 'scalar',
+      table: 'pets',
+      column: 'profile_photo_url',
+      idColumn: 'id',
+      id: petId,
+    },
+  });
+  return resolved?.displayUrl ?? raw;
+}
 
 export function registerPetEndpoints(app: Hono) {
   /**
@@ -96,7 +117,7 @@ export function registerPetEndpoints(app: Hono) {
 
       const pet = pets[0];
       const photo =
-        (await presignS3GetUrlIfApplicable(pet.profile_photo_url)) || pet.profile_photo_url;
+        (await resolvePetPhotoForDisplay(pet.profile_photo_url, pet.id)) || pet.profile_photo_url;
 
       return c.json({
         success: true,
@@ -143,7 +164,7 @@ export function registerPetEndpoints(app: Hono) {
 
       const pet = pets[0];
       const photo =
-        (await presignS3GetUrlIfApplicable(pet.profile_photo_url)) || pet.profile_photo_url;
+        (await resolvePetPhotoForDisplay(pet.profile_photo_url, pet.id)) || pet.profile_photo_url;
       const vaccinations = extractVaccinationsForClient(pet);
       const bloodType = normalizeBloodTypeForStorage(pet.medical_history?.bloodType, pet.species);
 
@@ -193,7 +214,7 @@ export function registerPetEndpoints(app: Hono) {
 
       const pet = pets[0];
       const profilePhoto =
-        (await presignS3GetUrlIfApplicable(pet.profile_photo_url)) || pet.profile_photo_url;
+        (await resolvePetPhotoForDisplay(pet.profile_photo_url, pet.id)) || pet.profile_photo_url;
 
       // Get medical records count
       const medicalRecords = await query(

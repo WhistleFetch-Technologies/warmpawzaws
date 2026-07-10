@@ -241,7 +241,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       const row = products.rows[0] as Record<string, unknown>;
-      const product = await prepareStorefrontProductRow(row);
+      const product = await prepareStorefrontProductRow(row, 'detail');
 
       let skusRaw = await loadProductSkus(productId);
       const meta =
