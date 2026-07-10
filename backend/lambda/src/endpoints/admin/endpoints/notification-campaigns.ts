@@ -14,6 +14,11 @@ import {
 import { executeCampaignDelivery } from '../../../utils/notification-campaign-processor';
 import { loadCampaignTargeting } from '../../../utils/notification-campaign-targeting';
 import { processDueScheduledCampaigns } from '../../../utils/scheduled-notification-drain';
+import {
+  campaignPipelineDisabledResult,
+  cronPipelineSkippedPayload,
+  isNotificationPipelineEnabled,
+} from '../../../utils/notification-pipeline-kill-switch';
 
 function getAdminId(c: { req: { header: (name: string) => string | undefined } }): string | null {
   return c.req.header('x-admin-id') || c.req.header('x-user-id') || null;
@@ -463,6 +468,9 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
   });
 
   app.post('/admin/notifications/campaigns/:id/send', async (c) => {
+    if (!isNotificationPipelineEnabled()) {
+      return c.json({ success: false, ...campaignPipelineDisabledResult() }, 503);
+    }
     try {
       const { id } = c.req.param();
       const adminId = getAdminId(c);
@@ -581,6 +589,9 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
    * EventBridge cron: fire campaigns with status SCHEDULED and scheduled_at_utc <= now.
    */
   app.post('/admin/notifications/campaigns/process-scheduled', async (c) => {
+    if (!isNotificationPipelineEnabled()) {
+      return c.json(cronPipelineSkippedPayload());
+    }
     try {
       const result = await processDueScheduledCampaigns();
       console.log(
