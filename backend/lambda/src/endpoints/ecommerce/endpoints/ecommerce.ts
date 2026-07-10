@@ -82,6 +82,10 @@ import {
 import { paymentHoldExpiresAt, expireShopPaymentHolds } from '../../../utils/shop-payment-hold';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
 import { writeEcommerceOrderSettlementLedgerRow } from '../../../utils/write-ecommerce-order-settlement';
+import {
+  productIdIsExcludedFromEcommerceStorefront,
+  STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL,
+} from '../../../utils/ecommerce-storefront-product-filter';
 
 const ADMIN_CATEGORY_SELECT = `
   SELECT id::text AS id, name, description, display_order, is_active, image_url,
@@ -129,6 +133,7 @@ async function queryAdminCategories() {
 const STOREFRONT_PRODUCT_SQL = `
   p.is_active = true
   AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
+  ${STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL}
 `;
 
 /** Hide products tied to admin-disabled ecommerce categories. */
@@ -666,6 +671,9 @@ export function registerEcommerceEndpoints(app: Hono) {
         try {
           const resolved = await resolveEcommerceOrderLine(item as Record<string, unknown>);
           if (!resolved) continue;
+          if (await productIdIsExcludedFromEcommerceStorefront(resolved.product_id)) {
+            return c.json({ error: 'Product is not available in the shop' }, 400);
+          }
           await assertProductDeliverableToCity(
             resolved.product_id,
             resolved.product_name,
@@ -1244,6 +1252,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       WHERE p.category_id = ec.id
         AND p.is_active = true
         AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
+        ${STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL}
     ) pc ON true`;
 
   /**
@@ -1328,6 +1337,7 @@ export function registerEcommerceEndpoints(app: Hono) {
          INNER JOIN products p ON ci.product_id = p.id
          LEFT JOIN vendors v ON p.vendor_id = v.id
          WHERE ci.customer_id = $1
+           ${STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL}
          ORDER BY ci.created_at DESC`,
         [customerId]
       );
@@ -1362,6 +1372,10 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       if (!productId || !quantity) {
         return c.json({ error: 'productId and quantity are required' }, 400);
+      }
+
+      if (await productIdIsExcludedFromEcommerceStorefront(String(productId))) {
+        return c.json({ error: 'Product is not available in the shop' }, 404);
       }
 
       // Check if item already in cart
@@ -1481,6 +1495,9 @@ export function registerEcommerceEndpoints(app: Hono) {
         try {
           const resolved = await resolveEcommerceOrderLine(item as Record<string, unknown>);
           if (!resolved) continue;
+          if (await productIdIsExcludedFromEcommerceStorefront(resolved.product_id)) {
+            return c.json({ error: 'Product is not available in the shop' }, 400);
+          }
           await assertProductDeliverableToCity(
             resolved.product_id,
             resolved.product_name,
