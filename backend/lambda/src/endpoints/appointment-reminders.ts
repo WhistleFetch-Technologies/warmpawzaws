@@ -22,7 +22,7 @@ import { sendEventNotification } from '../aws/aws-sns-notification-service';
 import { dispatchNotification } from '../utils/notification-dispatch';
 import {
   cronPipelineSkippedPayload,
-  isNotificationPipelineEnabled,
+  isNotificationCronEnabled,
 } from '../utils/notification-pipeline-kill-switch';
 
 // ============================================================================
@@ -562,7 +562,7 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
 
   // Scheduled job endpoint (called by CloudWatch Events)
   app.post('/reminders/scheduled-job', async (c) => {
-    if (!isNotificationPipelineEnabled()) {
+    if (!isNotificationCronEnabled()) {
       return c.json(cronPipelineSkippedPayload());
     }
     const event = {

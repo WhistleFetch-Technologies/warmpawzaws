@@ -1,20 +1,28 @@
 /**
- * Emergency master kill switch for the notification pipeline.
- * Set NOTIFICATION_PIPELINE_MASTER_DISABLED = false and redeploy to restore delivery.
+ * Notification pipeline controls.
+ * - NOTIFICATION_PIPELINE_MASTER_DISABLED: emergency halt for all delivery (event + cron).
+ * - NOTIFICATION_CRON_ENDPOINTS_DISABLED: permanent off for polled cron HTTP endpoints.
  */
 
-/** EMERGENCY: true halts all notification spend (cron + event-triggered + campaigns). */
-export const NOTIFICATION_PIPELINE_MASTER_DISABLED = true;
+/** Set true only for emergency full halt. Event-only surface keeps this false. */
+export const NOTIFICATION_PIPELINE_MASTER_DISABLED = false;
+
+/** Polled notification crons stay off; triggered events use dispatchNotification. */
+export const NOTIFICATION_CRON_ENDPOINTS_DISABLED = true;
 
 export function isNotificationPipelineEnabled(): boolean {
   return !NOTIFICATION_PIPELINE_MASTER_DISABLED;
 }
 
-export function cronPipelineSkippedPayload() {
+export function isNotificationCronEnabled(): boolean {
+  return !NOTIFICATION_CRON_ENDPOINTS_DISABLED;
+}
+
+export function cronPipelineSkippedPayload(reason = 'notification_cron_disabled') {
   return {
     success: true,
     skipped: true,
-    reason: 'notification_pipeline_disabled',
+    reason,
     processed: 0,
     sent: 0,
     failed: 0,

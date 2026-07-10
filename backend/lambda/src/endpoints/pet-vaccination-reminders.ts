@@ -10,7 +10,7 @@ import {
 } from '../lib/pet-vaccination-reminder-engine';
 import {
   cronPipelineSkippedPayload,
-  isNotificationPipelineEnabled,
+  isNotificationCronEnabled,
 } from '../utils/notification-pipeline-kill-switch';
 
 function authorizeCronRequest(c: { req: { header: (name: string) => string | undefined } }): boolean {
@@ -29,7 +29,7 @@ export function registerPetVaccinationReminderEndpoints(app: Hono) {
     if (!authorizeCronRequest(c)) {
       return c.json({ success: false, error: 'Unauthorized', code: 'INVALID_CRON_SECRET' }, 401);
     }
-    if (!isNotificationPipelineEnabled()) {
+    if (!isNotificationCronEnabled()) {
       return c.json(cronPipelineSkippedPayload());
     }
 

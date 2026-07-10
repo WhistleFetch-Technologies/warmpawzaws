@@ -1,6 +1,6 @@
 /**
  * Cron job: notify customer with start OTP when scheduled service time arrives.
- * Uses unified dispatcher via notifyBookingStartOtp.
+ * DEPRECATED: event-only notification surface — no cron polling. notifyBookingStartOtp is a no-op.
  */
 
 import { query, update } from '../database/rds-connection';
