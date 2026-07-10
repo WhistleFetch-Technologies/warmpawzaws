@@ -333,9 +333,9 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
                 Have a referral code?
               </button>
             ) : (
-              <div className="p-4 border-2 border-[#FF8C42]/30 rounded-2xl bg-[#FF8C42]/5">
-                <div className="flex items-center justify-between mb-3">
-                  <Label className="text-gray-700 text-sm font-medium">
+              <div className="overflow-hidden p-4 border-2 border-[#FF8C42]/30 rounded-2xl bg-[#FF8C42]/5">
+                <div className="flex items-center justify-between gap-2 mb-3 min-w-0">
+                  <Label className="text-gray-700 text-sm font-medium truncate">
                     Referral Code (Optional)
                   </Label>
                   <button
@@ -345,12 +345,12 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
                       setReferralCode('');
                       setReferralApplied(false);
                     }}
-                    className="text-xs text-gray-500 hover:text-gray-700"
+                    className="shrink-0 text-xs text-gray-500 hover:text-gray-700"
                   >
                     Cancel
                   </button>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex w-full min-w-0 gap-2">
                   <input
                     type="text"
                     value={referralCode}
@@ -358,7 +358,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
                       setReferralCode(e.target.value.toUpperCase());
                       setReferralApplied(false);
                     }}
-                    className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl text-sm uppercase focus:border-[#FF8C42] focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/20"
+                    className="min-w-0 flex-1 w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm uppercase focus:border-[#FF8C42] focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/20"
                     placeholder="Enter referral code"
                     maxLength={20}
                   />
@@ -366,7 +366,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
                     <button
                       type="button"
                       onClick={() => setReferralApplied(true)}
-                      className="px-4 py-3 bg-[#FF8C42] text-white rounded-xl text-sm font-medium hover:bg-[#FF7A29] transition-colors"
+                      className="shrink-0 px-4 py-3 bg-[#FF8C42] text-white rounded-xl text-sm font-medium hover:bg-[#FF7A29] transition-colors"
                     >
                       Apply
                     </button>

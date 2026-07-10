@@ -1322,9 +1322,9 @@ function AuthPageContent() {
                     Have a referral code?
                   </button>
                 ) : (
-                  <div className="p-4 border-2 border-[#FF8C42]/30 rounded-2xl bg-[#FF8C42]/5">
-                    <div className="flex items-center justify-between mb-3">
-                      <label className="text-gray-700 font-medium text-sm">Referral Code (Optional)</label>
+                  <div className="overflow-hidden p-4 border-2 border-[#FF8C42]/30 rounded-2xl bg-[#FF8C42]/5">
+                    <div className="flex items-center justify-between gap-2 mb-3 min-w-0">
+                      <label className="text-gray-700 font-medium text-sm truncate">Referral Code (Optional)</label>
                       <button
                         type="button"
                         onClick={() => {
@@ -1332,12 +1332,12 @@ function AuthPageContent() {
                           setReferralCode('');
                           setReferralApplied(false);
                         }}
-                        className="text-gray-400 hover:text-gray-600 text-xs"
+                        className="shrink-0 text-gray-400 hover:text-gray-600 text-xs"
                       >
                         Cancel
                       </button>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex w-full min-w-0 gap-2">
                       <input
                         type="text"
                         value={referralCode}
@@ -1347,13 +1347,13 @@ function AuthPageContent() {
                         }}
                         placeholder="Enter referral code"
                         maxLength={20}
-                        className="flex-1 px-4 py-3 border-2 border-gray-200/90 rounded-xl text-sm uppercase bg-[#FFFBF7] transition-all duration-200 focus:border-[#FF8C42] focus:outline-none focus:ring-4 focus:ring-[#FF8C42]/20 focus:bg-white"
+                        className="min-w-0 flex-1 w-full px-4 py-3 border-2 border-gray-200/90 rounded-xl text-sm uppercase bg-[#FFFBF7] transition-all duration-200 focus:border-[#FF8C42] focus:outline-none focus:ring-4 focus:ring-[#FF8C42]/20 focus:bg-white"
                       />
                       {referralCode && !referralApplied && (
                         <button
                           type="button"
                           onClick={() => setReferralApplied(true)}
-                          className="px-4 py-2.5 text-sm font-medium rounded-full border border-white/25 text-white bg-gradient-to-b from-[#FF9A4A] to-[#FF7A2E] shadow-md shadow-[#C85A10]/30 transition-all duration-200 hover:shadow-lg hover:brightness-105 active:brightness-95"
+                          className="shrink-0 px-4 py-2.5 text-sm font-medium rounded-full border border-white/25 text-white bg-gradient-to-b from-[#FF9A4A] to-[#FF7A2E] shadow-md shadow-[#C85A10]/30 transition-all duration-200 hover:shadow-lg hover:brightness-105 active:brightness-95"
                         >
                           Apply
                         </button>
