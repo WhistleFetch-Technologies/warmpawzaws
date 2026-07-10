@@ -26,6 +26,7 @@ import {
   toUploadJsonResponse,
   ImageProcessingError,
 } from '../services/image';
+import { presignedImageUploadRejected } from '../utils/reject-presigned-image-upload';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 // Use consistent S3_UPLOADS_BUCKET env var (set by CDK lambda-stack)
@@ -518,6 +519,11 @@ export function registerStorageEndpoints(app: Hono) {
         return c.json({ error: 'fileName and fileType are required' }, 400);
       }
 
+      const imageReject = presignedImageUploadRejected(fileType);
+      if (imageReject) {
+        return c.json({ error: imageReject }, 400);
+      }
+
       // Generate unique filename
       const timestamp = Date.now();
       const random = Math.random().toString(36).substring(2, 11);
@@ -555,6 +561,11 @@ export function registerStorageEndpoints(app: Hono) {
 
       if (!fileName || !fileType) {
         return c.json({ error: 'fileName and fileType are required' }, 400);
+      }
+
+      const imageReject = presignedImageUploadRejected(fileType);
+      if (imageReject) {
+        return c.json({ error: imageReject }, 400);
       }
 
       // Generate unique filename

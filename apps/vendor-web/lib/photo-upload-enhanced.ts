@@ -7,6 +7,7 @@ import {
   getApiBaseUrl,
   getVendorAuthHeadersForUpload,
   postJsonWithXhr,
+  postMultipartFormWithXhr,
   type MultipartUploadResponse,
 } from './api-client';
 import { fileMatchesAccept } from '@/lib/capacitor-file-pick';
@@ -147,13 +148,78 @@ export async function uploadImageWithProgress(
   };
 }
 
-/** Staff directory under vendor (existing callers). */
+/** Staff profile photo via ImageService multipart API. */
 export async function uploadStaffPhotoWithProgress(
   file: File,
-  vendorId: string,
+  staffId: string,
   options: PhotoUploadOptions = {}
 ): Promise<PhotoUploadResult> {
-  return uploadImageWithProgress(file, `staff/${vendorId}`, options);
+  const { onProgress, maxRetries = 3 } = options;
+  let lastError: string | undefined;
+  let retries = 0;
+
+  if (!staffId?.trim()) {
+    return { success: false, error: 'Staff ID is required' };
+  }
+
+  const normalized = await normalizeProfilePhotoFile(file);
+
+  while (retries < maxRetries) {
+    try {
+      if (onProgress) onProgress(10);
+      const formData = new FormData();
+      formData.append('photo', normalized, normalized.name);
+
+      const response = await postMultipartFormWithXhr(
+        `/staff/${staffId.trim()}/profile/photo`,
+        formData,
+        {
+          onProgress: (pct) => {
+            if (onProgress) onProgress(10 + pct * 0.9);
+          },
+        }
+      ) as MultipartUploadResponse & {
+        url?: string;
+        photo_url?: string;
+        imageKey?: string;
+        fileName?: string;
+        key?: string;
+        publicUrl?: string;
+      };
+
+      const url =
+        (typeof response?.url === 'string' && response.url) ||
+        (typeof response?.photo_url === 'string' && response.photo_url) ||
+        (typeof response?.publicUrl === 'string' && response.publicUrl) ||
+        '';
+      const fileKey =
+        (typeof response?.imageKey === 'string' && response.imageKey) ||
+        (typeof response?.fileName === 'string' && response.fileName) ||
+        (typeof response?.key === 'string' && response.key) ||
+        '';
+
+      if (!url && !fileKey) {
+        throw new Error(response?.error || 'Staff photo upload failed');
+      }
+
+      if (onProgress) onProgress(100);
+      return {
+        success: true,
+        url: url || fileKey,
+        publicUrl: url,
+        fileName: fileKey || url,
+        retries,
+      };
+    } catch (error: unknown) {
+      lastError = error instanceof Error ? error.message : 'Upload failed';
+      retries++;
+      if (retries < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * retries));
+      }
+    }
+  }
+
+  return { success: false, error: lastError || 'Upload failed after retries', retries };
 }
 
 /**

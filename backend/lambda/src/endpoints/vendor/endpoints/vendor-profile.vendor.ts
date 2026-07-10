@@ -22,11 +22,6 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { getEffectiveCapabilities } from '../../../utils/capability-filter';
 import { computeEffectiveAllowedServiceStyles } from '../../../utils/effective-service-styles';
-import {
-  uploadDisplayImage,
-  toUploadJsonResponse,
-  ImageProcessingError,
-} from '../../../services/image';
 
 /** Parse roles.config when stored as JSON string (Postgres json/jsonb driver variance). */
 export function parseRoleConfigJson(config: unknown): Record<string, any> {
@@ -1029,65 +1024,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
   });
 
   /**
-   * POST /vendor/:vendorId/profile/photo
-   * Upload vendor profile photo to S3
+   * Profile photo upload lives in vendorProfile.vendor.ts (registered handler).
+   * @deprecated duplicate route removed — use POST /vendor/:vendorId/profile/photo there.
    */
-  app.post("/vendor/:vendorId/profile/photo", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      
-      console.log(`📸 [PROFILE-PHOTO] Uploading photo for vendor: ${vendorId}`);
-      
-      // Verify vendor exists (same resolver as GET profile - supports vendor_identity + auto-create)
-      const vendor = await resolveVendorById(vendorId);
-      if (!vendor) {
-        return c.json({ error: 'Vendor not found' }, 404);
-      }
-
-      // Parse the multipart form data
-      const formData = await c.req.formData();
-      const photo = formData.get('photo') as File;
-      
-      if (!photo) {
-        return c.json({ error: 'No photo provided' }, 400);
-      }
-
-      // Upload via Lean Asset Pipeline (WebP, versioned key)
-      const arrayBuffer = await photo.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const actualVendorId = vendor.id;
-      const previousKey =
-        typeof vendor.profile_photo_url === 'string' ? vendor.profile_photo_url : null;
-
-      const asset = await uploadDisplayImage({
-        buffer,
-        declaredContentType: photo.type || undefined,
-        assetType: 'profile',
-        ownerId: actualVendorId,
-        vendorId: actualVendorId,
-        previousImageKey: previousKey,
-      });
-
-      await update('vendors', { id: actualVendorId }, {
-        profile_photo_url: asset.imageKey,
-        updated_at: new Date().toISOString(),
-      });
-
-      console.log(`✅ [PROFILE-PHOTO] Photo uploaded successfully for vendor ${actualVendorId}`);
-
-      return c.json({
-        ...toUploadJsonResponse(asset),
-        photo_url: asset.url,
-        fileName: asset.imageKey,
-      });
-    } catch (error: any) {
-      if (error instanceof ImageProcessingError) {
-        return c.json({ error: error.message }, error.statusCode);
-      }
-      console.error('❌ [PROFILE-PHOTO] Error uploading photo:', error);
-      return c.json({ error: error.message || 'Failed to upload photo' }, 500);
-    }
-  });
 
   /**
    * PUT/POST /vendor/:vendorId/profile
