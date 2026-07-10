@@ -88,6 +88,43 @@ resource "aws_s3_bucket_lifecycle_configuration" "user_uploads" {
       storage_class = "STANDARD_IA"
     }
   }
+
+  rule {
+    id     = "expire-uploads-tmp"
+    status = "Enabled"
+    filter { prefix = "uploads/tmp/" }
+    expiration { days = 1 }
+  }
+
+  rule {
+    id     = "expire-uploads-processing"
+    status = "Enabled"
+    filter { prefix = "uploads/processing/" }
+    expiration { days = 2 }
+  }
+
+  rule {
+    id     = "expire-cleanup"
+    status = "Enabled"
+    filter { prefix = "cleanup/" }
+    expiration { days = 30 }
+  }
+
+  rule {
+    id     = "expire-legacy"
+    status = "Enabled"
+    filter { prefix = "legacy/" }
+    expiration { days = 30 }
+  }
+
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+    filter { prefix = "" }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
 }
 
 # S3 Bucket for Static Website Content

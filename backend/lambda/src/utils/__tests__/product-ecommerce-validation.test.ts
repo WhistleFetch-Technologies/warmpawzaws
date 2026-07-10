@@ -90,16 +90,17 @@ describe('product-ecommerce-validation', () => {
     expect(r.ok).toBe(true);
   });
 
-  it('countTitledBulkRows and limit at 501', () => {
-    const rows = Array.from({ length: 501 }, (_, i) => ({
+  it('countTitledBulkRows and limit at MAX_BULK_PRODUCT_ROWS', () => {
+    const overLimit = MAX_BULK_PRODUCT_ROWS + 1;
+    const rows = Array.from({ length: overLimit }, (_, i) => ({
       name: `Product ${i}`,
     }));
-    expect(countTitledBulkRows(rows)).toBe(501);
+    expect(countTitledBulkRows(rows)).toBe(overLimit);
     expect(exceedsBulkRowLimit(rows)).toBe(true);
-    const err = bulkRowLimitResponse(501);
+    const err = bulkRowLimitResponse(overLimit);
     expect(err.limit).toBe(MAX_BULK_PRODUCT_ROWS);
-    expect(err.count).toBe(501);
-    expect(err.error).toContain('501');
+    expect(err.count).toBe(overLimit);
+    expect(err.error).toContain(String(overLimit));
   });
 
   it('parseProductImageList splits comma-separated URLs', () => {

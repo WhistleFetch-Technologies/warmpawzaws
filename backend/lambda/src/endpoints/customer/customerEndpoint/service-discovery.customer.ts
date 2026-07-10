@@ -69,6 +69,11 @@ import {
   loadVendorRadiusMetaByIds,
   type HubDiscoveryContext,
 } from '../../../lib/search-discovery-parity';
+import {
+  uploadDisplayImage,
+  ImageProcessingError,
+  FACILITY_MAX_PHOTOS,
+} from '../../../services/image';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
@@ -6060,7 +6065,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       type IncomingPhoto = { buffer: Uint8Array; name: string; contentType: string };
       const incoming: IncomingPhoto[] = [];
       const skippedReasons: string[] = [];
-      const MAX_BYTES = 5 * 1024 * 1024;
+      const MAX_BYTES = 25 * 1024 * 1024;
 
       const requestContentType = (c.req.header('content-type') || '').toLowerCase();
       let attemptedCount = 0;
@@ -6105,7 +6110,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               continue;
             }
             if (buf.length > MAX_BYTES) {
-              skippedReasons.push(`photo[${i}]: exceeds 5MB`);
+              skippedReasons.push(`photo[${i}]: exceeds ${Math.floor(MAX_BYTES / 1024 / 1024)}MB`);
               continue;
             }
             const name =
@@ -6139,7 +6144,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               continue;
             }
             if (uint8Array.byteLength > MAX_BYTES) {
-              skippedReasons.push(`${photo.name || 'unnamed'}: exceeds 5MB`);
+              skippedReasons.push(`${photo.name || 'unnamed'}: exceeds ${Math.floor(MAX_BYTES / 1024 / 1024)}MB`);
               continue;
             }
             incoming.push({
@@ -6153,33 +6158,39 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       }
 
+      const existingMetadata = (vendor.metadata as any) || {};
+      const existingPhotos: string[] = existingMetadata.facility_photos || [];
+      if (existingPhotos.length >= FACILITY_MAX_PHOTOS) {
+        return c.json(
+          { error: `Maximum ${FACILITY_MAX_PHOTOS} facility photos allowed` },
+          400,
+        );
+      }
+      const slotsRemaining = FACILITY_MAX_PHOTOS - existingPhotos.length;
+      if (incoming.length > slotsRemaining) {
+        return c.json(
+          {
+            error: `Can upload at most ${slotsRemaining} more photo(s) (limit ${FACILITY_MAX_PHOTOS} total)`,
+          },
+          400,
+        );
+      }
+
       console.log(`📸 [FACILITY-PHOTOS] Processing ${incoming.length} photo(s) (${attemptedCount} attempted)`);
-
-      const s3Upload: any = await import('@aws-sdk/client-s3');
-      const { S3Client, PutObjectCommand } = s3Upload;
-
-      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
 
       const photoUrls: string[] = [];
 
       for (const photo of incoming) {
         try {
-          const timestamp = Date.now();
-          const ext = photo.name.split('.').pop() || photo.contentType.split('/')[1] || 'jpg';
-          const fileKey = `vendors/${actualVendorId}/facility/facility_${timestamp}_${Math.random().toString(36).substr(2, 9)}.${ext}`;
-
-          await s3Client.send(
-            new PutObjectCommand({
-              Bucket: BUCKET_NAME,
-              Key: fileKey,
-              Body: photo.buffer,
-              ContentType: photo.contentType || 'image/jpeg',
-            })
-          );
-
-          photoUrls.push(fileKey);
-          console.log(`📸 [FACILITY-PHOTOS] Uploaded to S3: ${fileKey} (${photo.buffer.byteLength} bytes)`);
+          const asset = await uploadDisplayImage({
+            buffer: Buffer.from(photo.buffer),
+            declaredContentType: photo.contentType,
+            assetType: 'facility',
+            ownerId: actualVendorId,
+            vendorId: actualVendorId,
+          });
+          photoUrls.push(asset.imageKey);
+          console.log(`📸 [FACILITY-PHOTOS] Uploaded WebP: ${asset.imageKey}`);
         } catch (photoError: any) {
           const reason = `${photo.name || 'unnamed'}: ${photoError?.message || photoError}`;
           console.error(`❌ [FACILITY-PHOTOS] Error processing photo ${photo.name}:`, photoError);
@@ -6204,8 +6215,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         );
       }
 
-      const existingMetadata = (vendor.metadata as any) || {};
-      const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
 
       const { update } = await import('../../../database/rds-connection');
