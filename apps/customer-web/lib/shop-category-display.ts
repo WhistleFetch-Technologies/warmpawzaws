@@ -1,9 +1,13 @@
 import type { ShopCategory } from '@/components/shop/shop-types';
+import { apiClient } from '@/lib/api-client';
 import {
   canonicalizeShopCategorySlug,
   getShopCategoryStaticImageUrl,
   slugifyShopCategoryName,
 } from '@/lib/shop-category-static-images';
+
+/** Public storefront categories — only categories with active products when filtered server-side. */
+export const SHOP_CATEGORIES_WITH_PRODUCTS_PATH = '/ecommerce/categories?with_products_only=true';
 
 export function isShopCategoryActive(row: Record<string, unknown>): boolean {
   const v = row.is_active ?? row.enabled;
@@ -91,4 +95,22 @@ export function mapApiCategoriesToShop(
     .filter((c) => c.id && c.name);
 
   return sortShopCategories(mapped);
+}
+
+/** Keep only categories that have at least one storefront-active product. */
+export function filterShopCategoriesWithProducts(categories: ShopCategory[]): ShopCategory[] {
+  return categories.filter((c) => (c.product_count ?? 0) > 0);
+}
+
+export async function fetchShopCategoriesWithProducts(): Promise<ShopCategory[]> {
+  const res = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>(
+    SHOP_CATEGORIES_WITH_PRODUCTS_PATH
+  );
+  const raw = res?.categories;
+  const mapped = mapApiCategoriesToShop(
+    Array.isArray(raw)
+      ? raw.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
+      : []
+  );
+  return filterShopCategoriesWithProducts(mapped);
 }

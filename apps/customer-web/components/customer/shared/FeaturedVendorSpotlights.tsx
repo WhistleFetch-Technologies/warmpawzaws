@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation';
 import { Sparkles, Star, ChevronRight } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { resolveFeaturedVendorDestination } from '@/lib/promotion-navigation';
+import {
+  isStyleLaunchedForCustomer,
+  loadCustomerServiceLaunchCatalog,
+} from '@/lib/customer-service-style-launch';
+import { resolveStyleLaunchTargetForScreen } from '@/lib/customer-style-screen-launch';
 
 export interface FeaturedVendorSpotlightsProps {
   /**
@@ -12,6 +17,7 @@ export interface FeaturedVendorSpotlightsProps {
    * Sent as GET /customer/featured-vendors?service=…&limit=…
    */
   service: string;
+  phone?: string;
   onNavigate?: (screen: string, data?: Record<string, unknown>) => void;
   className?: string;
   limit?: number;
@@ -19,12 +25,29 @@ export interface FeaturedVendorSpotlightsProps {
 
 export function FeaturedVendorSpotlights({
   service,
+  phone,
   onNavigate,
   className = '',
   limit = 6,
 }: FeaturedVendorSpotlightsProps) {
   const router = useRouter();
   const [vendors, setVendors] = useState<any[]>([]);
+
+  const filterVendorsByLaunch = useCallback(
+    async (list: any[]) => {
+      if (!phone || !list.length) return list;
+      const catalog = await loadCustomerServiceLaunchCatalog(phone);
+      if (!catalog.length) return list;
+      return list.filter((v) => {
+        const dest = resolveFeaturedVendorDestination(v);
+        if (dest.kind !== 'screen') return true;
+        const target = resolveStyleLaunchTargetForScreen(dest.screen, v as Record<string, unknown>);
+        if (!target) return true;
+        return isStyleLaunchedForCustomer(catalog, target.serviceId, target.serviceStyle);
+      });
+    },
+    [phone]
+  );
 
   const navigateFromVendor = useCallback(
     (v: Record<string, unknown>) => {
@@ -59,11 +82,13 @@ export function FeaturedVendorSpotlights({
     (async () => {
       try {
         const params = new URLSearchParams({ service: service.trim(), limit: String(limit) });
+        if (phone) params.set('phone', phone);
         const res = await apiClient.get<any>(`/customer/featured-vendors?${params.toString()}`);
         if (cancelled) return;
         const list = res?.vendors;
         if (Array.isArray(list) && list.length > 0) {
-          setVendors(list);
+          const filtered = await filterVendorsByLaunch(list);
+          setVendors(filtered);
         } else {
           setVendors([]);
         }
@@ -74,7 +99,7 @@ export function FeaturedVendorSpotlights({
     return () => {
       cancelled = true;
     };
-  }, [service, limit]);
+  }, [service, limit, phone, filterVendorsByLaunch]);
 
   if (vendors.length === 0) {
     return null;

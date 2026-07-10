@@ -53,6 +53,13 @@ import { isVendorBannerCta } from '@/lib/banner-cta-parse';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { mapCatalogSlugToLaunchServiceId } from '@warmpawz/service-launch-mappings';
 import { buildCustomerLaunchTiles } from '@/lib/customer-launch-tiles';
+import {
+  isServiceStyleHidden,
+  isStyleLaunchedForCustomer,
+  loadCustomerServiceLaunchCatalog,
+  resolveServiceStyleLaunchFromCatalog,
+} from '@/lib/customer-service-style-launch';
+import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
 import { traceHomeSearchUpstream } from '@/lib/search-trace';
 import { mapApiServiceToRow } from '@/lib/clinic-service-row-mapper';
 import { launchSearchServiceBooking } from '@/lib/search-booking-launch';
@@ -81,8 +88,7 @@ import { ViewportSection } from '../home/shared/ViewportSection';
 import { buildHomeTopCarouselBanners } from '../home/utils/banner-utils';
 import { buildBannerBackgroundStyle } from '@/lib/customer-banner-surface';
 import { ShopCategoryGrid } from '@/components/shop/ShopCategoryGrid';
-import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
-import { STATIC_SHOP_DISPLAY_CATEGORIES } from '@/lib/shop-category-static-images';
+import { fetchShopCategoriesWithProducts, resolveShopCategoryParam } from '@/lib/shop-category-display';
 import type { QuickServiceTile } from '../home/types';
 import { resolveCustomerLocation } from '@/lib/customer-location';
 import type { CustomerLocation } from '@/lib/customer-location';
@@ -319,6 +325,8 @@ export function CustomerHomeComplete({
   const [vetHomeMinPrice, setVetHomeMinPrice] = useState<number | null>(null);
   /** Live min price across vendors offering clinic visits (for the home Clinic Visit tile). */
   const [clinicMinPrice, setClinicMinPrice] = useState<number | null>(null);
+  const [styleLaunchByCard, setStyleLaunchByCard] = useState<Record<string, LaunchStatusValue>>({});
+  const [groomingAtCenterLaunched, setGroomingAtCenterLaunched] = useState(true);
   const [activeBookings, setActiveBookings] = useState<any[]>([]); // For "Attention" section
 
   // ✅ Live Tracking & Review State
@@ -439,6 +447,46 @@ export function CustomerHomeComplete({
       cancelIdle();
     };
   }, []);
+
+  useEffect(() => {
+    if (!phone) return;
+    let cancelled = false;
+    void (async () => {
+      const catalog = await loadCustomerServiceLaunchCatalog(phone);
+      if (cancelled) return;
+      const next: Record<string, LaunchStatusValue> = {};
+      for (const [cardId, styleKey] of Object.entries({
+        tele: 'tele',
+        home: 'at_home',
+        clinic: 'at_center',
+      })) {
+        const { status } = resolveServiceStyleLaunchFromCatalog(catalog, 'vet', styleKey);
+        next[cardId] = status;
+      }
+      setStyleLaunchByCard(next);
+      setGroomingAtCenterLaunched(isStyleLaunchedForCustomer(catalog, 'grooming', 'at_center'));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [phone]);
+
+  const legacyVetStyleVisible = useMemo(
+    () => ({
+      tele: !styleLaunchByCard.tele || !isServiceStyleHidden(styleLaunchByCard.tele),
+      home: !styleLaunchByCard.home || !isServiceStyleHidden(styleLaunchByCard.home),
+      clinic: !styleLaunchByCard.clinic || !isServiceStyleHidden(styleLaunchByCard.clinic),
+    }),
+    [styleLaunchByCard]
+  );
+
+  const legacyVetStyleCount = useMemo(
+    () =>
+      (legacyVetStyleVisible.tele ? 1 : 0) +
+      (legacyVetStyleVisible.home ? 1 : 0) +
+      (legacyVetStyleVisible.clinic ? 1 : 0),
+    [legacyVetStyleVisible]
+  );
 
   const persistAiFabOffset = useCallback(
     (o: { x: number; y: number }) => {
@@ -582,24 +630,16 @@ export function CustomerHomeComplete({
   useEffect(() => {
     if (!customerCommerceEnabled) return;
     let cancelled = false;
-    const cancelIdle = scheduleIdleWork(() => {
-      void (async () => {
-        try {
-          const res = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>('/ecommerce/categories');
-          const raw = res?.categories;
-          if (cancelled || !Array.isArray(raw)) return;
-          const mapped = mapApiCategoriesToShop(
-            raw.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
-          );
-          if (!cancelled) setEcommerceShopCategories(mapped);
-        } catch {
-          if (!cancelled) setEcommerceShopCategories([]);
-        }
-      })();
-    });
+    void (async () => {
+      try {
+        const mapped = await fetchShopCategoriesWithProducts();
+        if (!cancelled) setEcommerceShopCategories(mapped);
+      } catch {
+        if (!cancelled) setEcommerceShopCategories([]);
+      }
+    })();
     return () => {
       cancelled = true;
-      cancelIdle();
     };
   }, [customerCommerceEnabled]);
 
@@ -653,6 +693,15 @@ export function CustomerHomeComplete({
     },
     [onNavigate, router]
   );
+
+  const petFoodCategoryId = useMemo(
+    () => resolveShopCategoryParam('pet-food', ecommerceShopCategories),
+    [ecommerceShopCategories]
+  );
+
+  const navigateToPetFoodShop = useCallback(() => {
+    handleNavigation('shop', petFoodCategoryId ? { category: petFoodCategoryId } : undefined);
+  }, [handleNavigation, petFoodCategoryId]);
 
   const handleSearchSubmit = useCallback(
     (searchQuery: string) => {
@@ -1191,18 +1240,27 @@ export function CustomerHomeComplete({
         }
       }
       const phoneParam = phone ? `&phone=${encodeURIComponent(phone)}` : '';
+      const launchCatalog = phone ? await loadCustomerServiceLaunchCatalog(phone) : [];
+      const fetchGroomingAtCenter =
+        !launchCatalog.length || isStyleLaunchedForCustomer(launchCatalog, 'grooming', 'at_center');
+      const fetchVetAtCenter =
+        !launchCatalog.length || isStyleLaunchedForCustomer(launchCatalog, 'vet', 'at_center');
 
       // discover-services requires serviceStyle (backend 400 if omitted)
       const productRequest = isCustomerEcommerceEnabled()
         ? apiClient.get<any>('/products?featured=true&limit=3')
         : Promise.resolve({ products: [] });
       const [groomingResult, vetResult, productsResult] = await Promise.allSettled([
-        apiClient.get<any>(
-          `/customer/discover-services?category=grooming&serviceStyle=at_center${locationParams}${phoneParam}`
-        ),
-        apiClient.get<any>(
-          `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}${phoneParam}`
-        ),
+        fetchGroomingAtCenter
+          ? apiClient.get<any>(
+              `/customer/discover-services?category=grooming&serviceStyle=at_center${locationParams}${phoneParam}`
+            )
+          : Promise.resolve(null),
+        fetchVetAtCenter
+          ? apiClient.get<any>(
+              `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}${phoneParam}`
+            )
+          : Promise.resolve(null),
         productRequest,
       ]);
 
@@ -1211,7 +1269,7 @@ export function CustomerHomeComplete({
       let nextHotDeals: any[] | undefined;
 
       // Handle grooming services
-      if (groomingResult.status === 'fulfilled') {
+      if (groomingResult.status === 'fulfilled' && groomingResult.value) {
         const groomingResp = groomingResult.value;
         if (groomingResp?.services || groomingResp?.vendors) {
           const services = groomingResp.services || groomingResp.vendors || [];
@@ -1238,7 +1296,7 @@ export function CustomerHomeComplete({
       }
 
       // Handle vet services
-      if (vetResult.status === 'fulfilled') {
+      if (vetResult.status === 'fulfilled' && vetResult.value) {
         const vetResp = vetResult.value;
         if (vetResp?.services || vetResp?.vendors) {
           const services = vetResp.services || vetResp.vendors || [];
@@ -1369,6 +1427,7 @@ export function CustomerHomeComplete({
             displayName: c.displayName,
             effectiveStatus: c.effectiveStatus,
           })),
+          fullCatalog: launchCatalog,
           visible: visibleLaunch,
           comingSoon: comingSoonLaunch,
           hidden: hiddenLaunch,
@@ -2432,6 +2491,7 @@ export function CustomerHomeComplete({
           <EnhancedSearchBar
             placeholder="Search services, products, vets, groomers..."
             customerId={customerId || undefined}
+            phone={phone}
             onSearch={handleSearchSubmit}
             onResultSelect={handleSearchResultSelect}
           />
@@ -2598,20 +2658,18 @@ export function CustomerHomeComplete({
               </button>
             ) : null}
           </div>
+          {ecommerceShopCategories.length > 0 ? (
           <ShopCategoryGrid
             embedded
             disabled={!customerCommerceEnabled}
-            categories={
-              ecommerceShopCategories.length > 0
-                ? ecommerceShopCategories
-                : STATIC_SHOP_DISPLAY_CATEGORIES
-            }
+            categories={ecommerceShopCategories}
             onSelectCategory={
               customerCommerceEnabled
                 ? (id) => handleNavigation('shop', { category: id })
                 : () => {}
             }
           />
+          ) : null}
         </div>
         ) : null}
 
@@ -2695,7 +2753,7 @@ export function CustomerHomeComplete({
         ) : null}
 
         {/* Spotlight: Grooming Services */}
-        {!newHomeUi ? (
+        {!newHomeUi && groomingAtCenterLaunched ? (
         <div className="mb-6">
           <div className="px-6 mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -2778,7 +2836,18 @@ export function CustomerHomeComplete({
             </button>
           </div>
 
-          <div className="px-6 grid grid-cols-3 gap-3" data-testid="vet-services-grid" style={{ pointerEvents: 'auto' }}>
+          <div
+            className={`px-6 grid gap-3 ${
+              legacyVetStyleCount === 1
+                ? 'grid-cols-1'
+                : legacyVetStyleCount === 2
+                  ? 'grid-cols-2'
+                  : 'grid-cols-3'
+            }`}
+            data-testid="vet-services-grid"
+            style={{ pointerEvents: 'auto' }}
+          >
+            {legacyVetStyleVisible.tele ? (
             <button
               type="button"
               data-testid="tele-consultation-button"
@@ -2802,6 +2871,8 @@ export function CustomerHomeComplete({
               <h3 className="text-xs font-semibold text-gray-800 mb-1 pointer-events-none">Tele Consult</h3>
               <p className="text-blue-600 font-medium text-sm pointer-events-none">₹{teleMinPrice ?? 299}</p>
             </button>
+            ) : null}
+            {legacyVetStyleVisible.home ? (
             <button
               onClick={() => handleNavigation('vet-home-visit', { startStep: 'home' })}
               className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
@@ -2812,6 +2883,8 @@ export function CustomerHomeComplete({
               <h3 className="text-xs font-semibold text-gray-800 mb-1">Vet at Home</h3>
               <p className="text-blue-600 font-medium text-sm">₹{vetHomeMinPrice ?? 599}</p>
             </button>
+            ) : null}
+            {legacyVetStyleVisible.clinic ? (
             <button
               onClick={() => handleNavigation('vet-clinic-list', { startStep: 'home' })}
               className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
@@ -2822,6 +2895,7 @@ export function CustomerHomeComplete({
               <h3 className="text-xs font-semibold text-gray-800 mb-1">Clinic Visit</h3>
               <p className="text-blue-600 font-medium text-sm">₹{clinicMinPrice ?? 399}</p>
             </button>
+            ) : null}
           </div>
         </div>
         </>
@@ -3172,7 +3246,7 @@ export function CustomerHomeComplete({
               </div>
               <button
                 type="button"
-                onClick={() => handleNavigation('shop', { category: 'food' })}
+                onClick={navigateToPetFoodShop}
                 className="text-[11px] text-[#FF8C42] font-medium shrink-0"
               >
                 Browse shop
@@ -3187,7 +3261,7 @@ export function CustomerHomeComplete({
               <button
                 key={index}
                 type="button"
-                onClick={() => handleNavigation('shop', { category: 'food' })}
+                onClick={navigateToPetFoodShop}
                 className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center transition active:scale-[0.98]"
               >
                 <div className="w-12 h-12 mx-auto mb-2 bg-yellow-100 rounded-xl flex items-center justify-center">

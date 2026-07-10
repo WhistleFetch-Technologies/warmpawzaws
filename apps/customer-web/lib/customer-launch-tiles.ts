@@ -6,6 +6,10 @@ import {
   serviceScreenMap,
 } from '@warmpawz/service-launch-mappings';
 import type { QuickServiceTile } from '@/components/customer/home/types';
+import {
+  hasAnyLaunchedStyle,
+  type ServiceLaunchCatalogEntry,
+} from '@/lib/customer-service-style-launch';
 
 /** Placeholder when synthesizing a tile without a catalog icon. */
 const FallbackServiceIcon = () => null;
@@ -27,6 +31,8 @@ export interface BuildCustomerLaunchTilesOptions {
   tilePool: QuickServiceTile[];
   /** Full admin-aligned catalog (preferred). */
   catalog?: LaunchCatalogEntry[];
+  /** Catalog with effectiveStyles — used for per-style parent tile gating. */
+  fullCatalog?: ServiceLaunchCatalogEntry[];
   visible?: LaunchBucketEntry[];
   comingSoon?: LaunchBucketEntry[];
   hidden?: LaunchBucketEntry[];
@@ -160,6 +166,13 @@ export function buildCustomerLaunchTiles(
   for (const entry of entries) {
     const svcId = normalizeServiceKey(entry.serviceId);
     if (!svcId || svcId === 'general' || svcId === 'unknown') continue;
+
+    if (
+      options.fullCatalog?.length &&
+      !hasAnyLaunchedStyle(options.fullCatalog, svcId)
+    ) {
+      continue;
+    }
 
     const status = entry.effectiveStatus;
     if (status === 'hidden' && !options.includeHiddenAsComingSoon) continue;

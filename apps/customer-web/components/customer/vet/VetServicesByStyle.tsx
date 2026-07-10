@@ -26,6 +26,9 @@ import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDi
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
+import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
+import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
+
 interface VetServicesByStyleProps {
   phone: string;
   serviceStyle: string; // 'tele', 'at_home', 'at_center'
@@ -102,18 +105,22 @@ export function VetServicesByStyle({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
+  const launchGate = useServiceStyleLaunchGate(phone, category, serviceStyle);
 
   // Check if we're in profile view mode (vendorId provided and single provider)
   const isProfileView = vendorId && providers.length === 1;
   const profileProvider = isProfileView ? providers[0] : null;
 
   useEffect(() => {
+    if (!launchGate.ready || launchGate.blocked) {
+      if (launchGate.ready && launchGate.blocked) setLoading(false);
+      return;
+    }
     loadServicesByStyle();
-    // If vendorId is provided, also load vendor and facility details for profile view
     if (vendorId) {
       loadVendorProfile();
     }
-  }, [serviceStyle, vendorId, specialization]);
+  }, [launchGate.ready, launchGate.blocked, serviceStyle, vendorId, specialization]);
 
   const loadServicesByStyle = async () => {
     // Get customer location from localStorage for distance-based sorting
@@ -430,6 +437,14 @@ export function VetServicesByStyle({
       serviceStyle,
     });
   };
+
+  if (launchGate.ready && launchGate.blocked) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <ServiceStyleLaunchBlocked message={launchGate.blockMessage} onBack={onBack} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (

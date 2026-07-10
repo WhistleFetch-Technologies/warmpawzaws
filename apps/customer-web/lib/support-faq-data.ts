@@ -109,7 +109,7 @@ export const SUPPORT_FAQ_CATEGORIES: SupportFaqCategory[] = [
         id: 'orders-2',
         question: 'What is the return policy?',
         answer:
-          'Most products can be returned within 7 days if unopened. Pharmacy and perishable items may have different policies.',
+          'Returns are available for Pet Clothing only, within the return window shown on your order (typically 7 days after delivery). Other product categories such as food, pharmacy, and grooming consumables are not eligible for return unless the item is damaged, defective, or incorrect.',
       },
       {
         id: 'orders-3',

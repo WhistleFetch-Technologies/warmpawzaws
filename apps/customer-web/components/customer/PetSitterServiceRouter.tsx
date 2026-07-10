@@ -395,7 +395,7 @@ export function PetSitterServiceRouter({
       >
         <div className="mx-auto w-full max-w-customer bg-white px-4 pt-5 pb-2">
           <div className="space-y-8">
-            <FeaturedVendorSpotlights service="sitting" onNavigate={onNavigate} />
+            <FeaturedVendorSpotlights service="sitting" phone={phone} onNavigate={onNavigate} />
 
             <button
               type="button"

@@ -1,4 +1,4 @@
-import { parseAdminCategoryPayloadItem } from '../ecommerce-category-display';
+import { parseAdminCategoryPayloadItem, mapCategoryRowForPublic } from '../ecommerce-category-display';
 
 describe('ecommerce-category-display', () => {
   describe('parseAdminCategoryPayloadItem', () => {
@@ -51,6 +51,25 @@ describe('ecommerce-category-display', () => {
         commissionRate: 15,
       });
       expect(item.default_commission_rate).toBe(15);
+    });
+  });
+
+  describe('mapCategoryRowForPublic', () => {
+    it('maps storefront product_count from row', async () => {
+      const row = await mapCategoryRowForPublic({
+        id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        name: 'Pet Food',
+        product_count: 3,
+      });
+      expect(row.product_count).toBe(3);
+    });
+
+    it('defaults product_count to 0 when missing', async () => {
+      const row = await mapCategoryRowForPublic({
+        id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        name: 'Pet Toys',
+      });
+      expect(row.product_count).toBe(0);
     });
   });
 });

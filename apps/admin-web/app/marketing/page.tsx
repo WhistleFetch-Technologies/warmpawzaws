@@ -51,7 +51,12 @@ import {
 	ExternalLink,
 	AlertCircle,
 	Store,
+	ChevronDown,
 } from "lucide-react";
+import {
+	SERVICE_STYLE_LAUNCH_LABELS,
+	type ServiceStyleLaunchKey,
+} from "@warmpawz/service-launch-mappings";
 import { apiClient } from "@/lib/api-client";
 import {
 	normalizeAdminBannersList,
@@ -250,6 +255,7 @@ export default function MarketingPromotionsTab() {
 	
 	// New Geographic Selection State
 	const [selectedState, setSelectedState] = useState<string>("");
+	const [expandedStyleServices, setExpandedStyleServices] = useState<Record<string, boolean>>({});
 	const [selectedCity, setSelectedCity] = useState<string>("");
 	const [availableStates, setAvailableStates] = useState<{code: string; name: string}[]>([]);
 	const [availableCities, setAvailableCities] = useState<string[]>([]);
@@ -517,6 +523,39 @@ export default function MarketingPromotionsTab() {
 		}
 	};
 
+	const handleUpdateServiceStyleLaunch = async (
+		serviceId: string,
+		serviceStyle: ServiceStyleLaunchKey,
+		status: string,
+		rolloutPercentage: number = 100
+	) => {
+		try {
+			await apiClient.put("/config/service-launch/geography", {
+				serviceId,
+				serviceStyle,
+				stateCode: selectedState || undefined,
+				city: selectedCity || undefined,
+				status,
+				rolloutPercentage,
+			});
+			const styleLabel = SERVICE_STYLE_LAUNCH_LABELS[serviceStyle] || serviceStyle;
+			toast.success(
+				`${styleLabel} for "${serviceId}" updated to ${status}${selectedState ? ` for ${selectedState}` : ""}${selectedCity ? ` > ${selectedCity}` : ""}`
+			);
+			loadServiceLaunchConfig();
+		} catch (error) {
+			console.error("Error updating service style launch:", error);
+			toast.error("Failed to update service style launch status");
+		}
+	};
+
+	const toggleStyleSection = (serviceId: string) => {
+		setExpandedStyleServices((prev) => ({
+			...prev,
+			[serviceId]: !prev[serviceId],
+		}));
+	};
+
 	const handleBulkSaveConfig = async () => {
 		try {
 			if (!Array.isArray(uiConfig)) {
@@ -530,6 +569,7 @@ export default function MarketingPromotionsTab() {
 				defaultStatus: svc.defaultStatus,
 				defaultRolloutPercentage: svc.defaultRolloutPercentage,
 				stateOverrides: svc.stateOverrides,
+				styleOverrides: svc.styleOverrides,
 			}));
 			
 			await apiClient.put("/config/service-launch", { services });
@@ -2153,6 +2193,128 @@ export default function MarketingPromotionsTab() {
 															{(selectedState || selectedCity) && svc.defaultStatus && (
 																<div className="text-xs text-gray-500 mt-2">
 																	Default status: <span className="font-medium capitalize">{svc.defaultStatus}</span>
+																</div>
+															)}
+
+															{Array.isArray(svc.supportedStyles) && svc.supportedStyles.length > 0 && (
+																<div className="pt-3 border-t space-y-2">
+																	<button
+																		type="button"
+																		onClick={() => toggleStyleSection(svc.id || svc.serviceId)}
+																		className="flex w-full items-center justify-between text-xs font-medium text-gray-700 hover:text-gray-900"
+																	>
+																		<span>Service Styles</span>
+																		<ChevronDown
+																			className={`w-4 h-4 transition-transform ${
+																				expandedStyleServices[svc.id || svc.serviceId] ? "rotate-180" : ""
+																			}`}
+																		/>
+																	</button>
+																	<p className="text-[11px] text-gray-500">
+																		Styles inherit the parent service unless overridden here. Only overrides are stored.
+																	</p>
+																	{expandedStyleServices[svc.id || svc.serviceId] && (
+																		<div className="space-y-3 pl-1">
+																			{svc.supportedStyles.map((styleKey: ServiceStyleLaunchKey) => {
+																				const styleEntry = svc.effectiveStyles?.[styleKey];
+																				const effectiveStatus = styleEntry?.effectiveStatus || svc.effectiveStatus || "hidden";
+																				const effectiveRollout =
+																					styleEntry?.effectiveRolloutPercentage ??
+																					svc.effectiveRolloutPercentage ??
+																					100;
+																				const inheritsParent = styleEntry?.inheritsParent !== false;
+																				return (
+																					<div
+																						key={styleKey}
+																						className="rounded-lg border border-gray-200 bg-white p-3 space-y-2"
+																					>
+																						<div className="flex items-center justify-between gap-2">
+																							<span className="text-xs font-semibold text-gray-800">
+																								{SERVICE_STYLE_LAUNCH_LABELS[styleKey] || styleKey}
+																							</span>
+																							{inheritsParent ? (
+																								<Badge className="bg-gray-100 text-gray-600 text-[10px]">
+																									Inherits parent
+																								</Badge>
+																							) : (
+																								<Badge className="bg-purple-100 text-purple-700 text-[10px]">
+																									Override
+																								</Badge>
+																							)}
+																						</div>
+																						<div className="grid grid-cols-2 gap-4 text-xs">
+																							<div>
+																								<span className="text-gray-500 block mb-1">
+																									Launch Status{" "}
+																									{selectedState
+																										? `(${selectedState}${selectedCity ? ` > ${selectedCity}` : ""})`
+																										: "(Default)"}
+																									:
+																								</span>
+																								<Select
+																									value={effectiveStatus}
+																									onValueChange={(value: string) =>
+																										handleUpdateServiceStyleLaunch(
+																											svc.id || svc.serviceId,
+																											styleKey,
+																											value,
+																											effectiveRollout
+																										)
+																									}
+																								>
+																									<SelectTrigger className="h-8 text-xs">
+																										<SelectValue />
+																									</SelectTrigger>
+																									<SelectContent>
+																										<SelectItem value="hidden">
+																											<span className="flex items-center gap-2">
+																												<EyeOff className="w-3 h-3" /> Hidden
+																											</span>
+																										</SelectItem>
+																										<SelectItem value="coming_soon">
+																											<span className="flex items-center gap-2">
+																												<Calendar className="w-3 h-3" /> Coming Soon
+																											</span>
+																										</SelectItem>
+																										<SelectItem value="beta">
+																											<span className="flex items-center gap-2">
+																												<Star className="w-3 h-3" /> Beta
+																											</span>
+																										</SelectItem>
+																										<SelectItem value="launched">
+																											<span className="flex items-center gap-2">
+																												<Eye className="w-3 h-3" /> Launched
+																											</span>
+																										</SelectItem>
+																									</SelectContent>
+																								</Select>
+																							</div>
+																							<div>
+																								<span className="text-gray-500 block mb-1">Rollout %:</span>
+																								<Input
+																									type="number"
+																									min="0"
+																									max="100"
+																									value={effectiveRollout}
+																									onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+																										const percentage = parseInt(e.target.value) || 100;
+																										handleUpdateServiceStyleLaunch(
+																											svc.id || svc.serviceId,
+																											styleKey,
+																											effectiveStatus,
+																											percentage
+																										);
+																									}}
+																									className="h-8 text-xs"
+																									placeholder="100"
+																								/>
+																							</div>
+																						</div>
+																					</div>
+																				);
+																			})}
+																		</div>
+																	)}
 																</div>
 															)}
 														</div>

@@ -25,6 +25,10 @@ import {
 } from '../../../utils/banner-cta-resolver';
 import { listPublishedCustomerArticlesForCustomer } from '../../../utils/content-page-articles';
 import { presignBannerImageForDisplay } from '../../../utils/banner-s3-image';
+import {
+  createLaunchGeoFilter,
+  shouldIncludeFeaturedSpotlightRow,
+} from '../../../lib/customer-launch-geo-filter';
 
 export function registerCustomerContentEndpoints(app: Hono) {
   /**
@@ -482,12 +486,24 @@ export function registerCustomerContentEndpoints(app: Hono) {
         [now]
       ).catch(() => ({ rows: [] }));
 
+      const phoneQ = c.req.query('phone') ?? c.req.query('customerPhone');
+      const phone = Array.isArray(phoneQ) ? phoneQ[0] : phoneQ;
+      const stateQ = c.req.query('state') ?? c.req.query('customerState');
+      const cityQ = c.req.query('city') ?? c.req.query('customerCity');
+      const launchFilter = await createLaunchGeoFilter({
+        phone: String(phone || '').trim(),
+        state: String(Array.isArray(stateQ) ? stateQ[0] : stateQ || '').trim(),
+        city: String(Array.isArray(cityQ) ? cityQ[0] : cityQ || '').trim(),
+      });
+
       const rows = (result.rows || []) as any[];
       const matched: any[] = [];
       for (const r of rows) {
         if (matched.length >= limit) break;
         const bucket = canonicalScreenForSpotlightRow(r.service_category, r.role_id);
-        if (bucket === requested) matched.push(r);
+        if (bucket !== requested) continue;
+        if (!shouldIncludeFeaturedSpotlightRow(launchFilter, r)) continue;
+        matched.push(r);
       }
 
       const vendors = matched.map((r) => ({

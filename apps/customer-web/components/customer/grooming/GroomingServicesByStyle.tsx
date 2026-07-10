@@ -28,6 +28,8 @@ import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { isDiscoveryAutoApplyPromotion } from '@/lib/promotion-banner-filter';
+import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
+import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -103,6 +105,7 @@ export function GroomingServicesByStyle({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
+  const launchGate = useServiceStyleLaunchGate(phone, category, serviceStyle);
   
   // ✅ NEW: Promotions state
   const [promotions, setPromotions] = useState<any[]>([]);
@@ -169,12 +172,15 @@ export function GroomingServicesByStyle({
   const profileProvider = isProfileView ? providers[0] : null;
 
   useEffect(() => {
+    if (!launchGate.ready || launchGate.blocked) {
+      if (launchGate.ready && launchGate.blocked) setLoading(false);
+      return;
+    }
     loadServicesByStyle();
-    // If vendorId is provided, also load vendor and facility details for profile view
     if (vendorId) {
       loadVendorProfile();
     }
-  }, [serviceStyle, vendorId, specialization]);
+  }, [launchGate.ready, launchGate.blocked, serviceStyle, vendorId, specialization]);
 
   // ✅ NEW: Load active promotions for discount display
   useEffect(() => {
@@ -636,6 +642,14 @@ export function GroomingServicesByStyle({
       serviceStyle,
     });
   };
+
+  if (launchGate.ready && launchGate.blocked) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <ServiceStyleLaunchBlocked message={launchGate.blockMessage} onBack={onBack} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (

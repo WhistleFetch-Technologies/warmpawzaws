@@ -16,8 +16,27 @@
  */
 
 import { Hono } from 'hono';
-import { mapCatalogSlugToLaunchServiceId } from '@warmpawz/service-launch-mappings';
+import {
+  mapCatalogSlugToLaunchServiceId,
+  SERVICE_STYLE_LAUNCH_KEYS,
+  supportedStylesForLaunchServiceId,
+  type ServiceStyleLaunchKey,
+} from '@warmpawz/service-launch-mappings';
 import { query } from '../database/rds-connection';
+import {
+  applyGeographyUpdateToSlice,
+  effectiveStatusForGeography as resolveGeoLaunchStatus,
+  effectiveStyleStatusForGeography,
+  getCityLaunchOverride,
+  mergeStateOverrides,
+  mergeStyleOverrides,
+  normalizeIndianCityName,
+  type GeoLaunchSlice,
+  type LaunchStatus,
+  type StateConfig,
+} from '../lib/service-launch-style-resolution';
+
+export type { LaunchStatus };
 
 // Indian states list for geographic control
 export const INDIAN_STATES = [
@@ -99,40 +118,12 @@ export const MAJOR_CITIES: Record<string, string[]> = {
 };
 
 /**
- * Canonical Indian city names for launch config keys and lookups.
- * Admin UI lists "Bangalore" while some data may use "Bengaluru"; without this,
- * city overrides are missed and state-level "Launched" appears after setting Hidden.
+ * Canonical Indian city names — kept for backward compatibility in comments only;
+ * resolution uses normalizeIndianCityName from service-launch-style-resolution.
  */
-const CITY_NAME_ALIASES: Record<string, string> = {
-  bengaluru: 'Bangalore',
-  bangalore: 'Bangalore',
-  mumbai: 'Mumbai',
-  bombay: 'Mumbai',
-  chennai: 'Chennai',
-  madras: 'Chennai',
-  kolkata: 'Kolkata',
-  calcutta: 'Kolkata',
-  'new delhi': 'New Delhi',
-  delhi: 'New Delhi',
-  hyderabad: 'Hyderabad',
-  pune: 'Pune',
-  poona: 'Pune',
-  ahmedabad: 'Ahmedabad',
-  gurugram: 'Gurugram',
-  gurgaon: 'Gurugram',
-  noida: 'Noida',
-  ghaziabad: 'Ghaziabad',
-};
 
-function normalizeIndianCityName(cityName: string): string {
-  const t = String(cityName || '').trim();
-  if (!t) return '';
-  const mapped = CITY_NAME_ALIASES[t.toLowerCase()];
-  return mapped || t;
-}
-
-// Launch status types
-export type LaunchStatus = 'hidden' | 'coming_soon' | 'beta' | 'launched';
+// Launch status types — re-exported from style resolution lib
+// export type LaunchStatus = 'hidden' | 'coming_soon' | 'beta' | 'launched';
 
 // Service launch config interface
 interface ServiceLaunchConfig {
@@ -147,38 +138,11 @@ interface ServiceLaunchConfig {
   defaultRolloutPercentage: number;
   // Geographic overrides: state code -> state config
   stateOverrides: Record<string, StateConfig>;
+  /** Per-style overrides only — inherits parent when absent. */
+  styleOverrides?: Partial<Record<ServiceStyleLaunchKey, GeoLaunchSlice>>;
   // Metadata
   createdAt: string;
   updatedAt: string;
-}
-
-interface StateConfig {
-  status: LaunchStatus;
-  rolloutPercentage: number;
-  // City-level overrides within the state
-  cities: Record<string, CityConfig>;
-}
-
-interface CityConfig {
-  status: LaunchStatus;
-  rolloutPercentage: number;
-}
-
-function getCityLaunchOverride(
-  cities: Record<string, CityConfig> | undefined,
-  cityQuery: string
-): CityConfig | undefined {
-  if (!cities || !cityQuery) return undefined;
-  const q = cityQuery.trim();
-  if (cities[q]) return cities[q];
-  const canon = normalizeIndianCityName(q);
-  if (canon && cities[canon]) return cities[canon];
-  const qLower = q.toLowerCase();
-  for (const k of Object.keys(cities)) {
-    if (k.toLowerCase() === qLower) return cities[k];
-    if (canon && normalizeIndianCityName(k).toLowerCase() === canon.toLowerCase()) return cities[k];
-  }
-  return undefined;
 }
 
 // Default icon mapping for services
@@ -219,22 +183,6 @@ function isUuidKey(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(s).trim());
 }
 
-function mergeStateOverrides(
-  base: Record<string, StateConfig> | undefined,
-  overlay: Record<string, StateConfig> | undefined
-): Record<string, StateConfig> {
-  const out: Record<string, StateConfig> = { ...(base || {}) };
-  for (const st of Object.keys(overlay || {})) {
-    const b = out[st];
-    const o = overlay![st];
-    out[st] = {
-      ...(b || {}),
-      ...o,
-      cities: { ...(b?.cities || {}), ...(o?.cities || {}) },
-    } as StateConfig;
-  }
-  return out;
-}
 
 /** Later entries win (so legacy UUID-keyed saves override empty slug keys). */
 function mergeServiceLaunchEntries(...parts: Record<string, any>[]): Record<string, any> {
@@ -247,6 +195,7 @@ function mergeServiceLaunchEntries(...parts: Record<string, any>[]): Record<stri
       ...acc,
       ...overlay,
       stateOverrides: mergeStateOverrides(acc.stateOverrides, overlay.stateOverrides),
+      styleOverrides: mergeStyleOverrides(acc.styleOverrides, overlay.styleOverrides),
     };
   }
   return acc;
@@ -400,6 +349,12 @@ export type DashboardLaunchService = {
   defaultStatus: LaunchStatus;
   defaultRolloutPercentage: number;
   stateOverrides: Record<string, StateConfig>;
+  styleOverrides?: Partial<Record<ServiceStyleLaunchKey, GeoLaunchSlice>>;
+  supportedStyles?: ServiceStyleLaunchKey[];
+  effectiveStyles?: Record<
+    ServiceStyleLaunchKey,
+    { effectiveStatus: LaunchStatus; effectiveRolloutPercentage: number; inheritsParent: boolean }
+  >;
   effectiveStatus: LaunchStatus;
   effectiveRolloutPercentage: number;
 };
@@ -463,22 +418,33 @@ function effectiveStatusForGeography(
   stateCode: string,
   city: string
 ): { status: LaunchStatus; rollout: number } {
-  let status: LaunchStatus = existingService?.defaultStatus || 'hidden';
-  let rollout = existingService?.defaultRolloutPercentage || 0;
+  return resolveGeoLaunchStatus(existingService, stateCode, city, 'hidden');
+}
 
-  if (stateCode && existingService?.stateOverrides?.[stateCode]) {
-    const stateConfig = existingService.stateOverrides[stateCode];
-    status = stateConfig.status;
-    rollout = stateConfig.rolloutPercentage;
-
-    const cityConfig = city ? getCityLaunchOverride(stateConfig.cities, city) : undefined;
-    if (cityConfig) {
-      status = cityConfig.status;
-      rollout = cityConfig.rolloutPercentage;
-    }
+function buildEffectiveStylesForService(
+  existingService: Partial<ServiceLaunchConfig> | undefined,
+  stateCode: string,
+  city: string,
+  serviceId: string
+): Record<
+  ServiceStyleLaunchKey,
+  { effectiveStatus: LaunchStatus; effectiveRolloutPercentage: number; inheritsParent: boolean }
+> | undefined {
+  const supported = supportedStylesForLaunchServiceId(serviceId);
+  if (!supported.length) return undefined;
+  const out = {} as Record<
+    ServiceStyleLaunchKey,
+    { effectiveStatus: LaunchStatus; effectiveRolloutPercentage: number; inheritsParent: boolean }
+  >;
+  for (const styleKey of supported) {
+    const resolved = effectiveStyleStatusForGeography(existingService, styleKey, stateCode, city, 'hidden');
+    out[styleKey] = {
+      effectiveStatus: resolved.status,
+      effectiveRolloutPercentage: resolved.rollout,
+      inheritsParent: resolved.inheritsParent,
+    };
   }
-
-  return { status, rollout };
+  return out;
 }
 
 /**
@@ -539,6 +505,9 @@ export async function buildDashboardServiceCatalog(
       defaultStatus: existingService?.defaultStatus || 'hidden',
       defaultRolloutPercentage: existingService?.defaultRolloutPercentage || 0,
       stateOverrides: existingService?.stateOverrides || {},
+      styleOverrides: existingService?.styleOverrides,
+      supportedStyles: supportedStylesForLaunchServiceId(dashboardId),
+      effectiveStyles: buildEffectiveStylesForService(existingService, stateCode, city, dashboardId),
       effectiveStatus: status,
       effectiveRolloutPercentage: rollout,
     });
@@ -563,6 +532,9 @@ export async function buildDashboardServiceCatalog(
       defaultStatus: existingService?.defaultStatus || 'hidden',
       defaultRolloutPercentage: existingService?.defaultRolloutPercentage || 0,
       stateOverrides: existingService?.stateOverrides || {},
+      styleOverrides: existingService?.styleOverrides,
+      supportedStyles: supportedStylesForLaunchServiceId(svc.id),
+      effectiveStyles: buildEffectiveStylesForService(existingService, stateCode, city, svc.id),
       effectiveStatus: status,
       effectiveRolloutPercentage: rollout,
     });
@@ -703,6 +675,10 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
           existingConfig[svc.serviceId] = {
             ...existingConfig[svc.serviceId],
             ...svc,
+            styleOverrides:
+              svc.styleOverrides !== undefined
+                ? svc.styleOverrides
+                : existingConfig[svc.serviceId]?.styleOverrides,
             updatedAt: new Date().toISOString(),
           };
         }
@@ -757,12 +733,13 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
   /**
    * PUT /config/service-launch/geography
    * Update launch status for a specific service + geography combination
-   * Body: { serviceId, stateCode?, city?, status, rolloutPercentage }
+   * Body: { serviceId, serviceStyle?, stateCode?, city?, status, rolloutPercentage }
+   * When serviceStyle is tele | at_center | at_home, only the style override slice is persisted.
    */
   app.put('/config/service-launch/geography', async (c) => {
     try {
       const body = await c.req.json();
-      const { serviceId, stateCode, city, status, rolloutPercentage = 100 } = body;
+      const { serviceId, serviceStyle, stateCode, city, status, rolloutPercentage = 100 } = body;
 
       if (!serviceId) {
         return c.json({ success: false, error: 'serviceId is required' }, 400);
@@ -772,6 +749,25 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
         return c.json({ 
           success: false, 
           error: 'status must be one of: hidden, coming_soon, beta, launched' 
+        }, 400);
+      }
+
+      const styleKey =
+        serviceStyle && SERVICE_STYLE_LAUNCH_KEYS.includes(serviceStyle)
+          ? (serviceStyle as ServiceStyleLaunchKey)
+          : null;
+      if (serviceStyle && !styleKey) {
+        return c.json({
+          success: false,
+          error: 'serviceStyle must be one of: tele, at_center, at_home',
+        }, 400);
+      }
+
+      const supportedStyles = supportedStylesForLaunchServiceId(serviceId);
+      if (styleKey && !supportedStyles.includes(styleKey)) {
+        return c.json({
+          success: false,
+          error: `serviceStyle "${styleKey}" is not supported for service "${serviceId}"`,
         }, 400);
       }
 
@@ -800,34 +796,36 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
 
       const serviceConfig = existingConfig[serviceId];
 
-      // Update based on geography level
-      if (!stateCode) {
-        // Update default (all India)
+      if (styleKey) {
+        if (!serviceConfig.styleOverrides) serviceConfig.styleOverrides = {};
+        const currentSlice: GeoLaunchSlice = serviceConfig.styleOverrides[styleKey] || {};
+        serviceConfig.styleOverrides[styleKey] = applyGeographyUpdateToSlice(
+          currentSlice,
+          stateCode || undefined,
+          city || undefined,
+          status as LaunchStatus,
+          rolloutPercentage
+        );
+      } else if (!stateCode) {
         serviceConfig.defaultStatus = status;
         serviceConfig.defaultRolloutPercentage = rolloutPercentage;
       } else if (!city) {
-        // Update state level
         if (!serviceConfig.stateOverrides) {
           serviceConfig.stateOverrides = {};
         }
         if (!serviceConfig.stateOverrides[stateCode]) {
           serviceConfig.stateOverrides[stateCode] = {
-            status: 'hidden',
-            rolloutPercentage: 0,
             cities: {},
           };
         }
         serviceConfig.stateOverrides[stateCode].status = status;
         serviceConfig.stateOverrides[stateCode].rolloutPercentage = rolloutPercentage;
       } else {
-        // Update city level
         if (!serviceConfig.stateOverrides) {
           serviceConfig.stateOverrides = {};
         }
         if (!serviceConfig.stateOverrides[stateCode]) {
           serviceConfig.stateOverrides[stateCode] = {
-            status: 'hidden',
-            rolloutPercentage: 0,
             cities: {},
           };
         }
@@ -873,6 +871,7 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
         success: true,
         message: 'Service launch status updated',
         serviceId,
+        serviceStyle: styleKey || null,
         geography: { stateCode: stateCode || 'all', city: city || 'all' },
         status,
         rolloutPercentage,
@@ -919,6 +918,8 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
             categoryId: svc.categoryId,
             effectiveStatus: svc.effectiveStatus,
             rolloutPercentage: svc.effectiveRolloutPercentage,
+            supportedStyles: svc.supportedStyles,
+            effectiveStyles: svc.effectiveStyles,
           })),
           visible: visibleServices,
           comingSoon: comingSoonServices,
@@ -936,7 +937,7 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
       return c.json({
         success: true,
         location: { state: null, stateCode: null, city: null },
-        services: { visible: [], comingSoon: [], hidden: [] },
+        services: { visible: [], comingSoon: [], hidden: [], catalog: [] },
         buttons: [],
       }, 200);
     }

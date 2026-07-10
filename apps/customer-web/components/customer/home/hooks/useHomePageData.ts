@@ -7,7 +7,7 @@ import { customerPathToScreen } from '@/lib/promotion-navigation';
 import { iconForCustomerHomeApiBanner } from '@/lib/customer-banner-icons';
 import { serviceBaseOnpincode } from '../../homepage/constants/helpers';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
-import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
+import { fetchShopCategoriesWithProducts } from '@/lib/shop-category-display';
 import { buildHomeTopCarouselBanners } from '../utils/banner-utils';
 import { extractProductImageUrl } from '../utils/product-image';
 import type { HomeCarouselBanner } from '../types';
@@ -486,12 +486,7 @@ export function useHomePageData({
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>('/ecommerce/categories');
-        const raw = res?.categories;
-        if (cancelled || !Array.isArray(raw)) return;
-        const mapped = mapApiCategoriesToShop(
-          raw.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
-        );
+        const mapped = await fetchShopCategoriesWithProducts();
         if (!cancelled) setEcommerceShopCategories(mapped);
       } catch {
         if (!cancelled) setEcommerceShopCategories([]);

@@ -41,4 +41,12 @@ describe('shop/payment visibility guards', () => {
     expect(file).toContain("WHEN order_status = 'pending_payment' THEN 'pending'");
     expect(file).toContain('PAYMENT_HOLD_EXPIRED');
   });
+
+  test('customer order list exposes pending_payment and payment-resume', () => {
+    const file = read('src/endpoints/customer/customerEndpoint/customer-orders.ts');
+    expect(file).toContain('expireShopPaymentHolds');
+    expect(file).toContain('buildShopOrderPaymentResumeContext');
+    expect(file).toContain('/customer/orders/:id/payment-resume');
+    expect(file).not.toContain("AND o.order_status != 'pending_payment'");
+  });
 });

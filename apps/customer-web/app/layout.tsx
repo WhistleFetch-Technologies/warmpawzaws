@@ -39,7 +39,7 @@ export default function RootLayout({
   const customerMealPlansEnabled =
     customerMealPlansEnabledRaw === 'true' || customerMealPlansEnabledRaw === '1';
   const customerEcommerceEnabledRaw = (
-    process.env.NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED ?? (isProd ? 'false' : 'true')
+    process.env.NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED ?? 'true'
   ).toLowerCase();
   const customerEcommerceEnabled =
     customerEcommerceEnabledRaw === 'true' || customerEcommerceEnabledRaw === '1';

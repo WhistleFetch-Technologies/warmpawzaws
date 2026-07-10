@@ -46,6 +46,10 @@ import {
   type SearchCategoryMatch,
 } from '../lib/search-taxonomy';
 import { hasFtsEntityIds, resolveSearchEntityIds, type SearchEntityIds } from '../lib/sql-search-fts';
+import {
+  resolveLaunchGeoFromQuery,
+  shouldIncludeSearchResult,
+} from '../lib/customer-launch-geo-filter';
 
 /** Whitespace-separated query → tokens (cap avoids huge SQL from pasted text). */
 function searchTokens(searchQuery: string, maxTokens = 6): string[] {
@@ -650,6 +654,7 @@ class UniversalSearchHandler extends BaseHandler {
           state: s.state,
           category: s.category ?? s.search_role_name ?? null,
           serviceType: s.category ?? s.search_role_name ?? null,
+          serviceStyle: s.service_style ?? null,
           imageUrl: s.image_url ?? s.thumbnail_url ?? null,
           vendorProfileImage,
           vendorAddress: s.vendor_address ?? null,
@@ -679,6 +684,35 @@ class UniversalSearchHandler extends BaseHandler {
       const keptIds = new Set(finalVendors.map((v) => String(v.id)));
       finalServices = filterServicesToKeptVendors(parity.services, keptIds);
     }
+
+    const launchFilter = await resolveLaunchGeoFromQuery(qs);
+    const hubCategory = category || (hubContext ? hubContext.discoverCategory : undefined);
+    finalVendors = finalVendors.filter((v) =>
+      shouldIncludeSearchResult(
+        launchFilter,
+        {
+          category: (v as { category?: string }).category,
+          serviceType: (v as { category?: string }).category,
+        },
+        hubCategory
+      )
+    );
+    finalServices = finalServices.filter((s) =>
+      shouldIncludeSearchResult(
+        launchFilter,
+        {
+          category: (s as { category?: string }).category,
+          serviceType: (s as { serviceType?: string }).serviceType,
+          serviceStyle: (s as { serviceStyle?: string }).serviceStyle,
+        },
+        hubCategory
+      )
+    );
+    const keptVendorIds = new Set(finalVendors.map((v) => String(v.id)));
+    finalServices = finalServices.filter((s) => {
+      const vid = String((s as { vendorId?: string }).vendorId || '');
+      return !vid || keptVendorIds.has(vid);
+    });
 
     // Query ecommerce products for shop/pharmacy hub searches.
     const finalProducts = isProductSearchHub(category)

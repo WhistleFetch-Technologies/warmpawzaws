@@ -2,7 +2,15 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient, ordersApi } from '@/lib/api-client';
+import { apiClient, ordersApi, extractHttpErrorMessage } from '@/lib/api-client';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
+import { resumeShopOrderPayment } from '@/lib/ecommerce/resume-shop-order-payment';
+import {
+  PaymentHoldBanner,
+  isShopOrderPaymentHoldVisible,
+  resolvePaymentHoldExpiresAt,
+  isShopOrderPaymentHoldExpired,
+} from '@/lib/payment-hold-ui';
 import {
   downloadOrderInvoice,
   getOrderInvoiceDownloadMessage,
@@ -57,12 +65,14 @@ interface OrderItem {
   price: number;
   vendor_id: string;
   vendor_name: string;
+  category_name?: string;
+  is_returnable?: boolean;
 }
 
 interface Order {
   id: string;
   order_number: string;
-  status: 'pending' | 'confirmed' | 'processing' | 'shipped' | 'out_for_delivery' | 'delivered' | 'cancelled' | 'returned';
+  status: 'pending_payment' | 'pending' | 'confirmed' | 'processing' | 'shipped' | 'out_for_delivery' | 'delivered' | 'cancelled' | 'returned';
   items: OrderItem[];
   shipping_address: {
     name: string;
@@ -78,6 +88,8 @@ interface Order {
   total: number;
   payment_method: string;
   payment_status: string;
+  payment_hold_expires_at?: string;
+  paymentHoldExpiresAt?: string;
   tracking_number?: string;
   tracking?: {
     carrierName?: string;
@@ -87,11 +99,13 @@ interface Order {
   estimated_delivery?: string;
   delivered_at?: string;
   return_window_days?: number;
+  has_returnable_items?: boolean;
   created_at: string;
   updated_at: string;
 }
 
 const statusConfig: Record<string, { badge: string; icon: typeof Clock; label: string }> = {
+  pending_payment: { badge: 'bg-amber-100 text-amber-800', icon: Clock, label: 'Payment pending' },
   pending: { badge: 'bg-amber-100 text-amber-800', icon: Clock, label: 'Order Placed' },
   confirmed: { badge: 'bg-blue-100 text-blue-800', icon: Check, label: 'Confirmed' },
   processing: { badge: 'bg-indigo-100 text-indigo-800', icon: Package, label: 'Processing' },
@@ -122,6 +136,8 @@ function normalizeItems(items: unknown): OrderItem[] {
       price: Number(it.unit_price ?? it.price ?? it.unitPrice ?? 0),
       vendor_id: String(it.vendor_id ?? ''),
       vendor_name: it.vendor_name || 'Store',
+      category_name: it.category_name ?? it.categoryName ?? undefined,
+      is_returnable: it.is_returnable === true || it.isReturnable === true,
     };
   });
 }
@@ -184,7 +200,7 @@ function parseShippingAddress(raw: any): Order['shipping_address'] {
 function normalizeOrder(raw: any): Order {
   const rawStatus = String(raw.status || raw.order_status || 'pending').toLowerCase();
   const allowed: Order['status'][] = [
-    'pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery',
+    'pending_payment', 'pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery',
     'delivered', 'cancelled', 'returned',
   ];
   const status = (allowed.includes(rawStatus as Order['status']) ? rawStatus : 'pending') as Order['status'];
@@ -207,11 +223,17 @@ function normalizeOrder(raw: any): Order {
     total,
     payment_method: raw.payment_method || 'online',
     payment_status: String(raw.payment_status || 'pending').toLowerCase(),
+    payment_hold_expires_at:
+      raw.payment_hold_expires_at ?? raw.paymentHoldExpiresAt ?? undefined,
+    paymentHoldExpiresAt:
+      raw.paymentHoldExpiresAt ?? raw.payment_hold_expires_at ?? undefined,
     tracking_number: raw.tracking_number,
     tracking,
     estimated_delivery: raw.estimated_delivery,
     delivered_at: raw.delivered_at || undefined,
     return_window_days: raw.return_window_days != null ? Number(raw.return_window_days) : undefined,
+    has_returnable_items:
+      raw.has_returnable_items === true || raw.hasReturnableItems === true,
     created_at: raw.created_at || new Date().toISOString(),
     updated_at: raw.updated_at || raw.created_at || new Date().toISOString(),
   };
@@ -226,6 +248,16 @@ function isReturnWindowOpen(order: Order): boolean {
     (Date.now() - new Date(order.delivered_at).getTime()) / 86_400_000
   );
   return daysSinceDelivery <= windowDays;
+}
+
+function canRequestReturn(order: Order): boolean {
+  if (order.status !== 'delivered') return false;
+  if (order.has_returnable_items === true) return isReturnWindowOpen(order);
+  return false;
+}
+
+function getReturnableItems(order: Order): OrderItem[] {
+  return (order.items || []).filter((item) => item.is_returnable === true);
 }
 
 export interface CustomerShopOrdersScreenProps {
@@ -244,6 +276,7 @@ export function CustomerShopOrdersScreen({
   initialExpandedOrderId,
 }: CustomerShopOrdersScreenProps) {
   const router = useRouter();
+  const nav = useCustomerNavigation();
 
   const goToShop = () => {
     if (spaShopReturnScreen) {
@@ -261,6 +294,10 @@ export function CustomerShopOrdersScreen({
   const [searchTerm, setSearchTerm] = useState('');
   const [reviewTarget, setReviewTarget] = useState<{ orderId: string; items: ShopReviewItem[] } | null>(null);
   const [reviewedProductIds, setReviewedProductIds] = useState<Set<string>>(new Set());
+  const [returnTarget, setReturnTarget] = useState<Order | null>(null);
+  const [returnSelectedIds, setReturnSelectedIds] = useState<Set<string>>(new Set());
+  const [returnSubmitting, setReturnSubmitting] = useState(false);
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
 
   const handleBack = () => {
     if (onBack) {
@@ -323,6 +360,77 @@ export function CustomerShopOrdersScreen({
     }
   }, [initialExpandedOrderId, orders]);
 
+  const handleResumeShopPayment = async (order: Order, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isShopOrderPaymentHoldExpired(order)) {
+      toast.error('Payment window expired. This order was cancelled.');
+      void loadOrders();
+      return;
+    }
+
+    const customerId = getResolvedCustomerId();
+    if (!customerId) {
+      toast.error('Please sign in again to complete payment');
+      return;
+    }
+
+    setPayingOrderId(order.id);
+    try {
+      const res = (await apiClient.get(
+        `/customer/orders/${order.id}/payment-resume?customerId=${encodeURIComponent(customerId)}`
+      )) as {
+        canResume?: boolean;
+        payableAmount?: number;
+        amount?: number;
+        error?: string;
+      };
+
+      if (res?.canResume === false) {
+        toast.error(res.error || 'Payment window expired. Please place a new order.');
+        void loadOrders();
+        return;
+      }
+
+      const payable = Number(res.payableAmount ?? res.amount ?? order.total) || 0;
+      if (payable <= 0) {
+        toast.error('Nothing to pay for this order');
+        return;
+      }
+
+      await resumeShopOrderPayment({
+        orderId: order.id,
+        payableAmount: payable,
+        customerId,
+        phone: order.shipping_address.phone,
+        prefillName: order.shipping_address.name,
+        onSuccess: (paidOrderId) => {
+          toast.success('Payment successful!');
+          nav.afterCheckoutSuccess(paidOrderId);
+        },
+      });
+      await loadOrders();
+    } catch (err: unknown) {
+      const apiErr = err as { status?: number; statusCode?: number; responseData?: unknown; message?: string };
+      const status = apiErr.status ?? apiErr.statusCode;
+      if (status === 410) {
+        toast.error('Payment window expired. Please place a new order.');
+        void loadOrders();
+        return;
+      }
+      const message =
+        apiErr.responseData != null
+          ? extractHttpErrorMessage(apiErr.responseData, status ?? 400)
+          : err instanceof Error
+            ? err.message
+            : 'Could not open payment';
+      if (message !== 'Payment cancelled') {
+        toast.error(message);
+      }
+    } finally {
+      setPayingOrderId(null);
+    }
+  };
+
   const cancelOrder = async (orderId: string) => {
     if (!confirm('Are you sure you want to cancel this order?')) return;
 
@@ -335,15 +443,54 @@ export function CustomerShopOrdersScreen({
     }
   };
 
-  const requestReturn = async (orderId: string) => {
-    if (!confirm('Are you sure you want to return this order?')) return;
+  const openReturnModal = (order: Order) => {
+    const returnable = getReturnableItems(order);
+    if (returnable.length === 0) {
+      toast.error('No returnable items in this order');
+      return;
+    }
+    setReturnTarget(order);
+    setReturnSelectedIds(new Set(returnable.map((item) => item.id)));
+  };
 
+  const toggleReturnItem = (itemId: string) => {
+    setReturnSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
+
+  const submitReturn = async () => {
+    if (!returnTarget) return;
+    if (returnSelectedIds.size === 0) {
+      toast.error('Select at least one item to return');
+      return;
+    }
+
+    setReturnSubmitting(true);
     try {
-      await ordersApi.returnOrder(orderId, { reason: 'Customer request' });
+      const items = returnTarget.items
+        .filter((item) => returnSelectedIds.has(item.id))
+        .map((item) => ({
+          orderItemId: item.id,
+          quantity: item.quantity,
+        }));
+
+      await ordersApi.returnOrder(returnTarget.id, {
+        reason: 'Customer return request',
+        items,
+      });
+      toast.success('Return request submitted');
+      setReturnTarget(null);
+      setReturnSelectedIds(new Set());
       await loadOrders();
     } catch (err: any) {
       console.error('Error requesting return:', err);
-      alert('Failed to request return: ' + (err.message || 'Unknown error'));
+      toast.error(err.message || 'Failed to request return');
+    } finally {
+      setReturnSubmitting(false);
     }
   };
 
@@ -431,7 +578,7 @@ export function CustomerShopOrdersScreen({
 
   const dashboardStats = useMemo(() => {
     const active = orders.filter((o) =>
-      ['pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery'].includes(o.status)
+      ['pending_payment', 'pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery'].includes(o.status)
     ).length;
     const done = orders.filter((o) => o.status === 'delivered' || o.status === 'cancelled' || o.status === 'returned').length;
     return [
@@ -489,6 +636,15 @@ export function CustomerShopOrdersScreen({
                 <span className="flex items-center gap-2.5">
                   <ShoppingBag className="size-4 shrink-0 text-orange-500" strokeWidth={2} />
                   All Orders
+                </span>
+              </SelectItem>
+              <SelectItem
+                value="pending_payment"
+                className="rounded-xl py-3 pl-3 pr-9 text-[15px] sm:text-sm cursor-pointer hover:bg-orange-50/80 focus:bg-orange-50 data-[highlighted]:bg-orange-50 data-[highlighted]:text-slate-900 data-[state=checked]:bg-orange-50/80"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Clock className="size-4 shrink-0 text-amber-600" strokeWidth={2} />
+                  Payment pending
                 </span>
               </SelectItem>
               <SelectItem
@@ -658,6 +814,14 @@ export function CustomerShopOrdersScreen({
                         )}
                       </button>
                     </div>
+                    {isShopOrderPaymentHoldVisible(order) ? (
+                      <PaymentHoldBanner
+                        expiresAt={resolvePaymentHoldExpiresAt(order)}
+                        holdMessage="Complete payment to confirm your order. Stock is held until the timer ends."
+                        onPayNow={(e) => void handleResumeShopPayment(order, e)}
+                        onExpired={loadOrders}
+                      />
+                    ) : null}
                   </div>
 
                   <div className="p-3 bg-slate-50">
@@ -858,18 +1022,20 @@ export function CustomerShopOrdersScreen({
                         )}
                         {order.status === 'delivered' && (
                           <div className="flex flex-col gap-2">
-                            {isReturnWindowOpen(order) ? (
+                            {canRequestReturn(order) ? (
                               <button
                                 type="button"
-                                onClick={() => requestReturn(order.id)}
+                                onClick={() => openReturnModal(order)}
                                 className="w-full py-2.5 text-sm border border-orange-200 text-orange-600 rounded-xl font-medium hover:bg-orange-50 flex items-center justify-center gap-2"
                               >
                                 <RefreshCcw className="w-4 h-4" />
-                                Return order
+                                Return items
                               </button>
                             ) : (
                               <p className="w-full py-2.5 text-sm text-center text-slate-400 border border-slate-100 rounded-xl">
-                                Return window closed
+                                {!isReturnWindowOpen(order)
+                                  ? 'Return window closed'
+                                  : 'Returns not available for items in this order'}
                               </p>
                             )}
                             <button
@@ -908,6 +1074,63 @@ export function CustomerShopOrdersScreen({
         onClose={() => setReviewTarget(null)}
         onSubmitted={(productId) => handleReviewSubmitted([productId])}
       />
+
+      {returnTarget && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h3 className="text-lg font-semibold text-slate-900">Return items</h3>
+              <p className="text-sm text-slate-500 mt-1">
+                Select Pet Clothing items to return. Other categories are not eligible.
+              </p>
+            </div>
+            <div className="max-h-[50vh] overflow-y-auto px-5 py-3 space-y-2">
+              {getReturnableItems(returnTarget).map((item) => (
+                <label
+                  key={item.id}
+                  className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 cursor-pointer hover:bg-orange-50/50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={returnSelectedIds.has(item.id)}
+                    onChange={() => toggleReturnItem(item.id)}
+                    className="w-4 h-4 rounded border-slate-300"
+                  />
+                  <OrderItemThumbnail item={item} className="w-10 h-10" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">{item.product_name}</p>
+                    <p className="text-xs text-slate-500">
+                      Qty {item.quantity}
+                      {item.category_name ? ` · ${item.category_name}` : ''}
+                    </p>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="px-5 py-4 border-t border-slate-100 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setReturnTarget(null);
+                  setReturnSelectedIds(new Set());
+                }}
+                disabled={returnSubmitting}
+                className="flex-1 py-2.5 text-sm border border-slate-200 rounded-xl font-medium text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitReturn()}
+                disabled={returnSubmitting || returnSelectedIds.size === 0}
+                className="flex-1 py-2.5 text-sm bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50"
+              >
+                {returnSubmitting ? 'Submitting…' : 'Submit return'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@
  * Phased rollout: sections are composed here as each phase lands.
  * Gated in CustomerHomeComplete when NEXT_PUBLIC_NEW_HOME_UI is enabled.
  */
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { HomeHeaderSection } from './sections/HomeHeaderSection';
 import { PetStripSection } from './sections/PetStripSection';
@@ -33,6 +33,7 @@ import type { HomeNavigateFn } from './hooks/useHomeNavigation';
 import type { HomeCarouselBanner, QuickServiceTile } from './types';
 import type { Pet } from '../homepage/constants/interface';
 import type { WhatsNewAnnouncement } from '@/lib/whats-new-announcements';
+import { resolveShopCategoryParam } from '@/lib/shop-category-display';
 
 const ShopProductsSection = dynamic(
   () => import('./sections/ShopProductsSection').then((mod) => ({ default: mod.ShopProductsSection })),
@@ -167,11 +168,16 @@ function CustomerHomePageContentComponent({
   reviewDemoAccount = false,
 }: CustomerHomePageContentProps) {
   const lowerHomeBanners = featuredLowerBanners.slice(1);
+  const petFoodCategoryId = useMemo(
+    () => resolveShopCategoryParam('pet-food', ecommerceShopCategories),
+    [ecommerceShopCategories]
+  );
 
   return (
     <>
       <SearchFilterSection
         customerId={customerId}
+        phone={phone}
         onSearch={onSearch}
         onResultSelect={onSearchResultSelect}
       />
@@ -225,7 +231,7 @@ function CustomerHomePageContentComponent({
       ) : null}
       {!reviewDemoAccount ? (
         <ViewportSection placeholderMinHeight={250}>
-          <PremiumPetFoodSection onNavigate={onNavigate} />
+          <PremiumPetFoodSection onNavigate={onNavigate} petFoodCategoryId={petFoodCategoryId || undefined} />
         </ViewportSection>
       ) : null}
       {petCareArticles.length > 0 ? (

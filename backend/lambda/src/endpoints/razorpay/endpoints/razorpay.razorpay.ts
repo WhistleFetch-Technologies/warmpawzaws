@@ -33,6 +33,7 @@ import {
   applyOrderCommissionAudit,
 } from '../../../utils/resolve-ecommerce-commission-rate';
 import { isCommissionConfigurationError } from '../../../utils/commission-configuration-error';
+import { writeEcommerceOrderSettlementLedgerRow } from '../../../utils/write-ecommerce-order-settlement';
 export { getVendorTierCommission } from '../../../utils/vendor-tier-commission';
 import { logBookingStatusChange } from '../../../utils/audit-log';
 import { notifyBookingCreated } from '../../../utils/booking-notifications';
@@ -710,51 +711,37 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         notes,
       };
 
-      // If vendor has linked account and marketplace mode enabled, add transfers
-      if (vendor?.razorpay_account_id && vendor.bank_verified) {
+      // If vendor has linked account and marketplace mode enabled, add transfers.
+      // E-commerce orders are EXCLUDED: they settle via the batch settlement ledger
+      // (ecommerce_order_settlements / ecommerce-settlement-processor.ts) instead of an
+      // instant per-order Razorpay Route transfer, because admin/platform-funded promotions
+      // can make a single order's platform net negative — that can only be funded by
+      // pooling commission across many orders, which a per-order transfer cannot do.
+      // See Ecommerce Settlement Engine plan §1/§5. Commission is still snapshotted below
+      // for the settlement job to read at payment-verify time.
+      if (vendor?.razorpay_account_id && vendor.bank_verified && !isEcommerceOrder) {
         const amt = Number(chargeAmount);
         let tierCommission = DEFAULT_COMMISSION_RATE;
         let commissionAmountPaise: number;
 
-        if (isEcommerceOrder && ecommerceOrderId) {
-          const resolved = await resolveOrderCommissionByOrderId(
-            vendorIdFinal,
-            String(ecommerceOrderId)
-          );
-          tierCommission = resolved.effectiveRate;
-          commissionAmountPaise = Math.round(resolved.commissionAmount * 100);
-
-          const snapshot = buildCommissionSnapshot(resolved);
-          try {
-            await query(
-              `UPDATE orders SET commission_snapshot = $2::jsonb, updated_at = NOW() WHERE id = $1::uuid`,
-              [ecommerceOrderId, JSON.stringify(snapshot)]
-            );
-          } catch (snapErr) {
-            console.warn('[RAZORPAY-CREATE-ORDER] commission_snapshot update skipped:', snapErr);
-          }
-        } else {
-          try {
-            tierCommission = await Promise.race([
-              getVendorTierCommission(vendorIdFinal),
-              new Promise<number>((resolve) =>
-                setTimeout(() => resolve(DEFAULT_COMMISSION_RATE), 2000)
-              ),
-            ]);
-          } catch {
-            tierCommission = DEFAULT_COMMISSION_RATE;
-          }
-          commissionAmountPaise = Math.round((amt * tierCommission / 100) * 100);
+        try {
+          tierCommission = await Promise.race([
+            getVendorTierCommission(vendorIdFinal),
+            new Promise<number>((resolve) =>
+              setTimeout(() => resolve(DEFAULT_COMMISSION_RATE), 2000)
+            ),
+          ]);
+        } catch {
+          tierCommission = DEFAULT_COMMISSION_RATE;
         }
+        commissionAmountPaise = Math.round((amt * tierCommission / 100) * 100);
 
         const vendorShare = Math.round(amt * 100) - commissionAmountPaise;
         const transferNotes = isPharmacyOrder
           ? { pharmacy_order_id: String(pharmacyOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
-          : isEcommerceOrder
-            ? { order_id: String(ecommerceOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
-            : isDiagnosticsOrder
-              ? { type: 'diagnostics', vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
-              : { booking_id: bookingId, vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() };
+          : isDiagnosticsOrder
+            ? { type: 'diagnostics', vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
+            : { booking_id: bookingId, vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() };
         orderData.transfers = [
           {
             account: vendor.razorpay_account_id,
@@ -764,6 +751,22 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             on_hold: false,
           },
         ];
+      } else if (isEcommerceOrder && ecommerceOrderId && vendorIdFinal) {
+        // Snapshot commission now so the settlement job has it even though no Route
+        // transfer happens here.
+        try {
+          const resolved = await resolveOrderCommissionByOrderId(
+            vendorIdFinal,
+            String(ecommerceOrderId)
+          );
+          const snapshot = buildCommissionSnapshot(resolved);
+          await query(
+            `UPDATE orders SET commission_snapshot = $2::jsonb, updated_at = NOW() WHERE id = $1::uuid`,
+            [ecommerceOrderId, JSON.stringify(snapshot)]
+          );
+        } catch (snapErr) {
+          console.warn('[RAZORPAY-CREATE-ORDER] commission_snapshot update skipped:', snapErr);
+        }
       }
 
       // ✅ Enhanced logging before Razorpay API call
@@ -1440,6 +1443,12 @@ class VerifyPaymentHandler extends BaseHandler {
         triggerAutoShipment(ecommerceOrderForShipment, 'ecommerce').catch((e) =>
           console.error('[PAYMENT-VERIFY] Auto-shipment trigger failed:', e)
         );
+        // Batch settlement ledger row (replaces instant Razorpay Route transfer for
+        // e-commerce — see write-ecommerce-order-settlement.ts). Fire-and-forget, same
+        // as shipment/notification side effects above; the batch job can backfill if this fails.
+        void writeEcommerceOrderSettlementLedgerRow(ecommerceOrderForShipment).catch((e) =>
+          console.error('[PAYMENT-VERIFY] Settlement ledger write failed:', e)
+        );
       }
 
       if (ecommerceOrderToNotify) {
@@ -1696,9 +1705,11 @@ class RazorpayWebhookHandler extends BaseHandler {
             ecommerceOrderForShipment = orderId;
             ecommerceOrderToNotify = orderId;
             if (vendorId) {
-              void applyOrderCommissionAudit(orderId, vendorId).catch((e) =>
-                console.warn('[RAZORPAY-WEBHOOK] Commission audit failed:', e)
-              );
+              void applyOrderCommissionAudit(orderId, vendorId)
+                .then(() => writeEcommerceOrderSettlementLedgerRow(orderId))
+                .catch((e) =>
+                  console.warn('[RAZORPAY-WEBHOOK] Commission audit / settlement ledger failed:', e)
+                );
             }
           }
         }

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { WalletIcon } from '../WalletIcon';
 import { PresignableImage } from '@/components/shared/PresignableImage';
+import { WishlistNavHeart } from '@/components/customer/WishlistNavHeart';
 
 interface Pet {
   id: string;
@@ -157,9 +158,7 @@ export function StandardizedHeader({
               </span>
             )}
           </button>
-          <button className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors">
-            <Heart className="w-4 h-4 text-white" />
-          </button>
+          <WishlistNavHeart variant="shell" onNavigate={onNavigate} />
         </div>
       </div>
 

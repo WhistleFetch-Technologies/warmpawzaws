@@ -27,6 +27,8 @@ import {
   bookingFormFieldsFromProceed,
   type TeleWizardSnapshot,
 } from '@/lib/navigation/wizard-session-state';
+import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
+import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 
 // ============================================================================
 // TYPES
@@ -851,6 +853,7 @@ export function TeleConsultationRouter({
   const [pets, setPets] = useState<Pet[]>([]);
   const [loadingServices, setLoadingServices] = useState(false);
   const [loadingPets, setLoadingPets] = useState(false);
+  const launchGate = useServiceStyleLaunchGate(phone, 'vet', 'tele');
 
   // Load customer ID on mount
   useEffect(() => {
@@ -1233,6 +1236,14 @@ export function TeleConsultationRouter({
   useEffect(() => {
     onInternalBackReady?.(handleBack);
   }, [handleBack, onInternalBackReady]);
+
+  if (launchGate.ready && launchGate.blocked) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <ServiceStyleLaunchBlocked message={launchGate.blockMessage} onBack={onBack} />
+      </div>
+    );
+  }
 
   // Render based on step
   switch (step) {

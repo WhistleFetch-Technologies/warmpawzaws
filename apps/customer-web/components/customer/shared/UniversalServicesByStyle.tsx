@@ -42,6 +42,9 @@ import {
 import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
 import { roleIdToSharePersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
+import { ServiceStyleLaunchBlocked } from './ServiceStyleLaunchBlocked';
+
 interface UniversalServicesByStyleProps {
   phone: string;
   roleId: RoleId; // ✅ NEW: Role ID for universal component
@@ -231,18 +234,22 @@ export function UniversalServicesByStyle({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
+  const launchGate = useServiceStyleLaunchGate(phone, finalCategory, serviceStyle);
 
   // Check if we're in profile view mode (vendorId provided and single provider)
   const isProfileView = vendorId && providers.length === 1;
   const profileProvider = isProfileView ? providers[0] : null;
 
   useEffect(() => {
+    if (!launchGate.ready || launchGate.blocked) {
+      if (launchGate.ready && launchGate.blocked) setLoading(false);
+      return;
+    }
     loadServicesByStyle();
-    // If vendorId is provided, also load vendor and facility details for profile view
     if (vendorId) {
       loadVendorProfile();
     }
-  }, [serviceStyle, vendorId, specialization, phone]); // Reload when specialization or coords context (phone) changes
+  }, [launchGate.ready, launchGate.blocked, serviceStyle, vendorId, specialization, phone]);
 
   const loadServicesByStyle = async () => {
     const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
@@ -800,6 +807,14 @@ export function UniversalServicesByStyle({
       serviceStyle,
     });
   };
+
+  if (launchGate.ready && launchGate.blocked) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <ServiceStyleLaunchBlocked message={launchGate.blockMessage} onBack={onBack} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (

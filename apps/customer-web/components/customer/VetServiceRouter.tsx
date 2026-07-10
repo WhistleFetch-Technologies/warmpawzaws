@@ -32,6 +32,15 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
+import {
+  gateServiceStyleNavigation,
+  isServiceStyleComingSoon,
+  isServiceStyleHidden,
+  isServiceStyleNavigable,
+  loadCustomerServiceLaunchCatalog,
+  resolveServiceStyleLaunchFromCatalog,
+} from '@/lib/customer-service-style-launch';
+import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -45,6 +54,13 @@ interface VetServiceRouterProps {
  * Vet services require a pet to be selected before booking
  */
 const HUB_SLUG: BoardingServiceSlug = 'all';
+
+/** Vet hub cards that map to Dashboard service-style launch keys. */
+const VET_CARD_LAUNCH_STYLE: Record<string, string> = {
+  tele: 'tele',
+  clinic: 'at_center',
+  home: 'at_home',
+};
 
 const VET_HEADER_ICON =
   'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none [&>line]:fill-none';
@@ -112,6 +128,24 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
 
   const [previousVet, setPreviousVet] = useState<any>(null);
+  const [styleLaunchByCard, setStyleLaunchByCard] = useState<Record<string, LaunchStatusValue>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const catalog = await loadCustomerServiceLaunchCatalog(phone);
+      if (cancelled) return;
+      const next: Record<string, LaunchStatusValue> = {};
+      for (const [cardId, styleKey] of Object.entries(VET_CARD_LAUNCH_STYLE)) {
+        const { status } = resolveServiceStyleLaunchFromCatalog(catalog, 'vet', styleKey);
+        next[cardId] = status;
+      }
+      setStyleLaunchByCard(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [phone]);
 
   useEffect(() => {
     loadPets();
@@ -238,16 +272,28 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   };
 
   const serviceTypes = useMemo(() => {
-    const allServiceTypes = VET_SERVICE_CARDS.map((service) =>
-      service.id === 'clinic' ? { ...service, badge: vetClinicBadgeText } : service,
-    );
+    const allServiceTypes = VET_SERVICE_CARDS.map((service) => {
+      if (service.id !== 'clinic') return service;
+      const clinicStatus = styleLaunchByCard.clinic;
+      if (clinicStatus && !isServiceStyleNavigable(clinicStatus)) {
+        return { ...service, badge: undefined };
+      }
+      return { ...service, badge: vetClinicBadgeText };
+    });
+
+    const launchFiltered = allServiceTypes.filter((service) => {
+      const launchStatus = styleLaunchByCard[service.id];
+      if (launchStatus && isServiceStyleHidden(launchStatus)) {
+        return false;
+      }
+      return true;
+    });
 
     if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
-      return allServiceTypes;
+      return launchFiltered;
     }
 
-    return allServiceTypes.filter((service) => {
-      const styleMap = serviceTypeStyleMap[service.id] || [];
+    return launchFiltered.filter((service) => {
       return styleMap.some((style) =>
         allowedServiceStyles.some(
           (allowed) =>
@@ -256,7 +302,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         ),
       );
     });
-  }, [allowedServiceStyles, vetClinicBadgeText]);
+  }, [allowedServiceStyles, vetClinicBadgeText, styleLaunchByCard]);
 
   const problemGridItems = useMemo(
     () => (vetProblems.length > 0 ? vetProblems : VET_PROBLEMS),
@@ -474,10 +520,22 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
           <div className="grid grid-cols-2 gap-3">
             {serviceTypes.map((service) => {
-              const isComingSoon = !!service.comingSoon;
+              const launchStatus = styleLaunchByCard[service.id];
+              const isComingSoon =
+                launchStatus != null
+                  ? isServiceStyleComingSoon(launchStatus)
+                  : !!service.comingSoon;
 
-              const handleServiceClick = () => {
+              const handleServiceClick = async () => {
                 try {
+                  const styleKey = VET_CARD_LAUNCH_STYLE[service.id];
+                  if (styleKey) {
+                    const allowed = await gateServiceStyleNavigation(phone, 'vet', styleKey, (msg) =>
+                      toast.info(msg)
+                    );
+                    if (!allowed) return;
+                  }
+
                   if (service.id === 'clinic') {
                     handleNavigate('vet-clinic-list');
                   } else if (service.id === 'tele') {

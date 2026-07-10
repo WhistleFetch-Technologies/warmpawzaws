@@ -681,6 +681,21 @@ export function registerPromotionEndpoints(app: Hono) {
       const promotions = await query(promotionsQuery, params);
       const promotionRows = promotions.rows ?? [];
 
+      let ecommerceAdminRows: Record<string, unknown>[] = [];
+      if (serviceType === 'all' || serviceType === 'product' || serviceType === 'shop') {
+        try {
+          const campaigns = await query(
+            `SELECT * FROM ecommerce_admin_promotions
+             WHERE is_active = true AND published = true
+               AND start_date <= NOW() AND end_date >= NOW()
+             ORDER BY created_at DESC`
+          );
+          ecommerceAdminRows = campaigns.rows || [];
+        } catch {
+          /* table may not exist yet on older schemas */
+        }
+      }
+
       const couponAsPromotions = includeCoupons
         ? await loadActivePlatformCouponsAsPromotions(now, serviceBucket, commercialDomain)
         : [];
@@ -708,7 +723,7 @@ export function registerPromotionEndpoints(app: Hono) {
       const discoveryRows = filterPromotionRowsForActive(promotionRows);
 
       const seenCodes = new Set<string>();
-      const merged = [...discoveryRows, ...couponAsPromotions].filter((row) => {
+      const merged = [...discoveryRows, ...couponAsPromotions, ...ecommerceAdminRows].filter((row) => {
         const code = String(row.code ?? '').trim().toUpperCase();
         if (!code) return true;
         if (seenCodes.has(code)) return false;

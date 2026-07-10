@@ -7,6 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { getWebCustomerVendorStyleListingNavTarget } from '@/lib/customer-vendor-profile-navigation';
+import {
+  resolveServiceStyleLaunch,
+  shouldBlockServiceStyleNavigation,
+  serviceStyleLaunchBlockMessage,
+} from '@/lib/customer-service-style-launch';
+import { toast } from 'sonner';
 import { formatDistanceDisplay, pickProviderDistanceKm } from '@/lib/distance-display';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 // Simple debounce implementation
@@ -69,6 +75,26 @@ export function VendorListingByStyle({
   const [distanceRange, setDistanceRange] = useState<DistanceRange>('all');
   const [minRating, setMinRating] = useState<number>(0);
   const [customerLocation, setCustomerLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [styleLaunchReady, setStyleLaunchReady] = useState(false);
+  const [styleLaunchBlocked, setStyleLaunchBlocked] = useState(false);
+  const [styleLaunchBlockMessage, setStyleLaunchBlockMessage] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { status } = await resolveServiceStyleLaunch(phone, category, serviceStyle);
+      if (cancelled) return;
+      if (shouldBlockServiceStyleNavigation(status)) {
+        setStyleLaunchBlocked(true);
+        setStyleLaunchBlockMessage(serviceStyleLaunchBlockMessage(status));
+        toast.info(serviceStyleLaunchBlockMessage(status));
+      }
+      setStyleLaunchReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [phone, category, serviceStyle]);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,8 +214,14 @@ export function VendorListingByStyle({
   );
 
   useEffect(() => {
+    if (!styleLaunchReady) return;
+    if (styleLaunchBlocked) {
+      setLoading(false);
+      setVendors([]);
+      return;
+    }
     loadVendors();
-  }, [loadVendors]);
+  }, [loadVendors, styleLaunchReady, styleLaunchBlocked]);
 
   // Debounced search using OpenSearch
   const debouncedSearch = useCallback(
@@ -483,7 +515,18 @@ export function VendorListingByStyle({
         )}
 
         {/* Vendor List */}
-        {sortedVendors.length === 0 ? (
+        {styleLaunchBlocked ? (
+          <Card className="p-8 text-center bg-white border border-gray-100">
+            <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              {getStyleIcon()}
+            </div>
+            <h3 className="font-semibold text-gray-900 mb-2">Not Available</h3>
+            <p className="text-gray-500 text-sm mb-4">{styleLaunchBlockMessage}</p>
+            <Button onClick={onBack} variant="outline" className="border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50">
+              Go Back
+            </Button>
+          </Card>
+        ) : sortedVendors.length === 0 ? (
           <Card className="p-8 text-center bg-white border border-gray-100">
             <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-4">
               {getStyleIcon()}

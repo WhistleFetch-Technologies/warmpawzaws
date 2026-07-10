@@ -48,6 +48,8 @@ export type CheckoutCoupon = {
   code: string;
   discountAmount: number;
   promotionId?: string;
+  /** Which table validated this — 'vendor' (vendor_promotions) or 'admin' (commercial campaigns / legacy platform promos). */
+  source?: 'vendor' | 'admin';
 };
 
 const VALID_STEPS: CheckoutStep[] = ['payment', 'review'];
@@ -160,6 +162,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
         label: persisted.sellerPromotion?.label,
         code: coupon?.code ?? persisted.sellerPromotion?.code,
         promotionId: coupon?.promotionId ?? persisted.sellerPromotion?.promotionId,
+        source: coupon?.source ?? persisted.sellerPromotion?.source,
       },
     });
   }, [cart, coupon, shippingMethod]);
@@ -241,6 +244,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
         code: sp.code,
         discountAmount: sp.codeDiscount ?? 0,
         promotionId: sp.promotionId,
+        source: sp.source,
       });
     }
   }, []);
@@ -257,6 +261,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
         label: persisted.sellerPromotion?.label,
         code: coupon?.code ?? persisted.sellerPromotion?.code,
         promotionId: coupon?.promotionId ?? persisted.sellerPromotion?.promotionId,
+        source: coupon?.source ?? persisted.sellerPromotion?.source,
       },
     });
   }, [cart, coupon, shippingMethod]);
@@ -315,6 +320,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
         codeDiscount: next.discountAmount,
         code: next.code,
         promotionId: next.promotionId,
+        source: next.source,
       },
     });
   }, []);
@@ -329,6 +335,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
         codeDiscount: 0,
         code: undefined,
         promotionId: undefined,
+        source: undefined,
       },
     });
   }, []);
@@ -364,6 +371,10 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
         onProcessingChange: setIsPlacingOrder,
         clearCart,
         walletAmountApplied,
+        onPaymentDismiss: (orderId) => {
+          toast.info('Payment not completed. You can pay from My Orders within 5 minutes.');
+          nav.afterCheckoutSuccess(orderId);
+        },
         onSuccess: (orderId) => {
           const stored: StoredCheckoutOrderResponse = {
             orderId,

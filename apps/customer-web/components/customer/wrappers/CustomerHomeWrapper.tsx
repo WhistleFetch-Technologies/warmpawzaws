@@ -131,7 +131,7 @@ import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { useCart } from '@/context/CartContext';
 import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
 import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
-import { toast } from 'sonner';
+import { gateStyleLaunchScreenNavigation, resolveStyleLaunchTargetForScreen } from '@/lib/customer-style-screen-launch';
 import { openVendorProfileChat } from '@/lib/open-vendor-profile-chat';
 
 // ============================================================================
@@ -1300,6 +1300,19 @@ export function CustomerHomeWrapper({
     if (isReviewBlockedScreen(service, phone)) {
       return;
     }
+    if (phone && resolveStyleLaunchTargetForScreen(service, data)) {
+      void gateStyleLaunchScreenNavigation(phone, service, data, (msg) => toast.info(msg)).then(
+        (allowed) => {
+          if (allowed) executeNavigateToService(service, data);
+        }
+      );
+      return;
+    }
+    executeNavigateToService(service, data);
+  };
+
+  const executeNavigateToService = (service: string, _data?: any) => {
+    const data = _data;
     captureBannerNavigationOrigin(data);
     const vendorRow: Record<string, unknown> =
       data && typeof data === 'object' ? { ...(data as Record<string, unknown>) } : {};

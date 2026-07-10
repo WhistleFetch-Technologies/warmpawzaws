@@ -10,17 +10,20 @@ import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 export interface PremiumPetFoodSectionProps {
   className?: string;
   onNavigate?: HomeNavigateFn;
+  /** Resolved Pet Food category UUID from storefront API; falls back to plain /shop when unset. */
+  petFoodCategoryId?: string;
 }
 
-function PremiumPetFoodSectionComponent({ className = '', onNavigate }: PremiumPetFoodSectionProps) {
+function PremiumPetFoodSectionComponent({
+  className = '',
+  onNavigate,
+  petFoodCategoryId,
+}: PremiumPetFoodSectionProps) {
   const brands = petFoodSpotlightBrands();
 
-  const openFoodShop = useCallback(
-    (category?: string) => {
-      onNavigate?.('shop', category ? { category } : undefined);
-    },
-    [onNavigate]
-  );
+  const openFoodShop = useCallback(() => {
+    onNavigate?.('shop', petFoodCategoryId ? { category: petFoodCategoryId } : undefined);
+  }, [onNavigate, petFoodCategoryId]);
 
   return (
     <div className={`mb-6 ${className}`} aria-label="Premium Pet Food">
@@ -28,7 +31,7 @@ function PremiumPetFoodSectionComponent({ className = '', onNavigate }: PremiumP
         title="Premium Pet Food"
         icon={<Wheat className="h-5 w-5 text-yellow-600" />}
         actionLabel="Browse shop"
-        onAction={() => openFoodShop('food')}
+        onAction={openFoodShop}
         className="px-4"
       />
       <p className="mb-3 px-4 text-xs text-gray-600">
@@ -39,7 +42,7 @@ function PremiumPetFoodSectionComponent({ className = '', onNavigate }: PremiumP
           <button
             key={index}
             type="button"
-            onClick={() => openFoodShop('food')}
+            onClick={openFoodShop}
             className="w-32 flex-shrink-0 rounded-2xl border border-yellow-100 bg-gradient-to-br from-yellow-50 to-orange-50 p-4 text-center transition active:scale-[0.98]"
           >
             <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-yellow-100">

@@ -41,6 +41,18 @@ import {
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
+import {
+  gateServiceStyleNavigation,
+  isServiceStyleHidden,
+  loadCustomerServiceLaunchCatalog,
+  resolveServiceStyleLaunchFromCatalog,
+} from '@/lib/customer-service-style-launch';
+import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
+
+const GROOMING_STYLE_LAUNCH_MAP: Record<string, string> = {
+  grooming_center: 'at_center',
+  grooming_home: 'at_home',
+};
 
 const GROOMING_IMG = '/images/home/Grooming';
 
@@ -150,6 +162,35 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   }, [groomingCenterLoading, groomingCenterFetching, groomingCenterError, groomingCenterCount]);
 
   const [previousGroomer, setPreviousGroomer] = useState<any>(null);
+  const [styleLaunchByCard, setStyleLaunchByCard] = useState<Record<string, LaunchStatusValue>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const catalog = await loadCustomerServiceLaunchCatalog(phone);
+      if (cancelled) return;
+      const next: Record<string, LaunchStatusValue> = {};
+      for (const [cardId, styleKey] of Object.entries(GROOMING_STYLE_LAUNCH_MAP)) {
+        const { status } = resolveServiceStyleLaunchFromCatalog(catalog, 'grooming', styleKey);
+        next[cardId] = status;
+      }
+      setStyleLaunchByCard(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [phone]);
+
+  const navigateGroomingStyle = async (screen: string) => {
+    const styleKey = GROOMING_STYLE_LAUNCH_MAP[screen];
+    if (styleKey) {
+      const allowed = await gateServiceStyleNavigation(phone, 'grooming', styleKey, (msg) =>
+        toast.info(msg)
+      );
+      if (!allowed) return;
+    }
+    onNavigate?.(screen);
+  };
 
   useEffect(() => {
     loadPreviousGroomer();
@@ -264,7 +305,8 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   }, [previousGroomer, onNavigate]);
 
   const serviceTypes = useMemo(
-    () => [
+    () => {
+      const cards = [
       {
         id: 'grooming_center',
         name: 'Grooming Centre',
@@ -285,8 +327,13 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         trustedBy: 'Trusted by 5K+ pet parents',
         arrowClass: 'bg-green-500 hover:bg-green-600',
       },
-    ],
-    [groomingCenterBadgeText]
+    ];
+      return cards.filter((service) => {
+        const launchStatus = styleLaunchByCard[service.id];
+        return !(launchStatus && isServiceStyleHidden(launchStatus));
+      });
+    },
+    [groomingCenterBadgeText, styleLaunchByCard]
   );
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
@@ -347,7 +394,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 </div>
                 <button
                   type="button"
-                  onClick={() => onNavigate?.('grooming_center')}
+                  onClick={() => void navigateGroomingStyle('grooming_center')}
                   className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-[#FF8C42] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#FF7A35]"
                 >
                   {GROOMING_BANNER.cta}
@@ -442,7 +489,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 <button
                   key={service.id}
                   type="button"
-                  onClick={() => onNavigate?.(service.id)}
+                  onClick={() => void navigateGroomingStyle(service.id)}
                   className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
                 >
                   <div className="relative h-28 w-full sm:h-32">
@@ -531,7 +578,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               <h2 className="text-lg font-bold text-slate-900">Top Groomers</h2>
               <button 
                 className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                onClick={() => onNavigate?.('grooming_center')}
+                onClick={() => void navigateGroomingStyle('grooming_center')}
               >
                 View All <ChevronRight className="w-4 h-4" />
               </button>

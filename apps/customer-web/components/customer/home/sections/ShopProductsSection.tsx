@@ -9,8 +9,6 @@ import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
 import { SectionHeader } from '../shared/SectionHeader';
 import { HorizontalScrollRow } from '../shared/HorizontalScrollRow';
 import { ShopCategoryGrid } from '@/components/shop/ShopCategoryGrid';
-import type { ShopCategory as ShopCategoryTile } from '@/components/shop/shop-types';
-import { STATIC_SHOP_DISPLAY_CATEGORIES } from '@/lib/shop-category-static-images';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
 export interface ShopHotDeal {
@@ -83,9 +81,6 @@ function ShopProductsSectionComponent({
   );
 
   const visibleDeals = ecommerceEnabled ? hotDeals : [];
-  const displayCategories = (
-    categories.length > 0 ? categories : STATIC_SHOP_DISPLAY_CATEGORIES
-  ) as ShopCategoryTile[];
 
   return (
     <div className={`mb-6 ${className}`}>
@@ -96,14 +91,16 @@ function ShopProductsSectionComponent({
         onAction={ecommerceEnabled ? () => onNavigate('shop') : undefined}
       />
 
-      <ShopCategoryGrid
-        embedded
-        disabled={!ecommerceEnabled}
-        categories={displayCategories}
-        onSelectCategory={
-          ecommerceEnabled ? (id) => onNavigate('shop', { category: id }) : () => {}
-        }
-      />
+      {categories.length > 0 ? (
+        <ShopCategoryGrid
+          embedded
+          disabled={!ecommerceEnabled}
+          categories={categories}
+          onSelectCategory={
+            ecommerceEnabled ? (id) => onNavigate('shop', { category: id }) : () => {}
+          }
+        />
+      ) : null}
 
       {visibleDeals.length > 0 ? (
         <HorizontalScrollRow gapClassName="gap-3" paddingClassName="px-4" className="mt-3">

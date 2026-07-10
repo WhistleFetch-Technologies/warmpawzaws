@@ -267,3 +267,96 @@ export async function expireShopPaymentHolds(options?: {
     timestamp: new Date().toISOString(),
   };
 }
+
+export interface ShopOrderPaymentResumeContext {
+  entityType: 'shop_order';
+  entityId: string;
+  orderId: string;
+  orderNumber: string | null;
+  customerId: string;
+  vendorId: string;
+  vendorName?: string | null;
+  /** Gross payable after wallet (INR). */
+  payableAmount: number;
+  /** @deprecated Prefer payableAmount — kept for older clients. */
+  amount: number;
+  currency: string;
+  paymentHoldExpiresAt: string | null;
+  secondsRemaining: number;
+  canResume: boolean;
+  razorpayOrderId: string | null;
+  paymentId: string | null;
+}
+
+/**
+ * Returns checkout context to resume Razorpay for an unpaid shop order within the hold window.
+ */
+export async function buildShopOrderPaymentResumeContext(
+  orderId: string
+): Promise<ShopOrderPaymentResumeContext | null> {
+  const { rows } = await query(
+    `SELECT o.*, v.business_name AS vendor_name
+     FROM orders o
+     LEFT JOIN vendors v ON v.id = o.vendor_id
+     WHERE o.id = $1::uuid
+     LIMIT 1`,
+    [orderId]
+  );
+  if (rows.length === 0) return null;
+
+  const o = rows[0] as Record<string, unknown>;
+  const st = String(o.order_status || '').toLowerCase();
+  const ps = String(o.payment_status || '').toLowerCase();
+  const pm = String(o.payment_method || 'online').toLowerCase();
+
+  if (st !== 'pending_payment') return null;
+  if (['paid', 'completed', 'expired', 'failed', 'refunded'].includes(ps)) return null;
+  if (pm === 'cod' || pm === 'cash_on_delivery') return null;
+
+  const expiresAt = o.payment_hold_expires_at
+    ? new Date(String(o.payment_hold_expires_at)).toISOString()
+    : null;
+  const canResume = isShopOrderPaymentHoldActive({
+    order_status: st,
+    payment_status: ps,
+    payment_method: pm,
+    payment_hold_expires_at: expiresAt,
+  });
+  const secondsRemaining = secondsRemainingUntilHoldExpiry(expiresAt);
+
+  const total = Number(o.total_amount || 0);
+  const wallet = Number(o.wallet_amount_applied || 0);
+  const payableAmount = Math.max(0, Math.round((total - wallet) * 100) / 100);
+
+  const payRes = await query(
+    `SELECT id, razorpay_order_id, amount, currency, payment_status
+     FROM payments
+     WHERE order_id = $1::uuid
+       AND LOWER(COALESCE(payment_status, '')) NOT IN ('paid', 'completed')
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [orderId]
+  );
+  const pay = payRes.rows[0] as Record<string, unknown> | undefined;
+  const pendingPayAmount = pay?.amount != null ? Number(pay.amount) : 0;
+  const resolvedPayable =
+    pendingPayAmount > 0.009 ? Math.round(pendingPayAmount * 100) / 100 : payableAmount;
+
+  return {
+    entityType: 'shop_order',
+    entityId: orderId,
+    orderId,
+    orderNumber: o.order_number != null ? String(o.order_number) : null,
+    customerId: String(o.customer_id || ''),
+    vendorId: String(o.vendor_id || ''),
+    vendorName: (o.vendor_name as string) || null,
+    payableAmount: resolvedPayable,
+    amount: resolvedPayable,
+    currency: String(pay?.currency || 'INR'),
+    paymentHoldExpiresAt: expiresAt,
+    secondsRemaining,
+    canResume,
+    razorpayOrderId: pay?.razorpay_order_id ? String(pay.razorpay_order_id) : null,
+    paymentId: pay?.id ? String(pay.id) : null,
+  };
+}

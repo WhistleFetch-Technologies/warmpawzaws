@@ -36,6 +36,8 @@ import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
+import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 
 interface ClinicListViewProps {
   phone: string;
@@ -216,6 +218,7 @@ export function ClinicListView({
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'rating' | 'distance' | 'price'>('all');
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
   const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
+  const launchGate = useServiceStyleLaunchGate(phone, 'vet', 'at_center');
 
   const fetchVendorServicesForClinic = useCallback(
     async (clinicId: string) => {
@@ -256,8 +259,12 @@ export function ClinicListView({
   );
 
   useEffect(() => {
+    if (!launchGate.ready || launchGate.blocked) {
+      if (launchGate.ready && launchGate.blocked) setLoading(false);
+      return;
+    }
     loadClinics();
-  }, [specialization, phone]);
+  }, [launchGate.ready, launchGate.blocked, specialization, phone]);
 
   const loadDiscoverFallback = async (locationParams: string) => {
     const specParam = specialization
@@ -530,6 +537,14 @@ export function ClinicListView({
   };
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
+
+  if (launchGate.ready && launchGate.blocked) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <ServiceStyleLaunchBlocked message={launchGate.blockMessage} onBack={onBack} />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-screen min-h-[100dvh] w-full max-w-customer flex-col bg-gray-50">
