@@ -205,51 +205,161 @@ async function connectPool() {
   return pool;
 }
 
-async function logMigration(pool, legacyKey, webpKey) {
-  if (DRY_RUN) return;
-  await pool.query(
-    `INSERT INTO image_migration_log (legacy_key, webp_key) VALUES ($1, $2) ON CONFLICT (legacy_key) DO NOTHING`,
-    [legacyKey, webpKey],
+function rowsFromRdsDataResult(result) {
+  if (result.formattedRecords) {
+    try {
+      return JSON.parse(result.formattedRecords);
+    } catch {
+      /* fall through */
+    }
+  }
+  const cols = (result.columnMetadata || []).map((c) => c.name);
+  return (result.records || []).map((rec) => {
+    const row = {};
+    rec.forEach((field, i) => {
+      const key = cols[i] || `col_${i}`;
+      if (field == null || field.isNull) row[key] = null;
+      else if (field.stringValue !== undefined) row[key] = field.stringValue;
+      else if (field.longValue !== undefined) row[key] = field.longValue;
+      else if (field.doubleValue !== undefined) row[key] = field.doubleValue;
+      else if (field.booleanValue !== undefined) row[key] = field.booleanValue;
+      else row[key] = null;
+    });
+    return row;
+  });
+}
+
+async function connectRdsDataApi() {
+  const clusterId = `warmpawz-${ENVIRONMENT}-cluster`;
+  const clusterInfo = JSON.parse(
+    execSync(`aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --output json`, {
+      encoding: 'utf8',
+    }),
+  );
+  const cluster = clusterInfo.DBClusters[0];
+  if (!cluster.HttpEndpointEnabled) {
+    throw new Error(`RDS Data API not enabled on ${clusterId}`);
+  }
+  const secretsClient = new SecretsManagerClient({ region: REGION });
+  const secretName =
+    ENVIRONMENT === 'prod'
+      ? 'warmpawz-prod-rds-master-20260207201049162400000001'
+      : `warmpawz-${ENVIRONMENT}-rds-master-20260106164510791100000002`;
+  const secretValue = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretName }));
+  return {
+    client: new RDSDataClient({ region: REGION }),
+    meta: {
+      resourceArn: cluster.DBClusterArn,
+      secretArn: secretValue.ARN,
+      database: cluster.DatabaseName || 'warmpawz',
+    },
+  };
+}
+
+async function rdsDataQuery(db, sql, parameters = []) {
+  const res = await db.client.send(
+    new ExecuteStatementCommand({
+      ...db.meta,
+      sql,
+      parameters,
+      formatRecordsAs: 'JSON',
+      includeResultMetadata: true,
+    }),
+  );
+  return rowsFromRdsDataResult(res);
+}
+
+async function rdsDataExecute(db, sql, parameters = []) {
+  await db.client.send(
+    new ExecuteStatementCommand({
+      ...db.meta,
+      sql,
+      parameters,
+    }),
   );
 }
 
-async function processScalarRows(pool, table, column, idColumn, assetType, ownerColumn) {
+async function logMigrationDb(db, legacyKey, webpKey) {
+  if (DRY_RUN) return;
+  if (db.type === 'pool') {
+    await db.pool.query(
+      `INSERT INTO image_migration_log (legacy_key, webp_key) VALUES ($1, $2) ON CONFLICT (legacy_key) DO NOTHING`,
+      [legacyKey, webpKey],
+    );
+    return;
+  }
+  await rdsDataExecute(db.rds, `INSERT INTO image_migration_log (legacy_key, webp_key)
+    VALUES (:legacy_key, :webp_key) ON CONFLICT (legacy_key) DO NOTHING`, [
+    { name: 'legacy_key', value: { stringValue: legacyKey } },
+    { name: 'webp_key', value: { stringValue: webpKey } },
+  ]);
+}
+
+async function processScalarRows(db, table, column, idColumn, assetType, ownerColumn) {
   const vendorClause = VENDOR_FILTER && table === 'vendors' ? ` AND id = '${VENDOR_FILTER}'::uuid` : '';
-  const productVendorClause = VENDOR_FILTER && table === 'products' ? ` AND vendor_id = '${VENDOR_FILTER}'::uuid` : '';
-  const res = await pool.query(
-    `SELECT ${idColumn} AS id, ${ownerColumn || idColumn} AS owner_id, ${column} AS val
+  const sql = `SELECT ${idColumn}::text AS id, ${(ownerColumn || idColumn)}::text AS owner_id, ${column} AS val
      FROM ${table}
      WHERE ${column} IS NOT NULL AND TRIM(${column}) <> ''
-     ${vendorClause}${productVendorClause}
-     LIMIT $1`,
-    [LIMIT],
-  );
+     ${vendorClause}
+     LIMIT ${LIMIT}`;
 
-  for (const row of res.rows) {
+  const rows =
+    db.type === 'pool'
+      ? (await db.pool.query(sql.replace(`LIMIT ${LIMIT}`, 'LIMIT $1'), [LIMIT])).rows
+      : await rdsDataQuery(db.rds, sql);
+
+  for (const row of rows) {
     if (stats.migrated >= LIMIT) break;
     const result = await migrateKey(assetType, row.owner_id || row.id, row.val);
     if (!result || DRY_RUN) continue;
-    await pool.query(
-      `UPDATE ${table} SET ${column} = $2, updated_at = NOW() WHERE ${idColumn} = $1::uuid`,
-      [row.id, result.displayKey],
-    );
-    await logMigration(pool, result.legacyKey, result.displayKey);
+    if (db.type === 'pool') {
+      await db.pool.query(
+        `UPDATE ${table} SET ${column} = $2, updated_at = NOW() WHERE ${idColumn} = $1::uuid`,
+        [row.id, result.displayKey],
+      );
+    } else {
+      await rdsDataExecute(
+        db.rds,
+        `UPDATE ${table} SET ${column} = :val, updated_at = NOW() WHERE ${idColumn} = :id::uuid`,
+        [
+          { name: 'val', value: { stringValue: result.displayKey } },
+          { name: 'id', value: { stringValue: String(row.id) } },
+        ],
+      );
+    }
+    await logMigrationDb(db, result.legacyKey, result.displayKey);
   }
 }
 
-async function processProductImages(pool) {
+async function processProductImages(db) {
   const vendorClause = VENDOR_FILTER ? ` AND vendor_id = '${VENDOR_FILTER}'::uuid` : '';
-  const res = await pool.query(
-    `SELECT id, vendor_id, images FROM products
+  const sql = `SELECT id::text AS id, vendor_id::text AS vendor_id, images::text AS images FROM products
      WHERE images IS NOT NULL AND jsonb_array_length(images) > 0
      ${vendorClause}
-     LIMIT $1`,
-    [LIMIT],
-  );
+     LIMIT ${LIMIT}`;
 
-  for (const row of res.rows) {
+  const rows =
+    db.type === 'pool'
+      ? (await db.pool.query(
+          `SELECT id, vendor_id, images FROM products
+           WHERE images IS NOT NULL AND jsonb_array_length(images) > 0
+           ${vendorClause}
+           LIMIT $1`,
+          [LIMIT],
+        )).rows
+      : await rdsDataQuery(db.rds, sql);
+
+  for (const row of rows) {
     if (stats.migrated >= LIMIT) break;
-    const images = Array.isArray(row.images) ? row.images : [];
+    let images = row.images;
+    if (typeof images === 'string') {
+      try {
+        images = JSON.parse(images);
+      } catch {
+        images = [];
+      }
+    }
+    if (!Array.isArray(images)) continue;
     let changed = false;
     const next = [];
     for (const item of images) {
@@ -257,7 +367,7 @@ async function processProductImages(pool) {
       const result = await migrateKey('product', row.vendor_id, raw);
       if (result && !DRY_RUN && result.displayKey) {
         next.push(result.displayKey);
-        await logMigration(pool, result.legacyKey, result.displayKey);
+        await logMigrationDb(db, result.legacyKey, result.displayKey);
         changed = true;
       } else if (result && DRY_RUN) {
         next.push(result);
@@ -267,27 +377,42 @@ async function processProductImages(pool) {
       }
     }
     if (changed && !DRY_RUN) {
-      await pool.query(`UPDATE products SET images = $2::jsonb, updated_at = NOW() WHERE id = $1::uuid`, [
-        row.id,
-        JSON.stringify(next),
-      ]);
+      const imagesJson = JSON.stringify(next);
+      if (db.type === 'pool') {
+        await db.pool.query(`UPDATE products SET images = $2::jsonb, updated_at = NOW() WHERE id = $1::uuid`, [
+          row.id,
+          imagesJson,
+        ]);
+      } else {
+        await rdsDataExecute(db.rds, `UPDATE products SET images = :images::jsonb, updated_at = NOW() WHERE id = :id::uuid`, [
+          { name: 'images', value: { stringValue: imagesJson } },
+          { name: 'id', value: { stringValue: String(row.id) } },
+        ]);
+      }
     }
   }
 }
 
 async function main() {
   console.log(
-    `[backfill-image-webp] env=${ENVIRONMENT} dryRun=${DRY_RUN} limit=${LIMIT} vendor=${VENDOR_FILTER || 'all'}`,
+    `[backfill-image-webp] env=${ENVIRONMENT} dryRun=${DRY_RUN} limit=${LIMIT} vendor=${VENDOR_FILTER || 'all'} rdsDataApi=${USE_RDS_DATA_API}`,
   );
-  const pool = await connectPool();
+
+  let db;
+  if (USE_RDS_DATA_API) {
+    db = { type: 'rds', rds: await connectRdsDataApi() };
+  } else {
+    db = { type: 'pool', pool: await connectPool() };
+  }
+
   try {
-    await processScalarRows(pool, 'customers', 'profile_photo_url', 'id', 'profile', 'phone');
-    await processScalarRows(pool, 'pets', 'profile_photo_url', 'id', 'pet');
-    await processScalarRows(pool, 'vendors', 'profile_photo_url', 'id', 'profile');
-    await processScalarRows(pool, 'banners', 'image_url', 'id', 'banner');
-    await processProductImages(pool);
+    await processScalarRows(db, 'customers', 'profile_photo_url', 'id', 'profile', 'phone');
+    await processScalarRows(db, 'pets', 'profile_photo_url', 'id', 'pet');
+    await processScalarRows(db, 'vendors', 'profile_photo_url', 'id', 'profile');
+    await processScalarRows(db, 'banners', 'image_url', 'id', 'banner');
+    await processProductImages(db);
   } finally {
-    await pool.end();
+    if (db.type === 'pool') await db.pool.end();
   }
 
   console.log('\nSummary:', stats);
