@@ -177,7 +177,7 @@ function Put-CronRule {
   Write-Host "Rule $RuleName -> $ScheduleExpression"
 }
 
-Write-Host "Stage: $Stage — disabling legacy notification EventBridge rules"
+Write-Host "Stage: $Stage - disabling legacy notification EventBridge rules"
 Write-Host ""
 
 $ruleNames = @(
