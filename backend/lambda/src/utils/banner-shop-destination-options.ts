@@ -3,11 +3,13 @@
  */
 
 import { query } from '../database/rds-connection';
+import { STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL } from './ecommerce-storefront-product-filter';
 
 /** Match public storefront listing in ecommerce.ts */
 export const STOREFRONT_PRODUCT_SQL = `
   p.is_active = true
   AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
+  ${STOREFRONT_EXCLUDE_MEAL_PRODUCTS_SQL}
 `;
 
 /** Exclude products in admin-disabled ecommerce categories (requires ec join). */
