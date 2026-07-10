@@ -3,7 +3,7 @@
  */
 
 import type { AssetType, ProcessedImageResult, ProcessedVariant } from './image-types';
-import { BYTE_BUDGETS, assetTypeNeedsThumb } from './image-types';
+import { BYTE_BUDGETS, MAX_IMAGE_DIMENSION, assetTypeNeedsThumb } from './image-types';
 
 const QUALITY_START = 0.85;
 const QUALITY_MIN = 0.35;
@@ -19,10 +19,18 @@ async function encodeWebpToBudget(
   maxEdgePx: number,
 ): Promise<ProcessedVariant> {
   const sharp = await getSharp();
-  const rotated = sharp(input, { failOn: 'error' }).rotate();
+  const rotated = sharp(input, { failOn: 'warning' }).rotate();
   const meta = await rotated.metadata();
   const w = meta.width ?? 0;
   const h = meta.height ?? 0;
+  if (w <= 0 || h <= 0) {
+    throw new Error('Could not read image dimensions');
+  }
+  if (w > MAX_IMAGE_DIMENSION || h > MAX_IMAGE_DIMENSION) {
+    throw new Error(
+      `Image dimensions must be ${MAX_IMAGE_DIMENSION}px or smaller per edge`,
+    );
+  }
   const longest = Math.max(w, h);
 
   let quality = QUALITY_START;
@@ -39,7 +47,7 @@ async function encodeWebpToBudget(
       : undefined;
 
   while (true) {
-    let pipeline = sharp(input, { failOn: 'error' }).rotate();
+    let pipeline = sharp(input, { failOn: 'warning' }).rotate();
     if (resize) {
       pipeline = pipeline.resize(resize);
     }
