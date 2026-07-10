@@ -1,5 +1,5 @@
 -- Lean Asset Pipeline: content-hash dedup index and legacy migration log.
--- Apply: ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1061_image_content_index.sql
+-- Apply: ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1067_image_content_index.sql
 
 CREATE TABLE IF NOT EXISTS image_content_index (
   content_sha256 CHAR(64) PRIMARY KEY,

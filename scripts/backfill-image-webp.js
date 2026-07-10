@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Phase 3: backfill legacy image keys to WebP (run after migration 1061 + Lambda deploy).
+ * Phase 3: backfill legacy image keys to WebP (run after migration 1067 + Lambda deploy).
  *
  * Usage:
  *   ENVIRONMENT=dev node scripts/backfill-image-webp.js --dry-run
