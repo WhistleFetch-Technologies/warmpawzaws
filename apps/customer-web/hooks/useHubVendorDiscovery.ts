@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
+import { filterHubDiscoveryRowsByRadius } from '@/lib/hub-discovery-radius-filter';
 import {
   buildBoardingVendorListFromRows,
   mapServicesApiResponseToPlanRows,
@@ -43,11 +44,18 @@ export function useHubVendorDiscovery(
     try {
       setLoading(true);
       let rows: any[] = [];
+      let latitude: string | undefined;
+      let longitude: string | undefined;
 
       if (customLoadRef.current) {
         rows = await customLoadRef.current();
+        const coords = await resolveCustomerDiscoveryCoords(phone);
+        latitude = coords.latitude;
+        longitude = coords.longitude;
       } else {
-        const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
+        const coords = await resolveCustomerDiscoveryCoords(phone);
+        latitude = coords.latitude;
+        longitude = coords.longitude;
         const locationParams =
           latitude && longitude
             ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
@@ -89,8 +97,9 @@ export function useHubVendorDiscovery(
         if (rows.length === 0 && config.fallbackVendorSearch) {
           try {
             const lim = config.fallbackVendorSearch.limit ?? 50;
+            const styleParam = `&serviceStyle=${encodeURIComponent(config.serviceStyle)}`;
             const vs = await apiClient.get<any>(
-              `/customer/vendors/search?roleId=${encodeURIComponent(config.fallbackVendorSearch.roleId)}&limit=${lim}${locationParams}`
+              `/customer/vendors/search?roleId=${encodeURIComponent(config.fallbackVendorSearch.roleId)}&limit=${lim}${styleParam}${locationParams}${phoneParam}`
             );
             if (Array.isArray(vs)) rows = vs;
             else if (vs?.vendors && Array.isArray(vs.vendors)) rows = vs.vendors;
@@ -100,6 +109,13 @@ export function useHubVendorDiscovery(
           }
         }
       }
+
+      rows = filterHubDiscoveryRowsByRadius(rows, {
+        serviceStyle: config.serviceStyle,
+        latitude,
+        longitude,
+        sittingRelaxed: config.discoverCategory === 'sitting',
+      });
 
       const { list, relaxedFilter: relaxed } = buildBoardingVendorListFromRows(rows, 'all');
       setRelaxedFilter(relaxed);

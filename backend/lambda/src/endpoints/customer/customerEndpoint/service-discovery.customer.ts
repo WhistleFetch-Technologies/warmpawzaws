@@ -63,6 +63,12 @@ import {
   isSlotPastInIst,
   ymdInIst,
 } from '../../../utils/ist-scheduling';
+import {
+  filterSearchResultsByDiscoveryRules,
+  hubSlugToDiscoveryContext,
+  loadVendorRadiusMetaByIds,
+  type HubDiscoveryContext,
+} from '../../../lib/search-discovery-parity';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
@@ -102,6 +108,52 @@ function discoveryCustomerRadiusKm(opts: {
   if (opts.serviceStyleNorm === 'at_home') return null;
   if (opts.serviceStyleNorm === 'tele') return opts.rules.discovery_radius_km_tele ?? 0;
   return opts.rules.discovery_radius_km ?? 50;
+}
+
+/** Role ids used by hub fallback vendor search → discover-services parity context. */
+function hubContextForVendorSearch(
+  roleId: string | undefined,
+  serviceStyleRaw: string | undefined
+): HubDiscoveryContext {
+  const roleKey = String(roleId || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
+  const fromSlug = hubSlugToDiscoveryContext(roleKey);
+  const styleNorm = normalizeServiceStyle(serviceStyleRaw || fromSlug?.serviceStyle || 'at_center') || 'at_center';
+
+  const roleAliases: Record<string, HubDiscoveryContext> = {
+    pet_groomer: { discoverCategory: 'grooming', serviceStyle: 'at_center', roleId: 'pet_groomer' },
+    groomer: { discoverCategory: 'grooming', serviceStyle: 'at_center', roleId: 'pet_groomer' },
+    trainer_center: { discoverCategory: 'training', serviceStyle: 'at_center', roleId: 'trainer_center' },
+    trainer: { discoverCategory: 'training', serviceStyle: 'at_center', roleId: 'trainer_center' },
+    veterinarian: { discoverCategory: 'vet', serviceStyle: 'at_center', roleId: 'veterinarian' },
+    vet_clinic: { discoverCategory: 'vet', serviceStyle: 'at_center', roleId: 'veterinarian' },
+    pet_boarding: { discoverCategory: 'boarding', serviceStyle: 'at_center', roleId: 'pet_boarding' },
+    pet_cafe: { discoverCategory: 'cafe', serviceStyle: 'at_center', roleId: 'pet_cafe' },
+    pet_resort: { discoverCategory: 'resort', serviceStyle: 'at_center', roleId: 'pet_resort' },
+  };
+
+  const base = fromSlug || roleAliases[roleKey] || {
+    discoverCategory: roleKey || 'all',
+    serviceStyle: styleNorm as HubDiscoveryContext['serviceStyle'],
+    roleId: roleId || undefined,
+  };
+
+  return {
+    ...base,
+    serviceStyle: styleNorm as HubDiscoveryContext['serviceStyle'],
+    roleId: base.roleId || roleId || undefined,
+  };
+}
+
+function providerWithinRadiusKm(
+  distanceKm: number | null | undefined,
+  capKm: number,
+  allowUnknownDistance: boolean
+): boolean {
+  if (distanceKm == null || !Number.isFinite(distanceKm)) return allowUnknownDistance;
+  return distanceKm <= capKm;
 }
 
 /** Align with problem-grid specialization keys (slug, spaced label, normalized). */
@@ -3134,7 +3186,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 : radius != null && radius > 0
                   ? Math.min(radius, vendorCap)
                   : vendorCap;
-            return p.distance === null || p.distance <= cap;
+            return providerWithinRadiusKm(p.distance, cap, true);
           });
           if (withinRadius.length > 0) {
             results = withinRadius;
@@ -3145,8 +3197,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const effectiveMaxKm =
             maxDistanceKm ?? (radius != null && radius > 0 ? radius : null);
           if (effectiveMaxKm != null) {
-            const withinRadius = results.filter(
-              (p) => p.distance === null || p.distance <= effectiveMaxKm
+            const withinRadius = results.filter((p) =>
+              providerWithinRadiusKm(p.distance, effectiveMaxKm, sittingDiscoveryRelaxed)
             );
             if (withinRadius.length > 0) {
               results = withinRadius;
@@ -5216,6 +5268,43 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         })
       )).filter(Boolean);
 
+      const hubForSearch = hubContextForVendorSearch(roleId || undefined, serviceStyle || undefined);
+      const styleNormSearch =
+        normalizeServiceStyle(serviceStyle || hubForSearch.serviceStyle) || hubForSearch.serviceStyle;
+      const rulesForSearch = await getDiscoveryRules(
+        hubForSearch.roleId || hubForSearch.discoverCategory || 'all',
+        'discover',
+        styleNormSearch,
+        hubForSearch.discoverCategory
+      );
+      const userCoordsSearch =
+        Number.isFinite(customerLatNum) && Number.isFinite(customerLngNum)
+          ? { lat: customerLatNum, lng: customerLngNum }
+          : null;
+      const vendorRadiusByIdSearch = await loadVendorRadiusMetaByIds(
+        enrichedVendors.map((v: { id: string }) => String(v.id))
+      );
+      const radiusFiltered = filterSearchResultsByDiscoveryRules({
+        vendors: enrichedVendors.map((v: any) => ({
+          id: String(v.id),
+          latitude: v.latitude != null ? parseFloat(String(v.latitude)) : null,
+          longitude: v.longitude != null ? parseFloat(String(v.longitude)) : null,
+          distanceKm: v.distanceKm ?? null,
+          is_online: v.is_online,
+        })),
+        services: [],
+        userCoords: userCoordsSearch,
+        hub: { ...hubForSearch, serviceStyle: styleNormSearch as HubDiscoveryContext['serviceStyle'] },
+        rules: rulesForSearch,
+        radiusFromQuery: c.req.query('radius') || undefined,
+        maxDistanceFromQuery: c.req.query('maxDistance') || undefined,
+        vendorRadiusById: vendorRadiusByIdSearch,
+      });
+      const allowedVendorIdsSearch = new Set(radiusFiltered.vendors.map((v) => v.id));
+      const filteredEnrichedVendors = enrichedVendors.filter((v: { id: string }) =>
+        allowedVendorIdsSearch.has(String(v.id))
+      );
+
       // If serviceStyle is 'at_home' or 'tele', also return staff
       let staff: any[] = [];
       if (serviceStyle && ['at_home', 'tele'].includes(serviceStyle) && roleId) {
@@ -5242,9 +5331,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        vendors: enrichedVendors,
+        vendors: filteredEnrichedVendors,
         staff: staff.length > 0 ? staff : undefined,
-        total: enrichedVendors.length,
+        total: filteredEnrichedVendors.length,
         limit,
         offset,
       });
@@ -7059,7 +7148,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 : radius != null && radius > 0
                   ? Math.min(radius, vendorCap)
                   : vendorCap;
-            return p.distance === null || p.distance <= cap;
+            return providerWithinRadiusKm(p.distance, cap, true);
           });
           if (withinRadius.length > 0) {
             results = withinRadius;
@@ -7070,8 +7159,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const effectiveMaxKm =
             maxDistanceKm ?? (radius != null && radius > 0 ? radius : null);
           if (effectiveMaxKm != null) {
-            results = results.filter(
-              (p) => p.distance === null || p.distance <= effectiveMaxKm
+            results = results.filter((p) =>
+              providerWithinRadiusKm(p.distance, effectiveMaxKm, false)
             );
           }
         }

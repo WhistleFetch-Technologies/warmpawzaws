@@ -239,7 +239,7 @@ describe('filterSearchResultsByDiscoveryRules', () => {
     expect(out.map((v) => v.id)).toContain('no-loc');
   });
 
-  it('does NOT exclude at_center vendor with null lat/lng (relaxed for non-at_home)', () => {
+  it('excludes at_center vendor with unknown distance when coords are known', () => {
     const groomingHub = hubSlugToDiscoveryContext('grooming')!;
     const vendors = [
       { id: 'has-loc', latitude: 12.901, longitude: 77.601, distanceKm: 5 },
@@ -253,8 +253,7 @@ describe('filterSearchResultsByDiscoveryRules', () => {
       rules: { ...defaultRules, discovery_radius_km: 50 },
       vendorRadiusById: new Map(),
     });
-    expect(out.map((v) => v.id)).toContain('has-loc');
-    expect(out.map((v) => v.id)).toContain('no-loc');
+    expect(out.map((v) => v.id)).toEqual(['has-loc']);
   });
 
   // The exact case the customer reported: home shows N walkers, search shows N+1.

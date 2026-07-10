@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
+import { filterHubDiscoveryRowsByRadius } from '@/lib/hub-discovery-radius-filter';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
@@ -309,6 +310,12 @@ export function UniversalServicesByStyle({
             p.nextAvailableSlot = resolveNextAvailableLabel(p);
             return p;
           });
+
+          providerData = filterHubDiscoveryRowsByRadius(providerData, {
+            serviceStyle: 'at_center',
+            latitude,
+            longitude,
+          });
           
           setProviders(providerData);
           console.log(`✅ [${config.roleName}] Loaded ${providerData.length} clinic${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
@@ -481,6 +488,13 @@ export function UniversalServicesByStyle({
             }
           }
         }
+
+        finalProviders = filterHubDiscoveryRowsByRadius(finalProviders, {
+          serviceStyle: serviceStyle as 'at_center' | 'at_home' | 'tele',
+          latitude,
+          longitude,
+          sittingRelaxed: finalCategory === 'sitting',
+        });
 
         setProviders(finalProviders);
         console.log(`✅ [${config.roleName}] Loaded ${finalProviders.length} solo/staff provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);

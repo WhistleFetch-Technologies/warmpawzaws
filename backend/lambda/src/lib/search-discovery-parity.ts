@@ -295,8 +295,11 @@ function withinDiscoveryRadius(opts: {
   distanceKm: number | null;
   capKm: number;
   sittingRelaxed: boolean;
+  allowUnknownDistance?: boolean;
 }): boolean {
-  if (opts.distanceKm == null) return true;
+  if (opts.distanceKm == null) {
+    return opts.allowUnknownDistance ?? opts.sittingRelaxed;
+  }
   return opts.distanceKm <= opts.capKm;
 }
 
@@ -382,6 +385,7 @@ export function filterSearchResultsByDiscoveryRules<T extends SearchVendorRow, S
           distanceKm: v.distanceKm ?? null,
           capKm: cap,
           sittingRelaxed: !!opts.hub.sittingDiscoveryRelaxed,
+          allowUnknownDistance: true,
         });
       });
       if (within.length > 0) {
@@ -402,6 +406,7 @@ export function filterSearchResultsByDiscoveryRules<T extends SearchVendorRow, S
               distanceKm: v.distanceKm ?? null,
               capKm: effectiveMaxKm,
               sittingRelaxed: !!opts.hub.sittingDiscoveryRelaxed,
+              allowUnknownDistance: false,
             })
           );
           if (within.length > 0) {
