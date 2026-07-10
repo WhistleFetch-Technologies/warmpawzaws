@@ -6,6 +6,14 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { flattenProductForApiResponse, sanitizeStorefrontProductForCustomer } from './product-storefront-normalize';
+import {
+  enrichProductImageForContext,
+  mapWithConcurrency,
+  type EnrichedProductImage,
+} from '../services/image';
+import type { ImageDisplayContext } from '../services/image/image-types';
+
+const IMAGE_LIST_CONCURRENCY = 3;
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 
@@ -46,35 +54,48 @@ export async function presignS3GetUrlIfApplicable(
 /**
  * Presign every string URL in products.images JSONB (and { url | src | image_url } objects).
  * Handles column returned as JSON array or JSON string from pg.
+ * List context prefers thumb URLs for managed WebP assets.
  */
-export async function presignProductImagesJsonb(raw: unknown): Promise<unknown> {
+export async function presignProductImagesJsonb(
+  raw: unknown,
+  context: ImageDisplayContext = 'detail',
+  vendorId?: string,
+): Promise<unknown> {
   if (raw == null) return raw;
   let parsed: unknown = raw;
   if (typeof raw === 'string') {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      return (await presignS3GetUrlIfApplicable(raw)) ?? raw;
+      const enriched = await enrichProductImageForContext(raw, {
+        assetType: 'product',
+        ownerId: vendorId || 'unknown',
+        vendorId,
+        context,
+        migrate: false,
+      });
+      return flattenEnrichedImageForApi(enriched);
     }
   }
   if (!Array.isArray(parsed)) return raw;
-  return await Promise.all(
-    parsed.map(async (item) => {
-      if (typeof item === 'string') {
-        return (await presignS3GetUrlIfApplicable(item)) ?? item;
-      }
-      if (item && typeof item === 'object' && !Array.isArray(item)) {
-        const o = item as Record<string, unknown>;
-        for (const k of ['url', 'src', 'image_url'] as const) {
-          if (typeof o[k] === 'string') {
-            const signed = (await presignS3GetUrlIfApplicable(o[k] as string)) ?? o[k];
-            return { ...o, [k]: signed };
-          }
-        }
-      }
-      return item;
-    }),
-  );
+  const enriched = await mapWithConcurrency(parsed, IMAGE_LIST_CONCURRENCY, async (item) => {
+    return enrichProductImageForContext(item, {
+      assetType: 'product',
+      ownerId: vendorId || 'unknown',
+      vendorId,
+      context,
+      migrate: false,
+    });
+  });
+  return enriched.map(flattenEnrichedImageForApi);
+}
+
+function flattenEnrichedImageForApi(item: EnrichedProductImage): string {
+  if (typeof item === 'string') return item;
+  if (item && typeof item === 'object' && 'displayUrl' in item) {
+    return item.displayUrl;
+  }
+  return '';
 }
 
 /** Normalize products.images from JSONB, JSON string, or a single URL into a string array. */
@@ -109,25 +130,35 @@ export function normalizeProductImagesField(raw: unknown): string[] {
  */
 export async function prepareStorefrontProductRow(
   row: Record<string, unknown>,
+  context: ImageDisplayContext = 'list',
 ): Promise<Record<string, unknown>> {
   const normalized = flattenProductForApiResponse(row);
   const out: Record<string, unknown> = { ...normalized };
   if ('images' in out) {
     out.images = normalizeProductImagesField(out.images);
   }
-  const presigned = await presignProductRowForDisplay(out);
+  const presigned = await presignProductRowForDisplay(out, context);
   return sanitizeStorefrontProductForCustomer(presigned);
 }
 
 export async function prepareStorefrontProductRows(
   rows: Record<string, unknown>[],
 ): Promise<Record<string, unknown>[]> {
-  return Promise.all(rows.map((r) => prepareStorefrontProductRow(r)));
+  return Promise.all(rows.map((r) => prepareStorefrontProductRow(r, 'list')));
 }
 
 /** Presign product.images and metadata.images for API responses (private S3 bucket). */
-export async function presignProductRowForDisplay(row: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function presignProductRowForDisplay(
+  row: Record<string, unknown>,
+  context: ImageDisplayContext = 'detail',
+): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = { ...row };
+  const vendorId =
+    typeof out.vendor_id === 'string'
+      ? out.vendor_id
+      : typeof out.vendorId === 'string'
+        ? out.vendorId
+        : undefined;
 
   const top = out.images;
   const topEmpty =
@@ -148,12 +179,12 @@ export async function presignProductRowForDisplay(row: Record<string, unknown>):
   }
 
   if ('images' in out) {
-    out.images = await presignProductImagesJsonb(out.images);
+    out.images = await presignProductImagesJsonb(out.images, context, vendorId);
   }
   if (out.metadata != null && typeof out.metadata === 'object' && !Array.isArray(out.metadata)) {
     const m = { ...(out.metadata as Record<string, unknown>) };
     if ('images' in m) {
-      m.images = await presignProductImagesJsonb(m.images);
+      m.images = await presignProductImagesJsonb(m.images, context, vendorId);
     }
     out.metadata = m;
   }
@@ -241,12 +272,19 @@ export async function presignMealPlanRowDisplayFields(mp: Record<string, unknown
 
 export async function presignProductSkusForDisplay(
   skus: Record<string, unknown>[],
+  context: ImageDisplayContext = 'detail',
 ): Promise<Record<string, unknown>[]> {
   return Promise.all(
     skus.map(async (sku) => {
       const out = { ...sku };
+      const vendorId =
+        typeof out.vendor_id === 'string'
+          ? out.vendor_id
+          : typeof out.vendorId === 'string'
+            ? out.vendorId
+            : undefined;
       if ('images' in out) {
-        out.images = await presignProductImagesJsonb(out.images);
+        out.images = await presignProductImagesJsonb(out.images, context, vendorId);
       }
       return out;
     }),
