@@ -18,10 +18,7 @@ import {
 import { recordImageUploadFailed, recordImageUploadSuccess } from './image-metrics';
 import { processImageBuffer } from './image-processor';
 import { moveKeyToCleanup, putWebpObject, getUploadsBucket } from './image-repository';
-import {
-  validateImageBuffer,
-  validateImageDimensions,
-} from './image-validator';
+import { validateImageBuffer } from './image-validator';
 import { attachUrlsToImageDto } from './image-url-builder';
 
 export class ImageProcessingError extends Error {
@@ -57,12 +54,7 @@ export async function uploadDisplayImage(input: ImageUploadInput): Promise<Image
     throw new ImageProcessingError(basic.message);
   }
 
-  const dimCheck = await validateImageDimensions(buffer);
-  if (!dimCheck.ok) {
-    await recordImageUploadFailed(assetType, dimCheck.message);
-    throw new ImageProcessingError(dimCheck.message);
-  }
-
+  // Do not gate on metadata() alone — phone JPEGs often fail failOn:error metadata but encode fine.
   const hash = sha256Hex(buffer);
   let dedupHit = false;
 
@@ -97,10 +89,25 @@ export async function uploadDisplayImage(input: ImageUploadInput): Promise<Image
 
   let processed;
   try {
-    processed = await processImageBuffer(buffer, assetType, dimCheck.detectedMime);
-  } catch {
-    await recordImageUploadFailed(assetType, 'processing_failed');
-    throw new ImageProcessingError('Failed to process image', 500);
+    processed = await processImageBuffer(buffer, assetType, basic.detectedMime);
+  } catch (err: unknown) {
+    const sharpMsg = (err as Error)?.message || 'processing_failed';
+    console.warn(
+      JSON.stringify({
+        event: 'image.upload.process_failed',
+        assetType,
+        byteLength: buffer.length,
+        declaredContentType: input.declaredContentType,
+        detectedMime: basic.detectedMime,
+        error: sharpMsg,
+      }),
+    );
+    const userMessage =
+      /heif|heic/i.test(sharpMsg) || basic.detectedMime === 'image/heic'
+        ? 'HEIC/HEIF is not supported on the server. Please upload JPEG or PNG.'
+        : 'Failed to process image. Try a JPEG or PNG from your gallery.';
+    await recordImageUploadFailed(assetType, userMessage);
+    throw new ImageProcessingError(userMessage, 400);
   }
 
   const suffix = `${Date.now().toString(36)}${hash.slice(0, 8)}`;

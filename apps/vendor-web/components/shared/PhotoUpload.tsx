@@ -20,6 +20,7 @@ import { cn } from '@/components/ui/utils';
 import { toast } from 'sonner';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { fileMatchesAccept } from '@/lib/capacitor-file-pick';
+import { normalizeProfilePhotoFile } from '@/lib/normalize-profile-photo';
 
 interface PhotoUploadProps {
   photoUrl?: string;
@@ -92,7 +93,8 @@ export function PhotoUpload({
     // Upload file
     try {
       setUploading(true);
-      const result = await onUpload(file);
+      const normalized = await normalizeProfilePhotoFile(file);
+      const result = await onUpload(normalized);
       
       if (result.success && result.photo_url) {
         setPreview(result.photo_url);

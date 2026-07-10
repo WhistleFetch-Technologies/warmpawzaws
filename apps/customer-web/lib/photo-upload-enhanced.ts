@@ -4,6 +4,7 @@
  */
 
 import { apiClient, getApiBaseUrl, getCustomerAuthHeadersForUpload } from './api-client';
+import { normalizeProfilePhotoFile } from './normalize-profile-photo';
 
 /** JPEG/PNG/WebP/GIF/HEIC; also allows missing MIME when the filename looks like an image (common on mobile). */
 function isAllowedCustomerImageFile(file: File): boolean {
@@ -78,6 +79,28 @@ export async function uploadPhotoWithProgress(
   }
 
   // Retry loop
+  let normalizedFile: File;
+  try {
+    normalizedFile = await normalizeProfilePhotoFile(file);
+  } catch (normalizeError: unknown) {
+    return {
+      success: false,
+      error:
+        normalizeError instanceof Error
+          ? normalizeError.message
+          : 'Could not process image for upload',
+    };
+  }
+
+  const uploadFormData = new FormData();
+  for (const [key, value] of formData.entries()) {
+    if (key === 'file') {
+      uploadFormData.append('file', normalizedFile, normalizedFile.name);
+    } else {
+      uploadFormData.append(key, value);
+    }
+  }
+
   while (retries < maxRetries) {
     try {
       // Simulate progress for FormData upload (browser doesn't provide real progress for FormData)
@@ -86,9 +109,12 @@ export async function uploadPhotoWithProgress(
       }
 
       // Upload using XMLHttpRequest for progress tracking
-      const uploadResult = await uploadWithXHR(endpoint, formData, onProgress);
+      const uploadResult = await uploadWithXHR(endpoint, uploadFormData, onProgress);
 
-      if (uploadResult.success && uploadResult.publicUrl) {
+      if (
+        uploadResult.success &&
+        (uploadResult.imageKey || uploadResult.publicUrl || uploadResult.url)
+      ) {
         // Verify upload if requested
         // Use presigned URL (url) for verification since public URL may be blocked in dev
         if (verifyUpload) {
@@ -166,7 +192,7 @@ async function uploadWithXHR(
             response.asset?.imageKey ||
             response.key ||
             response.fileName;
-          if (response.success && resolvedUrl) {
+          if (response.success && (resolvedUrl || imageKey)) {
             resolve({
               success: true,
               url: response.url,

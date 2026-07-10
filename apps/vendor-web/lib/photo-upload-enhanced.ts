@@ -10,6 +10,7 @@ import {
   type MultipartUploadResponse,
 } from './api-client';
 import { fileMatchesAccept } from '@/lib/capacitor-file-pick';
+import { normalizeProfilePhotoFile } from '@/lib/normalize-profile-photo';
 
 export interface PhotoUploadOptions {
   onProgress?: (progress: number) => void;
@@ -369,10 +370,17 @@ async function buildFacilityJsonPhotoPayloads(
     if (file.size === 0) {
       throw new Error(`${file.name || 'Photo'} is empty on this device`);
     }
+    const withMime =
+      file.type && file.type !== 'application/octet-stream'
+        ? file
+        : new File([file], file.name || `photo-${Date.now()}.jpg`, {
+            type: mimeForFacilityPhoto(file),
+          });
+    const normalized = await normalizeProfilePhotoFile(withMime);
     photos.push({
-      base64: await readFileAsBase64(file),
-      fileName: file.name || `photo-${Date.now()}.jpg`,
-      mimeType: mimeForFacilityPhoto(file),
+      base64: await readFileAsBase64(normalized),
+      fileName: normalized.name || `photo-${Date.now()}.jpg`,
+      mimeType: normalized.type || 'image/jpeg',
     });
   }
   return photos;
@@ -454,20 +462,20 @@ export async function uploadFacilityCenterPhotos(
       if (file.size === 0) {
         throw new Error(`${payload.fileName || 'Photo'} is empty on this device`);
       }
-      uploadFiles.push(file);
+      uploadFiles.push(await normalizeProfilePhotoFile(file));
     }
   } else {
     for (const file of files) {
       if (file.size === 0) {
         throw new Error(`${file.name || 'Photo'} is empty on this device`);
       }
-      uploadFiles.push(
+      const withMime =
         file.type && file.type !== 'application/octet-stream'
           ? file
           : new File([file], file.name || `photo-${Date.now()}.jpg`, {
               type: mimeForFacilityPhoto(file),
-            })
-      );
+            });
+      uploadFiles.push(await normalizeProfilePhotoFile(withMime));
     }
   }
 
