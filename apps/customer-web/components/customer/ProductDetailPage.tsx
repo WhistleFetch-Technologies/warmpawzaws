@@ -40,7 +40,7 @@ import {
 import { RecommendationProductScroller } from '@/components/ecommerce/shared/RecommendationProductScroller';
 import type { ShopProduct } from '@/components/shop/shop-types';
 import { shopProductToCartItem } from '@/lib/ecommerce/cart-product-helpers';
-import { ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL } from '@/lib/ecommerce/cart-pricing';
+import { ECOMMERCE_DEFAULT_DELIVERY_FEE } from '@/lib/ecommerce/cart-pricing';
 import { shopProductDetailPath } from '@/lib/shop-product-path';
 import { ProductImageGallery } from '@/components/ecommerce/ProductImageGallery';
 import {
@@ -395,25 +395,6 @@ export function ProductDetailPage({
             )}
           </div>
 
-          {/* Rating & Reviews */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1">
-              <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
-              <span className="font-semibold text-gray-900">{rating.toFixed(1)}</span>
-            </div>
-            <button
-              onClick={onReviewsClick}
-              className="text-sm text-gray-600 hover:text-[#FF8C42] transition-colors"
-            >
-              ({reviewCount} {reviewCount === 1 ? 'review' : 'reviews'})
-            </button>
-            <Separator orientation="vertical" className="h-4" />
-            <div className="flex items-center gap-1 text-sm text-gray-600">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span>Verified</span>
-            </div>
-          </div>
-
           {/* Price */}
           <div className="flex flex-row items-baseline justify-between gap-3">
             <div className="flex items-baseline gap-3 flex-wrap min-w-0">
@@ -427,14 +408,12 @@ export function ProductDetailPage({
                 </>
               )}
             </div>
-            {templateSpecEntries.length > 0 && (
-              <div className="flex flex-col gap-0.5 items-end text-right shrink-0">
-                {templateSpecEntries.map(([key, value]) => (
-                  <div key={key} className="text-sm whitespace-nowrap">
-                    <span className="text-gray-500">{key}: </span>
-                    <span className="font-medium text-gray-900">{displayProductSpecValue(value)}</span>
-                  </div>
-                ))}
+            {isMeaningfulProductSpecValue(product.key_features) && (
+              <div className="flex flex-col gap-0.5 items-end text-right shrink-0 max-w-[48%]">
+                <span className="text-xs text-gray-500">Key Features</span>
+                <span className="text-sm font-medium text-gray-900 whitespace-pre-line">
+                  {displayProductSpecValue(product.key_features)}
+                </span>
               </div>
             )}
           </div>
@@ -554,9 +533,9 @@ export function ProductDetailPage({
               <div className="flex items-start gap-3">
                 <Truck className="w-5 h-5 text-blue-600 mt-0.5" />
                 <div className="flex-1">
-                  <p className="font-semibold text-gray-900 text-sm">Free Delivery</p>
+                  <p className="font-semibold text-gray-900 text-sm">Standard Delivery</p>
                   <p className="text-xs text-gray-600">
-                    On orders above ₹{ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL.toLocaleString('en-IN')}
+                    ₹{ECOMMERCE_DEFAULT_DELIVERY_FEE.toLocaleString('en-IN')} on all orders
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     {product.vendor?.deliveryTime || '2-3 days'} delivery

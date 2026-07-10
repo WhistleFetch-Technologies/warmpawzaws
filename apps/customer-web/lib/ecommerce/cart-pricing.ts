@@ -103,16 +103,15 @@ export const VENDOR_DELIVERY_CONFIG: Record<
 // These constants are intentionally duplicated from backend/lambda/src/utils/ecommerce/delivery-fee.ts
 // because the two packages cannot share source. If you change the delivery policy here,
 // you MUST update the backend file to match (and vice versa) to prevent cart↔order fee mismatches.
-export const ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL = 1000;
 export const ECOMMERCE_DEFAULT_DELIVERY_FEE = 150;
 
 const GIFT_WRAP_PER_ITEM = 25;
 const PROTECTION_RATE = 0.02;
 
-/** Order-level delivery: free when subtotal (after discounts) >= ₹1000, else ₹150. */
-export function computeEcommerceDeliveryFee(subtotalAfterDiscount: number): number {
-  const subtotal = Number(subtotalAfterDiscount) || 0;
-  return subtotal >= ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL ? 0 : ECOMMERCE_DEFAULT_DELIVERY_FEE;
+/** Order-level delivery: flat ₹150 on all order values (delivery coupons may waive). */
+export function computeEcommerceDeliveryFee(_subtotalAfterDiscount?: number): number {
+  void _subtotalAfterDiscount;
+  return ECOMMERCE_DEFAULT_DELIVERY_FEE;
 }
 
 export function groupCartLinesByVendor(
@@ -233,10 +232,7 @@ export function computeCartPricing(
     (c) => c.type === 'delivery' && lineSubtotal >= (c.minOrder ?? 0)
   );
   const deliveryFees = hasFreeDeliveryCoupon ? 0 : computeEcommerceDeliveryFee(subtotalAfterDiscount);
-  const freeDeliveryGap =
-    hasFreeDeliveryCoupon || subtotalAfterDiscount >= ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL
-      ? 0
-      : ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL - subtotalAfterDiscount;
+  const freeDeliveryGap = 0;
 
   const byVendor: VendorPricingRow[] = Object.keys(itemsByVendor).map((vendorId) => {
     const vendorItems = itemsByVendor[vendorId];
@@ -245,7 +241,7 @@ export function computeCartPricing(
       vendorId,
       subtotal,
       deliveryFee: 0,
-      freeDeliveryMin: ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL,
+      freeDeliveryMin: 0,
       freeDeliveryGap: 0,
     };
   });
