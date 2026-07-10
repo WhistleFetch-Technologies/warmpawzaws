@@ -18,6 +18,10 @@ import {
 } from './firebase-client';
 import { resolveNotificationDeepLink, type DeepLinkRecipientType } from './notification-deep-links';
 import { fetchCustomerNotificationSettings } from './customer-notification-settings';
+import {
+  dispatchPipelineDisabledResult,
+  isNotificationPipelineEnabled,
+} from './notification-pipeline-kill-switch';
 
 const PUSH_BATCH_SIZE = 500;
 const DEDUPE_LOOKBACK_HOURS = 48;
@@ -219,6 +223,18 @@ async function sendPushWithHygiene(
 export async function dispatchNotification(
   input: DispatchNotificationInput
 ): Promise<DispatchNotificationResult> {
+  if (!isNotificationPipelineEnabled()) {
+    console.log(
+      JSON.stringify({
+        metric: 'notification_dispatch',
+        status: 'pipeline_disabled',
+        type: input.notificationType,
+        recipientType: input.recipientType,
+      })
+    );
+    return dispatchPipelineDisabledResult();
+  }
+
   const started = Date.now();
   const channels = {
     inApp: input.channels?.inApp !== false,
