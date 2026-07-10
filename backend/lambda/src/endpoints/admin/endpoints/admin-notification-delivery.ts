@@ -14,7 +14,7 @@ import {
 import { purgeOldNotificationDeliveryLogs } from '../../../utils/scheduled-notification-drain';
 import {
   cronPipelineSkippedPayload,
-  isNotificationPipelineEnabled,
+  isNotificationCronEnabled,
 } from '../../../utils/notification-pipeline-kill-switch';
 
 export function registerAdminNotificationDeliveryEndpoints(app: Hono) {
@@ -191,7 +191,7 @@ export function registerAdminNotificationDeliveryEndpoints(app: Hono) {
    * EventBridge daily cron: purge delivery log rows older than retention window.
    */
   app.post('/admin/notifications/delivery-log/retention', async (c) => {
-    if (!isNotificationPipelineEnabled()) {
+    if (!isNotificationCronEnabled()) {
       return c.json({ ...cronPipelineSkippedPayload(), deleted: 0, retentionDays: 90 });
     }
     try {

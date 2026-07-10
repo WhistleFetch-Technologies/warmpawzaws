@@ -17,6 +17,7 @@ import { processDueScheduledCampaigns } from '../../../utils/scheduled-notificat
 import {
   campaignPipelineDisabledResult,
   cronPipelineSkippedPayload,
+  isNotificationCronEnabled,
   isNotificationPipelineEnabled,
 } from '../../../utils/notification-pipeline-kill-switch';
 
@@ -313,20 +314,29 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
     try {
       const body = await c.req.json();
       const adminId = getAdminId(c);
+      if (body.scheduled_at_utc) {
+        return c.json(
+          {
+            error: 'Scheduled campaigns are disabled. Create as DRAFT and use Send.',
+            code: 'CAMPAIGN_SCHEDULE_DISABLED',
+          },
+          400
+        );
+      }
       const row = await insert('notification_campaigns', {
         name: body.name,
         title: body.title,
         message: body.message,
         channel: body.channel || 'PUSH',
         target_app: body.target_app || 'CUSTOMER',
-        status: body.status || 'DRAFT',
+        status: body.status === 'SCHEDULED' ? 'DRAFT' : body.status || 'DRAFT',
         image_url: body.image_url || null,
         cta_text: body.cta_text || null,
         deep_link: body.deep_link || null,
         targeting_type: body.targeting_type || 'BROADCAST',
         audience_filters: await buildCampaignAudienceFilters(body),
         timezone: body.timezone || null,
-        scheduled_at_utc: body.scheduled_at_utc || null,
+        scheduled_at_utc: null,
         created_by: adminId,
       });
       const campaignId = row[0]?.id;
@@ -346,6 +356,15 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
       const { id } = c.req.param();
       const body = await c.req.json();
       const adminId = getAdminId(c);
+      if (body.scheduled_at_utc || body.status === 'SCHEDULED') {
+        return c.json(
+          {
+            error: 'Scheduled campaigns are disabled. Use Send for immediate delivery.',
+            code: 'CAMPAIGN_SCHEDULE_DISABLED',
+          },
+          400
+        );
+      }
       const updated = await update('notification_campaigns', { id }, {
         name: body.name,
         title: body.title,
@@ -358,7 +377,6 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
         targeting_type: body.targeting_type,
         audience_filters: await buildCampaignAudienceFilters(body),
         timezone: body.timezone,
-        scheduled_at_utc: body.scheduled_at_utc,
         updated_at: new Date().toISOString(),
       });
       await replaceCampaignTargeting(id, body);
@@ -448,23 +466,14 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
   });
 
   app.post('/admin/notifications/campaigns/:id/schedule', async (c) => {
-    try {
-      const { id } = c.req.param();
-      const body = await c.req.json();
-      const adminId = getAdminId(c);
-      if (!body.scheduled_at_utc) return c.json({ error: 'scheduled_at_utc required' }, 400);
-      await update('notification_campaigns', { id }, {
-        status: 'SCHEDULED',
-        scheduled_at_utc: body.scheduled_at_utc,
-        timezone: body.timezone || null,
-        updated_at: new Date().toISOString(),
-      });
-      await recordCampaignEvent(id, 'SCHEDULED', adminId, { scheduled_at_utc: body.scheduled_at_utc });
-      return c.json({ success: true });
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Schedule failed';
-      return c.json({ error: msg }, 500);
-    }
+    return c.json(
+      {
+        success: false,
+        error: 'Scheduled campaigns are disabled. Use POST /admin/notifications/campaigns/:id/send.',
+        code: 'CAMPAIGN_SCHEDULE_DISABLED',
+      },
+      410
+    );
   });
 
   app.post('/admin/notifications/campaigns/:id/send', async (c) => {
@@ -589,7 +598,7 @@ export function registerNotificationCampaignEndpoints(app: Hono) {
    * EventBridge cron: fire campaigns with status SCHEDULED and scheduled_at_utc <= now.
    */
   app.post('/admin/notifications/campaigns/process-scheduled', async (c) => {
-    if (!isNotificationPipelineEnabled()) {
+    if (!isNotificationCronEnabled()) {
       return c.json(cronPipelineSkippedPayload());
     }
     try {

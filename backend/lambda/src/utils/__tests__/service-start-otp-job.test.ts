@@ -19,10 +19,10 @@ describe('processServiceStartOtpNotifications', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedUpdate.mockResolvedValue([] as never);
-    mockedNotify.mockResolvedValue({ sent: true });
+    mockedNotify.mockResolvedValue({ sent: false });
   });
 
-  it('sends start OTP and marks booking when rows match', async () => {
+  it('does not mark booking sent when start OTP notify is disabled', async () => {
     mockedQuery.mockResolvedValue({
       rows: [
         {
@@ -37,33 +37,11 @@ describe('processServiceStartOtpNotifications', () => {
 
     const result = await processServiceStartOtpNotifications();
 
-    expect(result).toEqual({ processed: 1, sent: 1, skipped: 0 });
-    expect(mockedNotify).toHaveBeenCalledWith(
-      expect.objectContaining({
-        bookingId: 'b1',
-        customerId: 'c1',
-        otp: '1234',
-      }),
-    );
-    expect(mockedUpdate).toHaveBeenCalledWith(
-      'bookings',
-      { id: 'b1' },
-      expect.objectContaining({ start_otp_notification_sent: true }),
-    );
-  });
-
-  it('skips marking when notify returns sent false', async () => {
-    mockedQuery.mockResolvedValue({
-      rows: [{ id: 'b2', customer_id: 'c2', otp_code: null, vendor_name: 'V', service_name: 'S' }],
-    } as never);
-    mockedNotify.mockResolvedValue({ sent: false });
-
-    const result = await processServiceStartOtpNotifications();
-
     expect(result).toEqual({ processed: 1, sent: 0, skipped: 1 });
+    expect(mockedNotify).toHaveBeenCalled();
     expect(mockedUpdate).not.toHaveBeenCalledWith(
       'bookings',
-      { id: 'b2' },
+      { id: 'b1' },
       expect.objectContaining({ start_otp_notification_sent: true }),
     );
   });

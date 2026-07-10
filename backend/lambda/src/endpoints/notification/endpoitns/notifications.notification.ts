@@ -30,7 +30,7 @@ import {
 import { processDueScheduledNotifications } from '../../../utils/scheduled-notification-drain';
 import {
   cronPipelineSkippedPayload,
-  isNotificationPipelineEnabled,
+  isNotificationCronEnabled,
 } from '../../../utils/notification-pipeline-kill-switch';
 import {
   ensureDeliveryLogEntries,
@@ -558,7 +558,7 @@ export function registerNotificationEndpoints(app: Hono) {
    * EventBridge cron: drain scheduled_notifications rows due for delivery.
    */
   app.post('/notifications/process-scheduled', async (c) => {
-    if (!isNotificationPipelineEnabled()) {
+    if (!isNotificationCronEnabled()) {
       return c.json(cronPipelineSkippedPayload());
     }
     try {

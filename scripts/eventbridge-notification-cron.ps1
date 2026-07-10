@@ -1,15 +1,17 @@
 <#
 .SYNOPSIS
-  Create EventBridge minute/daily schedules for notification cron endpoints on the existing API Lambda.
+  Disable legacy notification EventBridge cron rules (event-only notification surface).
 
 .DESCRIPTION
-  Creates API destinations + rules (same pattern as eventbridge-settlement-calculate-daily.ps1):
-    - rate(1 minute)  POST /reminders/scheduled-job
-    - rate(1 minute)  POST /admin/notifications/campaigns/process-scheduled
-    - rate(1 minute)  POST /notifications/process-scheduled
-    - cron(30 2 * * ? *) POST /admin/notifications/delivery-log/retention  (~08:00 IST)
+  Notifications are triggered-only (booking/order/meal/campaign Send). This script DISABLES
+  any existing notification poll rules — it does not create new schedules.
 
-  Reuses connection warmpawz-<Stage>-notification-cron (or creates it).
+  Rules disabled per stage:
+    - warmpawz-<Stage>-reminders-minute
+    - warmpawz-<Stage>-campaigns-minute
+    - warmpawz-<Stage>-scheduled-notifications-minute
+    - warmpawz-<Stage>-delivery-log-retention-daily
+    - warmpawz-<Stage>-vaccination-reminders-daily
 
 .PARAMETER Stage
   dev (default) or prod
@@ -175,78 +177,30 @@ function Put-CronRule {
   Write-Host "Rule $RuleName -> $ScheduleExpression"
 }
 
-Write-Host "Stage: $Stage  API: $BaseUrl"
+Write-Host "Stage: $Stage — disabling legacy notification EventBridge rules"
 Write-Host ""
 
-$connArn = Ensure-Connection -ApiKeyValue ''
-if (-not $connArn) { throw 'Failed to resolve EventBridge connection' }
-
-$deadline = (Get-Date).AddMinutes(2)
-while ((Get-Date) -lt $deadline) {
-  $st = (aws events describe-connection --name $ConnectionName --region $Region --query 'ConnectionState' --output text).Trim()
-  if ($st -eq 'AUTHORIZED') { break }
-  Start-Sleep -Seconds 3
-}
-
-$jobs = @(
-  @{
-    RuleName    = "warmpawz-$Stage-reminders-minute"
-    DestName    = "warmpawz-$Stage-reminders-cron"
-    Endpoint    = "$BaseUrl/reminders/scheduled-job"
-    Schedule    = 'rate(1 minute)'
-    Description = "$Stage`: POST /reminders/scheduled-job"
-    TargetId    = 'RemindersMinute'
-  },
-  @{
-    RuleName    = "warmpawz-$Stage-campaigns-minute"
-    DestName    = "warmpawz-$Stage-campaigns-cron"
-    Endpoint    = "$BaseUrl/admin/notifications/campaigns/process-scheduled"
-    Schedule    = 'rate(1 minute)'
-    Description = "$Stage`: POST campaigns/process-scheduled"
-    TargetId    = 'CampaignsMinute'
-  },
-  @{
-    RuleName    = "warmpawz-$Stage-scheduled-notifications-minute"
-    DestName    = "warmpawz-$Stage-scheduled-notif-cron"
-    Endpoint    = "$BaseUrl/notifications/process-scheduled"
-    Schedule    = 'rate(1 minute)'
-    Description = "$Stage`: POST /notifications/process-scheduled"
-    TargetId    = 'ScheduledNotificationsMinute'
-  },
-  @{
-    RuleName    = "warmpawz-$Stage-delivery-log-retention-daily"
-    DestName    = "warmpawz-$Stage-delivery-log-retention"
-    Endpoint    = "$BaseUrl/admin/notifications/delivery-log/retention"
-    Schedule    = 'cron(30 2 * * ? *)'
-    Description = "$Stage`: daily delivery log retention"
-    TargetId    = 'DeliveryLogRetention'
-  },
-  @{
-    RuleName    = "warmpawz-$Stage-vaccination-reminders-daily"
-    DestName    = "warmpawz-$Stage-vaccination-reminders-cron"
-    Endpoint    = "$BaseUrl/reminders/vaccinations/process"
-    Schedule    = 'cron(30 2 * * ? *)'
-    Description = "$Stage`: POST /reminders/vaccinations/process (~08:00 IST)"
-    TargetId    = 'VaccinationRemindersDaily'
-  }
+$ruleNames = @(
+  "warmpawz-$Stage-reminders-minute",
+  "warmpawz-$Stage-campaigns-minute",
+  "warmpawz-$Stage-scheduled-notifications-minute",
+  "warmpawz-$Stage-delivery-log-retention-daily",
+  "warmpawz-$Stage-vaccination-reminders-daily"
 )
 
-$destArns = @()
-foreach ($job in $jobs) {
-  $destArns += Ensure-ApiDestination -Name $job.DestName -Endpoint $job.Endpoint -ConnArn $connArn
-}
-
-$roleArn = Ensure-InvokeRole -DestinationArns $destArns
-
-for ($i = 0; $i -lt $jobs.Count; $i++) {
-  Put-CronRule `
-    -RuleName $jobs[$i].RuleName `
-    -ScheduleExpression $jobs[$i].Schedule `
-    -Description $jobs[$i].Description `
-    -DestArn $destArns[$i] `
-    -RoleArn $roleArn `
-    -TargetId $jobs[$i].TargetId
+foreach ($ruleName in $ruleNames) {
+  aws events describe-rule --name $ruleName --region $Region --output json 2>$null | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "Skip (not found): $ruleName"
+    continue
+  }
+  aws events disable-rule --name $ruleName --region $Region | Out-Null
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "Disabled: $ruleName"
+  } else {
+    Write-Host "Failed to disable: $ruleName"
+  }
 }
 
 Write-Host ""
-Write-Host "Done. Notification EventBridge rules registered for $Stage."
+Write-Host "Done. Notification crons disabled for $Stage. User notifications are triggered-only via API."
