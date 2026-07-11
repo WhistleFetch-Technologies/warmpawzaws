@@ -1,8 +1,12 @@
 /**
- * Temporary vendor suppression till cutoff date (IST).
- * Hides historical bookings / settlements / vendor earnings for listed vendors from admin and vendor UIs only — no DB deletes.
+ * Temporary vendor suppression till fixed cutoff date (IST).
+ * Hides bookings / settlements / vendor earnings on or before the cutoff for listed vendors
+ * from admin and vendor UIs only — no DB deletes. Bookings after the cutoff (including today) show normally.
  * Remove this module’s usage once the cleanup window is past.
  */
+
+/** Last calendar day (IST) hidden for TEMPORARY_SUPPRESSED_VENDOR_IDS; bookings after this date are visible. */
+export const TEMPORARY_SUPPRESSED_CUTOFF_DATE_IST = '2026-05-25';
 
 /** Specific bookings hidden from vendor-web and admin-web only (no DB deletes). */
 export const UI_HIDDEN_BOOKING_IDS: readonly string[] = [
@@ -12,7 +16,6 @@ export const UI_HIDDEN_BOOKING_IDS: readonly string[] = [
 export const TEMPORARY_SUPPRESSED_VENDOR_IDS: readonly string[] = [
 	'191568e6-2139-4675-9cd4-adb95a27c8b5',
 	'426fb107-76cc-4b64-931a-ed2d924628e0',
-	'06d6fab0-9120-4332-8c22-e000416323c7',
 	'45104431-dca6-4073-ab8d-b20f5003d19e',
 	'6e0f8ea7-31ed-4242-b395-e995e17b3ed4',
 	'9b87f7da-4b7e-44da-9324-291ef79fb551',
@@ -27,25 +30,15 @@ export const TEMPORARY_SUPPRESSED_VENDOR_IDS: readonly string[] = [
 	'ad1b7f84-1ed4-4c96-a0a4-40d14fc1c1f6',
 ];
 
-function getTodayDateStringIst(): string {
-	return new Intl.DateTimeFormat('en-CA', {
-		timeZone: 'Asia/Kolkata',
-		year: 'numeric',
-		month: '2-digit',
-		day: '2-digit',
-	}).format(new Date());
-}
-
 /** Params for `query(..., params)` when suppression is active. */
 export function getTemporaryVendorSuppressionParams(): {
 	vendorIds: string[];
 	cutoffDateIst: string;
 } | null {
-	// Temporary vendor suppression till cutoff date (IST).
 	if (TEMPORARY_SUPPRESSED_VENDOR_IDS.length === 0) return null;
 	return {
 		vendorIds: [...TEMPORARY_SUPPRESSED_VENDOR_IDS],
-		cutoffDateIst: getTodayDateStringIst(),
+		cutoffDateIst: TEMPORARY_SUPPRESSED_CUTOFF_DATE_IST,
 	};
 }
 
