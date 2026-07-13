@@ -186,7 +186,7 @@ export function useHomePageData({
   const [ecommerceShopCategories, setEcommerceShopCategories] = useState<
     Array<{ id: string; name: string; image_url?: string; display_order?: number }>
   >([]);
-  const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
+  const customerCommerceEnabled = isCustomerEcommerceEnabled();
 
   const loadUserData = useCallback(async () => {
     const hadCachedPets = readCachedPetsForPhone(phone).length > 0;

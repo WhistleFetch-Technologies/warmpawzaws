@@ -5,6 +5,10 @@
 
 import { query } from '../database/rds-connection';
 import { dispatchNotification } from './notification-dispatch';
+import {
+  isPaymentAbandonCancellationReason,
+  isShopOrderVendorVisible,
+} from './shop-vendor-visibility';
 
 export type ShopOrderLifecycleStatus =
   | 'paid'
@@ -251,20 +255,46 @@ export async function notifyShopOrderStatusChange(params: {
 
   const vendorEvent = mapStatusToVendorEvent(newStatus);
   if (vendorEvent && params.notifyVendor !== false) {
-    const vendorMessages: Partial<Record<ShopOrderLifecycleStatus, string>> = {
-      paid: `${ctx.customerName} placed order #${ctx.orderNumber}.`,
-      cancelled: `Order #${ctx.orderNumber} was cancelled${params.cancellationReason ? `: ${params.cancellationReason}` : '.'}`,
-      returned: `Order #${ctx.orderNumber} was marked returned.`,
-    };
-    await notifyShopRecipient({
-      ctx,
-      recipientId: ctx.vendorId,
-      recipientType: 'vendor',
-      notificationType: vendorEvent,
-      title: 'Shop order update',
-      message: vendorMessages[newStatus] || `Order #${ctx.orderNumber} status: ${newStatus}`,
-      dedupeEvent: `${newStatus}-vendor`,
-    }).catch((e) => console.warn('[shop-notify] vendor status notify failed:', e));
+    let shouldNotifyVendor = true;
+    if (newStatus === 'cancelled') {
+      if (isPaymentAbandonCancellationReason(params.cancellationReason)) {
+        shouldNotifyVendor = false;
+      } else {
+        try {
+          const orderRes = await query(
+            `SELECT payment_status, payment_method FROM orders WHERE id = $1::uuid LIMIT 1`,
+            [orderId]
+          );
+          const orderRow = orderRes.rows[0] as
+            | { payment_status?: string; payment_method?: string }
+            | undefined;
+          const wasVendorVisible =
+            orderRow != null && isShopOrderVendorVisible(orderRow);
+          const hadPaidTransition =
+            ['paid', 'completed', 'pending'].includes(String(previousStatus || '').toLowerCase()) &&
+            (await orderHasCompletedPayment(orderId));
+          shouldNotifyVendor = wasVendorVisible || hadPaidTransition;
+        } catch {
+          shouldNotifyVendor = false;
+        }
+      }
+    }
+    if (shouldNotifyVendor) {
+      const vendorMessages: Partial<Record<ShopOrderLifecycleStatus, string>> = {
+        paid: `${ctx.customerName} placed order #${ctx.orderNumber}.`,
+        cancelled: `Order #${ctx.orderNumber} was cancelled${params.cancellationReason ? `: ${params.cancellationReason}` : '.'}`,
+        returned: `Order #${ctx.orderNumber} was marked returned.`,
+      };
+      await notifyShopRecipient({
+        ctx,
+        recipientId: ctx.vendorId,
+        recipientType: 'vendor',
+        notificationType: vendorEvent,
+        title: 'Shop order update',
+        message: vendorMessages[newStatus] || `Order #${ctx.orderNumber} status: ${newStatus}`,
+        dedupeEvent: `${newStatus}-vendor`,
+      }).catch((e) => console.warn('[shop-notify] vendor status notify failed:', e));
+    }
   }
 }
 

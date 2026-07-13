@@ -625,7 +625,7 @@ export function CustomerHomeComplete({
     Array<{ id: string; name: string; image_url?: string; display_order?: number }>
   >([]);
   // Evaluated lazily so runtime-config.js (which runs before hydration) is already applied.
-  const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
+  const customerCommerceEnabled = isCustomerEcommerceEnabled();
   const shopUiVisible = isShopUiVisibleForAccount(phone);
   const reviewDemoAccount = isAppReviewDemoAccount(phone);
   const [newHomeUi] = useState<boolean>(() => isNewHomeUiEnabled());

@@ -18,6 +18,7 @@ import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { presignedImageUploadRejected } from '../utils/reject-presigned-image-upload';
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'ap-south-1',
@@ -37,6 +38,11 @@ export function registerFileUploadEndpoints(app: Hono) {
 
       if (!fileName || !fileType) {
         return c.json({ error: 'fileName and fileType are required' }, 400);
+      }
+
+      const imageReject = presignedImageUploadRejected(fileType);
+      if (imageReject) {
+        return c.json({ error: imageReject }, 400);
       }
 
       // Generate unique file key

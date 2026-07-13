@@ -24,6 +24,7 @@ import {
   notifyShopOrderStatusChange,
   type ShopOrderLifecycleStatus,
 } from '../../../utils/shop-order-notifications';
+import { SQL_SHOP_ORDER_VENDOR_VISIBLE } from '../../../utils/shop-vendor-visibility';
 
 function triggerOrderInvoiceOnDelivered(orderId: string, status: string, previousStatus: string) {
   if (status === 'delivered' && previousStatus !== 'delivered') {
@@ -200,6 +201,7 @@ class GetVendorOrdersHandler extends BaseHandler {
         ) s ON true
         WHERE o.vendor_id = $1
           AND o.order_status != 'pending_payment'
+          AND ${SQL_SHOP_ORDER_VENDOR_VISIBLE}
           ${dateFilterClause}
           ${statusFilter}
           ${searchFilter}
@@ -292,6 +294,7 @@ class GetVendorOrdersHandler extends BaseHandler {
           FROM orders o
           WHERE o.vendor_id = $1
             AND o.order_status != 'pending_payment'
+            AND ${SQL_SHOP_ORDER_VENDOR_VISIBLE}
             ${dateFilterClause}
             ${statusFilter}
             ${searchFilter}
@@ -389,6 +392,10 @@ class GetVendorOrderStatsHandler extends BaseHandler {
           FROM orders
           WHERE vendor_id = $1
             AND order_status != 'pending_payment'
+            AND (
+              LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed')
+              OR LOWER(COALESCE(payment_method, 'online')) IN ('cod', 'cash_on_delivery')
+            )
             ${dateFilterClause}
         `;
 

@@ -122,7 +122,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
               id: b.id,
               title: b.title,
               subtitle: b.subtitle,
-              imageUrl: await presignBannerImageForDisplay(b.image_url),
+              imageUrl: await presignBannerImageForDisplay(b.image_url, String(b.id)),
               ctaText: b.cta_text || 'Learn More',
               ctaLink: b.cta_link,
               position:

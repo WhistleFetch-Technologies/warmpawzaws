@@ -20,6 +20,10 @@ import { query, select, insert, update } from '../database/rds-connection';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { sendEventNotification } from '../aws/aws-sns-notification-service';
 import { dispatchNotification } from '../utils/notification-dispatch';
+import {
+  cronPipelineSkippedPayload,
+  isNotificationCronEnabled,
+} from '../utils/notification-pipeline-kill-switch';
 
 // ============================================================================
 // TYPES
@@ -558,6 +562,9 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
 
   // Scheduled job endpoint (called by CloudWatch Events)
   app.post('/reminders/scheduled-job', async (c) => {
+    if (!isNotificationCronEnabled()) {
+      return c.json(cronPipelineSkippedPayload());
+    }
     const event = {
       httpMethod: 'POST',
       path: '/reminders/scheduled-job',

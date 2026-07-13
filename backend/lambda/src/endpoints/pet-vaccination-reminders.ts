@@ -8,6 +8,10 @@ import {
   getUpcomingVaccinationRemindersForCustomer,
   processVaccinationReminders,
 } from '../lib/pet-vaccination-reminder-engine';
+import {
+  cronPipelineSkippedPayload,
+  isNotificationCronEnabled,
+} from '../utils/notification-pipeline-kill-switch';
 
 function authorizeCronRequest(c: { req: { header: (name: string) => string | undefined } }): boolean {
   const cronSecret = process.env.INTERNAL_CRON_SECRET?.trim();
@@ -24,6 +28,9 @@ export function registerPetVaccinationReminderEndpoints(app: Hono) {
   app.post('/reminders/vaccinations/process', async (c) => {
     if (!authorizeCronRequest(c)) {
       return c.json({ success: false, error: 'Unauthorized', code: 'INVALID_CRON_SECRET' }, 401);
+    }
+    if (!isNotificationCronEnabled()) {
+      return c.json(cronPipelineSkippedPayload());
     }
 
     try {

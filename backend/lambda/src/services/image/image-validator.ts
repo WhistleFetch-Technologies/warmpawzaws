@@ -91,10 +91,25 @@ export function validateImageBuffer(
   return { ok: true, detectedMime };
 }
 
+function dimensionValidationMessage(detectedMime: string | null, err: unknown): string {
+  const sharpMsg = (err as Error)?.message || String(err);
+  if (detectedMime === 'image/heic' || detectedMime === 'image/heif') {
+    return 'HEIC/HEIF is not supported on the server. Please upload JPEG or PNG.';
+  }
+  if (/heif|heic|compression format/i.test(sharpMsg)) {
+    return 'HEIC/HEIF is not supported on the server. Please upload JPEG or PNG.';
+  }
+  if (/invalid|corrupt|truncated|unsupported/i.test(sharpMsg)) {
+    return 'Corrupted or unreadable image file';
+  }
+  return 'Corrupted or unreadable image file';
+}
+
 export async function validateImageDimensions(buffer: Buffer): Promise<ValidationResult> {
+  const mime = detectImageMime(buffer);
   try {
     const sharp = (await import('sharp')).default;
-    const meta = await sharp(buffer, { failOn: 'error' }).metadata();
+    const meta = await sharp(buffer, { failOn: 'warning' }).metadata();
     const w = meta.width ?? 0;
     const h = meta.height ?? 0;
     if (w <= 0 || h <= 0) {
@@ -106,12 +121,16 @@ export async function validateImageDimensions(buffer: Buffer): Promise<Validatio
         message: `Image dimensions must be ${MAX_IMAGE_DIMENSION}px or smaller per edge`,
       };
     }
-    const mime = detectImageMime(buffer);
     if (!mime) {
       return { ok: false, message: 'Unsupported or invalid image format' };
     }
     return { ok: true, detectedMime: mime };
-  } catch {
-    return { ok: false, message: 'Corrupted or unreadable image file' };
+  } catch (err: unknown) {
+    console.warn(
+      '[image-validator] validateImageDimensions failed:',
+      mime,
+      (err as Error)?.message || err,
+    );
+    return { ok: false, message: dimensionValidationMessage(mime, err) };
   }
 }

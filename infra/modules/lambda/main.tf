@@ -168,6 +168,18 @@ resource "aws_iam_role_policy" "lambda_custom" {
           "arn:aws:chime:${var.aws_region}:${data.aws_caller_identity.current.account_id}:meeting/*",
           "arn:aws:chime:*:${data.aws_caller_identity.current.account_id}:meeting/*"
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricData"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "Warmpawz/ImageProcessing"
+          }
+        }
       }
     ]
   })

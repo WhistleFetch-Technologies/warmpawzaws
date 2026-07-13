@@ -54,8 +54,18 @@ export const BYTE_BUDGETS: Record<
   AssetType,
   { targetBytes: number; maxEdgePx: number; thumbTargetBytes: number; thumbMaxEdgePx: number }
 > = {
-  profile: { targetBytes: 150 * 1024, maxEdgePx: 2048, thumbTargetBytes: 0, thumbMaxEdgePx: 0 },
-  pet: { targetBytes: 150 * 1024, maxEdgePx: 2048, thumbTargetBytes: 0, thumbMaxEdgePx: 0 },
+  profile: {
+    targetBytes: 150 * 1024,
+    maxEdgePx: 2048,
+    thumbTargetBytes: 20 * 1024,
+    thumbMaxEdgePx: 400,
+  },
+  pet: {
+    targetBytes: 150 * 1024,
+    maxEdgePx: 2048,
+    thumbTargetBytes: 20 * 1024,
+    thumbMaxEdgePx: 400,
+  },
   product: {
     targetBytes: 250 * 1024,
     maxEdgePx: 2048,
@@ -68,8 +78,18 @@ export const BYTE_BUDGETS: Record<
     thumbTargetBytes: 20 * 1024,
     thumbMaxEdgePx: 400,
   },
-  banner: { targetBytes: 350 * 1024, maxEdgePx: 2560, thumbTargetBytes: 0, thumbMaxEdgePx: 0 },
-  staff: { targetBytes: 150 * 1024, maxEdgePx: 2048, thumbTargetBytes: 0, thumbMaxEdgePx: 0 },
+  banner: {
+    targetBytes: 350 * 1024,
+    maxEdgePx: 2560,
+    thumbTargetBytes: 25 * 1024,
+    thumbMaxEdgePx: 480,
+  },
+  staff: {
+    targetBytes: 150 * 1024,
+    maxEdgePx: 2048,
+    thumbTargetBytes: 20 * 1024,
+    thumbMaxEdgePx: 400,
+  },
 };
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -82,5 +102,7 @@ export const FACILITY_MAX_PHOTOS = 20;
 export const DEDUP_ASSET_TYPES = new Set<AssetType>(['product', 'facility', 'banner']);
 
 export function assetTypeNeedsThumb(assetType: AssetType): boolean {
-  return assetType === 'product' || assetType === 'facility';
+  return BYTE_BUDGETS[assetType].thumbTargetBytes > 0;
 }
+
+export type ImageDisplayContext = 'list' | 'detail';

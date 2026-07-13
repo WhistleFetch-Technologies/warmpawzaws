@@ -492,7 +492,7 @@ class GetBannersHandler extends BaseHandler {
       const banners = await Promise.all(
         rows.map(async (r: any) => {
           const presignedImageUrl = r.image_url
-            ? await presignBannerImageForDisplay(r.image_url)
+            ? await presignBannerImageForDisplay(r.image_url, String(r.id))
             : r.image_url;
           return {
             ...r,

@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { query, select } from '../database/rds-connection';
+import { query, select, insert, update } from '../database/rds-connection';
 import { triggerBookingNotification } from '../endpoints/sms-notifications';
 import { sendVendorAppointmentScheduledSms } from '../lib/vendor-appointment-sms';
 import { sendEventNotification } from '../aws/aws-sns-notification-service';
@@ -62,6 +62,23 @@ async function loadBookingContext(bookingId: string) {
     serviceName,
     serviceTypeLabel,
   };
+}
+
+async function activateTeleChatOnBookingCreated(booking: Record<string, unknown>): Promise<void> {
+  if (String(booking.service_type || '') !== 'tele') return;
+  const bookingId = String(booking.id);
+  await update('bookings', { id: bookingId }, {
+    chat_activated_at: new Date().toISOString(),
+    chat_auto_activated: true,
+  }).catch(() => undefined);
+  await insert('chat_messages', {
+    booking_id: bookingId,
+    sender_type: 'system',
+    message:
+      'Chat is open for your video consultation. You can message each other before the call.',
+    is_read: false,
+    created_at: new Date(),
+  }).catch(() => undefined);
 }
 
 export async function notifyBookingCreated(bookingId: string, requestId?: string): Promise<BookingNotificationResult> {
@@ -151,6 +168,8 @@ export async function notifyBookingCreated(bookingId: string, requestId?: string
   } catch (error) {
     console.error('Failed to publish booking created event:', error);
   }
+
+  await activateTeleChatOnBookingCreated(booking as Record<string, unknown>);
 
   return { notified: true, bookingId: booking.id };
 }
@@ -248,34 +267,13 @@ export async function notifyBookingRescheduled(params: {
   });
 }
 
-/** Customer push/in-app at scheduled service start with OTP to share with vendor. */
-export async function notifyBookingStartOtp(params: {
+/** Start OTP push/in-app disabled — event-only notification surface (no cron). */
+export async function notifyBookingStartOtp(_params: {
   bookingId: string;
   customerId: string;
   vendorName: string;
   serviceName: string;
   otp: string;
 }): Promise<{ sent: boolean }> {
-  if (!params.customerId || !params.otp?.trim()) {
-    return { sent: false };
-  }
-
-  await dispatchNotification({
-    recipientId: params.customerId,
-    recipientType: 'customer',
-    notificationType: 'booking_start_otp',
-    title: 'Service start OTP',
-    message: `Share this OTP with ${params.vendorName} to start your ${params.serviceName} service: ${params.otp}`,
-    channels: { inApp: true, push: true },
-    priority: 'high',
-    data: {
-      bookingId: params.bookingId,
-      otp: params.otp,
-      vendorName: params.vendorName,
-      serviceName: params.serviceName,
-      dedupeKey: `booking-${params.bookingId}-start-otp-customer`,
-    },
-  });
-
-  return { sent: true };
+  return { sent: false };
 }

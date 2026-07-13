@@ -19,8 +19,9 @@ import { assetTypeNeedsThumb } from './image-types';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 
-function normalizeToS3Key(raw: string, bucket: string): string | null {
-  const s = String(raw || '').trim();
+export function extractRawImageKey(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
   if (!s) return null;
   if (s.startsWith('data:')) return null;
   if (!s.includes('://')) return s.replace(/^\/+/, '');
@@ -34,6 +35,10 @@ function normalizeToS3Key(raw: string, bucket: string): string | null {
     return null;
   }
   return null;
+}
+
+function normalizeToS3Key(raw: string, _bucket: string): string | null {
+  return extractRawImageKey(raw);
 }
 
 export async function logLegacyMigration(legacyKey: string, webpKey: string): Promise<void> {
