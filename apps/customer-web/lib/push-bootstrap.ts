@@ -590,28 +590,32 @@ export interface CapacitorTokenOptions {
   forceRequest?: boolean;
 }
 
+type CapacitorPushPlugin = {
+  checkPermissions: () => Promise<{ receive: string }>;
+  requestPermissions: () => Promise<{ receive: string }>;
+  register: () => Promise<void>;
+  addListener: (
+    event: string,
+    handler: (payload: { value?: string } | unknown) => void
+  ) => Promise<{ remove: () => void | Promise<void> }>;
+  removeAllListeners: () => Promise<void>;
+};
+
 async function importCapacitorPushModule(): Promise<{
-  PushNotifications: {
-    checkPermissions: () => Promise<{ receive: string }>;
-    requestPermissions: () => Promise<{ receive: string }>;
-    register: () => Promise<void>;
-    addListener: (
-      event: string,
-      handler: (payload: { value?: string } | unknown) => void
-    ) => Promise<{ remove: () => void }>;
-    removeAllListeners: () => Promise<void>;
-  };
+  PushNotifications: CapacitorPushPlugin;
 } | null> {
   /** Capacitor injects native plugins on window before the web bundle runs — prefer over dynamic import. */
   const bridged = (window as any).Capacitor?.Plugins?.PushNotifications;
   if (bridged?.register && bridged?.addListener) {
-    return { PushNotifications: bridged };
+    return { PushNotifications: bridged as CapacitorPushPlugin };
   }
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       const mod = await import(/* webpackIgnore: true */ '@capacitor/push-notifications');
-      if (mod?.PushNotifications) return mod;
+      if (mod?.PushNotifications) {
+        return { PushNotifications: mod.PushNotifications as CapacitorPushPlugin };
+      }
     } catch (err) {
       console.warn('[push-bootstrap] push-notifications import attempt failed:', attempt + 1, err);
     }
@@ -622,7 +626,7 @@ async function importCapacitorPushModule(): Promise<{
 
   const bridgedLate = (window as any).Capacitor?.Plugins?.PushNotifications;
   if (bridgedLate?.register && bridgedLate?.addListener) {
-    return { PushNotifications: bridgedLate };
+    return { PushNotifications: bridgedLate as CapacitorPushPlugin };
   }
   return null;
 }
@@ -733,16 +737,22 @@ export async function openAppNotificationSettings(): Promise<void> {
     const platform = (window as any).Capacitor?.getPlatform?.() as string | undefined;
     if (platform === 'android') {
       const { App } = await import(/* webpackIgnore: true */ '@capacitor/app');
+      const appPlugin = App as typeof App & {
+        openUrl: (opts: { url: string }) => Promise<void>;
+      };
       const info = await App.getInfo();
       const pkg = info.id;
-      await App.openUrl({
+      await appPlugin.openUrl({
         url: `intent:#Intent;action=android.settings.APP_NOTIFICATION_SETTINGS;package=${pkg};S:android.provider.extra.APP_PACKAGE=${pkg};end`,
       });
       return;
     }
     if (platform === 'ios') {
       const { App } = await import(/* webpackIgnore: true */ '@capacitor/app');
-      await App.openUrl({ url: 'app-settings:' });
+      const appPlugin = App as typeof App & {
+        openUrl: (opts: { url: string }) => Promise<void>;
+      };
+      await appPlugin.openUrl({ url: 'app-settings:' });
     }
   } catch (err) {
     console.warn('[push-bootstrap] openAppNotificationSettings failed:', err);
@@ -813,8 +823,8 @@ async function getTokenFromCapacitor(
         });
       }, 30_000);
 
-      let regListener: { remove: () => Promise<void> } | undefined;
-      let errListener: { remove: () => Promise<void> } | undefined;
+      let regListener: { remove: () => void | Promise<void> } | undefined;
+      let errListener: { remove: () => void | Promise<void> } | undefined;
       let settled = false;
 
       const finish = (value: string | null) => {
@@ -825,8 +835,16 @@ async function getTokenFromCapacitor(
 
       const cleanup = async () => {
         clearTimeout(timeout);
-        await regListener?.remove().catch(() => undefined);
-        await errListener?.remove().catch(() => undefined);
+        const removeListener = async (listener?: { remove: () => void | Promise<void> }) => {
+          if (!listener) return;
+          try {
+            await Promise.resolve(listener.remove());
+          } catch {
+            /* ignore */
+          }
+        };
+        await removeListener(regListener);
+        await removeListener(errListener);
       };
 
       void (async () => {

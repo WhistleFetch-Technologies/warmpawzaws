@@ -626,7 +626,7 @@ export function GroomingServicesByStyle({
   const handleShare = async () => {
     const shareVendorId =
       vendorId ||
-      pickCustomerVendorAccountId(profileProvider ?? {}) ||
+      pickCustomerVendorAccountId((profileProvider ?? {}) as unknown as Record<string, unknown>) ||
       profileProvider?.vendorId ||
       profileProvider?.providerId;
     if (!shareVendorId) return;
@@ -670,7 +670,7 @@ export function GroomingServicesByStyle({
     const description = vendor?.description || facility?.description || `${salonName} is a professional pet grooming salon offering premium grooming services.`;
 
     const profileVendorId = String(
-      vendorId ?? profileProvider.id ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
+      vendorId ?? profileProvider.providerId ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
     ).trim();
     
     const getServiceTitle = () => {

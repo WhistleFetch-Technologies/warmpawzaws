@@ -42,7 +42,10 @@ function kitchenProgressForTerminalCancel(
     picked_up: { filled: 3, current: 3 },
     on_the_way: { filled: 4, current: 4 },
   };
-  const p = progress[kitchenEff] ?? { filled: 0, current: 0 };
+  const p =
+    kitchenEff === 'cancelled' || kitchenEff === 'failed' || kitchenEff === 'delivered'
+      ? { filled: 0, current: 0 }
+      : (progress[kitchenEff] ?? { filled: 0, current: 0 });
   if ((p.current ?? 0) >= 3) {
     return { filled: 2, current: 2 };
   }

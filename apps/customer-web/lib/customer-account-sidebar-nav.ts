@@ -1,4 +1,4 @@
-import type { AppRouterInstance } from 'next/navigation';
+import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import {
   rememberBeforeMyPackagesNav,
   rememberHelpBackFromCurrentUrl,
@@ -8,7 +8,10 @@ import {
 } from '@/lib/go-back-or-replace';
 
 /** Route account-menu actions from standalone Next.js pages (search, my-packages, etc.). */
-export function navigateFromStandaloneAccountMenu(router: AppRouterInstance, path: string) {
+export function navigateFromStandaloneAccountMenu(
+  router: Pick<AppRouterInstance, 'push'>,
+  path: string
+) {
   if (path === 'home') {
     router.push('/');
     return;

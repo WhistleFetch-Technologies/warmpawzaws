@@ -322,7 +322,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       return;
     }
 
-    const gst = preview.gst || {};
+    const gst = preview.gst;
     const addrObj = {
       ...deliveryAddress,
       state: selectedAddress?.state,
@@ -343,10 +343,10 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       scheduledDeliverySlot: { start: scheduledTime, end: scheduledTime },
       logisticsType: 'warmpawz',
       foodSubtotalInr: preview.subtotal,
-      foodGstPct: Number.isFinite(Number(gst.foodGstPct)) ? Number(gst.foodGstPct) : 0,
-      deliveryGstPct: Number.isFinite(Number(gst.deliveryGstPct)) ? Number(gst.deliveryGstPct) : 0,
+      foodGstPct: Number.isFinite(Number(gst?.foodGstPct)) ? Number(gst?.foodGstPct) : 0,
+      deliveryGstPct: Number.isFinite(Number(gst?.deliveryGstPct)) ? Number(gst?.deliveryGstPct) : 0,
       mealPlanGstCatalogCategoryId:
-        gst.catalogCategoryId != null ? String(gst.catalogCategoryId) : undefined,
+        gst?.catalogCategoryId != null ? String(gst.catalogCategoryId) : undefined,
       deliveryFeeInr: preview.deliveryFee ?? 0,
       platformFeeInr: preview.platformFee ?? 0,
       convenienceFeeInr: preview.convenienceFee ?? 0,

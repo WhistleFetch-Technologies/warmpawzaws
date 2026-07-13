@@ -59,6 +59,7 @@ const HUB_SCREENS = new Set<string>([
   'pets',
   'nutrition-meal-plans',
   'diet-consultation-services',
+  'tele-consultation-hub',
   'vet-tele-consultation',
   'vet-home-visit',
   'vet-clinic-list',

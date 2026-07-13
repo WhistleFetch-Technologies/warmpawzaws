@@ -829,11 +829,11 @@ export function AIChatbotWidget({
         const q = new URLSearchParams({
           date: dateStr,
           serviceStyle: st,
-          serviceId,
           totalDuration: String(dur),
         });
+        if (serviceId) q.set('serviceId', serviceId);
         const res: any = await apiClient.get(
-          `/customer/vendor/${encodeURIComponent(vendorId)}/available-slots?${q.toString()}`
+          `/customer/vendor/${encodeURIComponent(String(vendorId ?? ''))}/available-slots?${q.toString()}`
         );
         const { slots: normalized } = normalizeAvailableSlotsResponse(res, dateStr);
         return { res, slots: normalized, open: countOpenSlotsFromNormalized(normalized) };

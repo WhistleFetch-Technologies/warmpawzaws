@@ -339,7 +339,7 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
                   <div className="flex-1">
                     <p className="font-medium text-gray-900">{item.name}</p>
                     <p className="text-gray-500">Qty: {item.quantity}</p>
-                    {item.prescription_required && (
+                    {Boolean(item.prescription_required) && (
                       <span className="inline-flex items-center gap-1 text-xs text-orange-600 mt-1">
                         <AlertCircle className="w-3 h-3" />
                         Rx Required

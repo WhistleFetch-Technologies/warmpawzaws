@@ -283,7 +283,7 @@ export function sanitizeVariantSelection(
   if (partial?.option_values) {
     const ov = optionValuesToSelectedVariations(
       partial.option_values as Record<string, unknown>,
-      variationAxes,
+      variationAxes.map((a) => ({ type: a.type, name: a.type, option_key: a.option_key })),
     );
     next = { ...next, ...ov };
   }

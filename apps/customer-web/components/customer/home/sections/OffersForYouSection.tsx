@@ -160,7 +160,7 @@ function OffersForYouSectionComponent({
         .toLowerCase();
       let screen = resolvePromotionDestination(
         {
-          ...(promo as Record<string, unknown>),
+          ...(promo as unknown as Record<string, unknown>),
           service_category: resolvedCategory,
           service_style: resolvedStyle,
         },

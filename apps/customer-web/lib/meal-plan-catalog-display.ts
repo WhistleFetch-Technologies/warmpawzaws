@@ -54,6 +54,8 @@ export interface MealPlanCatalogDisplay {
   preparationLabel: string;
   deliveryLabel: string;
   shelfLifeDays: number | null;
+  packWeightGrams: number | null;
+  packWeightLabel: string | null;
   purchaseType: CustomerPurchaseType;
   customerPurchaseHeadline: string;
   customerPricingLine: string;

@@ -294,7 +294,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     }
 
     return launchFiltered.filter((service) => {
-      return styleMap.some((style) =>
+      const styles = serviceTypeStyleMap[service.id] ?? [service.id];
+      return styles.some((style: string) =>
         allowedServiceStyles.some(
           (allowed) =>
             allowed.toLowerCase().includes(style.toLowerCase()) ||

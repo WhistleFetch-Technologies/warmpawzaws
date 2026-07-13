@@ -609,7 +609,7 @@ export function TrainingBookingRouter({
       const fromId = serviceOptions.find(
         (s) =>
           String(s.id) === String(serviceId) ||
-          String(s.serviceId) === String(serviceId)
+          String('serviceId' in s ? s.serviceId : s.id) === String(serviceId)
       );
       if (fromId) return fromId;
     }

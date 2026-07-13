@@ -163,7 +163,7 @@ export function PromotionBanner({
       /* ignore */
     }
     let screen = resolvePromotionDestination(
-      { ...(promo as Record<string, unknown>), service_category: resolvedCategory, service_style: resolvedStyle },
+      { ...(promo as unknown as Record<string, unknown>), service_category: resolvedCategory, service_style: resolvedStyle },
       service
     );
     if (screen === 'home') screen = 'services';

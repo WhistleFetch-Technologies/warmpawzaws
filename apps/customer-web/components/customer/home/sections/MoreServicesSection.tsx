@@ -163,7 +163,7 @@ function MoreServiceCard({
   return (
     <button
       type="button"
-      onClick={() => onNavigate('screen' in card ? card.screen : card.id)}
+      onClick={() => onNavigate(card.id)}
       className={`${cardClassName} w-full transition-shadow hover:shadow-md`}
     >
       {content}

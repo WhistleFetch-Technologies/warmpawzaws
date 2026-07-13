@@ -44,16 +44,31 @@ export function pickBestVendorDescription(p: Record<string, unknown>): string {
   return candidates.reduce((a, b) => (b.length > a.length ? b : a), '');
 }
 
+function coerceOptionalString(v: unknown): string | undefined {
+  if (v == null || v === '') return undefined;
+  if (typeof v === 'string') return v.trim() || undefined;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return undefined;
+}
+
+function coerceStringOrNumber(v: unknown, fallback: string | number): string | number {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  const s = coerceOptionalString(v);
+  return s ?? fallback;
+}
+
 export function mapApiServiceToRow(p: unknown, vendorId: string, index: number): ClinicServiceRow {
   const raw = (p && typeof p === 'object' ? p : {}) as Record<string, unknown>;
   const normalized = normalizeVendorServiceRowForPackage(raw);
-  const vendorServiceId =
-    normalized.id ?? normalized.vendor_service_id ?? raw.vendor_service_id ?? `idx-${index}`;
+  const vendorServiceId = coerceStringOrNumber(
+    normalized.id ?? normalized.vendor_service_id ?? raw.vendor_service_id,
+    `idx-${index}`
+  );
   const catalogServiceId =
-    (normalized.serviceId != null && String(normalized.serviceId)) ||
-    (normalized.service_id != null && String(normalized.service_id)) ||
-    (raw.serviceId != null && String(raw.serviceId)) ||
-    (raw.service_id != null && String(raw.service_id)) ||
+    coerceOptionalString(normalized.serviceId) ??
+    coerceOptionalString(normalized.service_id) ??
+    coerceOptionalString(raw.serviceId) ??
+    coerceOptionalString(raw.service_id) ??
     null;
   const stableKey = catalogServiceId ? `cat-${catalogServiceId}` : `vs-${vendorId}-${vendorServiceId}`;
   const desc = pickBestVendorDescription(normalized);
@@ -65,9 +80,9 @@ export function mapApiServiceToRow(p: unknown, vendorId: string, index: number):
   const durNum = typeof durRaw === 'string' ? parseInt(durRaw, 10) : Number(durRaw);
   const duration = Number.isFinite(durNum) && durNum > 0 ? durNum : 30;
   const category =
-    (normalized.category && String(normalized.category)) ||
-    (normalized.category_name && String(normalized.category_name)) ||
-    (normalized.categorySlug && String(normalized.categorySlug)) ||
+    coerceOptionalString(normalized.category) ??
+    coerceOptionalString(normalized.category_name) ??
+    coerceOptionalString(normalized.categorySlug) ??
     undefined;
   return {
     stableKey,

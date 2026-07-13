@@ -649,11 +649,11 @@ export function UniversalProviderProfile({
 
                 <VendorRatingDisplay
                   row={{
-                    vendorId: provider.vendorId ?? provider.id,
+                    vendorId: provider.vendorId ?? provider.providerId,
                     vendorRating: provider.rating,
                     vendorReviewCount: provider.reviewCount,
                   }}
-                  vendorId={String(provider.vendorId ?? provider.id ?? '')}
+                  vendorId={String(provider.vendorId ?? provider.providerId ?? '')}
                   className="mt-2"
                   starsClassName="w-4 h-4"
                   textClassName="text-xs text-gray-500"

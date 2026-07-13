@@ -262,7 +262,7 @@ export function BoardingVendorExpandableCard({
                             {plan.name}
                           </h5>
                           {(plan.isPackage ||
-                            isVendorServicePackageRow(plan as Record<string, unknown>)) && (
+                            isVendorServicePackageRow(plan as unknown as Record<string, unknown>)) && (
                             <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
                               Package
                             </span>

@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import type { BannerNavTarget } from '@/lib/banner-cta-navigation';
 
 /** Quick service tile from catalog + launch config (matches useCustomerCategories shape). */
 export interface QuickServiceTile {
@@ -26,7 +27,7 @@ export interface HomeCarouselBanner {
   /** CMS home informational — CTA label only, no navigation */
   isInformational?: boolean;
   imageUrl?: string;
-  navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> } | null;
+  navTarget?: BannerNavTarget | null;
   metadata?: unknown;
 }
 

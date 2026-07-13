@@ -43,8 +43,8 @@ describe('wizard-session-state', () => {
       bookingTime: '14:00',
       petId: 'pet-9',
       services: [
-        { id: 'row-1', serviceId: 'svc-a', price: 500 },
-        { id: 'row-2', serviceId: 'svc-b', price: 300 },
+        { id: 'row-1', serviceId: 'svc-a' },
+        { id: 'row-2', serviceId: 'svc-b' },
       ],
       address: { id: 'addr-42' },
     });
