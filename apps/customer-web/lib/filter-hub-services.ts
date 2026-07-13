@@ -119,6 +119,26 @@ export function filterProvidersServicesForVetHub<T extends ProviderWithServices>
     .filter((provider) => (provider.services?.length ?? 0) > 0);
 }
 
+/**
+ * Vet hub discovery list: remove groomer-role providers and grooming catalog services.
+ * When `keepProvidersPendingServiceFetch` is true, vendors with empty embedded services
+ * (needs lazy fetch) are kept — used by clinic list cards.
+ */
+export function applyVetHubDiscoveryToProviders<
+  T extends Record<string, unknown> & ProviderWithServices & { needsServiceFetch?: boolean },
+>(providers: T[], options?: { keepProvidersPendingServiceFetch?: boolean }): T[] {
+  const keepPending = options?.keepProvidersPendingServiceFetch ?? false;
+  return filterVetHubProviderRows(providers)
+    .map((provider) => ({
+      ...provider,
+      services: filterServicesForVetHub(Array.isArray(provider.services) ? provider.services : []),
+    }))
+    .filter((provider) => {
+      if ((provider.services?.length ?? 0) > 0) return true;
+      return keepPending && provider.needsServiceFetch === true;
+    });
+}
+
 /** Groomer / grooming-role providers must not appear on vet hub vendor lists. */
 export function isNonVetProviderRow(row: Record<string, unknown>): boolean {
   const role = String(

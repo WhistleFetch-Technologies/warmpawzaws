@@ -4,6 +4,7 @@ import {
   filterVetHubProviderRows,
   isGroomingServiceForVetHub,
   resolveServiceCategoryDisplayLabel,
+  applyVetHubDiscoveryToProviders,
 } from '../filter-hub-services';
 
 describe('resolveServiceCategoryDisplayLabel', () => {
@@ -28,6 +29,36 @@ describe('filterVetHubProviderRows', () => {
       { id: 'g-1', roleDisplayName: 'Groomer (Center)' },
     ];
     expect(filterVetHubProviderRows(rows).map((r) => r.id)).toEqual(['vet-1']);
+  });
+});
+
+describe('applyVetHubDiscoveryToProviders', () => {
+  it('drops groomer with only grooming services from vet home visit list', () => {
+    const rows = [
+      {
+        id: 'g-1',
+        roleDisplayName: 'Groomer (Center)',
+        services: [{ name: 'Ear Cleaning', category: 'General', catalogServiceSlug: 'groom_ear' }],
+      },
+      {
+        id: 'vet-1',
+        roleDisplayName: 'Veterinary Clinic',
+        services: [{ name: 'Checkup', category: 'Veterinary Services' }],
+      },
+    ];
+    expect(applyVetHubDiscoveryToProviders(rows).map((r) => r.id)).toEqual(['vet-1']);
+  });
+
+  it('keeps vet clinic pending service fetch when no embedded services', () => {
+    const rows = [
+      {
+        id: 'vet-1',
+        roleDisplayName: 'Veterinary Clinic',
+        services: [],
+        needsServiceFetch: true,
+      },
+    ];
+    expect(applyVetHubDiscoveryToProviders(rows, { keepProvidersPendingServiceFetch: true })).toHaveLength(1);
   });
 });
 
