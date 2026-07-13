@@ -14,6 +14,7 @@ import {
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
+import { filterServicesForVetHub } from '@/lib/filter-hub-services';
 import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 
@@ -130,7 +131,8 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         services = servicesData;
       }
       
-      const mappedServices = services.map((s: any, idx: number) => {
+      const mappedServices = filterServicesForVetHub(
+        services.map((s: any, idx: number) => {
         const catalogId = s.serviceId || s.service_id;
         const vendorServiceId = s.id;
         const selectionKey = String(
@@ -144,11 +146,16 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           name: s.serviceName || s.name || s.service_name,
           price: parseFloat(s.price || '0'),
           duration: s.duration || s.duration_minutes || 30,
+          category: s.category ?? s.categoryName,
+          categoryName: s.categoryName ?? s.category,
+          catalogCategoryId: s.catalogCategoryId ?? s.catalog_category_id,
+          catalogServiceSlug: s.catalogServiceId ?? s.catalog_service_id,
           isPackage: !!(s.isPackage ?? s.metadata?.isPackage),
           packageDetails: s.packageDetails,
           metadata: s.metadata,
         };
-      });
+      })
+      );
       
       console.log('✅ Loaded clinic data:', {
         vendorId: vendorData.id || clinicId,

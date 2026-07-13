@@ -197,6 +197,28 @@ export function isWalkerHubCategoryRequest(categoryRaw: string): boolean {
   return ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c);
 }
 
+/**
+ * Vet hub: exclude grooming catalog services even when vs.category = 'general'.
+ * Do not match by service_name — catalog has both groom_ear and vet_ear_cleaning_medical.
+ */
+export function sqlVetHubExcludeNonVetServices(vsAlias = 'vs'): string {
+  return `
+    AND NOT (
+      LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) = ANY(ARRAY[
+        'grooming','grooming & hygiene','pet_groomer','pet_grooming'
+      ]::text[])
+      OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) LIKE '%groom%'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM service_catalog sc_vet_ex
+      WHERE sc_vet_ex.id = ${vsAlias}.service_id
+        AND (
+          LOWER(TRIM(COALESCE(sc_vet_ex.category_id, ''))) = 'grooming'
+          OR LOWER(TRIM(COALESCE(sc_vet_ex.service_id, ''))) LIKE 'groom_%'
+        )
+    )`;
+}
+
 /** Bind params for hub category filter on GET /customer/vendor/:id/services */
 export function vendorServicesHubCategoryBindParams(categoryRaw: string): {
   exact: string[];
@@ -569,6 +591,11 @@ export async function buildDiscoveryVendorExistsSql(
       ? ` OR (TRIM(COALESCE(${vsAlias}.category, '')) = '' AND ${vAlias}.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
       : '';
 
+  const vetExcludeNonVetSql =
+    !sittingDiscoveryRelaxed && isVetCategoryDiscovery
+      ? sqlVetHubExcludeNonVetServices(vsAlias)
+      : '';
+
   let p = opts.paramOffset;
   const pStyle = pg(p++);
   const pExact = catTextExact.length > 0 ? pg(p++) : null;
@@ -637,6 +664,7 @@ export async function buildDiscoveryVendorExistsSql(
               AND ${vendorVsDiscoverSql}
               AND ${vendorVsStyleSql}
               ${vendorServiceCategorySql}
+              ${vetExcludeNonVetSql}
           )`;
 
   return {
