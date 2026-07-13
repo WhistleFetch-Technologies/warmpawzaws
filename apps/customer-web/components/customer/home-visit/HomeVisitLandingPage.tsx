@@ -35,14 +35,15 @@ function HomeVisitLandingPageComponent({ onBack, onNavigate }: HomeVisitLandingP
   );
 
   return (
-    <div className="relative min-h-screen bg-gray-50">
+    <div className="relative mx-auto min-h-[100dvh] w-full max-w-customer bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)]">
       <HomeVisitHero onBack={onBack} />
       <HomeVisitQuickStats />
-      <HomeVisitServiceGrid onNavigate={navigate} />
-      <HomeVisitTimeline />
-      <HomeVisitTrustSection />
-      <HomeVisitPopularServices onNavigate={navigate} />
-      <div className="h-28" aria-hidden />
+      <main className="-mt-3 rounded-t-[1.75rem] bg-white px-4 pt-5 pb-44">
+        <HomeVisitServiceGrid onNavigate={navigate} />
+        <HomeVisitTimeline />
+        <HomeVisitTrustSection />
+        <HomeVisitPopularServices onNavigate={navigate} />
+      </main>
       <HomeVisitBottomCTA onNavigate={navigate} />
       <style jsx global>{`
         @keyframes home-visit-fade-in {

@@ -5,8 +5,15 @@ import Image from 'next/image';
 import { ChevronRight, PawPrint } from 'lucide-react';
 import type { PremiumServiceCardEntry } from '../constants/premium-service-cards-catalog';
 
-/** Every card image renders at this exact height. */
-const CARD_IMAGE_HEIGHT_PX = 82;
+/**
+ * Every card image renders at this exact height (base / sm breakpoint), sized
+ * to fill most of the card's vertical space so the pet cutout reads as the
+ * primary visual, not an afterthought. Kept as one shared constant so all
+ * three premium cards stay perfectly consistent.
+ */
+const CARD_IMAGE_HEIGHT_CLASS = 'h-[120px] sm:h-[134px]';
+const CARD_IMAGE_INTRINSIC_WIDTH = 240;
+const CARD_IMAGE_INTRINSIC_HEIGHT = 134;
 
 export interface PremiumServiceCardProps {
   entry: PremiumServiceCardEntry;
@@ -83,18 +90,16 @@ function PremiumServiceCardComponent({ entry, index, onPress }: PremiumServiceCa
         </span>
       </div>
 
-      {/* Hero image: fixed equal height, bottom-right aligned */}
-      <div className="relative z-10 w-[40%] shrink-0 self-stretch overflow-hidden sm:w-[38%]">
-        <div className="absolute bottom-0 right-0 flex items-end justify-end">
+      {/* Hero image: fixed equal height across all cards, bottom-right aligned with breathing room */}
+      <div className="relative z-10 w-[43%] shrink-0 self-stretch overflow-hidden sm:w-[40%]">
+        <div className="absolute inset-0 flex items-end justify-end pb-1.5 pr-1">
           <Image
             src={entry.imageUrl}
             alt={entry.imageAlt}
-            width={CARD_IMAGE_HEIGHT_PX * 2}
-            height={CARD_IMAGE_HEIGHT_PX}
-            className="block w-auto object-contain object-bottom drop-shadow-[0_8px_18px_rgba(15,23,42,0.16)] transition-[transform,filter] duration-500 ease-out group-hover:translate-x-0.5 group-hover:scale-[1.03] group-hover:brightness-[1.03]"
+            width={CARD_IMAGE_INTRINSIC_WIDTH}
+            height={CARD_IMAGE_INTRINSIC_HEIGHT}
+            className={`block w-auto object-contain object-bottom drop-shadow-[0_10px_20px_rgba(15,23,42,0.18)] transition-[transform,filter] duration-500 ease-out group-hover:translate-x-0.5 group-hover:scale-[1.03] group-hover:brightness-[1.03] ${CARD_IMAGE_HEIGHT_CLASS}`}
             style={{
-              height: `${CARD_IMAGE_HEIGHT_PX}px`,
-              width: 'auto',
               marginRight: `${entry.imageNudgeX ?? 0}px`,
               marginBottom: `${entry.imageNudgeY ?? 0}px`,
             }}

@@ -259,6 +259,7 @@ const NutritionistServicesLanding = dynamic(() => import('../nutrition/Nutrition
 const ChimeVideoCall = dynamic(() => import('../../teleCommunication/ChimeVideoCall'), { ssr: false, loading: LoadingSpinner });
 const TrainingBookingRouter = dynamic(() => import('../training/TrainingBookingRouter').then((m) => ({ default: m.TrainingBookingRouter })), { ssr: false, loading: LoadingSpinner });
 const UniversalHomeServiceRouter = dynamic(() => import('../home-services/UniversalHomeServiceRouter').then((m) => ({ default: m.UniversalHomeServiceRouter })), { ssr: false, loading: LoadingSpinner });
+const TeleConsultationHub = dynamic(() => import('../tele-consultation/TeleConsultationHub').then((m) => ({ default: m.TeleConsultationHub })), { loading: LoadingSpinner });
 
 type ScreenType = 
   | 'home' 
@@ -280,6 +281,7 @@ type ScreenType =
   | 'vet-clinic-profile'
   | 'vet-clinic-booking'
   | 'vet-services-by-style'
+  | 'tele-consultation-hub'
   | 'vet-tele-consultation'
   | 'vet-home-visit'
   | 'grooming'
@@ -1428,6 +1430,10 @@ export function CustomerHomeWrapper({
       navigateToScreen('vet-tele-consultation');
       return;
     }
+    else if (service === 'tele-consultation-hub') {
+      navigateToScreen('tele-consultation-hub');
+      return;
+    }
     else if (service === 'vet-home-visit') {
       const homeVisitTarget = resolveHomeVisitEntryScreen(data);
       if (homeVisitTarget === 'home-service-selection') {
@@ -1750,6 +1756,10 @@ export function CustomerHomeWrapper({
       if ((data as any)?.startStep === 'scheduled') setTeleSkipToScheduled(true);
       else setTeleSkipToScheduled(false);
       navigateToScreen('vet-tele-consultation');
+      return;
+    }
+    else if (screen === 'tele-consultation-hub') {
+      navigateToScreen('tele-consultation-hub');
       return;
     }
     else if (screen === 'vet-home-visit') {
@@ -3329,6 +3339,23 @@ export function CustomerHomeWrapper({
         onNavigate={handleVetNavigate}
       />
     );
+  // Tele Consultation chooser: Vet vs Pet Nutrition, before entering either flow
+  if (currentScreen === 'tele-consultation-hub') {
+    return renderScreenWithLayout('tele-consultation-hub',
+      <TeleConsultationHub
+        onBack={handleBack}
+        onSelect={(choice) => {
+          if (choice === 'nutritionist') {
+            navigateToScreen('diet-consultation-services');
+          } else {
+            setTeleSkipToScheduled(true);
+            navigateToScreen('vet-tele-consultation');
+          }
+        }}
+      />,
+      { title: 'Tele Consultation', subtitle: 'Talk to an expert over video', showBackButton: true, skipHeader: true }
+    );
+  }
   // ✅ FIX: Tele Consultation Router
   if (currentScreen === 'vet-tele-consultation') {
     return renderScreenWithLayout('vet-tele-consultation',

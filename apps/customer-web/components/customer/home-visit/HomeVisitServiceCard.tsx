@@ -11,8 +11,8 @@ function CardImage({ src, alt }: { src: string; alt: string }) {
       src={src}
       alt={alt}
       fill
-      sizes="(max-width: 480px) 45vw, 200px"
-      className="object-cover transition-transform duration-500 group-hover:scale-105"
+      sizes="72px"
+      className="object-cover"
       unoptimized
     />
   );
@@ -32,36 +32,30 @@ function HomeVisitServiceCardComponent({ service, index = 0, onPress }: HomeVisi
     <button
       type="button"
       onClick={() => onPress(service)}
-      className="home-visit-fade-in group w-full text-left"
+      className="home-visit-fade-in group flex w-full min-h-[4.75rem] items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3 text-left shadow-sm transition-transform duration-200 active:scale-[0.98]"
       style={{ animationDelay: staggerDelay }}
     >
-      <div
-        className={`relative flex h-full min-h-[172px] flex-col overflow-hidden rounded-3xl bg-gradient-to-br ${service.gradient} p-0 shadow-[0_8px_28px_rgba(16,185,129,0.1)] ring-1 ${service.ring} transition-all duration-300 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-[0_14px_36px_rgba(16,185,129,0.18)] active:scale-[0.98] ${service.glow}`}
-      >
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/30 via-transparent to-white/10" aria-hidden />
-
-        <div className="relative h-[92px] w-full overflow-hidden">
-          <CardImage src={service.imageUrl} alt={service.title} />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-white via-white/25 to-transparent" />
-          <span
-            className={`absolute left-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full shadow-md ${service.iconBg}`}
-            aria-hidden
-          >
-            <Icon className={`h-[18px] w-[18px] ${service.iconColor}`} strokeWidth={2} />
-          </span>
-        </div>
-
-        <div className="relative flex flex-1 flex-col p-3 pt-2">
-          <h3 className="mb-0.5 text-sm font-bold leading-tight text-[#1E3A2F]">{service.title}</h3>
-          <p className="mb-3 line-clamp-2 text-[11px] leading-snug text-gray-600">{service.description}</p>
-          <span
-            className={`mt-auto inline-flex h-8 w-8 items-center justify-center rounded-full ${service.iconBg} text-white shadow-sm transition-transform duration-200 group-hover:translate-x-0.5`}
-            aria-hidden
-          >
-            <ChevronRight className="h-4 w-4" strokeWidth={2.5} />
-          </span>
-        </div>
+      <div className="relative h-[4.5rem] w-[4.5rem] shrink-0 overflow-hidden rounded-xl">
+        <CardImage src={service.imageUrl} alt={service.title} />
+        <span
+          className={`absolute left-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-full shadow-sm ${service.iconBg}`}
+          aria-hidden
+        >
+          <Icon className={`h-3.5 w-3.5 ${service.iconColor}`} strokeWidth={2} />
+        </span>
       </div>
+
+      <div className="min-w-0 flex-1">
+        <h3 className="text-sm font-bold leading-tight text-gray-900">{service.title}</h3>
+        <p className="mt-0.5 line-clamp-2 text-xs leading-snug text-gray-500">{service.description}</p>
+      </div>
+
+      <span
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${service.iconBg} text-white shadow-sm`}
+        aria-hidden
+      >
+        <ChevronRight className="h-4 w-4" strokeWidth={2.5} />
+      </span>
     </button>
   );
 }

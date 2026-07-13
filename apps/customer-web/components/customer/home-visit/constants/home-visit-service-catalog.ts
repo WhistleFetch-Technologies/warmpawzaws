@@ -67,6 +67,11 @@ export interface HomeVisitPopularEntry {
   imageUrl: string;
   targetScreen: string;
   navigateData?: Record<string, unknown>;
+  /**
+   * `contain` — image is a transparent-background pet cutout (portrait); fit fully, don't crop.
+   * `cover` (default) — image is a full-bleed photo; fill the frame.
+   */
+  imageFit?: 'cover' | 'contain';
 }
 
 export const HOME_VISIT_HERO_IMAGE = `${VET_IMG}/home-visit.webp`;
@@ -250,6 +255,7 @@ export const HOME_VISIT_POPULAR_ITEMS: HomeVisitPopularEntry[] = [
     id: 'vaccination',
     title: 'Vaccination',
     imageUrl: `${VET_IMG}/card-dog1.webp`,
+    imageFit: 'contain',
     targetScreen: 'services_by_problem',
     navigateData: {
       problemId: 'vaccination',
@@ -269,6 +275,7 @@ export const HOME_VISIT_POPULAR_ITEMS: HomeVisitPopularEntry[] = [
     id: 'health-checkup',
     title: 'Health Checkup',
     imageUrl: `${VET_IMG}/card-dog2.webp`,
+    imageFit: 'contain',
     targetScreen: 'services_by_problem',
     navigateData: {
       problemId: 'medicine',
@@ -288,6 +295,7 @@ export const HOME_VISIT_POPULAR_ITEMS: HomeVisitPopularEntry[] = [
     id: 'puppy-care',
     title: 'Puppy Care',
     imageUrl: `${VET_IMG}/card-dog5.webp`,
+    imageFit: 'contain',
     targetScreen: 'services_by_problem',
     navigateData: {
       problemId: 'potty_training',
@@ -307,6 +315,7 @@ export const HOME_VISIT_POPULAR_ITEMS: HomeVisitPopularEntry[] = [
     id: 'dental',
     title: 'Dental',
     imageUrl: `${VET_IMG}/card-cat2.webp`,
+    imageFit: 'contain',
     targetScreen: 'services_by_problem',
     navigateData: {
       problemId: 'dentistry',
@@ -326,6 +335,7 @@ export const HOME_VISIT_POPULAR_ITEMS: HomeVisitPopularEntry[] = [
     id: 'skin-care',
     title: 'Skin Care',
     imageUrl: `${VET_IMG}/card-cat4.webp`,
+    imageFit: 'contain',
     targetScreen: 'services_by_problem',
     navigateData: {
       problemId: 'dermatology',

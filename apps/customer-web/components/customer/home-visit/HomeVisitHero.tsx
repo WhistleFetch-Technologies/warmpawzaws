@@ -35,16 +35,16 @@ function HomeVisitHeroComponent({ onBack }: HomeVisitHeroProps) {
         onBack={onBack}
         showBackButton
         bottomEdge="sheet"
-        fullWidth
-        headerColor="bg-gradient-to-br from-emerald-600 via-green-500 to-lime-400"
+        sheetToneClass="bg-white"
+        headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
         headerBackground={<HomeVisitPawBackground />}
         headerTrailingImage={HOME_VISIT_HERO_IMAGE}
         headerTrailingImageAlt="Happy golden retriever with medical kit"
-        headerTrailingImageClassName="pointer-events-none absolute bottom-0 right-0 top-[2.75rem] z-[5] flex w-[48%] max-w-[200px] items-end justify-end pr-1 sm:top-12 sm:max-w-[220px] sm:pr-2"
+        headerTrailingImageClassName="pointer-events-none absolute bottom-0 right-0 top-[2.5rem] z-[5] flex w-[38%] max-w-[150px] items-end justify-end pr-1"
         headerTrailingImageImgClassName="home-visit-hero-float h-auto max-h-full w-auto max-w-full object-contain object-bottom drop-shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
       />
 
-      <span className="pointer-events-none absolute right-4 top-[calc(env(safe-area-inset-top,0px)+3.5rem)] z-30 inline-flex items-center gap-1 rounded-full border border-white/40 bg-white/20 px-2.5 py-1 text-[10px] font-semibold text-white shadow-sm backdrop-blur-md sm:right-6">
+      <span className="pointer-events-none absolute right-3 top-[calc(env(safe-area-inset-top,0px)+3.25rem)] z-30 inline-flex items-center gap-1 rounded-full border border-white/40 bg-white/20 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm backdrop-blur-md">
         <BadgeCheck className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
         Verified
       </span>

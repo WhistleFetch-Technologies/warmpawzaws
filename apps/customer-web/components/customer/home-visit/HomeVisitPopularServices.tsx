@@ -27,34 +27,40 @@ function HomeVisitPopularServicesComponent({ onNavigate }: HomeVisitPopularServi
 
   return (
     <section className="mt-8" aria-label="Popular services">
-      <div className="mb-3 px-4">
-        <h2 className="text-base font-bold text-gray-900">Popular Services</h2>
+      <div className="mb-3">
+        <h2 className="text-lg font-bold text-gray-900">Popular Services</h2>
         <p className="mt-0.5 text-xs text-gray-500">Quick picks pet parents love</p>
       </div>
 
-      <HorizontalScrollRow gapClassName="gap-3" paddingClassName="px-4">
+      <HorizontalScrollRow gapClassName="gap-3" paddingClassName="-mx-4 px-4">
         {HOME_VISIT_POPULAR_ITEMS.map((item, index) => (
           <button
             key={item.id}
             type="button"
             onClick={() => handlePress(item)}
-            className="home-visit-fade-in group w-[7.5rem] flex-shrink-0 text-left sm:w-[8.25rem]"
+            className="home-visit-fade-in group w-[6.75rem] flex-shrink-0 text-left"
             style={{ animationDelay: `${index * 55}ms` }}
           >
-            <div className="overflow-hidden rounded-2xl border border-emerald-100/80 bg-white shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]">
+            <div className="overflow-hidden rounded-2xl border border-emerald-100/80 bg-white shadow-sm transition-transform duration-200 active:scale-[0.98]">
               <div className="relative h-24 w-full overflow-hidden bg-gradient-to-br from-emerald-50 to-green-50">
                 <Image
                   src={item.imageUrl}
                   alt={item.title}
                   fill
-                  sizes="132px"
-                  className="object-cover transition-transform duration-500 group-hover:scale-105"
+                  sizes="108px"
+                  className={
+                    item.imageFit === 'contain'
+                      ? 'object-contain object-bottom p-1.5'
+                      : 'object-cover'
+                  }
                   unoptimized
                 />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-white/80 via-transparent to-transparent" />
+                {item.imageFit !== 'contain' && (
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-white/80 via-transparent to-transparent" />
+                )}
               </div>
-              <div className="px-2.5 py-2">
-                <p className="line-clamp-2 text-[11px] font-semibold leading-snug text-gray-900">{item.title}</p>
+              <div className="px-2 py-2">
+                <p className="line-clamp-2 text-[10px] font-semibold leading-snug text-gray-900">{item.title}</p>
               </div>
             </div>
           </button>

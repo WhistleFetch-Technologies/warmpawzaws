@@ -13,6 +13,7 @@ const SHELL_TITLE: Record<string, string> = {
   'vet-clinic-profile': 'Clinic profile',
   'vet-clinic-booking': 'Clinic booking',
   'vet-services-by-style': 'Vet services',
+  'tele-consultation-hub': 'Tele consultation',
   'vet-tele-consultation': 'Tele vet',
   'vet-home-visit': 'Home visit vet',
   'home-service-selection': 'Home Visit',

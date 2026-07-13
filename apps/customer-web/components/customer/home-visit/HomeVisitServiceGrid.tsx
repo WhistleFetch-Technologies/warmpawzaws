@@ -21,13 +21,13 @@ function HomeVisitServiceGridComponent({ onNavigate }: HomeVisitServiceGridProps
   );
 
   return (
-    <section className="mt-6 px-4" aria-label="Available home services">
-      <div className="mb-3 px-0">
-        <h2 className="text-base font-bold text-gray-900">Choose a Home Service</h2>
+    <section aria-label="Available home services">
+      <div className="mb-4">
+        <h2 className="text-lg font-bold text-gray-900">Choose a Home Service</h2>
         <p className="mt-0.5 text-xs text-gray-500">Select the service you need today</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="flex flex-col gap-3">
         {HOME_VISIT_SERVICES.map((service, index) => (
           <HomeVisitServiceCard
             key={service.id}
