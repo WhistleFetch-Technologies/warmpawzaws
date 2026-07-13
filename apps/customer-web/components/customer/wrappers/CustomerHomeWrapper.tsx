@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { toast } from 'sonner';
 import { useCustomerShellAnalytics } from '@/hooks/useCustomerShellAnalytics';
 import { setClientShellScreenForErrors } from '@/lib/client-error-reporting';
 import dynamic from 'next/dynamic';
@@ -231,7 +232,7 @@ const CheckInCheckOutPage = dynamic(() => import('../CheckInCheckOutPage').then(
 const MedicalRecordsPage = dynamic(() => import('../MedicalRecordsPage').then((m) => ({ default: m.MedicalRecordsPage })), { loading: LoadingSpinner });
 const CustomerWalletPage = dynamic(() => import('../WalletPage').then((m) => ({ default: m.WalletPage })), { loading: LoadingSpinner });
 const MatingDatingHub = dynamic(() => import('../MatingDatingHub').then((m) => ({ default: m.MatingDatingHub })), { loading: LoadingSpinner });
-const HomeServiceSelectionEnhanced = dynamic(() => import('../HomeServiceSelectionEnhanced').then((m) => ({ default: m.HomeServiceSelectionEnhanced })), { loading: LoadingSpinner });
+const HomeServiceSelectionEnhanced = dynamic(() => import('../HomeServiceSelectionEnhanced'), { loading: LoadingSpinner });
 const IntegratedServicesHub = dynamic(() => import('../../IntegratedServicesHub').then((m) => ({ default: m.IntegratedServicesHub })), { loading: LoadingSpinner });
 const ProblemGridSelector = dynamic(() => import('../ProblemGridSelector').then((m) => ({ default: m.ProblemGridSelector })), { loading: LoadingSpinner });
 const AllServicesScreen = dynamic(() => import('../home/all-services/AllServicesScreen').then((m) => ({ default: m.AllServicesScreen })), { loading: LoadingSpinner });
@@ -1263,7 +1264,7 @@ export function CustomerHomeWrapper({
       setSpaBoardingVendorsSlug(null);
       setBoardingVendorsReturnScreen(null);
       setLabDiagnosticsReturnScreen(null);
-      shellNav.resetTo(returnScreen);
+      shellNav.resetTo(returnScreen as ScreenType);
       setSelectedPetId(null);
       setSelectedBookingId(null);
       setVetServiceData(null);
@@ -1291,6 +1292,22 @@ export function CustomerHomeWrapper({
     }
     executeNavigateToService(service, data);
   };
+
+  const shouldOpenHomeVisitLandingHub = (data?: Record<string, unknown> | null): boolean => {
+    if (data?.fromHomeVisitLanding === true) return false;
+    if (currentScreen === 'home-service-selection') return false;
+    if (currentScreen === 'vet') return false;
+    const returnScreen = String(data?.returnScreen ?? '').toLowerCase();
+    if (returnScreen === 'home') return true;
+    if (currentScreen === 'home') return true;
+    if (bannerReturnHomeRef.current) return true;
+    return false;
+  };
+
+  const resolveHomeVisitEntryScreen = (
+    data?: Record<string, unknown> | null
+  ): 'home-service-selection' | 'vet-home-visit' =>
+    shouldOpenHomeVisitLandingHub(data) ? 'home-service-selection' : 'vet-home-visit';
 
   const executeNavigateToService = (service: string, _data?: any) => {
     const data = _data;
@@ -1401,7 +1418,7 @@ export function CustomerHomeWrapper({
     else if (service === 'vet' || service === 'veterinarian') {
       const st = String(data?.serviceStyle || data?.service_style || '').toLowerCase();
       if (st === 'tele' || st === 'online') navigateToScreen('vet-tele-consultation');
-      else if (st === 'at_home' || st === 'home') navigateToScreen('vet-home-visit');
+      else if (st === 'at_home' || st === 'home') navigateToScreen(resolveHomeVisitEntryScreen(data));
       else navigateToScreen('vet');
     }
     else if (service === 'vet-tele-consultation') {
@@ -1412,6 +1429,11 @@ export function CustomerHomeWrapper({
       return;
     }
     else if (service === 'vet-home-visit') {
+      const homeVisitTarget = resolveHomeVisitEntryScreen(data);
+      if (homeVisitTarget === 'home-service-selection') {
+        navigateToScreen('home-service-selection');
+        return;
+      }
       setVetServiceData(_data);
       if ((data as any)?.startStep === 'home') setVetHomeFromHome(true);
       else setVetHomeFromHome(false);
@@ -3502,9 +3524,10 @@ export function CustomerHomeWrapper({
           }
 
           const fromPayload = bd?.returnScreen as ScreenType | undefined;
+          const returnScreenAlias = String(bd?.returnScreen ?? '');
           if (
             fromPayload === 'nutritionist-tele' ||
-            fromPayload === 'tele-consultation' ||
+            returnScreenAlias === 'tele-consultation' ||
             bd?.category === 'nutritionist'
           ) {
             setTeleWizardRestore(consumeTeleWizardSnapshot());
@@ -4614,16 +4637,18 @@ export function CustomerHomeWrapper({
           onCloseInitialBookingDetail={returnToAccountMenuBookings}
           onReorderMedicine={handleReorderMedicine}
           onNavigate={(screen, data) => { 
-            if (data?.bookingId) setSelectedBookingId(data.bookingId); 
-            if (screen === 'video-call' && data?.bookingId) {
+            const bookingId =
+              data?.bookingId != null ? String(data.bookingId).trim() : '';
+            if (bookingId) setSelectedBookingId(bookingId);
+            if (screen === 'video-call' && bookingId) {
               const payload = data as { bookingId: string; meetingId?: string };
-              setVideoCallData({ bookingId: payload.bookingId, meetingId: payload.meetingId });
-              navigateToScreen('video-call', routeKey.booking(String(payload.bookingId)));
+              setVideoCallData({ bookingId, meetingId: payload.meetingId });
+              navigateToScreen('video-call', routeKey.booking(bookingId));
             } else if (screen === 'payment' && data) {
               setPaymentData({ ...(data as Record<string, unknown>), returnScreen: 'my-bookings' });
               navigateToScreen('payment');
             } else if (screen === 'gps-tracking' || screen === 'tracking') {
-              setTrackingBookingId(data?.bookingId ?? null);
+              setTrackingBookingId(bookingId || null);
               const bid = data?.bookingId != null ? String(data.bookingId).trim() : '';
               navigateToScreen('gps-tracking', bid ? routeKey.booking(bid) : undefined);
             } else if (screen === 'package-tracking' && (data as { packagePurchaseId?: string })?.packagePurchaseId) {
@@ -5351,29 +5376,72 @@ export function CustomerHomeWrapper({
     petId={selectedPetId || 'pet_default'}
     onBack={handleBack}
     onNavigate={(screen, data) => {
-      if (screen === 'pet-sitter') {
-        setPetSitterOriginScreen(currentScreen);
-        setPetSitterFacilityOptionId(null);
-        navigateToScreen('pet-sitter');
+      const navData = (data ?? {}) as Record<string, unknown>;
+      const problem = (navData.problem ?? {}) as Record<string, unknown>;
+      if (screen === 'services_by_problem' || screen === 'problem_selected') {
+        const problemId = navData.problemId != null ? String(navData.problemId) : undefined;
+        const problemTitle =
+          navData.problemTitle != null ? String(navData.problemTitle) : undefined;
+        if (
+          isEmergencyProblemTileLocked({
+            id: problemId,
+            name: problemTitle,
+            displayName: problemTitle,
+          })
+        ) {
+          toast.info('Emergency care is coming soon on the app.');
+          return;
+        }
+        const categoryStored = navData.category ?? problem.category;
+        const rawCategory = String(categoryStored ?? '').toLowerCase();
+        const isBehaviorCategory =
+          rawCategory === 'behavioral' ||
+          rawCategory === 'behavior' ||
+          rawCategory === 'sub_behavior';
+        let roleIdForFlow = String(navData.roleId ?? problem.roleId ?? '').trim();
+        if (isBehaviorCategory && roleIdForFlow && !/behav/i.test(roleIdForFlow)) {
+          roleIdForFlow = 'behaviorist';
+        }
+        if (isBehaviorCategory && !roleIdForFlow) {
+          roleIdForFlow = 'behaviorist';
+        }
+        const allowedStylesRaw =
+          problem.allowedServiceStyles ?? navData.allowedServiceStyles;
+        const allowedStylesList = allowedStylesRaw
+          ? Array.isArray(allowedStylesRaw)
+            ? (allowedStylesRaw as string[])
+            : [String(allowedStylesRaw)]
+          : null;
+        setSelectedProblem({
+          id: problemId ?? '',
+          title: problemTitle || 'Service',
+          roleId: roleIdForFlow || (navData.roleId != null ? String(navData.roleId) : undefined),
+          category:
+            categoryStored != null
+              ? String(categoryStored)
+              : isBehaviorCategory
+                ? 'behavioral'
+                : undefined,
+          allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(allowedStylesList, {
+            roleId: roleIdForFlow || (navData.roleId != null ? String(navData.roleId) : undefined),
+            specializationId: problemId,
+            categoryHint:
+              categoryStored != null
+                ? String(categoryStored)
+                : isBehaviorCategory
+                  ? 'behavioral'
+                  : undefined,
+          }),
+        });
+        setProblemGridSpecialization(problemId);
+        navigateToScreen('problem_grid_flow');
         return;
       }
-      if (screen === 'create-booking' && data?.homeService) {
-        const map: Record<string, string> = { vet: 'veterinary', walking: 'walker', sitting: 'sitter' };
-        const serviceType = (map[data?.serviceType || data?.serviceId] ||
-          data?.serviceType ||
-          data?.serviceId ||
-          'walker') as
-          | 'walker'
-          | 'grooming'
-          | 'training'
-          | 'veterinary'
-          | 'behaviourist'
-          | 'sitter'
-          | 'diagnostics';
-        setSelectedHomeServiceType(serviceType);
-        setSelectedVendorId(data?.vendorId);
-        navigateToScreen('universal-home-booking');
+      if (screen === 'support_help') {
+        handleSupportHelpChatbotNavigate(screen, data);
+        return;
       }
+      handleNavigateToService(screen, data);
     }}
     onSuccess={(bookingId) => bookingId && handleViewBooking(bookingId)}
   />;

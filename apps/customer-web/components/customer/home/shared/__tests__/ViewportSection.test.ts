@@ -49,11 +49,10 @@ function renderDeferredSection() {
       Fragment,
       null,
       createElement('div', { style: { height: '4000px' } }),
-      createElement(
-        ViewportSection,
-        { placeholderMinHeight: 300 },
-        createElement('div', { 'data-testid': 'deferred-section' }, 'Deferred content')
-      )
+      createElement(ViewportSection, {
+        placeholderMinHeight: 300,
+        children: createElement('div', { 'data-testid': 'deferred-section' }, 'Deferred content'),
+      })
     )
   );
 }

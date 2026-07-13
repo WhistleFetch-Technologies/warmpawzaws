@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, type LucideIcon, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import {
   Check,
   CheckCircle2,
@@ -259,7 +260,7 @@ export function MyOrdersListShell({
   onFilterHeaderClick: () => void;
   filterMenu: ReactNode;
   children: ReactNode;
-  headerRef?: React.RefObject<HTMLButtonElement | null>;
+  headerRef?: React.Ref<HTMLButtonElement>;
 }) {
   return (
     <div className={cn(MY_ORDERS_LIST_SHELL_CLASS, 'my-bookings-fade-in')}>

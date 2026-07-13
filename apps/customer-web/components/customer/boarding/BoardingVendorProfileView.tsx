@@ -65,6 +65,7 @@ interface MappedBoardingService {
 }
 
 interface VendorInfo {
+  vendorId?: string;
   id: string;
   name: string;
   description: string;

@@ -18,6 +18,7 @@ import {
 import { apiClient, customerApi, ordersApi } from '@/lib/api-client';
 import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
+import { signOutCustomer } from '@/lib/session-utils';
 import { validateEmail } from '@/lib/validation';
 import { inferCityStateFromCommaAddress, mergeStreetAddressLineOnly } from '@/lib/profile-address-format';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
@@ -94,7 +95,10 @@ async function resolveCustomerIdForProfileStats(phone: string): Promise<string |
   if (existing) return existing;
 
   try {
-    const byPhone = await customerApi.getByPhone(phone);
+    const byPhone = (await customerApi.getByPhone(phone)) as {
+      customer?: { id?: string };
+      id?: string;
+    } | null;
     const candidate = byPhone?.customer?.id ?? byPhone?.id;
     const id = candidate != null ? String(candidate).trim() : '';
     if (id && isCustomerDatabaseUuid(id)) {

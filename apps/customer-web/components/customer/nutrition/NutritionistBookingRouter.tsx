@@ -784,8 +784,8 @@ export function NutritionistBookingRouter({
                 <div className="space-y-3">
                   {serviceOptions.map((service) => {
                     const Icon = service.icon;
-                    const isSelected = selectedVendorService?.id === service.id || selectedVendorService?.serviceId === service.id;
-                    const serviceKey = String(service.id ?? service.serviceId ?? '');
+                    const isSelected = selectedVendorService?.id === service.id || ('serviceId' in service && selectedVendorService?.serviceId === service.serviceId);
+                    const serviceKey = String(service.id ?? ('serviceId' in service ? service.serviceId : '') ?? '');
                     const expanded = !!expandedServices[serviceKey];
                     const descTrim = (service.desc ?? '').trim();
                     const showToggle = descTrim.length > SERVICE_DESC_VIEW_MORE_MIN_LEN;
@@ -1011,7 +1011,7 @@ export function NutritionistBookingRouter({
               <h2 className="text-lg font-bold text-gray-900">
                 {selectedServiceType === 'at_home' ? 'Select Your Address' : 'Confirm Clinic Address'}
               </h2>
-              {(selectedServiceType === 'at_home' || selectedServiceType === 'home') && (
+              {(selectedServiceType === 'at_home') && (
                 <button
                   onClick={() => setShowAddAddressModal(true)}
                   className="flex items-center gap-1 px-3 py-1.5 bg-blue-100 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-200 transition"
@@ -1023,7 +1023,7 @@ export function NutritionistBookingRouter({
             </div>
 
             {/* Required notice for home services */}
-            {(selectedServiceType === 'at_home' || selectedServiceType === 'home') && (
+            {(selectedServiceType === 'at_home') && (
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-800">
                   📍 An address is required for home service delivery.
@@ -1032,7 +1032,7 @@ export function NutritionistBookingRouter({
             )}
 
             <div className="space-y-3">
-              {(selectedServiceType === 'at_home' || selectedServiceType === 'home') ? (
+              {(selectedServiceType === 'at_home') ? (
                 addresses.length > 0 ? (
                   addresses.map((addr) => (
                     <button

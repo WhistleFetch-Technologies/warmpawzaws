@@ -55,7 +55,7 @@ function GroomingCenterContent() {
           serviceStyle: data?.serviceStyle ? String(data.serviceStyle) : 'at_center',
           serviceType: 'grooming',
           returnSearchUrl,
-          groomer: data?.vendor || data?.groomer,
+          groomer: (data?.vendor ?? data?.groomer) as Record<string, unknown> | undefined,
         };
         try {
           sessionStorage.setItem(SEARCH_GROOMING_BOOKING_INTENT_KEY, JSON.stringify(intent));

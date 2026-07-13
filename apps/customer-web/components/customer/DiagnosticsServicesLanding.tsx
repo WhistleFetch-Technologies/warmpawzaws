@@ -81,7 +81,7 @@ function computeDiagnosticsHeaderRating(
       c.rating <= 5
   );
   if (rated.length === 0) return '—';
-  const avg = rated.reduce((sum, c) => sum + c.rating, 0) / rated.length;
+  const avg = rated.reduce((sum, c) => sum + (c.rating ?? 0), 0) / rated.length;
   return (Math.round(avg * 10) / 10).toFixed(1);
 }
 

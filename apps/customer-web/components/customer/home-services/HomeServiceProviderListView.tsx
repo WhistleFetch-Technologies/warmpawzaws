@@ -21,7 +21,8 @@ import {
   ChevronRight,
   X,
   SlidersHorizontal,
-  BadgeCheck
+  BadgeCheck,
+  Star,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -63,7 +64,7 @@ interface Provider {
   reviewCount: number;
   specializations: string[];
   amenities: string[];
-  nextAvailableSlot: string;
+  nextAvailableSlot?: string;
   consultationFee: number;
   price: number;
   isVerified: boolean;

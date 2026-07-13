@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { Dog, DoorOpen, Home, Scissors, Stethoscope } from 'lucide-react';
 import { HOME_CATEGORY_IMAGE_URLS } from './category-card-images';
 import { getCategoryCardTheme } from './category-card-themes';
@@ -9,11 +9,7 @@ export interface PopularServiceCatalogEntry {
   description: string;
   screen: string;
   imageUrl: string;
-  icon: ComponentType<{
-    className?: string;
-    style?: React.CSSProperties;
-    strokeWidth?: number;
-  }>;
+  icon: LucideIcon;
   iconColor: string;
   /** discover-services query */
   discoverCategory: string;

@@ -424,7 +424,7 @@ export function VetServicesByStyle({
   const handleShare = async () => {
     const shareVendorId =
       vendorId ||
-      pickCustomerVendorAccountId(profileProvider ?? {}) ||
+      pickCustomerVendorAccountId((profileProvider ?? {}) as unknown as Record<string, unknown>) ||
       profileProvider?.vendorId ||
       profileProvider?.providerId;
     if (!shareVendorId) return;
@@ -492,7 +492,7 @@ export function VetServicesByStyle({
             ? 'Video consultation with vet'
             : 'Professional pet healthcare';
     const profileVendorId = String(
-      vendorId ?? profileProvider.id ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
+      vendorId ?? profileProvider.providerId ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
     ).trim();
 
     return (

@@ -137,7 +137,7 @@ describe('computeCartPricing', () => {
 describe('calculateVendorDeliveryFee', () => {
   it('uses express fee when selected', () => {
     expect(
-      calculateVendorDeliveryFee('default', 100, { deliverySpeed: 'express' })
+      calculateVendorDeliveryFee('default', 100, { deliverySpeed: 'express' }, 100)
     ).toBe(150);
   });
 });

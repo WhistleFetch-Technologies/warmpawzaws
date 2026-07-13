@@ -126,11 +126,13 @@ function mapRecordType(row: Record<string, unknown>): 'prescription' | 'uploaded
   return 'prescription';
 }
 
-function normalizePrescriptionRow(row: Record<string, any>): Prescription {
+function normalizePrescriptionRow(row: Record<string, unknown>): Prescription {
   return {
+    id: String(row.id ?? ''),
+    created_at: String(row.created_at ?? row.createdAt ?? new Date().toISOString()),
     ...row,
     recordType: mapRecordType(row),
-  };
+  } as Prescription;
 }
 
 function countMedications(p: Prescription): number {

@@ -15,6 +15,7 @@ const SHELL_TITLE: Record<string, string> = {
   'vet-services-by-style': 'Vet services',
   'vet-tele-consultation': 'Tele vet',
   'vet-home-visit': 'Home visit vet',
+  'home-service-selection': 'Home Visit',
   grooming: 'Grooming',
   'grooming_center': 'Grooming center',
   'grooming_home': 'Grooming at home',

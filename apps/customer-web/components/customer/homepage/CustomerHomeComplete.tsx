@@ -890,7 +890,7 @@ export function CustomerHomeComplete({
       subtitle?: string;
       metadata?: unknown;
       isInformational?: boolean;
-      navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> };
+      navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> } | null;
     }) => {
       if (isBannerInformationalNonClickable(banner)) return;
       if (!banner?.ctaLink && !banner?.navTarget && !banner?.metadata) return;
@@ -1164,8 +1164,9 @@ export function CustomerHomeComplete({
 
       // Handle articles
       if (articlesResp.status === 'fulfilled' && articlesResp.value?.articles?.length > 0) {
-        nextArticles = articlesResp.value.articles;
-        setDynamicArticles(nextArticles);
+        const articles = articlesResp.value.articles ?? [];
+        nextArticles = articles;
+        setDynamicArticles(articles);
       } else if (articlesResp.status === 'rejected') {
         const error = articlesResp.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -1175,8 +1176,9 @@ export function CustomerHomeComplete({
 
       // Handle announcements
       if (announcementsResp.status === 'fulfilled' && announcementsResp.value?.announcements?.length > 0) {
-        nextAnnouncements = announcementsResp.value.announcements;
-        setDynamicAnnouncements(nextAnnouncements);
+        const announcements = announcementsResp.value.announcements ?? [];
+        nextAnnouncements = announcements;
+        setDynamicAnnouncements(announcements);
       } else if (announcementsResp.status === 'rejected') {
         const error = announcementsResp.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -2880,13 +2882,13 @@ export function CustomerHomeComplete({
             ) : null}
             {legacyVetStyleVisible.home ? (
             <button
-              onClick={() => handleNavigation('vet-home-visit', { startStep: 'home' })}
+              onClick={() => handleNavigation('home-service-selection')}
               className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
             >
               <div className="w-10 h-10 mx-auto mb-2 bg-green-100 rounded-xl flex items-center justify-center">
                 <HomeIcon className="w-5 h-5 text-green-600" />
               </div>
-              <h3 className="text-xs font-semibold text-gray-800 mb-1">Vet at Home</h3>
+              <h3 className="text-xs font-semibold text-gray-800 mb-1">Home Visit</h3>
               <p className="text-blue-600 font-medium text-sm">₹{vetHomeMinPrice ?? 599}</p>
             </button>
             ) : null}

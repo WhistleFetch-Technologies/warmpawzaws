@@ -119,15 +119,30 @@ function isSoloVendor(p: any): boolean {
   );
 }
 
+function coerceOptionalString(v: unknown): string | undefined {
+  if (v == null || v === '') return undefined;
+  if (typeof v === 'string') return v.trim() || undefined;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return undefined;
+}
+
+function coerceStringOrNumber(v: unknown, fallback: string | number): string | number {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  const s = coerceOptionalString(v);
+  return s ?? fallback;
+}
+
 function mapApiServiceToRow(p: any, vendorId: string, index: number): ClinicServiceRow {
   const normalized = normalizeVendorServiceRowForPackage(p);
-  const vendorServiceId =
-    normalized.id ?? normalized.vendor_service_id ?? p.vendor_service_id ?? `idx-${index}`;
+  const vendorServiceId = coerceStringOrNumber(
+    normalized.id ?? normalized.vendor_service_id ?? p.vendor_service_id,
+    `idx-${index}`
+  );
   const catalogServiceId =
-    (normalized.serviceId != null && String(normalized.serviceId)) ||
-    (normalized.service_id != null && String(normalized.service_id)) ||
-    (p.serviceId != null && String(p.serviceId)) ||
-    (p.service_id != null && String(p.service_id)) ||
+    coerceOptionalString(normalized.serviceId) ??
+    coerceOptionalString(normalized.service_id) ??
+    coerceOptionalString(p.serviceId) ??
+    coerceOptionalString(p.service_id) ??
     null;
   const stableKey = catalogServiceId ? `cat-${catalogServiceId}` : `vs-${vendorId}-${vendorServiceId}`;
   const desc = pickBestVendorDescription(normalized);
@@ -139,9 +154,9 @@ function mapApiServiceToRow(p: any, vendorId: string, index: number): ClinicServ
   const durNum = typeof durRaw === 'string' ? parseInt(durRaw, 10) : Number(durRaw);
   const duration = Number.isFinite(durNum) && durNum > 0 ? durNum : 30;
   const category =
-    (normalized.category && String(normalized.category)) ||
-    (normalized.category_name && String(normalized.category_name)) ||
-    (normalized.categorySlug && String(normalized.categorySlug)) ||
+    coerceOptionalString(normalized.category) ??
+    coerceOptionalString(normalized.category_name) ??
+    coerceOptionalString(normalized.categorySlug) ??
     undefined;
   return {
     stableKey,
