@@ -25,6 +25,8 @@ import {
   defaultServiceStyleForRoles,
   normalizeServiceStyle,
   isAllowedServiceStyle,
+  resolveServiceCatalogCategoryDisplay,
+  resolveServiceCatalogCategoryDisplayWithRoleFallback,
 } from '../utils/service-catalog-sync';
 import { resolveCustomerDefaultAddressLocation } from '../utils/customer-default-address-location';
 import { serviceCategoryVisibleOnCustomerDashboard } from '../utils/customer-category-visibility';
@@ -556,7 +558,7 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         name: service.service_name,
         description: service.description,
         categoryId: service.category_id,
-        categoryName: service.category_name && String(service.category_name).trim() ? service.category_name : (service.category_id === 'veterinary' ? 'Veterinary Services' : service.category_id === 'diagnostic' ? 'Diagnostics & Lab' : service.category_id === 'grooming' ? 'Grooming & Hygiene' : service.category_id || 'General'),
+        categoryName: resolveServiceCatalogCategoryDisplay(service).category_name,
         subCategoryId: service.sub_category_id,
         subCategoryName: service.sub_category_name,
         applicableRoles: service.applicable_roles || [],
@@ -1072,23 +1074,33 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
       const services = await query(catalogQuery, params);
 
-      // Helper: never expose "Uncategorized" - use role-based or generic default so all discovered services are categorized
-      const categoryDisplay = (slug: string) =>
-        slug ? String(slug).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '';
-      const defaultCategoryName =
-        (roleConfig?.category && categoryDisplay(roleConfig.category as string)) ||
-        (role?.display_name && String(role.display_name)) ||
-        'General';
-      const defaultCategoryId = (roleConfig?.category && String(roleConfig.category).replace(/\s+/g, '_')) || 'general';
+      const roleCategoryFallback =
+        role || vendorRole
+          ? {
+              categoryId:
+                (roleConfig?.category && String(roleConfig.category).replace(/\s+/g, '_')) ||
+                undefined,
+              categoryName:
+                (roleConfig?.category &&
+                  String(roleConfig.category)
+                    .replace(/_/g, ' ')
+                    .replace(/\b\w/g, (c: string) => c.toUpperCase())) ||
+                (role || vendorRole)?.display_name ||
+                undefined,
+            }
+          : null;
+
+      const normalizeAdminCatalogCategory = (service: any) =>
+        resolveServiceCatalogCategoryDisplayWithRoleFallback(service, roleCategoryFallback);
 
       // If groupBy is 'category' or 'subcategory', group services hierarchically
       if (groupBy === 'category' || groupBy === 'subcategory') {
         const grouped: Record<string, any> = {};
         
         (services.rows || []).forEach((service: any) => {
-          const effectiveCategoryName = service.category_name?.trim() || defaultCategoryName;
-          const effectiveCategoryId = service.category_id?.trim() || defaultCategoryId;
-          // Ensure all service fields are safe; never use "Uncategorized"
+          const { category_id: effectiveCategoryId, category_name: effectiveCategoryName } =
+            normalizeAdminCatalogCategory(service);
+          // Ensure all service fields are safe; category label comes from category_id when name is blank
           const safeService = {
             ...service,
             id: String(service.id || service.service_id || ''),
@@ -1159,10 +1171,10 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         });
       }
 
-      // Ensure all service fields are safe; never return uncategorized (use role-based default)
+      // Ensure all service fields are safe; resolve category from category_id (not "General" default)
       const safeServices = (services.rows || []).map((service: any) => {
-        const effectiveCategoryName = service.category_name?.trim() || defaultCategoryName;
-        const effectiveCategoryId = service.category_id?.trim() || defaultCategoryId;
+        const { category_id: effectiveCategoryId, category_name: effectiveCategoryName } =
+          normalizeAdminCatalogCategory(service);
         return {
           ...service,
           id: String(service.id || service.service_id || ''),
