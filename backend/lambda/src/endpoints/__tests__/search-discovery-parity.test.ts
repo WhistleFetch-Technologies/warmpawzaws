@@ -33,6 +33,7 @@ import {
   buildDiscoveryVendorExistsSql,
   resolveDiscoveryCategoryKeys,
   sqlVendorServicesHubCategoryFilter,
+  sqlVetHubExcludeNonVetServices,
   vendorServicesHubCategoryBindParams,
 } from '../../lib/discovery-vendor-query';
 import type { DiscoveryRuleSet } from '../../lib/rule-engine';
@@ -423,6 +424,24 @@ describe('buildDiscoveryVendorExistsSql', () => {
     const walkSql = sqlVendorServicesHubCategoryFilter('walker', 'vs', 2, 3);
     expect(walkSql).toContain('dog%walk%');
     expect(sqlVendorServicesHubCategoryFilter('grooming', 'vs', 2, 3)).toBeNull();
+  });
+
+  it('sqlVetHubExcludeNonVetServices excludes grooming catalog without service_name matching', () => {
+    const sql = sqlVetHubExcludeNonVetServices('vs');
+    expect(sql).toContain("sc_vet_ex.category_id");
+    expect(sql).toContain("'grooming'");
+    expect(sql).toContain("LIKE 'groom_%'");
+    expect(sql).not.toContain('service_name');
+  });
+
+  it('buildDiscoveryVendorExistsSql appends vet grooming exclusion for vet hub', async () => {
+    const { sql } = await buildDiscoveryVendorExistsSql({
+      category: 'vet',
+      serviceStyle: 'at_center',
+      paramOffset: 1,
+    });
+    expect(sql).toContain("sc_vet_ex.category_id");
+    expect(sql).toContain("'grooming'");
   });
 });
 

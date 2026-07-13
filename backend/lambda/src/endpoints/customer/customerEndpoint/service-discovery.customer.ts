@@ -42,6 +42,8 @@ import {
   sqlVendorServiceDiscoverable,
   sqlVendorServicesHubCategoryFilter,
   vendorServicesHubCategoryBindParams,
+  sqlVetHubExcludeNonVetServices,
+  isVetHubCategoryRequest,
   TRAINING_HUB_ROLE_SQL_IN_LIST,
   BEHAVIOR_HUB_ROLE_SQL_IN_LIST,
   catTextRequestsBehaviorHub,
@@ -1537,6 +1539,8 @@ function mapVendorServiceRowForCustomerDiscoveryList(s: any): any {
     description: cleanDescription(s.description),
     category: s.category_name,
     categoryName: s.category_name,
+    catalogCategoryId: s.catalog_category_id ?? s.category_id ?? null,
+    catalogServiceId: s.catalog_service_id ?? null,
     serviceStyle: s.service_style || null,
     service_style: s.service_style || null,
     metadata,
@@ -4744,7 +4748,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           sc.service_name as catalog_name,
           sc.display_name as catalog_display_name,
           sc.description as catalog_description,
-          sc.specialization_ids as catalog_specialization_ids
+          sc.specialization_ids as catalog_specialization_ids,
+          sc.category_id as catalog_category_id,
+          sc.category_name as catalog_category_name,
+          sc.service_id as catalog_service_id,
+          COALESCE(sc.category_name, vs.category) as resolved_category
         FROM vendor_services vs
         LEFT JOIN services s ON vs.service_id = s.id
         LEFT JOIN service_catalog sc ON vs.service_id = sc.id
@@ -4783,6 +4791,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const likeP = queryParams.length;
           const hubSql = sqlVendorServicesHubCategoryFilter(category, 'vs', exactP, likeP);
           if (hubSql) servicesQuery += hubSql;
+          if (isVetHubCategoryRequest(category)) {
+            servicesQuery += sqlVetHubExcludeNonVetServices('vs');
+          }
         } else if (sittingBookingCategoryRequest) {
           queryParams.push(category);
           const catParam = queryParams.length;
@@ -4936,8 +4947,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           price,
           custom_price: row.custom_price != null ? parseFloat(row.custom_price) : undefined,
           duration,
-          category: row.category,
+          category: row.resolved_category || row.category,
+          categoryName: row.resolved_category || row.category,
           categorySlug: row.category,
+          catalogCategoryId: row.catalog_category_id ?? null,
+          catalogServiceId: row.catalog_service_id ?? null,
           serviceStyle: row.service_style || null, // Don't default to 'at_center' - use actual value from DB
           specializationIds,
           specialization_ids: specializationIds,
@@ -6808,6 +6822,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
         : '';
 
+      const vetExcludeNonVetSqlByStyle = isVetCategoryDiscoveryByStyle
+        ? sqlVetHubExcludeNonVetServices('vs')
+        : '';
+
       // ────────────────────────────────────────────────────────
       // 3. SCOPED HELPERS
       // ────────────────────────────────────────────────────────
@@ -6881,6 +6899,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ? ''
             : strictCustomDiscoverySql;
 
+        const vetExcludeForFetchByStyle = isVetCategoryDiscoveryByStyle
+          ? sqlVetHubExcludeNonVetServices('vs')
+          : '';
+
         const sql = `
           SELECT vs.id, vs.service_id, vs.service_name, vs.price,
                   vs.custom_price,
@@ -6891,19 +6913,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                   COALESCE(vs.custom_duration, vs.duration_minutes) AS duration,
                   COALESCE(
                     vs.custom_description,
-                    (SELECT sc.description FROM service_catalog sc
-                     WHERE sc.service_name = vs.service_name
-                       AND sc.service_style = vs.service_style LIMIT 1),
+                    sc.description,
+                    (SELECT sc2.description FROM service_catalog sc2
+                     WHERE sc2.service_name = vs.service_name
+                       AND sc2.service_style = vs.service_style LIMIT 1),
                     s.description
                   ) AS description,
-                  vs.category AS category_name
+                  COALESCE(sc.category_name, vs.category) AS category_name,
+                  sc.category_id AS catalog_category_id,
+                  sc.service_id AS catalog_service_id
            FROM vendor_services vs
            LEFT JOIN services s ON vs.service_id = s.id
+           LEFT JOIN service_catalog sc ON vs.service_id = sc.id
            WHERE vs.vendor_id = $1
              AND vs.service_style = ANY($2::text[])
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
             ${categoryFilterSql}
             ${strictCustomSqlForFetch}
+            ${vetExcludeForFetchByStyle}
              AND ${sqlVendorServiceDiscoverable('vs', false)}
           ORDER BY vs.price ASC
         `;
@@ -7100,6 +7127,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${boardingCustomCategoryIdOrByStyleSql}
               )` : ``}
               ${strictCustomDiscoverySql}
+              ${vetExcludeNonVetSqlByStyle}
           )
           ${trainingDiscoverySearchByStyle || behaviorHubDiscoverySearchByStyle ? '' : `AND ${sqlVendorAvailabilityOrNotConfigured('v')}`}
         ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT ${maxResults}

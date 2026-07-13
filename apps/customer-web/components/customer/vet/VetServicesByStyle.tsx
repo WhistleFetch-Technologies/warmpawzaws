@@ -15,6 +15,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
+import { filterProvidersServicesForVetHub } from '@/lib/filter-hub-services';
 import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
@@ -158,7 +159,7 @@ export function VetServicesByStyle({
         }
         
         // Set providers from primary endpoint
-          setProviders(providerData);
+          setProviders(filterProvidersServicesForVetHub(providerData));
           console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
       } else {
         console.warn(`⚠️ [Vet] Primary endpoint returned success=false or no providers`);
