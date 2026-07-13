@@ -13,6 +13,7 @@ import { PetStripSection } from './sections/PetStripSection';
 import { HomeHeaderShell } from './shared/HomeHeaderShell';
 import { SearchFilterSection } from './sections/SearchFilterSection';
 import type { SearchFilterSectionProps } from './sections/SearchFilterSection';
+import { PremiumServiceCardsSection } from './sections/PremiumServiceCardsSection';
 import { ServiceCategoryRow } from './sections/ServiceCategoryRow';
 import { HeroBannerSection } from './sections/HeroBannerSection';
 import { TrustFeatureBar } from './sections/TrustFeatureBar';
@@ -181,6 +182,12 @@ function CustomerHomePageContentComponent({
         onSearch={onSearch}
         onResultSelect={onSearchResultSelect}
       />
+      <PremiumServiceCardsSection
+        phone={phone}
+        customerCommerceEnabled={customerCommerceEnabled}
+        onNavigate={onNavigate}
+        reviewDemoAccount={reviewDemoAccount}
+      />
       <ServiceCategoryRow
         services={services}
         onNavigate={onNavigate}
@@ -267,6 +274,7 @@ export const CustomerHomePageContent = memo(CustomerHomePageContentComponent);
 export { HomeHeaderSection } from './sections/HomeHeaderSection';
 export { PetStripSection } from './sections/PetStripSection';
 export { SearchFilterSection } from './sections/SearchFilterSection';
+export { PremiumServiceCardsSection } from './sections/PremiumServiceCardsSection';
 export { ServiceCategoryRow } from './sections/ServiceCategoryRow';
 export { HeroBannerSection } from './sections/HeroBannerSection';
 export { TrustFeatureBar } from './sections/TrustFeatureBar';

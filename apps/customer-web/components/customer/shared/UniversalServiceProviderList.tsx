@@ -436,11 +436,11 @@ function ProviderCard({ provider, serviceStyle, showPriceDisclaimer = false, isP
           <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
             <VendorRatingDisplay
               row={{
-                vendorId: provider.vendorId ?? provider.id,
+                vendorId: provider.vendorId ?? provider.providerId,
                 vendorRating: provider.rating,
                 vendorReviewCount: provider.reviewCount,
               }}
-              vendorId={String(provider.vendorId ?? provider.id ?? '')}
+              vendorId={String(provider.vendorId ?? provider.providerId ?? '')}
               starsClassName="w-3 h-3"
               textClassName="text-xs text-gray-500"
             />
@@ -1018,7 +1018,7 @@ export function UniversalServiceProviderList({
                             name: provider.name,
                             businessName: provider.businessName,
                             photo: provider.photo,
-                            rating: provider.rating,
+                            rating: provider.rating ?? 0,
                             reviewCount: provider.reviewCount,
                             specialization: provider.specialization,
                             isVerified: provider.isVerified,

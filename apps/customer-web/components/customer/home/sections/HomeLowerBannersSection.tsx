@@ -69,7 +69,7 @@ function HomeLowerBannersSectionComponent({
           >
             {hasImage ? (
               <>
-                <LowerBannerBackground src={banner.imageUrl} alt={banner.title} />
+                <LowerBannerBackground src={banner.imageUrl ?? ''} alt={banner.title} />
                 <div
                   className="absolute inset-0"
                   style={{

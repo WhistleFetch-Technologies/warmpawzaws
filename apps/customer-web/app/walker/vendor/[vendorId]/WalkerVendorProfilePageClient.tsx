@@ -93,7 +93,7 @@ function WalkerVendorProfileContent({ vendorId }: { vendorId: string }) {
               serviceName: service.name,
               price: service.price,
               duration: service.duration,
-              walker: pkgNav.walker,
+              walker: pkgNav.walker as Record<string, unknown> | undefined,
             });
             return;
           }

@@ -1078,7 +1078,7 @@ export function TeleConsultationRouter({
         selectedProvider: null,
         selectedInstantVendorId: selectedInstantVendor.vendorId,
         selectedServiceId: selectedService.serviceId,
-        selectedPet: selectedPet as Record<string, unknown>,
+        selectedPet: selectedPet as unknown as Record<string, unknown>,
       });
       onNavigate('payment', paymentData);
     } else {
@@ -1105,7 +1105,7 @@ export function TeleConsultationRouter({
         selectedProvider: null,
         selectedInstantVendorId: selectedInstantVendor.vendorId,
         selectedServiceId: selectedService.serviceId,
-        selectedPet: selectedPet as Record<string, unknown>,
+        selectedPet: selectedPet as unknown as Record<string, unknown>,
       });
       onNavigate('payment', {
         flowType: 'tele-queue-accepted',

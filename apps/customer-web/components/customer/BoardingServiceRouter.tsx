@@ -106,7 +106,7 @@ interface BoardingServiceRouterProps {
 }
 
 const BOARDING_CARD_LINKS: {
-  slug: BoardingServiceSlug;
+  slug: Exclude<BoardingServiceSlug, 'all'>;
   title: string;
   subtitle: string;
   Icon: LucideIcon;

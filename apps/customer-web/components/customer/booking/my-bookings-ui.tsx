@@ -1,6 +1,7 @@
 'use client';
 
-import type { LucideIcon, MouseEvent, ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { ChevronRight, LayoutGrid, Clock, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/components/ui/utils';
 

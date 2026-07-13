@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { X, MapPin, Home, Briefcase, MoreHorizontal, Search, ChevronRight } from 'lucide-react';
+import { X, MapPin, Home, Briefcase, MoreHorizontal, Search, ChevronRight, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';

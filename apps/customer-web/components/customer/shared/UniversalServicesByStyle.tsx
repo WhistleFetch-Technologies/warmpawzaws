@@ -82,6 +82,7 @@ interface Provider {
   isIndividualProvider?: boolean;
   nextAvailableSlot?: string;
   specialization?: string;
+  amenities?: string[];
   services: {
     id: string;
     serviceId: string;
@@ -808,7 +809,7 @@ export function UniversalServicesByStyle({
   const handleShare = async () => {
     const shareVendorId =
       vendorId ||
-      pickCustomerVendorAccountId(profileProvider ?? {}) ||
+      pickCustomerVendorAccountId((profileProvider ?? {}) as unknown as Record<string, unknown>) ||
       profileProvider?.vendorId ||
       profileProvider?.providerId;
     if (!shareVendorId) return;
@@ -865,7 +866,7 @@ export function UniversalServicesByStyle({
           : config.styleDescriptions.at_center;
 
     const profileVendorId = String(
-      vendorId ?? profileProvider.id ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
+      vendorId ?? profileProvider.providerId ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
     ).trim();
     const profileReviewTotal = normalizeRatingCount(
       rating?.totalReviews ?? profileProvider.reviewCount

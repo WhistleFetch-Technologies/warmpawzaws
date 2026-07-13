@@ -1,0 +1,103 @@
+﻿node.exe : npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm 
+help npmrc` for supported config options.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (npm warn Unknow...config options.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+app/track/[orderId]/TrackingPageClient.tsx(266,51): error TS2339: Property 'reassignPending' does not exist on type '{ awb?: string | undefined; courier?: string | undefined; status: string; currentLocation?: string | { lat: number; lng: number; } | undefined; estimatedDelivery?: string | undefined; trackingUrl?: string | undefined; ... 12 more ...; locationHistory?: { ...; }[] | undefined; }'.
+app/track/[orderId]/TrackingPageClient.tsx(446,34): error TS2339: Property 'lastLocationUpdate' does not exist on type '{ awb?: string | undefined; courier?: string | undefined; status: string; currentLocation?: string | { lat: number; lng: number; } | undefined; estimatedDelivery?: string | undefined; trackingUrl?: string | undefined; ... 12 more ...; locationHistory?: { ...; }[] | undefined; }'.
+components/customer/CustomerShopOrdersScreen.tsx(231,5): error TS2322: Type 'OrderTrackingInfo | null' is not assignable to type '{ carrierName?: string | undefined; trackingNumber?: string | undefined; trackingUrl?: string | null | undefined; } | undefined'.
+  Type 'null' is not assignable to type '{ carrierName?: string | undefined; trackingNumber?: string | undefined; trackingUrl?: string | null | undefined; } | undefined'.
+components/customer/CustomerShopOrdersScreen.tsx(874,70): error TS2345: Argument of type '"pending" | "delivered" | "confirmed" | "cancelled" | "processing" | "returned" | "out_for_delivery" | "pending_payment" | "shipped"' is not assignable to parameter of type '"pending" | "delivered" | "confirmed" | "processing" | "out_for_delivery" | "shipped"'.
+  Type '"cancelled"' is not assignable to type '"pending" | "delivered" | "confirmed" | "processing" | "out_for_delivery" | "shipped"'.
+components/customer/CustomerWallet.tsx(414,17): error TS18047: 'wallet' is possibly 'null'.
+components/customer/DiagnosticsServicesLanding.tsx(84,46): error TS18048: 'c.rating' is possibly 'undefined'.
+components/customer/EnhancedAddPetModal.tsx(464,48): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+components/customer/EnhancedWalletPage.tsx(421,20): error TS18047: 'wallet' is possibly 'null'.
+components/customer/EnhancedWalletPage.tsx(435,21): error TS18047: 'wallet' is possibly 'null'.
+components/customer/home-services/HomeServiceLanding.tsx(454,53): error TS2339: Property 'reviewCount' does not exist on type 'PreviousProvider'.
+components/customer/home/hooks/useForYouRecommendations.ts(53,59): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+components/customer/home/sections/OffersForYouSection.tsx(163,15): error TS2352: Conversion of type 'SpotlightPromotion' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'SpotlightPromotion'.
+components/customer/home/shared/__tests__/ViewportSection.test.ts(54,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ placeholderMinHeight: number; }' is not assignable to parameter of type 'Attributes & ViewportSectionProps'.
+      Property 'children' is missing in type '{ placeholderMinHeight: number; }' but required in type 'ViewportSectionProps'.
+components/customer/homepage/CustomerHomeComplete.tsx(1168,28): error TS2345: Argument of type 'any[] | undefined' is not assignable to parameter of type 'SetStateAction<any[]>'.
+  Type 'undefined' is not assignable to type 'SetStateAction<any[]>'.
+components/customer/homepage/CustomerHomeComplete.tsx(1179,33): error TS2345: Argument of type 'any[] | undefined' is not assignable to parameter of type 'SetStateAction<any[]>'.
+  Type 'undefined' is not assignable to type 'SetStateAction<any[]>'.
+components/customer/homepage/CustomerHomeComplete.tsx(2609,52): error TS2345: Argument of type 'HomeCarouselBanner' is not assignable to parameter of type '{ ctaLink?: string | undefined; title?: string | undefined; subtitle?: string | undefined; metadata?: unknown; isInformational?: boolean | undefined; navTarget?: { kind: string; screen?: string | undefined; path?: string | undefined; data?: Record<...> | undefined; } | undefined; }'.
+  Types of property 'navTarget' are incompatible.
+    Type 'BannerNavTarget | null | undefined' is not assignable to type '{ kind: string; screen?: string | undefined; path?: string | undefined; data?: Record<string, unknown> | undefined; } | undefined'.
+      Type 'null' is not assignable to type '{ kind: string; screen?: string | undefined; path?: string | undefined; data?: Record<string, unknown> | undefined; } | undefined'.
+components/customer/my-orders-ui.tsx(269,11): error TS2322: Type 'RefObject<HTMLButtonElement | null> | undefined' is not assignable to type 'LegacyRef<HTMLButtonElement> | undefined'.
+  Type 'RefObject<HTMLButtonElement | null>' is not assignable to type 'LegacyRef<HTMLButtonElement> | undefined'.
+    Type 'RefObject<HTMLButtonElement | null>' is not assignable to type 'RefObject<HTMLButtonElement>'.
+      Type 'HTMLButtonElement | null' is not assignable to type 'HTMLButtonElement'.
+        Type 'null' is not assignable to type 'HTMLButtonElement'.
+components/customer/nutrition/MealOrderCheckout.tsx(346,46): error TS2339: Property 'foodGstPct' does not exist on type '{}'.
+components/customer/nutrition/MealOrderCheckout.tsx(346,72): error TS2339: Property 'foodGstPct' does not exist on type '{}'.
+components/customer/nutrition/MealOrderCheckout.tsx(347,50): error TS2339: Property 'deliveryGstPct' does not exist on type '{}'.
+components/customer/nutrition/MealOrderCheckout.tsx(347,80): error TS2339: Property 'deliveryGstPct' does not exist on type '{}'.
+components/customer/nutrition/MealOrderCheckout.tsx(349,13): error TS2339: Property 'catalogCategoryId' does not exist on type '{}'.
+components/customer/nutrition/MealOrderCheckout.tsx(349,52): error TS2339: Property 'catalogCategoryId' does not exist on type '{}'.
+components/customer/nutrition/NutritionistBookingRouter.tsx(788,69): error TS2339: Property 'serviceId' does not exist on type '{ id: string; name: string; icon: ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>; price: number; duration: number; desc: string; color: string; } | { ...; }'.
+  Property 'serviceId' does not exist on type '{ id: string; name: string; icon: ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>; price: number; duration: number; desc: string; color: string; }'.
+components/customer/nutrition/NutritionistBookingRouter.tsx(1014,54): error TS2367: This comparison appears to be unintentional because the types '"at_center"' and '"home"' have no overlap.
+components/customer/nutrition/NutritionistBookingRouter.tsx(1026,52): error TS2367: This comparison appears to be unintentional because the types '"at_center"' and '"home"' have no overlap.
+components/customer/nutrition/NutritionistBookingRouter.tsx(1035,54): error TS2367: This comparison appears to be unintentional because the types '"at_center"' and '"home"' have no overlap.
+components/customer/PharmacyCheckout.tsx(342,21): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+components/customer/PrescriptionHistoryModal.tsx(130,3): error TS2739: Type '{ recordType: "prescription" | "uploaded"; }' is missing the following properties from type 'Prescription': id, created_at
+components/customer/shared/AddAddressModal.tsx(527,18): error TS2304: Cannot find name 'Loader2'.
+components/customer/shared/FeaturedProviderCard.tsx(69,34): error TS2339: Property 'vendorId' does not exist on type 'FeaturedProvider'.
+components/customer/shared/FeaturedProviderCard.tsx(73,39): error TS2339: Property 'vendorId' does not exist on type 'FeaturedProvider'.
+components/customer/shared/PromotionBanner.tsx(166,13): error TS2352: Conversion of type 'Promotion' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'Promotion'.
+components/customer/tracking/OrderTrackingScreen.tsx(747,14): error TS2367: This comparison appears to be unintentional because the types '"pharmacy"' and '"meal"' have no overlap.
+components/customer/tracking/OrderTrackingScreen.tsx(755,17): error TS2367: This comparison appears to be unintentional because the types '"pharmacy"' and '"meal"' have no overlap.
+components/customer/tracking/OrderTrackingScreen.tsx(770,27): error TS2367: This comparison appears to be unintentional because the types '"pharmacy"' and '"meal"' have no overlap.
+components/customer/training/TrainingBookingRouter.tsx(612,20): error TS2339: Property 'serviceId' does not exist on type '{ id: string; name: string; icon: ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>; price: number; duration: number; desc: string; color: string; } | { ...; }'.
+  Property 'serviceId' does not exist on type '{ id: string; name: string; icon: ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>; price: number; duration: number; desc: string; color: string; }'.
+components/customer/vet/ClinicListView.tsx(154,5): error TS2322: Type '{} | undefined' is not assignable to type 'string | undefined'.
+  Type '{}' is not assignable to type 'string'.
+components/customer/vet/TeleConsultationRouter.tsx(1081,22): error TS2352: Conversion of type 'Pet' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'Pet'.
+components/customer/vet/TeleConsultationRouter.tsx(1108,22): error TS2352: Conversion of type 'Pet' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'Pet'.
+components/customer/vet/VetBookingRouter.tsx(394,20): error TS2339: Property 'serviceId' does not exist on type '{ id: any; serviceId: any; vendorServiceId: any; name: any; price: any; duration: any; desc: any; serviceStyle: string; icon: ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>; color: string; isPackage: boolean; } | { ...; }'.
+  Property 'serviceId' does not exist on type '{ id: any; name: any; price: any; duration: any; desc: any; icon: ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>; color: string; }'.
+components/PushSessionRegistrar.tsx(77,5): error TS2322: Type 'number' is not assignable to type 'Timeout'.
+lib/address-from-geolocation.ts(282,51): error TS2345: Argument of type 'Position' is not assignable to parameter of type '{ timestamp: number; coords: { latitude: number; longitude: number; accuracy: number; altitude: number | null; altitudeAccuracy: number | null; heading: number | null; speed: number | null; }; }'.
+  The types of 'coords.altitudeAccuracy' are incompatible between these types.
+    Type 'number | null | undefined' is not assignable to type 'number | null'.
+      Type 'undefined' is not assignable to type 'number | null'.
+lib/clinic-service-row-mapper.ts(84,5): error TS2322: Type '{} | undefined' is not assignable to type 'string | undefined'.
+  Type '{}' is not assignable to type 'string'.
+lib/clinic-service-row-mapper.ts(86,5): error TS2322: Type '{}' is not assignable to type 'string | number'.
+lib/home-session-cache.ts(74,49): error TS2339: Property 'isComingSoon' does not exist on type 'Record<string, unknown> | { icon: ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>; label: string; color: string; screen: string; categoryId: string; }'.
+  Property 'isComingSoon' does not exist on type '{ icon: ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>; label: string; color: string; screen: string; categoryId: string; }'.
+lib/meal-refund-review.ts(51,47): error TS18048: 'recommendedAmount' is possibly 'undefined'.
+lib/navigation/__tests__/boarding-vendor-booking-utils.test.ts(19,5): error TS2322: Type 'null' is not assignable to type 'string | undefined'.
+lib/navigation/__tests__/boarding-vendor-booking-utils.test.ts(39,5): error TS2353: Object literal may only specify known properties, and 'rawRow' does not exist in type 'BoardingPlanRow'.
+lib/navigation/__tests__/wizard-session-state.test.ts(46,44): error TS2353: Object literal may only specify known properties, and 'price' does not exist in type '{ id?: string | undefined; serviceId?: string | undefined; service_id?: string | undefined; }'.
+lib/navigation/__tests__/wizard-session-state.test.ts(47,44): error TS2353: Object literal may only specify known properties, and 'price' does not exist in type '{ id?: string | undefined; serviceId?: string | undefined; service_id?: string | undefined; }'.
+lib/product-sku-client.ts(286,7): error TS2345: Argument of type '{ type: string; option_key?: string | undefined; }[]' is not assignable to parameter of type '{ type: string; name: string; option_key?: string | undefined; }[]'.
+  Property 'name' is missing in type '{ type: string; option_key?: string | undefined; }' but required in type '{ type: string; name: string; option_key?: string | undefined; }'.
+lib/push-bootstrap.ts(615,18): error TS2322: Type 'PushNotificationsPlugin' is not assignable to type '{ checkPermissions: () => Promise<{ receive: string; }>; requestPermissions: () => Promise<{ receive: string; }>; register: () => Promise<void>; addListener: (event: string, handler: (payload: unknown) => void) => Promise<...>; removeAllListeners: () => Promise<...>; }'.
+  Types of property 'addListener' are incompatible.
+    Type '{ (eventName: "registration", listenerFunc: (token: Token) => void): Promise<PluginListenerHandle>; (eventName: "registrationError", listenerFunc: (error: RegistrationError) => void): Promise<...>; (eventName: "pushNotificationReceived", listenerFunc: (notification: PushNotificationSchema) => void): Promise<...>; (e...' is not assignable to type '(event: string, handler: (payload: unknown) => void) => Promise<{ remove: () => void | Promise<void>; }>'.
+      Types of parameters 'eventName' and 'event' are incompatible.
+        Type 'string' is not assignable to type '"registration"'.
+lib/push-bootstrap.ts(842,11): error TS2322: Type '{ remove: () => void | Promise<void>; }' is not assignable to type '{ remove: () => Promise<void>; }'.
+  The types returned by 'remove()' are incompatible between these types.
+    Type 'void | Promise<void>' is not assignable to type 'Promise<void>'.
+      Type 'void' is not assignable to type 'Promise<void>'.
+lib/push-bootstrap.ts(847,11): error TS2322: Type '{ remove: () => void | Promise<void>; }' is not assignable to type '{ remove: () => Promise<void>; }'.
+  The types returned by 'remove()' are incompatible between these types.
+    Type 'void | Promise<void>' is not assignable to type 'Promise<void>'.
+      Type 'void' is not assignable to type 'Promise<void>'.

@@ -76,6 +76,7 @@ interface PreviousProvider {
   name: string;
   photo: string;
   rating: number;
+  reviewCount?: number;
   lastVisit: string;
 }
 

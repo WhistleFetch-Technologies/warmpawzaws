@@ -53,6 +53,8 @@ interface DeliveryPerson {
 
 interface TrackingData {
   status: string;
+  reassignPending?: boolean;
+  lastLocationUpdate?: string;
   deliveryOtp?: string | null;
   deliveredAt?: string | null;
   currentLat?: number;
@@ -318,12 +320,12 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
       order.total_amount ?? order.totalAmount ?? order.total ?? order.amount;
     const deliveredAtLabel = resolveDeliveredAt(order, tracking);
     const deliveryAddressText = formatMealOrderDeliveryAddress(order as Record<string, unknown>);
-    const riderCoords = extractRiderCoordinates(tracking as Record<string, unknown>);
+    const riderCoords = extractRiderCoordinates(tracking as unknown as Record<string, unknown>);
     const destination = extractDestinationCoordinates(
       order as Record<string, unknown>,
       deliveryAddressText,
     );
-    const riderPhoto = resolveRiderPhoto(tracking as Record<string, unknown>);
+    const riderPhoto = resolveRiderPhoto(tracking as unknown as Record<string, unknown>);
     const refundReview = parseMealRefundReview(order.refundReview);
     const openMealOrderHelp = () => {
       const ctx = buildSupportMealOrderContext(order as Record<string, unknown>);
@@ -742,7 +744,7 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
             <p className="text-sm text-white/80 mb-4">
               Delivered at {order.delivered_at ? new Date(order.delivered_at).toLocaleTimeString('en-IN') : 'N/A'}
             </p>
-            {orderType === 'meal' && !order.rating && !reviewSubmitted ? (
+            {!order.rating && !reviewSubmitted ? (
               <button
                 onClick={() => setShowReviewModal(true)}
                 className="bg-white text-green-600 px-6 py-2 rounded-full font-medium flex items-center gap-2 mx-auto"
@@ -750,7 +752,7 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
                 <Star className="w-4 h-4" />
                 Rate Your Experience
               </button>
-            ) : (orderType === 'meal' && (order.rating || reviewSubmitted)) ? (
+            ) : (order.rating || reviewSubmitted) ? (
               <p className="text-sm text-white/90 flex items-center justify-center gap-1">
                 <Star className="w-4 h-4 fill-current" /> Thank you for your review!
               </p>
@@ -765,7 +767,7 @@ export function OrderTrackingScreen({ orderId, orderType, onBack, onNeedHelp }: 
       )}
 
       {/* Review modal (meal orders only) */}
-      {showReviewModal && orderType === 'meal' && (
+      {showReviewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
             <div className="flex justify-between items-center mb-4">

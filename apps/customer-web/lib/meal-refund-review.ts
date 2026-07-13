@@ -48,7 +48,9 @@ export function parseMealRefundReview(raw: unknown): MealRefundReviewMetadata | 
   return {
     status,
     message,
-    ...(Number.isFinite(recommendedAmount) && recommendedAmount > 0
+    ...(recommendedAmount != null &&
+    Number.isFinite(recommendedAmount) &&
+    recommendedAmount > 0
       ? { recommendedAmount }
       : {}),
     ...(createdAt ? { createdAt } : {}),

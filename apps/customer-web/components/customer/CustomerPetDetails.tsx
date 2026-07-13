@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Calendar, AlertCircle, Scale, User, Shield, Heart } from 'lucide-react';
+import { Calendar, AlertCircle, Scale, User, Shield, Heart, ChevronRight } from 'lucide-react';
+import { fetchPetById } from '@/lib/fetch-customer-pet';
 import { apiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/error-handling';
 import { breedsForSpecies } from '@/lib/pet-breeds';

@@ -394,7 +394,11 @@ export function mapWalkerApiRowToOption(
     typeof stRaw === 'string' && stRaw.trim()
       ? String(stRaw).trim()
       : bookingServiceStyle;
-  const totalSessions = pd?.totalSessions ?? metaObj?.totalSessions;
+  const totalSessionsRaw = pd?.totalSessions ?? metaObj?.totalSessions;
+  const totalSessions =
+    typeof totalSessionsRaw === 'number' && Number.isFinite(totalSessionsRaw)
+      ? totalSessionsRaw
+      : null;
   const sessionsPerDay = Math.max(
     1,
     Math.min(

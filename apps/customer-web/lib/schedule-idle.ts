@@ -7,10 +7,12 @@ export function scheduleIdleWork(fn: () => void, timeoutMs = 2500): () => void {
   const run = () => {
     if (!cancelled) fn();
   };
-  const handle =
-    'requestIdleCallback' in window
-      ? window.requestIdleCallback(run, { timeout: timeoutMs })
-      : window.setTimeout(run, 0);
+  let handle: ReturnType<typeof globalThis.setTimeout> | number;
+  if ('requestIdleCallback' in window) {
+    handle = window.requestIdleCallback(run, { timeout: timeoutMs });
+  } else {
+    handle = globalThis.setTimeout(run, 0);
+  }
   return () => {
     cancelled = true;
     if ('cancelIdleCallback' in window && typeof handle === 'number') {
