@@ -1,10 +1,22 @@
 'use client';
 
-import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  forwardRef,
+  useImperativeHandle,
+  useDeferredValue,
+  useMemo,
+} from 'react';
 import { Package, AlertTriangle, TrendingDown, ArrowUp, ArrowDown, Search, Save, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { IntegerInput } from '@/components/shared/IntegerInput';
+import { Button } from '@/components/ui/button';
+import { useVendorProductList } from '@/hooks/useVendorProductList';
+import { VENDOR_PRODUCT_PAGE_SIZE } from '@/lib/vendor-product-list-query';
+import { paginationShowingLabel } from '@/lib/vendor-schedule-bookings';
 
 /** Products below this threshold (but above 0) are flagged as low stock. */
 const LOW_STOCK_THRESHOLD = 10;
@@ -58,12 +70,71 @@ function resolveSelectedSkuId(product: { id: string; skus?: InventorySku[] }, se
 
 export const InventoryManagement = forwardRef<InventoryManagementHandle, InventoryManagementProps>(
   function InventoryManagement({ sellerId }, ref) {
-  const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
+  const [pageIndex, setPageIndex] = useState(0);
   const [selectedSkuByProduct, setSelectedSkuByProduct] = useState<Record<string, string>>({});
+  const [lowStockCount, setLowStockCount] = useState(0);
+
+  const deferredSearch = useDeferredValue(searchQuery.trim());
+
+  const {
+    products,
+    total,
+    loading,
+    refresh,
+    pageSize,
+  } = useVendorProductList({
+    sellerId,
+    mode: 'paged',
+    pageIndex,
+    search: deferredSearch,
+    enabled: Boolean(sellerId),
+  });
+
+  const loadLowStockCount = useCallback(async () => {
+    if (!sellerId) {
+      setLowStockCount(0);
+      return;
+    }
+    try {
+      const data = await apiClient.get<{ count?: number }>(
+        `/vendor/${sellerId}/products/low-stock?threshold=${LOW_STOCK_THRESHOLD}`,
+      );
+      setLowStockCount(Number(data?.count ?? 0));
+    } catch (error) {
+      console.error('Error loading low stock count:', error);
+      setLowStockCount(0);
+    }
+  }, [sellerId]);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([refresh(), loadLowStockCount()]);
+  }, [refresh, loadLowStockCount]);
+
+  useImperativeHandle(ref, () => ({ refresh: refreshAll }), [refreshAll]);
+
+  useEffect(() => {
+    void loadLowStockCount();
+  }, [loadLowStockCount]);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [deferredSearch, filter, sellerId]);
+
+  useEffect(() => {
+    const defaults: Record<string, string> = {};
+    for (const p of products) {
+      if (productHasVariants(p) && p.skus?.length) {
+        const firstId = (p.skus as InventorySku[])[0]?.id;
+        if (firstId) defaults[p.id] = String(firstId);
+      }
+    }
+    if (Object.keys(defaults).length > 0) {
+      setSelectedSkuByProduct((prev) => ({ ...defaults, ...prev }));
+    }
+  }, [products]);
 
   /**
    * Pending unsaved stock changes.
@@ -73,34 +144,6 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
    */
   const [pendingChanges, setPendingChanges] = useState<Record<string, number>>({});
   const isDirty = Object.keys(pendingChanges).length > 0;
-
-  const loadInventory = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await apiClient.get<{ products?: any[] }>(`/vendor/${sellerId}/products`);
-      const list = data?.products || [];
-      setProducts(list);
-      const defaults: Record<string, string> = {};
-      for (const p of list) {
-        if (productHasVariants(p) && p.skus?.length) {
-          const firstId = p.skus[0]?.id;
-          if (firstId) defaults[p.id] = String(firstId);
-        }
-      }
-      setSelectedSkuByProduct((prev) => ({ ...defaults, ...prev }));
-    } catch (error) {
-      console.error('Error loading inventory:', error);
-      setProducts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [sellerId]);
-
-  useImperativeHandle(ref, () => ({ refresh: () => loadInventory() }), [loadInventory]);
-
-  useEffect(() => {
-    void loadInventory();
-  }, [loadInventory]);
 
   /** Stage a stock change locally — no API call yet. */
   const stageChange = (key: string, newStock: number) => {
@@ -133,7 +176,7 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
         }),
       );
       setPendingChanges({});
-      await loadInventory();
+      await refreshAll();
       toast.success('Stock updated successfully');
     } catch (error) {
       console.error('Error saving stock changes:', error);
@@ -153,26 +196,28 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
   const isOutOfStock = (p: any) => (p.stock ?? p.stock_quantity ?? 0) === 0;
   const isHealthy = (p: any) => (p.stock ?? p.stock_quantity ?? 0) > (p.min_stock || p.minStock || LOW_STOCK_THRESHOLD);
 
-  const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name?.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredProducts = products.filter((product) => {
     const matchesFilter =
       filter === 'all' ? true :
       filter === 'low' ? isLowStock(product) :
       filter === 'out' ? isOutOfStock(product) :
       filter === 'good' ? isHealthy(product) : true;
-    return matchesSearch && matchesFilter;
+    return matchesFilter;
   });
 
-  const stats = {
-    total: products.length,
-    lowStock: products.filter(isLowStock).length,
-    outOfStock: products.filter(isOutOfStock).length,
-    healthy: products.filter(isHealthy).length,
-  };
+  const pageStats = useMemo(
+    () => ({
+      healthy: products.filter(isHealthy).length,
+      outOfStock: products.filter(isOutOfStock).length,
+    }),
+    [products],
+  );
 
   const anyHasVariants = products.some(productHasVariants);
+  const hasPagination = total > pageSize || pageIndex > 0;
+  const hasMorePages = (pageIndex + 1) * pageSize < total;
 
-  if (loading) {
+  if (loading && products.length === 0) {
     return (
       <div className="flex items-center justify-center h-full min-h-[400px]">
         <div className="text-center">
@@ -194,7 +239,7 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
             </div>
             <div>
               <p className="text-sm text-slate-500">Total Products</p>
-              <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
+              <p className="text-2xl font-bold text-slate-900">{total}</p>
             </div>
           </div>
         </div>
@@ -205,7 +250,8 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
             </div>
             <div>
               <p className="text-sm text-slate-500">Healthy Stock</p>
-              <p className="text-2xl font-bold text-emerald-600">{stats.healthy}</p>
+              <p className="text-2xl font-bold text-emerald-600">{pageStats.healthy}</p>
+              <p className="text-xs text-slate-400 mt-0.5">On this page</p>
             </div>
           </div>
         </div>
@@ -216,7 +262,7 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
             </div>
             <div>
               <p className="text-sm text-slate-500">Low Stock</p>
-              <p className="text-2xl font-bold text-amber-600">{stats.lowStock}</p>
+              <p className="text-2xl font-bold text-amber-600">{lowStockCount}</p>
             </div>
           </div>
         </div>
@@ -227,7 +273,8 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
             </div>
             <div>
               <p className="text-sm text-slate-500">Out of Stock</p>
-              <p className="text-2xl font-bold text-red-600">{stats.outOfStock}</p>
+              <p className="text-2xl font-bold text-red-600">{pageStats.outOfStock}</p>
+              <p className="text-xs text-slate-400 mt-0.5">On this page</p>
             </div>
           </div>
         </div>
@@ -458,6 +505,36 @@ export const InventoryManagement = forwardRef<InventoryManagementHandle, Invento
             )}
           </tbody>
         </table>
+
+        {hasPagination && (
+          <div className="px-4 py-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <p className="text-xs text-slate-500">
+              {paginationShowingLabel(total, pageIndex * VENDOR_PRODUCT_PAGE_SIZE, products.length)}
+            </p>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1 sm:flex-none"
+                disabled={pageIndex === 0 || loading}
+                onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+              >
+                Previous
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1 sm:flex-none"
+                disabled={!hasMorePages || loading}
+                onClick={() => setPageIndex((p) => p + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
