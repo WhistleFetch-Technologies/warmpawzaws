@@ -41,7 +41,8 @@ import type { ShopProduct } from '@/components/shop/shop-types';
 import {
   formatSelectedVariations,
   shopProductToCartItem,
-  computeCartMrpTotal,
+  allocateLinePromotionDiscount,
+  cartLineMrpTotal,
 } from '@/lib/ecommerce/cart-product-helpers';
 import type { CheckoutAddress } from '@/components/customer/ecommerce/useEcommerceCheckout';
 import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
@@ -123,7 +124,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     });
   }, [cart, itemCount, sellerPromotionPricing]);
 
-  const mrpTotal = useMemo(() => computeCartMrpTotal(cart), [cart]);
+
   const undeliverableItems = useMemo(
     () => findUndeliverableCartItems(cart, selectedAddress?.city),
     [cart, selectedAddress?.city],
@@ -277,7 +278,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                 label: promo?.label ?? autoPromo?.label,
                 code: promo?.code,
                 promotionId: promo?.promotionId ?? autoPromo?.promotionId,
-                source: promo ? promo.source : 'vendor',
+                source: promo ? promo.source : (autoPromo?.source ?? 'vendor'),
               }
             : undefined,
       });
@@ -453,8 +454,15 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             <section className="space-y-3">
               {cart.map((item) => {
                 const variantLabel = formatSelectedVariations(item.selectedVariations);
-                const showMrp =
-                  item.originalPrice != null && item.originalPrice > item.price;
+                const lineMrp = cartLineMrpTotal(item);
+                const lineDiscount = allocateLinePromotionDiscount(
+                  lineMrp,
+                  pricing.lineSubtotal,
+                  pricing.discount,
+                );
+                const linePayable = Math.max(0, lineMrp - lineDiscount);
+                const unitMrp = item.originalPrice ?? item.price;
+                const hasPromotion = pricing.discount > 0;
                 const undeliverable =
                   Boolean(selectedAddress?.city) &&
                   undeliverableItems.some((u) => u.id === item.id);
@@ -493,11 +501,19 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                           )}
                         </p>
                       )}
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="font-bold text-[#FF8C42]">₹{item.price}</span>
-                        {showMrp && (
-                          <span className="text-xs text-slate-400 line-through">
-                            ₹{item.originalPrice}
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {hasPromotion ? (
+                          <>
+                            <span className="text-xs text-slate-400 line-through tabular-nums">
+                              ₹{unitMrp} MRP
+                            </span>
+                            <span className="font-bold text-[#FF8C42] tabular-nums">
+                              ₹{(linePayable / item.quantity).toFixed(0)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="font-bold text-[#FF8C42] tabular-nums">
+                            ₹{unitMrp}
                           </span>
                         )}
                       </div>
@@ -533,19 +549,35 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             />
 
             <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm lg:hidden">
-              <CheckoutPriceBreakdown cart={cart} pricing={pricing} showItems={false} />
+              <CheckoutPriceBreakdown
+                cart={cart}
+                pricing={pricing}
+                showItems={false}
+                promotionLabel={selectedPromo?.label ?? autoPromo?.label}
+              />
             </section>
           </div>
 
           <aside className="hidden lg:block">
             <div className="sticky top-24 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
               <h2 className="font-bold text-slate-900 mb-4">Order summary</h2>
-              {mrpTotal > pricing.total && (
-                <p className="text-sm text-emerald-600 font-medium mb-3">
-                  You save ₹{(mrpTotal - pricing.total).toFixed(0)}
-                </p>
+              {pricing.discount > 0 && (
+                <div className="mb-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm">
+                  <p className="font-semibold text-emerald-800">
+                    You save ₹{pricing.discount.toFixed(0)} on this order
+                  </p>
+                  {(selectedPromo?.label ?? autoPromo?.label) ? (
+                    <p className="text-xs text-emerald-700 mt-0.5">
+                      {selectedPromo?.label ?? autoPromo?.label}
+                    </p>
+                  ) : null}
+                </div>
               )}
-              <CheckoutPriceBreakdown cart={cart} pricing={pricing} />
+              <CheckoutPriceBreakdown
+                cart={cart}
+                pricing={pricing}
+                promotionLabel={selectedPromo?.label ?? autoPromo?.label}
+              />
               <Button
                 onClick={handleProceedCheckout}
                 disabled={!selectedAddress?.id || hasUndeliverable}

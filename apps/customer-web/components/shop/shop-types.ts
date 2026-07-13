@@ -3,7 +3,10 @@ export interface ShopProduct {
   name: string;
   description: string;
   category_id: string;
+  /** Catalog MRP — stored in cart and sent to calculate-cart / order create. */
   price: number;
+  /** Promo selling price for browse UI only; cart uses `price` (MRP). */
+  display_price?: number;
   original_price?: number;
   images: string[];
   emoji?: string;

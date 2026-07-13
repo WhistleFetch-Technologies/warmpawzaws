@@ -60,11 +60,14 @@ function lineToCartItem(line: WarmpawzCartLine): CartItem {
   const originalRaw = p?.original_price;
   const originalPrice =
     originalRaw != null && Number(originalRaw) > 0 ? Number(originalRaw) : undefined;
+  /** Legacy carts stored promo-discounted price; normalize to catalog MRP for Option A. */
+  const catalogPrice =
+    originalPrice != null && originalPrice > price && price > 0 ? originalPrice : price;
   return {
     id,
     name,
-    price,
-    originalPrice,
+    price: catalogPrice,
+    originalPrice: originalPrice ?? catalogPrice,
     quantity: Math.max(1, Number(line.quantity) || 1),
     image: imageFromList || imageEmoji,
     vendorId: p?.vendor_id != null ? String(p.vendor_id) : undefined,
@@ -81,8 +84,16 @@ function cartItemsToLines(items: CartItem[]): WarmpawzCartLine[] {
   return items.map((item) => {
     const w = item.warmpawzLine;
     if (w) {
+      const product = w.product
+        ? {
+            ...w.product,
+            price: item.price,
+            original_price: item.originalPrice ?? item.price,
+          }
+        : w.product;
       return {
         ...w,
+        product,
         product_id: String(w.product_id || item.id),
         quantity: item.quantity,
       };

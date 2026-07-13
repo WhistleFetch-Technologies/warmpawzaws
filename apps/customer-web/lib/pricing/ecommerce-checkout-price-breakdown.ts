@@ -1,33 +1,46 @@
 import type { CartPricingBreakdown } from '@/lib/ecommerce/cart-pricing';
 import type { PriceBreakdownLine } from './types';
 
-/** Maps ecommerce cart pricing to Sprint 1 PriceBreakdown lines — no API changes */
+export type EcommerceCheckoutBreakdownOptions = {
+  /** e.g. "10% OFF" or campaign name from calculate-cart */
+  promotionLabel?: string;
+};
+
+/** Maps ecommerce cart pricing to checkout order-summary lines (Option A: MRP + explicit promo). */
 export function buildEcommerceCheckoutPriceLines(
-  pricing: CartPricingBreakdown
+  pricing: CartPricingBreakdown,
+  options: EcommerceCheckoutBreakdownOptions = {},
 ): PriceBreakdownLine[] {
   const lines: PriceBreakdownLine[] = [
     {
       kind: 'subtotal',
-      label: 'Subtotal',
+      label: 'Item total (MRP)',
       amount: pricing.lineSubtotal,
     },
   ];
 
-  if ((pricing.couponDiscount ?? 0) > 0) {
+  const promotionDiscount = pricing.discount;
+  if (promotionDiscount > 0) {
+    const promoLabel =
+      options.promotionLabel?.trim() ||
+      (pricing.promotionSource === 'admin'
+        ? 'Platform promotion'
+        : pricing.promotionSource === 'vendor'
+          ? 'Store offer'
+          : 'Promotion savings');
+
     lines.push({
-      kind: 'coupon',
-      label: 'Coupon discount',
-      amount: -(pricing.couponDiscount ?? 0),
+      kind: 'savings',
+      label: promoLabel,
+      amount: -promotionDiscount,
       emphasis: 'discount',
     });
-  }
 
-  if ((pricing.sellerPromotionDiscount ?? 0) > 0) {
     lines.push({
-      kind: 'vendor_discount',
-      label: 'Store offer',
-      amount: -(pricing.sellerPromotionDiscount ?? 0),
-      emphasis: 'discount',
+      kind: 'subtotal',
+      label: 'After promotion',
+      amount: pricing.subtotalAfterDiscount,
+      emphasis: 'muted',
     });
   }
 
@@ -42,8 +55,9 @@ export function buildEcommerceCheckoutPriceLines(
   if (pricing.taxAmount > 0) {
     lines.push({
       kind: 'tax',
-      label: 'Tax',
+      label: 'GST (included in MRP)',
       amount: pricing.taxAmount,
+      emphasis: 'muted',
     });
   }
 

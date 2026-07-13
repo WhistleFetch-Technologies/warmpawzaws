@@ -6,7 +6,7 @@ import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation'
 import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
 import { ShopCartQuantityControl } from './ShopCartQuantityControl';
 import type { ShopProduct } from './shop-types';
-import { getProductDiscountPercent } from './map-shop-product';
+import { getProductDiscountPercent, getShopProductDisplayPrice } from './map-shop-product';
 import { MarketplaceCard } from '@/components/customer/marketplace/MarketplaceCard';
 
 const PRODUCT_CARD_SHADOW =
@@ -41,10 +41,11 @@ export function ShopProductCard({
   }, [product.id, product.images?.[0]]);
 
   const discount = getProductDiscountPercent(product);
+  const displayPrice = getShopProductDisplayPrice(product);
   const outOfStock = product.stock === 0;
   const pricePrefix = product.price_from ? 'From ' : '';
   const hasDiscount = discount > 0 && product.original_price != null;
-  const savingsAmount = hasDiscount ? product.original_price! - product.price : undefined;
+  const savingsAmount = hasDiscount ? product.original_price! - displayPrice : undefined;
 
   const handleCardClick = () => {
     const pid = (wishlistPid || product.id || '').trim();
@@ -79,7 +80,7 @@ export function ShopProductCard({
   const priceSlot =
     !hasDiscount && pricePrefix ? (
       <p className="text-sm font-bold text-slate-900 tabular-nums">
-        {pricePrefix}₹{product.price}
+        {pricePrefix}₹{displayPrice}
       </p>
     ) : undefined;
 
@@ -91,7 +92,7 @@ export function ShopProductCard({
       imageFallback={product.emoji || (variant === 'deal' ? '🐾' : '📦')}
       title={product.name}
       originalPrice={hasDiscount ? product.original_price : undefined}
-      currentPrice={product.price}
+      currentPrice={displayPrice}
       savingsAmount={savingsAmount}
       availability={outOfStock ? 'unavailable' : product.stock <= 5 && product.stock > 0 ? 'limited' : 'available'}
       availabilityLabel={

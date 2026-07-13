@@ -597,8 +597,8 @@ export default function ProductDetailClient() {
     return {
       id: product.id,
       name: product.name,
-      price: displayPrice,
-      original_price: displayOriginalPrice,
+      price: catalogUnitPrice,
+      original_price: displayOriginalPrice ?? catalogUnitPrice,
       emoji: product.emoji,
       images: heroImage ? [heroImage] : product.images,
       ...(vendorId ? { vendor_id: vendorId } : {}),

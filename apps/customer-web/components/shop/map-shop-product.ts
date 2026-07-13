@@ -3,6 +3,7 @@ import { normalizeOptionValues } from '@/lib/product-sku-client';
 import {
   getProductDiscountPercent as discountPercentFromPrices,
   listPriceForDiscountDisplay,
+  productHasListDiscount,
   resolveProductCompareAtPrice,
   resolveProductSellingPrice,
 } from '@/lib/shop-product-pricing';
@@ -13,7 +14,10 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
   if (!id) return null;
 
   const compareAt = resolveProductCompareAtPrice(p);
-  const sellingPrice = resolveProductSellingPrice(p, compareAt);
+  const enrichedSelling = resolveProductSellingPrice(p, compareAt);
+  /** Option A: cart/checkout use catalog MRP; browse may show enrichedSelling separately. */
+  const catalogPrice = compareAt ?? enrichedSelling;
+  const hasBrowseDiscount = productHasListDiscount(enrichedSelling, compareAt);
   const rc = Number(p.review_count ?? 0) || 0;
   const rawRating = p.rating != null ? Number(p.rating) : NaN;
   const rating = rc > 0 && Number.isFinite(rawRating) && rawRating > 0 ? rawRating : 0;
@@ -49,8 +53,9 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
     ...(p as unknown as ShopProduct),
     id,
     stock: Number(p.stock_quantity ?? p.stock ?? 0) || 0,
-    price: sellingPrice,
-    original_price: listPriceForDiscountDisplay(sellingPrice, compareAt),
+    price: catalogPrice,
+    display_price: hasBrowseDiscount ? enrichedSelling : undefined,
+    original_price: listPriceForDiscountDisplay(enrichedSelling, compareAt),
     rating,
     review_count: rc,
     images: (p.images as string[]) || [],
@@ -83,7 +88,13 @@ export function mapApiProductsList(rawList: unknown[]): ShopProduct[] {
 }
 
 export function getProductDiscountPercent(product: ShopProduct): number {
-  return discountPercentFromPrices(product.price, product.original_price);
+  const selling = product.display_price ?? product.price;
+  return discountPercentFromPrices(selling, product.original_price);
+}
+
+/** Customer-facing unit price on shop cards (may differ from cart MRP when a browse promo applies). */
+export function getShopProductDisplayPrice(product: ShopProduct): number {
+  return product.display_price ?? product.price;
 }
 
 /**
@@ -94,9 +105,13 @@ export function sortShopProducts(products: ShopProduct[], sortBy: string): ShopP
   const list = [...products];
   switch (sortBy) {
     case 'price_low':
-      return list.sort((a, b) => a.price - b.price);
+      return list.sort(
+        (a, b) => getShopProductDisplayPrice(a) - getShopProductDisplayPrice(b),
+      );
     case 'price_high':
-      return list.sort((a, b) => b.price - a.price);
+      return list.sort(
+        (a, b) => getShopProductDisplayPrice(b) - getShopProductDisplayPrice(a),
+      );
     case 'rating':
       return list.sort((a, b) => b.rating - a.rating);
     case 'newest':
