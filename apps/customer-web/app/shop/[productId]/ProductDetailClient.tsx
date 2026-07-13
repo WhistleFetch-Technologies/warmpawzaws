@@ -328,8 +328,10 @@ export default function ProductDetailClient() {
       });
 
       let productRes: any;
+      const customerId = getResolvedCustomerId();
+      const customerQuery = customerId ? `?customerId=${encodeURIComponent(customerId)}` : '';
       try {
-        productRes = await apiClient.get<any>(`/ecommerce/products/${productId}`);
+        productRes = await apiClient.get<any>(`/ecommerce/products/${productId}${customerQuery}`);
       } catch (firstErr: any) {
         const is404 =
           firstErr?.status === 404 ||
@@ -339,7 +341,7 @@ export default function ProductDetailClient() {
           console.warn('[shop/product] ecommerce detail 404, retrying /products/:id', {
             productId,
           });
-          productRes = await apiClient.get<any>(`/products/${productId}`);
+          productRes = await apiClient.get<any>(`/products/${productId}${customerQuery}`);
         } else {
           throw firstErr;
         }
@@ -487,24 +489,44 @@ export default function ProductDetailClient() {
     [productSkus, selectedVariations, product?.variations],
   );
 
-  const displayPrice = useMemo(() => {
+  const productPromoRatio = useMemo(() => {
+    const compareAt = product?.original_price;
+    const selling = product?.price;
+    if (compareAt != null && selling != null && compareAt > selling && selling > 0) {
+      return selling / compareAt;
+    }
+    return null;
+  }, [product?.original_price, product?.price]);
+
+  const catalogUnitPrice = useMemo(() => {
+    const catalogFallback = product?.original_price ?? product?.price ?? 0;
     if (productSkus.length > 0) {
       return resolveSkuPriceForSelection(
         productSkus,
         selectedVariations,
-        product?.price ?? 0,
+        catalogFallback,
         product?.variations,
       );
     }
     return product?.price ?? 0;
-  }, [productSkus, selectedVariations, product?.price]);
+  }, [productSkus, selectedVariations, product?.original_price, product?.price, product?.variations]);
+
+  const displayPrice = useMemo(() => {
+    if (productPromoRatio != null && catalogUnitPrice > 0) {
+      return Math.round(catalogUnitPrice * productPromoRatio * 100) / 100;
+    }
+    return catalogUnitPrice;
+  }, [catalogUnitPrice, productPromoRatio]);
 
   const displayOriginalPrice = useMemo(() => {
+    if (productPromoRatio != null && catalogUnitPrice > 0) {
+      return catalogUnitPrice;
+    }
     if (matchedSku?.compare_at_price != null && matchedSku.compare_at_price > 0) {
       return matchedSku.compare_at_price;
     }
     return product?.original_price;
-  }, [matchedSku, product?.original_price]);
+  }, [productPromoRatio, catalogUnitPrice, matchedSku, product?.original_price]);
   const showFromPrice = useMemo(() => {
     if (!product?.price_from || productSkus.length === 0) return false;
     return hasIncompleteVariantSelection(productSkus, selectedVariations);

@@ -34,6 +34,8 @@ import {
 } from '../discount-engine/rules/adapters/shadow-adapters';
 import {
   buildPromotionPersistenceFromAdminBody,
+  buildEcommerceAdminPromotionRecord,
+  isEcommerceAdminPromotionDomain,
   mergeAdminPromotionUpdateBody,
   normalizePromotionDiscountType as normalizeAdminPromotionDiscountType,
   parseDateInput as parseAdminDateInput,
@@ -54,6 +56,11 @@ import {
 } from '../utils/commercial-discount-domain';
 
 async function persistPromotionInsert(promotionData: Record<string, unknown>) {
+  if (isEcommerceAdminPromotionDomain(promotionData)) {
+    const ecommerceRecord = buildEcommerceAdminPromotionRecord(promotionData);
+    return await insert('ecommerce_admin_promotions', ecommerceRecord);
+  }
+
   const payload = { ...promotionData };
   for (;;) {
     try {
@@ -1306,22 +1313,61 @@ export function registerPromotionEndpoints(app: Hono) {
 
   /**
    * GET /admin/promotions/stats
-   * Get promotion statistics
+   * Get promotion statistics. Pass ?domain=PRODUCT for ecommerce-only counts.
    */
   app.get("/admin/promotions/stats", async (c) => {
     try {
-      const activePromotions = await query(
-        'SELECT COUNT(*) as count FROM promotions WHERE is_active = true AND (end_date IS NULL OR end_date >= NOW())'
-      );
-      const totalConversions = await query(
-        'SELECT COUNT(*) as count FROM promotion_usages'
-      ).catch(() => ({ rows: [{ count: '0' }] }));
-      const totalRevenue = await query(
-        'SELECT COALESCE(SUM(discount_amount), 0) as total FROM promotion_usages'
-      ).catch(() => ({ rows: [{ total: '0' }] }));
-      const avgDiscount = await query(
-        'SELECT COALESCE(AVG(discount_amount), 0) as avg FROM promotion_usages'
-      ).catch(() => ({ rows: [{ avg: '0' }] }));
+      const domain = (c.req.query('domain') ?? 'ALL').toUpperCase();
+      const isProduct = domain === 'PRODUCT';
+
+      const usageWhere = isProduct
+        ? `WHERE order_id IS NOT NULL`
+        : domain === 'SERVICE'
+          ? `WHERE booking_id IS NOT NULL AND order_id IS NULL`
+          : '';
+
+      const [activePromotions, totalConversions, totalRevenue, avgDiscount] = await Promise.all([
+        isProduct
+          ? Promise.all([
+              query(
+                `SELECT COUNT(*) AS count FROM ecommerce_admin_promotions
+                 WHERE is_active = true
+                   AND start_date <= NOW()
+                   AND end_date >= NOW()`,
+              ).catch(() => ({ rows: [{ count: '0' }] })),
+              query(
+                `SELECT COUNT(*) AS count FROM vendor_promotions
+                 WHERE is_active = true
+                   AND start_date <= NOW()
+                   AND end_date >= NOW()
+                   AND (usage_limit IS NULL OR usage_count < usage_limit)`,
+              ).catch(() => ({ rows: [{ count: '0' }] })),
+            ]).then(([admin, vendor]) => ({
+              rows: [
+                {
+                  count: String(
+                    parseInt(admin.rows[0]?.count || '0', 10) +
+                      parseInt(vendor.rows[0]?.count || '0', 10),
+                  ),
+                },
+              ],
+            }))
+          : query(
+              'SELECT COUNT(*) as count FROM promotions WHERE is_active = true AND (end_date IS NULL OR end_date >= NOW())',
+            ),
+        query(`SELECT COUNT(*) as count FROM promotion_usages ${usageWhere}`).catch(() => ({
+          rows: [{ count: '0' }],
+        })),
+        query(
+          `SELECT COALESCE(SUM(discount_amount), 0) as total FROM promotion_usages ${usageWhere}`,
+        ).catch(() => ({ rows: [{ total: '0' }] })),
+        query(
+          `SELECT COALESCE(AVG(discount_amount), 0) as avg FROM promotion_usages ${usageWhere}`,
+        ).catch(() => ({ rows: [{ avg: '0' }] })),
+      ]);
+
+      const reportDomain =
+        domain === 'PRODUCT' || domain === 'SERVICE' || domain === 'ALL' ? domain : 'ALL';
 
       return c.json({
         success: true,
@@ -1333,8 +1379,9 @@ export function registerPromotionEndpoints(app: Hono) {
         },
         ...(isAnalyticsEnabled() && isAnalyticsAuthoritative()
           ? {
-              engineStats: (await getAnalyticsEngine().generateReport({ domain: 'ALL' }))?.promotions
-                ?.totals,
+              engineStats: (
+                await getAnalyticsEngine().generateReport({ domain: reportDomain as 'ALL' | 'PRODUCT' | 'SERVICE' })
+              )?.promotions?.totals,
             }
           : {}),
       });
@@ -1712,6 +1759,30 @@ export function registerPromotionEndpoints(app: Hono) {
         );
       }
 
+      if (discountDomain === 'ECOMMERCE') {
+        try {
+          const ecommerceRes = await query(
+            `SELECT * FROM ecommerce_admin_promotions
+             ORDER BY created_at DESC`,
+          );
+          const ecommerceRows = (ecommerceRes.rows ?? []) as Record<string, unknown>[];
+          const seen = new Set(rows.map((r: Record<string, unknown>) => String(r.id)));
+          for (const row of ecommerceRows) {
+            const id = String(row.id ?? '');
+            if (!id || seen.has(id)) continue;
+            rows.push({
+              ...row,
+              discount_domain: 'ECOMMERCE',
+              min_order_amount: row.min_order_value,
+              max_discount_amount: row.max_discount_amount,
+            });
+            seen.add(id);
+          }
+        } catch {
+          /* table may not exist on older schemas */
+        }
+      }
+
       return c.json({
         success: true,
         promotions: rows,
@@ -1763,6 +1834,7 @@ export function registerPromotionEndpoints(app: Hono) {
       }
 
       const promotionData: any = {
+        ...body,
         ...record,
         created_at: new Date().toISOString(),
       };

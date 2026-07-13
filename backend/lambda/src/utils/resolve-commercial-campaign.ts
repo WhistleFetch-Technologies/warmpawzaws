@@ -23,6 +23,7 @@ import { insert, query } from '../database/rds-connection';
 import {
   calculateBestCartPromotion,
   normalizePromotionRow,
+  parseJsonbStringArray,
   type CartLineItem,
   type PromotionEvaluation,
   type PromotionRow,
@@ -31,13 +32,28 @@ import {
 /** Legacy `promotions` table uses different column names — translate into PromotionRow shape. */
 function normalizeLegacyPlatformPromotionRow(row: Record<string, unknown>): PromotionRow {
   const discountTypeRaw = String(row.discount_type || 'percentage').trim().toLowerCase();
+  const meta =
+    row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+      ? (row.metadata as Record<string, unknown>)
+      : {};
+  const selectedTargets =
+    meta.selectedTargets && typeof meta.selectedTargets === 'object'
+      ? (meta.selectedTargets as Record<string, unknown>)
+      : {};
+  const applicableProducts = parseJsonbStringArray(
+    row.applicable_products ?? meta.applicableProducts ?? selectedTargets.products,
+  );
+  const applicableCategories = parseJsonbStringArray(
+    row.applicable_categories ?? meta.applicableCategories ?? selectedTargets.categories,
+  );
+
   return {
     id: String(row.id),
     vendor_id: undefined,
     name: String(row.name || row.title || 'Promotion'),
     description: row.description != null ? String(row.description) : undefined,
     code: row.code != null ? String(row.code) : null,
-    promotion_type: 'flash_sale',
+    promotion_type: String(row.promotion_type || 'flash_sale'),
     discount_type: discountTypeRaw === 'fixed' || discountTypeRaw === 'flat' ? 'fixed' : 'percentage',
     discount_value: parseFloat(String(row.discount_value ?? 0)) || 0,
     min_order_value:
@@ -51,12 +67,22 @@ function normalizeLegacyPlatformPromotionRow(row: Record<string, unknown>): Prom
     start_date: String(row.start_date),
     end_date: String(row.end_date),
     is_active: row.is_active !== false,
-    usage_limit: row.usage_limit != null ? parseInt(String(row.usage_limit), 10) : null,
-    usage_count: row.usage_count != null ? parseInt(String(row.usage_count), 10) : 0,
-    target_audience: 'all',
-    // Legacy platform promos are not product/category scoped — they apply cart-wide.
-    applicable_products: [],
-    applicable_categories: [],
+    usage_limit:
+      row.usage_limit != null
+        ? parseInt(String(row.usage_limit), 10)
+        : row.max_uses != null
+          ? parseInt(String(row.max_uses), 10)
+          : null,
+    usage_count:
+      row.usage_count != null
+        ? parseInt(String(row.usage_count), 10)
+        : row.used_count != null
+          ? parseInt(String(row.used_count), 10)
+          : 0,
+    target_audience:
+      row.target_audience != null ? String(row.target_audience) : 'all',
+    applicable_products: applicableProducts,
+    applicable_categories: applicableCategories,
   };
 }
 
@@ -65,7 +91,8 @@ async function loadCanonicalCampaigns(): Promise<PromotionRow[]> {
     const res = await query(
       `SELECT * FROM ecommerce_admin_promotions
        WHERE is_active = true AND published = true
-         AND start_date <= NOW() AND end_date >= NOW()`
+         AND start_date <= NOW() AND end_date >= NOW()
+         AND (usage_limit IS NULL OR usage_count < usage_limit)`
     );
     return (res.rows || []).map((row: Record<string, unknown>) => normalizePromotionRow(row));
   } catch {
@@ -83,12 +110,16 @@ async function loadLegacyPlatformPromotions(): Promise<PromotionRow[]> {
          AND start_date <= $1
          AND (end_date IS NULL OR end_date >= $1)
          AND (
-           applicable_services IS NULL
+           COALESCE(discount_domain, '') = 'ECOMMERCE'
+           OR COALESCE(metadata->>'discount_domain', '') = 'ECOMMERCE'
+           OR COALESCE(metadata->>'domain', '') = 'ecommerce'
+           OR COALESCE(applicable_to, '') IN ('products', 'product', 'shop', 'ecommerce')
+           OR applicable_services IS NULL
            OR EXISTS (
              SELECT 1 FROM jsonb_array_elements_text(
                CASE WHEN jsonb_typeof(applicable_services) = 'array' THEN applicable_services ELSE '[]'::jsonb END
              ) AS svc(val)
-             WHERE svc.val IN ('product', 'shop', 'ecom', 'ecommerce')
+             WHERE svc.val IN ('product', 'shop', 'ecom', 'ecommerce', 'products')
            )
          )`,
       [now]
@@ -110,6 +141,14 @@ async function loadAllActiveCampaigns(): Promise<{ promos: PromotionRow[]; legac
   ]);
   const legacyIds = new Set(legacy.map((p) => p.id));
   return { promos: [...canonical, ...legacy], legacyIds };
+}
+
+/** Active admin/platform ecommerce campaigns for cart and storefront promo enrichment. */
+export async function getActiveCommercialCampaignPromotions(): Promise<{
+  promos: PromotionRow[];
+  legacyIds: Set<string>;
+}> {
+  return loadAllActiveCampaigns();
 }
 
 export type CommercialCampaignResolution = {
@@ -195,7 +234,7 @@ export async function recordCommercialCampaignUsage(params: {
   try {
     await insert('promotion_usages', {
       promotion_id: params.promotionId,
-      promotion_type: 'platform',
+      promotion_type: params.isLegacy ? 'platform' : 'product',
       booking_id: null,
       order_id: params.orderId,
       customer_id: params.customerId || null,

@@ -256,6 +256,64 @@ export function buildPromotionPersistenceFromAdminBody(
   };
 }
 
+export function isEcommerceAdminPromotionDomain(body: Record<string, unknown>): boolean {
+  return resolvePersistedDiscountDomain(body, 'SERVICE') === 'ECOMMERCE';
+}
+
+/** Map admin wizard body → `ecommerce_admin_promotions` row (canonical shop promos). */
+export function buildEcommerceAdminPromotionRecord(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const base = buildPromotionPersistenceFromAdminBody(body);
+  const meta =
+    base.metadata && typeof base.metadata === 'object'
+      ? (base.metadata as Record<string, unknown>)
+      : {};
+  const selectedTargets =
+    meta.selectedTargets && typeof meta.selectedTargets === 'object'
+      ? (meta.selectedTargets as Record<string, unknown>)
+      : {};
+
+  const applicableProducts = parseServicesList(
+    body.applicable_products ?? meta.applicableProducts ?? selectedTargets.products,
+  );
+  const applicableCategories = parseServicesList(
+    body.applicable_category_ids ??
+      body.applicable_categories ??
+      selectedTargets.categories,
+  );
+
+  const codeRaw = body.code != null ? String(body.code).trim() : '';
+  const targetAudience = String(
+    body.target_audience ?? body.targetAudience ?? 'all',
+  ).trim();
+
+  return {
+    name: base.name,
+    description: base.description ?? null,
+    code: codeRaw ? codeRaw.toUpperCase() : null,
+    promotion_type: base.promotion_type,
+    discount_type: base.discount_type,
+    discount_value: base.discount_value,
+    min_order_value: base.min_order_amount ?? null,
+    max_discount_amount: base.max_discount_amount ?? null,
+    start_date: base.start_date,
+    end_date: base.end_date,
+    is_active: base.is_active,
+    published: base.published,
+    usage_limit: base.usage_limit ?? null,
+    usage_count: 0,
+    target_audience: targetAudience || 'all',
+    applicable_products:
+      applicableProducts.length > 0 ? JSON.stringify(applicableProducts) : null,
+    applicable_categories:
+      applicableCategories.length > 0 ? JSON.stringify(applicableCategories) : null,
+    funded_by: 'admin',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
 export function mergeAdminPromotionUpdateBody(
   body: Record<string, unknown>,
   existing: Record<string, unknown>

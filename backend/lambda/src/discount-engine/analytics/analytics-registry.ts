@@ -13,7 +13,12 @@ function basePromotionFilter(rows: PromotionUsageRow[], domain: AnalyticsDomainF
     return rows.filter((r) => r.promotionType === 'service' || r.promotionType === 'platform');
   }
   if (domain === 'PRODUCT') {
-    return rows.filter((r) => r.promotionType === 'product');
+    // Vendor shop promos use promotion_type=product; admin ecommerce campaigns use platform+order_id.
+    return rows.filter(
+      (r) =>
+        r.promotionType === 'product' ||
+        (r.promotionType === 'platform' && Boolean(r.orderId)),
+    );
   }
   if (domain === 'PACKAGE') {
     return rows.filter((r) => r.promotionType === 'service' && Boolean(r.bookingId));

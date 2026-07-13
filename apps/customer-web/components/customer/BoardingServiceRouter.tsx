@@ -590,3 +590,4 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     </div>
   );
 }
+

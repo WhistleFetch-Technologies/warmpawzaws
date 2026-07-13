@@ -20,6 +20,13 @@ export interface ShopProduct {
   listing_option_values?: Record<string, string>;
   price_from?: boolean;
   min_price?: number;
+  /** Auto-applied promo from storefront read-time enrichment. */
+  promo_applied?: {
+    source: 'vendor' | 'admin';
+    id: string;
+    label: string;
+    discountPercent: number;
+  };
 }
 
 export interface ShopCategory {

@@ -29,6 +29,22 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
       | undefined,
   );
 
+  const promoAppliedRaw = p.promo_applied;
+  const promo_applied =
+    promoAppliedRaw != null &&
+    typeof promoAppliedRaw === 'object' &&
+    !Array.isArray(promoAppliedRaw)
+      ? {
+          source: ((promoAppliedRaw as { source?: string }).source === 'admin'
+            ? 'admin'
+            : 'vendor') as 'vendor' | 'admin',
+          id: String((promoAppliedRaw as { id?: string }).id ?? ''),
+          label: String((promoAppliedRaw as { label?: string }).label ?? 'Promotion'),
+          discountPercent:
+            Number((promoAppliedRaw as { discountPercent?: number }).discountPercent) || 0,
+        }
+      : undefined;
+
   return {
     ...(p as unknown as ShopProduct),
     id,
@@ -56,6 +72,7 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
       p.min_price != null && Number.isFinite(Number(p.min_price))
         ? Number(p.min_price)
         : undefined,
+    promo_applied: promo_applied?.id ? promo_applied : undefined,
   };
 }
 

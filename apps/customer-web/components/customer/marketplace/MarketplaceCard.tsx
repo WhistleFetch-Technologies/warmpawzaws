@@ -78,7 +78,7 @@ export function MarketplaceCard({
             {discountPct ? (
               <PromotionOfferBadge variant="percent" value={discountPct} size="sm" />
             ) : null}
-            {data.promotionLabel && data.domain !== 'product' ? (
+            {data.promotionLabel && !discountPct ? (
               <SavingsBadge variant="auto_applied" label={data.promotionLabel} />
             ) : null}
             {data.couponCode ? (
@@ -132,7 +132,7 @@ export function MarketplaceCard({
                 originalPrice={data.originalPrice ?? data.currentPrice}
                 currentPrice={data.currentPrice}
                 size="sm"
-                showSavings={Boolean(hasSavings || discountPct)}
+                showSavings={data.domain !== 'product'}
               />
             ) : (
               <p className="text-sm font-bold text-orange-600 tabular-nums">{formatInr(data.currentPrice)}</p>

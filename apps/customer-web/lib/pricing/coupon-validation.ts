@@ -36,7 +36,7 @@ function toFiniteNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function calculateDiscountAmount(
+export function calculateDiscountAmount(
   type: 'percentage' | 'fixed',
   value: unknown,
   amount: unknown,

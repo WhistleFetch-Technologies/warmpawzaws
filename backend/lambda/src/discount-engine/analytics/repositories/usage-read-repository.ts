@@ -51,6 +51,87 @@ function mapCouponRow(row: Record<string, unknown>): CouponUsageRow {
   };
 }
 
+function mapEcommerceCouponRow(row: Record<string, unknown>): CouponUsageRow {
+  return {
+    id: String(row.id),
+    couponId: String(row.promotion_id ?? row.couponId ?? ''),
+    code: String(row.code ?? ''),
+    customerId: row.customer_id ? String(row.customer_id) : null,
+    bookingId: null,
+    orderId: row.order_id ? String(row.order_id) : null,
+    usedAt: String(row.created_at ?? new Date().toISOString()),
+    maxUses: row.max_uses != null ? parseInt(String(row.max_uses), 10) : null,
+    isActive: row.is_active !== false,
+    endDate: row.end_date ? String(row.end_date) : null,
+    discountAmount:
+      row.discount_amount != null ? parseFloat(String(row.discount_amount)) : undefined,
+  };
+}
+
+async function loadEcommerceCouponUsages(filters: AnalyticsFilters): Promise<CouponUsageRow[]> {
+  const params: unknown[] = [];
+  let sql = `
+    SELECT pu.id, pu.promotion_id, pu.order_id, pu.customer_id, pu.discount_amount, pu.created_at,
+           COALESCE(NULLIF(TRIM(eap.code), ''), NULLIF(TRIM(vp.code), '')) AS code,
+           COALESCE(eap.usage_limit, vp.usage_limit) AS max_uses,
+           COALESCE(eap.is_active, vp.is_active, true) AS is_active,
+           COALESCE(eap.end_date, vp.end_date) AS end_date
+    FROM promotion_usages pu
+    LEFT JOIN ecommerce_admin_promotions eap ON eap.id::text = pu.promotion_id::text
+    LEFT JOIN vendor_promotions vp ON vp.id::text = pu.promotion_id::text
+    WHERE pu.order_id IS NOT NULL
+      AND (
+        (eap.code IS NOT NULL AND TRIM(eap.code) <> '')
+        OR (vp.code IS NOT NULL AND TRIM(vp.code) <> '')
+      )
+  `;
+
+  if (filters.from) {
+    params.push(filters.from);
+    sql += ` AND pu.created_at >= $${params.length}`;
+  }
+  if (filters.to) {
+    params.push(filters.to);
+    sql += ` AND pu.created_at <= $${params.length}`;
+  }
+  if (filters.customerId) {
+    params.push(filters.customerId);
+    sql += ` AND pu.customer_id = $${params.length}::uuid`;
+  }
+
+  sql += ' ORDER BY pu.created_at DESC LIMIT 10000';
+
+  const res = await query(sql, params).catch(() => ({ rows: [] }));
+  return (res.rows ?? []).map((r: Record<string, unknown>) => mapEcommerceCouponRow(r));
+}
+
+async function countActivePromotions(domain: AnalyticsFilters['domain']): Promise<number> {
+  if (domain === 'PRODUCT') {
+    const [adminRes, vendorRes] = await Promise.all([
+      query(
+        `SELECT COUNT(*) AS count FROM ecommerce_admin_promotions
+         WHERE is_active = true AND start_date <= NOW() AND end_date >= NOW()`,
+      ).catch(() => ({ rows: [{ count: '0' }] })),
+      query(
+        `SELECT COUNT(*) AS count FROM vendor_promotions
+         WHERE is_active = true
+           AND start_date <= NOW()
+           AND end_date >= NOW()
+           AND (usage_limit IS NULL OR usage_count < usage_limit)`,
+      ).catch(() => ({ rows: [{ count: '0' }] })),
+    ]);
+    return (
+      parseInt(String(adminRes.rows?.[0]?.count ?? '0'), 10) +
+      parseInt(String(vendorRes.rows?.[0]?.count ?? '0'), 10)
+    );
+  }
+
+  const activeRes = await query(
+    'SELECT COUNT(*) AS count FROM promotions WHERE is_active = true AND (end_date IS NULL OR end_date >= NOW())',
+  ).catch(() => ({ rows: [{ count: '0' }] }));
+  return parseInt(String(activeRes.rows?.[0]?.count ?? '0'), 10);
+}
+
 /**
  * Read-only repository — aggregates from existing usage tables.
  * Does not write or recalculate discounts.
@@ -59,9 +140,13 @@ export class RdsUsageReadRepository implements UsageReadRepository {
   async loadSnapshot(filters: AnalyticsFilters): Promise<AnalyticsDataSnapshot> {
     const params: unknown[] = [];
     let promoSql = `
-      SELECT pu.*, p.name AS promotion_name, NULL::uuid AS vendor_id
+      SELECT pu.*,
+             COALESCE(eap.name, vp.name, p.name) AS promotion_name,
+             COALESCE(vp.vendor_id, NULL::uuid) AS vendor_id
       FROM promotion_usages pu
       LEFT JOIN promotions p ON p.id::text = pu.promotion_id::text
+      LEFT JOIN ecommerce_admin_promotions eap ON eap.id::text = pu.promotion_id::text
+      LEFT JOIN vendor_promotions vp ON vp.id::text = pu.promotion_id::text
       WHERE 1=1
     `;
 
@@ -114,18 +199,25 @@ export class RdsUsageReadRepository implements UsageReadRepository {
 
     couponSql += ' ORDER BY cu.used_at DESC LIMIT 10000';
 
-    const [promoRes, couponRes, activeRes] = await Promise.all([
+    const [promoRes, couponRes, activeCount, ecommerceCouponRows] = await Promise.all([
       query(promoSql, params).catch(() => ({ rows: [] })),
       query(couponSql, couponParams).catch(() => ({ rows: [] })),
-      query(
-        'SELECT COUNT(*) AS count FROM promotions WHERE is_active = true AND (end_date IS NULL OR end_date >= NOW())'
-      ).catch(() => ({ rows: [{ count: '0' }] })),
+      countActivePromotions(filters.domain),
+      filters.domain === 'PRODUCT' ? loadEcommerceCouponUsages(filters) : Promise.resolve([]),
     ]);
+
+    const bookingCoupons = (couponRes.rows ?? []).map((r: Record<string, unknown>) =>
+      mapCouponRow(r),
+    );
+    const couponUsages =
+      filters.domain === 'PRODUCT'
+        ? [...ecommerceCouponRows, ...bookingCoupons.filter((c) => Boolean(c.orderId))]
+        : bookingCoupons;
 
     return {
       promotionUsages: (promoRes.rows ?? []).map((r: Record<string, unknown>) => mapPromotionRow(r)),
-      couponUsages: (couponRes.rows ?? []).map((r: Record<string, unknown>) => mapCouponRow(r)),
-      activePromotionCount: parseInt(String(activeRes.rows?.[0]?.count ?? '0'), 10),
+      couponUsages,
+      activePromotionCount: activeCount,
     };
   }
 }

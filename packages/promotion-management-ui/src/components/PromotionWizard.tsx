@@ -460,7 +460,11 @@ export function PromotionWizard({
 
           {step === 4 && (
             <div className="space-y-4">
-              <PromotionPreview form={form} catalog={catalog} />
+              <PromotionPreview
+                form={form}
+                catalog={catalog}
+                smartTargetAdapter={smartTargetAdapter}
+              />
               <PromotionSummary
                 form={form}
                 catalog={catalog}

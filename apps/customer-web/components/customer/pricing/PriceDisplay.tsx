@@ -12,6 +12,8 @@ export type PriceDisplayProps = {
   size?: 'sm' | 'md' | 'lg';
   showSavings?: boolean;
   showDiscountPercent?: boolean;
+  /** When set, overrides percent derived from original vs current price (e.g. stated promo %). */
+  discountPercent?: number;
   prefix?: string;
   suffix?: string;
   loading?: boolean;
@@ -31,6 +33,7 @@ export function PriceDisplay({
   size = 'md',
   showSavings = true,
   showDiscountPercent = true,
+  discountPercent: discountPercentOverride,
   prefix,
   suffix,
   loading = false,
@@ -40,7 +43,8 @@ export function PriceDisplay({
   const styles = sizeClasses[size];
   const hasReduction = hasEffectivePriceReduction(originalPrice, currentPrice);
   const savings = hasReduction ? originalPrice - currentPrice : 0;
-  const discountPercent = computeDiscountPercent(originalPrice, currentPrice);
+  const discountPercent =
+    discountPercentOverride ?? computeDiscountPercent(originalPrice, currentPrice);
 
   if (loading) {
     return (

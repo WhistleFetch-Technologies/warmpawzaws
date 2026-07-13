@@ -86,7 +86,7 @@ export function useDiscountAnalytics(options?: {
 
       const [overview, stats] = await Promise.all([
         fetchDiscountAnalyticsOverview(filters),
-        fetchPromotionStats(),
+        fetchPromotionStats({ domain: filters.domain }),
       ]);
       if (!overview) {
         setError('Failed to load analytics overview.');

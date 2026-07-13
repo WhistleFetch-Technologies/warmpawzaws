@@ -125,13 +125,16 @@ export function filterProvidersServicesForVetHub<T extends ProviderWithServices>
  * (needs lazy fetch) are kept — used by clinic list cards.
  */
 export function applyVetHubDiscoveryToProviders<
-  T extends Record<string, unknown> & ProviderWithServices & { needsServiceFetch?: boolean },
->(providers: T[], options?: { keepProvidersPendingServiceFetch?: boolean }): T[] {
+  T extends ProviderWithServices & { needsServiceFetch?: boolean },
+  S extends HubServiceRow = HubServiceRow,
+>(providers: (T & { services?: S[] | null })[], options?: { keepProvidersPendingServiceFetch?: boolean }): T[] {
   const keepPending = options?.keepProvidersPendingServiceFetch ?? false;
   return filterVetHubProviderRows(providers)
     .map((provider) => ({
       ...provider,
-      services: filterServicesForVetHub(Array.isArray(provider.services) ? provider.services : []),
+      services: filterServicesForVetHub<S>(
+        Array.isArray(provider.services) ? provider.services : []
+      ),
     }))
     .filter((provider) => {
       if ((provider.services?.length ?? 0) > 0) return true;
@@ -162,8 +165,8 @@ export function isNonVetProviderRow(row: Record<string, unknown>): boolean {
   return groomerRoles.some((r) => role.includes(r));
 }
 
-export function filterVetHubProviderRows<T extends Record<string, unknown>>(rows: T[]): T[] {
-  return rows.filter((row) => !isNonVetProviderRow(row));
+export function filterVetHubProviderRows<T>(rows: T[]): T[] {
+  return rows.filter((row) => !isNonVetProviderRow(row as Record<string, unknown>));
 }
 
 export function isVetHubDiscoveryConfig(config: {

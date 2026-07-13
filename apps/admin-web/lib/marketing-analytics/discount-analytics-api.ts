@@ -44,10 +44,13 @@ export async function fetchDiscountAnalyticsOverview(
   }
 }
 
-export async function fetchPromotionStats(): Promise<PromotionStatsLegacy | null> {
+export async function fetchPromotionStats(
+  filters?: Pick<AnalyticsFilters, 'domain'>
+): Promise<PromotionStatsLegacy | null> {
   try {
+    const q = filters?.domain ? `?domain=${encodeURIComponent(filters.domain)}` : '';
     const res = await apiClient.get<{ success: boolean; stats: PromotionStatsLegacy }>(
-      '/admin/promotions/stats'
+      `/admin/promotions/stats${q}`
     );
     return res.stats ?? null;
   } catch {

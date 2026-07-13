@@ -42,7 +42,6 @@ interface TrackingData {
   lastLocationUpdate?: string;
   deliveryOtp?: string | null;
   deliveredAt?: string | null;
-  reassignPending?: boolean;
   currentLat?: number;
   currentLng?: number;
   eta?: number;

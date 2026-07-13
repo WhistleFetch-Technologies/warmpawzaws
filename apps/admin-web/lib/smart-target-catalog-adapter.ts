@@ -67,10 +67,17 @@ function mapMealRow(p: Record<string, unknown>): TargetOption | null {
 function mapProductRow(p: Record<string, unknown>): TargetOption | null {
   const id = String(p.id ?? '').trim();
   if (!id) return null;
+  const priceRaw = p.price ?? p.selling_price ?? p.sellingPrice;
+  const price =
+    priceRaw != null && priceRaw !== '' && Number.isFinite(Number(priceRaw))
+      ? Number(priceRaw)
+      : undefined;
   return {
     id,
     label: String(p.name ?? p.title ?? id),
-    subtitle: p.price != null ? `₹${p.price}` : p.sku ? String(p.sku) : undefined,
+    subtitle:
+      price != null ? `₹${price}` : p.sku ? String(p.sku) : undefined,
+    price,
     group: p.category ? String(p.category) : undefined,
   };
 }

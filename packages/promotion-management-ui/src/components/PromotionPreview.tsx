@@ -1,12 +1,18 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Sparkles, Ticket } from 'lucide-react';
-import type { PromotionTargetCatalog, PromotionWizardForm } from '../types';
+import type {
+  PromotionTargetCatalog,
+  PromotionWizardForm,
+  SmartTargetCatalogAdapter,
+} from '../types';
 import {
   collectSelectedTargetOptions,
   estimateDiscountedPrice,
   formatInr,
+  mergeCatalogWithResolvedOptions,
+  resolveLazySelectedOptions,
   selectedPreviewFooter,
   selectedPreviewSectionTitle,
   supportsSimplePricePreview,
@@ -16,12 +22,41 @@ import {
 export function PromotionPreview({
   form,
   catalog,
+  smartTargetAdapter,
   showSelectedPricing = true,
 }: {
   form: PromotionWizardForm;
   catalog?: PromotionTargetCatalog;
+  smartTargetAdapter?: SmartTargetCatalogAdapter;
   showSelectedPricing?: boolean;
 }) {
+  const [previewCatalog, setPreviewCatalog] = useState<PromotionTargetCatalog | undefined>(catalog);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncCatalog = async () => {
+      if (!catalog) {
+        setPreviewCatalog(undefined);
+        return;
+      }
+      if (!smartTargetAdapter) {
+        setPreviewCatalog(catalog);
+        return;
+      }
+
+      const resolved = await resolveLazySelectedOptions(form, catalog, smartTargetAdapter);
+      if (!cancelled) {
+        setPreviewCatalog(mergeCatalogWithResolvedOptions(catalog, resolved));
+      }
+    };
+
+    void syncCatalog();
+    return () => {
+      cancelled = true;
+    };
+  }, [catalog, smartTargetAdapter, form.selectedTargets, form.targetScopes]);
+
   const isCoupon = form.createKind === 'coupon';
   const headline = isCoupon
     ? form.code || 'COUPON_CODE'
@@ -32,8 +67,8 @@ export function PromotionPreview({
       : `₹${form.discountValue} OFF`;
 
   const selectedItems = useMemo(
-    () => collectSelectedTargetOptions(form, catalog),
-    [form, catalog]
+    () => collectSelectedTargetOptions(form, previewCatalog),
+    [form, previewCatalog]
   );
 
   const canPreviewPrices = supportsSimplePricePreview(form.promotionType);
@@ -44,7 +79,7 @@ export function PromotionPreview({
   const heroEstimated = estimateDiscountedPrice(heroPrice, form);
 
   const showSelectedSection =
-    showSelectedPricing && catalog != null && selectedItems.length > 0;
+    showSelectedPricing && previewCatalog != null && selectedItems.length > 0;
 
   return (
     <div className="space-y-4">

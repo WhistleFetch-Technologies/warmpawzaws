@@ -12,6 +12,7 @@ import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
 import { calculateBestCartPromotionAsync, discountsWithinTolerance, normalizePromotionRow, type CartLineItem } from '../utils/vendor-promotion-engine';
 import { countPriorVendorOrders, recordVendorPromotionUsage } from '../utils/vendor-promotion-usage';
+import { resolveCommercialCampaignDiscount } from '../utils/resolve-commercial-campaign';
 import {
   clampRecommendationLimit,
   resolveProductRecommendations,
@@ -543,34 +544,84 @@ app.post('/promotions/calculate-cart', async (c) => {
       normalizePromotionRow(p as Record<string, unknown>)
     );
 
-    const result = await calculateBestCartPromotionAsync(normalizedPromos, cartLines, {
+    const vendorAutoResult = await calculateBestCartPromotionAsync(normalizedPromos, cartLines, {
       vendorId,
       customerId,
       priorVendorOrderCount,
-      manualCode: manualCode || undefined,
     });
 
-    const best = result.bestPromotion;
+    const vendorCodeResult = manualCode
+      ? await calculateBestCartPromotionAsync(
+          normalizedPromos,
+          cartLines,
+          {
+            vendorId,
+            customerId,
+            priorVendorOrderCount,
+            manualCode: String(manualCode).trim(),
+          },
+          { platformCouponCode: String(manualCode).trim() },
+        )
+      : null;
+
+    const vendorAutoDiscount =
+      vendorAutoResult.bestPromotion?.discountAmount ?? vendorAutoResult.totalSavings ?? 0;
+    const vendorCodeDiscount =
+      vendorCodeResult?.bestPromotion?.discountAmount ??
+      vendorCodeResult?.totalSavings ??
+      vendorCodeResult?.platformCouponDiscount ??
+      0;
+    const vendorDiscount = Math.max(vendorAutoDiscount, vendorCodeDiscount);
+    const vendorBestEval =
+      vendorCodeDiscount >= vendorAutoDiscount
+        ? vendorCodeResult?.bestPromotion
+        : vendorAutoResult.bestPromotion;
+
+    let adminDiscount = 0;
+    let adminBestEval = null as typeof vendorBestEval;
+    try {
+      const campaignResult = await resolveCommercialCampaignDiscount({
+        cartLines,
+        customerId: customerId ? String(customerId) : null,
+      });
+      adminDiscount = campaignResult.discountAmount;
+      adminBestEval = campaignResult.evaluation;
+    } catch (adminErr) {
+      console.warn('[promotions/calculate-cart] admin campaign evaluation skipped:', adminErr);
+    }
+
+    const adminWins = adminDiscount > vendorDiscount;
+    const winningDiscount = Math.max(vendorDiscount, adminDiscount);
+    const promotionSource: 'vendor' | 'admin' | undefined =
+      winningDiscount > 0 ? (adminWins ? 'admin' : 'vendor') : undefined;
+
+    const best = adminWins ? adminBestEval : vendorBestEval;
+    const originalTotal = vendorAutoResult.originalTotal;
+    const discountedTotal = Math.max(0, originalTotal - winningDiscount);
 
     return c.json({
       success: true,
-      originalTotal: result.originalTotal,
+      originalTotal,
       bestPromotion: best
         ? {
             ...best.promotion,
+            id: best.promotionId,
             calculatedDiscount: best.discountAmount,
             description: best.description,
             type: best.promotionType,
+            promotionSource,
           }
         : null,
-      allPromotions: result.allPromotions.map((e) => ({
+      allPromotions: vendorAutoResult.allPromotions.map((e) => ({
         ...e.promotion,
         calculatedDiscount: e.discountAmount,
         description: e.description,
         type: e.promotionType,
+        promotionSource: 'vendor' as const,
       })),
-      discountedTotal: result.discountedTotal,
-      totalSavings: result.totalSavings,
+      discountedTotal,
+      totalSavings: winningDiscount,
+      promotionSource: promotionSource ?? null,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);

@@ -35,6 +35,7 @@ import { CheckoutCouponPanel } from '@/components/customer/pricing/CheckoutCoupo
 import {
   validateCouponCode,
   couponValidateOrderTypeForCheckout,
+  calculateDiscountAmount,
   type AppliedCheckoutCoupon,
 } from '@/lib/pricing/coupon-validation';
 import type { CouponCheckoutKind } from '@/lib/pricing/coupon-capability';

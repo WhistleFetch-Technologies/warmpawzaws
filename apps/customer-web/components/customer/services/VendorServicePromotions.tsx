@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { PromoOffersSection } from '@/components/customer/shared/PromotionBadge';
-import { Gift } from 'lucide-react';
 
 export type VendorServicePromotion = {
   id: string;
@@ -16,15 +15,6 @@ export type VendorServicePromotion = {
   max_discount_amount?: number;
   promo_category?: string;
 };
-
-function formatServicePromoHeadline(promo: VendorServicePromotion): string {
-  const val = promo.discount_value ?? 0;
-  if (promo.discount_type === 'fixed') return `₹${val} OFF`;
-  if (val > 0) return `${val}% OFF`;
-  if (promo.promotion_type === 'first_booking') return 'First booking offer';
-  if (promo.promotion_type === 'combo') return 'Combo deal';
-  return promo.name || 'Special offer';
-}
 
 type VendorServicePromotionsProps = {
   vendorId?: string;
@@ -71,16 +61,9 @@ export function VendorServicePromotions({
 
   if (!vendorId || loading || promotions.length === 0) return null;
 
-  const headlines = promotions.slice(0, 4).map((p) => formatServicePromoHeadline(p));
-
   return (
     <div className={className}>
-      <PromoOffersSection
-        icon={Gift}
-        title={vendorName ? `Offers from ${vendorName}` : 'Service offers'}
-        subtitle="Applied automatically on eligible services at checkout"
-        offers={headlines}
-      />
+      <PromoOffersSection promotions={promotions} />
     </div>
   );
 }

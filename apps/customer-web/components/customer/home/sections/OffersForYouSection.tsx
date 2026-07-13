@@ -66,8 +66,7 @@ function CmsBannerImage({ src, alt }: { src: string; alt: string }) {
     <PresignableImage
       src={src}
       alt={alt}
-      fill
-      className="object-cover object-center"
+      className="absolute inset-0 h-full w-full object-cover object-center"
     />
   );
 }

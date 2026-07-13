@@ -7,7 +7,7 @@ import { extractBookingFinancial } from '@/lib/pricing/booking-financial';
 import type { BookingFinancialSnapshot } from '@/lib/pricing/booking-financial';
 
 export type BookingConfirmationSavingsProps = {
-  bookingId?: string;
+  bookingId?: string | null;
   fallbackBasePrice?: number;
   className?: string;
 };

@@ -224,6 +224,8 @@ export function CouponSection({
           const normalizedCode = code.toUpperCase();
           const couponPayload: AppliedCoupon = {
             code: normalizedCode,
+            discountType: 'fixed',
+            discountValue: appliedCouponOffer.discountAmount,
             discountAmount: appliedCouponOffer.discountAmount,
             promotionId: appliedCouponOffer.id,
           };

@@ -74,6 +74,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     discountAmount: number;
     promotionId?: string;
     label?: string;
+    source?: 'vendor' | 'admin';
   } | null>(null);
   const [addresses, setAddresses] = useState<DeliveryAddress[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<DeliveryAddress | null>(null);
@@ -107,9 +108,8 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       label: selectedPromo?.label ?? autoPromo?.label,
       promotionId: selectedPromo?.promotionId ?? autoPromo?.promotionId,
       code: selectedPromo?.code,
-      // Auto-applied promos come from POST /promotions/calculate-cart, which only
-      // ever queries vendor_promotions — always vendor-sourced.
-      source: selectedPromo ? selectedPromo.source : 'vendor',
+      // Auto-applied promos come from POST /promotions/calculate-cart (vendor or admin winner).
+      source: selectedPromo ? selectedPromo.source : (autoPromo?.source ?? 'vendor'),
     };
   }, [selectedPromo, autoPromo]);
 
@@ -161,7 +161,9 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             name?: string;
             description?: string;
             calculatedDiscount?: number;
+            promotionSource?: 'vendor' | 'admin';
           };
+          promotionSource?: 'vendor' | 'admin' | null;
         }>('/promotions/calculate-cart', {
           vendorId: primaryVendorId,
           customerId: getResolvedCustomerId() || undefined,
@@ -170,11 +172,14 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
         if (cancelled) return;
         const best = res?.bestPromotion;
         const amount = best?.calculatedDiscount ?? 0;
+        const promoSource =
+          best?.promotionSource ?? res?.promotionSource ?? undefined;
         if (amount > 0) {
           setAutoPromo({
             discountAmount: amount,
             promotionId: best?.id,
             label: best?.description || best?.name || 'Promotion applied',
+            source: promoSource === 'admin' ? 'admin' : 'vendor',
           });
         } else {
           setAutoPromo(null);

@@ -87,6 +87,7 @@ import {
   productIdIsExcludedFromEcommerceStorefront,
   storefrontExcludeMealProductsSql,
 } from '../../../utils/ecommerce-storefront-product-filter';
+import { enrichStorefrontProductsWithPromoPricing } from '../../../utils/storefront-product-promo-pricing';
 
 const ADMIN_CATEGORY_SELECT = `
   SELECT id::text AS id, name, description, display_order, is_active, image_url,
@@ -203,19 +204,28 @@ function normalizeTaxBreakdownForDb(raw: unknown): Record<string, unknown>[] | n
   return null;
 }
 
+/** Optional customer scope for storefront promo enrichment (query param). */
+function resolveOptionalStorefrontCustomerId(c: { req: { query: (key: string) => string | undefined } }): string | null {
+  const raw = c.req.query('customerId') ?? c.req.query('customer_id');
+  if (!raw || !isValidUUID(String(raw).trim())) return null;
+  return String(raw).trim();
+}
+
 /** Presign product rows and apply SKU listing pricing for variant products (single batch query). */
 async function enrichStorefrontProductListRows(
   rows: Record<string, unknown>[],
+  customerId?: string | null,
 ): Promise<Record<string, unknown>[]> {
   const signed = await prepareStorefrontProductRows(rows);
   const ids = signed.map((r) => String(r.id ?? '')).filter(Boolean);
   const skuMap = await loadProductSkusForProducts(ids);
-  return signed.map((row) => {
+  const withSkuPricing = signed.map((row) => {
     const pid = String(row.id ?? '');
     const skus = skuMap.get(pid) ?? [];
     if (skus.length === 0) return row;
     return applyStorefrontSkuPricingFields(row, skus);
   });
+  return enrichStorefrontProductsWithPromoPricing(withSkuPricing, customerId);
 }
 
 export function registerEcommerceEndpoints(app: Hono) {
@@ -277,9 +287,16 @@ export function registerEcommerceEndpoints(app: Hono) {
         product.has_variants = false;
       }
 
+      const customerId = resolveOptionalStorefrontCustomerId(c);
+      const [enrichedProduct] = await enrichStorefrontProductsWithPromoPricing(
+        [product as Record<string, unknown>],
+        customerId,
+      );
+      const productOut = enrichedProduct ?? product;
+
       return c.json({
         success: true,
-        product,
+        product: productOut,
         skus: skusPresigned,
         variation_axes,
       });
@@ -376,7 +393,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       const rows = (products?.rows || []) as Record<string, unknown>[];
-      const signedProducts = await enrichStorefrontProductListRows(rows);
+      const customerId = resolveOptionalStorefrontCustomerId(c);
+      const signedProducts = await enrichStorefrontProductListRows(rows, customerId);
 
       return c.json({
         success: true,
@@ -553,7 +571,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       const rows = (products?.rows || []) as Record<string, unknown>[];
-      const signedProducts = await enrichStorefrontProductListRows(rows);
+      const customerId = resolveOptionalStorefrontCustomerId(c);
+      const signedProducts = await enrichStorefrontProductListRows(rows, customerId);
 
       return c.json({
         success: true,

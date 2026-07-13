@@ -795,18 +795,52 @@ function SmartPromotionTargetSelector({
                   <TargetListSkeleton rows={5} />
                 ) : inventoryError ? (
                   <TargetEmptyState message={inventoryError} onRetry={() => void loadInventory()} />
-                ) : inventoryPageItems.length === 0 ? (
+                ) : inventoryOptions.length === 0 ? (
                   <TargetEmptyState
                     message="No published inventory found for this vendor."
                     hint="Only enabled, approved listings appear here."
                   />
                 ) : (
-                  <CheckboxList
-                    items={inventoryPageItems}
-                    selected={selectedTargets[inventoryScope] ?? []}
-                    onToggle={toggleInventory}
-                    namePrefix="inventory"
-                  />
+                  <>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-orange-600"
+                        onClick={() =>
+                          syncScopes({
+                            ...selectedTargets,
+                            vendors: selectedPartnerId ? [selectedPartnerId] : [],
+                            [inventoryScope]: inventoryOptions.map((o) => o.id),
+                          })
+                        }
+                      >
+                        Select all
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-slate-500"
+                        onClick={() =>
+                          syncScopes({
+                            ...selectedTargets,
+                            vendors: selectedPartnerId ? [selectedPartnerId] : [],
+                            [inventoryScope]: [],
+                          })
+                        }
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    {inventoryPageItems.length === 0 ? (
+                      <TargetEmptyState message="No inventory matches your search." />
+                    ) : (
+                      <CheckboxList
+                        items={inventoryPageItems}
+                        selected={selectedTargets[inventoryScope] ?? []}
+                        onToggle={toggleInventory}
+                        namePrefix="inventory"
+                      />
+                    )}
+                  </>
                 )}
                 <Paginator
                   page={inventoryPage}

@@ -2,8 +2,10 @@ import type {
   PromotionTargetCatalog,
   PromotionWizardForm,
   PromotionTypeId,
+  SmartTargetCatalogAdapter,
   TargetOption,
   TargetScopeId,
+  VendorInventoryType,
 } from './types';
 
 const ITEM_LEVEL_SCOPES: TargetScopeId[] = ['services', 'packages', 'meal_plans', 'products'];
@@ -94,6 +96,99 @@ function catalogForScope(
     default:
       return undefined;
   }
+}
+
+function catalogKeyForScope(scope: TargetScopeId): keyof PromotionTargetCatalog | undefined {
+  switch (scope) {
+    case 'services':
+      return 'services';
+    case 'packages':
+      return 'packages';
+    case 'meal_plans':
+      return 'mealPlans';
+    case 'products':
+      return 'products';
+    default:
+      return undefined;
+  }
+}
+
+/** Merge lazily loaded target rows (e.g. seller products) into a base catalog for preview. */
+export function mergeCatalogWithResolvedOptions(
+  catalog: PromotionTargetCatalog | undefined,
+  resolved: Partial<Record<TargetScopeId, TargetOption[]>>
+): PromotionTargetCatalog {
+  const merged: PromotionTargetCatalog = { ...(catalog ?? {}) };
+
+  for (const scope of ITEM_LEVEL_SCOPES) {
+    const extras = resolved[scope];
+    if (!extras?.length) continue;
+
+    const key = catalogKeyForScope(scope);
+    if (!key) continue;
+
+    const existing = (merged[key] as TargetOption[] | undefined) ?? [];
+    const byId = new Map(existing.map((o) => [o.id, o]));
+    for (const option of extras) {
+      byId.set(option.id, option);
+    }
+    merged[key] = Array.from(byId.values()) as PromotionTargetCatalog[typeof key];
+  }
+
+  return merged;
+}
+
+function missingSelectedIds(
+  form: PromotionWizardForm,
+  catalog: PromotionTargetCatalog | undefined,
+  scope: TargetScopeId
+): string[] {
+  const ids = form.selectedTargets[scope];
+  if (!ids?.length) return [];
+
+  const options = catalogForScope(scope, catalog ?? {}) ?? [];
+  const known = new Set(options.map((o) => o.id));
+  return ids.filter((id) => !known.has(id));
+}
+
+/** Load selected inventory rows missing from the lightweight base catalog (smart-target flows). */
+export async function resolveLazySelectedOptions(
+  form: PromotionWizardForm,
+  catalog: PromotionTargetCatalog | undefined,
+  adapter?: SmartTargetCatalogAdapter
+): Promise<Partial<Record<TargetScopeId, TargetOption[]>>> {
+  if (!adapter) return {};
+
+  const resolved: Partial<Record<TargetScopeId, TargetOption[]>> = {};
+  const vendorId = form.selectedTargets.vendors?.[0];
+
+  const missingProducts = missingSelectedIds(form, catalog, 'products');
+  if (missingProducts.length > 0 && vendorId && adapter.loadSellerProducts) {
+    const rows = await adapter.loadSellerProducts(vendorId, '');
+    resolved.products = rows.filter((row) => missingProducts.includes(row.id));
+  }
+
+  const inventoryTypes: VendorInventoryType[] = ['services', 'packages', 'meal_plans'];
+  if (vendorId && adapter.loadVendorInventory) {
+    await Promise.all(
+      inventoryTypes.map(async (inventoryType) => {
+        const scope = inventoryType as TargetScopeId;
+        const missing = missingSelectedIds(form, catalog, scope);
+        if (missing.length === 0) return;
+        const rows = await adapter.loadVendorInventory!(vendorId, inventoryType, '');
+        resolved[scope] = rows.filter((row) => missing.includes(row.id));
+      })
+    );
+  }
+
+  const missingServices = missingSelectedIds(form, catalog, 'services');
+  const categoryIds = form.selectedTargets.categories ?? [];
+  if (missingServices.length > 0 && categoryIds.length > 0 && adapter.loadCatalogServicesByCategory) {
+    const rows = await adapter.loadCatalogServicesByCategory(categoryIds, '');
+    resolved.services = rows.filter((row) => missingServices.includes(row.id));
+  }
+
+  return resolved;
 }
 
 export function collectSelectedTargetOptions(

@@ -33,7 +33,12 @@ export function aggregatePromotionMetrics(usages: PromotionUsageRow[]): Promotio
       0
     );
     const customers = new Set(list.map((u) => u.customerId).filter(Boolean));
-    const owner = list[0]?.promotionType === 'product' || list[0]?.promotionType === 'service' ? 'vendor' : 'platform';
+    const first = list[0];
+    const owner: 'platform' | 'vendor' =
+      first?.promotionType === 'service' ||
+      (first?.promotionType === 'product' && Boolean(first?.vendorId))
+        ? 'vendor'
+        : 'platform';
 
     rows.push({
       promotionId,
@@ -97,10 +102,18 @@ export function aggregateVendorMetrics(
     const promoIds = new Set(list.map((u) => u.promotionId));
     const savings = list.reduce((s, u) => s + (u.discountAmount || 0), 0);
     const vendorFunded = list
-      .filter((u) => u.promotionType === 'service' || u.promotionType === 'product')
+      .filter(
+        (u) =>
+          u.promotionType === 'service' ||
+          (u.promotionType === 'product' && Boolean(u.vendorId)),
+      )
       .reduce((s, u) => s + (u.discountAmount || 0), 0);
     const platformFunded = list
-      .filter((u) => u.promotionType === 'platform')
+      .filter(
+        (u) =>
+          u.promotionType === 'platform' ||
+          (u.promotionType === 'product' && !u.vendorId),
+      )
       .reduce((s, u) => s + (u.discountAmount || 0), 0);
 
     const byPromo = aggregatePromotionMetrics(list).slice(0, 5);
@@ -131,10 +144,18 @@ export function aggregateSavings(
   const promotionSavings = promotionUsages.reduce((s, u) => s + (u.discountAmount || 0), 0);
   const couponSavings = couponUsages.reduce((s, u) => s + (u.discountAmount ?? 0), 0);
   const vendorSavings = promotionUsages
-    .filter((u) => u.promotionType === 'service' || u.promotionType === 'product')
+    .filter(
+      (u) =>
+        u.promotionType === 'service' ||
+        (u.promotionType === 'product' && Boolean(u.vendorId)),
+    )
     .reduce((s, u) => s + (u.discountAmount || 0), 0);
   const platformSavings = promotionUsages
-    .filter((u) => u.promotionType === 'platform')
+    .filter(
+      (u) =>
+        u.promotionType === 'platform' ||
+        (u.promotionType === 'product' && !u.vendorId),
+    )
     .reduce((s, u) => s + (u.discountAmount || 0), 0);
 
   const byCategoryMap = new Map<string, number>();
