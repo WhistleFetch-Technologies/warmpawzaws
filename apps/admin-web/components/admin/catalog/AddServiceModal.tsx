@@ -50,6 +50,20 @@ function toCanonicalRoleCode(v: string): string {
   return ROLE_DISPLAY_TO_CODE[withSpace] ?? ROLE_DISPLAY_TO_CODE[withUnderscore] ?? ROLE_DISPLAY_TO_CODE[raw] ?? withUnderscore;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+
+function resolveCategoryForSave(categoryIdVal: string, cats: any[]): { slug: string; name: string } {
+  if (!categoryIdVal) return { slug: '', name: '' };
+  const c = cats.find(
+    (cat: any) =>
+      (cat.id && String(cat.id) === String(categoryIdVal)) ||
+      (cat.category_id && String(cat.category_id) === String(categoryIdVal))
+  );
+  const slug = String(c?.category_id || categoryIdVal).trim();
+  const name = String(c?.name || c?.display_name || '').trim();
+  return { slug, name };
+}
+
 interface Service {
   id: string;
   name: string;
@@ -157,7 +171,16 @@ export function AddServiceModal({
     }
   }, [isOpen, categoryId, subCategoryId, service]);
 
-  // Resolve category to slug for API (specialization_master uses slugs; admin may send service_categories.id UUID)
+  // Normalize legacy UUID category_id to slug once categories are loaded (edit flow).
+  useEffect(() => {
+    if (!isOpen || categories.length === 0 || !formData.categoryId) return;
+    if (!UUID_RE.test(String(formData.categoryId))) return;
+    const { slug } = resolveCategoryForSave(formData.categoryId, categories);
+    if (slug && slug !== formData.categoryId) {
+      setFormData((prev) => ({ ...prev, categoryId: slug }));
+    }
+  }, [isOpen, categories, formData.categoryId]);
+
   const getCategorySlugForSpec = useCallback((categoryIdVal: string) => {
     if (!categoryIdVal) return '';
     const c = categories.find((cat: any) => (cat.id && String(cat.id) === String(categoryIdVal)) || (cat.category_id && String(cat.category_id) === String(categoryIdVal)));
@@ -275,13 +298,19 @@ export function AddServiceModal({
         isPackage: formData.isPackage,
         show_final_price_inclusive_tax: formData.showFinalPriceInclusiveTax,
       };
+      const { slug: categorySlug, name: categoryDisplayName } = resolveCategoryForSave(
+        formData.categoryId,
+        categories
+      );
+
       if (service?.id) {
         // Update existing service
         await apiClient.put(`/admin/service-catalog/${service.id}`, {
           service_name: formData.name,
           display_name: formData.name,
           description: formData.description,
-          category_id: formData.categoryId,
+          category_id: categorySlug,
+          category_name: categoryDisplayName,
           sub_category_id: formData.subCategoryId,
           base_price: parseFloat(formData.price) || 0,
           duration_minutes: parseInt(formData.duration) || 30,
@@ -300,7 +329,8 @@ export function AddServiceModal({
           name: formData.name,
           code: formData.code,
           description: formData.description,
-          categoryId: formData.categoryId,
+          categoryId: categorySlug,
+          categoryName: categoryDisplayName,
           subCategoryId: formData.subCategoryId,
           price: formData.price,
           duration: formData.duration,
@@ -409,23 +439,21 @@ export function AddServiceModal({
             />
           </div>
 
-          {!categoryId && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Parent Category
-              </label>
-              <select
-                value={formData.categoryId}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('categoryId', e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
-              >
-                <option value="">Select category</option>
-                {categories.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Parent Category
+            </label>
+            <select
+              value={formData.categoryId}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('categoryId', e.target.value)}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
+            >
+              <option value="">Select category</option>
+              {categories.map(cat => (
+                <option key={cat.id} value={cat.category_id || cat.id}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
