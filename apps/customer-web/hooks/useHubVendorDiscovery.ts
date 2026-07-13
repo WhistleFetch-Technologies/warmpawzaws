@@ -10,6 +10,11 @@ import {
   type BoardingListVendor,
 } from '@/lib/boarding-vendor-discovery-map';
 import type { HubVendorDiscoveryConfig } from '@/lib/service-hub-discovery-config';
+import {
+  filterPlanRowsForVetHub,
+  filterVetHubProviderRows,
+  isVetHubDiscoveryConfig,
+} from '@/lib/filter-hub-services';
 
 function extractRows(data: any): any[] {
   if (!data) return [];
@@ -117,9 +122,18 @@ export function useHubVendorDiscovery(
         sittingRelaxed: config.discoverCategory === 'sitting',
       });
 
+      if (isVetHubDiscoveryConfig(config)) {
+        rows = filterVetHubProviderRows(rows);
+      }
+
       const { list, relaxedFilter: relaxed } = buildBoardingVendorListFromRows(rows, 'all');
+      const finalList = isVetHubDiscoveryConfig(config)
+        ? list
+            .map((v) => ({ ...v, planRows: filterPlanRowsForVetHub(v.planRows) }))
+            .filter((v) => v.planRows.length > 0)
+        : list;
       setRelaxedFilter(relaxed);
-      setVendors(list);
+      setVendors(finalList);
     } catch (e) {
       console.error('[useHubVendorDiscovery]', e);
       setVendors([]);
@@ -143,7 +157,10 @@ export function useHubVendorDiscovery(
               `/customer/vendor/${vendorId}/services?serviceStyle=${encodeURIComponent(config.serviceStyle)}`
             )
           );
-        const rows = mapServicesApiResponseToPlanRows(servicesResponse);
+        const mapped = mapServicesApiResponseToPlanRows(servicesResponse);
+        const rows = isVetHubDiscoveryConfig(config)
+          ? filterPlanRowsForVetHub(mapped)
+          : mapped;
         setVendors((prev) =>
           prev.map((v) =>
             v.id === vendorId ? { ...v, planRows: rows, needsServiceFetch: false } : v

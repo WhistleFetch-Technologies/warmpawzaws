@@ -1,8 +1,35 @@
 import {
   filterProvidersServicesForVetHub,
   filterServicesForVetHub,
+  filterVetHubProviderRows,
   isGroomingServiceForVetHub,
+  resolveServiceCategoryDisplayLabel,
 } from '../filter-hub-services';
+
+describe('resolveServiceCategoryDisplayLabel', () => {
+  it('shows Grooming instead of General for groom_ear', () => {
+    expect(
+      resolveServiceCategoryDisplayLabel({
+        category: 'General',
+        catalogServiceSlug: 'groom_ear',
+      })
+    ).toBe('Grooming');
+  });
+
+  it('hides bare General when not vet catalog', () => {
+    expect(resolveServiceCategoryDisplayLabel({ category: 'General' })).toBeUndefined();
+  });
+});
+
+describe('filterVetHubProviderRows', () => {
+  it('drops groomer-center providers from vet hub rows', () => {
+    const rows = [
+      { id: 'vet-1', roleDisplayName: 'Veterinary Clinic' },
+      { id: 'g-1', roleDisplayName: 'Groomer (Center)' },
+    ];
+    expect(filterVetHubProviderRows(rows).map((r) => r.id)).toEqual(['vet-1']);
+  });
+});
 
 describe('isGroomingServiceForVetHub', () => {
   it('flags groom_ear with General category (grooming catalog mis-tagged)', () => {

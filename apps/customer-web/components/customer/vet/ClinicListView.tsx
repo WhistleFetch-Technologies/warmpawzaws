@@ -25,7 +25,7 @@ import {
   normalizeVendorServiceRowForPackage,
 } from '@/lib/vendor-package-purchase-nav';
 import { toast } from 'sonner';
-import { filterServicesForVetHub } from '@/lib/filter-hub-services';
+import { filterServicesForVetHub, resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
@@ -818,7 +818,7 @@ export function ClinicListView({
                                     <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                                     <span>{service.duration} mins</span>
                                     <span className="text-gray-300">·</span>
-                                    <span>{service.category || 'Vet Care'}</span>
+                                    <span>{resolveServiceCategoryDisplayLabel(service) || 'Vet Care'}</span>
                                   </div>
                                   <Button
                                     type="button"

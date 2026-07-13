@@ -10,10 +10,11 @@ const GROOMING_CATALOG_SERVICE_IDS = new Set([
   'groom_home',
 ]);
 
-type VetHubServiceRow = {
+export type HubServiceRow = {
   category?: string | null;
   categoryName?: string | null;
   categorySlug?: string | null;
+  name?: string | null;
   catalogCategoryId?: string | null;
   category_id?: string | null;
   catalog_category_id?: string | null;
@@ -21,16 +22,17 @@ type VetHubServiceRow = {
   catalogServiceSlug?: string | null;
   serviceId?: string | null;
   service_id?: string | null;
+  resolved_category?: string | null;
 };
 
-function serviceCategoryHaystack(service: VetHubServiceRow): string {
-  return [service.category, service.categoryName, service.categorySlug]
+function serviceCategoryHaystack(service: HubServiceRow): string {
+  return [service.category, service.categoryName, service.categorySlug, service.resolved_category]
     .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
     .join(' ')
     .toLowerCase();
 }
 
-function catalogCategoryId(service: VetHubServiceRow): string {
+function catalogCategoryId(service: HubServiceRow): string {
   return String(
     service.catalogCategoryId ?? service.catalog_category_id ?? service.category_id ?? ''
   )
@@ -38,7 +40,7 @@ function catalogCategoryId(service: VetHubServiceRow): string {
     .toLowerCase();
 }
 
-function catalogServiceId(service: VetHubServiceRow): string {
+function catalogServiceId(service: HubServiceRow): string {
   return String(
     service.catalogServiceSlug ??
       service.catalogServiceId ??
@@ -51,7 +53,7 @@ function catalogServiceId(service: VetHubServiceRow): string {
 }
 
 /** True when a service row is grooming-only and should be hidden on vet hub surfaces. */
-export function isGroomingServiceForVetHub(service: VetHubServiceRow): boolean {
+export function isGroomingServiceForVetHub(service: HubServiceRow): boolean {
   const haystack = serviceCategoryHaystack(service);
   if (haystack.includes('groom')) return true;
 
@@ -64,13 +66,45 @@ export function isGroomingServiceForVetHub(service: VetHubServiceRow): boolean {
   return false;
 }
 
+/**
+ * Customer-facing category badge — never show misleading "General" on grooming catalog rows.
+ * Returns undefined to omit the badge when there is no meaningful label.
+ */
+export function resolveServiceCategoryDisplayLabel(service: HubServiceRow): string | undefined {
+  const catalogId = catalogCategoryId(service);
+  const catalogSlug = catalogServiceId(service);
+
+  if (catalogId === 'grooming' || catalogSlug.startsWith('groom_')) {
+    return 'Grooming';
+  }
+  if (catalogId === 'veterinary' || catalogSlug.startsWith('vet_')) {
+    return 'Veterinary';
+  }
+
+  const raw =
+    [service.resolved_category, service.categoryName, service.category, service.categorySlug].find(
+      (v) => typeof v === 'string' && v.trim()
+    )?.trim() || '';
+  const norm = raw.toLowerCase();
+
+  if (norm.includes('groom')) return 'Grooming';
+  if (norm.includes('vet') || norm.includes('veterinar')) return 'Veterinary';
+
+  // Vendor custom services default to "General" — hide when not vet-specific.
+  if (norm === 'general' || norm === 'general services') {
+    return undefined;
+  }
+
+  return raw || undefined;
+}
+
 /** Drop grooming catalog / category services from vet clinic discovery and booking lists. */
-export function filterServicesForVetHub<T extends VetHubServiceRow>(services: T[]): T[] {
+export function filterServicesForVetHub<T extends HubServiceRow>(services: T[]): T[] {
   return services.filter((service) => !isGroomingServiceForVetHub(service));
 }
 
 type ProviderWithServices = {
-  services?: VetHubServiceRow[] | null;
+  services?: HubServiceRow[] | null;
 };
 
 /** Filter each provider's services for vet hub; omit providers with no services left. */
@@ -83,4 +117,59 @@ export function filterProvidersServicesForVetHub<T extends ProviderWithServices>
       services: filterServicesForVetHub(Array.isArray(provider.services) ? provider.services : []),
     }))
     .filter((provider) => (provider.services?.length ?? 0) > 0);
+}
+
+/** Groomer / grooming-role providers must not appear on vet hub vendor lists. */
+export function isNonVetProviderRow(row: Record<string, unknown>): boolean {
+  const role = String(
+    row.roleDisplayName ?? row.roleName ?? row.role ?? row.providerType ?? ''
+  )
+    .trim()
+    .toLowerCase();
+  const category = String(row.category ?? row.serviceCategory ?? row.service_category ?? '')
+    .trim()
+    .toLowerCase();
+  if (category.includes('groom') || role.includes('groom')) return true;
+  const groomerRoles = [
+    'groomer',
+    'groomer_center',
+    'groomer_solo',
+    'pet_groomer',
+    'grooming_solo',
+    'grooming_salon',
+    'pet_spa',
+  ];
+  return groomerRoles.some((r) => role.includes(r));
+}
+
+export function filterVetHubProviderRows<T extends Record<string, unknown>>(rows: T[]): T[] {
+  return rows.filter((row) => !isNonVetProviderRow(row));
+}
+
+export function isVetHubDiscoveryConfig(config: {
+  discoverCategory?: string;
+  servicesApiCategory?: string;
+}): boolean {
+  const c = String(config.discoverCategory ?? config.servicesApiCategory ?? '')
+    .trim()
+    .toLowerCase();
+  return c === 'vet' || c === 'veterinary' || c === 'veterinarian';
+}
+
+export function filterPlanRowsForVetHub<
+  T extends {
+    categoryLabel?: string;
+    serviceId?: string;
+    name?: string;
+  },
+>(planRows: T[]): T[] {
+  return planRows.filter(
+    (plan) =>
+      !isGroomingServiceForVetHub({
+        category: plan.categoryLabel,
+        serviceId: plan.serviceId,
+        catalogServiceSlug: plan.serviceId,
+        name: plan.name,
+      })
+  );
 }
