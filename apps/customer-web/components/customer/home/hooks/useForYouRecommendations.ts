@@ -50,7 +50,9 @@ export function useForYouRecommendations(phone?: string) {
 
     const load = async () => {
       const hadCache =
-        (readHomeSessionCache<ForYouRecommendationItem[]>(phone, 'for_you')?.length ?? 0) > 0;
+        ((phone
+          ? readHomeSessionCache<ForYouRecommendationItem[]>(phone, 'for_you')?.length
+          : 0) ?? 0) > 0;
       if (!hadCache) setLoading(true);
       if (!phone) {
         setApiItems([]);

@@ -418,7 +418,7 @@ export function EnhancedWalletPage({
               {(wallet?.loyalty_points ?? 0) > 0 && (
                 <div className="flex items-center gap-1 text-amber-200 text-sm">
                   <Coins className="w-4 h-4" />
-                  {wallet.loyalty_points} pts
+                  {wallet?.loyalty_points} pts
                 </div>
               )}
             </div>
@@ -432,7 +432,7 @@ export function EnhancedWalletPage({
               {(wallet?.pending_credits ?? 0) > 0 && (
                 <div className="flex items-center justify-center gap-1 mt-2 text-amber-200 text-sm">
                   <Clock className="w-4 h-4" />
-                  ₹{wallet.pending_credits.toLocaleString()} pending
+                  ₹{wallet?.pending_credits?.toLocaleString()} pending
                 </div>
               )}
             </div>

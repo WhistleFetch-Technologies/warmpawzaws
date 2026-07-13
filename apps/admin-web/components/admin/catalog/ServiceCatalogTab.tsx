@@ -11,6 +11,29 @@ import { AddServiceModal } from './AddServiceModal';
 import { EnhancedModal } from '../shared/EnhancedModal';
 import { EnhancedButton } from '../shared/EnhancedButton';
 
+function serviceCatalogListCategoryLabel(s: {
+  category_name?: string | null;
+  category_id?: string | null;
+}): string {
+  const id = String(s.category_id ?? '').trim();
+  const name = String(s.category_name ?? '').trim();
+  if (name && !(name.toLowerCase() === 'general' && id && id.toLowerCase() !== 'general')) {
+    return name;
+  }
+  if (id) {
+    const known: Record<string, string> = {
+      veterinary: 'Veterinary Services',
+      diagnostic: 'Diagnostics & Lab',
+      diagnostics: 'Diagnostics & Lab',
+      grooming: 'Grooming & Hygiene',
+    };
+    const mapped = known[id.toLowerCase()];
+    if (mapped) return mapped;
+    return id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  return '';
+}
+
 interface Service {
   id: string;
   name: string;
@@ -95,7 +118,7 @@ export function ServiceCatalogTab() {
       const mappedServices: Service[] = servicesArray.map((s: any) => ({
         id: s.id || s.service_id,
         name: s.service_name || s.display_name || s.name,
-        category: s.category_name || s.category_id || 'General',
+        category: serviceCatalogListCategoryLabel(s),
         status: (['active', 'inactive', 'draft', 'pending'].includes(s.status)
           ? s.status
           : s.status === 'archived' ? 'inactive' : 'inactive') as 'active' | 'inactive' | 'pending' | 'draft',
@@ -450,9 +473,11 @@ export function ServiceCatalogTab() {
                     <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full border bg-purple-50 text-purple-700 border-purple-200">
                       {service.isPackage ? 'Package' : 'Service'}
                     </span>
-                    <span className="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full border border-gray-200">
-                      {service.category}
-                    </span>
+                    {service.category ? (
+                      <span className="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full border border-gray-200">
+                        {service.category}
+                      </span>
+                    ) : null}
                   </div>
                   
                   {service.description && (
@@ -578,9 +603,11 @@ export function ServiceCatalogTab() {
                 <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${viewingService.isPackage ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
                   {viewingService.isPackage ? 'Package' : 'Service'}
                 </span>
-                <span className="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">
-                  {viewingService.category}
-                </span>
+                {viewingService.category ? (
+                  <span className="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">
+                    {viewingService.category}
+                  </span>
+                ) : null}
               </div>
             </div>
 

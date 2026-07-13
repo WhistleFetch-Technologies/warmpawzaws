@@ -1024,83 +1024,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
   });
 
   /**
-   * POST /vendor/:vendorId/profile/photo
-   * Upload vendor profile photo to S3
+   * Profile photo upload lives in vendorProfile.vendor.ts (registered handler).
+   * @deprecated duplicate route removed — use POST /vendor/:vendorId/profile/photo there.
    */
-  app.post("/vendor/:vendorId/profile/photo", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      
-      console.log(`📸 [PROFILE-PHOTO] Uploading photo for vendor: ${vendorId}`);
-      
-      // Verify vendor exists (same resolver as GET profile - supports vendor_identity + auto-create)
-      const vendor = await resolveVendorById(vendorId);
-      if (!vendor) {
-        return c.json({ error: 'Vendor not found' }, 404);
-      }
-
-      // Parse the multipart form data
-      const formData = await c.req.formData();
-      const photo = formData.get('photo') as File;
-      
-      if (!photo) {
-        return c.json({ error: 'No photo provided' }, 400);
-      }
-
-      // Upload to S3
-      const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
-      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-      
-      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-      
-      // Generate unique filename
-      const timestamp = Date.now();
-      const ext = photo.name.split('.').pop() || 'jpg';
-      const actualVendorId = vendor.id; // Use resolved vendor id (may differ from URL if matched by phone)
-      const fileName = `vendors/${actualVendorId}/profile/photo_${timestamp}.${ext}`;
-      
-      // Convert File to ArrayBuffer and upload
-      const arrayBuffer = await photo.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      
-      await s3Client.send(new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: fileName,
-        Body: uint8Array,
-        ContentType: photo.type || 'image/jpeg',
-      }));
-      
-      // ✅ FIX: Store S3 key instead of pre-signed URL to avoid expiration issues
-      // Pre-signed URLs expire after 7 days, but we can regenerate them on-demand
-      // Store the S3 key (fileName) so we can generate fresh URLs when needed
-      await update('vendors', { id: actualVendorId }, {
-        profile_photo_url: fileName, // Store S3 key, not pre-signed URL
-        updated_at: new Date().toISOString(),
-      });
-      
-      // Generate presigned URL for immediate use (valid for 7 days)
-      const signedUrl = await getSignedUrl(
-        s3Client,
-        new GetObjectCommand({
-          Bucket: BUCKET_NAME,
-          Key: fileName,
-        }),
-        { expiresIn: 604800 } // 7 days (max for presigned URLs)
-      );
-      
-      console.log(`✅ [PROFILE-PHOTO] Photo uploaded successfully for vendor ${actualVendorId}`);
-      
-      return c.json({
-        success: true,
-        photo_url: signedUrl,
-        fileName: fileName,
-      });
-    } catch (error: any) {
-      console.error('❌ [PROFILE-PHOTO] Error uploading photo:', error);
-      return c.json({ error: error.message || 'Failed to upload photo' }, 500);
-    }
-  });
 
   /**
    * PUT/POST /vendor/:vendorId/profile

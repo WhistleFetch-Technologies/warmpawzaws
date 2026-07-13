@@ -461,7 +461,10 @@ export function EnhancedAddPetModal({
             )}
             <button
               type="button"
-              onClick={() => removeVaccination(record.id)}
+              onClick={() => {
+                const removeId = record.id ?? record.vaccineKey ?? item.key;
+                removeVaccination(removeId);
+              }}
               className="text-red-500 hover:text-red-600 p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-red-300"
               aria-label={`Remove ${item.displayName}`}
             >

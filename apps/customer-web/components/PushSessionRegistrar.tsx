@@ -32,7 +32,7 @@ const RETRY_DELAYS_MS = [2_000, 5_000, 10_000, 20_000];
 export function PushSessionRegistrar() {
   useEffect(() => {
     let cancelled = false;
-    let customerIdPollTimer: ReturnType<typeof setInterval> | undefined;
+    let customerIdPollTimer: number | undefined;
 
     const registerSession = async (attempt = 0, force = false): Promise<void> => {
       if (cancelled) return;

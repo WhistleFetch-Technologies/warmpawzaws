@@ -42,6 +42,8 @@ import {
   sqlVendorServiceDiscoverable,
   sqlVendorServicesHubCategoryFilter,
   vendorServicesHubCategoryBindParams,
+  sqlVetHubExcludeNonVetServices,
+  isVetHubCategoryRequest,
   TRAINING_HUB_ROLE_SQL_IN_LIST,
   BEHAVIOR_HUB_ROLE_SQL_IN_LIST,
   catTextRequestsBehaviorHub,
@@ -63,6 +65,19 @@ import {
   isSlotPastInIst,
   ymdInIst,
 } from '../../../utils/ist-scheduling';
+import {
+  filterSearchResultsByDiscoveryRules,
+  hubSlugToDiscoveryContext,
+  loadVendorRadiusMetaByIds,
+  type HubDiscoveryContext,
+} from '../../../lib/search-discovery-parity';
+import {
+  uploadDisplayImage,
+  ImageProcessingError,
+  FACILITY_MAX_PHOTOS,
+  mapWithConcurrency,
+  resolveImageForContext,
+} from '../../../services/image';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
@@ -102,6 +117,52 @@ function discoveryCustomerRadiusKm(opts: {
   if (opts.serviceStyleNorm === 'at_home') return null;
   if (opts.serviceStyleNorm === 'tele') return opts.rules.discovery_radius_km_tele ?? 0;
   return opts.rules.discovery_radius_km ?? 50;
+}
+
+/** Role ids used by hub fallback vendor search → discover-services parity context. */
+function hubContextForVendorSearch(
+  roleId: string | undefined,
+  serviceStyleRaw: string | undefined
+): HubDiscoveryContext {
+  const roleKey = String(roleId || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
+  const fromSlug = hubSlugToDiscoveryContext(roleKey);
+  const styleNorm = normalizeServiceStyle(serviceStyleRaw || fromSlug?.serviceStyle || 'at_center') || 'at_center';
+
+  const roleAliases: Record<string, HubDiscoveryContext> = {
+    pet_groomer: { discoverCategory: 'grooming', serviceStyle: 'at_center', roleId: 'pet_groomer' },
+    groomer: { discoverCategory: 'grooming', serviceStyle: 'at_center', roleId: 'pet_groomer' },
+    trainer_center: { discoverCategory: 'training', serviceStyle: 'at_center', roleId: 'trainer_center' },
+    trainer: { discoverCategory: 'training', serviceStyle: 'at_center', roleId: 'trainer_center' },
+    veterinarian: { discoverCategory: 'vet', serviceStyle: 'at_center', roleId: 'veterinarian' },
+    vet_clinic: { discoverCategory: 'vet', serviceStyle: 'at_center', roleId: 'veterinarian' },
+    pet_boarding: { discoverCategory: 'boarding', serviceStyle: 'at_center', roleId: 'pet_boarding' },
+    pet_cafe: { discoverCategory: 'cafe', serviceStyle: 'at_center', roleId: 'pet_cafe' },
+    pet_resort: { discoverCategory: 'resort', serviceStyle: 'at_center', roleId: 'pet_resort' },
+  };
+
+  const base = fromSlug || roleAliases[roleKey] || {
+    discoverCategory: roleKey || 'all',
+    serviceStyle: styleNorm as HubDiscoveryContext['serviceStyle'],
+    roleId: roleId || undefined,
+  };
+
+  return {
+    ...base,
+    serviceStyle: styleNorm as HubDiscoveryContext['serviceStyle'],
+    roleId: base.roleId || roleId || undefined,
+  };
+}
+
+function providerWithinRadiusKm(
+  distanceKm: number | null | undefined,
+  capKm: number,
+  allowUnknownDistance: boolean
+): boolean {
+  if (distanceKm == null || !Number.isFinite(distanceKm)) return allowUnknownDistance;
+  return distanceKm <= capKm;
 }
 
 /** Align with problem-grid specialization keys (slug, spaced label, normalized). */
@@ -831,14 +892,21 @@ async function presignCustomerFacilityGalleryUrls(vendorId: string, rawInput: un
   const items = dedupeGalleryInputsPreserveOrder(flattenMetadataGalleryItems(rawInput));
   if (items.length === 0) return [];
 
-  const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-  const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
-  const s3Module: any = await import('@aws-sdk/client-s3');
-  const s3Client = new s3Module.S3Client({ region: AWS_REGION });
-
-  const photos = await Promise.all(
-    items.map((photoItem) => resolveOneFacilityPhotoToPresignedUrl(vendorId, photoItem, s3Client, BUCKET_NAME))
-  );
+  const photos = await mapWithConcurrency(items, 3, async (photoItem) => {
+    const resolved = await resolveImageForContext(photoItem, {
+      assetType: 'facility',
+      ownerId: vendorId,
+      vendorId,
+      context: 'list',
+      migrate: true,
+      persist: {
+        kind: 'vendor_facility_photo',
+        vendorId,
+        legacyValue: photoItem,
+      },
+    });
+    return resolved?.displayUrl ?? null;
+  });
 
   return photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
 }
@@ -1471,6 +1539,8 @@ function mapVendorServiceRowForCustomerDiscoveryList(s: any): any {
     description: cleanDescription(s.description),
     category: s.category_name,
     categoryName: s.category_name,
+    catalogCategoryId: s.catalog_category_id ?? s.category_id ?? null,
+    catalogServiceId: s.catalog_service_id ?? null,
     serviceStyle: s.service_style || null,
     service_style: s.service_style || null,
     metadata,
@@ -3134,7 +3204,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 : radius != null && radius > 0
                   ? Math.min(radius, vendorCap)
                   : vendorCap;
-            return p.distance === null || p.distance <= cap;
+            return providerWithinRadiusKm(p.distance, cap, true);
           });
           if (withinRadius.length > 0) {
             results = withinRadius;
@@ -3145,8 +3215,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const effectiveMaxKm =
             maxDistanceKm ?? (radius != null && radius > 0 ? radius : null);
           if (effectiveMaxKm != null) {
-            const withinRadius = results.filter(
-              (p) => p.distance === null || p.distance <= effectiveMaxKm
+            const withinRadius = results.filter((p) =>
+              providerWithinRadiusKm(p.distance, effectiveMaxKm, sittingDiscoveryRelaxed)
             );
             if (withinRadius.length > 0) {
               results = withinRadius;
@@ -4678,7 +4748,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           sc.service_name as catalog_name,
           sc.display_name as catalog_display_name,
           sc.description as catalog_description,
-          sc.specialization_ids as catalog_specialization_ids
+          sc.specialization_ids as catalog_specialization_ids,
+          sc.category_id as catalog_category_id,
+          sc.category_name as catalog_category_name,
+          sc.service_id as catalog_service_id,
+          COALESCE(sc.category_name, vs.category) as resolved_category
         FROM vendor_services vs
         LEFT JOIN services s ON vs.service_id = s.id
         LEFT JOIN service_catalog sc ON vs.service_id = sc.id
@@ -4717,6 +4791,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const likeP = queryParams.length;
           const hubSql = sqlVendorServicesHubCategoryFilter(category, 'vs', exactP, likeP);
           if (hubSql) servicesQuery += hubSql;
+          if (isVetHubCategoryRequest(category)) {
+            servicesQuery += sqlVetHubExcludeNonVetServices('vs');
+          }
         } else if (sittingBookingCategoryRequest) {
           queryParams.push(category);
           const catParam = queryParams.length;
@@ -4870,8 +4947,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           price,
           custom_price: row.custom_price != null ? parseFloat(row.custom_price) : undefined,
           duration,
-          category: row.category,
+          category: row.resolved_category || row.category,
+          categoryName: row.resolved_category || row.category,
           categorySlug: row.category,
+          catalogCategoryId: row.catalog_category_id ?? null,
+          catalogServiceId: row.catalog_service_id ?? null,
           serviceStyle: row.service_style || null, // Don't default to 'at_center' - use actual value from DB
           specializationIds,
           specialization_ids: specializationIds,
@@ -5216,6 +5296,43 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         })
       )).filter(Boolean);
 
+      const hubForSearch = hubContextForVendorSearch(roleId || undefined, serviceStyle || undefined);
+      const styleNormSearch =
+        normalizeServiceStyle(serviceStyle || hubForSearch.serviceStyle) || hubForSearch.serviceStyle;
+      const rulesForSearch = await getDiscoveryRules(
+        hubForSearch.roleId || hubForSearch.discoverCategory || 'all',
+        'discover',
+        styleNormSearch,
+        hubForSearch.discoverCategory
+      );
+      const userCoordsSearch =
+        Number.isFinite(customerLatNum) && Number.isFinite(customerLngNum)
+          ? { lat: customerLatNum, lng: customerLngNum }
+          : null;
+      const vendorRadiusByIdSearch = await loadVendorRadiusMetaByIds(
+        enrichedVendors.map((v: { id: string }) => String(v.id))
+      );
+      const radiusFiltered = filterSearchResultsByDiscoveryRules({
+        vendors: enrichedVendors.map((v: any) => ({
+          id: String(v.id),
+          latitude: v.latitude != null ? parseFloat(String(v.latitude)) : null,
+          longitude: v.longitude != null ? parseFloat(String(v.longitude)) : null,
+          distanceKm: v.distanceKm ?? null,
+          is_online: v.is_online,
+        })),
+        services: [],
+        userCoords: userCoordsSearch,
+        hub: { ...hubForSearch, serviceStyle: styleNormSearch as HubDiscoveryContext['serviceStyle'] },
+        rules: rulesForSearch,
+        radiusFromQuery: c.req.query('radius') || undefined,
+        maxDistanceFromQuery: c.req.query('maxDistance') || undefined,
+        vendorRadiusById: vendorRadiusByIdSearch,
+      });
+      const allowedVendorIdsSearch = new Set(radiusFiltered.vendors.map((v) => v.id));
+      const filteredEnrichedVendors = enrichedVendors.filter((v: { id: string }) =>
+        allowedVendorIdsSearch.has(String(v.id))
+      );
+
       // If serviceStyle is 'at_home' or 'tele', also return staff
       let staff: any[] = [];
       if (serviceStyle && ['at_home', 'tele'].includes(serviceStyle) && roleId) {
@@ -5242,9 +5359,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        vendors: enrichedVendors,
+        vendors: filteredEnrichedVendors,
         staff: staff.length > 0 ? staff : undefined,
-        total: enrichedVendors.length,
+        total: filteredEnrichedVendors.length,
         limit,
         offset,
       });
@@ -5971,7 +6088,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       type IncomingPhoto = { buffer: Uint8Array; name: string; contentType: string };
       const incoming: IncomingPhoto[] = [];
       const skippedReasons: string[] = [];
-      const MAX_BYTES = 5 * 1024 * 1024;
+      const MAX_BYTES = 25 * 1024 * 1024;
 
       const requestContentType = (c.req.header('content-type') || '').toLowerCase();
       let attemptedCount = 0;
@@ -6016,7 +6133,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               continue;
             }
             if (buf.length > MAX_BYTES) {
-              skippedReasons.push(`photo[${i}]: exceeds 5MB`);
+              skippedReasons.push(`photo[${i}]: exceeds ${Math.floor(MAX_BYTES / 1024 / 1024)}MB`);
               continue;
             }
             const name =
@@ -6050,7 +6167,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               continue;
             }
             if (uint8Array.byteLength > MAX_BYTES) {
-              skippedReasons.push(`${photo.name || 'unnamed'}: exceeds 5MB`);
+              skippedReasons.push(`${photo.name || 'unnamed'}: exceeds ${Math.floor(MAX_BYTES / 1024 / 1024)}MB`);
               continue;
             }
             incoming.push({
@@ -6064,33 +6181,39 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       }
 
+      const existingMetadata = (vendor.metadata as any) || {};
+      const existingPhotos: string[] = existingMetadata.facility_photos || [];
+      if (existingPhotos.length >= FACILITY_MAX_PHOTOS) {
+        return c.json(
+          { error: `Maximum ${FACILITY_MAX_PHOTOS} facility photos allowed` },
+          400,
+        );
+      }
+      const slotsRemaining = FACILITY_MAX_PHOTOS - existingPhotos.length;
+      if (incoming.length > slotsRemaining) {
+        return c.json(
+          {
+            error: `Can upload at most ${slotsRemaining} more photo(s) (limit ${FACILITY_MAX_PHOTOS} total)`,
+          },
+          400,
+        );
+      }
+
       console.log(`📸 [FACILITY-PHOTOS] Processing ${incoming.length} photo(s) (${attemptedCount} attempted)`);
-
-      const s3Upload: any = await import('@aws-sdk/client-s3');
-      const { S3Client, PutObjectCommand } = s3Upload;
-
-      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
 
       const photoUrls: string[] = [];
 
       for (const photo of incoming) {
         try {
-          const timestamp = Date.now();
-          const ext = photo.name.split('.').pop() || photo.contentType.split('/')[1] || 'jpg';
-          const fileKey = `vendors/${actualVendorId}/facility/facility_${timestamp}_${Math.random().toString(36).substr(2, 9)}.${ext}`;
-
-          await s3Client.send(
-            new PutObjectCommand({
-              Bucket: BUCKET_NAME,
-              Key: fileKey,
-              Body: photo.buffer,
-              ContentType: photo.contentType || 'image/jpeg',
-            })
-          );
-
-          photoUrls.push(fileKey);
-          console.log(`📸 [FACILITY-PHOTOS] Uploaded to S3: ${fileKey} (${photo.buffer.byteLength} bytes)`);
+          const asset = await uploadDisplayImage({
+            buffer: Buffer.from(photo.buffer),
+            declaredContentType: photo.contentType,
+            assetType: 'facility',
+            ownerId: actualVendorId,
+            vendorId: actualVendorId,
+          });
+          photoUrls.push(asset.imageKey);
+          console.log(`📸 [FACILITY-PHOTOS] Uploaded WebP: ${asset.imageKey}`);
         } catch (photoError: any) {
           const reason = `${photo.name || 'unnamed'}: ${photoError?.message || photoError}`;
           console.error(`❌ [FACILITY-PHOTOS] Error processing photo ${photo.name}:`, photoError);
@@ -6115,8 +6238,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         );
       }
 
-      const existingMetadata = (vendor.metadata as any) || {};
-      const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
 
       const { update } = await import('../../../database/rds-connection');
@@ -6701,6 +6822,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
         : '';
 
+      const vetExcludeNonVetSqlByStyle = isVetCategoryDiscoveryByStyle
+        ? sqlVetHubExcludeNonVetServices('vs')
+        : '';
+
       // ────────────────────────────────────────────────────────
       // 3. SCOPED HELPERS
       // ────────────────────────────────────────────────────────
@@ -6774,6 +6899,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ? ''
             : strictCustomDiscoverySql;
 
+        const vetExcludeForFetchByStyle = isVetCategoryDiscoveryByStyle
+          ? sqlVetHubExcludeNonVetServices('vs')
+          : '';
+
         const sql = `
           SELECT vs.id, vs.service_id, vs.service_name, vs.price,
                   vs.custom_price,
@@ -6784,19 +6913,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                   COALESCE(vs.custom_duration, vs.duration_minutes) AS duration,
                   COALESCE(
                     vs.custom_description,
-                    (SELECT sc.description FROM service_catalog sc
-                     WHERE sc.service_name = vs.service_name
-                       AND sc.service_style = vs.service_style LIMIT 1),
+                    sc.description,
+                    (SELECT sc2.description FROM service_catalog sc2
+                     WHERE sc2.service_name = vs.service_name
+                       AND sc2.service_style = vs.service_style LIMIT 1),
                     s.description
                   ) AS description,
-                  vs.category AS category_name
+                  COALESCE(sc.category_name, vs.category) AS category_name,
+                  sc.category_id AS catalog_category_id,
+                  sc.service_id AS catalog_service_id
            FROM vendor_services vs
            LEFT JOIN services s ON vs.service_id = s.id
+           LEFT JOIN service_catalog sc ON vs.service_id = sc.id
            WHERE vs.vendor_id = $1
              AND vs.service_style = ANY($2::text[])
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
             ${categoryFilterSql}
             ${strictCustomSqlForFetch}
+            ${vetExcludeForFetchByStyle}
              AND ${sqlVendorServiceDiscoverable('vs', false)}
           ORDER BY vs.price ASC
         `;
@@ -6993,6 +7127,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 ${boardingCustomCategoryIdOrByStyleSql}
               )` : ``}
               ${strictCustomDiscoverySql}
+              ${vetExcludeNonVetSqlByStyle}
           )
           ${trainingDiscoverySearchByStyle || behaviorHubDiscoverySearchByStyle ? '' : `AND ${sqlVendorAvailabilityOrNotConfigured('v')}`}
         ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT ${maxResults}
@@ -7059,7 +7194,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 : radius != null && radius > 0
                   ? Math.min(radius, vendorCap)
                   : vendorCap;
-            return p.distance === null || p.distance <= cap;
+            return providerWithinRadiusKm(p.distance, cap, true);
           });
           if (withinRadius.length > 0) {
             results = withinRadius;
@@ -7070,8 +7205,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const effectiveMaxKm =
             maxDistanceKm ?? (radius != null && radius > 0 ? radius : null);
           if (effectiveMaxKm != null) {
-            results = results.filter(
-              (p) => p.distance === null || p.distance <= effectiveMaxKm
+            results = results.filter((p) =>
+              providerWithinRadiusKm(p.distance, effectiveMaxKm, false)
             );
           }
         }

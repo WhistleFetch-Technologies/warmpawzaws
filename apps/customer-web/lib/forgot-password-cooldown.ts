@@ -62,15 +62,17 @@ export function persistForgotCooldown(storageKey: string, retryAfterSeconds: num
   sessionStorage.setItem(storageKey, String(Date.now() + seconds * 1000));
 }
 
+import type { RetryConfig } from './error-handling';
+
 /** Do not retry 429 on forgot-password OTP requests; still retry transient 5xx. */
-export const FORGOT_PASSWORD_RETRY_CONFIG = {
+export const FORGOT_PASSWORD_RETRY_CONFIG: Partial<RetryConfig> = {
   retryableStatusCodes: [502, 503, 504],
-} as const;
+};
 
 /** Do not retry 429 on login OTP send; still retry transient 5xx. */
-export const LOGIN_OTP_RETRY_CONFIG = {
+export const LOGIN_OTP_RETRY_CONFIG: Partial<RetryConfig> = {
   retryableStatusCodes: [502, 503, 504],
-} as const;
+};
 
 const DEFAULT_COOLDOWN_SEC = 60;
 

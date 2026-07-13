@@ -111,10 +111,12 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
           maxRetries: 3,
         });
         
-        if (result.success && result.publicUrl) {
-          // Functional update so a slow upload cannot overwrite fields typed after pick (e.g. houseNo).
-          setProfile((prev) => ({ ...prev, photo: result.publicUrl }));
-          console.log('✅ Customer photo uploaded to S3:', result.publicUrl);
+        if (result.success && (result.imageKey || result.publicUrl)) {
+          const keyOrUrl = result.imageKey || result.fileName || result.publicUrl;
+          const previewUrl = result.url || result.publicUrl || keyOrUrl;
+          setProfile((prev) => ({ ...prev, photo: keyOrUrl }));
+          setPhotoPreview(previewUrl || '');
+          console.log('✅ Customer photo uploaded:', keyOrUrl);
         } else {
           alert(result.error || 'Failed to upload photo. Please try again.');
           setPhotoPreview(latestProfileRef.current.photo || '');
@@ -556,13 +558,13 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
                   {referralExpanded ? 'Hide referral code' : 'Have a referral code?'}
                 </button>
                 {referralExpanded && (
-                  <div className="flex gap-2">
+                  <div className="flex w-full min-w-0 gap-2">
                     <input
                       type="text"
                       value={referralCode}
                       onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
                       placeholder="Enter referral code"
-                      className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none uppercase"
+                      className="min-w-0 flex-1 w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none uppercase"
                     />
                     <Button
                       type="button"

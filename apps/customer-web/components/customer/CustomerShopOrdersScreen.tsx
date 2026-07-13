@@ -92,7 +92,7 @@ interface Order {
   paymentHoldExpiresAt?: string;
   tracking_number?: string;
   tracking?: {
-    carrierName?: string;
+    carrierName?: string | null;
     trackingNumber?: string;
     trackingUrl?: string | null;
   };
@@ -228,7 +228,7 @@ function normalizeOrder(raw: any): Order {
     paymentHoldExpiresAt:
       raw.paymentHoldExpiresAt ?? raw.payment_hold_expires_at ?? undefined,
     tracking_number: raw.tracking_number,
-    tracking,
+    tracking: tracking ?? undefined,
     estimated_delivery: raw.estimated_delivery,
     delivered_at: raw.delivered_at || undefined,
     return_window_days: raw.return_window_days != null ? Number(raw.return_window_days) : undefined,
@@ -871,7 +871,7 @@ export function CustomerShopOrdersScreen({
                               'out_for_delivery',
                               'delivered',
                             ] as const;
-                            const currentIndex = statusOrder.indexOf(order.status);
+                            const currentIndex = (statusOrder as readonly string[]).indexOf(order.status);
                             const isComplete =
                               index <= currentIndex && !['cancelled', 'returned'].includes(order.status);
                             const isCurrent =

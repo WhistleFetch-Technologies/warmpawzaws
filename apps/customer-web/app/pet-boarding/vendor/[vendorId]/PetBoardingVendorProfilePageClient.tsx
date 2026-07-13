@@ -209,7 +209,7 @@ function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
               serviceStyle: data?.serviceStyle ? String(data.serviceStyle) : 'at_center',
               serviceType: 'boarding',
               returnSearchUrl,
-              facility: data?.facility,
+              facility: (data?.facility) as Record<string, unknown> | undefined,
             };
             try {
               sessionStorage.setItem(SEARCH_BOARDING_BOOKING_INTENT_KEY, JSON.stringify(intent));

@@ -12,6 +12,7 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { pickProviderDistanceKm } from '@/lib/distance-display';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
 import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
+import { resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
 
 export interface BoardingPlanRow {
   rowId: string;
@@ -104,6 +105,16 @@ export function humanizeServiceCategoryBadge(raw: string | undefined | null): st
 }
 
 function categoryLabelFromServiceRow(s: Record<string, unknown>): string | undefined {
+  const resolved = resolveServiceCategoryDisplayLabel({
+    category: s.category as string | undefined,
+    categoryName: (s.category_name ?? s.categoryName) as string | undefined,
+    categorySlug: s.categorySlug as string | undefined,
+    catalogCategoryId: (s.catalogCategoryId ?? s.catalog_category_id) as string | undefined,
+    catalogServiceSlug: (s.catalogServiceId ?? s.catalog_service_id) as string | undefined,
+    serviceId: (s.serviceId ?? s.service_id) as string | undefined,
+    resolved_category: s.resolved_category as string | undefined,
+  });
+  if (resolved) return resolved;
   const raw = String(
     s.category_name ?? s.categoryName ?? s.category ?? s.service_category ?? ''
   ).trim();

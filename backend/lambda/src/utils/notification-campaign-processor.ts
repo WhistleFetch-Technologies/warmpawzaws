@@ -10,6 +10,10 @@ import {
 } from './notification-campaign-audience';
 import { loadCampaignTargeting } from './notification-campaign-targeting';
 import { dispatchCampaignNotification } from './notification-dispatch';
+import {
+  campaignPipelineDisabledResult,
+  isNotificationPipelineEnabled,
+} from './notification-pipeline-kill-switch';
 
 const MAX_RECIPIENTS_PER_SEND = 5000;
 
@@ -93,6 +97,17 @@ export async function executeCampaignDelivery(
   targeting: CampaignTargeting,
   performedBy: string | null
 ): Promise<CampaignDeliveryResult> {
+  if (!isNotificationPipelineEnabled()) {
+    console.log(
+      JSON.stringify({
+        metric: 'notification_campaign_delivery',
+        status: 'pipeline_disabled',
+        campaignId: campaign.id,
+      })
+    );
+    return campaignPipelineDisabledResult();
+  }
+
   const errors: string[] = [];
   const filters = buildFiltersFromCampaign(campaign, targeting);
   const recipientIds = await resolveCampaignRecipientIds(filters, MAX_RECIPIENTS_PER_SEND);

@@ -1,39 +1,25 @@
 /**
  * Documents vendor meal-orders list visibility (must match fetch-vendor-meal-orders.ts SQL).
- * Regression: Pidge-cancelled prod orders use payment_status=refunded and were hidden from dashboard.
+ * Regression: Pidge-cancelled prod orders use payment_status=refunded and remain visible.
+ * Unpaid checkout abandons must stay hidden from the vendor dashboard.
  */
 
-function vendorMealOrderVisibleForDashboard(paymentStatus: string | null, orderStatus: string | null): boolean {
-  const pay = String(paymentStatus ?? '').toLowerCase();
-  const st = String(orderStatus ?? '').toLowerCase();
-  if (['paid', 'completed', 'refunded', 'expired'].includes(pay)) return true;
-  return [
-    'confirmed',
-    'preparing',
-    'ready_for_pickup',
-    'picked_up',
-    'on_the_way',
-    'delivered',
-    'cancelled',
-    'failed',
-  ].includes(st);
-}
+import {
+  isMealOrderVendorVisible,
+} from '../shop-vendor-visibility';
 
 describe('vendorMealOrderVisibleForDashboard', () => {
   it('includes paid and refunded Pidge-cancelled rows', () => {
-    expect(vendorMealOrderVisibleForDashboard('paid', 'cancelled')).toBe(true);
-    expect(vendorMealOrderVisibleForDashboard('refunded', 'cancelled')).toBe(true);
+    expect(isMealOrderVendorVisible({ payment_status: 'paid' })).toBe(true);
+    expect(isMealOrderVendorVisible({ payment_status: 'refunded' })).toBe(true);
   });
 
-  it('includes expired hold cancellations', () => {
-    expect(vendorMealOrderVisibleForDashboard('expired', 'cancelled')).toBe(true);
+  it('hides expired hold cancellations (never paid)', () => {
+    expect(isMealOrderVendorVisible({ payment_status: 'expired' })).toBe(false);
   });
 
-  it('includes cancelled rows even when payment never captured', () => {
-    expect(vendorMealOrderVisibleForDashboard('pending', 'cancelled')).toBe(true);
-  });
-
-  it('excludes unpaid checkout holds still pending', () => {
-    expect(vendorMealOrderVisibleForDashboard('pending', 'pending')).toBe(false);
+  it('hides cancelled rows when payment never captured', () => {
+    expect(isMealOrderVendorVisible({ payment_status: 'pending' })).toBe(false);
+    expect(isMealOrderVendorVisible({ payment_status: 'failed' })).toBe(false);
   });
 });

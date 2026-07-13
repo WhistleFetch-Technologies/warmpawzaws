@@ -68,6 +68,8 @@ import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '
 import { toast } from 'sonner';
 import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
+import { filterHubDiscoveryRowsByRadius } from '@/lib/hub-discovery-radius-filter';
 import {
   filterComingSoonBannersForReviewAccount,
   filterHomeServiceTilesForReviewAccount,
@@ -622,7 +624,7 @@ export function CustomerHomeComplete({
     Array<{ id: string; name: string; image_url?: string; display_order?: number }>
   >([]);
   // Evaluated lazily so runtime-config.js (which runs before hydration) is already applied.
-  const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
+  const customerCommerceEnabled = isCustomerEcommerceEnabled();
   const shopUiVisible = isShopUiVisibleForAccount(phone);
   const reviewDemoAccount = isAppReviewDemoAccount(phone);
   const [newHomeUi] = useState<boolean>(() => isNewHomeUiEnabled());
@@ -887,7 +889,7 @@ export function CustomerHomeComplete({
       subtitle?: string;
       metadata?: unknown;
       isInformational?: boolean;
-      navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> };
+      navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> } | null;
     }) => {
       if (isBannerInformationalNonClickable(banner)) return;
       if (!banner?.ctaLink && !banner?.navTarget && !banner?.metadata) return;
@@ -1161,8 +1163,9 @@ export function CustomerHomeComplete({
 
       // Handle articles
       if (articlesResp.status === 'fulfilled' && articlesResp.value?.articles?.length > 0) {
-        nextArticles = articlesResp.value.articles;
-        setDynamicArticles(nextArticles);
+        const articles = articlesResp.value.articles ?? [];
+        nextArticles = articles;
+        setDynamicArticles(articles);
       } else if (articlesResp.status === 'rejected') {
         const error = articlesResp.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -1172,8 +1175,9 @@ export function CustomerHomeComplete({
 
       // Handle announcements
       if (announcementsResp.status === 'fulfilled' && announcementsResp.value?.announcements?.length > 0) {
-        nextAnnouncements = announcementsResp.value.announcements;
-        setDynamicAnnouncements(nextAnnouncements);
+        const announcements = announcementsResp.value.announcements ?? [];
+        nextAnnouncements = announcements;
+        setDynamicAnnouncements(announcements);
       } else if (announcementsResp.status === 'rejected') {
         const error = announcementsResp.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -1228,16 +1232,13 @@ export function CustomerHomeComplete({
       if (!hadCachedServices) setServicesLoading(true);
 
       let locationParams = '';
-      if (typeof window !== 'undefined') {
-        try {
-          const customerLat = localStorage.getItem('customer_latitude');
-          const customerLng = localStorage.getItem('customer_longitude');
-          if (customerLat && customerLng) {
-            locationParams = `&latitude=${encodeURIComponent(customerLat)}&longitude=${encodeURIComponent(customerLng)}`;
-          }
-        } catch {
-          /* ignore */
-        }
+      let latitude: string | undefined;
+      let longitude: string | undefined;
+      const coords = await resolveCustomerDiscoveryCoords(phone);
+      latitude = coords.latitude;
+      longitude = coords.longitude;
+      if (latitude && longitude) {
+        locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
       }
       const phoneParam = phone ? `&phone=${encodeURIComponent(phone)}` : '';
       const launchCatalog = phone ? await loadCustomerServiceLaunchCatalog(phone) : [];
@@ -1271,9 +1272,12 @@ export function CustomerHomeComplete({
       // Handle grooming services
       if (groomingResult.status === 'fulfilled' && groomingResult.value) {
         const groomingResp = groomingResult.value;
-        if (groomingResp?.services || groomingResp?.vendors) {
-          const services = groomingResp.services || groomingResp.vendors || [];
-          const mappedGrooming = services.slice(0, 3).map((s: any) => ({
+        const groomingRows = filterHubDiscoveryRowsByRadius(
+          groomingResp.providers || groomingResp.vendors || groomingResp.services || [],
+          { serviceStyle: 'at_center', latitude, longitude }
+        );
+        if (groomingRows.length > 0) {
+          const mappedGrooming = groomingRows.slice(0, 3).map((s: any) => ({
             id: s.id || s.vendorServiceId,
             title: s.serviceName || s.name || 'Grooming Service',
             price: `₹${s.price || s.basePrice || 999}`,
@@ -1298,9 +1302,12 @@ export function CustomerHomeComplete({
       // Handle vet services
       if (vetResult.status === 'fulfilled' && vetResult.value) {
         const vetResp = vetResult.value;
-        if (vetResp?.services || vetResp?.vendors) {
-          const services = vetResp.services || vetResp.vendors || [];
-          const mappedVet = services.slice(0, 3).map((s: any) => ({
+        const vetRows = filterHubDiscoveryRowsByRadius(
+          vetResp.providers || vetResp.vendors || vetResp.services || [],
+          { serviceStyle: 'at_center', latitude, longitude }
+        );
+        if (vetRows.length > 0) {
+          const mappedVet = vetRows.slice(0, 3).map((s: any) => ({
             id: s.id || s.vendorServiceId,
             title: s.serviceName || s.name || 'Vet Service',
             price: `₹${s.price || s.basePrice || 499}`,
@@ -2874,13 +2881,13 @@ export function CustomerHomeComplete({
             ) : null}
             {legacyVetStyleVisible.home ? (
             <button
-              onClick={() => handleNavigation('vet-home-visit', { startStep: 'home' })}
+              onClick={() => handleNavigation('home-service-selection')}
               className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
             >
               <div className="w-10 h-10 mx-auto mb-2 bg-green-100 rounded-xl flex items-center justify-center">
                 <HomeIcon className="w-5 h-5 text-green-600" />
               </div>
-              <h3 className="text-xs font-semibold text-gray-800 mb-1">Vet at Home</h3>
+              <h3 className="text-xs font-semibold text-gray-800 mb-1">Home Visit</h3>
               <p className="text-blue-600 font-medium text-sm">₹{vetHomeMinPrice ?? 599}</p>
             </button>
             ) : null}

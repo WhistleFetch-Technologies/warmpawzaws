@@ -31,10 +31,14 @@ import {
   deleteManagedProductS3Image,
   extensionFromContentType,
   extractProductS3Key,
-  PRODUCT_UPLOAD_MAX_BYTES,
   uploadProductImageBufferToS3,
 } from '../../../utils/product-s3-image';
 import { ingestExternalProductImageUrl } from '../../../utils/product-image-ingest';
+import {
+  uploadDisplayImage,
+  toUploadJsonResponse,
+  ImageProcessingError,
+} from '../../../services/image';
 import { resolveVendorById } from './vendorProfile.vendor';
 import {
   applyNormalizedPricingToDbPayload,
@@ -1678,38 +1682,30 @@ export function registerVendorProductsEndpoints(app: Hono) {
       if (buffer.length === 0) {
         return c.json({ error: 'Image file is empty' }, 400);
       }
-      if (buffer.length > PRODUCT_UPLOAD_MAX_BYTES) {
-        return c.json(
-          {
-            error: `Image must be ${Math.floor(PRODUCT_UPLOAD_MAX_BYTES / 1024)} KB or smaller`,
-          },
-          400,
-        );
-      }
 
-      const contentType = imageFile.type || 'image/jpeg';
-      const fileExtension =
-        extensionFromContentType(contentType) ||
-        imageFile.name.split('.').pop() ||
-        'jpg';
-      const imageUrl = await uploadProductImageBufferToS3(
-        vendorId,
+      const asset = await uploadDisplayImage({
         buffer,
-        contentType,
-        fileExtension,
-      );
-      const displayUrl = (await presignS3GetUrlIfApplicable(imageUrl)) ?? imageUrl;
-      const fileKey = extractProductS3Key(imageUrl, vendorId) ?? '';
+        declaredContentType: imageFile.type || undefined,
+        assetType: 'product',
+        ownerId: vendorId,
+        vendorId,
+      });
 
+      const payload = toUploadJsonResponse(asset);
       return c.json({
-        success: true,
-        s3_url: imageUrl,
-        image_url: displayUrl,
-        url: displayUrl,
-        fileKey,
+        ...payload,
+        s3_url: asset.imageKey,
+        image_url: asset.url,
+        url: asset.url,
+        fileKey: asset.imageKey,
+        thumbKey: asset.thumbKey,
+        thumbUrl: asset.thumbUrl,
         message: 'Image uploaded successfully',
       });
     } catch (error: any) {
+      if (error instanceof ImageProcessingError) {
+        return c.json({ error: error.message }, error.statusCode);
+      }
       console.error('Error uploading product image:', error);
       return c.json({ error: error.message || 'Failed to upload image' }, 500);
     }

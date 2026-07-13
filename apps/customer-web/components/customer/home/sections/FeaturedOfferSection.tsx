@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { clickHomeBannerCta } from '@/lib/banner-cta-navigation';
 import { isBannerInformationalNonClickable } from '@/lib/banner-cta-target';
 import { buildBannerBackgroundStyle } from '@/lib/customer-banner-surface';
+import type { BannerNavTarget } from '@/lib/banner-cta-navigation';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
 export interface FeaturedLowerBanner {
@@ -21,7 +22,7 @@ export interface FeaturedLowerBanner {
   comingSoon?: boolean;
   isInformational?: boolean;
   metadata?: unknown;
-  navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> } | null;
+  navTarget?: BannerNavTarget | null;
 }
 
 export interface FeaturedOfferSectionProps {

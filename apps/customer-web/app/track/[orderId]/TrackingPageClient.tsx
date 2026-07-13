@@ -81,6 +81,9 @@ interface TrackingData {
     last_location_update?: string;
     logistics_partner?: string;
     locationHistory?: Array<{ lat: number; lng: number; time: string }>;
+    reassignPending?: boolean;
+    lastLocationUpdate?: string;
+    last_location_update?: string;
   } | null;
 }
 

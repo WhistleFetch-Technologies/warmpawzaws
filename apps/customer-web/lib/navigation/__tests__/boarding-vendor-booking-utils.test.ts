@@ -8,17 +8,16 @@ function makeVendor(): BoardingListVendor {
   return {
     id: 'vendor-1',
     name: 'Happy Paws',
-    address: '12 Main St',
-    city: 'Mumbai',
-    pincode: '400001',
-    phone: '9999999999',
+    address: '12 Main St, Mumbai 400001',
     rating: 4.5,
     review_count: 10,
+    distanceKm: null,
     timing: '9am–6pm',
     price_label: '₹600',
-    photo: null,
+    photo: undefined,
     services: ['Daycare'],
     planRows: [],
+    needsServiceFetch: false,
     raw: {},
   };
 }
@@ -36,7 +35,6 @@ function makePlan(): BoardingPlanRow {
     categoryLabel: 'Daycare',
     description: 'Full day care',
     metadata: {},
-    rawRow: { id: 'vs-row-uuid-1', isPackage: false },
   };
 }
 

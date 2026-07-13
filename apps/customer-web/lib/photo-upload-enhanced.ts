@@ -4,6 +4,7 @@
  */
 
 import { apiClient, getApiBaseUrl, getCustomerAuthHeadersForUpload } from './api-client';
+import { normalizeProfilePhotoFile } from './normalize-profile-photo';
 
 /** JPEG/PNG/WebP/GIF/HEIC; also allows missing MIME when the filename looks like an image (common on mobile). */
 function isAllowedCustomerImageFile(file: File): boolean {
@@ -34,6 +35,8 @@ export interface PhotoUploadResult {
   url?: string;
   publicUrl?: string;
   fileName?: string;
+  /** Stable S3 key — persist this in DB, not presigned URL */
+  imageKey?: string;
   error?: string;
   retries?: number;
 }
@@ -76,6 +79,28 @@ export async function uploadPhotoWithProgress(
   }
 
   // Retry loop
+  let normalizedFile: File;
+  try {
+    normalizedFile = await normalizeProfilePhotoFile(file);
+  } catch (normalizeError: unknown) {
+    return {
+      success: false,
+      error:
+        normalizeError instanceof Error
+          ? normalizeError.message
+          : 'Could not process image for upload',
+    };
+  }
+
+  const uploadFormData = new FormData();
+  for (const [key, value] of formData.entries()) {
+    if (key === 'file') {
+      uploadFormData.append('file', normalizedFile, normalizedFile.name);
+    } else {
+      uploadFormData.append(key, value);
+    }
+  }
+
   while (retries < maxRetries) {
     try {
       // Simulate progress for FormData upload (browser doesn't provide real progress for FormData)
@@ -84,9 +109,12 @@ export async function uploadPhotoWithProgress(
       }
 
       // Upload using XMLHttpRequest for progress tracking
-      const uploadResult = await uploadWithXHR(endpoint, formData, onProgress);
+      const uploadResult = await uploadWithXHR(endpoint, uploadFormData, onProgress);
 
-      if (uploadResult.success && uploadResult.publicUrl) {
+      if (
+        uploadResult.success &&
+        (uploadResult.imageKey || uploadResult.publicUrl || uploadResult.url)
+      ) {
         // Verify upload if requested
         // Use presigned URL (url) for verification since public URL may be blocked in dev
         if (verifyUpload) {
@@ -105,7 +133,8 @@ export async function uploadPhotoWithProgress(
           success: true,
           url: uploadResult.url,
           publicUrl: uploadResult.publicUrl,
-          fileName: uploadResult.fileName,
+          fileName: uploadResult.imageKey || uploadResult.fileName,
+          imageKey: uploadResult.imageKey || uploadResult.fileName,
           retries,
         };
       }
@@ -158,12 +187,18 @@ async function uploadWithXHR(
         try {
           const response = JSON.parse(xhr.responseText);
           const resolvedUrl = response.url || response.publicUrl;
-          if (response.success && resolvedUrl) {
+          const imageKey =
+            response.imageKey ||
+            response.asset?.imageKey ||
+            response.key ||
+            response.fileName;
+          if (response.success && (resolvedUrl || imageKey)) {
             resolve({
               success: true,
               url: response.url,
               publicUrl: response.publicUrl,
-              fileName: response.fileName,
+              fileName: imageKey || response.fileName,
+              imageKey: imageKey || undefined,
             });
           } else {
             resolve({

@@ -395,7 +395,7 @@ export function VetBookingRouter({
         allSelectedServices.length > 0
           ? allSelectedServices.map((s: any) => s.serviceId || s.id).filter(Boolean).join(',')
           : String(
-              opt?.serviceId ||
+              (opt && 'serviceId' in opt && opt.serviceId ? opt.serviceId : undefined) ||
                 opt?.id ||
                 selectedVendorService?.service_id ||
                 selectedVendorService?.serviceId ||

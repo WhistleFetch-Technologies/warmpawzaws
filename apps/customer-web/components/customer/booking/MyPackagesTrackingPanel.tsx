@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useRef, useState, type LucideIcon } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
   Activity,

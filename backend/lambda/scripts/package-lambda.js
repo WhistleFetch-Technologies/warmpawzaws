@@ -22,27 +22,66 @@ if (!fs.existsSync(handlerPath)) {
 
 const firebaseVersion =
   require(path.join(lambdaRoot, 'package.json')).dependencies['firebase-admin'];
+const sharpVersion = require(path.join(lambdaRoot, 'package.json')).dependencies.sharp;
 
 const runtimePkg = {
   name: 'warmpawz-lambda-runtime-deps',
   private: true,
   dependencies: {
     'firebase-admin': firebaseVersion,
+    sharp: sharpVersion,
   },
 };
 
 fs.writeFileSync(path.join(distDir, 'package.json'), JSON.stringify(runtimePkg, null, 2));
 
 console.log('Installing firebase-admin into dist/ for Lambda runtime...');
-execSync('npm install --omit=dev --no-audit --no-fund', {
+execSync(`npm install firebase-admin@${firebaseVersion} --omit=dev --no-audit --no-fund`, {
   cwd: distDir,
   stdio: 'inherit',
 });
+
+// AWS Lambda Node 20 (Amazon Linux 2023) uses glibc → linux-x64, NOT linuxmusl-x64.
+console.log(`Installing sharp@${sharpVersion} for linux x64 glibc (Lambda runtime)...`);
+execSync(
+  `npm install sharp@${sharpVersion} --no-save --force --os=linux --cpu=x64 --libc=glibc --include=optional`,
+  { cwd: distDir, stdio: 'inherit' },
+);
+
+const sharpLinuxNode = path.join(
+  distDir,
+  'node_modules',
+  '@img',
+  'sharp-linux-x64',
+  'lib',
+  'sharp-linux-x64.node',
+);
+if (!fs.existsSync(sharpLinuxNode)) {
+  console.error('FATAL: @img/sharp-linux-x64 native binary missing — Lambda needs glibc linux-x64.');
+  console.error(`Expected: ${sharpLinuxNode}`);
+  process.exit(1);
+}
+console.log(`Sharp linux-x64 binary OK (${fs.statSync(sharpLinuxNode).size} bytes)`);
 
 if (!fs.existsSync(path.join(distDir, 'node_modules', 'firebase-admin'))) {
   console.error('firebase-admin was not installed into dist/node_modules');
   process.exit(1);
 }
+
+if (!fs.existsSync(path.join(distDir, 'node_modules', 'sharp'))) {
+  console.error('sharp was not installed into dist/node_modules');
+  process.exit(1);
+}
+
+const imgDir = path.join(distDir, 'node_modules', '@img');
+const hasLinuxX64 = fs.existsSync(path.join(imgDir, 'sharp-linux-x64'));
+if (!hasLinuxX64) {
+  console.error(
+    'FATAL: @img/sharp-linux-x64 missing in dist/node_modules — Lambda image uploads will fail.',
+  );
+  process.exit(1);
+}
+console.log('Sharp native bindings: linux-x64=true');
 
 const assetsSrc = path.join(lambdaRoot, 'assets');
 const assetsDest = path.join(distDir, 'assets');

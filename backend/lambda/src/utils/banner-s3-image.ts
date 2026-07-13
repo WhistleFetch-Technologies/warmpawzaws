@@ -6,6 +6,7 @@
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { buildPublicS3ObjectUrl } from './s3-presign-upload';
 import { presignS3GetUrlIfApplicable } from './s3-media-presign';
+import { resolveImageForContext } from '../services/image';
 
 export const BANNER_S3_PREFIX = 'admin/banners/';
 export const BANNER_UPLOAD_MAX_BYTES = 220 * 1024;
@@ -69,13 +70,31 @@ export async function deleteManagedBannerS3Image(value: unknown): Promise<void> 
 }
 
 export async function presignBannerImageForDisplay(
-  value: unknown
+  value: unknown,
+  bannerId?: string,
 ): Promise<string | null | undefined> {
   if (value == null || value === '') return value as null | undefined;
   const raw = String(value).trim();
   if (!raw) return raw;
   if (raw.startsWith('data:') || raw.startsWith('/')) return raw;
   if (raw.includes('X-Amz-Algorithm=') || raw.includes('X-Amz-Credential=')) return raw;
+
+  const resolved = await resolveImageForContext(raw, {
+    assetType: 'banner',
+    ownerId: bannerId || 'banner',
+    context: 'list',
+    migrate: true,
+    persist: bannerId
+      ? {
+          kind: 'scalar',
+          table: 'banners',
+          column: 'image_url',
+          idColumn: 'id',
+          id: bannerId,
+        }
+      : null,
+  });
+  if (resolved?.displayUrl) return resolved.displayUrl;
 
   const key = extractBannerS3Key(raw);
   if (key) {

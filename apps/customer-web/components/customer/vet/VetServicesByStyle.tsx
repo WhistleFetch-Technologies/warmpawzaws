@@ -15,6 +15,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
+import { filterProvidersServicesForVetHub, resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
 import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
@@ -158,7 +159,7 @@ export function VetServicesByStyle({
         }
         
         // Set providers from primary endpoint
-          setProviders(providerData);
+          setProviders(filterProvidersServicesForVetHub(providerData));
           console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
       } else {
         console.warn(`⚠️ [Vet] Primary endpoint returned success=false or no providers`);
@@ -424,7 +425,7 @@ export function VetServicesByStyle({
   const handleShare = async () => {
     const shareVendorId =
       vendorId ||
-      pickCustomerVendorAccountId(profileProvider ?? {}) ||
+      pickCustomerVendorAccountId((profileProvider ?? {}) as unknown as Record<string, unknown>) ||
       profileProvider?.vendorId ||
       profileProvider?.providerId;
     if (!shareVendorId) return;
@@ -492,7 +493,7 @@ export function VetServicesByStyle({
             ? 'Video consultation with vet'
             : 'Professional pet healthcare';
     const profileVendorId = String(
-      vendorId ?? profileProvider.id ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
+      vendorId ?? profileProvider.providerId ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
     ).trim();
 
     return (
@@ -832,8 +833,8 @@ export function VetServicesByStyle({
                                   <Clock className="w-3.5 h-3.5 text-gray-600" />
                                   {service.duration} mins
                                 </span>
-                                {service.category && (
-                                  <span className="px-2.5 py-1 bg-gray-100 rounded-lg text-gray-600">{service.category}</span>
+                                {resolveServiceCategoryDisplayLabel(service) && (
+                                  <span className="px-2.5 py-1 bg-gray-100 rounded-lg text-gray-600">{resolveServiceCategoryDisplayLabel(service)}</span>
                                 )}
                               </div>
                             </div>
@@ -1214,9 +1215,9 @@ export function VetServicesByStyle({
                                 <Clock className="mr-1 h-3 w-3" />
                                 {service.duration} mins
                               </Badge>
-                              {service.category && (
+                              {resolveServiceCategoryDisplayLabel(service) && (
                                 <Badge variant="secondary" className="max-w-full shrink-0 text-xs">
-                                  {service.category}
+                                  {resolveServiceCategoryDisplayLabel(service)}
                                 </Badge>
                               )}
                             </div>

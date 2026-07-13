@@ -3,12 +3,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
+import { filterHubDiscoveryRowsByRadius } from '@/lib/hub-discovery-radius-filter';
 import {
   buildBoardingVendorListFromRows,
   mapServicesApiResponseToPlanRows,
   type BoardingListVendor,
 } from '@/lib/boarding-vendor-discovery-map';
 import type { HubVendorDiscoveryConfig } from '@/lib/service-hub-discovery-config';
+import {
+  filterPlanRowsForVetHub,
+  filterVetHubProviderRows,
+  isVetHubDiscoveryConfig,
+} from '@/lib/filter-hub-services';
 
 function extractRows(data: any): any[] {
   if (!data) return [];
@@ -43,11 +49,18 @@ export function useHubVendorDiscovery(
     try {
       setLoading(true);
       let rows: any[] = [];
+      let latitude: string | undefined;
+      let longitude: string | undefined;
 
       if (customLoadRef.current) {
         rows = await customLoadRef.current();
+        const coords = await resolveCustomerDiscoveryCoords(phone);
+        latitude = coords.latitude;
+        longitude = coords.longitude;
       } else {
-        const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
+        const coords = await resolveCustomerDiscoveryCoords(phone);
+        latitude = coords.latitude;
+        longitude = coords.longitude;
         const locationParams =
           latitude && longitude
             ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
@@ -89,8 +102,9 @@ export function useHubVendorDiscovery(
         if (rows.length === 0 && config.fallbackVendorSearch) {
           try {
             const lim = config.fallbackVendorSearch.limit ?? 50;
+            const styleParam = `&serviceStyle=${encodeURIComponent(config.serviceStyle)}`;
             const vs = await apiClient.get<any>(
-              `/customer/vendors/search?roleId=${encodeURIComponent(config.fallbackVendorSearch.roleId)}&limit=${lim}${locationParams}`
+              `/customer/vendors/search?roleId=${encodeURIComponent(config.fallbackVendorSearch.roleId)}&limit=${lim}${styleParam}${locationParams}${phoneParam}`
             );
             if (Array.isArray(vs)) rows = vs;
             else if (vs?.vendors && Array.isArray(vs.vendors)) rows = vs.vendors;
@@ -101,9 +115,25 @@ export function useHubVendorDiscovery(
         }
       }
 
+      rows = filterHubDiscoveryRowsByRadius(rows, {
+        serviceStyle: config.serviceStyle,
+        latitude,
+        longitude,
+        sittingRelaxed: config.discoverCategory === 'sitting',
+      });
+
+      if (isVetHubDiscoveryConfig(config)) {
+        rows = filterVetHubProviderRows(rows);
+      }
+
       const { list, relaxedFilter: relaxed } = buildBoardingVendorListFromRows(rows, 'all');
+      const finalList = isVetHubDiscoveryConfig(config)
+        ? list
+            .map((v) => ({ ...v, planRows: filterPlanRowsForVetHub(v.planRows) }))
+            .filter((v) => v.planRows.length > 0)
+        : list;
       setRelaxedFilter(relaxed);
-      setVendors(list);
+      setVendors(finalList);
     } catch (e) {
       console.error('[useHubVendorDiscovery]', e);
       setVendors([]);
@@ -127,7 +157,10 @@ export function useHubVendorDiscovery(
               `/customer/vendor/${vendorId}/services?serviceStyle=${encodeURIComponent(config.serviceStyle)}`
             )
           );
-        const rows = mapServicesApiResponseToPlanRows(servicesResponse);
+        const mapped = mapServicesApiResponseToPlanRows(servicesResponse);
+        const rows = isVetHubDiscoveryConfig(config)
+          ? filterPlanRowsForVetHub(mapped)
+          : mapped;
         setVendors((prev) =>
           prev.map((v) =>
             v.id === vendorId ? { ...v, planRows: rows, needsServiceFetch: false } : v

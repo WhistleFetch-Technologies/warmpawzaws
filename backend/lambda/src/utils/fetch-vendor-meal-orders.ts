@@ -3,6 +3,7 @@
  */
 
 import { query } from '../database/rds-connection';
+import { SQL_MEAL_ORDER_VENDOR_VISIBLE } from './shop-vendor-visibility';
 
 export type VendorMealOrderRow = Record<string, unknown>;
 
@@ -49,13 +50,7 @@ export async function fetchVendorMealOrdersForVendorIds(
 
   sql += `
     )
-    AND (
-      LOWER(COALESCE(mo.payment_status, '')) IN ('paid', 'completed', 'refunded', 'expired')
-      OR LOWER(COALESCE(mo.status, '')) IN (
-        'confirmed', 'preparing', 'ready_for_pickup', 'picked_up',
-        'on_the_way', 'delivered', 'cancelled', 'failed'
-      )
-    )
+    AND ${SQL_MEAL_ORDER_VENDOR_VISIBLE}
   `;
 
   if (options?.status) {

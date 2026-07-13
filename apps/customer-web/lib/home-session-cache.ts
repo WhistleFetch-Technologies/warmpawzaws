@@ -71,7 +71,7 @@ export function rehydrateLaunchTilesFromCache(
       ...match,
       label: entry.label || match.label,
       color: entry.color || match.color,
-      isComingSoon: entry.isComingSoon ?? match.isComingSoon,
+      isComingSoon: entry.isComingSoon ?? ('isComingSoon' in match ? Boolean(match.isComingSoon) : undefined),
     });
   }
   return result;

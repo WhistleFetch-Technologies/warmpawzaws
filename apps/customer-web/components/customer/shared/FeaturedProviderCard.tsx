@@ -66,11 +66,11 @@ export function FeaturedProviderCard({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
           <VendorRatingDisplay
             row={{
-              vendorId: provider.vendorId ?? provider.id,
+              vendorId: provider.id,
               vendorRating: provider.rating,
               vendorReviewCount: provider.reviewCount,
             }}
-            vendorId={String(provider.vendorId ?? provider.id ?? '')}
+            vendorId={String(provider.id ?? '')}
             starsClassName="h-3 w-3"
             textClassName="text-xs text-gray-500"
           />

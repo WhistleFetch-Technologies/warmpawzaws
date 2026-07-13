@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { getResolvedCustomerId, extractCustomerUuidFromProfile } from '@/lib/customer-id-storage';
 
 // ============================================================================
 // TYPES

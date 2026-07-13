@@ -83,6 +83,10 @@ import {
 import { paymentHoldExpiresAt, expireShopPaymentHolds } from '../../../utils/shop-payment-hold';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
 import { writeEcommerceOrderSettlementLedgerRow } from '../../../utils/write-ecommerce-order-settlement';
+import {
+  productIdIsExcludedFromEcommerceStorefront,
+  storefrontExcludeMealProductsSql,
+} from '../../../utils/ecommerce-storefront-product-filter';
 
 const ADMIN_CATEGORY_SELECT = `
   SELECT id::text AS id, name, description, display_order, is_active, image_url,
@@ -127,10 +131,13 @@ async function queryAdminCategories() {
 }
 
 /** Only admin-approved products appear on the public storefront (see products.status + is_active). */
-const STOREFRONT_PRODUCT_SQL = `
+async function storefrontProductWhereSql(): Promise<string> {
+  const exclude = await storefrontExcludeMealProductsSql();
+  return `
   p.is_active = true
   AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
-`;
+  ${exclude}`;
+}
 
 /** Hide products tied to admin-disabled ecommerce categories. */
 const STOREFRONT_ACTIVE_CATEGORY_SQL = `
@@ -221,11 +228,12 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
       console.log(`${logLabel} lookup product id=`, productId);
 
+      const productWhere = await storefrontProductWhereSql();
       const products = await query(
         `SELECT p.*, v.business_name as vendor_name, v.city as vendor_city
          FROM products p
          LEFT JOIN vendors v ON p.vendor_id = v.id
-         WHERE p.id = $1 AND ${STOREFRONT_PRODUCT_SQL}${STOREFRONT_ACTIVE_CATEGORY_SQL}`,
+         WHERE p.id = $1 AND ${productWhere}${STOREFRONT_ACTIVE_CATEGORY_SQL}`,
         [productId]
       );
 
@@ -234,7 +242,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       const row = products.rows[0] as Record<string, unknown>;
-      const product = await prepareStorefrontProductRow(row);
+      const product = await prepareStorefrontProductRow(row, 'detail');
 
       let skusRaw = await loadProductSkus(productId);
       const meta =
@@ -299,11 +307,12 @@ export function registerEcommerceEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '50', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
+      const productWhere = await storefrontProductWhereSql();
       let productQuery = `
         SELECT p.*, v.business_name as vendor_name
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
-        WHERE ${STOREFRONT_PRODUCT_SQL}${STOREFRONT_ACTIVE_CATEGORY_SQL}
+        WHERE ${productWhere}${STOREFRONT_ACTIVE_CATEGORY_SQL}
       `;
 
       const params: any[] = [];
@@ -424,7 +433,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       const minPriceRaw = parseFloat(c.req.query('min_price') ?? '');
       const maxPriceRaw = parseFloat(c.req.query('max_price') ?? '');
 
-      const baseWhere = `${STOREFRONT_PRODUCT_SQL}${STOREFRONT_ACTIVE_CATEGORY_SQL}`;
+      const productWhere = await storefrontProductWhereSql();
+      const baseWhere = `${productWhere}${STOREFRONT_ACTIVE_CATEGORY_SQL}`;
       let whereClause = baseWhere;
       const filterParams: any[] = [];
       let paramIndex = 1;
@@ -667,6 +677,9 @@ export function registerEcommerceEndpoints(app: Hono) {
         try {
           const resolved = await resolveEcommerceOrderLine(item as Record<string, unknown>);
           if (!resolved) continue;
+          if (await productIdIsExcludedFromEcommerceStorefront(resolved.product_id)) {
+            return c.json({ error: 'Product is not available in the shop' }, 400);
+          }
           await assertProductDeliverableToCity(
             resolved.product_id,
             resolved.product_name,
@@ -1261,15 +1274,18 @@ export function registerEcommerceEndpoints(app: Hono) {
    */
   app.get("/products/:productId", (c) => handleGetPublicProductById(c, '[products/:productId]'));
 
-  /** Storefront-active product count per category (matches public product catalog rules). */
-  const STOREFRONT_CATEGORY_PRODUCT_COUNT_LATERAL = `
+async function storefrontCategoryProductCountLateral(): Promise<string> {
+  const exclude = await storefrontExcludeMealProductsSql();
+  return `
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS product_count
       FROM products p
       WHERE p.category_id = ec.id
         AND p.is_active = true
         AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
+        ${exclude}
     ) pc ON true`;
+}
 
   /**
    * GET /ecommerce/categories
@@ -1282,6 +1298,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         c.req.query('with_products_only') === 'true' ||
         c.req.query('with_products_only') === '1';
 
+      const categoryLateral = await storefrontCategoryProductCountLateral();
       let categories;
       try {
         categories = await query(
@@ -1289,7 +1306,7 @@ export function registerEcommerceEndpoints(app: Hono) {
                   ec.image_url, ec.created_at,
                   COALESCE(pc.product_count, 0) AS product_count
            FROM ecommerce_categories ec
-           ${STOREFRONT_CATEGORY_PRODUCT_COUNT_LATERAL}
+           ${categoryLateral}
            WHERE ec.is_active = true
            ${withProductsOnly ? 'AND COALESCE(pc.product_count, 0) > 0' : ''}
            ORDER BY ec.display_order ASC, ec.name ASC`
@@ -1311,7 +1328,7 @@ export function registerEcommerceEndpoints(app: Hono) {
                     ec.created_at,
                     COALESCE(pc.product_count, 0) AS product_count
              FROM ecommerce_categories ec
-             ${STOREFRONT_CATEGORY_PRODUCT_COUNT_LATERAL}
+             ${categoryLateral}
              WHERE ec.is_active = true
              ${withProductsOnly ? 'AND COALESCE(pc.product_count, 0) > 0' : ''}
              ORDER BY ec.display_order ASC, ec.name ASC`
@@ -1346,6 +1363,7 @@ export function registerEcommerceEndpoints(app: Hono) {
   app.get("/cart/:customerId", async (c) => {
     try {
       const { customerId } = c.req.param();
+      const excludeMealSql = await storefrontExcludeMealProductsSql();
 
       const cartItems = await query(
         `SELECT ci.*, p.name as product_name, p.price, p.images, v.business_name as vendor_name
@@ -1353,6 +1371,7 @@ export function registerEcommerceEndpoints(app: Hono) {
          INNER JOIN products p ON ci.product_id = p.id
          LEFT JOIN vendors v ON p.vendor_id = v.id
          WHERE ci.customer_id = $1
+           ${excludeMealSql}
          ORDER BY ci.created_at DESC`,
         [customerId]
       );
@@ -1387,6 +1406,10 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       if (!productId || !quantity) {
         return c.json({ error: 'productId and quantity are required' }, 400);
+      }
+
+      if (await productIdIsExcludedFromEcommerceStorefront(String(productId))) {
+        return c.json({ error: 'Product is not available in the shop' }, 404);
       }
 
       // Check if item already in cart
@@ -1506,6 +1529,9 @@ export function registerEcommerceEndpoints(app: Hono) {
         try {
           const resolved = await resolveEcommerceOrderLine(item as Record<string, unknown>);
           if (!resolved) continue;
+          if (await productIdIsExcludedFromEcommerceStorefront(resolved.product_id)) {
+            return c.json({ error: 'Product is not available in the shop' }, 400);
+          }
           await assertProductDeliverableToCity(
             resolved.product_id,
             resolved.product_name,

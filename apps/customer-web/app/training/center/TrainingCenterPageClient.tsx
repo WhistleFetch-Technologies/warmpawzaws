@@ -55,7 +55,7 @@ function TrainingCenterContent() {
           serviceStyle: data?.serviceStyle ? String(data.serviceStyle) : 'at_center',
           serviceType: 'training',
           returnSearchUrl,
-          trainer: data?.vendor || data?.trainer,
+          trainer: (data?.vendor ?? data?.trainer) as Record<string, unknown> | undefined,
         };
         try {
           sessionStorage.setItem(SEARCH_TRAINING_BOOKING_INTENT_KEY, JSON.stringify(intent));

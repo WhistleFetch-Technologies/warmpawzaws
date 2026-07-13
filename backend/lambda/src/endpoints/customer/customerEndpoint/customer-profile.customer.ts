@@ -26,33 +26,41 @@ import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from '../../../utils/s3-media-presign';
-import { regeneratePresignedUrl } from '../../constants/helper';
+import { resolveImageForContext } from '../../../services/image';
 import { getCustomerByPhoneFromMicroservice } from '../../../lib/services/customer-microservice-client';
 import { geocodeAddress, geocodeIndiaPincode } from '../../../lib/utils/geocode';
 /**
  * DB may store bare S3 keys, unsigned HTTPS object URLs, or expired presigned URLs.
- * presignS3GetUrlIfApplicable returns any string that already contains X-Amz-* unchanged,
- * so stale presigned URLs never refresh and the customer app shows a broken profile image.
+ * Uses ImageService resolve layer for managed keys (WebP thumbs on list paths elsewhere).
  */
-async function resolveCustomerPhotoForDisplay(raw: string | null | undefined): Promise<string | null> {
+async function resolveCustomerPhotoForDisplay(
+  raw: string | null | undefined,
+  customerId?: string,
+): Promise<string | null> {
   if (raw == null) return null;
   const s = String(raw).trim();
   if (!s) return null;
-  if (s.startsWith('data:')) return s;
+
+  const resolved = await resolveImageForContext(s, {
+    assetType: 'profile',
+    ownerId: customerId || 'customer',
+    context: 'detail',
+    migrate: true,
+    persist: customerId
+      ? {
+          kind: 'scalar',
+          table: 'customers',
+          column: 'profile_photo_url',
+          idColumn: 'id',
+          id: customerId,
+        }
+      : null,
+  });
+  if (resolved?.displayUrl) return resolved.displayUrl;
 
   const stripped = stripS3PresignQueryFromUrl(s);
-
-  if (!stripped.includes('://')) {
-    const signed = await regeneratePresignedUrl(stripped);
-    return signed || stripped;
-  }
-
   const presigned = await presignS3GetUrlIfApplicable(stripped);
-  if (presigned && presigned !== stripped) {
-    return presigned;
-  }
-  const regen = await regeneratePresignedUrl(stripped);
-  return regen || presigned || stripped;
+  return presigned || stripped;
 }
 
 /** Map DB row to API profile with camelCase address detail fields */
@@ -598,7 +606,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           ? customer.address
           : (customer.address && (customer.address as any).street) || '';
 
-      const profilePhoto = await resolveCustomerPhotoForDisplay(customer.profile_photo_url);
+      const profilePhoto = await resolveCustomerPhotoForDisplay(customer.profile_photo_url, customer.id);
 
       // Get pets for this customer with error handling
       let pets: any[] = [];
@@ -612,7 +620,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const petsOut = await Promise.all(
         pets.map(async (p: any) => {
           const rawPhoto = p.profile_photo_url;
-          const signed = (await resolveCustomerPhotoForDisplay(rawPhoto)) || rawPhoto;
+          const signed =
+            (await resolveCustomerPhotoForDisplay(rawPhoto, customer.id)) || rawPhoto;
           return {
             id: p.id,
             name: p.name,
@@ -694,7 +703,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      const photoUrl = await resolveCustomerPhotoForDisplay(customer.profile_photo_url);
+      const photoUrl = await resolveCustomerPhotoForDisplay(customer.profile_photo_url, customer.id);
 
       // Extract address fields from JSONB (if address is stored as JSONB)
       // Otherwise use address as text

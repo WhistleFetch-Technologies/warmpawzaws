@@ -6,15 +6,27 @@ import { query, update } from '../database/rds-connection';
 import { dispatchNotification } from './notification-dispatch';
 import { executeCampaignDelivery } from './notification-campaign-processor';
 import { loadCampaignTargeting } from './notification-campaign-targeting';
+import {
+  cronPipelineSkippedPayload,
+  isNotificationPipelineEnabled,
+} from './notification-pipeline-kill-switch';
 
 const BATCH_LIMIT = 100;
 
-export async function processDueScheduledNotifications(): Promise<{
-  processed: number;
-  sent: number;
-  failed: number;
-  errors: string[];
-}> {
+type ScheduledDrainResult =
+  | ReturnType<typeof cronPipelineSkippedPayload>
+  | {
+      processed: number;
+      sent: number;
+      failed: number;
+      errors: string[];
+    };
+
+export async function processDueScheduledNotifications(): Promise<ScheduledDrainResult> {
+  if (!isNotificationPipelineEnabled()) {
+    return cronPipelineSkippedPayload();
+  }
+
   const errors: string[] = [];
   let sent = 0;
   let failed = 0;
@@ -81,12 +93,11 @@ export async function processDueScheduledNotifications(): Promise<{
   return { processed: rows.length, sent, failed, errors };
 }
 
-export async function processDueScheduledCampaigns(): Promise<{
-  processed: number;
-  sent: number;
-  failed: number;
-  errors: string[];
-}> {
+export async function processDueScheduledCampaigns(): Promise<ScheduledDrainResult> {
+  if (!isNotificationPipelineEnabled()) {
+    return cronPipelineSkippedPayload();
+  }
+
   const errors: string[] = [];
   let sent = 0;
   let failed = 0;

@@ -3,6 +3,7 @@
  */
 
 import { normalizeEcommerceProductPricing } from './product-ecommerce-pricing';
+import { PRODUCT_MAX_IMAGES } from '../services/image/image-types';
 
 /** Title is the row classifier — rows without a non-empty Title are ignored during bulk upload. */
 export function getBulkProductTitle(raw: Record<string, unknown>): string {
@@ -248,6 +249,13 @@ export function validateEcommerceProductInput(
       ok: false,
       field: 'images',
       message: 'At least one product image is required',
+    };
+  }
+  if (imageUrls.length > PRODUCT_MAX_IMAGES) {
+    return {
+      ok: false,
+      field: 'images',
+      message: `Maximum ${PRODUCT_MAX_IMAGES} product images allowed`,
     };
   }
 

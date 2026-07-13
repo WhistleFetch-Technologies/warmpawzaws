@@ -33,6 +33,7 @@ import {
   buildDiscoveryVendorExistsSql,
   resolveDiscoveryCategoryKeys,
   sqlVendorServicesHubCategoryFilter,
+  sqlVetHubExcludeNonVetServices,
   vendorServicesHubCategoryBindParams,
 } from '../../lib/discovery-vendor-query';
 import type { DiscoveryRuleSet } from '../../lib/rule-engine';
@@ -239,7 +240,7 @@ describe('filterSearchResultsByDiscoveryRules', () => {
     expect(out.map((v) => v.id)).toContain('no-loc');
   });
 
-  it('does NOT exclude at_center vendor with null lat/lng (relaxed for non-at_home)', () => {
+  it('excludes at_center vendor with unknown distance when coords are known', () => {
     const groomingHub = hubSlugToDiscoveryContext('grooming')!;
     const vendors = [
       { id: 'has-loc', latitude: 12.901, longitude: 77.601, distanceKm: 5 },
@@ -253,8 +254,7 @@ describe('filterSearchResultsByDiscoveryRules', () => {
       rules: { ...defaultRules, discovery_radius_km: 50 },
       vendorRadiusById: new Map(),
     });
-    expect(out.map((v) => v.id)).toContain('has-loc');
-    expect(out.map((v) => v.id)).toContain('no-loc');
+    expect(out.map((v) => v.id)).toEqual(['has-loc']);
   });
 
   // The exact case the customer reported: home shows N walkers, search shows N+1.
@@ -424,6 +424,24 @@ describe('buildDiscoveryVendorExistsSql', () => {
     const walkSql = sqlVendorServicesHubCategoryFilter('walker', 'vs', 2, 3);
     expect(walkSql).toContain('dog%walk%');
     expect(sqlVendorServicesHubCategoryFilter('grooming', 'vs', 2, 3)).toBeNull();
+  });
+
+  it('sqlVetHubExcludeNonVetServices excludes grooming catalog without service_name matching', () => {
+    const sql = sqlVetHubExcludeNonVetServices('vs');
+    expect(sql).toContain("sc_vet_ex.category_id");
+    expect(sql).toContain("'grooming'");
+    expect(sql).toContain("LIKE 'groom_%'");
+    expect(sql).not.toContain('service_name');
+  });
+
+  it('buildDiscoveryVendorExistsSql appends vet grooming exclusion for vet hub', async () => {
+    const { sql } = await buildDiscoveryVendorExistsSql({
+      category: 'vet',
+      serviceStyle: 'at_center',
+      paramOffset: 1,
+    });
+    expect(sql).toContain("sc_vet_ex.category_id");
+    expect(sql).toContain("'grooming'");
   });
 });
 

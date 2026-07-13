@@ -35,7 +35,6 @@ export interface ByProblemServiceRow {
   id?: string;
   nextAvailable?: string;
   /** Vendor service listing (from API) */
-  description?: string;
   serviceImageUrl?: string | null;
 }
 
@@ -80,7 +79,7 @@ export function groupByProblemRowsByVendor(rows: unknown[]): VendorGroupFromProb
     const rowPhoto = pickVendorPhotoFromRow(row as Record<string, unknown>);
     const distRaw = row.distance;
     const dist =
-      distRaw != null && distRaw !== ''
+      distRaw != null && String(distRaw) !== ''
         ? num(distRaw, NaN)
         : NaN;
     const distFmt =

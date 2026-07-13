@@ -46,7 +46,7 @@ const nextConfig = {
   compress: true,
   // Allow dev exports to proceed even if there are transient type or lint issues
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   eslint: {
     ignoreDuringBuilds: true,

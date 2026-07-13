@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from './api-client';
+import { normalizeProfilePhotoFile } from './normalize-profile-photo';
 
 export interface PhotoUploadResult {
   success: boolean;
@@ -21,8 +22,9 @@ export async function uploadCustomerPhoto(
   customerPhone: string
 ): Promise<PhotoUploadResult> {
   try {
+    const normalized = await normalizeProfilePhotoFile(file);
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', normalized);
     formData.append('userId', customerPhone);
     formData.append('userType', 'customer');
     formData.append('folder', 'media');
@@ -66,8 +68,9 @@ export async function uploadPetPhoto(
   customerPhone: string
 ): Promise<PhotoUploadResult> {
   try {
+    const normalized = await normalizeProfilePhotoFile(file);
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', normalized);
     formData.append('userId', petId || `pet_${Date.now()}`);
     formData.append('userType', 'pet');
     formData.append('folder', 'media');

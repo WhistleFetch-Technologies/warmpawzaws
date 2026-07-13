@@ -38,6 +38,8 @@ interface DeliveryPerson {
 
 interface TrackingData {
   status: string;
+  reassignPending?: boolean;
+  lastLocationUpdate?: string;
   deliveryOtp?: string | null;
   deliveredAt?: string | null;
   reassignPending?: boolean;

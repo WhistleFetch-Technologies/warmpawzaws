@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
-import { uploadImageWithProgress } from '@/lib/photo-upload-enhanced';
+import { uploadProductImage } from '@/lib/product-image-upload';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import {
   ALLERGEN_OPTIONS,
@@ -127,13 +127,12 @@ export function MealProductFormModal({
     if (!file) return;
     setUploadingMealImage(true);
     try {
-      const res = await uploadImageWithProgress(file, `meal-products/${vendorId}`, { verifyUpload: false });
-      if (!res.success || !(res.url || res.publicUrl)) {
-        toast.error(res.error || 'Image upload failed');
+      const res = await uploadProductImage(vendorId, file);
+      const url = (res.displayUrl || res.s3_url || '').trim();
+      if (!url) {
+        toast.error('Image upload failed');
         return;
       }
-      // Prefer presigned display URL (works for private buckets); raw publicUrl often 403s in <img>.
-      const url = (res.url || res.publicUrl || '').trim();
       setForm((prev) => ({ ...prev, mealImageUrl: url }));
       toast.success('Meal image uploaded');
     } finally {

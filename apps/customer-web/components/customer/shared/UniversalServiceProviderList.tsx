@@ -20,6 +20,10 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import {
+  applyVetHubDiscoveryToProviders,
+  isVetHubDiscoveryConfig,
+} from '@/lib/filter-hub-services';
 
 // ============================================================================
 // TYPES
@@ -432,11 +436,11 @@ function ProviderCard({ provider, serviceStyle, showPriceDisclaimer = false, isP
           <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
             <VendorRatingDisplay
               row={{
-                vendorId: provider.vendorId ?? provider.id,
+                vendorId: provider.vendorId ?? provider.providerId,
                 vendorRating: provider.rating,
                 vendorReviewCount: provider.reviewCount,
               }}
-              vendorId={String(provider.vendorId ?? provider.id ?? '')}
+              vendorId={String(provider.vendorId ?? provider.providerId ?? '')}
               starsClassName="w-3 h-3"
               textClassName="text-xs text-gray-500"
             />
@@ -698,9 +702,14 @@ export function UniversalServiceProviderList({
           nextAvailableSlot: resolveNextAvailableLabel(p),
         }));
 
+        let finalProviders = cleanedProviders;
+        if (isVetHubDiscoveryConfig({ discoverCategory: category, servicesApiCategory: category })) {
+          finalProviders = applyVetHubDiscoveryToProviders(cleanedProviders);
+        }
+
         // Set providers from primary endpoint
-        setProviders(cleanedProviders);
-        console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
+        setProviders(finalProviders);
+        console.log(`✅ Loaded ${finalProviders.length} providers for ${category}/${serviceStyle}`);
       } else {
         console.warn(`⚠️ Primary endpoint returned success=false or no providers for ${category}/${serviceStyle}`);
         setProviders([]);
@@ -1009,7 +1018,7 @@ export function UniversalServiceProviderList({
                             name: provider.name,
                             businessName: provider.businessName,
                             photo: provider.photo,
-                            rating: provider.rating,
+                            rating: provider.rating ?? 0,
                             reviewCount: provider.reviewCount,
                             specialization: provider.specialization,
                             isVerified: provider.isVerified,

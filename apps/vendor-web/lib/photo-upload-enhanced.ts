@@ -7,9 +7,11 @@ import {
   getApiBaseUrl,
   getVendorAuthHeadersForUpload,
   postJsonWithXhr,
+  postMultipartFormWithXhr,
   type MultipartUploadResponse,
 } from './api-client';
 import { fileMatchesAccept } from '@/lib/capacitor-file-pick';
+import { normalizeProfilePhotoFile } from '@/lib/normalize-profile-photo';
 
 export interface PhotoUploadOptions {
   onProgress?: (progress: number) => void;
@@ -146,13 +148,78 @@ export async function uploadImageWithProgress(
   };
 }
 
-/** Staff directory under vendor (existing callers). */
+/** Staff profile photo via ImageService multipart API. */
 export async function uploadStaffPhotoWithProgress(
   file: File,
-  vendorId: string,
+  staffId: string,
   options: PhotoUploadOptions = {}
 ): Promise<PhotoUploadResult> {
-  return uploadImageWithProgress(file, `staff/${vendorId}`, options);
+  const { onProgress, maxRetries = 3 } = options;
+  let lastError: string | undefined;
+  let retries = 0;
+
+  if (!staffId?.trim()) {
+    return { success: false, error: 'Staff ID is required' };
+  }
+
+  const normalized = await normalizeProfilePhotoFile(file);
+
+  while (retries < maxRetries) {
+    try {
+      if (onProgress) onProgress(10);
+      const formData = new FormData();
+      formData.append('photo', normalized, normalized.name);
+
+      const response = await postMultipartFormWithXhr(
+        `/staff/${staffId.trim()}/profile/photo`,
+        formData,
+        {
+          onProgress: (pct) => {
+            if (onProgress) onProgress(10 + pct * 0.9);
+          },
+        }
+      ) as MultipartUploadResponse & {
+        url?: string;
+        photo_url?: string;
+        imageKey?: string;
+        fileName?: string;
+        key?: string;
+        publicUrl?: string;
+      };
+
+      const url =
+        (typeof response?.url === 'string' && response.url) ||
+        (typeof response?.photo_url === 'string' && response.photo_url) ||
+        (typeof response?.publicUrl === 'string' && response.publicUrl) ||
+        '';
+      const fileKey =
+        (typeof response?.imageKey === 'string' && response.imageKey) ||
+        (typeof response?.fileName === 'string' && response.fileName) ||
+        (typeof response?.key === 'string' && response.key) ||
+        '';
+
+      if (!url && !fileKey) {
+        throw new Error(response?.error || 'Staff photo upload failed');
+      }
+
+      if (onProgress) onProgress(100);
+      return {
+        success: true,
+        url: url || fileKey,
+        publicUrl: url,
+        fileName: fileKey || url,
+        retries,
+      };
+    } catch (error: unknown) {
+      lastError = error instanceof Error ? error.message : 'Upload failed';
+      retries++;
+      if (retries < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * retries));
+      }
+    }
+  }
+
+  return { success: false, error: lastError || 'Upload failed after retries', retries };
 }
 
 /**
@@ -369,10 +436,17 @@ async function buildFacilityJsonPhotoPayloads(
     if (file.size === 0) {
       throw new Error(`${file.name || 'Photo'} is empty on this device`);
     }
+    const withMime =
+      file.type && file.type !== 'application/octet-stream'
+        ? file
+        : new File([file], file.name || `photo-${Date.now()}.jpg`, {
+            type: mimeForFacilityPhoto(file),
+          });
+    const normalized = await normalizeProfilePhotoFile(withMime);
     photos.push({
-      base64: await readFileAsBase64(file),
-      fileName: file.name || `photo-${Date.now()}.jpg`,
-      mimeType: mimeForFacilityPhoto(file),
+      base64: await readFileAsBase64(normalized),
+      fileName: normalized.name || `photo-${Date.now()}.jpg`,
+      mimeType: normalized.type || 'image/jpeg',
     });
   }
   return photos;
@@ -454,20 +528,20 @@ export async function uploadFacilityCenterPhotos(
       if (file.size === 0) {
         throw new Error(`${payload.fileName || 'Photo'} is empty on this device`);
       }
-      uploadFiles.push(file);
+      uploadFiles.push(await normalizeProfilePhotoFile(file));
     }
   } else {
     for (const file of files) {
       if (file.size === 0) {
         throw new Error(`${file.name || 'Photo'} is empty on this device`);
       }
-      uploadFiles.push(
+      const withMime =
         file.type && file.type !== 'application/octet-stream'
           ? file
           : new File([file], file.name || `photo-${Date.now()}.jpg`, {
               type: mimeForFacilityPhoto(file),
-            })
-      );
+            });
+      uploadFiles.push(await normalizeProfilePhotoFile(withMime));
     }
   }
 

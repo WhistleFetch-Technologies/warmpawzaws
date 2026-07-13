@@ -273,7 +273,7 @@ export function BoardingVendorExpandableCard({
                             {plan.name}
                           </h5>
                           {(plan.isPackage ||
-                            isVendorServicePackageRow(plan as Record<string, unknown>)) && (
+                            isVendorServicePackageRow(plan as unknown as Record<string, unknown>)) && (
                             <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
                               Package
                             </span>
@@ -302,9 +302,11 @@ export function BoardingVendorExpandableCard({
                                 : `${plan.duration} mins`}
                             </Badge>
                           )}
-                          <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
-                            {plan.categoryLabel?.trim() || planBadgeLabel}
-                          </Badge>
+                          {plan.categoryLabel?.trim() ? (
+                            <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
+                              {plan.categoryLabel}
+                            </Badge>
+                          ) : null}
                         </div>
                       </div>
                       <div className="text-right">

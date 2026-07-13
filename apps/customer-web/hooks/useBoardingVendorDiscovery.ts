@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
+import { filterHubDiscoveryRowsByRadius } from '@/lib/hub-discovery-radius-filter';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import {
   buildBoardingVendorListFromRows,
@@ -24,44 +26,9 @@ export function useBoardingVendorDiscovery(
       setLoading(true);
       let latitude: string | undefined;
       let longitude: string | undefined;
-      try {
-        const profileRes = (await apiClient.get(
-          `/customer/profile?phone=${encodeURIComponent(phone)}`
-        )) as any;
-        const profile = profileRes?.profile || profileRes;
-        if (profile?.latitude != null && profile?.longitude != null) {
-          latitude = String(profile.latitude);
-          longitude = String(profile.longitude);
-        }
-      } catch {
-        /* ignore */
-      }
-      if (latitude == null && typeof window !== 'undefined') {
-        try {
-          const lat = localStorage.getItem('customer_latitude');
-          const lng = localStorage.getItem('customer_longitude');
-          if (lat && lng) {
-            latitude = lat;
-            longitude = lng;
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-      if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-              timeout: 5000,
-              maximumAge: 300000,
-            });
-          });
-          latitude = String(pos.coords.latitude);
-          longitude = String(pos.coords.longitude);
-        } catch {
-          /* ignore */
-        }
-      }
+      const coords = await resolveCustomerDiscoveryCoords(phone);
+      latitude = coords.latitude;
+      longitude = coords.longitude;
       const locationParams =
         latitude && longitude
           ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
@@ -91,6 +58,12 @@ export function useBoardingVendorDiscovery(
           console.warn('[useBoardingVendorDiscovery] by-style fallback failed:', e);
         }
       }
+
+      rows = filterHubDiscoveryRowsByRadius(rows, {
+        serviceStyle: 'at_center',
+        latitude,
+        longitude,
+      });
 
       const { list, relaxedFilter: relaxed } = buildBoardingVendorListFromRows(rows, serviceSlug);
       setRelaxedFilter(relaxed);
