@@ -65,6 +65,11 @@ import {
   enrichDiscoveryListVendorsConcurrent,
 } from '../../../utils/discovery-list-enrich';
 import {
+  fetchDiscoveryListStatsForVendors,
+  parseVendorServicesLimit,
+  toPreviewServiceRow,
+} from '../../../utils/discovery-list-stats';
+import {
   addDaysToYmd,
   dayOfWeekFromYmd,
   DEFAULT_MIN_NOTICE_MINUTES,
@@ -1699,7 +1704,10 @@ type CustomerVendorProfileBundle = {
   staff: unknown[];
 };
 
-async function fetchCustomerVendorProfileBundle(vendorId: string): Promise<CustomerVendorProfileBundle | null> {
+async function fetchCustomerVendorProfileBundle(
+  vendorId: string,
+  opts?: { includePhotos?: boolean }
+): Promise<CustomerVendorProfileBundle | null> {
   const vendor = await resolveVendorById(vendorId);
   if (!vendor) return null;
   const resolvedVendorId = vendor.id;
@@ -1707,22 +1715,8 @@ async function fetchCustomerVendorProfileBundle(vendorId: string): Promise<Custo
   const roles = await select('roles', { id: vendor.role_id });
   const role = roles[0];
 
-  const serviceColumns = await query(
-    `SELECT column_name FROM information_schema.columns 
-     WHERE table_name = 'services' AND column_name = 'is_global'`
-  );
-  const hasIsGlobal = serviceColumns.rows.length > 0;
-
-  const services = await query(
-    `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style
-     FROM services s
-     LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
-     WHERE (vs.vendor_id = $1${hasIsGlobal ? ' OR s.is_global = true' : ''})
-     AND s.is_active = true
-     AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
-     ORDER BY s.name`,
-    [resolvedVendorId]
-  );
+  // Phase 2: omit legacy services join — booking UIs use GET …/services
+  const services = { rows: [] as unknown[] };
 
   const reviews = await query(
     `SELECT r.*, c.full_name as customer_name
@@ -1774,12 +1768,14 @@ async function fetchCustomerVendorProfileBundle(vendorId: string): Promise<Custo
   const vendorMeta = parseVendorMetadata(vendor.metadata);
 
   let facilityPhotos: string[] = [];
-  try {
-    const raw = vendorMeta.facility_photos || vendorMeta.photos || [];
-    const rawArr = Array.isArray(raw) ? raw : [];
-    facilityPhotos = await presignCustomerFacilityGalleryUrls(resolvedVendorId, rawArr);
-  } catch (_) {
-    facilityPhotos = [];
+  if (opts?.includePhotos) {
+    try {
+      const raw = vendorMeta.facility_photos || vendorMeta.photos || [];
+      const rawArr = Array.isArray(raw) ? raw : [];
+      facilityPhotos = await presignCustomerFacilityGalleryUrls(resolvedVendorId, rawArr);
+    } catch (_) {
+      facilityPhotos = [];
+    }
   }
 
   const profileSpecMap = await batchLoadVendorSpecializationsForDiscovery([
@@ -3026,13 +3022,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       /** Filled after vendor SQL runs; enrichVendor reads resolved specialization labels. */
       let vendorSpecBundleForDiscover = new Map<string, { raw: string[]; displayLabels: string[] }>();
+      /** Batched price/count — filled after vendor SQL (Phase 2). */
+      let vendorStatsDiscover = new Map<string, { serviceCount: number; priceMin?: number; priceMax?: number }>();
 
-      // Fast-list enrich (shared with by-style): parallel, one listing thumb, slim services.
+      // Fast-list enrich: use batched stats by default; row hydrate only for fullEnrich.
       const enrichVendor = async (vendor: any) => {
-        const services = await fetchServices(vendor.vendor_id, vendor.role_name);
+        const stats = vendorStatsDiscover.get(String(vendor.vendor_id));
+        const services = fullEnrichDiscover
+          ? await fetchServices(vendor.vendor_id, vendor.role_name)
+          : [];
         const specBundle = vendorSpecBundleForDiscover.get(vendor.vendor_id);
         return enrichDiscoveryListVendor({
           vendor,
+          stats: fullEnrichDiscover ? null : stats || { serviceCount: 0 },
           services,
           acceptableStyles,
           distResolver: distResolverDiscover,
@@ -3106,6 +3108,32 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         vendorRadiusLookupDiscover.set(row.vendor_id, {
           service_radius: row.service_radius,
           service_distance_km: row.service_distance_km,
+        });
+      }
+      const discoverVendorIds = (vendorRows.rows || []).map((r: any) => String(r.vendor_id));
+      if (!fullEnrichDiscover && discoverVendorIds.length > 0) {
+        const sittingExcludeExtra = sittingDiscoveryRelaxed
+          ? `AND NOT (
+                LOWER(TRIM(COALESCE(vs.category, ''))) = ANY(ARRAY[
+                  'walking','walker','dog_walker','dog walking','dog walker','dog_walking',
+                  'vet','veterinary','veterinarian','vet care','vet_care',
+                  'grooming','training','diagnostics','behaviourist','nutrition','daycare','transport'
+                ]::text[])
+                OR (
+                  LOWER(TRIM(COALESCE(vs.category, ''))) = 'boarding'
+                  AND COALESCE(vs.is_custom_service, false) = true
+                )
+              )`
+          : undefined;
+        vendorStatsDiscover = await fetchDiscoveryListStatsForVendors(query, discoverVendorIds, {
+          acceptableStyles,
+          isAtCenter,
+          sittingStyleLoose: sittingDiscoveryRelaxed && !isAtCenter,
+          allowNullEnabled: sittingDiscoveryRelaxed,
+          catTextExact,
+          catTextLike,
+          catUUIDs,
+          extraAndSql: sittingExcludeExtra,
         });
       }
       console.log('vendorRows', vendorRows.rows?.length, acceptableStyles, catTextExact, catTextLike, catUUIDs);
@@ -4933,23 +4961,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       }
 
       const total = combined.length;
-      const limitRaw = c.req.query('limit');
-      const offsetRaw = c.req.query('offset');
-      const offset = Math.max(0, parseInt(String(offsetRaw || '0'), 10) || 0);
-      /** Omit `limit` → full list (booking routers). Preview/profile pass limit. */
+      const limit = parseVendorServicesLimit(c.req.query('limit'));
+      const offset = Math.max(0, parseInt(String(c.req.query('offset') || '0'), 10) || 0);
+      /** Omit/NaN `limit` → full list (booking routers). Preview/profile pass finite limit. */
       let page = combined;
-      let limit: number | null = null;
-      if (limitRaw != null && String(limitRaw).trim() !== '') {
-        limit = Math.min(100, Math.max(1, parseInt(String(limitRaw), 10) || 20));
+      if (limit != null) {
         page = combined.slice(offset, offset + limit);
       }
 
-      const packages = page.filter((s: any) => s.isPackage);
-      const services = page;
+      const shape = limit != null ? 'preview' : 'full';
+      const mappedPage =
+        shape === 'preview' ? page.map((s: any) => toPreviewServiceRow(s)) : page;
+      const packages = mappedPage.filter((s: any) => s.isPackage);
+      const services = mappedPage;
       const hasMore = limit != null ? offset + page.length < total : false;
 
       return c.json({
         success: true,
+        shape,
         services,
         packages,
         count: page.length,
@@ -4982,7 +5011,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   app.get('/public/vendor/:vendorId/profile', async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const bundle = await fetchCustomerVendorProfileBundle(vendorId);
+      const include = String(c.req.query('include') || '');
+      const includePhotos = include.split(',').map((s) => s.trim().toLowerCase()).includes('photos');
+      const bundle = await fetchCustomerVendorProfileBundle(vendorId, { includePhotos });
       if (!bundle) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
@@ -4993,10 +5024,108 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     }
   });
 
+  /**
+   * GET /public/vendor/:vendorId/services
+   * Guest-safe paginated services (no auth / no package membership). Prefer limit for PreviewServiceRow.
+   */
+  app.get('/public/vendor/:vendorId/services', async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const category = c.req.query('category');
+      const serviceStyle =
+        c.req.query('serviceStyle') || c.req.query('service_style') || c.req.query('style');
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor || !vendorRowIsOnline(vendor.is_online)) {
+        return c.json({ error: 'Vendor not found', success: false }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const params: any[] = [resolvedVendorId];
+      let sql = `
+        SELECT
+          vs.id, vs.service_id, vs.service_name, vs.price, vs.custom_price,
+          vs.metadata AS vs_metadata, vs.service_style, vs.publish_status,
+          COALESCE(vs.custom_duration, vs.duration_minutes) AS duration,
+          COALESCE(vs.custom_description, '') AS description,
+          vs.category AS category
+        FROM vendor_services vs
+        WHERE vs.vendor_id = $1
+          AND ${sqlVendorServiceDiscoverable('vs', false)}
+      `;
+      if (serviceStyle && serviceStyle !== 'all') {
+        params.push(acceptableStylesForService(serviceStyle));
+        sql += ` AND vs.service_style = ANY($${params.length}::text[])`;
+      }
+      if (category) {
+        params.push(category);
+        sql += ` AND (LOWER(COALESCE(vs.category, '')) = LOWER($${params.length}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${params.length}) || '%')`;
+      }
+      sql += ` ORDER BY vs.price ASC NULLS LAST`;
+      const result = await query(sql, params);
+      const combined = (result.rows || []).map((row: any) => {
+        const price =
+          row.custom_price != null
+            ? parseFloat(row.custom_price)
+            : row.price != null
+              ? parseFloat(row.price)
+              : 0;
+        const duration = row.duration ?? 30;
+        const name = row.service_name || 'Service';
+        const description = row.description || '';
+        const metadata = parseVendorServiceMetadataForCustomer(row.vs_metadata);
+        const { isPackage, packageDetails } = vendorServicePackagePresentationForCustomer(
+          metadata,
+          duration
+        );
+        return {
+          id: row.id,
+          serviceId: row.service_id,
+          name,
+          price,
+          duration,
+          category: row.category,
+          serviceStyle: row.service_style || null,
+          shortDescription:
+            description.length > 200 ? description.slice(0, 200) + '…' : description,
+          description,
+          isPackage,
+          packageDetails,
+          inActivePackage: false,
+          metadata,
+        };
+      });
+
+      const total = combined.length;
+      const limit = parseVendorServicesLimit(c.req.query('limit'));
+      const offset = Math.max(0, parseInt(String(c.req.query('offset') || '0'), 10) || 0);
+      let page = combined;
+      if (limit != null) page = combined.slice(offset, offset + limit);
+      const shape = limit != null ? 'preview' : 'full';
+      const mapped =
+        shape === 'preview' ? page.map((s) => toPreviewServiceRow(s as any)) : page;
+      return c.json({
+        success: true,
+        shape,
+        services: mapped,
+        packages: mapped.filter((s: any) => s.isPackage),
+        count: page.length,
+        total,
+        limit: limit ?? total,
+        offset,
+        hasMore: limit != null ? offset + page.length < total : false,
+        hasActivePackage: false,
+      });
+    } catch (error: any) {
+      console.error('Error fetching public vendor services:', error);
+      return c.json({ success: false, error: error.message || 'Failed', services: [] }, 500);
+    }
+  });
+
   app.get("/customer/vendor/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const bundle = await fetchCustomerVendorProfileBundle(vendorId);
+      const include = String(c.req.query('include') || '');
+      const includePhotos = include.split(',').map((s) => s.trim().toLowerCase()).includes('photos');
+      const bundle = await fetchCustomerVendorProfileBundle(vendorId, { includePhotos });
       if (!bundle) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
@@ -6916,16 +7045,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       };
 
       let vendorSpecBundleForByStyle = new Map<string, { raw: string[]; displayLabels: string[] }>();
+      let vendorStatsByStyle = new Map<string, { serviceCount: number; priceMin?: number; priceMax?: number }>();
 
       /**
        * Fast-list enrich (shared with discover-services). Null when zero matching services.
-       * No role_config gate: vendor_services is source of truth for cross-persona add-ons.
+       * Batched stats by default; row hydrate only for fullEnrich.
        */
       const enrichVendor = async (vendor: any) => {
-        const services = await fetchServices(vendor.vendor_id, vendor.role_name);
+        const stats = vendorStatsByStyle.get(String(vendor.vendor_id));
+        const services = fullEnrichByStyle
+          ? await fetchServices(vendor.vendor_id, vendor.role_name)
+          : [];
         const specBundle = vendorSpecBundleForByStyle.get(vendor.vendor_id);
         return enrichDiscoveryListVendor({
           vendor,
+          stats: fullEnrichByStyle ? null : stats || { serviceCount: 0 },
           services,
           acceptableStyles,
           distResolver: distResolverByStyle,
@@ -7023,6 +7157,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         vendorRadiusLookupByStyle.set(row.vendor_id, {
           service_radius: row.service_radius,
           service_distance_km: row.service_distance_km,
+        });
+      }
+      const byStyleVendorIds = (vendorRows.rows || []).map((r: any) => String(r.vendor_id));
+      if (!fullEnrichByStyle && byStyleVendorIds.length > 0) {
+        const vetExcludeExtra = isVetCategoryDiscoveryByStyle
+          ? sqlVetHubExcludeNonVetServices('vs')
+          : undefined;
+        vendorStatsByStyle = await fetchDiscoveryListStatsForVendors(query, byStyleVendorIds, {
+          acceptableStyles,
+          isAtCenter,
+          catTextExact,
+          catTextLike,
+          catUUIDs,
+          extraAndSql: vetExcludeExtra,
         });
       }
       console.log(

@@ -43,6 +43,8 @@ import { apiClient } from '@/lib/api-client';
 import {
   mapHomeServiceProfileServices,
   mergeCustomerVendorServicesPayload,
+  parseVendorServicesPageMeta,
+  VENDOR_SERVICES_PROFILE_PAGE_SIZE,
   type HomeServiceProfileService,
 } from '@/lib/customer-vendor-services-merge';
 import { rowQualifiesForWalkingModal } from '@/lib/walker-vendor-offerings';
@@ -231,18 +233,10 @@ export function HomeServiceProviderProfile({
       setLoading(true);
       console.log(`📍 [HOME-SERVICE-PROFILE] Loading vendor details for: ${vendorId}`);
 
-      const [facilityResponse, customerVendorResponse] = await Promise.all([
-        apiClient.get(`/customer/facility/${vendorId}`).catch(() => null),
-        apiClient.get(`/customer/vendor/${vendorId}`).catch(() => null),
-      ]);
-
-      let facilityRoot: Record<string, unknown> | null = null;
-      if (facilityResponse && typeof facilityResponse === 'object') {
-        const fr = facilityResponse as Record<string, unknown>;
-        if (fr.success !== false && (fr.vendor || fr.facility)) {
-          facilityRoot = fr;
-        }
-      }
+      // First paint: lean vendor shell only (skip /customer/facility gallery presign)
+      const customerVendorResponse = await apiClient
+        .get(`/customer/vendor/${vendorId}`)
+        .catch(() => null);
 
       let customerVendorRow: Record<string, unknown> | null = null;
       if (customerVendorResponse && typeof customerVendorResponse === 'object') {
@@ -256,10 +250,12 @@ export function HomeServiceProviderProfile({
       let merged: Record<string, unknown>;
       let ratingMeta: { average?: number; count?: number } = {};
 
-      if (facilityRoot) {
-        merged = mergeCustomerFacilityPayload(facilityRoot);
-        ratingMeta = ratingFromFacilityRoot(facilityRoot);
-        console.log('📦 [HOME-SERVICE-PROFILE] Facility merged vendor row:', merged);
+      if (customerVendorRow) {
+        merged = { ...customerVendorRow };
+        ratingMeta = {
+          average: Number(customerVendorRow.rating) || undefined,
+          count: Number(customerVendorRow.totalReviews ?? customerVendorRow.review_count) || undefined,
+        };
       } else {
         try {
           const data = await apiClient.get<{ vendor?: any }>(`/vendor/${vendorId}`);
@@ -277,14 +273,8 @@ export function HomeServiceProviderProfile({
       const profilePhotoUrl = resolveVendorProfilePhotoUrl(merged);
       const coverUrl = resolveVendorCoverImageUrl(merged);
 
-      const facilityForHero: Record<string, unknown> | null =
-        facilityRoot &&
-        typeof facilityRoot.facility === 'object' &&
-        facilityRoot.facility !== null
-          ? (facilityRoot.facility as Record<string, unknown>)
-          : null;
       const gallery = resolveVendorProfileHeroGallery({
-        facility: facilityForHero,
+        facility: null,
         vendor: merged,
         profileProvider: {
           photo: profilePhotoUrl,
@@ -302,9 +292,13 @@ export function HomeServiceProviderProfile({
       try {
         let servicesData: any;
         try {
-          servicesData = await apiClient.get<{ success?: boolean; services?: any[] }>(`/customer/vendor/${vendorId}/services`);
+          servicesData = await apiClient.get<{ success?: boolean; services?: any[] }>(
+            `/customer/vendor/${vendorId}/services?limit=${VENDOR_SERVICES_PROFILE_PAGE_SIZE}&offset=0`
+          );
         } catch {
-          servicesData = await apiClient.get<{ services: any[] }>(`/vendor/${vendorId}/services`);
+          servicesData = await apiClient.get<{ services: any[] }>(
+            `/customer/vendor/${vendorId}/services?limit=${VENDOR_SERVICES_PROFILE_PAGE_SIZE}&offset=0`
+          );
         }
         if (servicesData?.services && Array.isArray(servicesData.services)) {
           rawServices = mergeCustomerVendorServicesPayload(servicesData);

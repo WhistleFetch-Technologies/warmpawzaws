@@ -1,10 +1,14 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as ImageIcon, ChevronRight, CheckCircle2, Building2, Stethoscope } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as ImageIcon, ChevronRight, CheckCircle2, Building2, Stethoscope, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
-import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import {
+  mergeCustomerVendorServicesPayload,
+  parseVendorServicesPageMeta,
+  VENDOR_SERVICES_PROFILE_PAGE_SIZE,
+} from '@/lib/customer-vendor-services-merge';
 import { resolveCustomerVendorAmenities } from '@/lib/vendor-display-media';
 import { AmenitiesSection } from '../shared/AmenitiesSection';
 import { formatAverageForDisplay } from '@/lib/rating-display';
@@ -57,6 +61,9 @@ interface ClinicInfo {
 export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: ClinicProfileViewProps) {
   const [loading, setLoading] = useState(true);
   const [clinic, setClinic] = useState<ClinicInfo | null>(null);
+  const [servicesHasMore, setServicesHasMore] = useState(false);
+  const [servicesOffset, setServicesOffset] = useState(0);
+  const [servicesLoadingMore, setServicesLoadingMore] = useState(false);
   const [selectedService, setSelectedService] = useState<{
     selectionKey: string;
     id: string;
@@ -91,49 +98,9 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
     loadClinicData();
   }, [clinicId]);
 
-  const loadClinicData = async () => {
-    try {
-      setLoading(true);
-      
-      // ✅ CRITICAL: Load vendor profile from real API - NO MOCK DATA, NO FALLBACKS
-      // ✅ FIX: Include serviceStyle=at_center for clinic profile (clinics offer at_center services)
-      const [vendorResponse, servicesResponse, facilityResponse] = await Promise.all([
-        apiClient.get(`/customer/vendor/${clinicId}`),
-        apiClient.get(`/customer/vendor/${clinicId}/services?serviceStyle=at_center&category=${HUB_DISCOVERY_VET.servicesApiCategory}`).catch(() => apiClient.get(`/vendor/${clinicId}/services`)),
-        apiClient.get(`/customer/facility/${clinicId}`).catch(() => null),
-      ]);
-      
-      const vendorData = (vendorResponse as any)?.vendor || vendorResponse as any;
-      const facilityData =
-        facilityResponse && typeof facilityResponse === 'object' && (facilityResponse as any).facility
-          ? (facilityResponse as any).facility
-          : {};
-      const { amenities, customAmenities } = resolveCustomerVendorAmenities({
-        ...facilityData,
-        ...vendorData,
-      });
-      
-      // Extract services (customer endpoint returns { success, services: [...] }; vendor may return nested by style)
-      let services: any[] = [];
-      const servicesData = servicesResponse as any;
-      if (servicesData?.services && Array.isArray(servicesData.services)) {
-        services = mergeCustomerVendorServicesPayload(servicesData);
-      } else if (servicesData?.services?.at_home || servicesData?.services?.at_center || servicesData?.services?.tele) {
-        services = [
-          ...(servicesData.services.at_home?.services || []),
-          ...(servicesData.services.at_center?.services || []),
-          ...(servicesData.services.tele?.services || [])
-        ];
-      } else if (servicesData?.allServices) {
-        services = servicesData.allServices;
-      } else if (Array.isArray(servicesData?.services)) {
-        services = servicesData.services;
-      } else if (Array.isArray(servicesData)) {
-        services = servicesData;
-      }
-      
-      const mappedServices = filterServicesForVetHub(
-        services.map((s: any, idx: number) => {
+  const mapClinicServiceRows = useCallback((services: any[]) => {
+    return filterServicesForVetHub(
+      services.map((s: any, idx: number) => {
         const catalogId = s.serviceId || s.service_id;
         const vendorServiceId = s.id;
         const selectionKey = String(
@@ -156,17 +123,46 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           metadata: s.metadata,
         };
       })
-      );
-      
-      console.log('✅ Loaded clinic data:', {
-        vendorId: vendorData.id || clinicId,
-        servicesCount: mappedServices.length,
-        services: mappedServices
+    );
+  }, []);
+
+  const loadClinicData = async () => {
+    try {
+      setLoading(true);
+      // First paint: vendor shell + first services page — no /customer/facility (presign gallery)
+      const limitQ = `limit=${VENDOR_SERVICES_PROFILE_PAGE_SIZE}&offset=0`;
+      const [vendorResponse, servicesResponse] = await Promise.all([
+        apiClient.get(`/customer/vendor/${clinicId}`),
+        apiClient
+          .get(
+            `/customer/vendor/${clinicId}/services?serviceStyle=at_center&category=${HUB_DISCOVERY_VET.servicesApiCategory}&${limitQ}`
+          )
+          .catch(() =>
+            apiClient.get(`/customer/vendor/${clinicId}/services?serviceStyle=at_center&${limitQ}`)
+          ),
+      ]);
+
+      const vendorData = (vendorResponse as any)?.vendor || (vendorResponse as any);
+      const { amenities, customAmenities } = resolveCustomerVendorAmenities({
+        ...vendorData,
       });
-      
+
+      const servicesData = servicesResponse as any;
+      let services: any[] = [];
+      if (servicesData?.services && Array.isArray(servicesData.services)) {
+        services = mergeCustomerVendorServicesPayload(servicesData);
+      } else if (Array.isArray(servicesData)) {
+        services = servicesData;
+      }
+      const mappedServices = mapClinicServiceRows(services);
+      const meta = parseVendorServicesPageMeta(servicesData as Record<string, unknown>);
+      setServicesOffset(mappedServices.length);
+      setServicesHasMore(meta.hasMore || (meta.total > 0 && mappedServices.length < meta.total));
+
+      const listingPhoto = vendorData.photoUrl || vendorData.photo || vendorData.profile_photo_url;
       setClinic({
         id: vendorData.id || clinicId,
-        name: vendorData.business_name || vendorData.name || 'Veterinary Clinic',
+        name: vendorData.business_name || vendorData.businessName || vendorData.name || 'Veterinary Clinic',
         description: vendorData.description || '',
         address: vendorData.address || '',
         city: vendorData.city || '',
@@ -174,12 +170,12 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         phone: vendorData.phone || '',
         email: vendorData.email,
         website: vendorData.website,
-        rating: parseFloat(vendorData.rating || '0'),
-        review_count: parseInt(vendorData.review_count || '0', 10),
+        rating: parseFloat(String(vendorData.rating || '0')),
+        review_count: parseInt(String(vendorData.totalReviews ?? vendorData.review_count ?? '0'), 10),
         timing: vendorData.timing || vendorData.businessHours || '9:00 AM - 8:00 PM',
-        services: mappedServices, // ✅ Real services with UUID
+        services: mappedServices,
         doctors: vendorData.doctors || vendorData.staff || [],
-        photos: vendorData.photos || vendorData.gallery || facilityData.photos || [],
+        photos: listingPhoto ? [listingPhoto] : [],
         amenities,
         customAmenities,
       });
@@ -188,6 +184,31 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       setClinic(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMoreClinicServices = async () => {
+    if (!clinic || servicesLoadingMore || !servicesHasMore) return;
+    setServicesLoadingMore(true);
+    try {
+      const limitQ = `limit=${VENDOR_SERVICES_PROFILE_PAGE_SIZE}&offset=${servicesOffset}`;
+      const servicesData = (await apiClient.get(
+        `/customer/vendor/${clinicId}/services?serviceStyle=at_center&category=${HUB_DISCOVERY_VET.servicesApiCategory}&${limitQ}`
+      )) as any;
+      const rows = mapClinicServiceRows(mergeCustomerVendorServicesPayload(servicesData));
+      const meta = parseVendorServicesPageMeta(servicesData as Record<string, unknown>);
+      setClinic((prev) => {
+        if (!prev) return prev;
+        const seen = new Set(prev.services.map((s) => s.selectionKey));
+        const merged = [...prev.services, ...rows.filter((r) => !seen.has(r.selectionKey))];
+        setServicesOffset(merged.length);
+        setServicesHasMore(meta.hasMore || (meta.total > 0 && merged.length < meta.total));
+        return { ...prev, services: merged };
+      });
+    } catch (e) {
+      console.warn('[ClinicProfileView] load more failed', e);
+    } finally {
+      setServicesLoadingMore(false);
     }
   };
 
@@ -383,6 +404,24 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
                 </button>
               );
             })}
+            {servicesHasMore && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full text-[#FF8C42] border-[#FF8C42]/40"
+                disabled={servicesLoadingMore}
+                onClick={() => void loadMoreClinicServices()}
+              >
+                {servicesLoadingMore ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading…
+                  </span>
+                ) : (
+                  'Load more services'
+                )}
+              </Button>
+            )}
           </div>
         </div>
 

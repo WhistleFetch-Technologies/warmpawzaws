@@ -45,7 +45,7 @@ describe('slimDiscoveryListService', () => {
 });
 
 describe('enrichDiscoveryListVendor', () => {
-  it('returns card fields without services[] by default', async () => {
+  it('returns card fields from batched stats without services[]', async () => {
     const card = await enrichDiscoveryListVendor({
       vendor: {
         vendor_id: 'v1',
@@ -60,10 +60,7 @@ describe('enrichDiscoveryListVendor', () => {
         review_count: '3',
         is_online: true,
       },
-      services: [
-        { id: 's1', name: 'Consult', price: 500 },
-        { id: 's2', name: 'Follow-up', price: 300 },
-      ],
+      stats: { serviceCount: 2, priceMin: 300, priceMax: 500 },
       acceptableStyles: ['at_center'],
       distResolver: { resolve: async () => ({ km: 1.2, distanceText: '1.2 km' }) } as any,
       getNextAvailableSlot: async () => ({ display: 'Tomorrow 10:00 AM' }),
@@ -77,6 +74,18 @@ describe('enrichDiscoveryListVendor', () => {
     expect(card!.serviceCount).toBe(2);
     expect(card!.photos).toBeUndefined();
     expect(card!.photo).toBeUndefined();
+  });
+
+  it('returns null when stats serviceCount is 0', async () => {
+    const card = await enrichDiscoveryListVendor({
+      vendor: { vendor_id: 'v1', business_name: 'X', is_online: true },
+      stats: { serviceCount: 0 },
+      acceptableStyles: ['at_center'],
+      distResolver: { resolve: async () => null } as any,
+      getNextAvailableSlot: async () => null,
+      defaultAvailabilityDisplay: 'Tap',
+    });
+    expect(card).toBeNull();
   });
 });
 

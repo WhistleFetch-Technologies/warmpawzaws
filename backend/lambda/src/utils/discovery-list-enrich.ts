@@ -6,6 +6,7 @@ import type { DistanceResolver } from '../lib/utils/vendor-customer-distance';
 import { vendorRowIsOnline } from '../lib/search-discovery-parity';
 import { getVendorListingPhotoUrl } from './vendor-listing-photo';
 import { mapWithConcurrency } from '../services/image';
+import type { DiscoveryListVendorStats } from './discovery-list-stats';
 
 export const DISCOVERY_LIST_ENRICH_CONCURRENCY = 6;
 /** Cap list size for TTI / cost (caller may already clamp via rules). */
@@ -49,8 +50,10 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null
 
 export type EnrichDiscoveryListVendorOpts = {
   vendor: any;
-  /** Used for eligibility + priceMin/Max/serviceCount; not serialized by default */
-  services: any[];
+  /** Prefer batched stats (default path). */
+  stats?: DiscoveryListVendorStats | null;
+  /** Used when fullServices or when stats omitted (legacy hydrate). */
+  services?: any[];
   acceptableStyles: string[];
   distResolver: DistanceResolver;
   getNextAvailableSlot: DiscoveryListSlotFn;
@@ -71,7 +74,25 @@ export async function enrichDiscoveryListVendor(
 ): Promise<Record<string, unknown> | null> {
   const { vendor, acceptableStyles, distResolver, getNextAvailableSlot } = opts;
   const services = Array.isArray(opts.services) ? opts.services : [];
-  if (services.length === 0) return null;
+
+  let serviceCount = 0;
+  let priceMin: number | undefined;
+  let priceMax: number | undefined;
+
+  if (opts.stats) {
+    serviceCount = opts.stats.serviceCount || 0;
+    priceMin = opts.stats.priceMin;
+    priceMax = opts.stats.priceMax;
+  } else if (services.length > 0) {
+    serviceCount = services.length;
+    const prices = services
+      .map((s: any) => Number(s.price))
+      .filter((p: number) => Number.isFinite(p) && p > 0);
+    priceMin = prices.length > 0 ? Math.min(...prices) : undefined;
+    priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
+  }
+
+  if (serviceCount === 0) return null;
 
   let distResult: { km?: number | null; distanceText?: string | null } | null = null;
   try {
@@ -118,12 +139,6 @@ export async function enrichDiscoveryListVendor(
     photoUrl = null;
   }
 
-  const prices = services
-    .map((s: any) => Number(s.price))
-    .filter((p: number) => Number.isFinite(p) && p > 0);
-  const priceMin = prices.length > 0 ? Math.min(...prices) : undefined;
-  const priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
-
   const specializations = opts.specializations?.length ? opts.specializations : [];
 
   const card: Record<string, unknown> = {
@@ -147,7 +162,7 @@ export async function enrichDiscoveryListVendor(
     isOnline: vendorRowIsOnline(vendor.is_online),
     priceMin: priceMin && priceMin > 0 ? priceMin : undefined,
     priceMax: priceMax && priceMax > 0 ? priceMax : undefined,
-    serviceCount: services.length,
+    serviceCount,
     specializations: specializations.length ? specializations : undefined,
     bestForProblem: opts.problemTitle || undefined,
   };
