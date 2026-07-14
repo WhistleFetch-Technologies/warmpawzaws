@@ -124,8 +124,18 @@ export function filterProvidersServicesForVetHub<T extends ProviderWithServices>
  * When `keepProvidersPendingServiceFetch` is true, vendors with empty embedded services
  * (needs lazy fetch) are kept — used by clinic list cards.
  */
+type ProviderRoleRow = {
+  roleDisplayName?: unknown;
+  roleName?: unknown;
+  role?: unknown;
+  providerType?: unknown;
+  category?: unknown;
+  serviceCategory?: unknown;
+  service_category?: unknown;
+};
+
 export function applyVetHubDiscoveryToProviders<
-  T extends ProviderWithServices & { needsServiceFetch?: boolean },
+  T extends ProviderRoleRow & ProviderWithServices & { needsServiceFetch?: boolean },
   S extends HubServiceRow = HubServiceRow,
 >(providers: (T & { services?: S[] | null })[], options?: { keepProvidersPendingServiceFetch?: boolean }): T[] {
   const keepPending = options?.keepProvidersPendingServiceFetch ?? false;
@@ -139,34 +149,52 @@ export function applyVetHubDiscoveryToProviders<
     .filter((provider) => {
       if ((provider.services?.length ?? 0) > 0) return true;
       return keepPending && provider.needsServiceFetch === true;
-    });
+    }) as T[];
 }
 
-/** Groomer / grooming-role providers must not appear on vet hub vendor lists. */
-export function isNonVetProviderRow(row: Record<string, unknown>): boolean {
+/**
+ * Non-vet personas must not appear on vet hub vendor lists (Home Visit, clinic, featured).
+ * Covers groomers, trainers, and walkers that previously leaked via vs.category = "General".
+ */
+export function isNonVetProviderRole(row: ProviderRoleRow): boolean {
   const role = String(
     row.roleDisplayName ?? row.roleName ?? row.role ?? row.providerType ?? ''
   )
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
   const category = String(row.category ?? row.serviceCategory ?? row.service_category ?? '')
     .trim()
     .toLowerCase();
   if (category.includes('groom') || role.includes('groom')) return true;
-  const groomerRoles = [
+  if (role.includes('train') || category.includes('train')) return true;
+  if (
+    (role.includes('walk') && !role.includes('walk-in')) ||
+    (category.includes('walk') && !category.includes('walk-in'))
+  ) {
+    return true;
+  }
+  const blockedRoles = [
     'groomer',
-    'groomer_center',
-    'groomer_solo',
-    'pet_groomer',
-    'grooming_solo',
-    'grooming_salon',
-    'pet_spa',
+    'groomer center',
+    'groomer solo',
+    'pet groomer',
+    'grooming solo',
+    'grooming salon',
+    'pet spa',
+    'trainer',
+    'trainer solo',
+    'trainer center',
+    'pet trainer',
+    'walker',
+    'pet walker',
+    'dog walker',
   ];
-  return groomerRoles.some((r) => role.includes(r));
+  return blockedRoles.some((r) => role.includes(r) || role === r);
 }
 
-export function filterVetHubProviderRows<T>(rows: T[]): T[] {
-  return rows.filter((row) => !isNonVetProviderRow(row as Record<string, unknown>));
+export function filterVetHubProviderRows<T extends ProviderRoleRow>(rows: T[]): T[] {
+  return rows.filter((row) => !isNonVetProviderRole(row));
 }
 
 export function isVetHubDiscoveryConfig(config: {

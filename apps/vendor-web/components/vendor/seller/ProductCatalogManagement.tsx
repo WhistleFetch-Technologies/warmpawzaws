@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue, useRef } from 'react';
 import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
   Grid, List, ChevronDown, X, Upload, Tag,
@@ -19,6 +19,8 @@ import { BulkProductUpload } from '@/components/vendor/products/BulkProductUploa
 import { ProductFormModal } from '@/components/vendor/seller/ProductFormModal';
 import { formatVendorProductSellingDisplay } from '@/lib/product-ecommerce-pricing';
 import { formatPriceWithSymbol } from '@/lib/format-utils';
+import { useVendorProductList } from '@/hooks/useVendorProductList';
+import type { VendorProductServerStatus } from '@/lib/vendor-product-list-query';
 
 const DEFAULT_PRODUCT_EMOJI = '\u{1F4E6}';
 
@@ -57,12 +59,20 @@ interface Product {
   is_active: boolean;
 }
 
-function productMatchesCategory(product: Product, selectedCategory: string): boolean {
-  if (selectedCategory === 'all') return true;
-  const sel = String(selectedCategory);
-  if (product.category_id != null && String(product.category_id) === sel) return true;
-  if (product.category != null && String(product.category) === sel) return true;
-  return false;
+function toServerStatus(selectedStatus: string): VendorProductServerStatus | undefined {
+  if (selectedStatus === 'active') return 'active';
+  if (selectedStatus === 'inactive') return 'inactive';
+  return undefined;
+}
+
+function usesClientOnlyStatusFilter(selectedStatus: string): boolean {
+  return (
+    selectedStatus === 'all' ||
+    selectedStatus === 'pending' ||
+    selectedStatus === 'draft' ||
+    selectedStatus === 'rejected' ||
+    selectedStatus === 'out_of_stock'
+  );
 }
 
 function productMatchesStatusFilter(product: Product, selectedStatus: string): boolean {
@@ -79,8 +89,6 @@ function productMatchesStatusFilter(product: Product, selectedStatus: string): b
 }
 
 export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementProps) {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -90,24 +98,34 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const trimmedSearch = searchQuery.trim();
+  const deferredSearch = useDeferredValue(trimmedSearch);
+  const deferredSearchLower = deferredSearch.toLowerCase();
+  const serverStatus = toServerStatus(selectedStatus);
+
+  const {
+    products,
+    total,
+    loading,
+    loadingMore,
+    hasMore,
+    loadMore,
+    refresh,
+    loadedCount,
+  } = useVendorProductList({
+    sellerId,
+    mode: 'infinite',
+    search: deferredSearch,
+    category: selectedCategory,
+    serverStatus,
+    enabled: Boolean(sellerId),
+  });
 
   useEffect(() => {
-    loadProducts();
     loadCategories();
   }, [sellerId]);
-
-  const loadProducts = async () => {
-    try {
-      setLoading(true);
-      const data = await apiClient.get<{ products?: Product[] }>(`/vendor/${sellerId}/products`);
-      setProducts(data?.products || []);
-    } catch (error) {
-      console.error('Error loading products:', error);
-      setProducts([]);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadCategories = async () => {
     try {
@@ -122,11 +140,27 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   const handleRefresh = async () => {
     try {
       setRefreshing(true);
-      await Promise.all([loadProducts(), loadCategories()]);
+      await Promise.all([refresh(), loadCategories()]);
     } finally {
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    const el = loadMoreSentinelRef.current;
+    if (!el || !hasMore || loading || loadingMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          loadMore();
+        }
+      },
+      { root: null, rootMargin: '200px', threshold: 0 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadingMore, loadMore, loadedCount]);
 
   const openProductEdit = async (product: Product) => {
     try {
@@ -172,32 +206,36 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
       } else {
         toast.success(res?.message || 'Product deleted successfully.');
       }
-      loadProducts();
+      await refresh();
     } catch (error) {
       console.error('Error deleting product:', error);
       toast.error('Failed to remove product. Please try again.');
     }
   };
 
-  const trimmedSearch = searchQuery.trim();
-  const deferredSearch = useDeferredValue(trimmedSearch);
-  const deferredSearchLower = deferredSearch.toLowerCase();
-
   const filteredProducts = useMemo(() => {
-    return products.filter((product) => {
-      if (!productMatchesCategory(product, selectedCategory)) return false;
+    return (products as Product[]).filter((product) => {
       if (!productMatchesStatusFilter(product, selectedStatus)) return false;
       if (!deferredSearchLower) return true;
+      const sku = product.sku?.toLowerCase() ?? '';
+      if (sku.includes(deferredSearchLower)) return true;
       const name = product.name?.toLowerCase() ?? '';
       const desc = product.description?.toLowerCase() ?? '';
-      const sku = product.sku?.toLowerCase() ?? '';
-      return (
-        name.includes(deferredSearchLower) ||
-        desc.includes(deferredSearchLower) ||
-        sku.includes(deferredSearchLower)
-      );
+      return name.includes(deferredSearchLower) || desc.includes(deferredSearchLower);
     });
-  }, [products, deferredSearchLower, selectedCategory, selectedStatus]);
+  }, [products, deferredSearchLower, selectedStatus]);
+
+  const clientStatusFilterActive = usesClientOnlyStatusFilter(selectedStatus);
+  const catalogFooterLabel = useMemo(() => {
+    if (total === 0) return null;
+    if (clientStatusFilterActive && filteredProducts.length !== loadedCount) {
+      return `Showing ${filteredProducts.length} visible · ${loadedCount} loaded of ${total} products`;
+    }
+    if (!hasMore && loadedCount >= total) {
+      return `All ${total} products loaded`;
+    }
+    return `Showing ${loadedCount} of ${total} products`;
+  }, [total, loadedCount, filteredProducts.length, clientStatusFilterActive, hasMore]);
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
@@ -334,7 +372,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
       </div>
 
       {/* Products */}
-      {loading ? (
+      {loading && products.length === 0 ? (
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-orange-200 border-t-orange-500 mx-auto"></div>
@@ -348,13 +386,13 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
           </div>
           <h3 className="text-xl font-semibold text-slate-900">No products found</h3>
           <p className="text-slate-500 mt-2 max-w-md mx-auto">
-            {products.length === 0
+            {total === 0
               ? 'Start building your catalog by adding your first product.'
               : selectedStatus === 'inactive'
                 ? 'No removed products. Items with past orders are archived here after you delete them.'
                 : 'Try adjusting your filters to find what you\'re looking for.'}
           </p>
-          {products.length === 0 && (
+          {total === 0 && !loading && (
             <button
               onClick={() => setShowAddModal(true)}
               className="mt-6 px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg shadow-orange-500/25 hover:shadow-xl transition-all"
@@ -466,6 +504,31 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
         </div>
       )}
 
+      {filteredProducts.length > 0 && (
+        <div className="flex flex-col items-center gap-3 py-4">
+          {catalogFooterLabel && (
+            <p className="text-sm text-slate-500">{catalogFooterLabel}</p>
+          )}
+          {loadingMore && (
+            <div className="flex items-center gap-2 text-slate-500 text-sm">
+              <div className="animate-spin rounded-full h-5 w-5 border-2 border-orange-200 border-t-orange-500" />
+              Loading more products…
+            </div>
+          )}
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => loadMore()}
+              disabled={loadingMore || loading}
+              className="px-5 py-2.5 border border-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-50 disabled:opacity-60 transition-colors"
+            >
+              {loadingMore ? 'Loading…' : 'Load more'}
+            </button>
+          )}
+          <div ref={loadMoreSentinelRef} className="h-1 w-full" aria-hidden />
+        </div>
+      )}
+
       {/* Add/Edit Modal */}
       {showAddModal && (
         <ProductFormModal
@@ -479,7 +542,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
           onSave={() => {
             setShowAddModal(false);
             setEditingProduct(null);
-            loadProducts();
+            void refresh();
           }}
         />
       )}
@@ -490,7 +553,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
         vendorId={sellerId}
         onSuccess={() => {
           setShowBulkUpload(false);
-          loadProducts();
+          void refresh();
         }}
       />
     </div>
