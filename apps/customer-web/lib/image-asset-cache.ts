@@ -196,9 +196,9 @@ export function scheduleStaticImagePrewarm(paths: string[]): void {
   const run = () => {
     void prewarmStaticImagePaths(paths);
   };
-  if ('requestIdleCallback' in window) {
+  if (typeof window.requestIdleCallback === 'function') {
     window.requestIdleCallback(run, { timeout: 4000 });
   } else {
-    window.setTimeout(run, 1500);
+    globalThis.setTimeout(run, 1500);
   }
 }
