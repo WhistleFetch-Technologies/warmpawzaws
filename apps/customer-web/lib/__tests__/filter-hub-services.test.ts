@@ -30,6 +30,15 @@ describe('filterVetHubProviderRows', () => {
     ];
     expect(filterVetHubProviderRows(rows).map((r) => r.id)).toEqual(['vet-1']);
   });
+
+  it('drops trainer_solo and pet walker from vet home visit rows', () => {
+    const rows = [
+      { id: 'vet-1', roleDisplayName: 'Veterinary Clinic' },
+      { id: 't-1', roleDisplayName: 'Trainer (Solo)', role: 'trainer_solo' },
+      { id: 'w-1', roleDisplayName: 'Pet walker', role: 'walker' },
+    ];
+    expect(filterVetHubProviderRows(rows).map((r) => r.id)).toEqual(['vet-1']);
+  });
 });
 
 describe('applyVetHubDiscoveryToProviders', () => {
@@ -44,6 +53,23 @@ describe('applyVetHubDiscoveryToProviders', () => {
         id: 'vet-1',
         roleDisplayName: 'Veterinary Clinic',
         services: [{ name: 'Checkup', category: 'Veterinary Services' }],
+      },
+    ];
+    expect(applyVetHubDiscoveryToProviders(rows).map((r) => r.id)).toEqual(['vet-1']);
+  });
+
+  it('drops trainers that leaked via General at_home services', () => {
+    const rows = [
+      {
+        id: 't-1',
+        roleDisplayName: 'Trainer (Solo)',
+        role: 'trainer_solo',
+        services: [{ name: 'Daily training', category: 'General', catalogServiceSlug: 'TRA-001' }],
+      },
+      {
+        id: 'vet-1',
+        roleDisplayName: 'Veterinary Clinic',
+        services: [{ name: 'Home Visit', category: 'Veterinary Services' }],
       },
     ];
     expect(applyVetHubDiscoveryToProviders(rows).map((r) => r.id)).toEqual(['vet-1']);

@@ -139,27 +139,45 @@ export function applyVetHubDiscoveryToProviders<
     });
 }
 
-/** Groomer / grooming-role providers must not appear on vet hub vendor lists. */
+/**
+ * Non-vet personas must not appear on vet hub vendor lists (Home Visit, clinic, featured).
+ * Covers groomers, trainers, and walkers that previously leaked via vs.category = "General".
+ */
 export function isNonVetProviderRow(row: Record<string, unknown>): boolean {
   const role = String(
     row.roleDisplayName ?? row.roleName ?? row.role ?? row.providerType ?? ''
   )
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
   const category = String(row.category ?? row.serviceCategory ?? row.service_category ?? '')
     .trim()
     .toLowerCase();
   if (category.includes('groom') || role.includes('groom')) return true;
-  const groomerRoles = [
+  if (role.includes('train') || category.includes('train')) return true;
+  if (
+    (role.includes('walk') && !role.includes('walk-in')) ||
+    (category.includes('walk') && !category.includes('walk-in'))
+  ) {
+    return true;
+  }
+  const blockedRoles = [
     'groomer',
-    'groomer_center',
-    'groomer_solo',
-    'pet_groomer',
-    'grooming_solo',
-    'grooming_salon',
-    'pet_spa',
+    'groomer center',
+    'groomer solo',
+    'pet groomer',
+    'grooming solo',
+    'grooming salon',
+    'pet spa',
+    'trainer',
+    'trainer solo',
+    'trainer center',
+    'pet trainer',
+    'walker',
+    'pet walker',
+    'dog walker',
   ];
-  return groomerRoles.some((r) => role.includes(r));
+  return blockedRoles.some((r) => role.includes(r) || role === r);
 }
 
 export function filterVetHubProviderRows<T extends Record<string, unknown>>(rows: T[]): T[] {
