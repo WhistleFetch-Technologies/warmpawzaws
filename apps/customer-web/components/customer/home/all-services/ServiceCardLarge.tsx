@@ -1,6 +1,7 @@
 'use client';
 
 import React, { memo } from 'react';
+import { ArrowUpRight } from 'lucide-react';
 import { CachedImage } from '@/components/shared/CachedImage';
 import { ServiceDescriptionInline } from '../../shared/ServiceDescriptionInline';
 import { getCategoryCardImageUrl } from '../constants/category-card-images';
