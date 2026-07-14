@@ -40,6 +40,12 @@ import {
 import { validateVendorPromotionTargeting } from '../../../utils/promotion-targeting-validation';
 import { validateCouponForAmount } from '../../../lib/services/platform-coupon-service';
 import { resolveCommercialCampaignDiscount } from '../../../utils/resolve-commercial-campaign';
+import {
+  createVendorEcommerceOfferV2,
+  updateVendorEcommerceOfferV2,
+  deleteVendorEcommerceOfferV2,
+  enrichVendorPromotionsWithCampaignIds,
+} from '../../../utils/vendor-ecommerce-offer-v2';
 
 export function registerVendorPromotionsEndpoints(app: Hono) {
   // ============================================================================
@@ -80,11 +86,14 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
 
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      const normalized = normalizeDbRows(rows) as Record<string, unknown>[];
+      const enriched = await enrichVendorPromotionsWithCampaignIds(normalized);
 
       return c.json({
         success: true,
-        promotions: normalizeDbRows(rows),
-        total: rows.length
+        promotions: enriched,
+        total: enriched.length,
+        discountEngine: 'v2',
       });
     } catch (error: any) {
       console.error('Error fetching vendor promotions:', error);
@@ -98,7 +107,7 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/promotions
-   * Create a new promotion for vendor products
+   * Create seller product promotion/coupon via Discount Engine V2 campaign + vendor_promotions apply row.
    */
   app.post("/vendor/:vendorId/promotions", async (c) => {
     try {
@@ -107,30 +116,13 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
 
       const {
         name,
-        description,
-        code,
-        promotion_type = 'flash_sale',
-        discount_type = 'percentage',
         discount_value,
-        min_order_value,
-        max_discount_amount,
         start_date,
         end_date,
-        is_active = true,
-        usage_limit,
-        target_audience = 'all',
         applicable_products,
-        applicable_categories,
-        // BOGO
-        buy_quantity,
-        get_quantity,
-        get_discount_percent,
-        // Bundle
-        bundle_products,
-        bundle_discount
       } = body;
 
-      if (!name || !discount_value || !start_date || !end_date) {
+      if (!name || discount_value == null || !start_date || !end_date) {
         return c.json({ error: 'name, discount_value, start_date, and end_date are required' }, 400);
       }
 
@@ -143,121 +135,41 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
         return c.json({ error: targetingError }, 400);
       }
 
-      const resolvedDiscountValue =
-        promotion_type === 'bundle' && bundle_discount != null
-          ? parseFloat(String(bundle_discount))
-          : parseFloat(String(discount_value));
-
-      // Check for duplicate code
-      if (code) {
-        const existingCode = await query(
-          'SELECT id FROM vendor_promotions WHERE code = $1 AND vendor_id = $2::uuid',
-          [code.toUpperCase(), vendorId]
-        );
-        const codeRows = Array.isArray(existingCode) ? existingCode : (existingCode as any).rows || [];
-        if (codeRows.length > 0) {
-          return c.json({ error: 'Promotion code already exists' }, 400);
-        }
-      }
-
-      const promotion = await insert('vendor_promotions', {
-        vendor_id: vendorId,
-        name,
-        description: description || '',
-        code: code ? code.toUpperCase() : null,
-        promotion_type,
-        discount_type,
-        discount_value: resolvedDiscountValue,
-        min_order_value: min_order_value ? parseFloat(min_order_value) : null,
-        max_discount_amount: max_discount_amount ? parseFloat(max_discount_amount) : null,
-        start_date: promotionStartDateToIso(start_date),
-        end_date: promotionEndDateToIso(end_date),
-        is_active,
-        usage_limit: usage_limit || null,
-        usage_count: 0,
-        target_audience,
-        applicable_products: applicable_products?.length ? applicable_products : null,
-        applicable_categories: applicable_categories?.length ? applicable_categories : null,
-        buy_quantity: buy_quantity || null,
-        get_quantity: get_quantity || null,
-        get_discount_percent: get_discount_percent || null,
-        bundle_products: bundle_products?.length ? bundle_products : null,
-        bundle_discount: bundle_discount || null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
+      const { promotion, campaignId, engine } = await createVendorEcommerceOfferV2(vendorId, body);
 
       return c.json({
         success: true,
-        promotion: normalizeDbRow(promotion[0]),
-        message: 'Promotion created successfully'
-      });
+        promotion: normalizeDbRow(promotion),
+        commercialCampaignId: campaignId,
+        discountEngine: engine,
+        message:
+          engine === 'v2'
+            ? 'Promotion created via Discount Engine V2'
+            : 'Promotion created (legacy fallback — campaign mode off or campaign create failed)',
+      }, 201);
     } catch (error: any) {
       console.error('Error creating vendor promotion:', error);
-      return c.json({ error: error.message }, 500);
+      const status = String(error?.message || '').includes('already exists') ? 400 : 500;
+      return c.json({ error: error.message }, status);
     }
   });
 
   /**
    * PUT /vendor/:vendorId/promotions/:promoId
-   * Update a vendor promotion
+   * Update seller offer + sync linked V2 commercial campaign.
    */
   app.put("/vendor/:vendorId/promotions/:promoId", async (c) => {
     try {
       const { vendorId, promoId } = c.req.param();
       const body = await c.req.json();
 
-      const updateData: any = {
-        updated_at: new Date().toISOString()
-      };
-
-      // Map all possible fields
-      const fields = [
-        'name', 'description', 'promotion_type', 'discount_type', 'is_active',
-        'target_audience', 'buy_quantity', 'get_quantity', 'get_discount_percent', 'bundle_discount'
-      ];
-      
-      fields.forEach(field => {
-        if (body[field] !== undefined) {
-          updateData[field] = body[field];
-        }
-      });
-
-      // Numeric fields
-      if (body.discount_value !== undefined) updateData.discount_value = parseFloat(body.discount_value);
-      if (body.min_order_value !== undefined) updateData.min_order_value = body.min_order_value ? parseFloat(body.min_order_value) : null;
-      if (body.max_discount_amount !== undefined) updateData.max_discount_amount = body.max_discount_amount ? parseFloat(body.max_discount_amount) : null;
-      if (body.usage_limit !== undefined) updateData.usage_limit = body.usage_limit || null;
-
-      // Date fields (IST calendar bounds)
-      if (body.start_date !== undefined) updateData.start_date = promotionStartDateToIso(body.start_date);
-      if (body.end_date !== undefined) updateData.end_date = promotionEndDateToIso(body.end_date);
-
-      // Code (uppercase)
-      if (body.code !== undefined) updateData.code = body.code ? body.code.toUpperCase() : null;
-
-      // JSON fields (arrays — insert layer handles JSONB)
-      if (body.applicable_products !== undefined) {
-        updateData.applicable_products = body.applicable_products?.length ? body.applicable_products : null;
-      }
-      if (body.applicable_categories !== undefined) {
-        updateData.applicable_categories = body.applicable_categories?.length ? body.applicable_categories : null;
-      }
-      if (body.bundle_products !== undefined) {
-        updateData.bundle_products = body.bundle_products?.length ? body.bundle_products : null;
-      }
-
-      await update('vendor_promotions', { id: promoId, vendor_id: vendorId }, updateData);
-
-      const updated = await query(
-        'SELECT * FROM vendor_promotions WHERE id = $1::uuid AND vendor_id = $2::uuid',
-        [promoId, vendorId]
-      );
-      const rows = Array.isArray(updated) ? updated : (updated as any).rows || [];
+      const { promotion, campaignId } = await updateVendorEcommerceOfferV2(vendorId, promoId, body);
 
       return c.json({
         success: true,
-        promotion: normalizeDbRow(rows[0]),
+        promotion: normalizeDbRow(promotion),
+        commercialCampaignId: campaignId,
+        discountEngine: campaignId ? 'v2' : 'legacy',
         message: 'Promotion updated successfully'
       });
     } catch (error: any) {
@@ -268,16 +180,18 @@ export function registerVendorPromotionsEndpoints(app: Hono) {
 
   /**
    * DELETE /vendor/:vendorId/promotions/:promoId
-   * Delete a vendor promotion
+   * Delete seller offer and archive linked V2 campaign.
    */
   app.delete("/vendor/:vendorId/promotions/:promoId", async (c) => {
     try {
       const { vendorId, promoId } = c.req.param();
 
-      await deleteRows('vendor_promotions', { id: promoId, vendor_id: vendorId });
+      const { campaignId } = await deleteVendorEcommerceOfferV2(vendorId, promoId);
 
       return c.json({
         success: true,
+        commercialCampaignId: campaignId,
+        discountEngine: campaignId ? 'v2' : 'legacy',
         message: 'Promotion deleted successfully'
       });
     } catch (error: any) {

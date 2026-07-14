@@ -79,7 +79,8 @@ export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
     () => ({
       mode: 'vendor_seller' as const,
       title: 'Seller Promotions',
-      subtitle: 'Shop offers, coupon codes, and product targeting',
+      subtitle:
+        'Shop offers & coupons via Discount Engine V2 (vendor-funded campaigns; applied at checkout)',
       canManageCoupons: true,
       canManagePlatformTargets: false,
       domains: SELLER_PROMOTION_DOMAINS,
