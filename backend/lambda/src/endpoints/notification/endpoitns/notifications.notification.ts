@@ -69,6 +69,45 @@ async function resolveCustomerIdForNotificationPhone(phone: string): Promise<str
 
 export function registerNotificationEndpoints(app: Hono) {
   /**
+   * GET /notifications/unread-count?userId=&userType=
+   * Thin COUNT(*) on recipient_* (badge). Prefer this over shipping full rows.
+   */
+  app.get("/notifications/unread-count", async (c) => {
+    try {
+      const userId = c.req.query('userId');
+      const userType = c.req.query('userType') || 'customer';
+      if (!userId) {
+        return c.json({ error: 'userId is required' }, 400);
+      }
+
+      let effectiveUserId = userId;
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+      if (!isUuid && userType === UserType.CUSTOMER) {
+        const resolved = await resolveCustomerIdForNotificationPhone(userId);
+        if (resolved) effectiveUserId = resolved;
+      }
+
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveUserId)) {
+        return c.json({ success: true, unreadCount: 0 });
+      }
+
+      const unreadCountResult = await query(
+        `SELECT COUNT(*) as count
+         FROM notifications
+         WHERE recipient_id = $1
+           AND recipient_type = $2
+           AND is_read = false`,
+        [effectiveUserId, userType]
+      );
+      const unreadCount = parseInt(unreadCountResult.rows[0]?.count || '0', 10);
+      return c.json({ success: true, unreadCount });
+    } catch (error: any) {
+      console.error('Error fetching unread count:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /notifications
    * Get unread notifications for a user
    * 

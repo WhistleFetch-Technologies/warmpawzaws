@@ -39,6 +39,8 @@ export interface ShopCategory {
   image_url?: string;
   product_count?: number;
   display_order?: number;
+  /** Parent category id for subcategories (e.g. "Dry Pet Food" under "Pet Food"); undefined/'' for top-level. */
+  parent_category_id?: string;
 }
 
 export interface ShopCartItem {

@@ -1,5 +1,5 @@
 -- ============================================================================
--- MIGRATION 1072: Promo targeting by product listing ownership
+-- MIGRATION 1074: Promo targeting by product listing ownership
 -- ============================================================================
 -- Allows admin + vendor ecommerce promotions to scope discounts to
 -- own_brand products, third_party products, or both (default).

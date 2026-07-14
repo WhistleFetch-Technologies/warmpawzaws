@@ -13,6 +13,7 @@ import { PushSessionRegistrar } from '@/components/PushSessionRegistrar';
 import { CapacitorVendorDeepLinkListener } from '@/components/CapacitorVendorDeepLinkListener';
 import { VendorSharePathBootstrap } from '@/components/VendorSharePathBootstrap';
 import { NavigationBackBridge } from '@/components/navigation/NavigationBackBridge';
+import { StaticImagePrewarm } from '@/components/StaticImagePrewarm';
 
 // Lazy load DevTools - only imported in development mode
 const ReactQueryDevtools = lazy(() =>
@@ -45,6 +46,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <CapacitorVendorDeepLinkListener />
         <VendorSharePathBootstrap />
         <NavigationBackBridge />
+        <StaticImagePrewarm />
         <CartProvider>
           <SearchContextProvider>
             <ScrollToTop />
