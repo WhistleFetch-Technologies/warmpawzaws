@@ -5,6 +5,8 @@ import type { NormalizedPromotionItem } from '@warmpawz/promotion-management-ui'
 
 export function promotionMetricToCardItem(row: PromotionMetricRow): NormalizedPromotionItem {
   const now = new Date().toISOString();
+  const startDate = row.startDate ?? now;
+  const endDate = row.expiresAt ?? now;
   return {
     id: row.promotionId,
     kind: 'promotion',
@@ -14,9 +16,10 @@ export function promotionMetricToCardItem(row: PromotionMetricRow): NormalizedPr
     discountType: 'percentage',
     discountValue: Math.round(row.averageDiscount || 0),
     usageCount: row.usageCount,
-    startDate: now,
-    endDate: row.expiresAt ?? now,
-    isActive: true,
+    startDate,
+    endDate,
+    isActive: row.isActive === true,
+    published: row.published,
     owner: row.owner,
     raw: row as unknown as Record<string, unknown>,
   };

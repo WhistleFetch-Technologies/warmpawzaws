@@ -12,6 +12,7 @@ import {
   applyCouponFilters,
 } from './analytics-registry';
 import { buildPromotionAnalytics } from './promotion-analytics';
+import { enrichPromotionAnalyticsLifecycle } from './enrich-promotion-lifecycle';
 import { buildCouponAnalytics } from './coupon-analytics';
 import { buildVendorAnalytics } from './vendor-analytics';
 import { buildSavingsAnalytics } from './savings-analytics';
@@ -71,7 +72,9 @@ export class AnalyticsEngine {
       );
     }
 
-    const promotions = buildPromotionAnalytics(promotionUsages, limit);
+    const promotions = await enrichPromotionAnalyticsLifecycle(
+      buildPromotionAnalytics(promotionUsages, limit),
+    );
     const coupons = buildCouponAnalytics(couponUsages, limit);
     const vendors = buildVendorAnalytics(promotionUsages, limit);
     const savings = buildSavingsAnalytics(promotionUsages, couponUsages);

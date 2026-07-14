@@ -30,6 +30,10 @@ export interface PromotionMetricRow {
   averageDiscount: number;
   activeUsers: number;
   expiresAt?: string | null;
+  startDate?: string | null;
+  /** Live status enriched by analytics engine (active + published + date window). */
+  isActive?: boolean;
+  published?: boolean;
   roi: number | null;
 }
 

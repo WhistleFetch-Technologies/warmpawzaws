@@ -57,6 +57,7 @@ import {
   resolveCommercialCampaignDiscount,
   recordCommercialCampaignUsage,
 } from '../../../utils/resolve-commercial-campaign';
+import { selectEcommercePromotionWinnerAsync } from '../../../utils/ecommerce-promo-policy-winner';
 import { buildEcommerceProductTaxItems } from '../../../utils/resolve-ecommerce-product-tax-item';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../../../utils/idempotency';
 import {
@@ -807,11 +808,15 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       const wantsPromotion =
         cartLines.length > 0 && Boolean(couponCode || promoId || Number(bodyDiscount) > 0);
-      // Strict single-source validation: a client that asked for the vendor source never
-      // touches the admin campaign tables and vice versa. When the client is legacy and
-      // did not send promotionSource, we try both but still only ever apply ONE winner.
+      // Client-requested source can still force a single side; otherwise evaluate both and
+      // let ECOMMERCE Policy Center choose Best Offer vs stack (allowPlatformWithVendor).
       const tryVendor = wantsPromotion && Boolean(firstVendorId) && requestedPromotionSource !== 'admin';
       const tryAdmin = wantsPromotion && requestedPromotionSource !== 'vendor';
+
+      let vendorCandidateDiscount = 0;
+      let vendorCandidateId: string | null = null;
+      let adminCandidateDiscount = 0;
+      let adminCandidateId: string | null = null;
 
       if (tryVendor) {
         try {
@@ -858,22 +863,15 @@ export function registerEcommerceEndpoints(app: Hono) {
             codeResult?.totalSavings ??
             codeResult?.platformCouponDiscount ??
             0;
-          const vendorDiscount = Math.max(autoDiscount, codeDiscount);
+          vendorCandidateDiscount = Math.max(autoDiscount, codeDiscount);
           const bestEval =
             codeDiscount >= autoDiscount
               ? codeResult?.bestPromotion
               : autoResult.bestPromotion;
-
-          if (vendorDiscount > serverPromoDiscount) {
-            if (bestEval) {
-              serverPromoDiscount = vendorDiscount;
-              appliedPromotionId = bestEval.promotionId;
-              promotionSource = 'vendor';
-            } else if (codeResult?.platformCouponId && codeDiscount > 0) {
-              serverPromoDiscount = vendorDiscount;
-              appliedPromotionId = codeResult.platformCouponId;
-              promotionSource = 'vendor';
-            }
+          if (bestEval) {
+            vendorCandidateId = bestEval.promotionId;
+          } else if (codeResult?.platformCouponId && codeDiscount > 0) {
+            vendorCandidateId = codeResult.platformCouponId;
           }
         } catch (promoErr) {
           console.warn('[ecommerce/orders] vendor promotion validation skipped:', promoErr);
@@ -888,14 +886,27 @@ export function registerEcommerceEndpoints(app: Hono) {
             cartLines,
             customerId: customerId ? String(customerId) : null,
           });
-          if (campaignResult.discountAmount > serverPromoDiscount && campaignResult.promotionId) {
-            serverPromoDiscount = campaignResult.discountAmount;
-            appliedPromotionId = campaignResult.promotionId;
-            promotionSource = 'admin';
+          if (campaignResult.discountAmount > 0 && campaignResult.promotionId) {
+            adminCandidateDiscount = campaignResult.discountAmount;
+            adminCandidateId = campaignResult.promotionId;
             campaignIsLegacy = campaignResult.isLegacy;
           }
         } catch (promoErr) {
           console.warn('[ecommerce/orders] admin campaign validation skipped:', promoErr);
+        }
+      }
+
+      if (vendorCandidateDiscount > 0 || adminCandidateDiscount > 0) {
+        const winner = await selectEcommercePromotionWinnerAsync({
+          vendorDiscount: vendorCandidateDiscount,
+          adminDiscount: adminCandidateDiscount,
+        });
+        serverPromoDiscount = winner.discountAmount;
+        promotionSource = winner.promotionSource;
+        if (winner.promotionSource === 'admin') {
+          appliedPromotionId = adminCandidateId ?? appliedPromotionId;
+        } else if (winner.promotionSource === 'vendor') {
+          appliedPromotionId = vendorCandidateId ?? appliedPromotionId;
         }
       }
 

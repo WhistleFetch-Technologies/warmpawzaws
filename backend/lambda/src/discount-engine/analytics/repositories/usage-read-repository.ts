@@ -1,4 +1,5 @@
 import { query } from '../../../database/rds-connection';
+import { countActiveEcommerceAdminPromotions } from '../../../utils/count-active-ecommerce-promotions';
 import type { AnalyticsDataSnapshot, PromotionUsageRow, CouponUsageRow, AnalyticsFilters } from '../types';
 
 export interface UsageReadRepository {
@@ -107,23 +108,7 @@ async function loadEcommerceCouponUsages(filters: AnalyticsFilters): Promise<Cou
 
 async function countActivePromotions(domain: AnalyticsFilters['domain']): Promise<number> {
   if (domain === 'PRODUCT') {
-    const [adminRes, vendorRes] = await Promise.all([
-      query(
-        `SELECT COUNT(*) AS count FROM ecommerce_admin_promotions
-         WHERE is_active = true AND start_date <= NOW() AND end_date >= NOW()`,
-      ).catch(() => ({ rows: [{ count: '0' }] })),
-      query(
-        `SELECT COUNT(*) AS count FROM vendor_promotions
-         WHERE is_active = true
-           AND start_date <= NOW()
-           AND end_date >= NOW()
-           AND (usage_limit IS NULL OR usage_count < usage_limit)`,
-      ).catch(() => ({ rows: [{ count: '0' }] })),
-    ]);
-    return (
-      parseInt(String(adminRes.rows?.[0]?.count ?? '0'), 10) +
-      parseInt(String(vendorRes.rows?.[0]?.count ?? '0'), 10)
-    );
+    return countActiveEcommerceAdminPromotions();
   }
 
   const activeRes = await query(

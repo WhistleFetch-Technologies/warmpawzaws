@@ -13,7 +13,7 @@ import type {
   LimitConfiguration,
   PriorityConfiguration,
   StackPolicyConfiguration,
-} from './types';
+} from '../config/types';
 
 interface PublishedPolicyRow {
   publish_id: string;

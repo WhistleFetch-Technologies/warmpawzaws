@@ -54,6 +54,7 @@ import {
   rowMatchesDiscountDomain,
   type CommercialDiscountDomain,
 } from '../utils/commercial-discount-domain';
+import { countActiveEcommerceAdminPromotions } from '../utils/count-active-ecommerce-promotions';
 
 async function persistPromotionInsert(promotionData: Record<string, unknown>) {
   if (isEcommerceAdminPromotionDomain(promotionData)) {
@@ -121,7 +122,67 @@ async function persistPromotionInsert(promotionData: Record<string, unknown>) {
   }
 }
 
+async function loadPromotionForAdminWrite(
+  id: string,
+): Promise<{ table: 'promotions' | 'ecommerce_admin_promotions'; row: Record<string, unknown> } | null> {
+  const promotions = await select('promotions', { id });
+  if (promotions.length > 0) {
+    return { table: 'promotions', row: promotions[0] as Record<string, unknown> };
+  }
+  const ecommerce = await select('ecommerce_admin_promotions', { id }).catch(() => []);
+  if (ecommerce.length > 0) {
+    const row = ecommerce[0] as Record<string, unknown>;
+    return {
+      table: 'ecommerce_admin_promotions',
+      row: {
+        ...row,
+        discount_domain: 'ECOMMERCE',
+        min_order_amount: row.min_order_value ?? row.min_order_amount,
+      },
+    };
+  }
+  return null;
+}
+
+async function softDeleteAdminPromotion(id: string): Promise<boolean> {
+  const found = await loadPromotionForAdminWrite(id);
+  if (!found) return false;
+  await update(found.table, { id }, {
+    is_active: false,
+    updated_at: new Date().toISOString(),
+  });
+  return true;
+}
+
 async function persistPromotionUpdate(id: string, updateData: Record<string, unknown>) {
+  const ecommerceExisting = await select('ecommerce_admin_promotions', { id }).catch(() => []);
+  if (ecommerceExisting.length > 0) {
+    const existing = ecommerceExisting[0] as Record<string, unknown>;
+    const existingAsPromo = {
+      ...existing,
+      discount_domain: 'ECOMMERCE',
+      min_order_amount: existing.min_order_value ?? existing.min_order_amount,
+    };
+    // Merge partial updates (e.g. marketing PUT) onto the existing ecommerce row.
+    const merged = mergeAdminPromotionUpdateBody(updateData, existingAsPromo);
+    const ecommerceRecord = buildEcommerceAdminPromotionRecord({
+      ...merged,
+      ...updateData,
+      discount_domain: 'ECOMMERCE',
+    });
+    delete ecommerceRecord.created_at;
+    delete ecommerceRecord.usage_count;
+    await update(
+      'ecommerce_admin_promotions',
+      { id },
+      {
+        ...ecommerceRecord,
+        updated_at: new Date().toISOString(),
+      },
+    );
+    return;
+  }
+
   const payload = { ...updateData };
   for (;;) {
     try {
@@ -1328,29 +1389,8 @@ export function registerPromotionEndpoints(app: Hono) {
 
       const [activePromotions, totalConversions, totalRevenue, avgDiscount] = await Promise.all([
         isProduct
-          ? Promise.all([
-              query(
-                `SELECT COUNT(*) AS count FROM ecommerce_admin_promotions
-                 WHERE is_active = true
-                   AND start_date <= NOW()
-                   AND end_date >= NOW()`,
-              ).catch(() => ({ rows: [{ count: '0' }] })),
-              query(
-                `SELECT COUNT(*) AS count FROM vendor_promotions
-                 WHERE is_active = true
-                   AND start_date <= NOW()
-                   AND end_date >= NOW()
-                   AND (usage_limit IS NULL OR usage_count < usage_limit)`,
-              ).catch(() => ({ rows: [{ count: '0' }] })),
-            ]).then(([admin, vendor]) => ({
-              rows: [
-                {
-                  count: String(
-                    parseInt(admin.rows[0]?.count || '0', 10) +
-                      parseInt(vendor.rows[0]?.count || '0', 10),
-                  ),
-                },
-              ],
+          ? countActiveEcommerceAdminPromotions().then((count) => ({
+              rows: [{ count: String(count) }],
             }))
           : query(
               'SELECT COUNT(*) as count FROM promotions WHERE is_active = true AND (end_date IS NULL OR end_date >= NOW())',
@@ -1599,10 +1639,11 @@ export function registerPromotionEndpoints(app: Hono) {
       const { id } = c.req.param();
       const body = await c.req.json();
 
-      const promotions = await select('promotions', { id });
-      if (promotions.length === 0) {
+      const found = await loadPromotionForAdminWrite(id);
+      if (!found) {
         return c.json({ error: 'Promotion not found' }, 404);
       }
+      const promotions = [found.row];
 
       const updateData: any = {
         updated_at: new Date().toISOString(),
@@ -1664,12 +1705,21 @@ export function registerPromotionEndpoints(app: Hono) {
       // Phase 0.1: New fields
       if (body.is_spotlight !== undefined) updateData.is_spotlight = body.is_spotlight === true;
       if (body.published !== undefined) updateData.published = body.published === true;
+      if (found.table === 'ecommerce_admin_promotions') {
+        updateData.discount_domain = 'ECOMMERCE';
+        if (updateData.min_order_amount !== undefined && updateData.min_order_value === undefined) {
+          updateData.min_order_value = updateData.min_order_amount;
+        }
+      }
 
-      const updated = await update('promotions', { id }, updateData);
+      await persistPromotionUpdate(id, updateData);
+      const table = found.table;
+      const refreshed = await query(`SELECT * FROM ${table} WHERE id = $1::uuid`, [id]);
+      const promoRows = Array.isArray(refreshed) ? refreshed : (refreshed as any).rows || [];
 
       return c.json({
         success: true,
-        promotion: updated[0],
+        promotion: promoRows[0],
         message: 'Promotion updated successfully',
       });
     } catch (error: any) {
@@ -1685,17 +1735,11 @@ export function registerPromotionEndpoints(app: Hono) {
   app.delete("/marketing/promotions/:id", async (c) => {
     try {
       const { id } = c.req.param();
-      
-      const promotions = await select('promotions', { id });
-      if (promotions.length === 0) {
+
+      const deleted = await softDeleteAdminPromotion(id);
+      if (!deleted) {
         return c.json({ error: 'Promotion not found' }, 404);
       }
-
-      // Soft delete: set is_active to false
-      await update('promotions', { id }, {
-        is_active: false,
-        updated_at: new Date().toISOString(),
-      });
 
       return c.json({
         success: true,
@@ -1867,8 +1911,8 @@ export function registerPromotionEndpoints(app: Hono) {
       const { id } = c.req.param();
       const body = await c.req.json();
 
-      const promotions = await select('promotions', { id });
-      if (promotions.length === 0) {
+      const found = await loadPromotionForAdminWrite(id);
+      if (!found) {
         return c.json({ error: 'Promotion not found' }, 404);
       }
 
@@ -1877,21 +1921,33 @@ export function registerPromotionEndpoints(app: Hono) {
         return c.json({ error: targetingError }, 400);
       }
 
-      const updateData = mergeAdminPromotionUpdateBody(body, promotions[0]) as Record<string, unknown>;
+      const updateData = mergeAdminPromotionUpdateBody(body, found.row) as Record<string, unknown>;
       if (body.code !== undefined) {
         updateData.code = String(body.code).toUpperCase();
+      }
+      if (found.table === 'ecommerce_admin_promotions') {
+        updateData.discount_domain = 'ECOMMERCE';
       }
 
       await persistPromotionUpdate(id, updateData);
 
-      const updated = await query(
-        'SELECT * FROM promotions WHERE id = $1::uuid',
-        [id]
-      );
+      const table = found.table;
+      const updated = await query(`SELECT * FROM ${table} WHERE id = $1::uuid`, [id]);
       const promoRows = Array.isArray(updated) ? updated : (updated as any).rows || [];
+      const promotion = promoRows[0]
+        ? {
+            ...promoRows[0],
+            discount_domain:
+              table === 'ecommerce_admin_promotions'
+                ? 'ECOMMERCE'
+                : promoRows[0].discount_domain,
+            min_order_amount:
+              promoRows[0].min_order_amount ?? promoRows[0].min_order_value,
+          }
+        : null;
       return c.json({
         success: true,
-        promotion: promoRows[0],
+        promotion,
         message: 'Promotion updated successfully',
       });
     } catch (error: any) {
@@ -1908,15 +1964,10 @@ export function registerPromotionEndpoints(app: Hono) {
     try {
       const { id } = c.req.param();
 
-      const promotions = await select('promotions', { id });
-      if (promotions.length === 0) {
+      const deleted = await softDeleteAdminPromotion(id);
+      if (!deleted) {
         return c.json({ error: 'Promotion not found' }, 404);
       }
-
-      await update('promotions', { id }, {
-        is_active: false,
-        updated_at: new Date().toISOString(),
-      });
 
       return c.json({
         success: true,

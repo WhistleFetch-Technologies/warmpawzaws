@@ -10,6 +10,10 @@ import type { AnalyticsDataSnapshot } from '../types';
 import type { SettlementPreview } from '../../settlement/types';
 import { DiscountFunding } from '../../enums/discount-funding';
 
+jest.mock('../enrich-promotion-lifecycle', () => ({
+  enrichPromotionAnalyticsLifecycle: async <T>(summary: T) => summary,
+}));
+
 describe('analytics-aggregator', () => {
   it('aggregates promotion usage without recalculating discounts', () => {
     const rows = aggregatePromotionMetrics([

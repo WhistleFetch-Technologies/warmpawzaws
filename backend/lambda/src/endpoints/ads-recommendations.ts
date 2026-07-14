@@ -13,6 +13,7 @@ import { query, select, insert, update } from '../database/rds-connection';
 import { calculateBestCartPromotionAsync, discountsWithinTolerance, normalizePromotionRow, type CartLineItem } from '../utils/vendor-promotion-engine';
 import { countPriorVendorOrders, recordVendorPromotionUsage } from '../utils/vendor-promotion-usage';
 import { resolveCommercialCampaignDiscount } from '../utils/resolve-commercial-campaign';
+import { selectEcommercePromotionWinnerAsync } from '../utils/ecommerce-promo-policy-winner';
 import {
   clampRecommendationLimit,
   resolveProductRecommendations,
@@ -595,12 +596,19 @@ app.post('/promotions/calculate-cart', async (c) => {
       console.warn('[promotions/calculate-cart] admin campaign evaluation skipped:', adminErr);
     }
 
-    const adminWins = adminDiscount > vendorDiscount;
-    const winningDiscount = Math.max(vendorDiscount, adminDiscount);
-    const promotionSource: 'vendor' | 'admin' | undefined =
-      winningDiscount > 0 ? (adminWins ? 'admin' : 'vendor') : undefined;
+    const winner = await selectEcommercePromotionWinnerAsync({
+      vendorDiscount,
+      adminDiscount,
+    });
+    const winningDiscount = winner.discountAmount;
+    const promotionSource = winner.promotionSource ?? undefined;
 
-    const best = adminWins ? adminBestEval : vendorBestEval;
+    const best =
+      winner.promotionSource === 'admin'
+        ? adminBestEval
+        : winner.promotionSource === 'vendor'
+          ? vendorBestEval
+          : null;
     const originalTotal = vendorAutoResult.originalTotal;
     const discountedTotal = Math.max(0, originalTotal - winningDiscount);
 

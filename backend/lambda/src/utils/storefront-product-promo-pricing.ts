@@ -1,7 +1,7 @@
 /**
  * Storefront read-time promo pricing for shop PLP and PDP.
  * Evaluates vendor auto promos + admin auto campaigns for a single-item cart line,
- * picks the higher discount (never stacks), and sets transient compare_at / price fields.
+ * picks Best Offer or stacks per ECOMMERCE Policy Center, and sets transient compare_at / price fields.
  */
 import { query } from '../database/rds-connection';
 import { parsePositiveMoney, productDiscountPercent } from './product-ecommerce-pricing';
@@ -15,6 +15,7 @@ import {
   type PromotionRow,
 } from './vendor-promotion-engine';
 import { countPriorVendorOrders } from './vendor-promotion-usage';
+import { selectEcommercePromotionWinnerAsync } from './ecommerce-promo-policy-winner';
 
 export type StorefrontPromoApplied = {
   source: 'vendor' | 'admin';
@@ -170,21 +171,23 @@ export async function enrichStorefrontProductsWithPromoPricing(
         adminDiscount = adminEval?.discountAmount ?? 0;
       }
 
-      const winner =
-        adminDiscount > vendorDiscount
-          ? adminEval
-          : vendorDiscount > 0
-            ? vendorEval
-            : null;
-      const discount = Math.max(vendorDiscount, adminDiscount);
-      if (!winner || discount <= 0) return row;
+      const policyWinner = await selectEcommercePromotionWinnerAsync({
+        vendorDiscount,
+        adminDiscount,
+      });
+      const discount = policyWinner.discountAmount;
+      if (discount <= 0 || !policyWinner.promotionSource) return row;
 
-      const source: 'vendor' | 'admin' = adminDiscount > vendorDiscount ? 'admin' : 'vendor';
+      const winnerEval =
+        policyWinner.promotionSource === 'admin' ? adminEval : vendorEval;
+      if (!winnerEval) return row;
+
+      // When stacking, display price reflects combined discount; badge uses primary funder.
       const discountedPrice = Math.max(0, catalogPrice - discount);
       const promo: StorefrontPromoApplied = {
-        source,
-        id: winner.promotionId,
-        label: promoLabelFromEvaluation(winner),
+        source: policyWinner.promotionSource,
+        id: winnerEval.promotionId,
+        label: promoLabelFromEvaluation(winnerEval),
         discountPercent: productDiscountPercent(catalogPrice, discountedPrice),
       };
 

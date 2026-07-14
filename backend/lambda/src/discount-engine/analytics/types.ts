@@ -49,6 +49,11 @@ export interface PromotionMetricRow {
   averageDiscount: number;
   activeUsers: number;
   expiresAt: string | null;
+  /** Live window from promo tables (enriched after aggregation). */
+  startDate?: string | null;
+  /** True when promo is currently live (active + published + date window). */
+  isActive?: boolean;
+  published?: boolean;
   roi: number | null;
 }
 
