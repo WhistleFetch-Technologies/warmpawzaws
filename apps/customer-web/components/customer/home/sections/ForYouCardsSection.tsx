@@ -1,6 +1,7 @@
 'use client';
 
 import React, { memo, useCallback } from 'react';
+import { ChevronRight, Sparkles } from 'lucide-react';
 import { CachedImage } from '@/components/shared/CachedImage';
 import { SectionHeader } from '../shared/SectionHeader';
 import { getForYouCardTheme } from '../utils/for-you-card-theme';
