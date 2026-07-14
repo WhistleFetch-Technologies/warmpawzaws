@@ -2,6 +2,8 @@ import { query } from '../../database/rds-connection';
 import {
   resolveProductCommission,
   resolveOrderCommission,
+  applyOrderCommissionAudit,
+  type CommissionSnapshot,
 } from '../resolve-ecommerce-commission-rate';
 import { CommissionConfigurationError } from '../commission-configuration-error';
 
@@ -167,5 +169,35 @@ describe('resolveOrderCommission', () => {
     expect(result.commissionAmount).toBe(200);
     expect(result.effectiveRate).toBe(13.33);
     expect(result.lineBreakdown).toHaveLength(2);
+  });
+});
+
+describe('applyOrderCommissionAudit', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('writes order audit via pool query() (must not run under another connection FOR UPDATE)', async () => {
+    const snap: CommissionSnapshot = {
+      effectiveRate: 10,
+      commissionAmount: 50,
+      orderSubtotal: 500,
+      lineBreakdown: [],
+      resolvedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    mockQuery.mockResolvedValue({ rows: [] } as any);
+
+    const result = await applyOrderCommissionAudit('order-1', 'vendor-1', snap);
+
+    expect(result).toEqual(snap);
+    const updateCall = mockQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('UPDATE orders SET') && String(sql).includes('commission_rate')
+    );
+    expect(updateCall).toBeDefined();
+    expect(updateCall?.[1]).toEqual([
+      'order-1',
+      10,
+      50,
+      JSON.stringify(snap),
+    ]);
   });
 });

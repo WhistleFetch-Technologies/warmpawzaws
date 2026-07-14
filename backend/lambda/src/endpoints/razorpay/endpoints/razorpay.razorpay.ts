@@ -1017,6 +1017,8 @@ class VerifyPaymentHandler extends BaseHandler {
       let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
       let ecommerceOrderForShipment: string | null = null;
       let ecommerceOrderToNotify: string | null = null;
+      /** Set when ecommerce paid — commission audit runs after commit (pool query must not run under FOR UPDATE). */
+      let ecommerceVendorIdForCommission: string | null = null;
 
       const result = await withTransaction(async (client) => {
         // ✅ SQL: Look up payment record with FOR UPDATE lock
@@ -1139,70 +1141,24 @@ class VerifyPaymentHandler extends BaseHandler {
             throw new Error('PAYMENT_HOLD_EXPIRED');
           }
 
-          let commissionRate: number | null = null;
-          let commissionAmount: number | null = null;
-          const vendorIdForCommission = payment.vendor_id ? String(payment.vendor_id) : null;
-
-          if (vendorIdForCommission) {
-            const snap = await applyOrderCommissionAudit(
-              String(ecommerceOrderId),
-              vendorIdForCommission
-            );
-            if (snap) {
-              commissionRate = snap.effectiveRate;
-              commissionAmount = snap.commissionAmount;
-            }
-          }
-
-          let updateResult;
-          try {
-            updateResult = await client.query(
-              `UPDATE orders SET
-                payment_status = 'paid',
-                order_status = CASE
-                  WHEN order_status = 'pending_payment' THEN 'pending'
-                  ELSE order_status
-                END,
-                payment_method = COALESCE($3, payment_method),
-                payment_id = COALESCE(payment_id, $2),
-                commission_rate = COALESCE($4, commission_rate),
-                commission_amount = COALESCE($5, commission_amount),
-                payment_hold_expires_at = NULL,
-                updated_at = NOW()
-              WHERE id = $1::uuid
-              RETURNING id, payment_status, order_status`,
-              [
-                ecommerceOrderId,
-                payment.id,
-                resolvedPaymentMethod,
-                commissionRate,
-                commissionAmount,
-              ]
-            );
-          } catch (updateErr: any) {
-            if (
-              String(updateErr.message || '').includes('commission_rate') ||
-              updateErr.code === '42703'
-            ) {
-              updateResult = await client.query(
-                `UPDATE orders SET
-                  payment_status = 'paid',
-                  order_status = CASE
-                    WHEN order_status = 'pending_payment' THEN 'pending'
-                    ELSE order_status
-                  END,
-                  payment_method = COALESCE($3, payment_method),
-                  payment_id = COALESCE(payment_id, $2),
-                  payment_hold_expires_at = NULL,
-                  updated_at = NOW()
-                WHERE id = $1::uuid
-                RETURNING id, payment_status, order_status`,
-                [ecommerceOrderId, payment.id, resolvedPaymentMethod]
-              );
-            } else {
-              throw updateErr;
-            }
-          }
+          // Mark paid inside this transaction only. Do NOT call applyOrderCommissionAudit
+          // (or other pool-based writers on orders/items) while FOR UPDATE holds this row —
+          // that second connection deadlocks until Lambda times out.
+          const updateResult = await client.query(
+            `UPDATE orders SET
+              payment_status = 'paid',
+              order_status = CASE
+                WHEN order_status = 'pending_payment' THEN 'pending'
+                ELSE order_status
+              END,
+              payment_method = COALESCE($3, payment_method),
+              payment_id = COALESCE(payment_id, $2),
+              payment_hold_expires_at = NULL,
+              updated_at = NOW()
+            WHERE id = $1::uuid
+            RETURNING id, payment_status, order_status`,
+            [ecommerceOrderId, payment.id, resolvedPaymentMethod]
+          );
 
           if (updateResult.rows.length === 0) {
             const { rows: existing } = await client.query(
@@ -1217,6 +1173,9 @@ class VerifyPaymentHandler extends BaseHandler {
 
           ecommerceOrderForShipment = String(ecommerceOrderId);
           ecommerceOrderToNotify = String(ecommerceOrderId);
+          if (payment.vendor_id) {
+            ecommerceVendorIdForCommission = String(payment.vendor_id);
+          }
 
           return {
             success: true,
@@ -1444,12 +1403,24 @@ class VerifyPaymentHandler extends BaseHandler {
         triggerAutoShipment(ecommerceOrderForShipment, 'ecommerce').catch((e) =>
           console.error('[PAYMENT-VERIFY] Auto-shipment trigger failed:', e)
         );
-        // Batch settlement ledger row (replaces instant Razorpay Route transfer for
-        // e-commerce — see write-ecommerce-order-settlement.ts). Fire-and-forget, same
-        // as shipment/notification side effects above; the batch job can backfill if this fails.
-        void writeEcommerceOrderSettlementLedgerRow(ecommerceOrderForShipment).catch((e) =>
-          console.error('[PAYMENT-VERIFY] Settlement ledger write failed:', e)
-        );
+        // Commission audit + settlement ledger after commit (pool writers; never under FOR UPDATE).
+        // Batch job can backfill settlement if this fails.
+        const orderIdForPostCommit = ecommerceOrderForShipment;
+        const vendorIdForPostCommit = ecommerceVendorIdForCommission;
+        const writeSettlement = () =>
+          writeEcommerceOrderSettlementLedgerRow(orderIdForPostCommit).catch((e) =>
+            console.error('[PAYMENT-VERIFY] Settlement ledger write failed:', e)
+          );
+        if (vendorIdForPostCommit) {
+          void applyOrderCommissionAudit(orderIdForPostCommit, vendorIdForPostCommit)
+            .then(() => writeSettlement())
+            .catch((e) => {
+              console.warn('[PAYMENT-VERIFY] Commission audit failed (settlement still attempted):', e);
+              return writeSettlement();
+            });
+        } else {
+          void writeSettlement();
+        }
       }
 
       if (ecommerceOrderToNotify) {
@@ -1601,6 +1572,7 @@ class RazorpayWebhookHandler extends BaseHandler {
       let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
       let ecommerceOrderForShipment: string | null = null;
       let ecommerceOrderToNotify: string | null = null;
+      let ecommerceVendorIdForCommission: string | null = null;
 
       // ✅ FIX: Use transaction with fallback lookup (razorpay_payment_id → razorpay_order_id)
       // Previously only looked up by razorpay_payment_id, which is NULL until verify-payment runs.
@@ -1706,11 +1678,7 @@ class RazorpayWebhookHandler extends BaseHandler {
             ecommerceOrderForShipment = orderId;
             ecommerceOrderToNotify = orderId;
             if (vendorId) {
-              void applyOrderCommissionAudit(orderId, vendorId)
-                .then(() => writeEcommerceOrderSettlementLedgerRow(orderId))
-                .catch((e) =>
-                  console.warn('[RAZORPAY-WEBHOOK] Commission audit / settlement ledger failed:', e)
-                );
+              ecommerceVendorIdForCommission = vendorId;
             }
           }
         }
@@ -1765,6 +1733,23 @@ class RazorpayWebhookHandler extends BaseHandler {
         triggerAutoShipment(ecommerceOrderForShipment, 'ecommerce').catch((e) =>
           console.error('[RAZORPAY-WEBHOOK] Auto-shipment trigger failed:', e)
         );
+        // After commit only — avoid pool UPDATE racing the txn row lock.
+        const orderIdForPostCommit = ecommerceOrderForShipment;
+        const vendorIdForPostCommit = ecommerceVendorIdForCommission;
+        const writeSettlement = () =>
+          writeEcommerceOrderSettlementLedgerRow(orderIdForPostCommit).catch((e) =>
+            console.warn('[RAZORPAY-WEBHOOK] Settlement ledger write failed:', e)
+          );
+        if (vendorIdForPostCommit) {
+          void applyOrderCommissionAudit(orderIdForPostCommit, vendorIdForPostCommit)
+            .then(() => writeSettlement())
+            .catch((e) => {
+              console.warn('[RAZORPAY-WEBHOOK] Commission audit failed (settlement still attempted):', e);
+              return writeSettlement();
+            });
+        } else {
+          void writeSettlement();
+        }
       }
 
       if (ecommerceOrderToNotify) {
