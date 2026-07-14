@@ -279,6 +279,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             })(),
             manufacturing_details: product.manufacturing_details?.trim() || null,
             delivery_regions: product.delivery_regions ?? null,
+            listing_ownership: product.listing_ownership?.trim() || null,
           });
         }
 
