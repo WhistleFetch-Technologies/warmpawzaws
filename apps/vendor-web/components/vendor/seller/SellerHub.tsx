@@ -24,10 +24,33 @@ import { InventoryManagement, type InventoryManagementHandle } from './Inventory
 import { SellerOrderManagement } from './SellerOrderManagement';
 import { SellerInvoicesHub } from './SellerInvoicesHub';
 import { CommissionCalculator } from './CommissionCalculator';
-import { PromotionsManagement } from './PromotionsManagement';
-import { VendorCommercialCampaigns } from '@/components/vendor/campaigns/VendorCommercialCampaigns';
+import dynamic from 'next/dynamic';
 import { SellerAnalytics } from './SellerAnalytics';
 import { SellerSettings, type SellerSettingsHandle } from './SellerSettings';
+
+/** Lazy-load promo/campaign bundles so a wizard hooks bug cannot crash Dashboard on import. */
+const PromotionsManagement = dynamic(
+  () => import('./PromotionsManagement').then((m) => m.PromotionsManagement),
+  { ssr: false, loading: () => <SellerTabLoading label="promotions" /> }
+);
+const VendorCommercialCampaigns = dynamic(
+  () =>
+    import('@/components/vendor/campaigns/VendorCommercialCampaigns').then(
+      (m) => m.VendorCommercialCampaigns
+    ),
+  { ssr: false, loading: () => <SellerTabLoading label="campaigns" /> }
+);
+
+function SellerTabLoading({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-[240px] items-center justify-center">
+      <div className="text-center">
+        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-orange-200 border-t-orange-500" />
+        <p className="mt-3 text-sm text-slate-500">Loading {label}…</p>
+      </div>
+    </div>
+  );
+}
 
 export type SellerHubTab =
   | 'dashboard'

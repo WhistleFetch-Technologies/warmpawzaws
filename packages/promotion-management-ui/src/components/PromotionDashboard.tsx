@@ -591,24 +591,26 @@ export function PromotionDashboard({
         )}
       </div>
 
-      <PromotionWizard
-        key={editingId ?? `create-${wizardSessionKey}`}
-        open={wizardOpen}
-        onClose={() => {
-          setWizardOpen(false);
-          setEditForm(undefined);
-          setEditingId(undefined);
-          setWizardInitialStep(0);
-        }}
-        scope={scope}
-        catalog={catalog}
-        initial={editForm}
-        initialStep={wizardInitialStep}
-        existingCodes={existingCodes}
-        onSave={handleSave}
-        saving={saving}
-        smartTargetAdapter={smartTargetAdapter}
-      />
+      {wizardOpen ? (
+        <PromotionWizard
+          key={editingId ?? `create-${wizardSessionKey}`}
+          open={wizardOpen}
+          onClose={() => {
+            setWizardOpen(false);
+            setEditForm(undefined);
+            setEditingId(undefined);
+            setWizardInitialStep(0);
+          }}
+          scope={scope}
+          catalog={catalog}
+          initial={editForm}
+          initialStep={wizardInitialStep}
+          existingCodes={existingCodes}
+          onSave={handleSave}
+          saving={saving}
+          smartTargetAdapter={smartTargetAdapter}
+        />
+      ) : null}
 
       {(detailPromo || detailCoupon) && (
         <PromotionDetailsPanel

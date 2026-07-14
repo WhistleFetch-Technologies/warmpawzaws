@@ -109,6 +109,24 @@ export function PromotionWizard({
     [form, existingCodes, validationAudience, smartTargetSurface]
   );
 
+  // Must stay above any early return — otherwise open true↔false changes hook count (React #300/#301).
+  const stepBlockingIssues = useMemo(() => {
+    if (step === 1) {
+      return issues.filter((i) => i.field === 'name' || i.field === 'code');
+    }
+    if (step === 2) {
+      return issues.filter((i) => i.field === 'target');
+    }
+    if (step === 3) {
+      return issues.filter((i) =>
+        ['discountValue', 'maxDiscount', 'minAmount', 'usageLimit', 'usageLimitPerUser', 'schedule'].includes(
+          i.field
+        )
+      );
+    }
+    return [];
+  }, [issues, step]);
+
   if (!open) return null;
 
   const patch = (p: Partial<PromotionWizardForm>) => setForm((f) => ({ ...f, ...p }));
@@ -129,23 +147,6 @@ export function PromotionWizard({
     }
     onClose();
   };
-
-  const stepBlockingIssues = useMemo(() => {
-    if (step === 1) {
-      return issues.filter((i) => i.field === 'name' || i.field === 'code');
-    }
-    if (step === 2) {
-      return issues.filter((i) => i.field === 'target');
-    }
-    if (step === 3) {
-      return issues.filter((i) =>
-        ['discountValue', 'maxDiscount', 'minAmount', 'usageLimit', 'usageLimitPerUser', 'schedule'].includes(
-          i.field
-        )
-      );
-    }
-    return [];
-  }, [issues, step]);
 
   const canAdvance =
     step === 0 || !hasValidationErrors(stepBlockingIssues);
