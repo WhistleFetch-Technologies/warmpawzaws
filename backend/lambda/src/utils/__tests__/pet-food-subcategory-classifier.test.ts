@@ -33,6 +33,15 @@ describe('pet-food-subcategory-classifier', () => {
     );
   });
 
+  it('does not classify cat litter as therapeutic when description mentions veterinary', () => {
+    expect(
+      classifyPetFoodSubcategory(
+        'Drools Clumping Lavender Fragrance Cat Litter (For multiple cat',
+        'At Drools, our veterinary nutritionists have spent years on perfecting the recipes.'
+      )
+    ).toBeNull();
+  });
+
   it('classifies therapeutic and prescription diets after dry/wet/treat', () => {
     expect(
       classifyPetFoodSubcategory("Hill's Prescription Diet i/d Digestive Care Dog Food")
