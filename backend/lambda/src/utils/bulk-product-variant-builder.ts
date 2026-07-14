@@ -29,6 +29,7 @@ export type BulkVariantRow = Record<string, unknown> & {
   variant_value_3?: string | null;
   barcode?: string | null;
   brand?: string | null;
+  listing_ownership?: string | null;
 };
 
 export type BulkProductGroup = {
@@ -57,6 +58,7 @@ export type BulkProductGroup = {
     manufacturing_details?: string | null;
     delivery_regions?: unknown;
     product_specifications?: string | null;
+    listing_ownership?: string | null;
   };
   variants: BulkVariantRow[];
   rowNums: number[];
@@ -166,6 +168,7 @@ function parentFieldsFromBulkRow(row: BulkVariantRow): BulkProductGroup['parent'
     manufacturing_details: trimStr(row.manufacturing_details),
     delivery_regions: row.delivery_regions ?? null,
     product_specifications: trimStr(row.product_specifications),
+    listing_ownership: trimStr(row.listing_ownership),
   };
 }
 

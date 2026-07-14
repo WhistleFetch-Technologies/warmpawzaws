@@ -700,6 +700,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'image1000x1000px': 'images',
         'pettype': 'pet_type',
         'pettypeother': 'pet_type_other',
+        'listingownership': 'listing_ownership',
+        'productownership': 'listing_ownership',
         'isactive': 'is_active',
         'active': 'is_active',
         'status': 'is_active',

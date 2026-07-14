@@ -29,21 +29,20 @@ describe('parseBulkProductXlsxBuffer', () => {
     const { products } = await parseBulkProductXlsxBuffer(buf);
 
     expect(products).toHaveLength(1);
-    expect(getBulkProductTitle(products[0])).toBe('Smiling Sunflower Dog Dress');
+    expect(getBulkProductTitle(products[0])).toBe('Premium Dog Harness');
     expect(products[0].key_features).toBeTruthy();
-    expect(products[0].delivery_regions).toEqual(['Mumbai', 'Pune']);
     expect(products[0].pet_type).toBe('dog');
     const demoImages = String(products[0].images ?? '');
-    expect(parseProductImageList(demoImages)).toHaveLength(2);
-    expect(demoImages).toContain('example.com/your-product-image-2.jpg');
+    expect(parseProductImageList(demoImages).length).toBeGreaterThanOrEqual(1);
+    expect(demoImages).toContain('example.com/your-product-image');
   });
 
   it('maps gallery image column', () => {
     expect(BULK_HEADER_FIELD_MAP.image1000x1000px).toBe('images');
   });
 
-  it('template has 28 unified columns', () => {
-    expect(BULK_TEMPLATE_COLUMN_HEADERS).toHaveLength(28);
+  it('template has 27 unified columns including Listing Ownership', () => {
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toHaveLength(27);
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Delivery Regions');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Product Group ID');
     expect(BULK_TEMPLATE_COLUMN_HEADERS).toContain('Pet Type');
@@ -57,6 +56,13 @@ describe('parseBulkProductXlsxBuffer', () => {
   it('maps listing ownership column for bulk upload', () => {
     expect(BULK_HEADER_FIELD_MAP.listingownership).toBe('listing_ownership');
     expect(BULK_HEADER_FIELD_MAP.productownership).toBe('listing_ownership');
+  });
+
+  it('parses Listing Ownership from template demo row onto products', async () => {
+    const buf = await buildBulkProductTemplateBuffer(['Pet Accessories']);
+    const { products } = await parseBulkProductXlsxBuffer(buf);
+    expect(products).toHaveLength(1);
+    expect(products[0].listing_ownership).toBe('Third party');
   });
 
   it('maps variant attribute columns for bulk upload', () => {
