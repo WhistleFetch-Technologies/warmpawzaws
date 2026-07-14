@@ -85,6 +85,28 @@ export function sortShopCategories(categories: ShopCategory[]): ShopCategory[] {
   });
 }
 
+/** Pet Food subcategory chip order on /shop (Therapeutic Food first). */
+const PET_FOOD_SUBCATEGORY_CHIP_ORDER = [
+  'Therapeutic Food',
+  'Dry Pet Food',
+  'Wet Pet Food',
+  'Puppy Food',
+  'Adult Food',
+  'Pet Treats',
+] as const;
+
+export function sortPetFoodSubcategoriesForShop(subcategories: ShopCategory[]): ShopCategory[] {
+  const orderIndex = new Map(PET_FOOD_SUBCATEGORY_CHIP_ORDER.map((name, i) => [name, i]));
+  return [...subcategories].sort((a, b) => {
+    const idxA = orderIndex.get(a.name as (typeof PET_FOOD_SUBCATEGORY_CHIP_ORDER)[number]);
+    const idxB = orderIndex.get(b.name as (typeof PET_FOOD_SUBCATEGORY_CHIP_ORDER)[number]);
+    if (idxA != null && idxB != null) return idxA - idxB;
+    if (idxA != null) return -1;
+    if (idxB != null) return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 export function mapApiCategoriesToShop(
   rows: Array<Record<string, unknown>>
 ): ShopCategory[] {

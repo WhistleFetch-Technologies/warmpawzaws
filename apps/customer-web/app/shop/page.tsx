@@ -26,6 +26,7 @@ import {
   mapApiCategoriesToShop,
   mergeShopSubcategoriesForStorefront,
   resolveShopCategoryParam,
+  sortPetFoodSubcategoriesForShop,
   SHOP_CATEGORIES_WITH_PRODUCTS_PATH,
 } from '@/lib/shop-category-display';
 import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
@@ -621,13 +622,11 @@ function ShopPageContent() {
     return categoryById.get(selectedCategory)?.parent_category_id || selectedCategory;
   }, [selectedCategory, categoryById]);
 
-  const activeSubCategories = useMemo(
-    () =>
-      activeTopCategoryId
-        ? categories.filter((c) => c.parent_category_id === activeTopCategoryId)
-        : [],
-    [categories, activeTopCategoryId]
-  );
+  const activeSubCategories = useMemo(() => {
+    if (!activeTopCategoryId) return [];
+    const subs = categories.filter((c) => c.parent_category_id === activeTopCategoryId);
+    return sortPetFoodSubcategoriesForShop(subs);
+  }, [categories, activeTopCategoryId]);
 
   const activeSubCategoryId = useMemo(() => {
     if (!selectedCategory) return '';

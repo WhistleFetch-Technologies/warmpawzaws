@@ -22,8 +22,12 @@ BEGIN
 
     UPDATE ecommerce_categories
     SET parent_category_id = parent_id,
-        description = COALESCE(NULLIF(TRIM(description), ''), 'Prescription and veterinary diet food for pets')
+        description = COALESCE(NULLIF(TRIM(description), ''), 'Prescription and veterinary diet food for pets'),
+        display_order = 11
     WHERE name = 'Therapeutic Food'
-      AND (parent_category_id IS DISTINCT FROM parent_id);
+      AND (
+        parent_category_id IS DISTINCT FROM parent_id
+        OR display_order IS DISTINCT FROM 11
+      );
   END IF;
 END $$;
