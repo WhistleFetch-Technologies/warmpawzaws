@@ -511,14 +511,19 @@ app.post('/promotions/calculate-cart', async (c) => {
       return c.json({ success: false, error: 'items array required' }, 400);
     }
 
-    const cartLines = items.map((item: Record<string, unknown>) => ({
-      productId: String(item.productId || item.id || ''),
-      quantity: parseInt(String(item.quantity ?? 1), 10) || 1,
-      price: parseFloat(String(item.price ?? 0)) || 0,
-      category: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
-      categoryId: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
-      id: item.id ? String(item.id) : undefined,
-    }));
+    const cartLines = items.map((item: Record<string, unknown>) => {
+      const rawId = String(item.productId || item.id || '');
+      const sep = rawId.indexOf('::');
+      const productId = sep > 0 ? rawId.slice(0, sep) : rawId;
+      return {
+        productId,
+        quantity: parseInt(String(item.quantity ?? 1), 10) || 1,
+        price: parseFloat(String(item.price ?? 0)) || 0,
+        category: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
+        categoryId: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
+        id: productId || undefined,
+      };
+    });
 
     let promotions: Record<string, unknown>[] = [];
 

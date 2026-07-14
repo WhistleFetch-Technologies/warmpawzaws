@@ -11,6 +11,7 @@ import {
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { parseCartLineKey } from '@/lib/product-sku-client';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import {
@@ -137,19 +138,28 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
 
   const cartPromoItems = useMemo(
     () =>
-      cart.map((item) => ({
-        productId: item.id,
-        id: item.id,
-        quantity: item.quantity,
-        price: item.price,
-        categoryId: item.categoryId || item.category,
-        category: item.categoryId || item.category,
-      })),
+      cart.map((item) => {
+        // Cart line ids are `productId::skuId` for variants; promos match bare product UUIDs.
+        const productId =
+          parseCartLineKey(item.id).productId ||
+          (item.warmpawzLine?.product?.id != null
+            ? String(item.warmpawzLine.product.id)
+            : item.id);
+        return {
+          productId,
+          id: productId,
+          quantity: item.quantity,
+          price: item.price,
+          categoryId: item.categoryId || item.category,
+          category: item.categoryId || item.category,
+        };
+      }),
     [cart]
   );
 
   useEffect(() => {
-    if (!primaryVendorId || cart.length === 0 || selectedPromo) {
+    // Admin/platform campaigns work without vendorId; only skip when cart empty or a manual promo is selected.
+    if (cart.length === 0 || selectedPromo) {
       if (!selectedPromo) setAutoPromo(null);
       return;
     }
@@ -166,7 +176,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
           };
           promotionSource?: 'vendor' | 'admin' | null;
         }>('/promotions/calculate-cart', {
-          vendorId: primaryVendorId,
+          ...(primaryVendorId ? { vendorId: primaryVendorId } : {}),
           customerId: getResolvedCustomerId() || undefined,
           items: cartPromoItems,
         });

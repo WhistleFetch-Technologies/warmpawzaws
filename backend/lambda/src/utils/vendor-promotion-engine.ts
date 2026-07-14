@@ -173,7 +173,10 @@ export function isPromotionEligible(
 }
 
 function lineProductId(item: CartLineItem): string {
-  return String(item.productId || item.id || '');
+  const raw = String(item.productId || item.id || '');
+  // Cart UI uses `productId::skuId` for variant lines; promotions target product UUIDs.
+  const sep = raw.indexOf('::');
+  return sep > 0 ? raw.slice(0, sep) : raw;
 }
 
 export function promotionAppliesToLine(promo: PromotionRow, item: CartLineItem): boolean {
