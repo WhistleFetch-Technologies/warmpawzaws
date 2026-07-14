@@ -72,7 +72,7 @@ function stripAwsPresignFromProductImageUrl(url: string): string {
 type ProductFormModalProps = {
   product: Record<string, unknown> | null;
   sellerId: string;
-  categories: Array<{ id: string; name: string }>;
+  categories: Array<{ id: string; name: string; parent_category_id?: string | null }>;
   onClose: () => void;
   onSave: () => void;
 };
@@ -145,6 +145,22 @@ export function ProductFormModal({
       { id: currentId, name: fallbackName ? `${fallbackName} (inactive)` : 'Current category (inactive)' },
     ];
   }, [categories, form.category_id, product?.category, product?.category_name]);
+
+  /** Group into <optgroup>s so vendors can pick a subcategory (e.g. Pet Food > Dry Pet Food). */
+  const categoryOptionGroups = useMemo(() => {
+    const topLevel = categorySelectOptions.filter((c) => !c.parent_category_id);
+    const childrenByParent = new Map<string, typeof categorySelectOptions>();
+    for (const c of categorySelectOptions) {
+      if (!c.parent_category_id) continue;
+      const list = childrenByParent.get(c.parent_category_id) ?? [];
+      list.push(c);
+      childrenByParent.set(c.parent_category_id, list);
+    }
+    return topLevel.map((parent) => ({
+      parent,
+      children: childrenByParent.get(parent.id) ?? [],
+    }));
+  }, [categorySelectOptions]);
 
   const showCustomPetTypeInput = petTypeSelect === PET_TYPE_SELECT_OTHER;
 
@@ -604,9 +620,22 @@ export function ProductFormModal({
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white"
                 >
                   <option value="">Select Category</option>
-                  {categorySelectOptions.map((cat) => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
+                  {categoryOptionGroups.map(({ parent, children }) =>
+                    children.length > 0 ? (
+                      <optgroup key={parent.id} label={parent.name}>
+                        <option value={parent.id}>{parent.name} (all)</option>
+                        {children.map((child) => (
+                          <option key={child.id} value={child.id}>
+                            {child.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : (
+                      <option key={parent.id} value={parent.id}>
+                        {parent.name}
+                      </option>
+                    )
+                  )}
                 </select>
               </div>
               {product?.id ? (

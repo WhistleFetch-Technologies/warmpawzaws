@@ -441,6 +441,7 @@ export function CategoryManagement() {
       {showModal && editingCategory && (
         <CategoryEditorModal
           category={editingCategory}
+          allCategories={categories}
           onSave={saveCategory}
           onClose={() => {
             setShowModal(false);
@@ -668,17 +669,41 @@ function ShopCategoryGridPreview({ name }: { name: string }) {
   );
 }
 
+/** Descendant ids (children, grandchildren, ...) of a category, to block cyclic parent picks. */
+function descendantCategoryIds(categoryId: string, allCategories: Category[]): Set<string> {
+  const result = new Set<string>();
+  const queue = [categoryId];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const c of allCategories) {
+      if (c.parentId === current && !result.has(c.id)) {
+        result.add(c.id);
+        queue.push(c.id);
+      }
+    }
+  }
+  return result;
+}
+
 // Category Editor Modal Component
 function CategoryEditorModal({
   category,
+  allCategories,
   onSave,
   onClose,
 }: {
   category: Category;
+  allCategories: Category[];
   onSave: (category: Category) => void;
   onClose: () => void;
 }) {
   const [editedCategory, setEditedCategory] = useState<Category>(() => ({ ...category }));
+
+  const parentOptions = useMemo(() => {
+    const blocked = descendantCategoryIds(category.id, allCategories);
+    blocked.add(category.id);
+    return allCategories.filter((c) => !blocked.has(c.id));
+  }, [allCategories, category.id]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -717,6 +742,31 @@ function CategoryEditorModal({
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Parent Category</label>
+            <select
+              value={editedCategory.parentId ?? ''}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                setEditedCategory({
+                  ...editedCategory,
+                  parentId: e.target.value || null,
+                })
+              }
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+            >
+              <option value="">None (top-level category)</option>
+              {parentOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Set a parent to make this a subcategory shown as a second-level tab on the customer
+              shop page (e.g. "Dry Pet Food" under "Pet Food").
+            </p>
           </div>
 
           <div>
