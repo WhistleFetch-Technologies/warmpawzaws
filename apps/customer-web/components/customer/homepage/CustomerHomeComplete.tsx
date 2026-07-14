@@ -110,6 +110,11 @@ import {
   refreshHomeDynamicContent,
   scheduleHomeDeferredWork,
 } from '@/lib/customer-home-bootstrap';
+import {
+  getResolvedCustomerId,
+  persistCustomerDatabaseId,
+} from '@/lib/customer-id-storage';
+import { HOME_POLL_PROFILE, withPollJitter } from '@/lib/home-poll-profile';
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -1720,7 +1725,7 @@ export function CustomerHomeComplete({
       checkPendingReviews();
       checkUpcomingCalls();
       checkActiveOrderTracking();
-      checkIncomingCalls();
+      // Incoming tele owned solely by runIncomingCallTick (avoid duplicate /notifications)
     };
 
     const runIncomingCallTick = () => {
@@ -1730,8 +1735,11 @@ export function CustomerHomeComplete({
 
     const startPolling = () => {
       if (interval) return;
-      interval = setInterval(runPollingTick, 15000);
-      incomingCallInterval = setInterval(runIncomingCallTick, 5000);
+      interval = setInterval(runPollingTick, withPollJitter(HOME_POLL_PROFILE.homeTickMs));
+      incomingCallInterval = setInterval(
+        runIncomingCallTick,
+        HOME_POLL_PROFILE.teleIncomingMs
+      );
     };
 
     const stopPolling = () => {
@@ -1761,12 +1769,21 @@ export function CustomerHomeComplete({
       cancelDeferred = scheduleHomeDeferredWork({
         loadBookings: () => {
           if (cancelled) return;
-          apiClient
-            .get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`)
-            .then((r) => {
-              if (r?.customer?.id) setCustomerId(r.customer.id);
-            })
-            .catch(() => {});
+          const cachedId = getResolvedCustomerId();
+          if (cachedId) {
+            setCustomerId(cachedId);
+          } else {
+            apiClient
+              .get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`)
+              .then((r) => {
+                const id = r?.customer?.id;
+                if (id) {
+                  persistCustomerDatabaseId(id);
+                  setCustomerId(String(id));
+                }
+              })
+              .catch(() => {});
+          }
           loadActiveBookings();
           checkPendingReviews();
           checkUpcomingCalls();
@@ -1801,13 +1818,42 @@ export function CustomerHomeComplete({
     const fetchUnread = async () => {
       if (document.hidden) return;
       try {
+        const userId = customerId || getResolvedCustomerId();
+        if (userId) {
+          try {
+            const countRes = await apiClient.get<{ unreadCount?: number }>(
+              `/notifications/unread-count?userId=${encodeURIComponent(userId)}&userType=customer`
+            );
+            if (cancelled) return;
+            if (typeof countRes.unreadCount === 'number') {
+              setNotificationUnreadCount(countRes.unreadCount);
+              return;
+            }
+          } catch {
+            /* fall through to unread list */
+          }
+          const data = await apiClient.get<{
+            unreadCount?: number;
+            notifications?: { is_read?: boolean; read?: boolean }[];
+          }>(
+            `/notifications?userId=${encodeURIComponent(userId)}&userType=customer&limit=1`
+          );
+          if (cancelled) return;
+          if (typeof data.unreadCount === 'number') {
+            setNotificationUnreadCount(data.unreadCount);
+            return;
+          }
+          const list = data.notifications ?? [];
+          setNotificationUnreadCount(list.filter((n) => !(n.is_read ?? n.read)).length);
+          return;
+        }
+        // Phone fallback: slim limit (modal still loads full inbox on open)
         const data = await apiClient.get<{ notifications?: { is_read?: boolean; read?: boolean }[] }>(
-          `/customer/notifications?phone=${encodeURIComponent(clean)}&limit=50`
+          `/customer/notifications?phone=${encodeURIComponent(clean)}&limit=10`
         );
         if (cancelled) return;
         const list = data.notifications ?? [];
-        const unread = list.filter((n) => !(n.is_read ?? n.read)).length;
-        setNotificationUnreadCount(unread);
+        setNotificationUnreadCount(list.filter((n) => !(n.is_read ?? n.read)).length);
       } catch {
         if (!cancelled) setNotificationUnreadCount(0);
       }
@@ -1815,7 +1861,7 @@ export function CustomerHomeComplete({
 
     const startInterval = () => {
       if (interval) return;
-      interval = setInterval(fetchUnread, 90_000);
+      interval = setInterval(fetchUnread, withPollJitter(HOME_POLL_PROFILE.notifBadgeMs));
     };
 
     const stopInterval = () => {
@@ -1851,7 +1897,7 @@ export function CustomerHomeComplete({
       stopInterval();
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [phone, refreshKey, notificationInboxVersion]);
+  }, [phone, refreshKey, notificationInboxVersion, customerId]);
 
   useEffect(() => {
     const clean = (phone || '').replace(/[^0-9]/g, '');
@@ -1860,10 +1906,13 @@ export function CustomerHomeComplete({
       return;
     }
     let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
+
     const fetchUnread = async () => {
+      if (document.hidden) return;
       try {
         const b = await fetchCustomerMessageUnreadBreakdown({
-          customerId: customerId || undefined,
+          customerId: customerId || getResolvedCustomerId() || undefined,
           phoneForApi: phone,
         });
         if (!cancelled) setCombinedMessageUnreadCount(b.total);
@@ -1871,14 +1920,36 @@ export function CustomerHomeComplete({
         if (!cancelled) setCombinedMessageUnreadCount(0);
       }
     };
+
+    const startInterval = () => {
+      if (interval) return;
+      interval = setInterval(fetchUnread, withPollJitter(HOME_POLL_PROFILE.messageBadgeMs));
+    };
+    const stopInterval = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = undefined;
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) stopInterval();
+      else {
+        void fetchUnread();
+        startInterval();
+      }
+    };
+
     const cancelIdle = scheduleIdleWork(() => {
       void fetchUnread();
     });
-    const interval = setInterval(fetchUnread, 90_000);
+    if (!document.hidden) startInterval();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       cancelled = true;
       cancelIdle();
-      clearInterval(interval);
+      stopInterval();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [phone, refreshKey, customerId, messagesInboxVersion]);
 
@@ -2088,39 +2159,45 @@ export function CustomerHomeComplete({
   // ✅ Check for pending reviews on completed bookings
   const checkPendingReviews = async () => {
     try {
-      // Get customer ID first
-      const customerRes = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`);
-      const custId = customerRes.customer?.id;
-      if (custId) {
-        setCustomerId(custId);
-
-        // Check for pending review
-        const reviewRes = await apiClient.get<any>(`/reviews/pending/${custId}`);
-        if (reviewRes.hasPending && reviewRes.booking) {
-          const pendingBookingId = reviewRes.booking.bookingId;
-          if (pendingBookingId) {
-            try {
-              const id = String(pendingBookingId);
-              const submittedRaw = localStorage.getItem('warmpawz_review_submitted_booking_ids');
-              const skippedRaw = localStorage.getItem('warmpawz_review_skipped_booking_ids');
-              const submittedIds: string[] = submittedRaw ? JSON.parse(submittedRaw) : [];
-              const skippedIds: string[] = skippedRaw ? JSON.parse(skippedRaw) : [];
-              if (submittedIds.includes(id) || skippedIds.includes(id)) return;
-            } catch {
-              /* ignore */
-            }
-          }
-          setPendingReview({
-            isOpen: true,
-            bookingId: reviewRes.booking.bookingId,
-            vendorId: reviewRes.booking.vendorId,
-            vendorName: reviewRes.booking.vendorName || 'Service Provider',
-            serviceName: reviewRes.booking.serviceName || 'Service',
-            serviceStyle: reviewRes.booking.serviceStyle || 'at_center',
-            staffId: reviewRes.booking.staffId,
-            staffName: reviewRes.booking.staffName,
-          });
+      let custId = customerId || getResolvedCustomerId();
+      if (!custId) {
+        // One-shot resolve only when cache empty (not every home tick)
+        const customerRes = await apiClient.get<any>(
+          `/customer/by-phone?phone=${encodeURIComponent(phone)}`
+        );
+        custId = customerRes.customer?.id ? String(customerRes.customer.id) : null;
+        if (custId) {
+          persistCustomerDatabaseId(custId);
+          setCustomerId(custId);
         }
+      }
+      if (!custId) return;
+
+      const reviewRes = await apiClient.get<any>(`/reviews/pending/${custId}`);
+      if (reviewRes.hasPending && reviewRes.booking) {
+        const pendingBookingId = reviewRes.booking.bookingId;
+        if (pendingBookingId) {
+          try {
+            const id = String(pendingBookingId);
+            const submittedRaw = localStorage.getItem('warmpawz_review_submitted_booking_ids');
+            const skippedRaw = localStorage.getItem('warmpawz_review_skipped_booking_ids');
+            const submittedIds: string[] = submittedRaw ? JSON.parse(submittedRaw) : [];
+            const skippedIds: string[] = skippedRaw ? JSON.parse(skippedRaw) : [];
+            if (submittedIds.includes(id) || skippedIds.includes(id)) return;
+          } catch {
+            /* ignore */
+          }
+        }
+        setPendingReview({
+          isOpen: true,
+          bookingId: reviewRes.booking.bookingId,
+          vendorId: reviewRes.booking.vendorId,
+          vendorName: reviewRes.booking.vendorName || 'Service Provider',
+          serviceName: reviewRes.booking.serviceName || 'Service',
+          serviceStyle: reviewRes.booking.serviceStyle || 'at_center',
+          staffId: reviewRes.booking.staffId,
+          staffName: reviewRes.booking.staffName,
+        });
       }
     } catch (error) {
       console.log('No pending reviews');
