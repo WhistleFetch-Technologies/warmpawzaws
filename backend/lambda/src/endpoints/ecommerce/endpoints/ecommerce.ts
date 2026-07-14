@@ -259,6 +259,7 @@ export function registerEcommerceEndpoints(app: Hono) {
           ...s,
           images: normalizeImagesArray(s.images),
         })) as Record<string, unknown>[],
+        'detail',
       );
       const variation_axes = buildVariationAxes(skusRaw);
       const variations = mapSkusToCustomerVariations(skusRaw, variation_axes);

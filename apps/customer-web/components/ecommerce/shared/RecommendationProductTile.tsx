@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { ShopProduct } from '@/components/shop/shop-types';
 import { ShopCartQuantityControl } from '@/components/shop/ShopCartQuantityControl';
+import { CachedImage } from '@/components/shared/CachedImage';
 
 type RecommendationProductTileProps = {
   product: ShopProduct;
@@ -35,14 +36,11 @@ export function RecommendationProductTile({
     <>
       <div className="w-full aspect-square rounded-lg bg-slate-50 flex items-center justify-center text-2xl mb-2 overflow-hidden">
         {primaryImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <CachedImage
             src={primaryImage}
             alt={product.name}
             className="w-full h-full object-cover rounded-lg"
-            loading="lazy"
-            decoding="async"
-            onError={() => setImageFailed(true)}
+            onUnavailable={() => setImageFailed(true)}
           />
         ) : (
           <span className="text-2xl">{product.emoji || '🐾'}</span>

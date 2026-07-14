@@ -1,9 +1,8 @@
 'use client';
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import Image from 'next/image';
 import type { ComponentType } from 'react';
-import { PresignableImage } from '@/components/shared/PresignableImage';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { getCategoryCardImageUrl } from '../constants/category-card-images';
 
 export interface CategoryChipImageProps {
@@ -36,9 +35,6 @@ function CategoryChipImageComponent({
   }, [screen, categoryId]);
 
   const showImage = Boolean(imageUrl) && !imageUnavailable;
-  const isStaticLocal = Boolean(
-    imageUrl?.startsWith('/') && !imageUrl.includes('amazonaws.com')
-  );
 
   const handleImageUnavailable = useCallback(() => {
     setImageUnavailable(true);
@@ -60,24 +56,14 @@ function CategoryChipImageComponent({
         </span>
       ) : null}
       {showImage && imageUrl ? (
-        isStaticLocal ? (
-          <Image
-            src={imageUrl}
-            alt={alt}
-            fill
-            className="object-cover"
-            sizes="56px"
-            unoptimized
-            onError={handleImageUnavailable}
-          />
-        ) : (
-          <PresignableImage
-            src={imageUrl}
-            alt={alt}
-            className="h-full w-full object-cover"
-            onUnavailable={handleImageUnavailable}
-          />
-        )
+        <CachedImage
+          src={imageUrl}
+          alt={alt}
+          fill
+          className="object-cover"
+          sizes="56px"
+          onUnavailable={handleImageUnavailable}
+        />
       ) : (
         <Icon className="h-6 w-6" aria-hidden />
       )}

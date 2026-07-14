@@ -616,7 +616,7 @@ class GetVendorProductsHandler extends BaseHandler {
       );
       const productsOut = await Promise.all(
         rows.map(async (row: Record<string, unknown>) => {
-          const base = await presignProductRowForDisplay(row);
+          const base = await presignProductRowForDisplay(row, 'list');
           const pid = String(base.id ?? '');
           let skus = skuMap.get(pid) ?? [];
           const meta =
@@ -633,6 +633,7 @@ class GetVendorProductsHandler extends BaseHandler {
               ...s,
               images: normalizeImagesArray(s.images),
             })) as Record<string, unknown>[],
+            'list',
           );
           base.skus = skusPresigned;
           base.has_variants = skus.length > 0;

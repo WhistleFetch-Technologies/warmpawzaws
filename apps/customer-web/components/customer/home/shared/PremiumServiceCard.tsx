@@ -1,8 +1,8 @@
 'use client';
 
 import React, { memo } from 'react';
-import Image from 'next/image';
 import { ChevronRight, PawPrint } from 'lucide-react';
+import { CachedImage } from '@/components/shared/CachedImage';
 import type { PremiumServiceCardEntry } from '../constants/premium-service-cards-catalog';
 
 /**
@@ -93,7 +93,7 @@ function PremiumServiceCardComponent({ entry, index, onPress }: PremiumServiceCa
       {/* Hero image: fixed equal height across all cards, bottom-right aligned with breathing room */}
       <div className="relative z-10 w-[43%] shrink-0 self-stretch overflow-hidden sm:w-[40%]">
         <div className="absolute inset-0 flex items-end justify-end pb-1.5 pr-1">
-          <Image
+          <CachedImage
             src={entry.imageUrl}
             alt={entry.imageAlt}
             width={CARD_IMAGE_INTRINSIC_WIDTH}
@@ -103,8 +103,7 @@ function PremiumServiceCardComponent({ entry, index, onPress }: PremiumServiceCa
               marginRight: `${entry.imageNudgeX ?? 0}px`,
               marginBottom: `${entry.imageNudgeY ?? 0}px`,
             }}
-            priority={index === 0}
-            unoptimized
+            loading={index === 0 ? 'eager' : 'lazy'}
           />
         </div>
       </div>

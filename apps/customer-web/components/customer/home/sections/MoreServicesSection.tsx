@@ -1,8 +1,8 @@
 'use client';
 
 import React, { memo, useMemo } from 'react';
-import Image from 'next/image';
 import { Users, Shield, Dog, Coffee, ChevronRight, PawPrint, Heart, MapPin, Sparkles } from 'lucide-react';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { isAppReviewDemoAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -134,13 +134,12 @@ function MoreServiceCard({
 
       <div className="relative flex w-[5.5rem] shrink-0 flex-col justify-end sm:w-[6.25rem]">
         <div className="relative h-[5rem] w-full sm:h-[5.5rem]">
-          <Image
+          <CachedImage
             src={card.imageUrl}
             alt={card.imageAlt}
             fill
             className="object-contain object-bottom drop-shadow-[0_6px_16px_rgba(0,0,0,0.08)]"
             sizes="(max-width: 640px) 88px, 100px"
-            unoptimized
           />
         </div>
       </div>
