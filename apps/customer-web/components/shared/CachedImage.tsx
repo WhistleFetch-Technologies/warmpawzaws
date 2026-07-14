@@ -147,14 +147,16 @@ export function CachedImage({
     );
   }
 
+  // Absolute fill only — do NOT force objectFit here. Inline object-fit would
+  // override Tailwind classes (e.g. object-contain on vet problem tiles).
+  // Callers pass object-cover / object-contain via className or style.objectFit.
   const imgStyle: React.CSSProperties = fill
     ? {
-        ...style,
-        objectFit: (style?.objectFit as React.CSSProperties['objectFit']) ?? 'cover',
         position: 'absolute',
         inset: 0,
         width: '100%',
         height: '100%',
+        ...style,
       }
     : style ?? {};
 
