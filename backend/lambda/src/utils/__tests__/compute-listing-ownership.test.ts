@@ -56,7 +56,7 @@ describe('parseListingOwnershipInput', () => {
 describe('validateAndApplyVendorDeclaredOwnership', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('no-ops for category commission model', async () => {
+  it('no-ops for category commission model when ownership omitted', async () => {
     mockQuery.mockResolvedValueOnce({
       rows: [{ commission_model: 'category' }],
     } as any);
@@ -70,6 +70,23 @@ describe('validateAndApplyVendorDeclaredOwnership', () => {
     );
 
     expect(payload.listing_ownership).toBeUndefined();
+  });
+
+  it('persists ownership for category commission model when provided (promo targeting)', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ commission_model: 'category' }],
+    } as any);
+
+    const payload: Record<string, unknown> = {};
+    await validateAndApplyVendorDeclaredOwnership(
+      'vendor-1',
+      payload,
+      new Set(['listing_ownership', 'listing_ownership_source']),
+      'Third party'
+    );
+
+    expect(payload.listing_ownership).toBe('third_party');
+    expect(payload.listing_ownership_source).toBe('manual');
   });
 
   it('sets manual ownership for ownership model vendor', async () => {

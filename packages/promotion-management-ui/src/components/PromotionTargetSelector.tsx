@@ -22,6 +22,7 @@ import {
   INVENTORY_TYPE_LABELS,
   SMART_FLOW_LABELS,
 } from '../smart-target';
+import { filterByListingOwnership } from '../listing-ownership';
 import {
   TargetContextBar,
   TargetEmptyState,
@@ -81,13 +82,6 @@ function ownershipBadge(ownership?: TargetOption['listingOwnership']): string | 
   return null;
 }
 
-function filterByListingOwnership(
-  items: TargetOption[],
-  scope: ListingOwnershipScope
-): TargetOption[] {
-  if (scope === 'all') return items;
-  return items.filter((o) => o.listingOwnership === scope);
-}
 
 function ListingOwnershipScopeControl({
   value,
@@ -925,7 +919,7 @@ function SmartPromotionTargetSelector({
                         ? 'No owned products for this seller.'
                         : 'No third-party products for this seller.'
                     }
-                    hint="Try switching product ownership, or choose another seller."
+                    hint="Listing Ownership comes from seller bulk upload (Own brand / Third party). Products without it only appear under Both — re-upload or edit, then refresh."
                   />
                 ) : (
                   <>
@@ -1151,7 +1145,7 @@ function StaticPromotionTargetSelector({
           {pageItems.length === 0 ? (
             <TargetEmptyState
               message="No matching items in this catalog."
-              hint="Try another scope, ownership filter, or refresh the dashboard."
+              hint="Listing Ownership is set in bulk upload (Own brand / Third party). Without it, Owned/Third party filters stay empty — use Both or re-upload products."
             />
           ) : (
             <CheckboxList items={pageItems} selected={selected} onToggle={toggleId} namePrefix="static" />

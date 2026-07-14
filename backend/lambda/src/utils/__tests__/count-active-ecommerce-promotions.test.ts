@@ -19,6 +19,7 @@ describe('countActiveEcommerceAdminPromotions', () => {
     const sql = String(mockQuery.mock.calls[0][0]);
     expect(sql).toContain('ecommerce_admin_promotions');
     expect(sql).toContain('promotions');
+    expect(sql).toContain('coupons');
     expect(sql).toContain('UNION');
     expect(sql).toContain('COALESCE(published, false) = true');
     expect(sql).not.toContain('vendor_promotions');

@@ -52,7 +52,11 @@ import {
   normalizePromotionRow,
   type CartLineItem,
 } from '../../../utils/vendor-promotion-engine';
-import { countPriorVendorOrders, recordVendorPromotionUsage } from '../../../utils/vendor-promotion-usage';
+import {
+  countPriorVendorOrders,
+  recordEcommercePlatformCouponUsage,
+  recordVendorPromotionUsage,
+} from '../../../utils/vendor-promotion-usage';
 import {
   resolveCommercialCampaignDiscount,
   recordCommercialCampaignUsage,
@@ -852,6 +856,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       let vendorCandidateId: string | null = null;
       let adminCandidateDiscount = 0;
       let adminCandidateId: string | null = null;
+      /** Distinguishes platform `coupons` wins from ecommerce_admin/legacy campaign promos. */
+      let adminCandidateKind: 'coupon' | 'campaign' | null = null;
 
       if (tryVendor) {
         try {
@@ -908,6 +914,7 @@ export function registerEcommerceEndpoints(app: Hono) {
             if (platformManualDiscount > adminCandidateDiscount) {
               adminCandidateDiscount = platformManualDiscount;
               adminCandidateId = String(codeResult.platformCouponId);
+              adminCandidateKind = 'coupon';
             }
           }
         } catch (promoErr) {
@@ -927,6 +934,7 @@ export function registerEcommerceEndpoints(app: Hono) {
             if (campaignResult.discountAmount > adminCandidateDiscount) {
               adminCandidateDiscount = campaignResult.discountAmount;
               adminCandidateId = campaignResult.promotionId;
+              adminCandidateKind = 'campaign';
               campaignIsLegacy = campaignResult.isLegacy;
             }
           }
@@ -949,6 +957,7 @@ export function registerEcommerceEndpoints(app: Hono) {
             if (platformCoupon && platformCoupon.discountAmount > 0) {
               adminCandidateDiscount = platformCoupon.discountAmount;
               adminCandidateId = platformCoupon.couponId;
+              adminCandidateKind = 'coupon';
             }
           } catch (couponErr) {
             console.warn('[ecommerce/orders] platform coupon lookup skipped:', couponErr);
@@ -1257,7 +1266,14 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       if (appliedPromotionId && discountAmount > 0) {
         try {
-          if (promotionSource === 'admin') {
+          if (promotionSource === 'admin' && adminCandidateKind === 'coupon') {
+            await recordEcommercePlatformCouponUsage({
+              couponId: appliedPromotionId,
+              orderId,
+              customerId: customerId ? String(customerId) : null,
+              discountAmount,
+            });
+          } else if (promotionSource === 'admin') {
             await recordCommercialCampaignUsage({
               promotionId: appliedPromotionId,
               isLegacy: campaignIsLegacy,

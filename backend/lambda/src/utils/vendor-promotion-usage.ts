@@ -3,6 +3,35 @@
  */
 import { insert, query } from '../database/rds-connection';
 
+/** Persist platform `coupons` table redemption on ecommerce order (analytics Coupons tab). */
+export async function recordEcommercePlatformCouponUsage(params: {
+  couponId: string;
+  orderId: string;
+  customerId?: string | null;
+  discountAmount: number;
+}): Promise<void> {
+  const { couponId, orderId, customerId, discountAmount } = params;
+  try {
+    await insert('coupon_usages', {
+      coupon_id: couponId,
+      customer_id: customerId || null,
+      booking_id: null,
+      order_id: orderId,
+      discount_amount: discountAmount,
+      used_at: new Date().toISOString(),
+    });
+  } catch {
+    /* coupon_usages may be missing in some envs */
+  }
+
+  await query(
+    `UPDATE coupons
+     SET usage_count = COALESCE(usage_count, 0) + 1, updated_at = NOW()
+     WHERE id = $1::uuid`,
+    [couponId]
+  ).catch(() => undefined);
+}
+
 export async function recordVendorPromotionUsage(params: {
   promotionId: string;
   orderId: string;

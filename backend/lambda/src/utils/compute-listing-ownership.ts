@@ -48,7 +48,11 @@ export function lineMatchesListingOwnershipScope(
 ): boolean {
   const normalizedScope = normalizeListingOwnershipScope(scope);
   if (normalizedScope === 'all') return true;
-  return listingOwnership === normalizedScope;
+  const normalizedOwnership =
+    listingOwnership === 'own_brand' || listingOwnership === 'third_party'
+      ? listingOwnership
+      : parseListingOwnershipInput(listingOwnership);
+  return normalizedOwnership === normalizedScope;
 }
 
 export class ListingOwnershipRequiredError extends Error {
@@ -88,6 +92,7 @@ export function parseListingOwnershipInput(
     normalized === 'own' ||
     normalized === 'own brand' ||
     normalized === 'ownbrand' ||
+    normalized === 'owned' ||
     normalized === 'self' ||
     normalized === 'my brand'
   ) {
@@ -138,8 +143,11 @@ function extractDeclaredOwnership(
 }
 
 /**
- * Apply vendor-declared listing ownership when vendor uses ownership commission model.
- * Category-model vendors: no-op (listing_ownership not set).
+ * Apply vendor-declared listing ownership from bulk upload / product create/update.
+ *
+ * - Ownership commission model: required (throws if missing/invalid).
+ * - Category / unset model: optional, but when provided it is persisted so promo
+ *   targeting (Owned / Third party) can filter seller inventory.
  */
 export async function validateAndApplyVendorDeclaredOwnership(
   vendorId: string,
@@ -150,12 +158,20 @@ export async function validateAndApplyVendorDeclaredOwnership(
   if (!cols.has('listing_ownership')) return;
 
   const model = await getVendorCommissionModel(vendorId);
-  if (model !== 'ownership') return;
-
   const parsed = extractDeclaredOwnership(declaredOwnership);
-  if (!parsed) {
-    throw new ListingOwnershipRequiredError(vendorId);
+
+  if (model === 'ownership') {
+    if (!parsed) {
+      throw new ListingOwnershipRequiredError(vendorId);
+    }
+    payload.listing_ownership = parsed;
+    if (cols.has('listing_ownership_source')) {
+      payload.listing_ownership_source = 'manual';
+    }
+    return;
   }
+
+  if (!parsed) return;
 
   payload.listing_ownership = parsed;
   if (cols.has('listing_ownership_source')) {

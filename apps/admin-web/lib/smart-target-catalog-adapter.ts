@@ -3,7 +3,11 @@ import type {
   TargetOption,
   VendorInventoryType,
 } from '@warmpawz/promotion-management-ui';
-import { filterOptionsByQuery, isEligiblePublishedInventory } from '@warmpawz/promotion-management-ui';
+import {
+  filterOptionsByQuery,
+  isEligiblePublishedInventory,
+  parseListingOwnershipFromProductRow,
+} from '@warmpawz/promotion-management-ui';
 import type { AdminPromoSurface } from '@/lib/promotion-domain/surface-config';
 
 type ApiClientLike = {
@@ -72,9 +76,7 @@ function mapProductRow(p: Record<string, unknown>): TargetOption | null {
     priceRaw != null && priceRaw !== '' && Number.isFinite(Number(priceRaw))
       ? Number(priceRaw)
       : undefined;
-  const ownershipRaw = p.listing_ownership ?? p.listingOwnership;
-  const listingOwnership =
-    ownershipRaw === 'own_brand' || ownershipRaw === 'third_party' ? ownershipRaw : null;
+  const listingOwnership = parseListingOwnershipFromProductRow(p);
   const ownershipLabel =
     listingOwnership === 'own_brand'
       ? 'Owned'
@@ -208,7 +210,9 @@ export function createAdminSmartTargetAdapter(
     async loadSellerProducts(sellerId: string, search: string): Promise<TargetOption[]> {
       if (surface !== 'ecommerce') return [];
       const res = await apiClient
-        .get<{ products?: Record<string, unknown>[] }>(`/vendor/${sellerId}/products`)
+        .get<{ products?: Record<string, unknown>[] }>(
+          `/vendor/${sellerId}/products?limit=500&offset=0`
+        )
         .catch(() => ({ products: [] }));
       const rows = (res.products ?? [])
         .filter(isEligiblePublishedInventory)

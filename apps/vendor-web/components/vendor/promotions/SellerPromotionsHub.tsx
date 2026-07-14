@@ -7,6 +7,7 @@ import {
   PromotionDashboard,
   type PromotionDomain,
   enrichPromotionRow,
+  parseListingOwnershipFromProductRow,
   splitVendorPromotionRows,
   wizardToVendorSellerPayload,
   type NormalizedCouponItem,
@@ -32,7 +33,9 @@ export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
     try {
       const [promosRes, productsRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${sellerId}/promotions`),
-        apiClient.get<any>(`/vendor/${sellerId}/products`).catch(() => ({ products: [] })),
+        apiClient
+          .get<any>(`/vendor/${sellerId}/products?limit=500&offset=0`)
+          .catch(() => ({ products: [] })),
       ]);
       const rows = promosRes?.promotions || [];
       const products = (productsRes as any)?.products || [];
@@ -43,10 +46,7 @@ export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
       const nextCatalog: PromotionTargetCatalog = {
         products: products.map((p: any) => {
           const price = p.price != null ? Number(p.price) : undefined;
-          const listingOwnership =
-            p.listing_ownership === 'own_brand' || p.listing_ownership === 'third_party'
-              ? p.listing_ownership
-              : null;
+          const listingOwnership = parseListingOwnershipFromProductRow(p);
           const ownershipLabel =
             listingOwnership === 'own_brand'
               ? 'Owned'
