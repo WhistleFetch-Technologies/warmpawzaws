@@ -1817,6 +1817,46 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             : finNotes;
         }
 
+        // financialMeta.finalPaid may set total_amount to 0 (100% promo / full wallet).
+        // Only accept ₹0 when discounts/wallet cover the server gross; otherwise restore payable.
+        const resolvedPayable =
+          Math.round((parseFloat(String(bookingData.total_amount ?? 0)) || 0) * 100) / 100;
+        if (
+          resolvedPayable <= 0 &&
+          !isPackageBooking &&
+          !isSubscriptionBooking &&
+          calculatedFinalAmount > 0
+        ) {
+          const discountCover =
+            Math.round((parseFloat(String(bookingData.discount_amount ?? 0)) || 0) * 100) / 100;
+          let walletCover = 0;
+          if (financialMetaRaw && typeof financialMetaRaw === 'object') {
+            const fmWallet = financialMetaRaw as Record<string, unknown>;
+            walletCover =
+              Math.round(
+                (parseFloat(String(fmWallet.walletAmount ?? fmWallet.wallet_amount ?? 0)) || 0) * 100
+              ) / 100;
+          }
+          const covered =
+            discountCover + walletCover + 0.009 >= calculatedFinalAmount ||
+            discountCover + 0.009 >= calculatedFinalAmount ||
+            walletCover + 0.009 >= calculatedFinalAmount;
+          if (!covered) {
+            bookingData.total_amount = calculatedFinalAmount;
+            console.warn(
+              `[BOOKING] Ignoring unverified finalPaid=0 (discount=${discountCover}, wallet=${walletCover}); keeping server amount ₹${calculatedFinalAmount}`
+            );
+          } else if (paymentStatus === 'pending') {
+            paymentStatus = 'paid';
+            bookingRowStatus = 'confirmed';
+            bookingData.payment_status = paymentStatus;
+            bookingData.status = bookingRowStatus;
+            console.log(
+              '[BOOKING] Payable amount is ₹0 after discounts/wallet — confirming without payment hold'
+            );
+          }
+        }
+
         if (
           bookingPromotionIdentityMissing({
             discountAmount: parseFloat(String(bookingData.discount_amount ?? 0)) || 0,

@@ -3,7 +3,19 @@
  * Separated from Offer Resolution (policy-driven winner selection).
  */
 import { evaluateCandidateBenefit } from '../candidates/bridges/candidate-to-benefit-context';
+import type { DiscountCandidate } from '../candidates/types';
+import type { DiscountContext } from '../models/discount-context';
 import { evaluateCandidateEligibility } from '../rules/engine';
+import type { EligibilityResult } from '../rules/types';
+import {
+  DefaultCandidateRepository,
+  getCandidateRepository,
+} from './candidate-repository';
+import {
+  discountContextToBenefitRuntime,
+  discountContextToRuleRuntime,
+} from './context-runtime';
+import type { CandidateBenefitOutcome, CandidateRuleOutcome } from './types';
 
 export interface OfferDiscoveryResult {
   candidates: DiscountCandidate[];
