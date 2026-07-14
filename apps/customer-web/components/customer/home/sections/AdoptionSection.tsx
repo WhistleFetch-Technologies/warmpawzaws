@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { Heart, Home as HomeIcon, PawPrint, Sparkles } from 'lucide-react';
 import { ADOPTION_IMAGE_URLS } from '../constants/adoption-images';
 
@@ -136,14 +136,12 @@ function AdoptionSectionComponent({
             <div
               className="adopt-hero-float absolute inset-x-2 bottom-0 top-1 z-10"
             >
-              <Image
+              <CachedImage
                 src={ADOPTION_IMAGE_URLS.dogAndCat}
                 alt="Puppy and kitten together"
                 fill
                 className="object-contain object-bottom drop-shadow-[0_8px_20px_rgba(0,0,0,0.12)]"
                 sizes="112px"
-                unoptimized
-                priority={false}
               />
             </div>
             <FloatingHeart
@@ -216,13 +214,12 @@ function AdoptionSectionComponent({
                 className="adopt-pet-pop pointer-events-none absolute bottom-0 right-0 h-[5rem] w-[5rem]"
                 style={{ animationDelay: `${index * 200 + 400}ms` }}
               >
-                <Image
+                <CachedImage
                   src={card.imageUrl}
                   alt={card.imageAlt}
                   fill
                   className="object-contain object-bottom"
                   sizes="(max-width: 640px) 80px, 76px"
-                  unoptimized
                 />
               </div>
             </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo, useCallback, useMemo } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import {
   ChevronRight,
   Headphones,
@@ -11,7 +11,6 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { PresignableImage } from '@/components/shared/PresignableImage';
 import { HorizontalScrollRow } from '../shared/HorizontalScrollRow';
 import { HELP_WAYS_CATALOG } from '../constants/help-ways-catalog';
 import {
@@ -61,22 +60,14 @@ const SECTION_TRUST_ITEMS = [
 ] as const;
 
 function WayCardImage({ src, alt }: { src: string; alt: string }) {
-  if (src.startsWith('/') && !src.includes('amazonaws.com')) {
-    return (
-      <Image
-        src={src}
-        alt={alt}
-        width={56}
-        height={56}
-        className="h-14 w-14 rounded-full object-cover ring-2 ring-white/90"
-        unoptimized
-      />
-    );
-  }
   return (
-    <div className="h-14 w-14 overflow-hidden rounded-full ring-2 ring-white/90">
-      <PresignableImage src={src} alt={alt} className="h-full w-full object-cover" />
-    </div>
+    <CachedImage
+      src={src}
+      alt={alt}
+      width={56}
+      height={56}
+      className="h-14 w-14 rounded-full object-cover ring-2 ring-white/90"
+    />
   );
 }
 

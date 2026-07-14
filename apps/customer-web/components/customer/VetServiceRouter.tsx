@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, type MouseEvent } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { Stethoscope, Star, ChevronRight, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -585,7 +585,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     ) : null}
                   </div>
                   <div className="pointer-events-none absolute bottom-0 right-0 z-[2] h-[78%] w-[48%]">
-                    <Image
+                    <CachedImage
                       src={service.image}
                       alt=""
                       fill

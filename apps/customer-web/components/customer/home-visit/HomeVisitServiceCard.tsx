@@ -1,19 +1,18 @@
 'use client';
 
 import React, { memo } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { ChevronRight } from 'lucide-react';
 import type { HomeVisitServiceEntry } from './constants/home-visit-service-catalog';
 
 function CardImage({ src, alt }: { src: string; alt: string }) {
   return (
-    <Image
+    <CachedImage
       src={src}
       alt={alt}
       fill
       sizes="72px"
       className="object-cover"
-      unoptimized
     />
   );
 }

@@ -1,11 +1,10 @@
 'use client';
 
 import React, { memo } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { useRouter } from 'next/navigation';
 import { clickHomeBannerCta } from '@/lib/banner-cta-navigation';
 import { isBannerInformationalNonClickable } from '@/lib/banner-cta-target';
-import { PresignableImage } from '@/components/shared/PresignableImage';
 import {
   buildBannerBackgroundStyle,
   buildBannerGradientOverlayBackground,
@@ -14,22 +13,12 @@ import type { FeaturedLowerBanner } from './FeaturedOfferSection';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
 function LowerBannerBackground({ src, alt }: { src: string; alt: string }) {
-  if (src.startsWith('/') && !src.includes('amazonaws.com')) {
-    return (
-      <Image
-        src={src}
-        alt={alt}
-        fill
-        className="object-cover object-center"
-        unoptimized
-      />
-    );
-  }
   return (
-    <PresignableImage
+    <CachedImage
       src={src}
       alt={alt}
-      className="absolute inset-0 h-full w-full object-cover object-center"
+      fill
+      className="object-cover object-center"
     />
   );
 }
