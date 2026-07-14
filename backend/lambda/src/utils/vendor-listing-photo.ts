@@ -2,11 +2,16 @@
  * Shared vendor listing avatar resolution (search, discover-services, OpenSearch sync).
  * Center/business: metadata.facility_photos gallery first; solo: profile_photo_url first.
  */
+import { resolveImageForContext } from '../services/image';
 import { regeneratePresignedUrl } from '../endpoints/constants/helper';
 
 export function vendorGalleryDrivesListingPhoto(v: Record<string, unknown> | null | undefined): boolean {
   const vt = String(v?.vendor_type ?? '').toLowerCase().trim();
   return vt !== 'solo';
+}
+
+function vendorIdFrom(v: Record<string, unknown>): string {
+  return String(v.id ?? v.vendor_id ?? v.vendorId ?? '').trim();
 }
 
 function firstFacilityPhotoFromMetadata(v: Record<string, unknown>): string | null {
@@ -21,9 +26,28 @@ function firstFacilityPhotoFromMetadata(v: Record<string, unknown>): string | nu
   }
 }
 
+async function listingPhotoDisplayUrl(
+  raw: string,
+  v: Record<string, unknown>,
+  assetType: 'facility' | 'profile',
+): Promise<string | null> {
+  const vendorId = vendorIdFrom(v);
+  if (vendorId) {
+    const resolved = await resolveImageForContext(raw, {
+      assetType,
+      ownerId: vendorId,
+      vendorId,
+      context: 'list',
+      migrate: true,
+    });
+    if (resolved?.displayUrl) return resolved.displayUrl;
+  }
+  return regeneratePresignedUrl(raw);
+}
+
 /**
  * Unified vendor listing photo URL (same order as legacy getVendorPhotoUrl in service-discovery).
- * Regenerates pre-signed S3 URLs on demand.
+ * List context: thumb when available via ImageService resolve layer.
  */
 export async function getVendorListingPhotoUrl(
   v: Record<string, unknown> | null | undefined
@@ -33,15 +57,15 @@ export async function getVendorListingPhotoUrl(
   const firstFacility = firstFacilityPhotoFromMetadata(v);
 
   if (firstFacility && vendorGalleryDrivesListingPhoto(v)) {
-    return await regeneratePresignedUrl(firstFacility);
+    return listingPhotoDisplayUrl(firstFacility, v, 'facility');
   }
 
   const url = v.profile_photo_url || v.profile_image || v.logo_url || null;
   if (url && String(url).trim()) {
-    return await regeneratePresignedUrl(String(url).trim());
+    return listingPhotoDisplayUrl(String(url).trim(), v, 'profile');
   }
   if (firstFacility) {
-    return await regeneratePresignedUrl(firstFacility);
+    return listingPhotoDisplayUrl(firstFacility, v, 'facility');
   }
   return null;
 }

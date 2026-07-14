@@ -7,6 +7,7 @@ import { WishlistProductHeartButton } from '@/components/customer/WishlistProduc
 import { ShopCartQuantityControl } from './ShopCartQuantityControl';
 import type { ShopProduct } from './shop-types';
 import { getProductDiscountPercent } from './map-shop-product';
+import { CachedImage } from '@/components/shared/CachedImage';
 
 const PRODUCT_CARD_SHADOW =
   'shadow-[0_2px_6px_rgba(15,23,42,0.22),0_8px_24px_rgba(15,23,42,0.14)]';
@@ -69,13 +70,11 @@ export function ShopProductCard({
             className="absolute top-2 right-2 w-7 h-7 z-[2]"
           />
           {primaryImage ? (
-            <img
+            <CachedImage
               src={primaryImage}
               alt={product.name}
               className="w-full h-full object-contain"
-              loading="lazy"
-              decoding="async"
-              onError={() => setImageFailed(true)}
+              onUnavailable={() => setImageFailed(true)}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-3xl">
@@ -127,13 +126,11 @@ export function ShopProductCard({
         }`}
       >
         {primaryImage ? (
-          <img
+          <CachedImage
             src={primaryImage}
             alt={product.name}
             className="absolute inset-0 h-full w-full object-cover"
-            loading="lazy"
-            decoding="async"
-            onError={() => setImageFailed(true)}
+            onUnavailable={() => setImageFailed(true)}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-3xl sm:text-4xl select-none">

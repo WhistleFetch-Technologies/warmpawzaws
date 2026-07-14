@@ -2,7 +2,7 @@
 
 import React, { memo } from 'react';
 import type { ComponentType } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { BookOpen, ChevronRight, Clock, Sparkles } from 'lucide-react';
 import { getCustomerArticleCategoryLabel } from '@/lib/article-category-label';
 
@@ -273,13 +273,12 @@ function PetCareArticlesSectionComponent({
           <div className="relative shrink-0 pt-0.5" aria-hidden>
             <div className="article-hero-glow absolute inset-x-1 bottom-0 h-3.5 rounded-full bg-teal-500/15 blur-md" />
             <div className="article-hero-float relative h-14 w-16 sm:h-[3.75rem] sm:w-[4.5rem]">
-              <Image
+              <CachedImage
                 src="/images/home/article.webp"
                 alt=""
                 fill
                 className="object-contain object-center drop-shadow-[0_4px_10px_rgba(13,148,136,0.18)]"
                 sizes="72px"
-                unoptimized
               />
             </div>
           </div>

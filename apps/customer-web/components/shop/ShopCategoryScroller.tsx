@@ -5,6 +5,7 @@ import {
   Grid3X3,
 } from 'lucide-react';
 import { getShopCategoryStaticImageUrl } from '@/lib/shop-category-static-images';
+import { CachedImage } from '@/components/shared/CachedImage';
 import type { ShopCategory } from './shop-types';
 
 interface ShopCategoryScrollerProps {
@@ -82,13 +83,10 @@ function CategoryChip({
         } ${active ? 'border-[#FF8C42]' : 'border-transparent'}`}
       >
         {imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <CachedImage
             src={imageUrl}
             alt=""
             className="h-full w-full object-cover"
-            loading="lazy"
-            decoding="async"
           />
         ) : (
           icon

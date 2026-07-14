@@ -1,9 +1,8 @@
 'use client';
 
 import React, { memo } from 'react';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { PresignableImage } from '@/components/shared/PresignableImage';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { clickHomeBannerCta } from '@/lib/banner-cta-navigation';
 import { isBannerInformationalNonClickable } from '@/lib/banner-cta-target';
 import { DEFAULT_HOME_HERO_IMAGE_URL } from '../constants/category-card-images';
@@ -39,37 +38,13 @@ function BannerHeroImage({
   alt: string;
   objectPosition: string;
 }) {
-  const imageStyle = { objectPosition };
-
-  if (src.startsWith('/') && !src.includes('amazonaws.com')) {
-    return (
-      <Image
-        src={src}
-        alt={alt}
-        fill
-        className="object-cover"
-        style={imageStyle}
-        unoptimized
-      />
-    );
-  }
-  if (src.includes('amazonaws.com')) {
-    return (
-      <PresignableImage
-        src={src}
-        alt={alt}
-        className="absolute inset-0 h-full w-full object-cover"
-        style={imageStyle}
-      />
-    );
-  }
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <CachedImage
       src={src}
       alt={alt}
-      className="absolute inset-0 h-full w-full object-cover"
-      style={imageStyle}
+      fill
+      className="object-cover"
+      style={{ objectPosition }}
     />
   );
 }

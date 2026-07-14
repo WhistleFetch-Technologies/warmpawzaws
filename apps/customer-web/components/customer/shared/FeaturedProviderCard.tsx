@@ -2,6 +2,7 @@
 
 import { Clock, MapPin } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { CachedImage } from '@/components/shared/CachedImage';
 import type { FeaturedProvider } from '@/lib/featured-provider';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
 
@@ -44,7 +45,7 @@ export function FeaturedProviderCard({
     <div className="flex items-center gap-3">
       <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-[#FF8C42] to-[#FF7029]">
         {provider.photoUrl ? (
-          <img
+          <CachedImage
             src={provider.photoUrl}
             alt={provider.displayName}
             className="h-full w-full object-cover"

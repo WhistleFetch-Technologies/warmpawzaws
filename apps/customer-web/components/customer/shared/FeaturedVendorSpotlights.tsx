@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sparkles, Star, ChevronRight } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { resolveFeaturedVendorDestination } from '@/lib/promotion-navigation';
 import {
   isStyleLaunchedForCustomer,
@@ -124,7 +125,7 @@ export function FeaturedVendorSpotlights({
           >
             <div className="w-full aspect-square rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 mb-3 overflow-hidden">
               {v.imageUrl ? (
-                <img src={v.imageUrl} alt="" className="w-full h-full object-cover" />
+                <CachedImage src={v.imageUrl} alt="" className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <Star className="w-8 h-8 text-amber-400" />
