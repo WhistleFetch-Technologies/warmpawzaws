@@ -128,6 +128,7 @@ else
       "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
       "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
       "NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=${CMP_JS}"
+      "NEXT_PUBLIC_DISCOUNT_ENGINE_V2_ENABLED=true"
     )
   else
     BUILD_ENV=(
@@ -178,6 +179,9 @@ if [ "$PROD" = true ]; then
       apiBaseUrl: "${API_BASE_URL}",
       uatMode: false,
       environment: "production",
+      // Discount Engine V2 — prod cutover (authoritative modes live on Lambda env)
+      discountEngineV2Enabled: true,
+      discountEngineV2AnalyticsMode: "AUTHORITATIVE",
       firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
       firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
       firebaseProjectId:         "warmpawz-b9baf",

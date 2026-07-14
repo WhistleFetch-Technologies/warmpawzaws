@@ -123,6 +123,9 @@ if [ "$PROD" = true ]; then
     apiBaseUrl: "${API_BASE_URL}",
     uatMode: false,
     environment: "production",
+    // Discount Engine V2 — prod cutover (authoritative modes live on Lambda env)
+    discountEngineV2Enabled: true,
+    discountEngineV2AnalyticsMode: "AUTHORITATIVE",
     firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
     firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
     firebaseProjectId:         "warmpawz-b9baf",

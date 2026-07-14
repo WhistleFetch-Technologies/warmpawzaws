@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Align warmpawz-prod-api-handler Discount Engine env vars with
- * infra/envs/prod/main.tf common_env_vars (OFF / safe defaults).
+ * infra/envs/prod/main.tf common_env_vars (AUTHORITATIVE / Discount Engine V2 ON).
  *
  * Does NOT deploy Lambda code. Merges into existing environment.
  *
@@ -16,14 +16,14 @@ const FUNCTION_NAME = process.env.LAMBDA_FUNCTION_NAME || 'warmpawz-prod-api-han
 const REGION = process.env.AWS_REGION || 'ap-south-1';
 const DRY_RUN = process.argv.includes('--dry-run');
 
-/** Matches infra/envs/prod/main.tf Commercial Engine V2 block. */
+/** Matches infra/envs/prod/main.tf Commercial Engine V2 block (prod ON). */
 const TERRAFORM_PROD_DISCOUNT_FLAGS = {
-  DISCOUNT_ENGINE_V2_RESOLVER_MODE: 'OFF',
+  DISCOUNT_ENGINE_V2_RESOLVER_MODE: 'AUTHORITATIVE',
   DISCOUNT_ENGINE_V2_PRIORITY_MODE: 'AUTHORITATIVE',
-  DISCOUNT_ENGINE_V2_STACK_MODE: 'OFF',
-  DISCOUNT_ENGINE_V2_SETTLEMENT_MODE: 'OFF',
-  DISCOUNT_ENGINE_V2_ANALYTICS_MODE: 'OFF',
-  DISCOUNT_ENGINE_V2_CAMPAIGN_MODE: 'OFF',
+  DISCOUNT_ENGINE_V2_STACK_MODE: 'AUTHORITATIVE',
+  DISCOUNT_ENGINE_V2_SETTLEMENT_MODE: 'AUTHORITATIVE',
+  DISCOUNT_ENGINE_V2_ANALYTICS_MODE: 'AUTHORITATIVE',
+  DISCOUNT_ENGINE_V2_CAMPAIGN_MODE: 'AUTHORITATIVE',
   COMMERCIAL_AI_COPILOT_ENABLED: 'false',
   UAT_MODE: 'false',
 };

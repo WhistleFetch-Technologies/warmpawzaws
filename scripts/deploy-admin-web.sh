@@ -124,7 +124,10 @@ if [ "$PROD" = true ]; then
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: "${API_BASE_URL}",
     uatMode: false,
-    environment: "production"
+    environment: "production",
+    // Discount Engine V2 — prod cutover (authoritative modes live on Lambda env)
+    discountEngineV2Enabled: true,
+    discountEngineV2AnalyticsMode: "AUTHORITATIVE"
   };
   console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
