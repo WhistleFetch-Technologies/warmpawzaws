@@ -1,16 +1,18 @@
 /**
- * Bulk upload variant grouping — one row = one SKU; shared product_group_id or composite identity.
+ * Bulk upload variant grouping — one row = one SKU.
+ * Warmpawz Product ID or upload-scoped Product Group ID groups rows in memory only.
  */
 
 import { MAX_VARIANT_ATTRIBUTES, MAX_SKUS_PER_PRODUCT } from '@warmpawz/shared-types';
 import { normalizeOptionValues } from './product-sku-resolve';
 import type { SkuInput } from './product-sku-service';
 import { parseProductImageList } from './product-ecommerce-validation';
-import { resolveBulkGroupKey } from './product-group-identity';
+import { resolveBulkUploadGroupKey } from './product-group-identity';
 
 export type BulkVariantRow = Record<string, unknown> & {
   name: string;
   category?: string | null;
+  warmpawz_product_id?: string | null;
   product_group_id?: string | null;
   price: number;
   compare_at_price?: number | null;
@@ -34,6 +36,7 @@ export type BulkVariantRow = Record<string, unknown> & {
 
 export type BulkProductGroup = {
   groupKey: string;
+  warmpawz_product_id?: string;
   product_group_id?: string;
   name: string;
   category: string;
@@ -181,7 +184,7 @@ export function bulkGroupExtrasSource(group: BulkProductGroup): Record<string, u
   } as Record<string, unknown>;
 }
 
-export function groupBulkRows(rows: BulkVariantRow[], vendorId: string): BulkProductGroup[] {
+export function groupBulkRows(rows: BulkVariantRow[]): BulkProductGroup[] {
   const map = new Map<string, BulkProductGroup>();
 
   for (let i = 0; i < rows.length; i++) {
@@ -190,14 +193,16 @@ export function groupBulkRows(rows: BulkVariantRow[], vendorId: string): BulkPro
     const category = String(row.category ?? '').trim();
     if (!name || !category) continue;
 
-    const groupKey = resolveBulkGroupKey(vendorId, row) ?? normalizeProductGroupKey(name, category);
     const rowNum = row.rowNum != null ? Number(row.rowNum) : i + 1;
+    const groupKey = resolveBulkUploadGroupKey({ ...row, rowNum });
+    const wpid = String(row.warmpawz_product_id ?? '').trim();
     const pgid = String(row.product_group_id ?? '').trim();
 
     let group = map.get(groupKey);
     if (!group) {
       group = {
         groupKey,
+        warmpawz_product_id: wpid || undefined,
         product_group_id: pgid || undefined,
         name,
         category,
@@ -206,8 +211,9 @@ export function groupBulkRows(rows: BulkVariantRow[], vendorId: string): BulkPro
         rowNums: [],
       };
       map.set(groupKey, group);
-    } else if (pgid && !group.product_group_id) {
-      group.product_group_id = pgid;
+    } else {
+      if (wpid && !group.warmpawz_product_id) group.warmpawz_product_id = wpid;
+      if (pgid && !group.product_group_id) group.product_group_id = pgid;
     }
 
     group.variants.push({ ...row, rowNum });
@@ -314,17 +320,32 @@ export function validateVariantGroup(group: BulkProductGroup): VariantGroupValid
 
   const hasVariantAxes = axisKeysPerRow.some((r) => r.keys.length > 0);
   const isMultiRow = group.variants.length > 1;
+  const wpid =
+    group.warmpawz_product_id ?? String(group.variants[0]?.warmpawz_product_id ?? '').trim();
   const pgid = group.product_group_id ?? String(group.variants[0]?.product_group_id ?? '').trim();
+
+  const wpids = new Set(
+    group.variants
+      .map((r) => String(r.warmpawz_product_id ?? '').trim())
+      .filter(Boolean),
+  );
+  if (wpids.size > 1) {
+    push(
+      'warmpawz_product_id',
+      'Warmpawz Product ID must match across all rows in the product group',
+      group.rowNums[0],
+    );
+  }
 
   if (!group.parent.brand?.trim()) {
     push('brand', 'Brand is required', group.rowNums[0]);
   }
 
   if (hasVariantAxes || isMultiRow) {
-    if (!pgid) {
+    if (!pgid && !wpid) {
       push(
         'product_group_id',
-        'Product Group ID is required for multi-row or variant products',
+        'Product Group ID is required for multi-row or variant products (unless Warmpawz Product ID is provided for updates)',
         group.rowNums[0],
       );
     }
