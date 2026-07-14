@@ -198,6 +198,10 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
           : roundMoney(finalPaid + discountFromRow);
 
   const totalSavings = roundMoney(vendorDiscount + platformDiscount + couponDiscount);
+  const walletAmount = finMeta
+    ? num(finMeta.walletAmount ?? finMeta.wallet_amount)
+    : 0;
+  // Gap between list price and cash payable is often wallet — not a promo.
   const computedSavings =
     totalSavings > 0 ? totalSavings : Math.max(0, roundMoney(servicePrice - finalPaid));
 
@@ -208,7 +212,8 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
 
   if (
     effectiveVendorDiscount + effectivePlatformDiscount + effectiveCouponDiscount <= 0 &&
-    computedSavings > 0
+    computedSavings > 0 &&
+    walletAmount <= 0.009
   ) {
     effectiveVendorDiscount = computedSavings;
     vendorDiscountLabel = 'Discount';
