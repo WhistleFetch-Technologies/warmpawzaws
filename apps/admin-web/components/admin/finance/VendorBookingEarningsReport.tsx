@@ -1,9 +1,16 @@
 'use client';
 
-import { useCallback, useState, Fragment } from 'react';
+import { useCallback, useEffect, useState, Fragment } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { apiClient, getApiBaseUrl, isUatMode } from '@/lib/api-client';
 import { Button } from '@warmpawz/ui';
-import { ChevronDown, ChevronRight, Download, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Eye, Loader2, RefreshCw } from 'lucide-react';
+import {
+  type BookingEarningsLine,
+  normalizeBookingLine,
+} from '@/lib/finance/settlement-audit-types';
+import { downloadSettlementAuditCsv } from '@/lib/finance/settlementAuditExport';
+import { SettlementBreakdownDrawer } from './settlementAudit/SettlementBreakdownDrawer';
 
 type PeriodType = 'day' | 'month';
 
@@ -49,28 +56,7 @@ type VendorSummary = {
   vendorNet: number;
 };
 
-type BookingLine = {
-  bookingId: string;
-  vendorId: string;
-  bookingDate?: string | null;
-  bookingStatus?: string | null;
-  serviceName?: string | null;
-  customerName?: string | null;
-  couponCode?: string | null;
-  customerPaidTotal: number;
-  serviceBase: number;
-  discountAmount: number;
-  gstTotal: number;
-  platformFee: number;
-  convenienceFee: number;
-  deliveryFee: number;
-  vendorGross: number;
-  commissionRate?: number | null;
-  commissionAmount: number;
-  vendorNet: number;
-  feeSource: string;
-  realizedAt?: string | null;
-};
+type BookingLine = BookingEarningsLine;
 
 type PeriodTotals = {
   vendorCount: number;
@@ -97,18 +83,35 @@ function shortId(id: string) {
 }
 
 export function VendorBookingEarningsReport() {
-  const [periodType, setPeriodType] = useState<PeriodType>('day');
-  const [reportDate, setReportDate] = useState(yesterdayYmd());
-  const [yearMonth, setYearMonth] = useState(currentYearMonthValue());
+  const searchParams = useSearchParams();
+  const deepPeriod = searchParams.get('period');
+  const deepReportDate = searchParams.get('reportDate');
+  const deepYear = searchParams.get('year');
+  const deepMonth = searchParams.get('month');
+  const deepVendorId = searchParams.get('vendorId');
+  const deepBookingId = searchParams.get('bookingId');
+
+  const [periodType, setPeriodType] = useState<PeriodType>(
+    deepPeriod === 'month' ? 'month' : 'day',
+  );
+  const [reportDate, setReportDate] = useState(deepReportDate || yesterdayYmd());
+  const [yearMonth, setYearMonth] = useState(
+    deepYear && deepMonth
+      ? `${deepYear}-${String(deepMonth).padStart(2, '0')}`
+      : currentYearMonthValue(),
+  );
   const [loading, setLoading] = useState(false);
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [vendors, setVendors] = useState<VendorSummary[]>([]);
   const [periodTotals, setPeriodTotals] = useState<PeriodTotals | null>(null);
-  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(deepVendorId);
   const [bookings, setBookings] = useState<BookingLine[]>([]);
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [drawerLine, setDrawerLine] = useState<BookingLine | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [deepLinkHandled, setDeepLinkHandled] = useState(false);
 
   const parsedMonth = parseYearMonth(yearMonth);
   const periodWord = periodType === 'day' ? 'day' : 'month';
@@ -172,7 +175,7 @@ export function VendorBookingEarningsReport() {
           setBookings([]);
           return;
         }
-        setBookings(res.bookings || []);
+        setBookings((res.bookings || []).map((b: Record<string, unknown>) => normalizeBookingLine(b)));
       } catch (e: any) {
         setError(e?.message || 'Failed to load bookings');
         setBookings([]);
@@ -191,6 +194,79 @@ export function VendorBookingEarningsReport() {
     }
     setSelectedVendorId(vendorId);
     void loadVendorBookings(vendorId);
+  };
+
+  const openSettlementDrawer = (line: BookingLine) => {
+    setDrawerLine(line);
+    setDrawerOpen(true);
+  };
+
+  useEffect(() => {
+    if (deepLinkHandled || !deepVendorId) return;
+    void (async () => {
+      const vendorQuery = buildListQuery();
+      const bookingQuery = buildListQuery(deepVendorId);
+      if (!vendorQuery || !bookingQuery) {
+        setDeepLinkHandled(true);
+        return;
+      }
+      setLoading(true);
+      setLoadingBookings(true);
+      try {
+        const [vendorRes, bookingRes] = await Promise.all([
+          apiClient.get<any>(vendorQuery),
+          apiClient.get<any>(bookingQuery),
+        ]);
+        if (vendorRes?.success) {
+          setVendors(vendorRes.vendors || []);
+          setPeriodTotals(vendorRes.periodTotals || vendorRes.dayTotals || null);
+        }
+        if (bookingRes?.success) {
+          const loaded = (bookingRes.bookings || []).map((b: Record<string, unknown>) =>
+            normalizeBookingLine(b),
+          );
+          setBookings(loaded);
+          setSelectedVendorId(deepVendorId);
+          if (deepBookingId) {
+            const match = loaded.find((b: BookingLine) => b.bookingId === deepBookingId);
+            if (match) {
+              setExpandedBookingId(deepBookingId);
+              setDrawerLine(match);
+              setDrawerOpen(true);
+            }
+          }
+        }
+      } finally {
+        setLoading(false);
+        setLoadingBookings(false);
+        setDeepLinkHandled(true);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time deep link hydration
+  }, [deepLinkHandled, deepVendorId, deepBookingId]);
+
+  const exportSettlementAuditCsv = async () => {
+    if (periodType === 'month' && !parsedMonth) {
+      setError('Pick a valid month (YYYY-MM)');
+      return;
+    }
+    setError(null);
+    setExporting(true);
+    try {
+      if (periodType === 'month' && parsedMonth) {
+        await downloadSettlementAuditCsv({
+          periodType: 'month',
+          year: parsedMonth.year,
+          month: parsedMonth.month,
+        });
+      } else {
+        await downloadSettlementAuditCsv({ periodType: 'day', reportDate });
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Settlement audit export failed');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const exportCsv = async (vendorId?: string) => {
@@ -284,8 +360,8 @@ export function VendorBookingEarningsReport() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
-        Per-booking customer-paid waterfall and vendor ledger for the selected IST {periodWord}. Discount and coupon
-        columns are included for future promos (may be ₹0 today).
+        Financial audit report — per-booking customer-paid waterfall, vendor ledger, and settlement breakdown
+        (IST {periodWord}). Use <strong>View Settlement</strong> on a booking for funding and commission audit detail.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -348,6 +424,10 @@ export function VendorBookingEarningsReport() {
             Export booking CSV
           </Button>
         )}
+        <Button variant="outline" onClick={() => void exportSettlementAuditCsv()} disabled={exporting}>
+          {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+          Settlement audit CSV
+        </Button>
       </div>
 
       {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
@@ -475,12 +555,13 @@ export function VendorBookingEarningsReport() {
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Gross</th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Commission</th>
                                   <th className="px-3 py-2 text-right font-medium text-gray-700">Net</th>
+                                  <th className="px-3 py-2 text-center font-medium text-gray-700">Settlement</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-100">
                                 {bookings.length === 0 && !loadingBookings && (
                                   <tr>
-                                    <td colSpan={14} className="px-3 py-6 text-center text-gray-500">
+                                    <td colSpan={15} className="px-3 py-6 text-center text-gray-500">
                                       No bookings for this vendor in the selected {periodWord}.
                                     </td>
                                   </tr>
@@ -541,10 +622,25 @@ export function VendorBookingEarningsReport() {
                                         <td className="px-3 py-2 text-right tabular-nums">
                                           {moneyCell(b.vendorNet)}
                                         </td>
+                                        <td className="px-3 py-2 text-center">
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8 text-xs"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openSettlementDrawer(b);
+                                            }}
+                                          >
+                                            <Eye className="mr-1 h-3.5 w-3.5" />
+                                            View Settlement
+                                          </Button>
+                                        </td>
                                       </tr>
                                       {expanded && (
                                         <tr className="bg-gray-50/80">
-                                          <td colSpan={14} className="px-6 py-3">
+                                          <td colSpan={15} className="px-6 py-3">
                                             <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
                                               <div>
                                                 <span className="text-gray-500">Customer paid</span>
@@ -599,6 +695,20 @@ export function VendorBookingEarningsReport() {
                                                   {b.feeSource.replace(/_/g, ' ')}
                                                 </div>
                                               </div>
+                                              <div className="sm:col-span-2 lg:col-span-4">
+                                                <Button
+                                                  type="button"
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    openSettlementDrawer(b);
+                                                  }}
+                                                >
+                                                  <Eye className="mr-1 h-3.5 w-3.5" />
+                                                  View Settlement
+                                                </Button>
+                                              </div>
                                             </div>
                                           </td>
                                         </tr>
@@ -619,6 +729,15 @@ export function VendorBookingEarningsReport() {
           </tbody>
         </table>
       </div>
+
+      <SettlementBreakdownDrawer
+        open={drawerOpen}
+        line={drawerLine}
+        onClose={() => {
+          setDrawerOpen(false);
+          setDrawerLine(null);
+        }}
+      />
     </div>
   );
 }

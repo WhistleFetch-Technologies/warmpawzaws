@@ -271,7 +271,20 @@ module "lambda" {
     local.delivery_stack_live ? {
       DELIVERY_SERVICE_BASE_URL = "http://${module.delivery_service_ecs[0].internal_alb_dns_name}"
     } : {},
-    { MEAL_DELIVERY_NOTIFY_SECRET = "warmpawz-dev-meal-delivery-notify-2026" }
+    { MEAL_DELIVERY_NOTIFY_SECRET = "warmpawz-dev-meal-delivery-notify-2026" },
+    # Commercial Engine V2 feature flags (Terraform-managed — do not set manually in Lambda console).
+    # Campaign rollout: OFF → SHADOW → AUTHORITATIVE (same pattern as Resolver / Settlement / Analytics).
+    # Reader: backend/lambda/src/discount-engine/campaign/campaign-mode.ts
+    {
+      DISCOUNT_ENGINE_V2_RESOLVER_MODE    = "AUTHORITATIVE"
+      DISCOUNT_ENGINE_V2_PRIORITY_MODE    = "AUTHORITATIVE"
+      DISCOUNT_ENGINE_V2_STACK_MODE       = "AUTHORITATIVE"
+      DISCOUNT_ENGINE_V2_SETTLEMENT_MODE  = "AUTHORITATIVE"
+      DISCOUNT_ENGINE_V2_ANALYTICS_MODE   = "AUTHORITATIVE"
+      DISCOUNT_ENGINE_V2_CAMPAIGN_MODE    = "AUTHORITATIVE"
+      COMMERCIAL_AI_COPILOT_ENABLED       = "true"
+      FINANCE_FUNDING_AWARE_SETTLEMENT    = "SHADOW"
+    }
   )
 
   secrets_arns = concat(

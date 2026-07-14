@@ -1,19 +1,23 @@
 /**
  * Pure e-commerce settlement math — single source of truth for every scenario.
- * See the "Ecommerce Settlement Engine" plan §1 for the formulas this implements.
  *
- * P    = original unit price × qty, summed              (GST-inclusive catalog price — "actual price")
- * T    = P / (1 + gstRate/100)                            (taxable value, ALWAYS from original P)
- * G    = P - T                                            (GST amount, informational, ALWAYS from original P)
- * Comm = T × commissionRate/100                           (commission, ALWAYS on original T)
+ * P    = original unit price × qty, summed              (GST-inclusive catalog price)
  * D    = discount amount from the ONE selected promotion  (vendor or admin — never both)
+ * Paid = P − D                                          (customer pays for goods)
  *
- * Vendor payout (goods portion) depends on WHO funded the discount:
- *   - No promo         : vendor = P - Comm,          platform = Comm
- *   - Vendor promo      : vendor = (P - D) - Comm,    platform = Comm            (vendor absorbs D)
- *   - Admin/platform promo: vendor = P - Comm,        platform = Comm - D        (can be negative — platform subsidizes)
+ * Commission taxable base:
+ *   - No promo / admin-funded: T from original P  (platform absorbs D; vendor settles on P)
+ *   - Vendor-funded:           T from Paid (= P − D)  — commission on discounted amount
  *
- * Reconciliation invariant (always holds): (P - D) = vendorPayout + platformNet
+ * G    = commissionBaseMerchandise − T                (GST on the commission base, informational)
+ * Comm = T × commissionRate/100
+ *
+ * Vendor payout (goods portion):
+ *   - No promo         : vendor = P − Comm,            platform = Comm
+ *   - Vendor promo      : vendor = (P − D) − Comm,      platform = Comm
+ *   - Admin/platform    : vendor = P − Comm,            platform = Comm − D  (can be negative)
+ *
+ * Reconciliation invariant (always holds): (P − D) = vendorPayout + platformNet
  */
 
 export type PromotionSource = 'vendor' | 'admin' | null;
@@ -23,7 +27,11 @@ export type EcommerceSettlementInput = {
   merchandiseValue: number;
   /** Blended GST rate (%) implied by taxableValue vs merchandiseValue; only used if taxableValue is omitted. */
   gstRate?: number;
-  /** Taxable value T. If omitted, derived from merchandiseValue and gstRate. */
+  /**
+   * Taxable value T for the original merchandise P (ex-GST).
+   * When omitted, derived from merchandiseValue and gstRate.
+   * For vendor-funded discounts, commission is recomputed from discounted goods (P − D).
+   */
   taxableValue?: number;
   commissionRate: number;
   /** Who funded the single active discount for this order. null/undefined = no discount. */
@@ -34,6 +42,7 @@ export type EcommerceSettlementInput = {
 
 export type EcommerceSettlementResult = {
   merchandiseValue: number;
+  /** Taxable base used for commission (discounted when vendor-funded). */
   taxableValue: number;
   gstAmount: number;
   commissionAmount: number;
@@ -53,36 +62,55 @@ export function computeTaxableValue(merchandiseValue: number, gstRate: number): 
   return merchandiseValue / (1 + gstRate / 100);
 }
 
+/** Infer GST % from inclusive merchandise and its ex-GST taxable value. */
+export function inferGstRateFromTaxable(merchandiseValue: number, taxableValue: number): number {
+  if (!(merchandiseValue > 0) || !(taxableValue > 0) || taxableValue >= merchandiseValue) {
+    return 0;
+  }
+  return (merchandiseValue / taxableValue - 1) * 100;
+}
+
 export function calculateEcommerceSettlement(
   input: EcommerceSettlementInput
 ): EcommerceSettlementResult {
   const merchandiseValue = Math.max(0, Number(input.merchandiseValue) || 0);
-  const taxableValue = roundMoney(
+  const originalTaxable = roundMoney(
     input.taxableValue != null
       ? Number(input.taxableValue) || 0
       : computeTaxableValue(merchandiseValue, Number(input.gstRate) || 0)
   );
-  const gstAmount = roundMoney(merchandiseValue - taxableValue);
+  const gstRate =
+    Number(input.gstRate) > 0
+      ? Number(input.gstRate)
+      : inferGstRateFromTaxable(merchandiseValue, originalTaxable);
   const commissionRate = Math.max(0, Number(input.commissionRate) || 0);
-  const commissionAmount = roundMoney((taxableValue * commissionRate) / 100);
 
   const promotionSource = input.promotionSource ?? null;
   const discountAmount =
     promotionSource != null ? Math.max(0, Number(input.discountAmount) || 0) : 0;
+  const customerPayableGoods = roundMoney(Math.max(0, merchandiseValue - discountAmount));
+
+  // Vendor-funded: commission on discounted goods. Otherwise on original catalog taxable.
+  const commissionMerchandise =
+    promotionSource === 'vendor' ? customerPayableGoods : merchandiseValue;
+  const taxableValue = roundMoney(
+    promotionSource === 'vendor'
+      ? computeTaxableValue(commissionMerchandise, gstRate)
+      : originalTaxable
+  );
+  const gstAmount = roundMoney(Math.max(0, commissionMerchandise - taxableValue));
+  const commissionAmount = roundMoney((taxableValue * commissionRate) / 100);
 
   let vendorPayoutAmount: number;
   let platformNetAmount: number;
 
   if (promotionSource === 'vendor') {
-    // Vendor absorbs the discount in full; commission is unaffected.
-    vendorPayoutAmount = roundMoney(merchandiseValue - discountAmount - commissionAmount);
+    vendorPayoutAmount = roundMoney(customerPayableGoods - commissionAmount);
     platformNetAmount = commissionAmount;
   } else if (promotionSource === 'admin') {
-    // Platform subsidizes: vendor is paid as if the customer bought at full price.
     vendorPayoutAmount = roundMoney(merchandiseValue - commissionAmount);
     platformNetAmount = roundMoney(commissionAmount - discountAmount);
   } else {
-    // No promotion.
     vendorPayoutAmount = roundMoney(merchandiseValue - commissionAmount);
     platformNetAmount = commissionAmount;
   }
@@ -95,7 +123,7 @@ export function calculateEcommerceSettlement(
     discountAmount: roundMoney(discountAmount),
     vendorPayoutAmount: Math.max(0, vendorPayoutAmount),
     platformNetAmount,
-    customerPayableGoods: roundMoney(merchandiseValue - discountAmount),
+    customerPayableGoods,
   };
 }
 

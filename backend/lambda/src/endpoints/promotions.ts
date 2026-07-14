@@ -18,6 +18,258 @@ import { Hono } from 'hono';
 import { select, insert, update, query, deleteRows } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import {
+  listApplicableBookingPromotions,
+  resolveBookingDiscountQuote,
+} from '../lib/services/booking-promotion-service';
+import { resolveBookingServiceCategory } from '../lib/services/resolve-booking-service-category';
+import { validateCouponInternal as validatePlatformCouponInternal } from '../lib/services/platform-coupon-service';
+import {
+  getAnalyticsEngine,
+  isAnalyticsAuthoritative,
+  isAnalyticsEnabled,
+} from '../discount-engine/analytics';
+import {
+  shadowPlatformInlineEligibility,
+} from '../discount-engine/rules/adapters/shadow-adapters';
+import {
+  buildPromotionPersistenceFromAdminBody,
+  buildEcommerceAdminPromotionRecord,
+  isEcommerceAdminPromotionDomain,
+  mergeAdminPromotionUpdateBody,
+  normalizePromotionDiscountType as normalizeAdminPromotionDiscountType,
+  parseDateInput as parseAdminDateInput,
+} from '../utils/promotion-admin-persistence';
+import { isPromotionLiveInIst } from '../utils/promotion-date-bounds';
+import { promotionCategoriesMatch } from '../utils/platform-promotion-matching';
+import {
+  buildCouponTargetingFromAdminBody,
+  couponRowMatchesService,
+} from '../utils/coupon-targeting';
+import { validateAdminPromotionTargeting } from '../utils/promotion-targeting-validation';
+import {
+  appendDiscountDomainFilter,
+  inferLegacyDiscountDomain,
+  parseDiscountDomainInput,
+  rowMatchesDiscountDomain,
+  type CommercialDiscountDomain,
+} from '../utils/commercial-discount-domain';
+import { countActiveEcommerceAdminPromotions } from '../utils/count-active-ecommerce-promotions';
+
+async function persistPromotionInsert(promotionData: Record<string, unknown>) {
+  if (isEcommerceAdminPromotionDomain(promotionData)) {
+    const ecommerceRecord = buildEcommerceAdminPromotionRecord(promotionData);
+    try {
+      return await insert('ecommerce_admin_promotions', ecommerceRecord);
+    } catch (insertError: unknown) {
+      const msg = String((insertError as { message?: string })?.message || '');
+      if (msg.includes('column "listing_ownership_scope"')) {
+        console.warn(
+          '[Promotions] listing_ownership_scope column missing on ecommerce_admin_promotions — apply migration 1072'
+        );
+        delete ecommerceRecord.listing_ownership_scope;
+        return await insert('ecommerce_admin_promotions', ecommerceRecord);
+      }
+      throw insertError;
+    }
+  }
+
+  const payload = { ...promotionData };
+  for (;;) {
+    try {
+      return await insert('promotions', payload);
+    } catch (insertError: unknown) {
+      const msg = String((insertError as { message?: string })?.message || '');
+      if (msg.includes('column "code"') && payload.code) {
+        console.warn('[Promotions] Code column does not exist, retrying without code');
+        delete payload.code;
+        continue;
+      }
+      if (msg.includes('column "discount_domain"') && payload.discount_domain !== undefined) {
+        console.warn('[Promotions] discount_domain column missing, persisting in metadata');
+        const baseMeta =
+          payload.metadata && typeof payload.metadata === 'object'
+            ? { ...(payload.metadata as Record<string, unknown>) }
+            : {};
+        baseMeta.discount_domain = payload.discount_domain;
+        baseMeta.domain =
+          payload.discount_domain === 'ECOMMERCE' ? 'ecommerce' : 'service';
+        payload.metadata = baseMeta;
+        delete payload.discount_domain;
+        continue;
+      }
+      if (msg.includes('column "applicable_to"') && payload.applicable_to !== undefined) {
+        console.warn('[Promotions] applicable_to column missing, persisting in metadata');
+        const baseMeta =
+          payload.metadata && typeof payload.metadata === 'object'
+            ? { ...(payload.metadata as Record<string, unknown>) }
+            : {};
+        baseMeta.applicableTo = payload.applicable_to;
+        payload.metadata = baseMeta;
+        delete payload.applicable_to;
+        continue;
+      }
+      if (
+        (msg.includes('column "max_uses"') || msg.includes('column "max_uses_per_user"')) &&
+        (payload.max_uses !== undefined || payload.max_uses_per_user !== undefined)
+      ) {
+        console.warn('[Promotions] max_uses column(s) missing, persisting via usage_limit/metadata');
+        if (payload.max_uses !== undefined && payload.usage_limit === undefined) {
+          payload.usage_limit = payload.max_uses;
+        }
+        if (payload.max_uses_per_user !== undefined) {
+          const baseMeta =
+            payload.metadata && typeof payload.metadata === 'object'
+              ? { ...(payload.metadata as Record<string, unknown>) }
+              : {};
+          baseMeta.maxUsesPerUser = payload.max_uses_per_user;
+          payload.metadata = baseMeta;
+        }
+        delete payload.max_uses;
+        delete payload.max_uses_per_user;
+        continue;
+      }
+      throw insertError;
+    }
+  }
+}
+
+async function loadPromotionForAdminWrite(
+  id: string,
+): Promise<{ table: 'promotions' | 'ecommerce_admin_promotions'; row: Record<string, unknown> } | null> {
+  const promotions = await select('promotions', { id });
+  if (promotions.length > 0) {
+    return { table: 'promotions', row: promotions[0] as Record<string, unknown> };
+  }
+  const ecommerce = await select('ecommerce_admin_promotions', { id }).catch(() => []);
+  if (ecommerce.length > 0) {
+    const row = ecommerce[0] as Record<string, unknown>;
+    return {
+      table: 'ecommerce_admin_promotions',
+      row: {
+        ...row,
+        discount_domain: 'ECOMMERCE',
+        min_order_amount: row.min_order_value ?? row.min_order_amount,
+      },
+    };
+  }
+  return null;
+}
+
+async function softDeleteAdminPromotion(id: string): Promise<boolean> {
+  const found = await loadPromotionForAdminWrite(id);
+  if (!found) return false;
+  await update(found.table, { id }, {
+    is_active: false,
+    updated_at: new Date().toISOString(),
+  });
+  return true;
+}
+
+async function persistPromotionUpdate(id: string, updateData: Record<string, unknown>) {
+  const ecommerceExisting = await select('ecommerce_admin_promotions', { id }).catch(() => []);
+  if (ecommerceExisting.length > 0) {
+    const existing = ecommerceExisting[0] as Record<string, unknown>;
+    const existingAsPromo = {
+      ...existing,
+      discount_domain: 'ECOMMERCE',
+      min_order_amount: existing.min_order_value ?? existing.min_order_amount,
+    };
+    // Merge partial updates (e.g. marketing PUT) onto the existing ecommerce row.
+    const merged = mergeAdminPromotionUpdateBody(updateData, existingAsPromo);
+    const ecommerceRecord = buildEcommerceAdminPromotionRecord({
+      ...merged,
+      ...updateData,
+      discount_domain: 'ECOMMERCE',
+    });
+    delete ecommerceRecord.created_at;
+    delete ecommerceRecord.usage_count;
+    try {
+      await update(
+        'ecommerce_admin_promotions',
+        { id },
+        {
+          ...ecommerceRecord,
+          updated_at: new Date().toISOString(),
+        },
+      );
+    } catch (updateError: unknown) {
+      const msg = String((updateError as { message?: string })?.message || '');
+      if (msg.includes('column "listing_ownership_scope"')) {
+        console.warn(
+          '[Promotions] listing_ownership_scope column missing on ecommerce_admin_promotions update — apply migration 1072'
+        );
+        delete ecommerceRecord.listing_ownership_scope;
+        await update(
+          'ecommerce_admin_promotions',
+          { id },
+          {
+            ...ecommerceRecord,
+            updated_at: new Date().toISOString(),
+          },
+        );
+      } else {
+        throw updateError;
+      }
+    }
+    return;
+  }
+
+  const payload = { ...updateData };
+  for (;;) {
+    try {
+      await update('promotions', { id }, payload);
+      return;
+    } catch (updateError: unknown) {
+      const msg = String((updateError as { message?: string })?.message || '');
+      if (msg.includes('column "discount_domain"') && payload.discount_domain !== undefined) {
+        console.warn('[Promotions] discount_domain column missing on update, persisting in metadata');
+        const baseMeta =
+          payload.metadata && typeof payload.metadata === 'object'
+            ? { ...(payload.metadata as Record<string, unknown>) }
+            : {};
+        baseMeta.discount_domain = payload.discount_domain;
+        baseMeta.domain =
+          payload.discount_domain === 'ECOMMERCE' ? 'ecommerce' : 'service';
+        payload.metadata = baseMeta;
+        delete payload.discount_domain;
+        continue;
+      }
+      if (msg.includes('column "applicable_to"') && payload.applicable_to !== undefined) {
+        console.warn('[Promotions] applicable_to column missing on update, persisting in metadata');
+        const baseMeta =
+          payload.metadata && typeof payload.metadata === 'object'
+            ? { ...(payload.metadata as Record<string, unknown>) }
+            : {};
+        baseMeta.applicableTo = payload.applicable_to;
+        payload.metadata = baseMeta;
+        delete payload.applicable_to;
+        continue;
+      }
+      if (
+        (msg.includes('column "max_uses"') || msg.includes('column "max_uses_per_user"')) &&
+        (payload.max_uses !== undefined || payload.max_uses_per_user !== undefined)
+      ) {
+        console.warn('[Promotions] max_uses column(s) missing on update, persisting via usage_limit/metadata');
+        if (payload.max_uses !== undefined && payload.usage_limit === undefined) {
+          payload.usage_limit = payload.max_uses;
+        }
+        if (payload.max_uses_per_user !== undefined) {
+          const baseMeta =
+            payload.metadata && typeof payload.metadata === 'object'
+              ? { ...(payload.metadata as Record<string, unknown>) }
+              : {};
+          baseMeta.maxUsesPerUser = payload.max_uses_per_user;
+          payload.metadata = baseMeta;
+        }
+        delete payload.max_uses;
+        delete payload.max_uses_per_user;
+        continue;
+      }
+      throw updateError;
+    }
+  }
+}
 
 export function registerPromotionEndpoints(app: Hono) {
   const normalizePromotionDiscountType = (raw: unknown): 'percentage' | 'fixed' => {
@@ -88,36 +340,76 @@ export function registerPromotionEndpoints(app: Hono) {
 
   const isPromotionEligible = (promotion: any, params: { category?: string; serviceStyle?: string; serviceIds?: string[]; amount?: number }) => {
     const now = new Date();
-    const startDate = promotion.start_date ? new Date(promotion.start_date) : null;
-    const endDate = promotion.end_date ? new Date(promotion.end_date) : null;
-    if (startDate && now < startDate) return { eligible: false, reason: 'Promotion not started yet' };
-    if (endDate && now > endDate) return { eligible: false, reason: 'Promotion has expired' };
+    const startIso = promotion.start_date ? String(promotion.start_date) : new Date(0).toISOString();
+    const endIso = promotion.end_date ? String(promotion.end_date) : new Date('2099-12-31').toISOString();
+    let legacy: { eligible: boolean; reason: string | null };
+    if (!isPromotionLiveInIst(startIso, endIso, now)) {
+      legacy = { eligible: false, reason: 'Promotion is not active' };
+    } else if (
+      (promotion.usage_limit != null && promotion.usage_count >= promotion.usage_limit) ||
+      (promotion.max_uses != null && promotion.usage_count >= promotion.max_uses)
+    ) {
+      legacy = { eligible: false, reason: 'Promotion has reached its usage limit' };
+    } else {
+      const amount = Number(params.amount || 0);
+      const minOrder = promotion.min_order_amount != null ? parseFloat(String(promotion.min_order_amount)) : 0;
+      if (minOrder > 0 && amount > 0 && amount < minOrder) {
+        legacy = { eligible: false, reason: `Minimum order amount of ₹${minOrder} required` };
+      } else {
+        const category = String(params.category || '').trim().toLowerCase();
+        const style = normalizeStyle(params.serviceStyle || '');
+        const serviceIds = (params.serviceIds || []).map((x) => String(x).trim()).filter(Boolean);
+        const configured = parseServicesList(promotion.applicable_services);
+        const configuredCategories = configured.filter((x) => !x.startsWith('style:'));
+        const configuredStyles = configured
+          .filter((x) => x.startsWith('style:'))
+          .map((x) => normalizeStyle(x.replace(/^style:/, '')));
+        const configuredServiceIds = configured.filter((x) => isValidUUID(String(x)));
 
-    const amount = Number(params.amount || 0);
-    const minOrder = promotion.min_order_amount != null ? parseFloat(String(promotion.min_order_amount)) : 0;
-    if (minOrder > 0 && amount > 0 && amount < minOrder) {
-      return { eligible: false, reason: `Minimum order amount of ₹${minOrder} required` };
+        if (
+          category &&
+          category !== 'all' &&
+          configuredCategories.length > 0 &&
+          !configuredCategories.some((token) => promotionCategoriesMatch(category, token))
+        ) {
+          legacy = { eligible: false, reason: 'Promotion not applicable for this category' };
+        } else if (
+          style &&
+          style !== 'all' &&
+          configuredStyles.length > 0 &&
+          !configuredStyles.includes(style)
+        ) {
+          legacy = { eligible: false, reason: 'Promotion not applicable for this service style' };
+        } else if (
+          serviceIds.length > 0 &&
+          configuredServiceIds.length > 0 &&
+          !serviceIds.some((sid) => configuredServiceIds.includes(sid))
+        ) {
+          legacy = { eligible: false, reason: 'Promotion not applicable for selected service' };
+        } else {
+          legacy = { eligible: true, reason: null };
+        }
+      }
     }
+    return shadowPlatformInlineEligibility(promotion, { ...params, now }, legacy);
+  };
 
-    const category = String(params.category || '').trim().toLowerCase();
-    const style = normalizeStyle(params.serviceStyle || '');
-    const serviceIds = (params.serviceIds || []).map((x) => String(x).trim()).filter(Boolean);
-    const configured = parseServicesList(promotion.applicable_services);
-    const configuredCategories = configured.filter((x) => !x.startsWith('style:'));
-    const configuredStyles = configured.filter((x) => x.startsWith('style:')).map((x) => normalizeStyle(x.replace(/^style:/, '')));
-    const configuredServiceIds = configured.filter((x) => isValidUUID(String(x)));
+  /** Active-list service bucket filter (customer gallery / discovery). */
+  const promotionMatchesListService = (promotion: any, serviceBucket: string | undefined): boolean => {
+    if (!serviceBucket || serviceBucket === 'all') return true;
+    const category = String(serviceBucket).trim().toLowerCase();
+    const { eligible } = isPromotionEligible(promotion, { category });
+    return eligible;
+  };
 
-    if (category && category !== 'all' && configuredCategories.length > 0 && !configuredCategories.map((x) => x.toLowerCase()).includes(category)) {
-      return { eligible: false, reason: 'Promotion not applicable for this category' };
-    }
-    if (style && style !== 'all' && configuredStyles.length > 0 && !configuredStyles.includes(style)) {
-      return { eligible: false, reason: 'Promotion not applicable for this service style' };
-    }
-    if (serviceIds.length > 0 && configuredServiceIds.length > 0 && !serviceIds.some((sid) => configuredServiceIds.includes(sid))) {
-      return { eligible: false, reason: 'Promotion not applicable for selected service' };
-    }
-
-    return { eligible: true, reason: null as string | null };
+  /** Discovery auto-apply: coded/coupon offers are checkout-only. */
+  const isDiscoveryAutoApplyPromotionRow = (promotion: any): boolean => {
+    const type = String(promotion.promotion_type ?? '').trim().toLowerCase();
+    if (type === 'coupon' || type === 'platform_coupon') return false;
+    if (String(promotion.source ?? '').trim().toLowerCase() === 'platform_coupon') return false;
+    const code = String(promotion.code ?? '').trim();
+    if (code.length > 0) return false;
+    return true;
   };
 
   // ============================================================================
@@ -262,125 +554,208 @@ export function registerPromotionEndpoints(app: Hono) {
   // ============================================================================
   /**
    * GET /promotions/list
-   * Phase 0.1: Get promotions filtered by service and published status
-   * Query params: service, published (true/false), spotlight (optional)
+   * Deprecated: customer discovery "Special Offers" banners were removed.
+   * Promos/coupons surface on vendor/service pages and checkout only.
+   * Kept as an empty stub so older clients do not 404.
    */
   app.get("/promotions/list", async (c) => {
-    try {
-      const service = c.req.query('service');
-      const published = c.req.query('published');
-      const spotlight = c.req.query('spotlight');
-
-      const now = new Date().toISOString().split('T')[0];
-
-      let queryStr = `
-        SELECT * FROM promotions
-        WHERE is_active = true
-        AND start_date <= $1
-        AND (end_date IS NULL OR end_date >= $1)
-      `;
-      const params: any[] = [now];
-      let paramIndex = 2;
-
-      // Filter by published status
-      if (published === 'true') {
-        queryStr += ` AND published = true`;
-      } else if (published === 'false') {
-        queryStr += ` AND published = false`;
-      }
-
-      // Filter by spotlight
-      if (spotlight === 'true') {
-        queryStr += ` AND is_spotlight = true`;
-      }
-
-      // Filter by service (check applicable_services JSONB array)
-      if (service && service !== 'all') {
-        queryStr += ` AND (
-          applicable_services IS NULL 
-          OR applicable_services = '[]'::jsonb
-          OR applicable_services @> $${paramIndex}::jsonb
-        )`;
-        params.push(JSON.stringify([service]));
-        paramIndex++;
-      }
-
-      // Order: spotlight first, then by priority (lower number = higher priority)
-      queryStr += ` ORDER BY is_spotlight DESC, priority ASC, created_at DESC`;
-
-      const result = await query(queryStr, params);
-      const rows = Array.isArray(result) ? result : (result as any).rows || [];
-      const promotions = rows.map((row: any) => {
-        const serviceCategory = extractPromotionCategory(row);
-        const serviceStyle = extractPromotionStyle(row);
-        const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
-        return {
-          ...row,
-          service_category: row.service_category ?? serviceCategory ?? null,
-          service_style: row.service_style ?? serviceStyle ?? null,
-          serviceCategory: row.serviceCategory ?? row.service_category ?? serviceCategory ?? null,
-          serviceStyle: row.serviceStyle ?? row.service_style ?? serviceStyle ?? null,
-          metadata: {
-            ...(metadata as Record<string, unknown>),
-            promotionTarget: {
-              ...(((metadata as any)?.promotionTarget || {}) as Record<string, unknown>),
-              serviceCategory: (metadata as any)?.promotionTarget?.serviceCategory ?? (metadata as any)?.serviceCategory ?? serviceCategory ?? null,
-              serviceStyle: (metadata as any)?.promotionTarget?.serviceStyle ?? (metadata as any)?.serviceStyle ?? serviceStyle ?? null,
-            },
-            serviceCategory: (metadata as any)?.serviceCategory ?? serviceCategory ?? null,
-            serviceStyle: (metadata as any)?.serviceStyle ?? serviceStyle ?? null,
-          },
-        };
-      });
-
-      return c.json({
-        success: true,
-        promotions,
-        total: promotions.length,
-      });
-    } catch (error: any) {
-      console.error('Error fetching promotions list:', error);
-      // Graceful fallback if schema fields don't exist yet
-      if (error.message && (error.message.includes('does not exist') || error.message.includes('column'))) {
-        console.warn('⚠️ Schema issue - returning empty array');
-        return c.json({ success: true, promotions: [], total: 0 });
-      }
-      return c.json({ error: error.message }, 500);
-    }
+    return c.json({
+      success: true,
+      promotions: [],
+      total: 0,
+      deprecated: true,
+    });
   });
 
   /**
    * GET /promotions/active
    * Get active promotions
    */
+  const loadActivePlatformCouponsAsPromotions = async (
+    now: string,
+    serviceBucket?: string,
+    commercialDomain?: CommercialDiscountDomain | null
+  ): Promise<Record<string, unknown>[]> => {
+    const mapCouponRows = (rows: Record<string, unknown>[]) =>
+      rows
+        .filter((row) => {
+          if (commercialDomain && !rowMatchesDiscountDomain(row, commercialDomain)) {
+            return false;
+          }
+          // Shop galleries: never spill service-bucket coupons when no bucket is provided.
+          if (commercialDomain === 'ECOMMERCE') {
+            return true;
+          }
+          return couponRowMatchesService(row, serviceBucket);
+        })
+        .map((c) => ({
+          id: c.id,
+          code: c.code,
+          name: c.name,
+          title: c.name,
+          description: c.description,
+          discount_type: c.discount_type,
+          discount_value: c.discount_value,
+          min_order_amount: c.min_order_amount,
+          max_discount_amount: c.max_discount_amount,
+          start_date: c.start_date,
+          end_date: c.end_date,
+          valid_from: c.start_date,
+          valid_until: c.end_date,
+          source: 'platform_coupon',
+          promotion_type: 'coupon',
+          published: true,
+          is_active: true,
+          applicable_to: c.applicable_to,
+          service_category: c.service_category,
+          applicable_services: c.applicable_services,
+          discount_domain: c.discount_domain ?? inferLegacyDiscountDomain(c),
+          metadata: c.metadata,
+        }));
+
+    let fullQuery = `
+        SELECT id, code, name, description, discount_type, discount_value,
+               min_order_amount,
+               max_discount_amount,
+               start_date, end_date,
+               max_uses,
+               COALESCE(usage_count, uses_count, 0) AS usage_count,
+               applicable_to, service_category, applicable_services, metadata, discount_domain
+         FROM coupons
+         WHERE is_active = true
+           AND (start_date IS NULL OR start_date::date <= $1::date)
+           AND (end_date IS NULL OR end_date::date >= $1::date)
+           AND (max_uses IS NULL OR COALESCE(usage_count, uses_count, 0) < max_uses)`;
+
+    const legacyQuery = `
+        SELECT id, code, name, discount_type, discount_value,
+               min_order_amount,
+               max_discount_amount,
+               start_date, end_date,
+               max_uses,
+               COALESCE(uses_count, 0) AS usage_count
+         FROM coupons
+         WHERE is_active = true
+           AND (start_date IS NULL OR start_date::date <= $1::date)
+           AND (end_date IS NULL OR end_date::date >= $1::date)
+           AND (max_uses IS NULL OR COALESCE(uses_count, 0) < max_uses)`;
+
+    const minimalQuery = `
+        SELECT id, code, name, discount_type, discount_value,
+               start_date, end_date
+         FROM coupons
+         WHERE is_active = true`;
+
+    const params: unknown[] = [now];
+    if (commercialDomain) {
+      const filtered = appendDiscountDomainFilter({
+        queryStr: fullQuery,
+        params,
+        paramIndex: 2,
+        domain: commercialDomain,
+        includeLegacyHeuristics: true,
+      });
+      fullQuery = filtered.queryStr;
+    }
+
+    try {
+      const couponResult = await query(fullQuery, params);
+      return mapCouponRows((couponResult.rows ?? []) as Record<string, unknown>[]);
+    } catch (couponErr) {
+      const msg = String((couponErr as Error)?.message ?? couponErr);
+      console.warn('[promotions/active] coupons full query failed:', msg);
+      try {
+        const couponResult = await query(legacyQuery, [now]);
+        return mapCouponRows((couponResult.rows ?? []) as Record<string, unknown>[]);
+      } catch (legacyErr) {
+        const legacyMsg = String((legacyErr as Error)?.message ?? legacyErr);
+        console.warn('[promotions/active] coupons legacy query failed:', legacyMsg);
+        try {
+          const couponResult = await query(minimalQuery, [now]);
+          return mapCouponRows((couponResult.rows ?? []) as Record<string, unknown>[]);
+        } catch (minimalErr) {
+          console.warn('[promotions/active] coupons minimal merge skipped', minimalErr);
+          return [];
+        }
+      }
+    }
+  };
+
   const handleActivePromotions = async (c: any) => {
     try {
       const serviceType = c.req.query('serviceType') || 'all';
+      const serviceBucket = c.req.query('service') || c.req.query('serviceCategory') || undefined;
       const customerId = c.req.query('customerId');
       const vendorRoleId = c.req.query('vendorRoleId');
+      /** Checkout/coupon gallery only — discovery surfaces must not auto-apply platform coupons. */
+      const includeCoupons = c.req.query('includeCoupons') === 'true';
+      const includeCodedPromotions =
+        c.req.query('includeCodedPromotions') === 'true' || includeCoupons;
+
+      const isProductScope =
+        serviceType === 'product' || serviceType === 'shop' || serviceType === 'ecommerce';
+      const domainOverride = parseDiscountDomainInput(
+        c.req.query('discount_domain') || c.req.query('discountDomain') || c.req.query('domain')
+      );
+      const commercialDomain: CommercialDiscountDomain | null =
+        domainOverride ??
+        (isProductScope ? 'ECOMMERCE' : serviceType !== 'all' ? 'SERVICE' : null);
 
       const now = new Date().toISOString().split('T')[0];
 
       let promotionsQuery = `
         SELECT * FROM promotions
         WHERE is_active = true
+        AND published = true
         AND start_date <= $1
         AND (end_date IS NULL OR end_date >= $1)
+        AND (usage_limit IS NULL OR usage_count < usage_limit)
+        AND (max_uses IS NULL OR usage_count < max_uses)
       `;
 
       const params: any[] = [now];
       let paramIndex = 2;
 
-      if (serviceType !== 'all') {
-        // applicable_services is JSONB, not a PG array — ANY() fails with "requires array on right side"
+      if (commercialDomain) {
+        const filtered = appendDiscountDomainFilter({
+          queryStr: promotionsQuery,
+          params,
+          paramIndex,
+          domain: commercialDomain,
+          includeLegacyHeuristics: true,
+        });
+        promotionsQuery = filtered.queryStr;
+        paramIndex = filtered.paramIndex;
+      }
+
+      if (isProductScope) {
+        // Shop: product-scoped rows only — do not admit bare services/bookings NULL "all".
+        promotionsQuery += ` AND (
+          UPPER(COALESCE(discount_domain, '')) = 'ECOMMERCE'
+          OR LOWER(COALESCE(applicable_to, '')) = 'products'
+          OR (
+            metadata IS NOT NULL
+            AND (
+              metadata->'targetScopes' @> '"products"'::jsonb
+              OR metadata->'targetScopes' @> '"all_products"'::jsonb
+              OR LOWER(COALESCE(metadata->>'applicableTo', '')) = 'products'
+              OR LOWER(COALESCE(metadata->>'discount_domain', '')) = 'ecommerce'
+            )
+          )
+          OR (
+            (discount_domain IS NULL OR TRIM(COALESCE(discount_domain, '')) = '')
+            AND LOWER(COALESCE(service_category, '')) IN ('shop','ecommerce','product','retail','marketplace','pet-shop','pet_shop','petshop')
+          )
+        )`;
+      } else if (serviceType !== 'all') {
         promotionsQuery += ` AND (
           applicable_services IS NULL
+          OR COALESCE(LOWER(applicable_to), 'all') IN ('all', 'bookings', 'services')
           OR EXISTS (
             SELECT 1 FROM jsonb_array_elements_text(
               CASE WHEN jsonb_typeof(applicable_services) = 'array' THEN applicable_services ELSE '[]'::jsonb END
             ) AS svc(val)
             WHERE svc.val = $${paramIndex}
-               OR ($${paramIndex} IN ('product', 'shop') AND svc.val IN ('product', 'shop', 'ecom', 'ecommerce'))
           )
         )`;
         params.push(serviceType);
@@ -404,16 +779,9 @@ export function registerPromotionEndpoints(app: Hono) {
       promotionsQuery += ` ORDER BY priority DESC, created_at DESC`;
 
       const promotions = await query(promotionsQuery, params);
-      let merged: Record<string, unknown>[] = promotions.rows || [];
+      const promotionRows = promotions.rows ?? [];
 
-      // E-commerce admin promotions (ecom-scope "Commercial Campaign Engine"):
-      // canonical admin/platform product campaigns — table `ecommerce_admin_promotions`,
-      // deliberately NOT `commercial_discount_campaigns` (that name is used by the
-      // unrelated meal-plan/subscription Discount Engine V2). Additive alongside the
-      // legacy `promotions` table above during the transition — both are read here so
-      // CartPromotionSelect sees one merged list; server-side order validation
-      // (POST /ecommerce/orders, /promotions/validate-code) is what actually enforces
-      // correctness, this endpoint is display-only.
+      let ecommerceAdminRows: Record<string, unknown>[] = [];
       if (serviceType === 'all' || serviceType === 'product' || serviceType === 'shop') {
         try {
           const campaigns = await query(
@@ -422,11 +790,46 @@ export function registerPromotionEndpoints(app: Hono) {
                AND start_date <= NOW() AND end_date >= NOW()
              ORDER BY created_at DESC`
           );
-          merged = [...merged, ...(campaigns.rows || [])];
+          ecommerceAdminRows = campaigns.rows || [];
         } catch {
           /* table may not exist yet on older schemas */
         }
       }
+
+      const couponAsPromotions = includeCoupons
+        ? await loadActivePlatformCouponsAsPromotions(now, serviceBucket, commercialDomain)
+        : [];
+
+      const filterPromotionRowsForActive = (rows: Record<string, unknown>[]) => {
+        let filtered = rows;
+        if (commercialDomain) {
+          filtered = filtered.filter((promo) => rowMatchesDiscountDomain(promo, commercialDomain));
+        }
+        if (serviceBucket) {
+          filtered = filtered.filter((promo) =>
+            promotionMatchesListService(promo, serviceBucket)
+          );
+        }
+        if (includeCodedPromotions) {
+          return filtered.filter(
+            (promo) =>
+              isDiscoveryAutoApplyPromotionRow(promo) ||
+              String(promo.code ?? '').trim().length > 0
+          );
+        }
+        return filtered.filter(isDiscoveryAutoApplyPromotionRow);
+      };
+
+      const discoveryRows = filterPromotionRowsForActive(promotionRows);
+
+      const seenCodes = new Set<string>();
+      const merged = [...discoveryRows, ...couponAsPromotions, ...ecommerceAdminRows].filter((row) => {
+        const code = String(row.code ?? '').trim().toUpperCase();
+        if (!code) return true;
+        if (seenCodes.has(code)) return false;
+        seenCodes.add(code);
+        return true;
+      });
 
       return c.json({
         success: true,
@@ -435,6 +838,14 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching promotions:', error);
+      const msg = String(error?.message ?? error);
+      if (
+        (msg.includes('applicable_to') || msg.includes('discount_domain')) &&
+        (msg.includes('does not exist') || msg.includes('column'))
+      ) {
+        console.warn('[promotions/active] column missing — returning empty safe fallback');
+        return c.json({ success: true, promotions: [], total: 0 });
+      }
       return c.json({ error: error.message }, 500);
     }
   };
@@ -543,6 +954,8 @@ export function registerPromotionEndpoints(app: Hono) {
          AND (start_date IS NULL OR start_date <= NOW())
          AND (end_date IS NULL OR end_date >= NOW())
          AND published = true
+         AND (usage_limit IS NULL OR usage_count < usage_limit)
+         AND (max_uses IS NULL OR usage_count < max_uses)
          LIMIT 1`,
         [promotionCode]
       );
@@ -649,8 +1062,8 @@ export function registerPromotionEndpoints(app: Hono) {
   });
 
   /**
-   * ✅ FIX GAP 7.1: Internal coupon validation helper function
-   * Extracted from GET /coupons/validate/:couponCode to avoid fetch() in Lambda
+   * @deprecated Legacy inline validation — delegates to platform-coupon-service (Phase 8B).
+   * Retained for handler compatibility; removal candidate Phase 8C.
    */
   async function validateCouponInternal(couponCode: string, amount: number): Promise<{
     success: boolean;
@@ -659,70 +1072,7 @@ export function registerPromotionEndpoints(app: Hono) {
     discountAmount?: number;
     error?: string;
   }> {
-    try {
-      const coupons = await select('coupons', { code: couponCode.toUpperCase(), is_active: true });
-      if (coupons.length === 0) {
-        return { success: false, valid: false, error: 'Invalid coupon code' };
-      }
-
-      const coupon = coupons[0];
-
-      // Check validity
-      const now = new Date();
-      const startDate = new Date(coupon.start_date);
-      const endDate = coupon.end_date ? new Date(coupon.end_date) : null;
-
-      if (now < startDate || (endDate && now > endDate)) {
-        return { success: false, valid: false, error: 'Coupon has expired' };
-      }
-
-      if (coupon.min_order_amount && amount < parseFloat(coupon.min_order_amount)) {
-        return {
-          success: false,
-          valid: false,
-          error: `Minimum order amount of ₹${coupon.min_order_amount} required`,
-        };
-      }
-
-      // Check usage limit
-      if (coupon.max_uses) {
-        const usageCount = await query(
-          'SELECT COUNT(*) as count FROM coupon_usages WHERE coupon_id = $1',
-          [coupon.id]
-        ).catch(() => ({ rows: [{ count: '0' }] }));
-
-        if (parseInt(usageCount.rows[0]?.count || '0', 10) >= coupon.max_uses) {
-          return { success: false, valid: false, error: 'Coupon usage limit reached' };
-        }
-      }
-
-      // Calculate discount
-      let discountAmount = 0;
-      if (coupon.discount_type === 'percentage') {
-        discountAmount = (amount * parseFloat(coupon.discount_value || '0')) / 100;
-        if (coupon.max_discount_amount) {
-          discountAmount = Math.min(discountAmount, parseFloat(coupon.max_discount_amount));
-        }
-      } else if (coupon.discount_type === 'fixed') {
-        discountAmount = parseFloat(coupon.discount_value || '0');
-      }
-
-      return {
-        success: true,
-        valid: true,
-        coupon: {
-          id: coupon.id,
-          code: coupon.code,
-          name: coupon.name,
-          discountType: coupon.discount_type,
-          discountValue: coupon.discount_value,
-        },
-        discountAmount,
-      };
-    } catch (error: any) {
-      console.error('Error in validateCouponInternal:', error);
-      return { success: false, valid: false, error: error.message };
-    }
+    return validatePlatformCouponInternal(couponCode, amount);
   }
 
   /**
@@ -771,6 +1121,94 @@ export function registerPromotionEndpoints(app: Hono) {
   });
 
   // ============================================================================
+  // BOOKING PROMOTIONS (service providers — auto-apply)
+  // ============================================================================
+
+  /**
+   * POST /promotions/calculate-booking
+   * Server source of truth for service booking promotion stack.
+   */
+  app.post('/promotions/calculate-booking', async (c) => {
+    try {
+      const body = await c.req.json();
+      const vendorId = String(body.vendorId || body.vendor_id || '').trim();
+      const amount = parseFloat(String(body.amount ?? body.bookingAmount ?? 0)) || 0;
+      const serviceStyle = body.serviceStyle || body.service_style;
+      const customerId = body.customerId || body.customer_id;
+      const serviceCategory = body.serviceCategory || body.service_category || body.category;
+      const serviceIdsRaw = body.serviceIds || body.service_ids || body.selectedServiceIds;
+      const serviceIds = Array.isArray(serviceIdsRaw)
+        ? serviceIdsRaw.map((x: unknown) => String(x)).filter(Boolean)
+        : body.serviceId || body.service_id
+          ? [String(body.serviceId || body.service_id)]
+          : [];
+
+      if (!vendorId || amount <= 0) {
+        return c.json({ success: false, error: 'vendorId and amount are required' }, 400);
+      }
+
+      const resolvedCategory = await resolveBookingServiceCategory({
+        vendorId,
+        serviceId: serviceIds[0],
+        explicitCategory: serviceCategory ? String(serviceCategory) : null,
+      });
+
+      const couponCode = body.couponCode || body.coupon_code;
+      const displayPromotionsOnly =
+        body.displayPromotionsOnly === true ||
+        body.display_promotions_only === true ||
+        (!couponCode && body.includeCoupon !== true);
+
+      const quote = await resolveBookingDiscountQuote({
+        vendorId,
+        serviceIds,
+        serviceStyle,
+        amount,
+        customerId: customerId ? String(customerId) : undefined,
+        serviceCategory: resolvedCategory ?? undefined,
+        couponCode: couponCode ? String(couponCode).trim() : undefined,
+        displayPromotionsOnly,
+        debugSessionId:
+          body.debugSessionId === '3c1403' || body.debug_session_id === '3c1403'
+            ? '3c1403'
+            : undefined,
+      });
+
+      return c.json({
+        ...quote,
+        // Legacy field aliases for existing customer-web callers
+        originalAmount: quote.savings.originalAmount,
+        vendorDiscountAmount: quote.savings.vendorDiscountAmount,
+        platformDiscountAmount: quote.savings.platformDiscountAmount,
+        totalSavings: quote.savings.totalSavings,
+        finalAmount: quote.savings.finalAmount,
+        applied: quote.appliedOffers.map((o) => ({
+          id: o.id,
+          source: o.source === 'vendor' ? 'vendor' : 'platform',
+          name: o.name,
+          discountAmount: o.discountAmount,
+          promotionType: o.source === 'coupon' ? 'coupon' : o.offerType,
+        })),
+        bestPromotion: quote.winningPromotion
+          ? {
+              id: quote.winningPromotion.id,
+              source: quote.winningPromotion.source === 'vendor' ? 'vendor' : 'platform',
+              name: quote.winningPromotion.name,
+              calculatedDiscount: quote.winningPromotion.discountAmount,
+            }
+          : null,
+        policyApplicationStrategy: quote.currentPolicy.applicationStrategy,
+        winningStrategy: quote.currentPolicy.winningStrategy ?? null,
+        policyFingerprint: quote.currentPolicy.policyFingerprint,
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('Error calculating booking promotions:', msg);
+      return c.json({ success: false, error: msg }, 500);
+    }
+  });
+
+  // ============================================================================
   // PUBLIC: APPLICABLE PROMOTIONS (customer checkout – no admin auth)
   // ============================================================================
 
@@ -784,6 +1222,8 @@ export function registerPromotionEndpoints(app: Hono) {
     try {
       const category = c.req.query('category') || 'all';
       const serviceStyle = c.req.query('serviceStyle') || 'all';
+      const vendorId = c.req.query('vendorId') || c.req.query('vendor_id');
+      const customerId = c.req.query('customerId') || c.req.query('customer_id');
       const serviceId = c.req.query('serviceId');
       const selectedServiceIdsRaw = c.req.query('selectedServiceIds');
       const selectedServiceIds = String(selectedServiceIdsRaw || '')
@@ -793,13 +1233,47 @@ export function registerPromotionEndpoints(app: Hono) {
       if (serviceId) selectedServiceIds.push(String(serviceId));
       const amount = parseFloat(c.req.query('amount') || '0');
 
+      if (vendorId && vendorId !== 'default' && amount > 0) {
+        const offers = await listApplicableBookingPromotions({
+          vendorId: String(vendorId),
+          serviceIds: selectedServiceIds,
+          serviceStyle: serviceStyle !== 'all' ? serviceStyle : undefined,
+          amount,
+          customerId: customerId ? String(customerId) : undefined,
+          serviceCategory: category !== 'all' ? category : undefined,
+        });
+
+        const promotions = offers.map((o) => ({
+          id: o.id,
+          source: o.source,
+          name: o.title,
+          title: o.title,
+          description: o.description,
+          discountType: o.discountType,
+          discountValue: o.discountValue,
+          discountAmount: o.discountAmount,
+          promotion_type: o.promotionType || (o.isSpotlight ? 'spotlight' : 'flash_sale'),
+          autoApplyEligible: o.autoApplyEligible,
+          is_spotlight: o.isSpotlight === true,
+        }));
+
+        return c.json({
+          success: true,
+          promotions,
+          total: promotions.length,
+        });
+      }
+
       const now = new Date().toISOString().split('T')[0];
 
       let queryStr = `
         SELECT * FROM promotions
         WHERE is_active = true
+        AND published = true
         AND (start_date IS NULL OR start_date <= $1)
         AND (end_date IS NULL OR end_date >= $1)
+        AND (usage_limit IS NULL OR usage_count < usage_limit)
+        AND (max_uses IS NULL OR usage_count < max_uses)
       `;
 
       const params: any[] = [now];
@@ -877,6 +1351,8 @@ export function registerPromotionEndpoints(app: Hono) {
         WHERE is_active = true
         AND (start_date IS NULL OR start_date <= $1)
         AND (end_date IS NULL OR end_date >= $1)
+        AND (usage_limit IS NULL OR usage_count < usage_limit)
+        AND (max_uses IS NULL OR usage_count < max_uses)
       `;
       
       const params: any[] = [now];
@@ -930,22 +1406,40 @@ export function registerPromotionEndpoints(app: Hono) {
 
   /**
    * GET /admin/promotions/stats
-   * Get promotion statistics
+   * Get promotion statistics. Pass ?domain=PRODUCT for ecommerce-only counts.
    */
   app.get("/admin/promotions/stats", async (c) => {
     try {
-      const activePromotions = await query(
-        'SELECT COUNT(*) as count FROM promotions WHERE is_active = true AND (end_date IS NULL OR end_date >= NOW())'
-      );
-      const totalConversions = await query(
-        'SELECT COUNT(*) as count FROM promotion_usages'
-      ).catch(() => ({ rows: [{ count: '0' }] }));
-      const totalRevenue = await query(
-        'SELECT COALESCE(SUM(discount_amount), 0) as total FROM promotion_usages'
-      ).catch(() => ({ rows: [{ total: '0' }] }));
-      const avgDiscount = await query(
-        'SELECT COALESCE(AVG(discount_amount), 0) as avg FROM promotion_usages'
-      ).catch(() => ({ rows: [{ avg: '0' }] }));
+      const domain = (c.req.query('domain') ?? 'ALL').toUpperCase();
+      const isProduct = domain === 'PRODUCT';
+
+      const usageWhere = isProduct
+        ? `WHERE order_id IS NOT NULL`
+        : domain === 'SERVICE'
+          ? `WHERE booking_id IS NOT NULL AND order_id IS NULL`
+          : '';
+
+      const [activePromotions, totalConversions, totalRevenue, avgDiscount] = await Promise.all([
+        isProduct
+          ? countActiveEcommerceAdminPromotions().then((count) => ({
+              rows: [{ count: String(count) }],
+            }))
+          : query(
+              'SELECT COUNT(*) as count FROM promotions WHERE is_active = true AND (end_date IS NULL OR end_date >= NOW())',
+            ),
+        query(`SELECT COUNT(*) as count FROM promotion_usages ${usageWhere}`).catch(() => ({
+          rows: [{ count: '0' }],
+        })),
+        query(
+          `SELECT COALESCE(SUM(discount_amount), 0) as total FROM promotion_usages ${usageWhere}`,
+        ).catch(() => ({ rows: [{ total: '0' }] })),
+        query(
+          `SELECT COALESCE(AVG(discount_amount), 0) as avg FROM promotion_usages ${usageWhere}`,
+        ).catch(() => ({ rows: [{ avg: '0' }] })),
+      ]);
+
+      const reportDomain =
+        domain === 'PRODUCT' || domain === 'SERVICE' || domain === 'ALL' ? domain : 'ALL';
 
       return c.json({
         success: true,
@@ -955,6 +1449,13 @@ export function registerPromotionEndpoints(app: Hono) {
           totalRevenue: parseFloat(totalRevenue.rows[0]?.total || '0'),
           avgDiscountGiven: parseFloat(avgDiscount.rows[0]?.avg || '0'),
         },
+        ...(isAnalyticsEnabled() && isAnalyticsAuthoritative()
+          ? {
+              engineStats: (
+                await getAnalyticsEngine().generateReport({ domain: reportDomain as 'ALL' | 'PRODUCT' | 'SERVICE' })
+              )?.promotions?.totals,
+            }
+          : {}),
       });
     } catch (error: any) {
       console.error('Error fetching promotion stats:', error);
@@ -1170,10 +1671,11 @@ export function registerPromotionEndpoints(app: Hono) {
       const { id } = c.req.param();
       const body = await c.req.json();
 
-      const promotions = await select('promotions', { id });
-      if (promotions.length === 0) {
+      const found = await loadPromotionForAdminWrite(id);
+      if (!found) {
         return c.json({ error: 'Promotion not found' }, 404);
       }
+      const promotions = [found.row];
 
       const updateData: any = {
         updated_at: new Date().toISOString(),
@@ -1235,12 +1737,21 @@ export function registerPromotionEndpoints(app: Hono) {
       // Phase 0.1: New fields
       if (body.is_spotlight !== undefined) updateData.is_spotlight = body.is_spotlight === true;
       if (body.published !== undefined) updateData.published = body.published === true;
+      if (found.table === 'ecommerce_admin_promotions') {
+        updateData.discount_domain = 'ECOMMERCE';
+        if (updateData.min_order_amount !== undefined && updateData.min_order_value === undefined) {
+          updateData.min_order_value = updateData.min_order_amount;
+        }
+      }
 
-      const updated = await update('promotions', { id }, updateData);
+      await persistPromotionUpdate(id, updateData);
+      const table = found.table;
+      const refreshed = await query(`SELECT * FROM ${table} WHERE id = $1::uuid`, [id]);
+      const promoRows = Array.isArray(refreshed) ? refreshed : (refreshed as any).rows || [];
 
       return c.json({
         success: true,
-        promotion: updated[0],
+        promotion: promoRows[0],
         message: 'Promotion updated successfully',
       });
     } catch (error: any) {
@@ -1256,17 +1767,11 @@ export function registerPromotionEndpoints(app: Hono) {
   app.delete("/marketing/promotions/:id", async (c) => {
     try {
       const { id } = c.req.param();
-      
-      const promotions = await select('promotions', { id });
-      if (promotions.length === 0) {
+
+      const deleted = await softDeleteAdminPromotion(id);
+      if (!deleted) {
         return c.json({ error: 'Promotion not found' }, 404);
       }
-
-      // Soft delete: set is_active to false
-      await update('promotions', { id }, {
-        is_active: false,
-        updated_at: new Date().toISOString(),
-      });
 
       return c.json({
         success: true,
@@ -1285,6 +1790,9 @@ export function registerPromotionEndpoints(app: Hono) {
   app.get("/admin/promotions", async (c) => {
     try {
       const { type, status } = c.req.query();
+      const discountDomain = parseDiscountDomainInput(
+        c.req.query('discount_domain') || c.req.query('discountDomain') || c.req.query('domain')
+      );
       
       let queryStr = 'SELECT * FROM promotions WHERE 1=1';
       const params: any[] = [];
@@ -1304,10 +1812,52 @@ export function registerPromotionEndpoints(app: Hono) {
         queryStr += ` AND end_date < NOW()`;
       }
 
+      if (discountDomain) {
+        const filtered = appendDiscountDomainFilter({
+          queryStr,
+          params,
+          paramIndex,
+          domain: discountDomain,
+          includeLegacyHeuristics: true,
+        });
+        queryStr = filtered.queryStr;
+        params.splice(0, params.length, ...filtered.params);
+        paramIndex = filtered.paramIndex;
+      }
+
       queryStr += ` ORDER BY created_at DESC`;
 
       const result = await query(queryStr, params);
-      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      let rows = Array.isArray(result) ? result : (result as any).rows || [];
+      if (discountDomain) {
+        rows = rows.filter((r: Record<string, unknown>) =>
+          rowMatchesDiscountDomain(r, discountDomain)
+        );
+      }
+
+      if (discountDomain === 'ECOMMERCE') {
+        try {
+          const ecommerceRes = await query(
+            `SELECT * FROM ecommerce_admin_promotions
+             ORDER BY created_at DESC`,
+          );
+          const ecommerceRows = (ecommerceRes.rows ?? []) as Record<string, unknown>[];
+          const seen = new Set(rows.map((r: Record<string, unknown>) => String(r.id)));
+          for (const row of ecommerceRows) {
+            const id = String(row.id ?? '');
+            if (!id || seen.has(id)) continue;
+            rows.push({
+              ...row,
+              discount_domain: 'ECOMMERCE',
+              min_order_amount: row.min_order_value,
+              max_discount_amount: row.max_discount_amount,
+            });
+            seen.add(id);
+          }
+        } catch {
+          /* table may not exist on older schemas */
+        }
+      }
 
       return c.json({
         success: true,
@@ -1320,6 +1870,13 @@ export function registerPromotionEndpoints(app: Hono) {
       if (error.message && error.message.includes('operator does not exist')) {
         console.warn('⚠️ Schema issue with promotions query - returning empty array');
         return c.json({ success: true, promotions: [], total: 0 });
+      }
+      if (
+        error.message &&
+        error.message.includes('discount_domain') &&
+        (error.message.includes('does not exist') || error.message.includes('column'))
+      ) {
+        console.warn('[admin/promotions] discount_domain missing — returning unfiltered (pre-migration)');
       }
       return c.json({ error: error.message }, 500);
     }
@@ -1336,65 +1893,35 @@ export function registerPromotionEndpoints(app: Hono) {
 
   /**
    * POST /admin/promotions
-   * Create promotion (admin)
+   * Create promotion (admin — canonical Sprint A API with full targeting)
    */
   app.post("/admin/promotions", async (c) => {
     try {
       const body = await c.req.json();
-      const {
-        code,
-        name,
-        description,
-        discount_type,
-        discount_value,
-        min_order_value,
-        max_discount,
-        valid_from,
-        valid_until,
-        usage_limit,
-        usage_limit_per_user,
-        applicable_to,
-        is_active = true,
-      } = body;
+      const record = buildPromotionPersistenceFromAdminBody(body) as Record<string, unknown>;
 
-      if (!name || !discount_type || discount_value === undefined) {
+      if (!record.name || !record.discount_type || record.discount_value === undefined) {
         return c.json({ error: 'name, discount_type, and discount_value are required' }, 400);
       }
 
-      // Build promotion data, code is optional (column may not exist in all environments)
+      const targetingError = validateAdminPromotionTargeting(body as Record<string, unknown>);
+      if (targetingError) {
+        return c.json({ error: targetingError }, 400);
+      }
+
       const promotionData: any = {
-        name,
-        description: description || '',
-        discount_type,
-        discount_value,
-        min_order_amount: min_order_value,
-        max_discount_amount: max_discount,
-        start_date: valid_from ? new Date(valid_from) : new Date(),
-        end_date: valid_until ? new Date(valid_until) : null,
-        max_uses: usage_limit,
-        max_uses_per_user: usage_limit_per_user,
-        applicable_to: applicable_to || 'all',
-        is_active,
+        ...body,
+        ...record,
+        created_at: new Date().toISOString(),
       };
 
-      // Only add code if provided (column may not exist in all environments)
-      if (code) {
-        promotionData.code = code.toUpperCase();
+      const codeInput = body.code;
+      if (codeInput) {
+        promotionData.code = String(codeInput).toUpperCase();
       }
 
       let promotion;
-      try {
-        promotion = await insert('promotions', promotionData);
-      } catch (insertError: any) {
-        // If error is about missing 'code' column, retry without it
-        if (insertError.message && insertError.message.includes('column "code"') && promotionData.code) {
-          console.warn('[Promotions] Code column does not exist, retrying without code');
-          delete promotionData.code;
-          promotion = await insert('promotions', promotionData);
-        } else {
-          throw insertError;
-        }
-      }
+      promotion = await persistPromotionInsert(promotionData);
 
       return c.json({
         success: true,
@@ -1409,39 +1936,50 @@ export function registerPromotionEndpoints(app: Hono) {
 
   /**
    * PUT /admin/promotions/:id
-   * Update promotion (admin)
+   * Update promotion (admin — canonical with full targeting)
    */
   app.put("/admin/promotions/:id", async (c) => {
     try {
       const { id } = c.req.param();
       const body = await c.req.json();
 
-      const updateData: any = {};
-      if (body.code !== undefined) updateData.code = body.code.toUpperCase();
-      if (body.name !== undefined) updateData.name = body.name;
-      if (body.description !== undefined) updateData.description = body.description;
-      if (body.discount_type !== undefined) updateData.discount_type = body.discount_type;
-      if (body.discount_value !== undefined) updateData.discount_value = body.discount_value;
-      if (body.min_order_value !== undefined) updateData.min_order_amount = body.min_order_value;
-      if (body.max_discount !== undefined) updateData.max_discount_amount = body.max_discount;
-      if (body.valid_from !== undefined) updateData.start_date = new Date(body.valid_from);
-      if (body.valid_until !== undefined) updateData.end_date = body.valid_until ? new Date(body.valid_until) : null;
-      if (body.usage_limit !== undefined) updateData.max_uses = body.usage_limit;
-      if (body.usage_limit_per_user !== undefined) updateData.max_uses_per_user = body.usage_limit_per_user;
-      if (body.applicable_to !== undefined) updateData.applicable_to = body.applicable_to;
-      if (body.is_active !== undefined) updateData.is_active = body.is_active;
+      const found = await loadPromotionForAdminWrite(id);
+      if (!found) {
+        return c.json({ error: 'Promotion not found' }, 404);
+      }
 
-      await update('promotions', { id }, updateData);
+      const targetingError = validateAdminPromotionTargeting(body as Record<string, unknown>);
+      if (targetingError) {
+        return c.json({ error: targetingError }, 400);
+      }
 
-      // Use explicit UUID casting to avoid "uuid = text" errors
-      const updated = await query(
-        'SELECT * FROM promotions WHERE id = $1::uuid',
-        [id]
-      );
+      const updateData = mergeAdminPromotionUpdateBody(body, found.row) as Record<string, unknown>;
+      if (body.code !== undefined) {
+        updateData.code = String(body.code).toUpperCase();
+      }
+      if (found.table === 'ecommerce_admin_promotions') {
+        updateData.discount_domain = 'ECOMMERCE';
+      }
+
+      await persistPromotionUpdate(id, updateData);
+
+      const table = found.table;
+      const updated = await query(`SELECT * FROM ${table} WHERE id = $1::uuid`, [id]);
       const promoRows = Array.isArray(updated) ? updated : (updated as any).rows || [];
+      const promotion = promoRows[0]
+        ? {
+            ...promoRows[0],
+            discount_domain:
+              table === 'ecommerce_admin_promotions'
+                ? 'ECOMMERCE'
+                : promoRows[0].discount_domain,
+            min_order_amount:
+              promoRows[0].min_order_amount ?? promoRows[0].min_order_value,
+          }
+        : null;
       return c.json({
         success: true,
-        promotion: promoRows[0],
+        promotion,
         message: 'Promotion updated successfully',
       });
     } catch (error: any) {
@@ -1452,13 +1990,16 @@ export function registerPromotionEndpoints(app: Hono) {
 
   /**
    * DELETE /admin/promotions/:id
-   * Delete promotion (admin)
+   * Soft-delete promotion (backward compatible with /marketing/promotions)
    */
   app.delete("/admin/promotions/:id", async (c) => {
     try {
       const { id } = c.req.param();
 
-      await deleteRows('promotions', { id });
+      const deleted = await softDeleteAdminPromotion(id);
+      if (!deleted) {
+        return c.json({ error: 'Promotion not found' }, 404);
+      }
 
       return c.json({
         success: true,
@@ -1474,6 +2015,74 @@ export function registerPromotionEndpoints(app: Hono) {
   // ADMIN ENDPOINTS - COUPONS CRUD
   // ============================================================================
 
+  const buildAdminCouponRecord = (body: Record<string, unknown>): Record<string, unknown> => {
+    const finalCode = String(body.code ?? '').trim().toUpperCase();
+    const finalDiscountType = String(body.discount_type ?? body.type ?? 'percentage');
+    const finalDiscountValue =
+      body.discount_value !== undefined
+        ? body.discount_value
+        : body.value !== undefined
+          ? body.value
+          : 0;
+    const finalMinOrder =
+      body.min_order_value !== undefined
+        ? body.min_order_value
+        : body.minOrderAmount !== undefined
+          ? body.minOrderAmount
+          : 0;
+    const finalMaxDiscount =
+      body.max_discount !== undefined
+        ? body.max_discount
+        : body.maxDiscountAmount !== undefined
+          ? body.maxDiscountAmount
+          : 0;
+    const finalValidFrom = String(body.valid_from ?? body.validFrom ?? new Date().toISOString().split('T')[0]);
+    const finalValidUntil = body.valid_until ?? body.validUntil ?? null;
+    const finalUsageLimit =
+      body.usage_limit !== undefined
+        ? body.usage_limit
+        : body.usageLimit !== undefined
+          ? body.usageLimit
+          : 0;
+    const finalIsActive =
+      body.is_active !== undefined
+        ? body.is_active
+        : body.isActive !== undefined
+          ? body.isActive
+          : true;
+    const targeting = buildCouponTargetingFromAdminBody(body);
+
+    const couponData: Record<string, unknown> = {
+      code: finalCode,
+      name: String(body.name ?? finalCode).trim() || finalCode,
+      description: body.description != null ? String(body.description) : null,
+      discount_type: finalDiscountType,
+      discount_value: finalDiscountValue,
+      min_order_amount: Number(finalMinOrder) > 0 ? finalMinOrder : null,
+      max_discount_amount: Number(finalMaxDiscount) > 0 ? finalMaxDiscount : null,
+      start_date: finalValidFrom ? new Date(finalValidFrom) : new Date(),
+      end_date: finalValidUntil
+        ? new Date(String(finalValidUntil))
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      max_uses: Number(finalUsageLimit) > 0 ? finalUsageLimit : null,
+      is_active: finalIsActive,
+      applicable_to: targeting.applicable_to,
+      service_category: targeting.service_category,
+      applicable_services: targeting.applicable_services,
+      discount_domain: targeting.discount_domain,
+      metadata: targeting.metadata,
+    };
+
+    if (couponData.min_order_amount === null) delete couponData.min_order_amount;
+    if (couponData.max_discount_amount === null) delete couponData.max_discount_amount;
+    if (couponData.max_uses === null) delete couponData.max_uses;
+    if (couponData.description === null) delete couponData.description;
+    if (couponData.service_category === null) delete couponData.service_category;
+    if (couponData.applicable_services === null) delete couponData.applicable_services;
+
+    return couponData;
+  };
+
   /**
    * GET /admin/coupons
    * Get all coupons (admin)
@@ -1481,6 +2090,9 @@ export function registerPromotionEndpoints(app: Hono) {
   app.get("/admin/coupons", async (c) => {
     try {
       const { type, status } = c.req.query();
+      const discountDomain = parseDiscountDomainInput(
+        c.req.query('discount_domain') || c.req.query('discountDomain') || c.req.query('domain')
+      );
       
       let queryStr = 'SELECT * FROM coupons WHERE 1=1';
       const params: any[] = [];
@@ -1500,10 +2112,28 @@ export function registerPromotionEndpoints(app: Hono) {
         queryStr += ` AND end_date < NOW()`;
       }
 
+      if (discountDomain) {
+        const filtered = appendDiscountDomainFilter({
+          queryStr,
+          params,
+          paramIndex,
+          domain: discountDomain,
+          includeLegacyHeuristics: true,
+        });
+        queryStr = filtered.queryStr;
+        params.splice(0, params.length, ...filtered.params);
+        paramIndex = filtered.paramIndex;
+      }
+
       queryStr += ` ORDER BY created_at DESC`;
 
       const result = await query(queryStr, params);
-      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      let rows = Array.isArray(result) ? result : (result as any).rows || [];
+      if (discountDomain) {
+        rows = rows.filter((r: Record<string, unknown>) =>
+          rowMatchesDiscountDomain(r, discountDomain)
+        );
+      }
 
       // Map database fields to frontend format
       const mappedCoupons = rows.map((coupon: any) => ({
@@ -1528,6 +2158,7 @@ export function registerPromotionEndpoints(app: Hono) {
     }
   });
 
+
   /**
    * POST /admin/coupons
    * Create coupon (admin)
@@ -1535,59 +2166,42 @@ export function registerPromotionEndpoints(app: Hono) {
   app.post("/admin/coupons", async (c) => {
     try {
       const body = await c.req.json();
-      const {
-        code,
-        type,
-        value,
-        discount_type,
-        discount_value,
-        minOrderAmount,
-        min_order_value,
-        maxDiscountAmount,
-        max_discount,
-        validFrom,
-        valid_from,
-        validUntil,
-        valid_until,
-        usageLimit,
-        usage_limit,
-        isActive,
-        is_active = true,
-      } = body;
-
-      // Handle both UI format (type, value) and backend format (discount_type, discount_value)
-      const finalCode = code || '';
-      const finalDiscountType = discount_type || type || 'percentage';
-      const finalDiscountValue = discount_value !== undefined ? discount_value : (value !== undefined ? value : 0);
-      const finalMinOrder = min_order_value !== undefined ? min_order_value : (minOrderAmount !== undefined ? minOrderAmount : 0);
-      const finalMaxDiscount = max_discount !== undefined ? max_discount : (maxDiscountAmount !== undefined ? maxDiscountAmount : 0);
-      const finalValidFrom = valid_from || validFrom || new Date().toISOString().split('T')[0];
-      const finalValidUntil = valid_until || validUntil || null;
-      const finalUsageLimit = usage_limit !== undefined ? usage_limit : (usageLimit !== undefined ? usageLimit : 0);
-      const finalIsActive = is_active !== undefined ? is_active : (isActive !== undefined ? isActive : true);
-
-      if (!finalCode || !finalDiscountType || finalDiscountValue === undefined) {
+      if (!body.code || (body.discount_value === undefined && body.value === undefined)) {
         return c.json({ error: 'code, discount_type/type, and discount_value/value are required' }, 400);
       }
-
-      // Use correct column names based on schema (no max_discount column in base schema)
-      const couponData: any = {
-        code: finalCode.toUpperCase(),
-        name: finalCode.toUpperCase(), // Required field
-        discount_type: finalDiscountType,
-        discount_value: finalDiscountValue,
-        min_order_amount: finalMinOrder > 0 ? finalMinOrder : null,
-        start_date: finalValidFrom ? new Date(finalValidFrom) : new Date(),
-        end_date: finalValidUntil ? new Date(finalValidUntil) : (finalValidFrom ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : new Date()),
-        max_uses: finalUsageLimit > 0 ? finalUsageLimit : null,
-        is_active: finalIsActive,
-      };
-
-      // Remove null values for optional fields
-      if (couponData.min_order_amount === null) delete couponData.min_order_amount;
-      if (couponData.max_uses === null) delete couponData.max_uses;
-
-      const coupon = await insert('coupons', couponData);
+      const targetingError = validateAdminPromotionTargeting(body as Record<string, unknown>);
+      if (targetingError) {
+        return c.json({ error: targetingError }, 400);
+      }
+      const couponData = buildAdminCouponRecord(body as Record<string, unknown>);
+      let coupon;
+      try {
+        coupon = await insert('coupons', couponData);
+      } catch (insertErr: unknown) {
+        const msg = String((insertErr as Error)?.message ?? insertErr);
+        if (msg.includes('column "discount_domain"') && couponData.discount_domain !== undefined) {
+          const fallback = { ...couponData };
+          const baseMeta =
+            fallback.metadata && typeof fallback.metadata === 'object'
+              ? { ...(fallback.metadata as Record<string, unknown>) }
+              : {};
+          baseMeta.discount_domain = fallback.discount_domain;
+          fallback.metadata = baseMeta;
+          delete fallback.discount_domain;
+          coupon = await insert('coupons', fallback);
+        } else if (msg.includes('does not exist') || msg.includes('column')) {
+          const fallback = { ...couponData };
+          delete fallback.applicable_to;
+          delete fallback.service_category;
+          delete fallback.applicable_services;
+          delete fallback.discount_domain;
+          delete fallback.metadata;
+          delete fallback.description;
+          coupon = await insert('coupons', fallback);
+        } else {
+          throw insertErr;
+        }
+      }
 
       return c.json({
         success: true,
@@ -1607,59 +2221,42 @@ export function registerPromotionEndpoints(app: Hono) {
   app.post("/admin/coupons/create", async (c) => {
     try {
       const body = await c.req.json();
-      const {
-        code,
-        type,
-        value,
-        discount_type,
-        discount_value,
-        minOrderAmount,
-        min_order_value,
-        maxDiscountAmount,
-        max_discount,
-        validFrom,
-        valid_from,
-        validUntil,
-        valid_until,
-        usageLimit,
-        usage_limit,
-        isActive,
-        is_active = true,
-      } = body;
-
-      // Handle both UI format (type, value) and backend format (discount_type, discount_value)
-      const finalCode = code || '';
-      const finalDiscountType = discount_type || type || 'percentage';
-      const finalDiscountValue = discount_value !== undefined ? discount_value : (value !== undefined ? value : 0);
-      const finalMinOrder = min_order_value !== undefined ? min_order_value : (minOrderAmount !== undefined ? minOrderAmount : 0);
-      const finalMaxDiscount = max_discount !== undefined ? max_discount : (maxDiscountAmount !== undefined ? maxDiscountAmount : 0);
-      const finalValidFrom = valid_from || validFrom || new Date().toISOString().split('T')[0];
-      const finalValidUntil = valid_until || validUntil || null;
-      const finalUsageLimit = usage_limit !== undefined ? usage_limit : (usageLimit !== undefined ? usageLimit : 0);
-      const finalIsActive = is_active !== undefined ? is_active : (isActive !== undefined ? isActive : true);
-
-      if (!finalCode || !finalDiscountType || finalDiscountValue === undefined) {
+      if (!body.code || (body.discount_value === undefined && body.value === undefined)) {
         return c.json({ error: 'code, discount_type/type, and discount_value/value are required' }, 400);
       }
-
-      // Use correct column names based on schema (no max_discount column in base schema)
-      const couponData: any = {
-        code: finalCode.toUpperCase(),
-        name: finalCode.toUpperCase(), // Required field
-        discount_type: finalDiscountType,
-        discount_value: finalDiscountValue,
-        min_order_amount: finalMinOrder > 0 ? finalMinOrder : null,
-        start_date: finalValidFrom ? new Date(finalValidFrom) : new Date(),
-        end_date: finalValidUntil ? new Date(finalValidUntil) : (finalValidFrom ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : new Date()),
-        max_uses: finalUsageLimit > 0 ? finalUsageLimit : null,
-        is_active: finalIsActive,
-      };
-
-      // Remove null values for optional fields
-      if (couponData.min_order_amount === null) delete couponData.min_order_amount;
-      if (couponData.max_uses === null) delete couponData.max_uses;
-
-      const coupon = await insert('coupons', couponData);
+      const targetingError = validateAdminPromotionTargeting(body as Record<string, unknown>);
+      if (targetingError) {
+        return c.json({ error: targetingError }, 400);
+      }
+      const couponData = buildAdminCouponRecord(body as Record<string, unknown>);
+      let coupon;
+      try {
+        coupon = await insert('coupons', couponData);
+      } catch (insertErr: unknown) {
+        const msg = String((insertErr as Error)?.message ?? insertErr);
+        if (msg.includes('column "discount_domain"') && couponData.discount_domain !== undefined) {
+          const fallback = { ...couponData };
+          const baseMeta =
+            fallback.metadata && typeof fallback.metadata === 'object'
+              ? { ...(fallback.metadata as Record<string, unknown>) }
+              : {};
+          baseMeta.discount_domain = fallback.discount_domain;
+          fallback.metadata = baseMeta;
+          delete fallback.discount_domain;
+          coupon = await insert('coupons', fallback);
+        } else if (msg.includes('does not exist') || msg.includes('column')) {
+          const fallback = { ...couponData };
+          delete fallback.applicable_to;
+          delete fallback.service_category;
+          delete fallback.applicable_services;
+          delete fallback.discount_domain;
+          delete fallback.metadata;
+          delete fallback.description;
+          coupon = await insert('coupons', fallback);
+        } else {
+          throw insertErr;
+        }
+      }
 
       return c.json({
         success: true,
@@ -1710,6 +2307,23 @@ export function registerPromotionEndpoints(app: Hono) {
       if (body.is_active !== undefined || body.isActive !== undefined) {
         updateData.is_active = body.is_active !== undefined ? body.is_active : body.isActive;
       }
+      if (body.name !== undefined) updateData.name = String(body.name);
+      if (body.description !== undefined) updateData.description = body.description;
+
+      const targeting = buildCouponTargetingFromAdminBody(body as Record<string, unknown>);
+      if (body.applicable_to !== undefined || body.applicableTo !== undefined || body.target_scopes) {
+        updateData.applicable_to = targeting.applicable_to;
+      }
+      if (
+        body.service_category !== undefined ||
+        body.serviceCategory !== undefined ||
+        body.applicable_services !== undefined ||
+        body.applicableServices !== undefined
+      ) {
+        updateData.service_category = targeting.service_category;
+        updateData.applicable_services = targeting.applicable_services;
+        updateData.metadata = targeting.metadata;
+      }
 
       await update('coupons', { id }, updateData);
 
@@ -1741,6 +2355,77 @@ export function registerPromotionEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error updating coupon:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/coupons/bulk-generate
+   * Generate multiple unique coupon codes (admin)
+   */
+  app.post("/admin/coupons/bulk-generate", async (c) => {
+    try {
+      const body = await c.req.json();
+      const prefix = String(body.prefix || 'SAVE').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'SAVE';
+      const quantity = Math.min(Math.max(parseInt(String(body.quantity || 10), 10) || 10, 1), 500);
+      const length = Math.min(Math.max(parseInt(String(body.length || 6), 10) || 6, 4), 12);
+      const finalDiscountType = normalizeAdminPromotionDiscountType(body.type ?? body.discount_type ?? 'percentage');
+      const finalDiscountValue = Number(body.value ?? body.discount_value ?? 10);
+      const finalMinOrder = Number(body.minOrderAmount ?? body.min_order_value ?? 0);
+      const finalValidFrom = parseAdminDateInput(body.validFrom ?? body.valid_from) || new Date().toISOString().split('T')[0];
+      const finalValidUntil = parseAdminDateInput(body.validUntil ?? body.valid_until);
+      const finalUsageLimit = Number(body.usageLimit ?? body.usage_limit ?? 1);
+      const finalIsActive = body.is_active !== undefined ? body.is_active !== false : body.isActive !== false;
+
+      const generated: string[] = [];
+      const maxAttempts = quantity * 20;
+      let attempts = 0;
+
+      while (generated.length < quantity && attempts < maxAttempts) {
+        attempts += 1;
+        const suffix = Math.random()
+          .toString(36)
+          .replace(/[^a-z0-9]/gi, '')
+          .slice(0, length)
+          .toUpperCase();
+        const code = `${prefix}${suffix}`.slice(0, 20);
+        if (generated.includes(code)) continue;
+
+        const existing = await select('coupons', { code });
+        if (existing.length > 0) continue;
+
+        const couponData: any = {
+          code,
+          name: code,
+          discount_type: finalDiscountType,
+          discount_value: finalDiscountValue,
+          min_order_amount: finalMinOrder > 0 ? finalMinOrder : null,
+          start_date: new Date(finalValidFrom),
+          end_date: finalValidUntil
+            ? new Date(finalValidUntil)
+            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          max_uses: finalUsageLimit > 0 ? finalUsageLimit : null,
+          is_active: finalIsActive,
+        };
+        if (couponData.min_order_amount === null) delete couponData.min_order_amount;
+        if (couponData.max_uses === null) delete couponData.max_uses;
+
+        await insert('coupons', couponData);
+        generated.push(code);
+      }
+
+      if (generated.length === 0) {
+        return c.json({ success: false, error: 'Could not generate unique coupon codes' }, 400);
+      }
+
+      return c.json({
+        success: true,
+        message: `Generated ${generated.length} coupon${generated.length === 1 ? '' : 's'}`,
+        codes: generated,
+        count: generated.length,
+      });
+    } catch (error: any) {
+      console.error('Error bulk-generating coupons:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 

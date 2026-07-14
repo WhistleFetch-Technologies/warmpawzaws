@@ -11,7 +11,11 @@ import {
 import { toast } from 'sonner';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
-import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
+import { ServiceBookingPromoSummary } from '../booking/ServiceBookingPromoSummary';
+import { CheckoutCouponPanel } from '@/components/customer/pricing/CheckoutCouponPanel';
+import { useBookingDiscountResolver } from '@/lib/pricing/use-booking-discount-resolver';
+import type { AppliedCheckoutCoupon } from '@/lib/pricing/coupon-validation';
+import type { UnifiedResolverResponse } from '@/lib/pricing/unified-resolver-response';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { PaymentSourcesDisplay } from '../payment/PaymentSourcesDisplay';
@@ -666,36 +670,32 @@ export function VetBookingRouter({
     if (selectedServiceType === 'at_home') refreshAddresses();
   }, [selectedServiceType]);
 
-  // ✅ FIX: Auto-advance to UniversalPaymentPage for at_home services (like tele consultation)
-  // Skip the intermediate review page and go directly to full payment UI
+  // Skip duplicate pre-payment review — go straight to UniversalPaymentPage for all styles
   useEffect(() => {
-    if (step === 'payment' && selectedServiceType === 'at_home' && !showPaymentPage) {
-      // Ensure we have selectedVendorService before showing payment
+    if (step === 'payment' && !showPaymentPage) {
       const serviceOption = getSelectedServiceOption();
       if (!selectedVendorService && serviceOption) {
-        // ✅ CRITICAL: Find the actual vendor service from API to get real service_id (UUID)
         const actualVendorService = vendorServices.find(s => {
           const optionServiceId = (serviceOption as any).serviceId || serviceOption.id;
           return (s.serviceId || s.service_id) === optionServiceId || (s.serviceId || s.service_id) === serviceOption.id;
         });
-        
+
         const optionServiceId = (serviceOption as any).serviceId || serviceOption.id;
         setSelectedVendorService({
-          id: actualVendorService?.id, // Numeric vendor_services.id (for reference)
-          serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId, // ✅ UUID from services table
-          service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId, // ✅ Explicit UUID field
+          id: actualVendorService?.id,
+          serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
+          service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
           name: serviceOption.name,
           price: serviceOption.price,
           duration: serviceOption.duration,
           serviceStyle: selectedServiceType,
         });
       }
-      // Auto-advance to UniversalPaymentPage for at_home services
       if (selectedVendorService && selectedPet && selectedDate && selectedTime) {
         setShowPaymentPage(true);
       }
     }
-  }, [step, selectedServiceType, showPaymentPage, selectedVendorService, selectedPet, selectedDate, selectedTime, vendorServices]);
+  }, [step, showPaymentPage, selectedVendorService, selectedPet, selectedDate, selectedTime, vendorServices]);
 
   // Check for active packages when customer and vendor are known
   const checkForActivePackages = async () => {
@@ -812,6 +812,9 @@ export function VetBookingRouter({
         }
       }
       
+      if (nextStep === 'payment') {
+        setShowPaymentPage(true);
+      }
       setStep(nextStep);
     }
   };
@@ -829,6 +832,12 @@ export function VetBookingRouter({
       return;
     }
 
+    if (step === 'payment' && showPaymentPage) {
+      setShowPaymentPage(false);
+      setStep('summary');
+      return;
+    }
+
     if (currentIdx > 0) {
       const prevStep = steps[currentIdx - 1];
       if (prevStep === 'service' && hasServiceContext) {
@@ -839,7 +848,7 @@ export function VetBookingRouter({
     } else {
       onBack();
     }
-  }, [step, selectedServiceType, onBack, hasServiceContext]);
+  }, [step, selectedServiceType, onBack, hasServiceContext, showPaymentPage]);
 
   useEffect(() => {
     onInternalBackReady?.(handleBack);
@@ -958,6 +967,48 @@ export function VetBookingRouter({
 
   const selectedServiceOption = getSelectedServiceOption();
 
+  const bookingSummaryServiceIds = useMemo(() => {
+    const services = allSelectedServices?.length ? allSelectedServices : [selectedServiceOption];
+    return services
+      .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+      .filter(Boolean);
+  }, [allSelectedServices, selectedServiceOption]);
+
+  const bookingSummaryBaseAmount = useMemo(() => {
+    if (selectedPackageForSwitch) return 0;
+    return allSelectedServices?.length
+      ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0)
+      : (selectedServiceOption?.price ?? 0);
+  }, [allSelectedServices, selectedServiceOption, selectedPackageForSwitch]);
+
+  const bookingDiscountResolver = useBookingDiscountResolver({
+    enabled:
+      Boolean(vendorId || doctorId) &&
+      bookingSummaryBaseAmount > 0 &&
+      !selectedPackageForSwitch,
+    vendorId: String(vendorId || doctorId || ''),
+    serviceIds: bookingSummaryServiceIds,
+    amount: bookingSummaryBaseAmount,
+    customerId: customerId || undefined,
+    serviceStyle: selectedServiceType,
+    serviceCategory: 'vet',
+  });
+
+  const handleSummaryCouponApply = (
+    coupon: AppliedCheckoutCoupon,
+    quote?: UnifiedResolverResponse
+  ) => {
+    if (quote) {
+      bookingDiscountResolver.applyCouponFromQuote(quote, coupon.code);
+      return;
+    }
+    void bookingDiscountResolver.refresh(coupon.code);
+  };
+
+  const handleSummaryBookingQuote = (quote: UnifiedResolverResponse, couponCode: string) => {
+    bookingDiscountResolver.applyCouponFromQuote(quote, couponCode);
+  };
+
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
   const getServiceTitle = () => {
     if (selectedServiceType === 'at_center') return 'Clinic Visit Booking';
@@ -997,129 +1048,6 @@ export function VetBookingRouter({
       isCurrent: idx === currentIdx
     }));
   };
-
-  const reviewVetPrePayment =
-    step === 'payment' && !showPaymentPage && selectedServiceType !== 'at_home';
-
-  const handleVetPrePaymentContinue = () => {
-    if (!selectedVendorService && selectedServiceOption) {
-      const actualVendorService = vendorServices.find((s) => {
-        const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
-        return (
-          (s.serviceId || s.service_id) === optionServiceId || (s.serviceId || s.service_id) === selectedServiceOption.id
-        );
-      });
-
-      const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
-      setSelectedVendorService({
-        id: actualVendorService?.id,
-        serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
-        service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
-        name: selectedServiceOption.name,
-        price: selectedServiceOption.price,
-        duration: selectedServiceOption.duration,
-        serviceStyle: selectedServiceType,
-      });
-    }
-    setShowPaymentPage(true);
-  };
-
-  const vetPrePaymentTotalAmount =
-    allSelectedServices && allSelectedServices.length > 0
-      ? allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0)
-      : selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
-
-  const vetPrePaymentSummary = (
-    <>
-      {allSelectedServices && allSelectedServices.length > 0 ? (
-        <div className="space-y-3 pb-3 sm:pb-4 border-b">
-          {allSelectedServices.map((svc: any, idx: number) => (
-            <div key={svc.id || svc.serviceId || idx} className="flex items-center gap-2 sm:gap-3">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600">
-                {selectedServiceType === 'tele' ? (
-                  <Video className="w-5 h-5 sm:w-6 sm:h-6" />
-                ) : selectedServiceType === 'at_home' ? (
-                  <Home className="w-5 h-5 sm:w-6 sm:h-6" />
-                ) : (
-                  <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-sm sm:text-base">{svc.name || svc.serviceName || 'Service'}</h3>
-                {(svc.duration ?? 0) > 0 && <p className="text-xs sm:text-sm text-gray-500">{svc.duration} mins</p>}
-              </div>
-              <p className="font-bold text-sm sm:text-base flex-shrink-0">{formatPriceWithSymbol(svc.price ?? 0)}</p>
-            </div>
-          ))}
-          {allSelectedServices.length > 1 && (
-            <div className="flex justify-between items-center pt-2 font-bold text-sm sm:text-base">
-              <span>Subtotal</span>
-              <span className="text-orange-600">
-                {formatPriceWithSymbol(allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0))}
-              </span>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600">
-            {selectedServiceType === 'tele' ? (
-              <Video className="w-5 h-5 sm:w-6 sm:h-6" />
-            ) : selectedServiceType === 'at_home' ? (
-              <Home className="w-5 h-5 sm:w-6 sm:h-6" />
-            ) : (
-              <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-sm sm:text-base">
-              {selectedServiceOption?.name || selectedVendorService?.name || serviceName || 'Vet Consultation'}
-            </h3>
-            {(selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration) > 0 && (
-              <p className="text-xs sm:text-sm text-gray-500">
-                {selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration} mins
-              </p>
-            )}
-          </div>
-          <p className="font-bold text-sm sm:text-base flex-shrink-0">
-            {formatPriceWithSymbol(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0)}
-          </p>
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-        <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs sm:text-sm text-gray-500">Date & Time</p>
-          <p className="font-medium text-sm sm:text-base">
-            {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at{' '}
-            {formatTime12Hour(selectedTime)}
-          </p>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-        <User className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs sm:text-sm text-gray-500">Pet</p>
-          <p className="font-medium text-sm sm:text-base">
-            {selectedPet?.name} ({selectedPet?.breed})
-          </p>
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Additional Notes (Optional)</label>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Any symptoms or concerns..."
-          className="w-full p-2 sm:p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm sm:text-base"
-          rows={3}
-        />
-      </div>
-    </>
-  );
 
   const vetPaymentScreen =
     step === 'payment' &&
@@ -1207,6 +1135,7 @@ export function VetBookingRouter({
                 }
                 customerPhone={phone}
                 customerId={customerId || undefined}
+                initialAppliedCoupon={bookingDiscountResolver.appliedCoupon}
                 flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
                 onBack={() => {
                   setShowPaymentPage(false);
@@ -1249,7 +1178,7 @@ export function VetBookingRouter({
 
   return (
     <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-gray-50">
-      {!((step === 'payment' && showPaymentPage) || reviewVetPrePayment) && (
+      {!(step === 'payment' && showPaymentPage) && (
         <ServiceDashboardHeader
           serviceName={getServiceTitle()}
           serviceSubtitle={getServiceSubtitle()}
@@ -1270,25 +1199,6 @@ export function VetBookingRouter({
           paddingBottom: 'max(1rem, var(--customer-tabbar-content-pad))',
         }}
       >
-        {reviewVetPrePayment && (
-          <PrePaymentBookingReview
-            title="Booking Summary"
-            subtitle="Review before payment"
-            headerIcon={Stethoscope}
-            stats={dashboardStats}
-            onBack={handleBack}
-            summaryBody={vetPrePaymentSummary}
-            total={{ label: 'Total', amountFormatted: formatPriceWithSymbol(vetPrePaymentTotalAmount) }}
-            totalTextClassName="text-orange-600"
-            primaryButton={{
-              label: 'Continue to Payment',
-              onClick: handleVetPrePaymentContinue,
-              disabled: processing,
-              loading: processing,
-            }}
-          />
-        )}
-        {!reviewVetPrePayment && (
         <div className="mx-auto max-w-md px-4 py-4 sm:px-6 sm:py-6">
         {/* Service Selection - Skip if service context exists */}
         {step === 'service' && !hasServiceContext && (
@@ -1664,7 +1574,41 @@ export function VetBookingRouter({
               <div className="flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-gray-400" /><span>{selectedDate && new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {formatTime12Hour(selectedTime)}</span></div>
               <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-gray-400" /><span>{selectedPet?.name} ({selectedPet?.breed})</span></div>
               {selectedServiceType === 'at_home' && selectedAddress && <div className="flex items-center gap-2 text-sm"><MapPin className="w-4 h-4 text-gray-400" /><span>{selectedAddress.street || selectedAddress.address || 'Address'}</span></div>}
-              <div className="pt-2 flex justify-between font-semibold"><span>Total</span><span className="text-orange-600">{formatPriceWithSymbol(selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0) : (selectedServiceOption?.price ?? 0)))}</span></div>
+              <div className="pt-2 flex justify-between font-semibold"><span>Subtotal</span><span className="text-orange-600">{formatPriceWithSymbol(selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0) : (selectedServiceOption?.price ?? 0)))}</span></div>
+              {!selectedPackageForSwitch && (vendorId || doctorId) ? (
+                <ServiceBookingPromoSummary
+                  vendorId={vendorId || doctorId}
+                  customerId={customerId}
+                  serviceIds={bookingSummaryServiceIds}
+                  baseAmount={bookingSummaryBaseAmount}
+                  serviceStyle={selectedServiceType}
+                  serviceCategory="vet"
+                  quote={bookingDiscountResolver.quote}
+                  couponCode={bookingDiscountResolver.activeCouponCode}
+                  loading={bookingDiscountResolver.loading}
+                />
+              ) : null}
+              {!selectedPackageForSwitch && (vendorId || doctorId) ? (
+                <CheckoutCouponPanel
+                  kind="service_booking"
+                  vendorId={vendorId || doctorId}
+                  customerId={customerId || undefined}
+                  serviceCategory="vet"
+                  serviceIds={(allSelectedServices?.length ? allSelectedServices : [selectedServiceOption])
+                    .map((s: any) =>
+                      String(s?.id || s?.vendorServiceId || s?.serviceId || s?.service_id || '').trim()
+                    )
+                    .filter(Boolean)}
+                  serviceStyle={selectedServiceType}
+                  bookingBaseAmount={bookingSummaryBaseAmount}
+                  orderAmount={bookingSummaryBaseAmount}
+                  appliedCoupon={bookingDiscountResolver.appliedCoupon}
+                  onApplyCoupon={handleSummaryCouponApply}
+                  onBookingQuote={handleSummaryBookingQuote}
+                  onRemoveCoupon={() => void bookingDiscountResolver.removeCoupon()}
+                  alwaysShow
+                />
+              ) : null}
               {selectedPackageForSwitch && (
                 <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700 flex items-center gap-2">
                   <Package className="w-4 h-4" />
@@ -1910,7 +1854,6 @@ export function VetBookingRouter({
           }}
         />
         </div>
-        )}
       </div>
       
       {/* Standardized Footer */}

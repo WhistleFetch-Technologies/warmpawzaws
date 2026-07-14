@@ -17,7 +17,11 @@ export type PolicyDocKey =
   | 'finance-tier-system'
   | 'finance-schedule-settings'
   | 'finance-settlement-rules'
-  | 'finance-payment-gateway';
+  | 'finance-payment-gateway'
+  | 'discount-priority-policy'
+  | 'discount-stack-policy'
+  | 'discount-funding-policy'
+  | 'discount-limits-policy';
 
 export interface PolicyDocEntry {
   title: string;
@@ -769,6 +773,48 @@ The Payment Gateway screen (Finance → Payment Gateway) configures **payment ga
 - Keep Key Secret and Webhook Secret secure.
 - Payment Rules and Refund Policies here = Finance tabs; changing in one updates the other.
 - Use Schedule to align settlement runs with your finance calendar.`,
+  },
+  'discount-priority-policy': {
+    title: 'Discount Priority Policy',
+    markdown: `# Discount Priority Policy
+
+Configures **PriorityConfiguration** — how eligible promotions and coupons are ranked before stacking.
+
+## Strategies
+
+- **Maximum Customer Savings** — maximizes total discount for the customer
+- **Vendor Spotlight** — prefers vendor spotlight promotions
+- **Fixed Priority Weight** — uses promotion priority weights
+- **Lowest Platform Cost** — minimizes platform-funded exposure
+- **Admin Manual Order** — explicit admin-defined ordering
+
+Domain overrides merge onto global defaults. Changes apply only after policy publish (Phase 8 API).`,
+  },
+  'discount-stack-policy': {
+    title: 'Discount Stack Policy',
+    markdown: `# Discount Stack Policy
+
+Configures **StackPolicyConfiguration** — which discount types may combine and in what order.
+
+Key flags: coupon with promotion, multiple coupons, platform + vendor, exclusive behaviour, and stack order.
+
+Parallel application mode is reserved for a future engine release.`,
+  },
+  'discount-funding-policy': {
+    title: 'Discount Funding Policy',
+    markdown: `# Discount Funding Policy
+
+Configures **FundingConfiguration** default splits (platform vs vendor) passed to the Settlement Engine.
+
+The UI does not calculate payouts. Shared splits must sum to 100%. Campaign-level funding is managed in the Commercial Campaign Engine.`,
+  },
+  'discount-limits-policy': {
+    title: 'Discount Limits Policy',
+    markdown: `# Discount Limits Policy
+
+Configures **LimitConfiguration** caps: max promotions, coupons, total discounts, max discount percent, and minimum payable amount.
+
+Overflow strategy controls behaviour when caps are exceeded (reject last, trim, or reject lowest savings).`,
   },
 };
 

@@ -23,6 +23,7 @@ import { Card, Badge, Button, Input } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PolicyHelpButton } from '@/components/PolicyHelpButton';
+import { navigateToBookingEarnings } from '@/lib/finance/settlementAuditExport';
 
 interface Payout {
   id: string;
@@ -53,6 +54,7 @@ interface Payout {
   rejectionReason?: string;
   source?: 'payout' | 'settlement';
   settlement_id?: string;
+  settlementIds?: string[];
 }
 
 export function PayoutManagement() {
@@ -128,6 +130,13 @@ export function PayoutManagement() {
         })(),
         source: p.source ?? 'payout',
         settlement_id: p.settlement_id ?? null,
+        settlementIds: (() => {
+          const ids: string[] = [];
+          if (p.settlement_id) ids.push(String(p.settlement_id));
+          const rawId = String(p.id ?? '');
+          if (rawId.startsWith('settlement-')) ids.push(rawId.replace(/^settlement-/, ''));
+          return [...new Set(ids)];
+        })(),
       })));
     } catch (error) {
       console.error('Error loading payouts:', error);
@@ -610,6 +619,21 @@ export function PayoutManagement() {
                   </div>
                 </div>
               </div>
+              {(selectedPayout.settlementIds?.length || selectedPayout.settlement_id) && (
+                <div className="border-t border-gray-200 pt-4">
+                  <h4 className="font-semibold mb-3">Linked settlements</h4>
+                  <ul className="space-y-1 text-sm font-mono text-gray-700">
+                    {(selectedPayout.settlementIds?.length
+                      ? selectedPayout.settlementIds
+                      : [selectedPayout.settlement_id]
+                    )
+                      .filter(Boolean)
+                      .map((id) => (
+                        <li key={String(id)}>{String(id)}</li>
+                      ))}
+                  </ul>
+                </div>
+              )}
               {selectedPayout.bankAccount && (
                 <div className="border-t border-gray-200 pt-4">
                   <h4 className="font-semibold mb-3">Bank Account</h4>
@@ -641,6 +665,21 @@ export function PayoutManagement() {
               )}
             </div>
             <div className="p-6 border-t border-gray-200 flex items-center justify-end gap-3 bg-gray-50">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const created = selectedPayout.createdAt ?? (selectedPayout as any).created_at;
+                  const d = created ? new Date(created) : new Date();
+                  navigateToBookingEarnings({
+                    periodType: 'month',
+                    year: d.getFullYear(),
+                    month: d.getMonth() + 1,
+                    vendorId: selectedPayout.vendorId,
+                  });
+                }}
+              >
+                Open Booking Earnings
+              </Button>
               <Button onClick={() => {
                 setShowDetails(false);
                 setSelectedPayout(null);

@@ -1483,6 +1483,7 @@ export function VendorLandingPage({
           <ServicePromotionsManagement
             vendorId={vendorId}
             vendorRole={vendorData?.vendorType}
+            roleId={vendorData?.roleId ?? vendorData?.role_id}
             onBack={() => setShowServicePromotions(false)}
           />
         );

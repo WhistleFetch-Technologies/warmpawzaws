@@ -5,7 +5,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 import { apiClient } from '@/lib/api-client';
 import { 
   Package, MapPin, Truck, Clock, Check, AlertCircle, 
-  Phone, ChevronRight, ArrowLeft, Navigation, RefreshCcw, MessageCircle, CheckCircle, HelpCircle, Download
+  Phone, ChevronRight, ArrowLeft, Navigation, RefreshCcw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -13,33 +13,20 @@ import {
   getMealOrderInvoiceDownloadMessage,
   isMealOrderInvoiceAvailable,
 } from '@/lib/meal-order-invoice-download';
-import {
-  MealPlanOrderTrackingUI,
-  formatMealOrderDisplayId,
-} from '@/components/customer/tracking/MealPlanOrderTrackingUI';
-import { MealLiveMapSection } from '@/components/customer/tracking/MealLiveMapSection';
-import {
-  resolveEffectiveMealDeliveryState,
-  shouldShowDeliveryRider,
-} from '@warmpawz/shared-types';
-import {
-  extractDestinationCoordinates,
-  extractRiderCoordinates,
-  resolveRiderPhoto,
-} from '@/lib/meal-tracking-utils';
 import { useMealTrackingPoll } from '@/lib/use-meal-tracking-poll';
-import { MealOrderDetailsCollapsible } from '@/components/customer/tracking/MealOrderDetailsCollapsible';
-import { MealCustomerDetailsCard } from '@/components/customer/tracking/MealCustomerDetailsCard';
-import { DeliveryPartnerCallAction } from '@/components/customer/tracking/DeliveryPartnerCallAction';
-import { formatMealOrderDeliveryAddress } from '@/lib/meal-order-tracking-details';
-import { parseMealRefundReview } from '@/lib/meal-refund-review';
-import { MealRefundReviewTrackingCard } from '@/components/customer/meal-plans/MealRefundReviewListBanner';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
 import {
   buildSupportMealOrderContext,
   navigateToMealOrderSupport,
 } from '@/lib/support-contact';
+import { resolveMealOrderRowId } from '@/lib/meal-order-tracking-nav';
+import {
+  MealTrackingHeaderRefreshButton,
+  MealTrackingMealView,
+} from '@/components/customer/tracking/MealTrackingMealView';
+import { MealTrackingBackButton } from '@/components/customer/tracking/MealTrackingHeader';
+import { MealTrackingInvoiceButton } from '@/components/customer/tracking/MealTrackingInvoiceButton';
 
 interface TrackingData {
   success: boolean;
@@ -89,11 +76,11 @@ interface TrackingData {
     eta?: number;
     etaMinutes?: number;
     distanceRemaining?: number;
-    logistics_partner?: string;
-    locationHistory?: Array<{ lat: number; lng: number; time: string }>;
     reassignPending?: boolean;
     lastLocationUpdate?: string;
     last_location_update?: string;
+    logistics_partner?: string;
+    locationHistory?: Array<{ lat: number; lng: number; time: string }>;
   } | null;
 }
 
@@ -122,6 +109,7 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
   const pathname = usePathname();
   const phone = searchParams.get('phone')?.trim() || undefined;
   const from = searchParams.get('from')?.trim() || undefined;
+  const queryOrderId = searchParams.get('orderId')?.trim() || undefined;
 
   /** Static export only pre-renders `/track/placeholder`; real id must come from the client route or URL. */
   const resolvedOrderId = useMemo(() => {
@@ -135,13 +123,13 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
       typeof pathname === 'string' ? pathname.match(/^\/track\/([^/?#]+)/)?.[1] : undefined;
     const decodedPath = pathSeg ? decodeURIComponent(pathSeg) : '';
 
-    const candidates = [fromDynamicSegment, decodedPath, orderId];
+    const candidates = [queryOrderId, fromDynamicSegment, decodedPath, orderId];
     for (const c of candidates) {
       const s = String(c || '').trim();
       if (s && s !== 'placeholder') return s;
     }
     return String(orderId || '').trim();
-  }, [orderId, routeParams, pathname]);
+  }, [orderId, queryOrderId, routeParams, pathname]);
 
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -262,36 +250,8 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
   const steps = isHyperlocal ? deliveryStatusSteps : statusSteps;
   const trackingStatus = tracking.tracking?.status || (isHyperlocal ? 'pending_assignment' : 'pending');
   const currentStepIndex = getStatusIndex(trackingStatus, steps);
-  const mealDeliveryEff = resolveEffectiveMealDeliveryState(
-    tracking.order.status,
-    tracking.tracking?.status ?? null,
-    {
-      reassignPending: Boolean(tracking.tracking?.reassignPending),
-      cancelledBy:
-        (tracking.order as { cancelled_by?: string; cancelledBy?: string }).cancelled_by ??
-        (tracking.order as { cancelledBy?: string }).cancelledBy ??
-        null,
-      cancelledAt:
-        (tracking.order as { cancelled_at?: string; cancelledAt?: string }).cancelled_at ??
-        (tracking.order as { cancelledAt?: string }).cancelledAt ??
-        null,
-    },
-  );
-  const mealCancelledBy =
-    (tracking.order as { cancelled_by?: string; cancelledBy?: string }).cancelled_by ??
-    (tracking.order as { cancelledBy?: string }).cancelledBy ??
-    null;
-  const mealCancelledAt =
-    (tracking.order as { cancelled_at?: string; cancelledAt?: string }).cancelled_at ??
-    (tracking.order as { cancelledAt?: string }).cancelledAt ??
-    null;
-  const isMealCancelled =
-    tracking.orderType === 'meal' &&
-    (mealDeliveryEff === 'cancelled' || (mealDeliveryEff === 'failed' && Boolean(mealCancelledBy)));
   const isDelivered =
-    tracking.orderType === 'meal'
-      ? mealDeliveryEff === 'delivered' && !mealCancelledBy
-      : tracking.tracking?.status === 'delivered' || tracking.order.status === 'delivered';
+    tracking.tracking?.status === 'delivered' || tracking.order.status === 'delivered';
 
   const mealBackHref =
     from === 'meal-plans'
@@ -300,38 +260,7 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
         : '/orders/meal-plans'
       : '/';
 
-  const orderTotal = tracking.order.total ?? tracking.order.total_amount;
-
   if (tracking.orderType === 'meal') {
-    const logisticsStatus = tracking.tracking?.status ?? null;
-    const otp = tracking.tracking?.deliveryOtp;
-    const riderActive =
-      mealDeliveryEff === 'picked_up' ||
-      mealDeliveryEff === 'on_the_way' ||
-      shouldShowDeliveryRider(logisticsStatus);
-    const riderName =
-      tracking.tracking?.rider?.name?.trim() ||
-      tracking.tracking?.deliveryPerson?.name?.trim() ||
-      '';
-    const riderPhone =
-      tracking.tracking?.rider?.phone?.trim() ||
-      tracking.tracking?.deliveryPerson?.phone?.trim() ||
-      '';
-    const showRiderCard =
-      !isDelivered && shouldShowDeliveryRider(logisticsStatus) && Boolean(riderName);
-    const etaMinutes = tracking.tracking?.etaMinutes ?? tracking.tracking?.eta;
-    const riderPhoto = resolveRiderPhoto(tracking.tracking as Record<string, unknown>);
-    const riderCoords = extractRiderCoordinates(tracking.tracking as Record<string, unknown>);
-    const deliveryAddressText = formatMealOrderDeliveryAddress(
-      tracking.order as Record<string, unknown>,
-    );
-    const destination = extractDestinationCoordinates(
-      tracking.order as Record<string, unknown>,
-      deliveryAddressText,
-    );
-
-    const refundReview = parseMealRefundReview(tracking.order.refundReview);
-
     const openMealOrderHelp = () => {
       navigateToMealOrderSupport(
         router,
@@ -345,7 +274,9 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
         toast.error('Invoice is available after payment is confirmed');
         return;
       }
-      const orderIdForInvoice = String(mealOrder.id || resolvedOrderId);
+      const orderIdForInvoice = resolveMealOrderRowId(
+        tracking.order as { id?: string; order_id?: string; orderId?: string },
+      ) || resolvedOrderId;
       try {
         const { saveResult } = await downloadMealOrderInvoice(orderIdForInvoice);
         if (saveResult === 'failed') {
@@ -360,187 +291,26 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
     };
 
     return (
-      <MealPlanOrderTrackingUI
-        orderDisplayId={formatMealOrderDisplayId(tracking.order)}
-        orderStatus={tracking.order.status}
-        logisticsStatus={logisticsStatus}
-        cancelledBy={mealCancelledBy}
-        cancelledAt={mealCancelledAt}
-        totalAmount={orderTotal}
-        refundReviewCard={
-          refundReview ? <MealRefundReviewTrackingCard refundReview={refundReview} /> : undefined
-        }
+      <MealTrackingMealView
+        order={tracking.order as Record<string, unknown>}
+        customer={tracking.customer ?? null}
+        tracking={(tracking.tracking as Record<string, unknown>) ?? null}
+        orderId={resolvedOrderId}
+        reassignPending={Boolean(tracking.tracking?.reassignPending)}
         backSlot={
-          <a
-            href={mealBackHref}
-            className="p-2 rounded-full hover:bg-white/15 transition text-white"
-            aria-label="Back"
-          >
-            <ArrowLeft className="w-6 h-6" />
-          </a>
+          <MealTrackingBackButton onClick={() => router.push(mealBackHref)} />
         }
-        headerActions={
-          <div className="flex items-center gap-1">
+        onSupport={openMealOrderHelp}
+        headerExtra={
+          <>
             {isMealOrderInvoiceAvailable(tracking.order as Record<string, unknown>) ? (
-              <button
-                type="button"
-                onClick={() => void handleDownloadInvoice()}
-                className="p-2 rounded-full hover:bg-white/15 text-white transition"
-                aria-label="Download invoice"
-              >
-                <Download className="w-5 h-5" />
-              </button>
+              <MealTrackingInvoiceButton onClick={() => void handleDownloadInvoice()} />
             ) : null}
-            <button
-              type="button"
-              onClick={openMealOrderHelp}
-              className="p-2 rounded-full hover:bg-white/15 text-white transition"
-              aria-label="Help with this order"
-            >
-              <HelpCircle className="w-5 h-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => loadTracking(true)}
-              disabled={refreshing}
-              className="p-2 rounded-full hover:bg-white/15 text-white transition disabled:opacity-50"
-              aria-label="Refresh"
-            >
-              <RefreshCcw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        }
-        deliveryOtpBanner={
-          otp &&
-          riderActive &&
-          !isDelivered ? (
-            <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 -mt-2 shadow-sm">
-              <p className="text-sm font-medium text-amber-800 mb-2">
-                Handover OTP — share with delivery partner
-              </p>
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <span className="text-3xl font-mono font-bold text-amber-900 tracking-[0.3em]">{otp}</span>
-                <button
-                  type="button"
-                  onClick={() => otp && navigator.clipboard?.writeText(String(otp))}
-                  className="px-4 py-2 bg-amber-200 text-amber-900 rounded-lg text-sm font-medium"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-          ) : undefined
-        }
-        liveTrackingMap={
-          <MealLiveMapSection
-            logisticsPartner={tracking.tracking?.logistics_partner ?? null}
-            logisticsType={
-              (tracking.order as { logistics_type?: string; logisticsType?: string }).logistics_type ??
-              (tracking.order as { logisticsType?: string }).logisticsType ??
-              null
-            }
-            logisticsStatus={logisticsStatus}
-            orderEffectiveState={mealDeliveryEff}
-            riderCoords={riderCoords}
-            destination={destination}
-            etaMinutes={etaMinutes}
-            distanceRemainingKm={tracking.tracking?.distanceRemaining}
-            lastLocationUpdate={
-              tracking.tracking?.lastLocationUpdate ??
-              (tracking.tracking as { last_location_update?: string })?.last_location_update ??
-              null
-            }
-          />
-        }
-        deliveryPartnerCard={
-          showRiderCard ? (
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100/80">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-gradient-to-br from-emerald-100 to-teal-50 rounded-full flex items-center justify-center shrink-0 overflow-hidden">
-                  {riderPhoto || tracking.tracking?.deliveryPerson?.photo ? (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={riderPhoto || tracking.tracking!.deliveryPerson!.photo}
-                      alt=""
-                      className="w-full h-full rounded-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <Truck className="w-7 h-7 text-teal-600" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900">{riderName}</p>
-                  <p className="text-sm text-gray-500">
-                    {[
-                      tracking.tracking?.rider?.vehicleType ||
-                        tracking.tracking?.deliveryPerson?.vehicleType,
-                      tracking.tracking?.rider?.vehicleNumber ||
-                        tracking.tracking?.deliveryPerson?.vehicleNumber,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ') || 'Delivery partner'}
-                  </p>
-                </div>
-                {riderPhone ? (
-                  <DeliveryPartnerCallAction phone={riderPhone} variant="icon" />
-                ) : null}
-              </div>
-              {etaMinutes != null && Number.isFinite(Number(etaMinutes)) ? (
-                <div className="mt-4 flex items-center gap-3 p-3 bg-teal-50 rounded-xl border border-teal-100">
-                  <Clock className="w-5 h-5 text-teal-600 shrink-0" />
-                  <p className="text-sm font-medium text-teal-900">
-                    Arriving in ~{etaMinutes} minutes
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          ) : undefined
-        }
-        deliveredBanner={
-          isDelivered ? (
-            <div className="bg-gradient-to-r from-green-500 to-teal-500 rounded-2xl p-6 text-white text-center shadow-sm border border-white/20">
-              <CheckCircle className="w-14 h-14 mx-auto mb-3 opacity-95" />
-              <h2 className="text-xl font-bold mb-1">Delivered!</h2>
-              <p className="text-sm text-white/90">
-                {tracking.tracking?.deliveredAt
-                  ? `Delivered ${formatDate(tracking.tracking.deliveredAt)}`
-                  : 'Your meal plan order has been delivered.'}
-              </p>
-            </div>
-          ) : undefined
-        }
-        cancelledBanner={
-          isMealCancelled ? (
-            <div className="bg-red-50 border border-red-100 rounded-2xl p-6 text-center shadow-sm">
-              <AlertCircle className="w-12 h-12 mx-auto mb-3 text-red-500" />
-              <h2 className="text-xl font-bold text-red-900 mb-1">Order cancelled</h2>
-              <p className="text-sm text-red-800/90">
-                Your delivery could not be completed. Refund details are shown above if applicable.
-              </p>
-            </div>
-          ) : undefined
-        }
-        customerDetailsCard={
-          <MealCustomerDetailsCard
-            order={tracking.order as Record<string, unknown>}
-            customer={tracking.customer ?? null}
-          />
-        }
-        orderDetailsCollapsible={
-          <MealOrderDetailsCollapsible order={tracking.order as Record<string, unknown>} />
-        }
-        supportHelpCard={
-          <button
-            type="button"
-            onClick={openMealOrderHelp}
-            className="w-full rounded-2xl border border-[#FF8C42]/30 bg-[#FFF3E8] px-4 py-3.5 text-sm font-semibold text-[#FF8C42] hover:bg-[#FFE8D4] transition flex items-center justify-center gap-2"
-          >
-            <HelpCircle className="w-5 h-5" />
-            Need help with this order?
-          </button>
+            <MealTrackingHeaderRefreshButton
+              onRefresh={() => void loadTracking(true)}
+              refreshing={refreshing}
+            />
+          </>
         }
       />
     );

@@ -3,7 +3,10 @@ export interface ShopProduct {
   name: string;
   description: string;
   category_id: string;
+  /** Catalog MRP — stored in cart and sent to calculate-cart / order create. */
   price: number;
+  /** Promo selling price for browse UI only; cart uses `price` (MRP). */
+  display_price?: number;
   original_price?: number;
   images: string[];
   /** Optional list-context thumb URL when API provides it separately from `images`. */
@@ -22,6 +25,13 @@ export interface ShopProduct {
   listing_option_values?: Record<string, string>;
   price_from?: boolean;
   min_price?: number;
+  /** Auto-applied promo from storefront read-time enrichment. */
+  promo_applied?: {
+    source: 'vendor' | 'admin';
+    id: string;
+    label: string;
+    discountPercent: number;
+  };
 }
 
 export interface ShopCategory {

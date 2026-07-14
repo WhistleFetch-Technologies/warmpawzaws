@@ -1,0 +1,800 @@
+﻿≡ƒôè Getting RDS cluster information...
+   Γ£à Cluster ARN: arn:aws:rds:ap-south-1:057442119249:cluster:warmpawz-dev-cluster
+   Γ£à HTTP Endpoint: Enabled
+   Γ£à Secret ARN: arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI
+
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL preview: 
+    SELECT id, status, payment_status, base_price, total_amount, discount_amount,
+           promotion_id, coupon_code, platform_fee, tax_amount, gst_amount,
+           notes, created_at, completed_a...
+
+=== BOOKING FULL (ERROR) ===
+node : Γ¥î SQL execution failed:
+At C:\Users\Bindushree\AppData\Local\Temp\ps-script-e6ccd872-f00d-474f-9d43-ea5d32631275.ps1:82 char:25
++ ... RONMENT='dev'; node scripts/_tmp-investigate-e8584dfb.js 2>&1 | Out-F ...
++                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Γ¥î SQL execution failed::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Error: ERROR: column "platform_fee" does not exist; Position: 122; SQLState: 42703
+ERROR: column "platform_fee" does not exist; Position: 122; SQLState: 42703
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL preview: 
+    SELECT id, amount, total_amount, payment_status, payment_method, discount_amount,
+           razorpay_order_id, razorpay_payment_id, created_at, completed_at
+    FROM payments WHERE booking_id = ...
+   Γ£à Query executed successfully (1 records)
+
+=== PAYMENTS ===
+[
+  [
+    "9cda2671-04d4-4b6d-8796-20e14cdb59bd",
+    "110.00",
+    null,
+    "completed",
+    "razorpay",
+    "0",
+    "order_TAcmG3m3bYQFsT",
+    "pay_TAcmPwQbUe7BdD",
+    "2026-07-07 13:11:13.442751",
+    "2026-07-07 13:11:38.523107"
+  ]
+]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL: 
+    SELECT * FROM promotion_usages WHERE booking_id = 'e8584dfb-3fd0-4c9b-abe0-275cd89cecbb'::uuid
+   Γ£à Statement executed successfully
+
+=== PROMOTION_USAGES ===
+[]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL: 
+    SELECT * FROM coupon_usages WHERE booking_id = 'e8584dfb-3fd0-4c9b-abe0-275cd89cecbb'::uuid
+   Γ£à Statement executed successfully
+
+=== COUPON_USAGES ===
+[]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL preview: 
+    SELECT id, name, usage_count, usage_limit, max_uses, discount_type, discount_value,
+           min_order_amount, published, is_active, created_at
+    FROM promotions WHERE id = '4414ddd5-bb70-408...
+   Γ£à Query executed successfully (1 records)
+
+=== VET PROMOTION ===
+[
+  [
+    "4414ddd5-bb70-408b-8951-971fa094f404",
+    "Vet promotion",
+    0,
+    1000,
+    1000,
+    "percentage",
+    "50.00",
+    "0",
+    true,
+    true,
+    "2026-07-07 13:09:55.894"
+  ]
+]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL preview: 
+    SELECT id, vendor_id, booking_id, amount, commission_amount, total_amount,
+           commission_rate, status, realized_at, metadata::text, created_at
+    FROM vendor_earnings WHERE booking_id = ...
+   Γ£à Query executed successfully (1 records)
+
+=== VENDOR_EARNINGS ===
+[
+  [
+    "d5be0dcd-714e-438c-b2f4-f8bb6b5090e4",
+    "109ac8bc-9709-45a6-a7f8-c6ed7c63571c",
+    "e8584dfb-3fd0-4c9b-abe0-275cd89cecbb",
+    "99.00",
+    "11.00",
+    "110.00",
+    "10.00",
+    "pending",
+    "2026-07-07 13:12:50",
+    "{}",
+    "2026-07-07 13:12:50.949075"
+  ]
+]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL: 
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'settlements' ORDER BY ordinal_position
+   Γ£à Query executed successfully (24 records)
+
+=== SETTLEMENTS ===
+[
+  [
+    "id"
+  ],
+  [
+    "vendor_id"
+  ],
+  [
+    "total_amount"
+  ],
+  [
+    "commission_amount"
+  ],
+  [
+    "net_amount"
+  ],
+  [
+    "settlement_status"
+  ],
+  [
+    "settlement_period_start"
+  ],
+  [
+    "settlement_period_end"
+  ],
+  [
+    "payment_ids"
+  ],
+  [
+    "payout_id"
+  ],
+  [
+    "created_at"
+  ],
+  [
+    "processed_at"
+  ],
+  [
+    "completed_at"
+  ],
+  [
+    "booking_id"
+  ],
+  [
+    "payment_id"
+  ],
+  [
+    "settlement_date"
+  ],
+  [
+    "razorpay_settlement_id"
+  ],
+  [
+    "currency"
+  ],
+  [
+    "failure_reason"
+  ],
+  [
+    "settlement_breakup"
+  ],
+  [
+    "tier_deduction_amount"
+  ],
+  [
+    "settlement_key"
+  ],
+  [
+    "excluded_payment_ids"
+  ],
+  [
+    "commission_rate_used"
+  ]
+]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL: 
+    SELECT * FROM settlements WHERE booking_id = 'e8584dfb-3fd0-4c9b-abe0-275cd89cecbb'::uuid LIMIT 5
+   Γ£à Statement executed successfully
+
+=== SETTLEMENTS ROWS ===
+[]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL preview: 
+    SELECT id, business_name, commission_percentage, pending_payout, total_earnings,
+           subscription_tier, tier, role_id
+    FROM vendors WHERE id = '109ac8bc-9709-45a6-a7f8-c6ed7c63571c'::uu...
+Γ¥î SQL execution failed:
+   Error: ERROR: column "pending_payout" does not exist; Position: 55; SQLState: 42703
+
+=== VENDOR CORE (ERROR) ===
+ERROR: column "pending_payout" does not exist; Position: 55; SQLState: 42703
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL: 
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'vendors' ORDER BY ordinal_position
+   Γ£à Query executed successfully (98 records)
+
+=== VENDOR COLS ===
+[
+  [
+    "id"
+  ],
+  [
+    "phone"
+  ],
+  [
+    "email"
+  ],
+  [
+    "business_name"
+  ],
+  [
+    "owner_name"
+  ],
+  [
+    "alternate_phone"
+  ],
+  [
+    "role_id"
+  ],
+  [
+    "category"
+  ],
+  [
+    "experience_years"
+  ],
+  [
+    "registration_number"
+  ],
+  [
+    "gst_number"
+  ],
+  [
+    "pan_number"
+  ],
+  [
+    "address"
+  ],
+  [
+    "city"
+  ],
+  [
+    "state"
+  ],
+  [
+    "pincode"
+  ],
+  [
+    "landmark"
+  ],
+  [
+    "latitude"
+  ],
+  [
+    "longitude"
+  ],
+  [
+    "status"
+  ],
+  [
+    "tier"
+  ],
+  [
+    "commission_percentage"
+  ],
+  [
+    "operating_hours"
+  ],
+  [
+    "capacity"
+  ],
+  [
+    "specialization"
+  ],
+  [
+    "is_active"
+  ],
+  [
+    "created_at"
+  ],
+  [
+    "updated_at"
+  ],
+  [
+    "approved_at"
+  ],
+  [
+    "approved_by"
+  ],
+  [
+    "onboarding_status"
+  ],
+  [
+    "vendor_identity_id"
+  ],
+  [
+    "vendor_type"
+  ],
+  [
+    "last_login_at"
+  ],
+  [
+    "rating"
+  ],
+  [
+    "service_radius"
+  ],
+  [
+    "emergency_contact"
+  ],
+  [
+    "max_dogs_per_walk"
+  ],
+  [
+    "walk_durations"
+  ],
+  [
+    "other_config"
+  ],
+  [
+    "metadata"
+  ],
+  [
+    "home_service_enabled"
+  ],
+  [
+    "home_service_operating_hours"
+  ],
+  [
+    "current_latitude"
+  ],
+  [
+    "current_longitude"
+  ],
+  [
+    "location_updated_at"
+  ],
+  [
+    "home_booking_settings"
+  ],
+  [
+    "timezone"
+  ],
+  [
+    "user_id"
+  ],
+  [
+    "onboarding_progress"
+  ],
+  [
+    "setup_completed"
+  ],
+  [
+    "seller_status"
+  ],
+  [
+    "seller_approved_at"
+  ],
+  [
+    "seller_approved_by"
+  ],
+  [
+    "seller_rejection_reason"
+  ],
+  [
+    "fulfillment_type"
+  ],
+  [
+    "default_carrier"
+  ],
+  [
+    "return_address"
+  ],
+  [
+    "shipping_origin_pincode"
+  ],
+  [
+    "processing_days"
+  ],
+  [
+    "is_returnable"
+  ],
+  [
+    "return_window_days"
+  ],
+  [
+    "return_policy"
+  ],
+  [
+    "commission_tier_id"
+  ],
+  [
+    "commission_rate"
+  ],
+  [
+    "upi_id"
+  ],
+  [
+    "upi_verified"
+  ],
+  [
+    "upi_verified_at"
+  ],
+  [
+    "go_live_at"
+  ],
+  [
+    "go_live_checklist"
+  ],
+  [
+    "languages"
+  ],
+  [
+    "is_verified"
+  ],
+  [
+    "profile_image"
+  ],
+  [
+    "completed_bookings_count"
+  ],
+  [
+    "specializations"
+  ],
+  [
+    "is_online"
+  ],
+  [
+    "went_offline_at"
+  ],
+  [
+    "profile_photo_url"
+  ],
+  [
+    "qualifications"
+  ],
+  [
+    "service_area"
+  ],
+  [
+    "description"
+  ],
+  [
+    "available_for_instant_tele"
+  ],
+  [
+    "is_deleted"
+  ],
+  [
+    "gstin"
+  ],
+  [
+    "gstin_verified"
+  ],
+  [
+    "gstin_verified_at"
+  ],
+  [
+    "availability_configured"
+  ],
+  [
+    "services_configured"
+  ],
+  [
+    "upi_vpa_holder_name"
+  ],
+  [
+    "password_hash"
+  ],
+  [
+    "auth_version"
+  ],
+  [
+    "boarding_disclaimer"
+  ],
+  [
+    "boarding_disclaimer_points"
+  ],
+  [
+    "service_distance_km"
+  ],
+  [
+    "current_tier_id"
+  ],
+  [
+    "tier_subscription_id"
+  ],
+  [
+    "tier_upgraded_at"
+  ],
+  [
+    "return_policy_text"
+  ]
+]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL: 
+    SELECT * FROM vendor_subscriptions WHERE vendor_id = '109ac8bc-9709-45a6-a7f8-c6ed7c63571c'::uuid
+    ORDER BY created_at DESC LIMIT 5
+Γ¥î SQL execution failed:
+   Error: ERROR: relation "vendor_subscriptions" does not exist; Position: 20; SQLState: 42P01
+
+=== VENDOR SUBSCRIPTIONS (ERROR) ===
+ERROR: relation "vendor_subscriptions" does not exist; Position: 20; SQLState: 42P01
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL: 
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'vendor_tiers' ORDER BY ordinal_position LIMIT 30
+   Γ£à Query executed successfully (30 records)
+
+=== VENDOR_TIERS TABLE ===
+[
+  [
+    "id"
+  ],
+  [
+    "tier_name"
+  ],
+  [
+    "tier_level"
+  ],
+  [
+    "display_name"
+  ],
+  [
+    "description"
+  ],
+  [
+    "commission_rate"
+  ],
+  [
+    "payout_period_days"
+  ],
+  [
+    "monthly_cost"
+  ],
+  [
+    "yearly_cost"
+  ],
+  [
+    "six_month_cost"
+  ],
+  [
+    "six_month_discount_percentage"
+  ],
+  [
+    "twelve_month_cost"
+  ],
+  [
+    "twelve_month_discount_percentage"
+  ],
+  [
+    "allow_split_payment"
+  ],
+  [
+    "split_payment_installments"
+  ],
+  [
+    "split_payment_interval_days"
+  ],
+  [
+    "features"
+  ],
+  [
+    "applicable_roles"
+  ],
+  [
+    "is_default"
+  ],
+  [
+    "is_active"
+  ],
+  [
+    "is_free_tier"
+  ],
+  [
+    "created_at"
+  ],
+  [
+    "updated_at"
+  ],
+  [
+    "min_bookings"
+  ],
+  [
+    "min_revenue"
+  ],
+  [
+    "monthly_fee"
+  ],
+  [
+    "yearly_fee"
+  ],
+  [
+    "terms_and_conditions"
+  ],
+  [
+    "terms_version"
+  ],
+  [
+    "is_deleted"
+  ]
+]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL: 
+    SELECT vt.* FROM vendor_tiers vt LIMIT 5
+   Γ£à Query executed successfully (3 records)
+
+=== VENDOR TIER LINK ===
+[
+  [
+    "f2acbc3f-6fe8-4231-bd07-e2e859dc1640",
+    "Advance",
+    2,
+    "Advance",
+    "This is advance tier better than the basic....",
+    "10.00",
+    1,
+    "1999.00",
+    "23988.00",
+    null,
+    "0",
+    null,
+    "0",
+    false,
+    3,
+    30,
+    "[]",
+    null,
+    false,
+    true,
+    false,
+    "2026-01-27 15:27:08.235382",
+    "2026-04-23 11:22:47.720677",
+    0,
+    "0",
+    "0",
+    "0",
+    "",
+    "1.0",
+    false
+  ],
+  [
+    "851cc7f9-f92a-4149-b779-121e30990479",
+    "Basic",
+    1,
+    "Basic",
+    "its free of costs",
+    "20.00",
+    1,
+    "0",
+    "0",
+    null,
+    "0",
+    null,
+    "0",
+    false,
+    3,
+    30,
+    "[]",
+    null,
+    true,
+    true,
+    true,
+    "2026-01-27 15:27:08.165643",
+    "2026-04-24 11:37:04.097796",
+    0,
+    "0",
+    "0",
+    "0",
+    "",
+    "1.0",
+    false
+  ],
+  [
+    "655f63cf-797b-4d48-bb41-68cca7d4f9ac",
+    "Premium",
+    3,
+    "Premium",
+    "Here this is premium Tier and you can enjoy the service at most",
+    "7.00",
+    1,
+    "2999.00",
+    "35988.00",
+    null,
+    "0",
+    null,
+    "0",
+    false,
+    3,
+    30,
+    "[]",
+    null,
+    false,
+    true,
+    false,
+    "2026-01-27 15:27:08.365443",
+    "2026-02-03 12:35:12.026409",
+    0,
+    "0",
+    "0",
+    "0",
+    null,
+    "1.0",
+    false
+  ]
+]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL: 
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name ILIKE '%commission%' OR table_name ILIKE '%tier%'
+   Γ£à Query executed successfully (16 records)
+
+=== COMMISSION POLICIES ===
+[
+  [
+    "refund_tiers"
+  ],
+  [
+    "vendor_tiers"
+  ],
+  [
+    "v_commission_revenue_account"
+  ],
+  [
+    "tier_upgrade_payments"
+  ],
+  [
+    "subscription_tiers"
+  ],
+  [
+    "ecommerce_commission_settings"
+  ],
+  [
+    "tier_upgrade_deductions"
+  ],
+  [
+    "vendor_tier_subscriptions"
+  ],
+  [
+    "vendor_tier_acceptances"
+  ],
+  [
+    "vendor_refund_tiers"
+  ],
+  [
+    "commission_tiers"
+  ],
+  [
+    "tier_deduction_transactions"
+  ],
+  [
+    "vendor_category_commission_rates"
+  ],
+  [
+    "order_item_commission"
+  ],
+  [
+    "vendor_commission_config"
+  ],
+  [
+    "product_commission_overrides"
+  ]
+]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL: 
+    SELECT id, price, custom_price, service_name FROM vendor_services
+    WHERE id = '5301c1b8-e603-4892-a101-49d8983c7f4f'::uuid
+   Γ£à Query executed successfully (1 records)
+
+=== VENDOR SERVICE ===
+[
+  [
+    "5301c1b8-e603-4892-a101-49d8983c7f4f",
+    "200.00",
+    "200.00",
+    "Injection Administration"
+  ]
+]
+ΓÜÖ∩╕Å  Executing SQL...
+   SQL: 
+    SELECT COUNT(*) AS cnt FROM promotion_usages
+    WHERE promotion_id = '4414ddd5-bb70-408b-8951-971fa094f404'::uuid
+   Γ£à Query executed successfully (1 records)
+
+=== PROMO USAGES BY PROMO ===
+[
+  [
+    0
+  ]
+]

@@ -45,6 +45,8 @@ import {
   fetchEligibleDeliverySettlementsForBatchPayout,
   safeMoneyAmount as safeDeliveryMoney,
 } from '../../../utils/delivery-settlement-finance';
+import { useFundingAwareSettlementBatch } from '../../../finance/settlement/finance-settlement-mode';
+import { fetchEligibleVendorEarningsForBatch } from '../../../finance/settlement/aggregate-vendor-earnings-batch';
 
 function safeMoneyAmount(raw: unknown): number {
   if (raw === null || raw === undefined || raw === '') return 0;
@@ -1055,6 +1057,22 @@ export function registerSettlementEndpoints(app: Hono) {
         // Group by vendor
         const vendorSettlements: Record<string, any> = {};
 
+        if (useFundingAwareSettlementBatch()) {
+          const earningsAgg = await fetchEligibleVendorEarningsForBatch();
+          for (const agg of earningsAgg) {
+            vendorSettlements[agg.vendorId] = {
+              vendorId: agg.vendorId,
+              bookingIds: agg.bookingIds,
+              earningIds: agg.earningIds,
+              deliverySettlementIds: [] as string[],
+              totalAmount: agg.totalAmount,
+              commissionAmount: agg.commissionAmount,
+              netAmount: agg.netAmount,
+              penaltyDeductions: penaltiesByVendor[agg.vendorId]?.penaltyAmount || 0,
+              fundingAwareLedger: true,
+            };
+          }
+        } else {
         for (const booking of eligibleBookings.rows) {
           const vendorId = booking.vendor_id;
           if (!vendorSettlements[vendorId]) {
@@ -1078,6 +1096,7 @@ export function registerSettlementEndpoints(app: Hono) {
           vendorSettlements[vendorId].totalAmount += bookingAmount;
           vendorSettlements[vendorId].commissionAmount += commissionAmount;
           vendorSettlements[vendorId].netAmount += netAmount;
+        }
         }
 
         // Eligible meal/pharmacy hyperlocal delivery_settlements (same tier hold as bookings)
@@ -1150,6 +1169,14 @@ export function registerSettlementEndpoints(app: Hono) {
               await client.query(`UPDATE bookings SET settled_at = NOW() WHERE id = ANY($1::uuid[])`, [
                 settlement.bookingIds,
               ]);
+            }
+            if (settlement.fundingAwareLedger && settlement.earningIds?.length) {
+              await client.query(
+                `UPDATE vendor_earnings
+                 SET settlement_id = $1::uuid, status = 'settled'
+                 WHERE id = ANY($2::uuid[]) AND settlement_id IS NULL`,
+                [ins.rows[0].id, settlement.earningIds]
+              );
             }
             if (settlement.deliverySettlementIds?.length) {
               await client.query(

@@ -47,6 +47,7 @@ import {
   rememberShopBackToSpaScreen,
   clearShopBackIntent,
   clearWishlistOpenedFromShopMark,
+  rememberHelpBackSpaScreen,
 } from '@/lib/go-back-or-replace';
 import {
   navigateToArticleFromHome,
@@ -65,6 +66,12 @@ import {
   createCustomerNavigation,
 } from '@/lib/navigation/navigation-service';
 import { routeKey } from '@/lib/navigation/route-registry';
+import {
+  consumeMealTrackSupportBack,
+  MEAL_TRACK_RESUME_BACK_SCREEN_KEY,
+  MEAL_TRACK_RESUME_ORDER_ID_KEY,
+  rememberMealTrackSupportBack,
+} from '@/lib/meal-order-tracking-nav';
 import {
   clearBoardingProfileContext,
   peekBoardingProfileContext,
@@ -864,6 +871,18 @@ export function CustomerHomeWrapper({
         shellNav.navigateToScreen('meal-order-checkout');
         return;
       }
+      if (raw === 'meal-order-tracking') {
+        const resumeOrderId = sessionStorage.getItem(MEAL_TRACK_RESUME_ORDER_ID_KEY)?.trim();
+        const resumeBack =
+          sessionStorage.getItem(MEAL_TRACK_RESUME_BACK_SCREEN_KEY)?.trim() || 'meal-plan-orders';
+        sessionStorage.removeItem(MEAL_TRACK_RESUME_ORDER_ID_KEY);
+        sessionStorage.removeItem(MEAL_TRACK_RESUME_BACK_SCREEN_KEY);
+        if (resumeOrderId) {
+          setMealTrackNav({ orderId: resumeOrderId, backScreen: resumeBack as ScreenType });
+          shellNav.navigateToScreen('meal-order-tracking', routeKey.order(resumeOrderId));
+        }
+        return;
+      }
       const next = raw as ScreenType;
       if (next === 'shop') {
         router.push('/shop');
@@ -1056,9 +1075,9 @@ export function CustomerHomeWrapper({
     const back = backScreen ?? currentScreenRef.current;
     flushSync(() => {
       setMealTrackNav({ orderId: id, backScreen: back });
-      setCurrentScreen('meal-order-tracking');
     });
-  }, []);
+    navigateToScreen('meal-order-tracking', routeKey.order(id));
+  }, [navigateToScreen]);
 
   useEffect(() => {
     registerMealShellTrack((orderId, backScreen) => {
@@ -2583,14 +2602,16 @@ export function CustomerHomeWrapper({
         orderId={mealTrackNav.orderId}
         orderType="meal"
         onBack={() => {
-          const back = mealTrackNav.backScreen ?? 'home';
           setMealTrackNav(null);
-          setCurrentScreen(back);
+          handleBack();
         }}
         onNeedHelp={(ctx) => {
           storeSupportMealOrderContext(ctx);
-          setMealTrackNav(null);
-          setCurrentScreen('support_help');
+          if (mealTrackNav?.orderId) {
+            rememberMealTrackSupportBack(mealTrackNav.orderId, mealTrackNav.backScreen ?? 'meal-plan-orders');
+          }
+          rememberHelpBackSpaScreen('meal-order-tracking');
+          navigateToScreen('support_help');
         }}
       />
     );
@@ -5135,11 +5156,19 @@ export function CustomerHomeWrapper({
       readSupportBookingContext(),
       readSupportMealOrderContext(),
     );
+    const handleSupportBack = () => {
+      const mealResume = consumeMealTrackSupportBack();
+      if (mealResume?.orderId) {
+        openMealOrderTracking(mealResume.orderId, mealResume.backScreen as ScreenType);
+        return;
+      }
+      backFromWalletHubChild();
+    };
     return (
       <div className="h-[100dvh] w-full max-w-customer mx-auto flex flex-col overflow-hidden bg-gray-50">
         <SupportHelpCenter
           phone={phone}
-          onBack={backFromWalletHubChild}
+          onBack={handleSupportBack}
           onInternalBackReady={(fn) => { supportHelpInternalBackRef.current = fn; }}
           onChatbotNavigate={handleSupportHelpChatbotNavigate}
           initialTab={supportCtx.kind ? 'contact' : undefined}

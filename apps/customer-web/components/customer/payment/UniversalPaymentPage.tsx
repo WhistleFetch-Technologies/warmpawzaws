@@ -1,6 +1,6 @@
-﻿'use client';
+'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   CreditCard, Wallet, Tag, ChevronRight,
   CheckCircle2, Shield, X, Percent, Info, MapPin,
@@ -26,6 +26,33 @@ import { PaymentPageHeader } from './PaymentPageHeader';
 import { PaymentProviderSection } from './PaymentProviderSection';
 import { PaymentBookingSummarySection } from './PaymentBookingSummarySection';
 import { paymentPageBgClass, paymentSecondaryCardClass } from './payment-page-styles';
+import { PriceBreakdown } from '@/components/customer/pricing/PriceBreakdown';
+import {
+  buildCheckoutPriceLines,
+  checkoutTotalSavings,
+} from '@/lib/pricing/checkout-price-breakdown';
+import { CheckoutCouponPanel } from '@/components/customer/pricing/CheckoutCouponPanel';
+import {
+  validateCouponCode,
+  couponValidateOrderTypeForCheckout,
+  calculateDiscountAmount,
+  type AppliedCheckoutCoupon,
+} from '@/lib/pricing/coupon-validation';
+import type { CouponCheckoutKind } from '@/lib/pricing/coupon-capability';
+import { couponRejectionMessageFromQuote } from '@/lib/pricing/coupon-policy-messages';
+import {
+  fetchBookingDiscountQuote,
+  type BookingDiscountQuoteParams,
+} from '@/lib/service-booking-pricing';
+import {
+  buildBookingCreateDiscountPayload,
+  deriveBookingDiscountFromQuote,
+  syncBookingDiscountStateFromQuote,
+  type BookingDiscountUiPromotion,
+} from '@/lib/pricing/booking-discount-state';
+import {
+  type UnifiedResolverResponse,
+} from '@/lib/pricing/unified-resolver-response';
 import {
   digitsToRazorpayContactE164,
   RAZORPAY_PREFILL_EMAIL_FALLBACK,
@@ -175,6 +202,8 @@ interface UniversalPaymentPageProps {
     clickedAt?: number;
     source?: string;
   };
+  /** Coupon applied on an earlier review step (booking summary). */
+  initialAppliedCoupon?: AppliedCheckoutCoupon | null;
 
   /**
    * fullscreen: default; CTA hugs bottom (overlays, dedicated routes).
@@ -203,12 +232,8 @@ interface UniversalPaymentPageProps {
   onPaymentAbandoned?: () => void;
 }
 
-interface CouponResult {
-  valid: boolean;
-  code: string;
-  discountType: 'percentage' | 'fixed';
-  discountValue: number;
-  discountAmount: number;
+interface CouponResult extends AppliedCheckoutCoupon {
+  valid?: boolean;
   message?: string;
   minAmount?: number;
   maxDiscount?: number;
@@ -268,6 +293,19 @@ interface PromotionOffer {
   minAmount?: number;
   maxDiscount?: number;
   applicable: boolean;
+}
+
+function uiPromotionToOffer(p: BookingDiscountUiPromotion): PromotionOffer {
+  return {
+    id: p.id,
+    type: p.type === 'vendor' ? 'service_discount' : 'spotlight',
+    title: p.title,
+    description: p.description,
+    discountType: p.discountType,
+    discountValue: p.discountValue,
+    discountAmount: p.discountAmount,
+    applicable: true,
+  };
 }
 
 interface RazorpayOffer {
@@ -395,6 +433,7 @@ export function UniversalPaymentPage({
   prepaidBookingPayload,
   initialPromotionId,
   initialPromotionIntent,
+  initialAppliedCoupon,
   layoutVariant = 'fullscreen',
   fillViewport = true,
   onBack,
@@ -420,14 +459,14 @@ export function UniversalPaymentPage({
   const [serviceIdResolving, setServiceIdResolving] = useState(false);
 
   // Coupon state
-  const [couponCode, setCouponCode] = useState('');
-  const [couponLoading, setCouponLoading] = useState(false);
-  const [appliedCoupon, setAppliedCoupon] = useState<CouponResult | null>(null);
-  const [showCouponInput, setShowCouponInput] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponResult | null>(
+    initialAppliedCoupon ?? null
+  );
 
   // Promotions & Offers
   const [promotions, setPromotions] = useState<PromotionOffer[]>([]);
   const [appliedPromotion, setAppliedPromotion] = useState<PromotionOffer | null>(null);
+  const [discountQuote, setDiscountQuote] = useState<UnifiedResolverResponse | null>(null);
   const [razorpayOffers, setRazorpayOffers] = useState<RazorpayOffer[]>([]);
   const [selectedRazorpayOffer, setSelectedRazorpayOffer] = useState<RazorpayOffer | null>(null);
   /** Optional UPI ID (VPA) for collect flow â€” passed as `prefill.vpa` (Razorpay may still show QR-only on desktop web per NPCI/Razorpay). */
@@ -811,6 +850,25 @@ export function UniversalPaymentPage({
     priceIncludesTax,
   ]);
 
+  /** Re-quote promos after tax subtotal is known (must match financialMeta.servicePrice at booking create). */
+  useEffect(() => {
+    if (type !== 'booking' || !vendorId || baseAmount <= 0) return;
+    loadPromotions();
+  }, [
+    type,
+    vendorId,
+    baseAmount,
+    taxBreakdown.subtotal,
+    category,
+    serviceStyle,
+    customerId,
+    resolvedServiceId,
+    serviceId,
+    selectedServices,
+    initialPromotionIntent?.serviceCategory,
+    appliedCoupon?.code,
+  ]);
+
   useEffect(() => {
     loadPaymentData();
     if (!isWarmpawzCustomerNativeWebView()) {
@@ -822,7 +880,6 @@ export function UniversalPaymentPage({
       return;
     }
     calculateTax();
-    loadPromotions();
     loadRazorpayOffers();
     loadPlatformFees();
     loadPaymentAndRefundPolicies();
@@ -1179,20 +1236,90 @@ export function UniversalPaymentPage({
     }
   };
 
+  const syncBookingFromQuote = useCallback(
+    (quote: UnifiedResolverResponse | null, couponCode?: string | null) => {
+      return syncBookingDiscountStateFromQuote(quote, {
+        couponCode,
+        setQuote: setDiscountQuote,
+        setPromotions: (rows) => setPromotions(rows.map(uiPromotionToOffer)),
+        setAppliedPromotion: (row) => setAppliedPromotion(row ? uiPromotionToOffer(row) : null),
+        setAppliedCoupon,
+      });
+    },
+    []
+  );
+
+  const refreshBookingDiscountQuote = useCallback(
+    async (couponCode?: string) => {
+      if (type !== 'booking' || !vendorId) return null;
+      const selectedServiceIds = (selectedServices || [])
+        .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+        .filter(Boolean);
+      const promoQuoteAmount =
+        taxBreakdown.subtotal > 0 ? taxBreakdown.subtotal : baseAmount;
+      const params: BookingDiscountQuoteParams = {
+        vendorId,
+        customerId: customerId || undefined,
+        amount: promoQuoteAmount,
+        serviceStyle,
+        serviceCategory: category || initialPromotionIntent?.serviceCategory,
+        serviceIds: selectedServiceIds.length
+          ? selectedServiceIds
+          : serviceId
+            ? [String(serviceId)]
+            : [],
+        couponCode,
+        displayPromotionsOnly: !couponCode,
+        bypassCache: Boolean(couponCode),
+      };
+      const quote = await fetchBookingDiscountQuote(params);
+      syncBookingFromQuote(quote, couponCode ?? appliedCoupon?.code ?? null);
+      return quote;
+    },
+    [
+      type,
+      vendorId,
+      selectedServices,
+      taxBreakdown.subtotal,
+      baseAmount,
+      customerId,
+      serviceStyle,
+      category,
+      initialPromotionIntent?.serviceCategory,
+      serviceId,
+      appliedCoupon?.code,
+      syncBookingFromQuote,
+    ]
+  );
   const loadPromotions = async () => {
     try {
       const selectedServiceIds = (selectedServices || [])
         .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
         .filter(Boolean);
+
+      if (type === 'booking' && vendorId && baseAmount > 0) {
+        const quote = await refreshBookingDiscountQuote(appliedCoupon?.code);
+        const derived = deriveBookingDiscountFromQuote(quote, {
+          couponCode: appliedCoupon?.code,
+        });
+        if (derived && !derived.couponWins && derived.promotionDiscount > 0) {
+          toast.success(`You save ₹${derived.promotionDiscount.toFixed(0)} on this booking`);
+        } else if (initialPromotionId && derived && derived.totalSavings <= 0) {
+          toast.info('The selected special offer is not eligible for this service/amount.');
+        }
+        return;
+      }
+
       const params = new URLSearchParams({
         category: String(category || initialPromotionIntent?.serviceCategory || ''),
         serviceStyle: String(serviceStyle || initialPromotionIntent?.serviceStyle || ''),
         amount: String(baseAmount || 0),
       });
       if (serviceId) params.set('serviceId', String(serviceId));
+      if (vendorId) params.set('vendorId', String(vendorId));
+      if (customerId) params.set('customerId', String(customerId));
       if (selectedServiceIds.length > 0) params.set('selectedServiceIds', selectedServiceIds.join(','));
 
-      // Load applicable promotions (public endpoint â€“ no admin auth required)
       const promoRes = await apiClient.get<any>(`/promotions/applicable?${params.toString()}`);
 
       if (promoRes.success && promoRes.promotions) {
@@ -1374,108 +1501,162 @@ export function UniversalPaymentPage({
     }
   };
 
-  const calculateDiscountAmount = (
-    type: 'percentage' | 'fixed',
-    value: number,
-    amount: number,
-    minAmount?: number,
-    maxDiscount?: number
-  ): number => {
-    if (minAmount && amount < minAmount) return 0;
+  const bookingDiscountDerived = useMemo(() => {
+    if (type !== 'booking') return null;
+    return deriveBookingDiscountFromQuote(discountQuote, { couponCode: appliedCoupon?.code });
+  }, [type, discountQuote, appliedCoupon?.code]);
 
-    let discount = type === 'percentage'
-      ? (amount * value) / 100
-      : value;
+  const autoPromoSavings =
+    type === 'booking'
+      ? bookingDiscountDerived?.promotionDiscount ?? 0
+      : appliedPromotion?.discountAmount || 0;
 
-    if (maxDiscount && discount > maxDiscount) {
-      discount = maxDiscount;
+  const couponWinsBestOffer = Boolean(bookingDiscountDerived?.couponWins);
+  const promotionDiscount =
+    type === 'booking'
+      ? bookingDiscountDerived?.promotionDiscount ?? 0
+      : appliedPromotion?.discountAmount || 0;
+  const couponDiscount =
+    type === 'booking'
+      ? bookingDiscountDerived?.couponDiscount ?? 0
+      : appliedCoupon?.discountAmount || 0;
+  const bookingDiscountTotal =
+    type === 'booking'
+      ? bookingDiscountDerived?.totalSavings ?? 0
+      : promotionDiscount + couponDiscount;
+
+  const couponCheckoutKind: CouponCheckoutKind = useMemo(() => {
+    if (type === 'order') return 'product_order';
+    if (type === 'meal_subscription' || type === 'meal_one_time') return 'meal';
+    return 'service_booking';
+  }, [type]);
+
+  /** Best-offer-only: validate coupon on full subtotal (same base as auto promo). */
+  const couponValidationBase = useMemo(() => {
+    if (type === 'meal_subscription' || type === 'meal_one_time') {
+      const foodBase =
+        mealOneTimeDraft?.foodSubtotalInr ??
+        mealPlanFoodTaxableInr ??
+        taxBreakdown.subtotal ??
+        baseAmount;
+      return Math.max(0, foodBase - autoPromoSavings);
     }
-
-    return Math.min(discount, amount);
-  };
-
-  const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) {
-      toast.error('Please enter a coupon code');
-      return;
+    if (type === 'booking') {
+      return Math.max(0, taxBreakdown.subtotal);
     }
+    return Math.max(0, taxBreakdown.subtotal - autoPromoSavings);
+  }, [
+    type,
+    mealOneTimeDraft?.foodSubtotalInr,
+    mealPlanFoodTaxableInr,
+    taxBreakdown.subtotal,
+    baseAmount,
+    autoPromoSavings,
+  ]);
 
-    setCouponLoading(true);
-    try {
-      // First try the unified promotion validation (includes vendor promotions)
-      const promoRes = await apiClient.post<any>('/promotions/validate-code', {
-        code: couponCode.toUpperCase(),
-        vendorId: vendorId,
-        orderAmount: type === 'order' ? taxBreakdown.total : undefined,
-        bookingAmount: type === 'booking' ? taxBreakdown.total : undefined,
-        orderType: type === 'booking' ? 'service' : 'product'
-      });
-
-      if (promoRes.valid) {
-        const discountAmount = promoRes.discount_amount || calculateDiscountAmount(
-          promoRes.promotion?.discount_type,
-          promoRes.promotion?.discount_value,
-          taxBreakdown.total,
-          promoRes.promotion?.min_order_value || promoRes.promotion?.min_booking_value,
-          promoRes.promotion?.max_discount_amount
+  const handleApplyCheckoutCoupon = useCallback(
+    async (coupon: AppliedCheckoutCoupon, quote?: UnifiedResolverResponse) => {
+      if (type === 'booking' && vendorId) {
+        const resolvedQuote =
+          quote ?? (await refreshBookingDiscountQuote(coupon.code));
+        const derived = syncBookingFromQuote(resolvedQuote, coupon.code);
+        const appliedCouponOffer = resolvedQuote?.appliedOffers.find(
+          (o) => o.source === 'coupon' || o.trigger === 'CODE'
         );
-
-        setAppliedCoupon({
-          valid: true,
-          code: couponCode.toUpperCase(),
-          discountType: promoRes.promotion?.discount_type || 'percentage',
-          discountValue: promoRes.promotion?.discount_value || 0,
-          discountAmount,
-          message: promoRes.promotion?.description || `You save ₹${discountAmount}!`,
-          minAmount: promoRes.promotion?.min_order_value || promoRes.promotion?.min_booking_value,
-          maxDiscount: promoRes.promotion?.max_discount_amount,
-        });
-        toast.success(`Coupon applied! You save ₹${discountAmount.toFixed(2)}`);
-        setShowCouponInput(false);
+        if (!appliedCouponOffer || !derived?.couponWins) {
+          const message = couponRejectionMessageFromQuote(resolvedQuote, coupon.code);
+          toast.error(message);
+          return;
+        }
+        toast.success(
+          resolvedQuote?.displayMessages.find((m) => m.type === 'success')?.message ??
+            `Coupon applied! You save ₹${appliedCouponOffer.discountAmount.toFixed(0)}`
+        );
         return;
       }
-
-      // Fallback to legacy coupon validation
-      const res = await apiClient.get<any>(
-        `/coupons/validate/${couponCode.toUpperCase()}?amount=${taxBreakdown.total}`
-      );
-
-      if (res.valid) {
-        const discountAmount = calculateDiscountAmount(
-          res.coupon.discount_type,
-          res.coupon.discount_value,
-          taxBreakdown.total,
-          res.coupon.min_amount,
-          res.coupon.max_discount
-        );
-
-        setAppliedCoupon({
-          valid: true,
-          code: couponCode.toUpperCase(),
-          discountType: res.coupon.discount_type,
-          discountValue: res.coupon.discount_value,
-          discountAmount,
-          message: res.message,
-          minAmount: res.coupon.min_amount,
-          maxDiscount: res.coupon.max_discount,
-        });
-        toast.success(`Coupon applied! You save ₹${discountAmount.toFixed(2)}`);
-        setShowCouponInput(false);
-      } else {
-        toast.error(promoRes.message || res.error || 'Invalid coupon code');
+      setAppliedCoupon(coupon);
+      if (coupon.discountAmount > 0) {
+        toast.success('Coupon applied successfully.');
       }
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to validate coupon');
-    } finally {
-      setCouponLoading(false);
-    }
-  };
+    },
+    [type, vendorId, refreshBookingDiscountQuote, syncBookingFromQuote]
+  );
 
-  const removeCoupon = () => {
+  const handleBookingQuoteFromPanel = useCallback(
+    (quote: UnifiedResolverResponse, couponCode: string) => {
+      syncBookingFromQuote(quote, couponCode);
+    },
+    [syncBookingFromQuote]
+  );
+
+  const removeCoupon = useCallback(() => {
+    if (type === 'booking') {
+      void refreshBookingDiscountQuote().then(() => {
+        toast.info('Coupon removed');
+      });
+      return;
+    }
     setAppliedCoupon(null);
-    setCouponCode('');
     toast.info('Coupon removed');
-  };
+  }, [type, refreshBookingDiscountQuote]);
+
+  // Re-validate coupon when promotions or base amount change (non-booking paths)
+  useEffect(() => {
+    if (type === 'booking') return;
+    if (!appliedCoupon?.code || couponValidationBase <= 0) return;
+
+    let cancelled = false;
+    void validateCouponCode({
+      code: appliedCoupon.code,
+      vendorId,
+      customerId,
+      orderType: couponValidateOrderTypeForCheckout(couponCheckoutKind),
+      amount: couponValidationBase,
+    }).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setAppliedCoupon((prev) =>
+          prev && prev.code === result.coupon.code
+            ? { ...prev, ...result.coupon }
+            : result.coupon
+        );
+      } else {
+        setAppliedCoupon(null);
+        toast.error(result.message || 'Coupon is no longer valid for this amount');
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appliedCoupon?.code, couponValidationBase, vendorId, customerId, couponCheckoutKind, type]);
+
+  // Booking: re-quote via unified resolver when amount changes with active coupon
+  useEffect(() => {
+    if (type !== 'booking' || !appliedCoupon?.code || !vendorId) return;
+    let cancelled = false;
+    void refreshBookingDiscountQuote(appliedCoupon.code).then((quote) => {
+      if (cancelled || !quote) return;
+      const derived = deriveBookingDiscountFromQuote(quote, { couponCode: appliedCoupon.code });
+      if (!derived?.couponWins) {
+        syncBookingFromQuote(quote, null);
+        toast.error('Coupon is no longer valid for this amount');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    type,
+    appliedCoupon?.code,
+    taxBreakdown.subtotal,
+    baseAmount,
+    vendorId,
+    refreshBookingDiscountQuote,
+    syncBookingFromQuote,
+  ]);
+
+  // promotionDiscount / couponDiscount / bookingDiscountTotal defined above (best-offer-only)
 
   const applyPromotion = (promotion: PromotionOffer) => {
     if (appliedPromotion?.id === promotion.id) {
@@ -1498,12 +1679,13 @@ export function UniversalPaymentPage({
   };
 
   // Calculate final amounts
-  const promotionDiscount = appliedPromotion?.discountAmount || 0;
-  const couponDiscount = appliedCoupon?.discountAmount || 0;
   const razorpayOfferDiscount = selectedRazorpayOffer?.discountValue || 0;
 
-  // Apply discounts to subtotal (before tax for some, after tax for others - following standard practice)
-  const subtotalAfterDiscounts = Math.max(0, taxBreakdown.subtotal - promotionDiscount - couponDiscount);
+  // Best-offer-only for bookings: at most one of promotionDiscount | couponDiscount is non-zero.
+  const subtotalAfterDiscounts = Math.max(
+    0,
+    taxBreakdown.subtotal - promotionDiscount - couponDiscount
+  );
 
   // Recalculate tax on discounted amount if needed (or keep original tax - business logic)
   const finalTax = taxBreakdown.totalTax; // Or recalculate on discounted amount
@@ -1517,7 +1699,7 @@ export function UniversalPaymentPage({
       : Number(baseAmount)
     : NaN;
   const walletCapBase = isMealPay
-    ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount)
+    ? Math.max(0, resolvedMealPayTotal - couponDiscount - razorpayOfferDiscount)
     : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount);
   const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
 
@@ -1525,8 +1707,17 @@ export function UniversalPaymentPage({
   const computedFinalAmount = subscriptionCovered
     ? 0
     : isMealPay
-      ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount - walletAmount)
+      ? Math.max(0, resolvedMealPayTotal - couponDiscount - razorpayOfferDiscount - walletAmount)
       : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
+
+  const checkoutVendorDiscount =
+    type === 'booking' && bookingDiscountDerived
+      ? bookingDiscountDerived.vendorDiscountLine
+      : promotionDiscount;
+  const checkoutPlatformDiscount =
+    type === 'booking' && bookingDiscountDerived
+      ? bookingDiscountDerived.platformDiscountLine
+      : 0;
 
   const finalAmount =
     type === 'booking' &&
@@ -1536,6 +1727,52 @@ export function UniversalPaymentPage({
     lockedPayableAmount > 0
       ? Math.max(0, Math.round((lockedPayableAmount - razorpayOfferDiscount - walletAmount) * 100) / 100)
       : computedFinalAmount;
+
+  const checkoutPriceLines = useMemo(
+    () =>
+      buildCheckoutPriceLines({
+        subtotalLabel: priceIncludesTax ? 'Taxable value (excl. GST)' : 'Service price',
+        subtotal: taxBreakdown.subtotal,
+        vendorDiscount: checkoutVendorDiscount,
+        vendorDiscountLabel: 'Discount',
+        platformDiscount: checkoutPlatformDiscount,
+        couponDiscount,
+        couponCode: appliedCoupon?.code,
+        taxBreakdown,
+        platformFees,
+        collapseAutoPromotions: type === 'booking',
+        includeDeliveryFee: type !== 'meal_subscription' && type !== 'meal_one_time',
+        razorpayOffer: selectedRazorpayOffer
+          ? { title: selectedRazorpayOffer.title, amount: razorpayOfferDiscount }
+          : undefined,
+        walletAmount,
+        finalAmount,
+      }),
+    [
+      priceIncludesTax,
+      taxBreakdown,
+      checkoutVendorDiscount,
+      checkoutPlatformDiscount,
+      appliedPromotion?.title,
+      couponDiscount,
+      appliedCoupon?.code,
+      platformFees,
+      type,
+      selectedRazorpayOffer,
+      razorpayOfferDiscount,
+      walletAmount,
+      finalAmount,
+    ]
+  );
+
+  const checkoutSavingsTotal = checkoutTotalSavings({
+    vendorDiscount: checkoutVendorDiscount,
+    platformDiscount: checkoutPlatformDiscount,
+    couponDiscount,
+    walletAmount,
+    razorpayOfferAmount: razorpayOfferDiscount,
+  });
+
 
   const getPaymentSuccessMeta = (gatewayMethod?: string | null) => {
     const paymentSources = buildCheckoutPaymentSources({
@@ -2143,7 +2380,10 @@ export function UniversalPaymentPage({
           }
         }
 
-        const bookingGrossAmount = Math.round(totalAfterDiscounts * 100) / 100;
+        const bookingPayAmount =
+          type === 'booking'
+            ? Math.round(finalAmount * 100) / 100
+            : Math.round(taxBreakdown.total * 100) / 100;
 
         const bookingPayload: Record<string, unknown> = {
           customerId: resolvedCustomerId, // âœ… Required UUID (resolved above)
@@ -2153,13 +2393,29 @@ export function UniversalPaymentPage({
           bookingDate: bookingDate, // âœ… Format: YYYY-MM-DD
           bookingTime: normalizedBookingTime, // âœ… Format: HH:MM or HH:MM:SS
           serviceType: serviceTypeValue, // âœ… Required enum
-          amount: bookingGrossAmount,
-          ...(couponDiscount + (appliedPromotion?.discountAmount || 0) > 0
+          amount: bookingPayAmount,
+          ...(type === 'booking'
             ? {
-                discountAmount: couponDiscount + (appliedPromotion?.discountAmount || 0),
-                ...(appliedCoupon?.code ? { couponCode: appliedCoupon.code } : {}),
+                serviceCategory: category || initialPromotionIntent?.serviceCategory || undefined,
+                financialMeta: {
+                  servicePrice: taxBreakdown.subtotal,
+                  vendorDiscount: checkoutVendorDiscount,
+                  platformDiscount: checkoutPlatformDiscount,
+                  couponDiscount,
+                  subtotalAfterDiscounts,
+                  cgst: taxBreakdown.cgst,
+                  sgst: taxBreakdown.sgst,
+                  igst: taxBreakdown.igst,
+                  totalTax: taxBreakdown.totalTax,
+                  platformFee: platformFees.platformFee,
+                  convenienceFee: platformFees.convenienceFee,
+                  deliveryFee: platformFees.deliveryFee,
+                  walletAmount,
+                  finalPaid: bookingPayAmount,
+                },
               }
             : {}),
+          ...(buildBookingCreateDiscountPayload(discountQuote, appliedCoupon?.code) ?? {}),
           petId: effectivePetId || undefined, // âœ… Optional UUID
           petName: effectivePetName || undefined, // âœ… Pet name for booking
           customerPhone: customerPhone, // âœ… Customer phone
@@ -2353,7 +2609,10 @@ export function UniversalPaymentPage({
       }
 
       const paymentPayload: any = {
-        amount: taxBreakdown.total, // âœ… Required: positive number
+        amount:
+          type === 'booking'
+            ? Math.round(finalAmount * 100) / 100
+            : taxBreakdown.total,
         paymentMethod: selectedMethod === 'razorpay' ? 'razorpay' : (selectedMethod || 'razorpay'), // âœ… Optional enum
         bookingId: currentBookingId, // âœ… Required UUID (booking should already exist)
       };
@@ -2378,13 +2637,37 @@ export function UniversalPaymentPage({
 
       // âœ… Additional fields (not in schema, but backend may handle from raw body)
       // These are sent but not validated by schema
-      if (appliedCoupon?.code) {
-        paymentPayload.couponCode = appliedCoupon.code;
-        paymentPayload.couponDiscount = couponDiscount || 0;
-      }
-      if (appliedPromotion?.id) {
-        paymentPayload.promotionId = appliedPromotion.id;
-        paymentPayload.promotionDiscount = promotionDiscount || 0;
+      if (type === 'booking' && bookingDiscountDerived && bookingDiscountTotal > 0) {
+        const discountPayload = buildBookingCreateDiscountPayload(
+          discountQuote,
+          appliedCoupon?.code
+        );
+        if (discountPayload) {
+          paymentPayload.promotionDiscount = discountPayload.discountAmount;
+          if (discountPayload.couponDiscount != null) {
+            paymentPayload.couponDiscount = discountPayload.couponDiscount;
+          }
+          if (discountPayload.couponCode) {
+            paymentPayload.couponCode = discountPayload.couponCode;
+          }
+          if (discountPayload.vendorPromotionId) {
+            paymentPayload.vendorPromotionId = discountPayload.vendorPromotionId;
+          }
+          if (discountPayload.platformPromotionId) {
+            paymentPayload.platformPromotionId = discountPayload.platformPromotionId;
+          }
+        }
+      } else {
+        if (appliedCoupon?.code && couponDiscount > 0) {
+          paymentPayload.couponCode = appliedCoupon.code;
+          paymentPayload.couponDiscount = couponDiscount;
+        }
+        if (promotionDiscount > 0 || couponDiscount > 0) {
+          paymentPayload.promotionDiscount = promotionDiscount || 0;
+          if (appliedPromotion?.id && appliedPromotion.id !== 'auto') {
+            paymentPayload.promotionId = appliedPromotion.id;
+          }
+        }
       }
       if (selectedRazorpayOffer?.id) {
         paymentPayload.razorpayOfferId = selectedRazorpayOffer.id;
@@ -2574,7 +2857,7 @@ export function UniversalPaymentPage({
           });
         }
 
-        if (appliedPromotion) {
+        if (appliedPromotion && type !== 'booking') {
           await apiClient.post('/promotions/apply', {
             promotionId: appliedPromotion.id,
             bookingId: currentBookingId,
@@ -3341,16 +3624,37 @@ export function UniversalPaymentPage({
           </div>
         )}
 
-        {/* Promotions & Spotlight Offers */}
-        {type !== 'meal_subscription' && type !== 'meal_one_time' && promotions.length > 0 && (
+        {/* Promotions & Spotlight Offers — bookings auto-apply (read-only) */}
+        {type !== 'meal_subscription' && type !== 'meal_one_time' && promotions.length > 0 && !couponWinsBestOffer && (
           <div className={paymentSecondaryCardClass}>
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
-              <h2 className="font-semibold text-gray-900">Available Offers</h2>
+              <h2 className="font-semibold text-gray-900">
+                {type === 'booking' ? 'Applied Offers' : 'Available Offers'}
+              </h2>
             </div>
 
             <div className="space-y-2">
               {promotions.map((promo) => (
+                type === 'booking' ? (
+                  <div
+                    key={promo.id}
+                    className="w-full text-left p-3 rounded-xl border-2 border-green-500 bg-green-50"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-medium text-gray-900">{promo.title}</h3>
+                          <Badge className="bg-green-600 text-white text-xs">Auto-applied</Badge>
+                        </div>
+                        <p className="text-sm font-medium text-green-600 mt-1">
+                          Save ₹{promo.discountAmount.toFixed(2)}
+                        </p>
+                      </div>
+                      <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+                    </div>
+                  </div>
+                ) : (
                 <button
                   key={promo.id}
                   onClick={() => applyPromotion(promo)}
@@ -3377,70 +3681,67 @@ export function UniversalPaymentPage({
                     )}
                   </div>
                 </button>
+                )
               ))}
             </div>
           </div>
         )}
 
-        {/* Coupon Section */}
-        {type !== 'meal_subscription' && type !== 'meal_one_time' && (
-        <div className={paymentSecondaryCardClass}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Tag className="w-5 h-5 text-[#FF8C42]" />
-              <h2 className="font-semibold text-gray-900">Coupons & Discounts</h2>
-            </div>
+        {type === 'booking' && couponWinsBestOffer && discountQuote && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {discountQuote.displayMessages.find((m) => m.type === 'info')?.message ??
+              (() => {
+                const skippedPromo = discountQuote.rejectedOffers.find((r) => r.trigger === 'AUTO');
+                if (skippedPromo?.name && appliedCoupon?.code) {
+                  return `${skippedPromo.name} was not applied — ${appliedCoupon.code} saves more under Best Offer.`;
+                }
+                return 'Auto promotion was not applied — your coupon is the best offer.';
+              })()}
           </div>
-
-          {appliedCoupon ? (
-            <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-green-500" />
-                <div>
-                  <p className="font-medium text-green-700">{appliedCoupon.code}</p>
-                  <p className="text-sm text-green-600">You save ₹{appliedCoupon.discountAmount.toFixed(2)}</p>
-                </div>
-              </div>
-              <button onClick={removeCoupon} className="text-red-500 hover:text-red-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          ) : showCouponInput ? (
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                  placeholder="Enter coupon code"
-                  className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none uppercase"
-                />
-                <Button
-                  onClick={handleApplyCoupon}
-                  disabled={couponLoading}
-                  className="bg-[#FF8C42] hover:bg-[#E67A35] text-white px-6"
-                >
-                  {couponLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
-                </Button>
-              </div>
-              <button
-                onClick={() => setShowCouponInput(false)}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowCouponInput(true)}
-              className="w-full flex items-center justify-between p-3 border-2 border-dashed border-gray-200 rounded-xl hover:border-[#FF8C42] transition-all duration-150 active:scale-[0.98] touch-manipulation"
-            >
-              <span className="text-gray-600">Have a coupon code?</span>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </button>
-          )}
-        </div>
         )}
+
+        {/* Coupon — shared CheckoutCouponPanel (booking, meals, orders) */}
+        <CheckoutCouponPanel
+          kind={couponCheckoutKind}
+          vendorId={vendorId}
+          customerId={customerId}
+          serviceCategory={category}
+          serviceIds={
+            type === 'booking'
+              ? (selectedServices || [])
+                  .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+                  .filter(Boolean)
+              : serviceId
+                ? [String(serviceId)]
+                : undefined
+          }
+          serviceStyle={serviceStyle}
+          bookingBaseAmount={
+            type === 'booking'
+              ? taxBreakdown.subtotal > 0
+                ? taxBreakdown.subtotal
+                : baseAmount
+              : undefined
+          }
+          orderAmount={couponValidationBase}
+          appliedCoupon={appliedCoupon}
+          onApplyCoupon={handleApplyCheckoutCoupon}
+          onBookingQuote={type === 'booking' ? handleBookingQuoteFromPanel : undefined}
+          onRemoveCoupon={removeCoupon}
+          className={paymentSecondaryCardClass}
+          alwaysShow={type === 'booking'}
+        />
+        {type === 'booking' && discountQuote?.displayMessages?.length ? (
+          <div className={`space-y-1 text-xs ${paymentSecondaryCardClass} p-3`}>
+            {discountQuote.displayMessages
+              .filter((m) => m.type === 'warning' || m.type === 'error')
+              .map((m, i) => (
+                <p key={`${m.code ?? 'msg'}-${i}`} className="text-amber-700">
+                  {m.message}
+                </p>
+              ))}
+          </div>
+        ) : null}
 
         {/* Razorpay Offers */}
         {type !== 'meal_subscription' && type !== 'meal_one_time' && razorpayOffers.length > 0 && (
@@ -3482,156 +3783,17 @@ export function UniversalPaymentPage({
 
         {/* Price Breakdown */}
         <div className={paymentSecondaryCardClass}>
-          <h2 className="font-semibold text-gray-900 mb-4">Price Details</h2>
           {priceIncludesTax && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
               List price includes GST. Taxable value and GST below add up to the amount you pay (before coupons/wallet).
             </p>
           )}
-
-          <div className="space-y-3">
-            <div className="flex justify-between text-gray-600">
-              <span>{priceIncludesTax ? 'Taxable value (excl. GST)' : 'Subtotal'}</span>
-              <span>₹{taxBreakdown.subtotal.toFixed(2)}</span>
-            </div>
-
-            {/* âœ… FIX: Vendor Discount - Applied directly by vendor at service level */}
-            {appliedPromotion && (
-              <div className="flex justify-between text-green-600">
-                <span className="flex items-center gap-1">
-                  <Sparkles className="w-4 h-4" />
-                  <span className="font-medium">Vendor Offer:</span> {appliedPromotion.title}
-                </span>
-                <span className="font-medium">-₹{promotionDiscount.toFixed(2)}</span>
-              </div>
-            )}
-
-            {/* âœ… FIX: Platform Coupon - Applied at checkout level by platform */}
-            {appliedCoupon && (
-              <div className="flex justify-between text-blue-600">
-                <span className="flex items-center gap-1">
-                  <Percent className="w-4 h-4" />
-                  <span className="font-medium">Platform Coupon:</span> {appliedCoupon.code}
-                </span>
-                <span className="font-medium">-₹{couponDiscount.toFixed(2)}</span>
-              </div>
-            )}
-
-            {/* GST Breakdown */}
-            {taxBreakdown.isInterState ? (
-              <div className="flex justify-between text-gray-600">
-                <span className="flex items-center gap-1">
-                  IGST ({taxBreakdown.taxRate}%)
-                  <Info className="w-3 h-3 text-gray-400" />
-                </span>
-                <span>₹{taxBreakdown.igst.toFixed(2)}</span>
-              </div>
-            ) : (
-              <>
-                <div className="flex justify-between text-gray-600">
-                  <span className="flex items-center gap-1">
-                    CGST ({taxBreakdown.taxRate / 2}%)
-                  </span>
-                  <span>₹{taxBreakdown.cgst.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-gray-600">
-                  <span className="flex items-center gap-1">
-                    SGST ({taxBreakdown.taxRate / 2}%)
-                  </span>
-                  <span>₹{taxBreakdown.sgst.toFixed(2)}</span>
-                </div>
-              </>
-            )}
-
-            {/* âœ… FIX GAP-7.1: Platform Discount (shown separately from vendor discount) */}
-            {appliedPromotion && promotionDiscount > 0 && (
-              <div className="flex justify-between text-blue-600">
-                <span className="flex items-center gap-1">
-                  <Gift className="w-4 h-4" />
-                  Platform Discount
-                </span>
-                <span>-₹{promotionDiscount.toFixed(2)}</span>
-              </div>
-            )}
-
-            {/* Platform Fees */}
-            {platformFees.platformFee > 0 && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-gray-600">
-                  <span className="flex items-center gap-1">
-                    Platform Fee
-                    <Info className="w-3 h-3 text-gray-400 cursor-help" aria-label="Platform service charge" />
-                  </span>
-                  <span>₹{platformFees.platformFee.toFixed(2)}</span>
-                </div>
-                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
-                  Platform fee is not refundable.
-                </p>
-              </div>
-            )}
-
-            {platformFees.convenienceFee > 0 && (
-              <div className="flex justify-between text-gray-600">
-                <span className="flex items-center gap-1">
-                  Convenience Fee
-                  <Info className="w-3 h-3 text-gray-400 cursor-help" aria-label="Online booking convenience charge" />
-                </span>
-                <span>₹{platformFees.convenienceFee.toFixed(2)}</span>
-              </div>
-            )}
-
-            {platformFees.deliveryFee > 0 && type !== 'meal_subscription' && type !== 'meal_one_time' && (
-              <div className="flex justify-between text-gray-600">
-                <span className="flex items-center gap-1">
-                  Delivery Fee
-                </span>
-                <span>₹{platformFees.deliveryFee.toFixed(2)}</span>
-              </div>
-            )}
-
-            {platformFees.packagingFee > 0 && (
-              <div className="flex justify-between text-gray-600">
-                <span className="flex items-center gap-1">
-                  Packaging Fee
-                </span>
-                <span>₹{platformFees.packagingFee.toFixed(2)}</span>
-              </div>
-            )}
-
-            {/* Razorpay Offer Discount */}
-            {selectedRazorpayOffer && (
-              <div className="flex justify-between text-blue-600">
-                <span className="flex items-center gap-1">
-                  <Gift className="w-4 h-4" />
-                  {selectedRazorpayOffer.title}
-                </span>
-                <span>-₹{razorpayOfferDiscount.toFixed(2)}</span>
-              </div>
-            )}
-
-            {/* Wallet */}
-            {useWallet && walletAmount > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span className="flex items-center gap-1">
-                  <Wallet className="w-4 h-4" />
-                  Wallet
-                </span>
-                <span>-₹{walletAmount.toFixed(2)}</span>
-              </div>
-            )}
-
-            <div className="mt-4 border-t border-[#EDE9E3] pt-4">
-              <div className="flex justify-between text-lg font-bold">
-                <span className="text-gray-900">Total Amount</span>
-                <span className="text-[#FF8C42]">₹{finalAmount.toFixed(2)}</span>
-              </div>
-              {(promotionDiscount > 0 || couponDiscount > 0 || walletAmount > 0 || razorpayOfferDiscount > 0) && (
-                <p className="text-sm text-green-600 mt-1">
-                  You save ₹{(promotionDiscount + couponDiscount + walletAmount + razorpayOfferDiscount).toFixed(2)} on this {type}!
-                </p>
-              )}
-            </div>
-          </div>
+          <PriceBreakdown lines={checkoutPriceLines} title="Price details" />
+          {checkoutSavingsTotal > 0 && (
+            <p className="text-sm text-green-600 mt-3 px-1">
+              You save ₹{checkoutSavingsTotal.toFixed(2)} on this {type}!
+            </p>
+          )}
         </div>
 
         {/* Payment & refund policy summary (dynamic from backend) */}

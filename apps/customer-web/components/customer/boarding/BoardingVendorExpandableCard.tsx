@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
+import { ServiceListingPrice } from '@/components/customer/pricing/ServiceListingPrice';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
@@ -48,6 +49,12 @@ export interface BoardingVendorExpandableCardProps {
   onBookPlan: (v: BoardingListVendor, plan: BoardingPlanRow) => void;
   onOpenCenterDetails: (e: MouseEvent, vendorId: string) => void;
   showPriceDisclaimer?: boolean;
+  /** Customer phone/id for server-side promo quote on service rows */
+  customerId?: string;
+  /** Service category slug for /promotions/calculate-booking (e.g. vet, grooming) */
+  serviceCategory?: string;
+  /** When true (default), service rows use winning promotion pricing from the API */
+  usePromoQuote?: boolean;
 }
 
 export function BoardingVendorExpandableCard({
@@ -65,9 +72,13 @@ export function BoardingVendorExpandableCard({
   onBookPlan,
   onOpenCenterDetails,
   showPriceDisclaimer = false,
+  customerId,
+  serviceCategory,
+  usePromoQuote = true,
 }: BoardingVendorExpandableCardProps) {
   const centerProfileVendorId =
     pickCustomerVendorAccountId((v.raw ?? {}) as Record<string, unknown>) || v.id;
+  const promoVendorId = centerProfileVendorId;
   const minP = minPProp ?? minPriceForVendor(v);
   const displayAddress =
     typeof v.address === 'string' && v.address.trim() ? v.address.trim() : 'Location on booking';
@@ -299,9 +310,22 @@ export function BoardingVendorExpandableCard({
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-lg font-bold text-[#FF8C42] mb-1 tabular-nums">
-                          {formatPriceWithSymbol(plan.price)}
-                        </div>
+                        {usePromoQuote && promoVendorId ? (
+                          <ServiceListingPrice
+                            basePrice={plan.price}
+                            vendorId={promoVendorId}
+                            serviceId={String(plan.vendorServiceId ?? plan.serviceId ?? plan.rowId)}
+                            customerId={customerId}
+                            serviceStyle={plan.serviceStyle}
+                            serviceCategory={serviceCategory}
+                            size="md"
+                            className="mb-1 items-end"
+                          />
+                        ) : (
+                          <div className="text-lg font-bold text-[#FF8C42] mb-1 tabular-nums">
+                            {formatPriceWithSymbol(plan.price)}
+                          </div>
+                        )}
                         {showPriceDisclaimer && (
                           <p className="mb-2 text-[11px] leading-4 text-gray-500 break-words">
                             {INDICATIVE_PRICING_NOTE}

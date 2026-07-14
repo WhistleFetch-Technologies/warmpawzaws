@@ -138,6 +138,7 @@ export const WARMPAWZ_HOME_RESUME_SCREENS = new Set<string>([
   'order_history',
   'my-bookings',
   'meal-plan-orders',
+  'meal-order-tracking',
   'package-tracking',
   'shop',
   'cart',
@@ -383,6 +384,11 @@ type HelpBackIntent =
 export function rememberHelpBackFromCurrentUrl(): void {
   if (typeof window === 'undefined') return;
   const path = window.location.pathname + window.location.search;
+  rememberHelpBackToPath(path);
+}
+
+export function rememberHelpBackToPath(path: string): void {
+  if (typeof window === 'undefined') return;
   if (!isSafeInternalPath(path) || path.startsWith('/help')) return;
   if (path === '/' || path === '') return;
   sessionStorage.setItem(

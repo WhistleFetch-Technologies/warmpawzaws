@@ -29,6 +29,7 @@ import {
   resolveProductCompareAtPrice,
   resolveProductSellingPrice,
 } from '@/lib/shop-product-pricing';
+import { PriceDisplay } from '@/components/customer/pricing/PriceDisplay';
 import {
   type ClientProductSku,
   resolveSkuFromSelection,
@@ -327,8 +328,10 @@ export default function ProductDetailClient() {
       });
 
       let productRes: any;
+      const customerId = getResolvedCustomerId();
+      const customerQuery = customerId ? `?customerId=${encodeURIComponent(customerId)}` : '';
       try {
-        productRes = await apiClient.get<any>(`/ecommerce/products/${productId}`);
+        productRes = await apiClient.get<any>(`/ecommerce/products/${productId}${customerQuery}`);
       } catch (firstErr: any) {
         const is404 =
           firstErr?.status === 404 ||
@@ -338,7 +341,7 @@ export default function ProductDetailClient() {
           console.warn('[shop/product] ecommerce detail 404, retrying /products/:id', {
             productId,
           });
-          productRes = await apiClient.get<any>(`/products/${productId}`);
+          productRes = await apiClient.get<any>(`/products/${productId}${customerQuery}`);
         } else {
           throw firstErr;
         }
@@ -486,24 +489,44 @@ export default function ProductDetailClient() {
     [productSkus, selectedVariations, product?.variations],
   );
 
-  const displayPrice = useMemo(() => {
+  const productPromoRatio = useMemo(() => {
+    const compareAt = product?.original_price;
+    const selling = product?.price;
+    if (compareAt != null && selling != null && compareAt > selling && selling > 0) {
+      return selling / compareAt;
+    }
+    return null;
+  }, [product?.original_price, product?.price]);
+
+  const catalogUnitPrice = useMemo(() => {
+    const catalogFallback = product?.original_price ?? product?.price ?? 0;
     if (productSkus.length > 0) {
       return resolveSkuPriceForSelection(
         productSkus,
         selectedVariations,
-        product?.price ?? 0,
+        catalogFallback,
         product?.variations,
       );
     }
     return product?.price ?? 0;
-  }, [productSkus, selectedVariations, product?.price]);
+  }, [productSkus, selectedVariations, product?.original_price, product?.price, product?.variations]);
+
+  const displayPrice = useMemo(() => {
+    if (productPromoRatio != null && catalogUnitPrice > 0) {
+      return Math.round(catalogUnitPrice * productPromoRatio * 100) / 100;
+    }
+    return catalogUnitPrice;
+  }, [catalogUnitPrice, productPromoRatio]);
 
   const displayOriginalPrice = useMemo(() => {
+    if (productPromoRatio != null && catalogUnitPrice > 0) {
+      return catalogUnitPrice;
+    }
     if (matchedSku?.compare_at_price != null && matchedSku.compare_at_price > 0) {
       return matchedSku.compare_at_price;
     }
     return product?.original_price;
-  }, [matchedSku, product?.original_price]);
+  }, [productPromoRatio, catalogUnitPrice, matchedSku, product?.original_price]);
   const showFromPrice = useMemo(() => {
     if (!product?.price_from || productSkus.length === 0) return false;
     return hasIncompleteVariantSelection(productSkus, selectedVariations);
@@ -574,8 +597,8 @@ export default function ProductDetailClient() {
     return {
       id: product.id,
       name: product.name,
-      price: displayPrice,
-      original_price: displayOriginalPrice,
+      price: catalogUnitPrice,
+      original_price: displayOriginalPrice ?? catalogUnitPrice,
       emoji: product.emoji,
       images: heroImage ? [heroImage] : product.images,
       ...(vendorId ? { vendor_id: vendorId } : {}),
@@ -885,17 +908,19 @@ export default function ProductDetailClient() {
             {/* Price */}
             <div className="flex flex-row items-baseline justify-between gap-3">
               <div className="flex items-center gap-4 flex-wrap min-w-0">
-                <span className="text-3xl font-bold text-slate-900">
-                  {showFromPrice ? 'From ' : ''}₹{headerPrice.toLocaleString()}
-                </span>
-                {!showFromPrice && displayOriginalPrice && displayOriginalPrice > displayPrice && (
-                  <>
-                    <span className="text-lg text-slate-400 line-through">₹{displayOriginalPrice.toLocaleString()}</span>
-                    <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-sm font-semibold rounded-lg">
-                      Save ₹{(displayOriginalPrice - displayPrice).toLocaleString()}
-                    </span>
-                  </>
-                )}
+                <PriceDisplay
+                  originalPrice={
+                    displayOriginalPrice && displayOriginalPrice > displayPrice
+                      ? displayOriginalPrice
+                      : displayPrice
+                  }
+                  currentPrice={headerPrice}
+                  size="lg"
+                  prefix={showFromPrice ? 'From ' : undefined}
+                  showSavings={Boolean(
+                    displayOriginalPrice && displayOriginalPrice > displayPrice && !showFromPrice
+                  )}
+                />
               </div>
               {isMeaningfulProductSpecValue(product.key_features) && (
                 <div className="flex flex-col gap-0.5 items-end text-right shrink-0 max-w-[48%]">

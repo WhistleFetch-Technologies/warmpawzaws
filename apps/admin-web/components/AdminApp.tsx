@@ -1,4 +1,5 @@
-'use client';
+import { isLegacyPromotionUiEnabled } from '@/lib/legacy-promotion-ui';
+import { LegacyPromotionDeprecatedScreen } from '@/components/admin/marketing/LegacyPromotionDeprecatedScreen';
 
 import React, { useState, useEffect } from 'react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
@@ -817,6 +818,7 @@ export function AdminApp() {
 
         {/* Promotions Tab */}
         {activeTab === 'promotions' && (
+          isLegacyPromotionUiEnabled() ? (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <p className="text-gray-500">{promotions.length} promotions</p>
@@ -861,9 +863,14 @@ export function AdminApp() {
               </table>
             </div>
           </div>
+          ) : (
+            <LegacyPromotionDeprecatedScreen
+              description="Promotions are managed in the Promotion Hub."
+              promotionHubHref="/promotions"
+              promotionHubLabel="Open Promotion Hub"
+            />
+          )
         )}
-
-        {/* Settings Tab */}
         {activeTab === 'settings' && settings && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

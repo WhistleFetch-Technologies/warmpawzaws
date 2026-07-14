@@ -4,6 +4,10 @@
  */
 
 import { getVendorCommissionRate } from './vendor-commission-rate';
+import {
+  applySettlementPreviewToCommissionableGross,
+  extractSettlementPreviewFromBooking,
+} from '../discount-engine/settlement/settlement-hook-bridge';
 
 /** DB surface compatible with `query()` from rds-connection and `PoolClient#query` overloads. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -244,6 +248,7 @@ async function accrueVendorEarningsForPackageSessionChild(
 
     const parentRes = await db.query(
       `SELECT b.vendor_id::text AS vendor_id, b.total_amount::numeric AS total_amount,
+              b.notes,
               COALESCE(pp.total_with_tax, pp.amount, pp.package_price, 0)::numeric AS purchase_amount
        FROM bookings b
        LEFT JOIN package_purchases pp ON pp.id = b.package_purchase_id
@@ -265,6 +270,9 @@ async function accrueVendorEarningsForPackageSessionChild(
     if (!Number.isFinite(parentTotal) || parentTotal <= 0) {
       return;
     }
+
+    const settlementPreview = extractSettlementPreviewFromBooking(parentRow as Record<string, unknown>);
+    parentTotal = applySettlementPreviewToCommissionableGross(parentTotal, settlementPreview);
 
     const priorRes = await db.query(
       `SELECT COALESCE(SUM(ve.total_amount), 0)::numeric AS sum_gross,

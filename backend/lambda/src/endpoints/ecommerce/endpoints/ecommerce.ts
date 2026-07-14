@@ -47,15 +47,21 @@ import {
 import { computeEcommerceDeliveryFee } from '../../../utils/ecommerce/delivery-fee';
 import {
   calculateBestCartPromotion,
+  calculateBestCartPromotionAsync,
   discountsWithinTolerance,
   normalizePromotionRow,
   type CartLineItem,
 } from '../../../utils/vendor-promotion-engine';
-import { countPriorVendorOrders, recordVendorPromotionUsage } from '../../../utils/vendor-promotion-usage';
+import {
+  countPriorVendorOrders,
+  recordEcommercePlatformCouponUsage,
+  recordVendorPromotionUsage,
+} from '../../../utils/vendor-promotion-usage';
 import {
   resolveCommercialCampaignDiscount,
   recordCommercialCampaignUsage,
 } from '../../../utils/resolve-commercial-campaign';
+import { selectEcommercePromotionWinnerAsync } from '../../../utils/ecommerce-promo-policy-winner';
 import { buildEcommerceProductTaxItems } from '../../../utils/resolve-ecommerce-product-tax-item';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../../../utils/idempotency';
 import {
@@ -86,6 +92,7 @@ import {
   productIdIsExcludedFromEcommerceStorefront,
   storefrontExcludeMealProductsSql,
 } from '../../../utils/ecommerce-storefront-product-filter';
+import { enrichStorefrontProductsWithPromoPricing } from '../../../utils/storefront-product-promo-pricing';
 import { buildStorefrontCategoryFilter } from '../../../utils/storefront-category-filter';
 
 const ADMIN_CATEGORY_SELECT = `
@@ -228,19 +235,28 @@ function normalizeTaxBreakdownForDb(raw: unknown): Record<string, unknown>[] | n
   return null;
 }
 
+/** Optional customer scope for storefront promo enrichment (query param). */
+function resolveOptionalStorefrontCustomerId(c: { req: { query: (key: string) => string | undefined } }): string | null {
+  const raw = c.req.query('customerId') ?? c.req.query('customer_id');
+  if (!raw || !isValidUUID(String(raw).trim())) return null;
+  return String(raw).trim();
+}
+
 /** Presign product rows and apply SKU listing pricing for variant products (single batch query). */
 async function enrichStorefrontProductListRows(
   rows: Record<string, unknown>[],
+  customerId?: string | null,
 ): Promise<Record<string, unknown>[]> {
   const signed = await prepareStorefrontProductRows(rows);
   const ids = signed.map((r) => String(r.id ?? '')).filter(Boolean);
   const skuMap = await loadProductSkusForProducts(ids);
-  return signed.map((row) => {
+  const withSkuPricing = signed.map((row) => {
     const pid = String(row.id ?? '');
     const skus = skuMap.get(pid) ?? [];
     if (skus.length === 0) return row;
     return applyStorefrontSkuPricingFields(row, skus);
   });
+  return enrichStorefrontProductsWithPromoPricing(withSkuPricing, customerId);
 }
 
 export function registerEcommerceEndpoints(app: Hono) {
@@ -303,9 +319,16 @@ export function registerEcommerceEndpoints(app: Hono) {
         product.has_variants = false;
       }
 
+      const customerId = resolveOptionalStorefrontCustomerId(c);
+      const [enrichedProduct] = await enrichStorefrontProductsWithPromoPricing(
+        [product as Record<string, unknown>],
+        customerId,
+      );
+      const productOut = enrichedProduct ?? product;
+
       return c.json({
         success: true,
-        product,
+        product: productOut,
         skus: skusPresigned,
         variation_axes,
       });
@@ -402,7 +425,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       const rows = (products?.rows || []) as Record<string, unknown>[];
-      const signedProducts = await enrichStorefrontProductListRows(rows);
+      const customerId = resolveOptionalStorefrontCustomerId(c);
+      const signedProducts = await enrichStorefrontProductListRows(rows, customerId);
 
       return c.json({
         success: true,
@@ -578,7 +602,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       const rows = (products?.rows || []) as Record<string, unknown>[];
-      const signedProducts = await enrichStorefrontProductListRows(rows);
+      const customerId = resolveOptionalStorefrontCustomerId(c);
+      const signedProducts = await enrichStorefrontProductListRows(rows, customerId);
 
       return c.json({
         success: true,
@@ -786,11 +811,12 @@ export function registerEcommerceEndpoints(app: Hono) {
         return raw === 'admin' || raw === 'vendor' ? raw : null;
       })();
 
-      const cartLines: CartLineItem[] = orderItems.map((oi) => {
+      const rawCartLines: CartLineItem[] = orderItems.map((oi) => {
         const raw = items.find(
           (it: Record<string, unknown>) =>
             String(it.productId || it.product_id || '') === String(oi.product_id)
         );
+        const ownershipRaw = raw?.listingOwnership ?? raw?.listing_ownership;
         return {
           productId: String(oi.product_id),
           quantity: oi.quantity,
@@ -803,8 +829,16 @@ export function registerEcommerceEndpoints(app: Hono) {
             raw?.categoryId || raw?.category
               ? String(raw.categoryId || raw.category)
               : undefined,
+          listingOwnership:
+            ownershipRaw === 'own_brand' || ownershipRaw === 'third_party'
+              ? String(ownershipRaw)
+              : undefined,
         };
       });
+      const { enrichLinesWithListingOwnership } = await import(
+        '../../../utils/compute-listing-ownership'
+      );
+      const cartLines = await enrichLinesWithListingOwnership(rawCartLines);
 
       let serverPromoDiscount = 0;
       let appliedPromotionId: string | null = promoId ? String(promoId) : null;
@@ -813,11 +847,17 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       const wantsPromotion =
         cartLines.length > 0 && Boolean(couponCode || promoId || Number(bodyDiscount) > 0);
-      // Strict single-source validation: a client that asked for the vendor source never
-      // touches the admin campaign tables and vice versa. When the client is legacy and
-      // did not send promotionSource, we try both but still only ever apply ONE winner.
+      // Client-requested source can still force a single side; otherwise evaluate both and
+      // let ECOMMERCE Policy Center choose Best Offer vs stack (allowPlatformWithVendor).
       const tryVendor = wantsPromotion && Boolean(firstVendorId) && requestedPromotionSource !== 'admin';
       const tryAdmin = wantsPromotion && requestedPromotionSource !== 'vendor';
+
+      let vendorCandidateDiscount = 0;
+      let vendorCandidateId: string | null = null;
+      let adminCandidateDiscount = 0;
+      let adminCandidateId: string | null = null;
+      /** Distinguishes platform `coupons` wins from ecommerce_admin/legacy campaign promos. */
+      let adminCandidateKind: 'coupon' | 'campaign' | null = null;
 
       if (tryVendor) {
         try {
@@ -826,7 +866,8 @@ export function registerEcommerceEndpoints(app: Hono) {
              WHERE vendor_id = $1::uuid
                AND is_active = true
                AND start_date <= NOW()
-               AND end_date >= NOW()`,
+               AND end_date >= NOW()
+               AND (usage_limit IS NULL OR usage_count < usage_limit)`,
             [firstVendorId]
           );
           const promos = (promosRes.rows || []).map((row: Record<string, unknown>) =>
@@ -837,33 +878,44 @@ export function registerEcommerceEndpoints(app: Hono) {
               ? await countPriorVendorOrders(String(customerId), String(firstVendorId))
               : 0;
 
-          const autoResult = calculateBestCartPromotion(promos, cartLines, {
+          const autoResult = await calculateBestCartPromotionAsync(promos, cartLines, {
             vendorId: String(firstVendorId),
             customerId: customerId ? String(customerId) : undefined,
             priorVendorOrderCount,
           });
 
           const codeResult = couponCode
-            ? calculateBestCartPromotion(promos, cartLines, {
-                vendorId: String(firstVendorId),
-                customerId: customerId ? String(customerId) : undefined,
-                priorVendorOrderCount,
-                manualCode: String(couponCode).trim(),
-              })
+            ? await calculateBestCartPromotionAsync(
+                promos,
+                cartLines,
+                {
+                  vendorId: String(firstVendorId),
+                  customerId: customerId ? String(customerId) : undefined,
+                  priorVendorOrderCount,
+                  manualCode: String(couponCode).trim(),
+                },
+                { platformCouponCode: String(couponCode).trim() }
+              )
             : null;
 
-          const autoDiscount = autoResult.bestPromotion?.discountAmount ?? 0;
-          const codeDiscount = codeResult?.bestPromotion?.discountAmount ?? 0;
-          const vendorDiscount = Math.max(autoDiscount, codeDiscount);
+          const autoDiscount = autoResult.bestPromotion?.discountAmount ?? autoResult.totalSavings ?? 0;
+          const vendorManualDiscount = codeResult?.bestPromotion?.discountAmount ?? 0;
+          const platformManualDiscount = codeResult?.platformCouponDiscount ?? 0;
+          vendorCandidateDiscount = Math.max(autoDiscount, vendorManualDiscount);
           const bestEval =
-            codeDiscount >= autoDiscount
-              ? codeResult?.bestPromotion
+            vendorManualDiscount >= autoDiscount && codeResult?.bestPromotion
+              ? codeResult.bestPromotion
               : autoResult.bestPromotion;
-
-          if (vendorDiscount > serverPromoDiscount && bestEval) {
-            serverPromoDiscount = vendorDiscount;
-            appliedPromotionId = bestEval.promotionId;
-            promotionSource = 'vendor';
+          if (bestEval) {
+            vendorCandidateId = bestEval.promotionId;
+          }
+          // Platform coupons are admin-funded — fold into admin candidate below.
+          if (platformManualDiscount > 0 && codeResult?.platformCouponId) {
+            if (platformManualDiscount > adminCandidateDiscount) {
+              adminCandidateDiscount = platformManualDiscount;
+              adminCandidateId = String(codeResult.platformCouponId);
+              adminCandidateKind = 'coupon';
+            }
           }
         } catch (promoErr) {
           console.warn('[ecommerce/orders] vendor promotion validation skipped:', promoErr);
@@ -878,14 +930,52 @@ export function registerEcommerceEndpoints(app: Hono) {
             cartLines,
             customerId: customerId ? String(customerId) : null,
           });
-          if (campaignResult.discountAmount > serverPromoDiscount && campaignResult.promotionId) {
-            serverPromoDiscount = campaignResult.discountAmount;
-            appliedPromotionId = campaignResult.promotionId;
-            promotionSource = 'admin';
-            campaignIsLegacy = campaignResult.isLegacy;
+          if (campaignResult.discountAmount > 0 && campaignResult.promotionId) {
+            if (campaignResult.discountAmount > adminCandidateDiscount) {
+              adminCandidateDiscount = campaignResult.discountAmount;
+              adminCandidateId = campaignResult.promotionId;
+              adminCandidateKind = 'campaign';
+              campaignIsLegacy = campaignResult.isLegacy;
+            }
           }
         } catch (promoErr) {
           console.warn('[ecommerce/orders] admin campaign validation skipped:', promoErr);
+        }
+
+        // When client sent promotionSource=admin, tryVendor is skipped — still resolve
+        // platform `coupons` table codes for Best Offer.
+        if (couponCode && adminCandidateDiscount <= 0) {
+          try {
+            const { resolveEcommercePlatformCoupon } = await import(
+              '../../../lib/services/promotion-code-validation-service'
+            );
+            const lineSubtotal = cartLines.reduce((s, l) => s + l.price * l.quantity, 0);
+            const platformCoupon = await resolveEcommercePlatformCoupon(
+              String(couponCode).trim(),
+              lineSubtotal
+            );
+            if (platformCoupon && platformCoupon.discountAmount > 0) {
+              adminCandidateDiscount = platformCoupon.discountAmount;
+              adminCandidateId = platformCoupon.couponId;
+              adminCandidateKind = 'coupon';
+            }
+          } catch (couponErr) {
+            console.warn('[ecommerce/orders] platform coupon lookup skipped:', couponErr);
+          }
+        }
+      }
+
+      if (vendorCandidateDiscount > 0 || adminCandidateDiscount > 0) {
+        const winner = await selectEcommercePromotionWinnerAsync({
+          vendorDiscount: vendorCandidateDiscount,
+          adminDiscount: adminCandidateDiscount,
+        });
+        serverPromoDiscount = winner.discountAmount;
+        promotionSource = winner.promotionSource;
+        if (winner.promotionSource === 'admin') {
+          appliedPromotionId = adminCandidateId ?? appliedPromotionId;
+        } else if (winner.promotionSource === 'vendor') {
+          appliedPromotionId = vendorCandidateId ?? appliedPromotionId;
         }
       }
 
@@ -896,6 +986,14 @@ export function registerEcommerceEndpoints(app: Hono) {
         ) {
           return c.json({ error: 'Promotion discount mismatch' }, 400);
         }
+      }
+
+      if (
+        Number(bodyDiscount) > 0 &&
+        serverPromoDiscount === 0 &&
+        (couponCode || promoId)
+      ) {
+        return c.json({ error: 'Promotion validation failed' }, 400);
       }
 
       const discountAmount =
@@ -1128,14 +1226,17 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
-      // Fix B/Phase 2: resolve and store commission immediately at order creation so it is
-      // available before payment verification. Commission is ALWAYS on the original ex-GST
-      // taxable value (T) of each line — a discount (vendor OR admin funded) never reduces
-      // it. applyOrderCommissionAudit serves as a reconcile pass later.
+      // Resolve commission at order creation. Admin/platform discounts keep commission on
+      // original ex-GST taxable T. Vendor-funded discounts commission on discounted goods
+      // (scale line taxable by (P − D) / P). applyOrderCommissionAudit reconciles later.
       if (firstVendorId) {
         try {
+          const vendorDiscountScale =
+            promotionSource === 'vendor' && subtotal > 0
+              ? Math.max(0, subtotal - discountAmount) / subtotal
+              : 1;
           const lineItemsForCommission = orderItems.map((item, idx) => ({
-            lineSubtotal: lineTaxableValues[idx] ?? item.total,
+            lineSubtotal: (lineTaxableValues[idx] ?? item.total) * vendorDiscountScale,
             productId: item.product_id ?? null,
             categoryId: (item as Record<string, unknown>).category_id as string | null ?? null,
           }));
@@ -1165,7 +1266,14 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       if (appliedPromotionId && discountAmount > 0) {
         try {
-          if (promotionSource === 'admin') {
+          if (promotionSource === 'admin' && adminCandidateKind === 'coupon') {
+            await recordEcommercePlatformCouponUsage({
+              couponId: appliedPromotionId,
+              orderId,
+              customerId: customerId ? String(customerId) : null,
+              discountAmount,
+            });
+          } else if (promotionSource === 'admin') {
             await recordCommercialCampaignUsage({
               promotionId: appliedPromotionId,
               isLegacy: campaignIsLegacy,

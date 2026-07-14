@@ -72,6 +72,12 @@ export function buildEcommerceOrderPayload(
     promo?.code ||
     persisted.appliedCoupons?.[0]?.code ||
     undefined;
+  const hasPromotionDiscount = pricing.discount > 0;
+  const promotionId = promo?.promotionId ?? persisted.sellerPromotion?.promotionId;
+  const promotionSource =
+    pricing.promotionSource ??
+    promo?.source ??
+    persisted.sellerPromotion?.source;
 
   return {
     customerId,
@@ -105,10 +111,10 @@ export function buildEcommerceOrderPayload(
     discountAmount: pricing.discount,
     totalAmount: pricing.total,
     couponCode,
-    promotionId: promo?.promotionId,
+    promotionId: hasPromotionDiscount ? promotionId : undefined,
     // Explicit source so the backend validates strictly against ONE table (vendor_promotions
     // vs ecommerce_admin_promotions) instead of inferring — see Ecommerce Settlement Engine plan §3.
-    promotionSource: promo?.promotionId ? (pricing.promotionSource ?? promo?.source) : undefined,
+    promotionSource: hasPromotionDiscount ? promotionSource : undefined,
     walletAmountApplied: walletAmountApplied ?? 0,
   };
 }

@@ -14,7 +14,7 @@ import { resolveStyleLaunchTargetForScreen } from '@/lib/customer-style-screen-l
 
 export interface FeaturedVendorSpotlightsProps {
   /**
-   * Same `service` context as `PromotionBanner` for this screen (e.g. `grooming`, `vet`, `sitting`, `veterinary`).
+   * Same `service` context as this screen (e.g. `grooming`, `vet`, `sitting`, `veterinary`).
    * Sent as GET /customer/featured-vendors?service=…&limit=…
    */
   service: string;

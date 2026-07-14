@@ -78,6 +78,25 @@ describe('bulk-product-variant-builder', () => {
     expect(groups.find((g) => g.name === 'Treats')?.variants).toHaveLength(2);
   });
 
+  it('groupBulkRows copies listing_ownership onto parent', () => {
+    const groups = groupBulkRows(
+      [
+        {
+          name: 'Treats',
+          category: 'Food',
+          brand: 'Acme',
+          price: 100,
+          stock_quantity: 5,
+          listing_ownership: 'Own brand',
+          rowNum: 1,
+        },
+      ] as any,
+      VENDOR,
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].parent.listing_ownership).toBe('Own brand');
+  });
+
   it('buildSkuInputsFromGroup uses row MRP and SP', () => {
     const groups = groupBulkRows(
       [

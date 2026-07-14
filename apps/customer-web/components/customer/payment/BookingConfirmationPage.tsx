@@ -2,18 +2,20 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  CheckCircle2, Calendar, Clock, MapPin, User, Building2, Home, Video,
-  Copy, Share2, Download, FileText, QrCode, Shield, Gift, Package, ArrowLeft
+  Clock, Home, Video,
+  Copy, Share2, QrCode, Shield, Gift, Package, ArrowLeft, Building2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PaymentSourcesDisplay } from './PaymentSourcesDisplay';
 import type { PaymentSource } from '@/lib/payment-display-utils';
 import { normalizePaymentSources } from '@/lib/payment-display-utils';
 import { downloadFromApi, getDownloadMessage } from '@/lib/download-file';
+import { MarketplaceConfirmation } from '@/components/customer/marketplace/MarketplaceConfirmation';
+import { BookingConfirmationSavings } from '@/components/customer/pricing/BookingConfirmationSavings';
+import type { MarketplaceAction } from '@/lib/marketplace/types';
 
 interface BookingConfirmationPageProps {
   bookingId: string;
@@ -193,6 +195,78 @@ export function BookingConfirmationPage({
       ? paymentSources
       : normalizePaymentSources(bookingDetails?.paymentSources);
 
+  const savingsAmount =
+    bookingDetails?.discountAmount != null && Number(bookingDetails.discountAmount) > 0
+      ? Number(bookingDetails.discountAmount)
+      : undefined;
+  const couponLabel =
+    bookingDetails?.couponCode || bookingDetails?.coupon_code
+      ? String(bookingDetails.couponCode || bookingDetails.coupon_code)
+      : undefined;
+
+  const couponCodeForConfirmation = couponLabel;
+
+  const summaryLines: { label: string; value: string }[] = [];
+  if (type === 'booking' && (bookingDate || bookingTime)) {
+    summaryLines.push({
+      label: 'Schedule',
+      value: [
+        bookingDate
+          ? new Date(bookingDate).toLocaleDateString('en-IN', {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            })
+          : null,
+        bookingTime,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    });
+  }
+  if (type === 'booking' && petName) {
+    summaryLines.push({ label: 'Pet', value: petName });
+  }
+  if (address) {
+    summaryLines.push({
+      label: 'Address',
+      value: [address.label || address.addressLine1, address.city, address.pincode]
+        .filter(Boolean)
+        .join(', '),
+    });
+  }
+  if (transactionId) {
+    summaryLines.push({ label: 'Transaction', value: transactionId });
+  }
+
+  const confirmationActions: MarketplaceAction[] = [
+    {
+      id: 'details',
+      label: `View ${type === 'booking' ? 'Booking' : 'Order'} Details`,
+      variant: 'primary',
+      onClick: onViewDetails,
+    },
+    {
+      id: 'receipt',
+      label: 'Download Receipt',
+      variant: 'outline',
+      onClick: downloadReceipt,
+    },
+    {
+      id: 'share',
+      label: 'Share',
+      variant: 'outline',
+      onClick: shareBooking,
+    },
+    {
+      id: 'home',
+      label: 'Back to Home',
+      variant: 'secondary',
+      onClick: onBackToHome,
+    },
+  ];
+
   return (
     <div className="w-full max-w-customer mx-auto min-h-[100dvh] bg-gradient-to-br from-green-50 via-white to-orange-50 flex flex-col">
       {onBack && (
@@ -207,24 +281,10 @@ export function BookingConfirmationPage({
           </button>
         </div>
       )}
-      {/* Header — same max width as app column (not full-viewport bleed) */}
-      <header className="bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg shrink-0">
-        <div className="w-full px-4 py-6 text-center">
-          <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 className="w-12 h-12 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold mb-2">
-            {type === 'booking' ? 'Booking Confirmed!' : 'Order Confirmed!'}
-          </h1>
-          <p className="text-white/90">
-            Your {type === 'booking' ? 'appointment' : 'order'} has been scheduled successfully
-          </p>
-        </div>
-      </header>
-
-      <main className="w-full flex-1 px-4 py-6 space-y-4 -mt-8 pb-6">
+      <main className="w-full flex-1 pb-6">
         {/* Queue Position Card (for tele consultations) */}
         {serviceStyle === 'tele' && queuePosition !== null && (
+          <div className="px-4 pt-4">
           <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 shadow-lg">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -268,10 +328,12 @@ export function BookingConfirmationPage({
               </div>
             </div>
           </Card>
+          </div>
         )}
 
         {/* OTP Card (for eligible bookings) */}
         {isEligibleForOTP && otpCode && (
+          <div className="px-4 pt-4">
           <Card className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white border-0 shadow-xl">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -333,131 +395,39 @@ export function BookingConfirmationPage({
               </div>
             </div>
           </Card>
+          </div>
         )}
 
-        {/* Booking/Order Details Card */}
-        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <div className="text-center mb-4 pb-4 border-b border-gray-200">
-            <p className="text-sm text-gray-500 mb-1">
-              {type === 'booking' ? 'Booking' : 'Order'} ID
+        <MarketplaceConfirmation
+          data={{
+            domain: type === 'booking' ? 'service' : 'product',
+            orderNumber: bookingId,
+            title: displayName,
+            vendorName,
+            paidAmount: totalAmount,
+            savingsAmount,
+            promotionLabel: savingsAmount ? 'Promotion applied' : undefined,
+            couponCode: couponCodeForConfirmation,
+            summaryLines,
+          }}
+          actions={confirmationActions}
+        >
+          {type === 'booking' ? (
+            <BookingConfirmationSavings bookingId={bookingId} fallbackBasePrice={totalAmount} />
+          ) : null}
+          {resolvedPaymentSources.length > 0 ? (
+            <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+              <PaymentSourcesDisplay
+                sources={resolvedPaymentSources}
+                totalPaid={totalAmount}
+                compact
+              />
+            </Card>
+          ) : paymentMethod ? (
+            <p className="text-center text-xs text-slate-500">
+              Paid via {paymentMethod === 'razorpay' ? 'Razorpay' : paymentMethod}
             </p>
-            <div className="flex items-center justify-center gap-2">
-              <p className="font-mono font-bold text-lg text-gray-900">{bookingId}</p>
-              <button
-                onClick={() => copyToClipboard(bookingId, 'Booking ID')}
-                className="p-1 hover:bg-gray-100 rounded"
-              >
-                <Copy className="w-4 h-4 text-gray-500" />
-              </button>
-            </div>
-            {transactionId && (
-              <p className="text-xs text-gray-400 mt-1">Txn: {transactionId}</p>
-            )}
-          </div>
-          
-          <div className="space-y-4">
-            {/* Service/Product */}
-            <div className="flex items-start gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                serviceStyle === 'tele' ? 'bg-blue-100' :
-                serviceStyle === 'at_home' ? 'bg-green-100' : 
-                serviceStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
-              }`}>
-                {serviceStyle === 'tele' ? <Video className="w-5 h-5 text-blue-600" /> :
-                 serviceStyle === 'at_home' ? <Home className="w-5 h-5 text-green-600" /> :
-                 serviceStyle === 'at_center' ? <Building2 className="w-5 h-5 text-purple-600" /> :
-                 <Package className="w-5 h-5 text-orange-600" />}
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-gray-500">{type === 'booking' ? 'Service' : 'Product'}</p>
-                <p className="font-semibold text-gray-900">{displayName}</p>
-                <p className="text-sm text-gray-500">{vendorName}</p>
-              </div>
-            </div>
-            
-            {/* Schedule (for bookings) */}
-            {type === 'booking' && (bookingDate || bookingTime || checkOutDate || checkOutTime) && (
-              <div className="flex items-start gap-3">
-                <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Schedule</p>
-                  <p className="font-medium text-gray-900">
-                    {bookingDate && new Date(bookingDate).toLocaleDateString('en-IN', { 
-                      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-                    })}
-                    {bookingTime && ` · ${bookingTime}`}
-                  </p>
-                  {(checkOutDate || checkOutTime) && (
-                    <p className="mt-1 text-sm text-gray-700">
-                      <span className="text-gray-500">Check-out: </span>
-                      {checkOutDate
-                        ? new Date(checkOutDate).toLocaleDateString('en-IN', {
-                            weekday: 'long',
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric',
-                          })
-                        : null}
-                      {checkOutTime ? ` · ${checkOutTime}` : ''}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-            
-            {/* Pet (for bookings) */}
-            {type === 'booking' && petName && (
-              <div className="flex items-start gap-3">
-                <User className="w-5 h-5 text-gray-400 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Pet</p>
-                  <p className="font-medium text-gray-900">{petName}</p>
-                </div>
-              </div>
-            )}
-            
-            {/* Address */}
-            {address && (
-              <div className="flex items-start gap-3">
-                <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Address</p>
-                  <p className="font-medium text-gray-900">{address.label || 'Home'}</p>
-                  <p className="text-sm text-gray-500">
-                    {address.addressLine1 || address.label || 'Address'}, {address.city} - {address.pincode}
-                  </p>
-                </div>
-              </div>
-            )}
-            
-            {/* Payment */}
-            <div className="pt-3 border-t border-gray-200 space-y-3">
-              {resolvedPaymentSources.length > 0 ? (
-                <PaymentSourcesDisplay
-                  sources={resolvedPaymentSources}
-                  totalPaid={totalAmount}
-                  compact
-                />
-              ) : (
-                <div className="flex items-start gap-3">
-                  <div className="flex-1">
-                    <p className="text-sm text-gray-500">Total Amount</p>
-                    <p className="font-bold text-lg text-[#FF8C42]">₹{totalAmount.toFixed(2)}</p>
-                    {paymentMethod && (
-                      <p className="text-xs text-gray-400 mt-1">
-                        Paid via {paymentMethod === 'razorpay' ? 'Razorpay' : paymentMethod}
-                      </p>
-                    )}
-                  </div>
-                  <Badge className="bg-green-100 text-green-700 border-green-200">
-                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                    Paid
-                  </Badge>
-                </div>
-              )}
-            </div>
-          </div>
-        </Card>
+          ) : null}
 
         {/* Next Steps Card */}
         <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -571,43 +541,7 @@ export function BookingConfirmationPage({
           </Card>
         )}
 
-        {/* Action Buttons */}
-        <div className="space-y-3">
-          <Button
-            onClick={onViewDetails}
-            className="w-full bg-[#FF8C42] hover:bg-[#E67A35] text-white py-3"
-          >
-            <FileText className="w-5 h-5 mr-2" />
-            View {type === 'booking' ? 'Booking' : 'Order'} Details
-          </Button>
-          
-          <div className="grid grid-cols-2 gap-3">
-            <Button
-              onClick={downloadReceipt}
-              variant="outline"
-              className="border-gray-200"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Receipt
-            </Button>
-            <Button
-              onClick={shareBooking}
-              variant="outline"
-              className="border-gray-200"
-            >
-              <Share2 className="w-4 h-4 mr-2" />
-              Share
-            </Button>
-          </div>
-          
-          <Button
-            onClick={onBackToHome}
-            variant="outline"
-            className="w-full"
-          >
-            Back to Home
-          </Button>
-        </div>
+        </MarketplaceConfirmation>
       </main>
     </div>
   );

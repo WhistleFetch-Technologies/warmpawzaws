@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { formatVendorFacingCustomerNotes } from '@/lib/vendor-facing-booking-notes';
 
 interface Booking {
   id: string;
@@ -265,8 +266,10 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                       </span>
                       <span className="font-semibold text-orange-500">₹{booking.total_amount}</span>
                     </div>
-                    {booking.notes && (
-                      <p className="text-sm text-gray-400 mt-1 italic">"{booking.notes}"</p>
+                    {formatVendorFacingCustomerNotes(booking.notes) && (
+                      <p className="text-sm text-gray-400 mt-1 italic">
+                        &quot;{formatVendorFacingCustomerNotes(booking.notes)}&quot;
+                      </p>
                     )}
                   </div>
                 </div>

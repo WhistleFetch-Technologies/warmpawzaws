@@ -14,6 +14,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { ServicePricingDisplay } from '@/components/customer/ServicePricingDisplay';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
@@ -21,11 +22,13 @@ import {
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
+import { VendorServicePromotions } from '../services/VendorServicePromotions';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 import { resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import { isDiscoveryAutoApplyPromotion } from '@/lib/promotion-banner-filter';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 
@@ -189,8 +192,9 @@ export function GroomingServicesByStyle({
     try {
       const response = await apiClient.get('/promotions/active') as any;
       if (response.success && response.promotions) {
-        setPromotions(response.promotions || []);
-        console.log(`✅ [Grooming] Loaded ${response.promotions.length} active promotions`);
+        const discoveryPromos = (response.promotions || []).filter(isDiscoveryAutoApplyPromotion);
+        setPromotions(discoveryPromos);
+        console.log(`✅ [Grooming] Loaded ${discoveryPromos.length} active promotions`);
       }
     } catch (error) {
       console.error('Error loading promotions:', error);
@@ -724,6 +728,7 @@ export function GroomingServicesByStyle({
         )}
 
         <div className="mx-auto w-full max-w-customer px-4 cw-scroll-pad-tabbar-sticky-cta">
+          <VendorServicePromotions vendorId={profileVendorId} vendorName={salonName} className="mb-4" />
           {/* Salon Header Info - Grooming-Focused */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4 -mt-6 relative z-10">
             <div className="mb-4">
@@ -1008,7 +1013,16 @@ export function GroomingServicesByStyle({
                               </div>
                             </div>
                             <div className="text-right flex-shrink-0">
-                              <div className="text-2xl font-bold text-[#FF8C42] mb-1">{formatPriceWithSymbol(service.price)}</div>
+                              <ServicePricingDisplay
+                                basePrice={service.originalPrice ?? service.price}
+                                usePromoQuote
+                                vendorId={vendorId || profileProvider?.providerId}
+                                serviceId={String(service.id || service.serviceId || '')}
+                                customerId={phone}
+                                serviceStyle={serviceStyle}
+                                serviceCategory={category}
+                                className="mb-1 items-end"
+                              />
                               {isSelected && (
                                 <div className="mt-1 flex justify-end">
                                   <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
@@ -1426,25 +1440,16 @@ export function GroomingServicesByStyle({
                                 )}
                               </div>
                               <div className="shrink-0 text-right">
-                                {service.originalPrice && service.originalPrice > service.price ? (
-                                  <>
-                                    <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
-                                      {formatPriceWithSymbol(service.price)}
-                                    </div>
-                                    <div className="text-sm text-gray-400 line-through">
-                                      {formatPriceWithSymbol(service.originalPrice)}
-                                    </div>
-                                    {service.discountPercentage && (
-                                      <Badge className="bg-green-500 text-white text-xs mt-1">
-                                        {service.discountPercentage}% OFF
-                                      </Badge>
-                                    )}
-                                  </>
-                                ) : (
-                                  <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
-                                    {formatPriceWithSymbol(service.price)}
-                                  </div>
-                                )}
+                                <ServicePricingDisplay
+                                  basePrice={service.originalPrice ?? service.price}
+                                  usePromoQuote
+                                  vendorId={String(provider.vendorId || provider.providerId || vendorId || '')}
+                                  serviceId={String(service.id || service.serviceId || '')}
+                                  customerId={phone}
+                                  serviceStyle={serviceStyle}
+                                  serviceCategory={category}
+                                  className="items-end"
+                                />
                               </div>
                             </div>
 

@@ -92,6 +92,7 @@ type CheckoutContextValue = {
   pricing: CartPricingBreakdown;
   mrpTotal: number;
   savingsAmount: number;
+  promotionLabel?: string;
   address: CheckoutAddress | null;
   addressId: string | null;
   addresses: DeliveryAddress[];
@@ -168,10 +169,15 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
   }, [cart, coupon, shippingMethod]);
 
   const mrpTotal = useMemo(() => computeCartMrpTotal(cart), [cart]);
-  const savingsAmount = useMemo(
-    () => Math.max(0, mrpTotal - pricing.total),
-    [mrpTotal, pricing.total]
-  );
+  const savingsAmount = useMemo(() => Math.max(0, pricing.discount), [pricing.discount]);
+  const promotionLabel = useMemo(() => {
+    const persisted = readPricingOptionsForCheckout();
+    return (
+      coupon?.code
+        ? `Coupon ${coupon.code}`
+        : persisted.sellerPromotion?.label
+    );
+  }, [coupon?.code]);
 
   const syncStepToUrl = useCallback(
     (next: CheckoutStep, historyMode: 'push' | 'replace' = 'replace') => {
@@ -423,6 +429,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       pricing,
       mrpTotal,
       savingsAmount,
+      promotionLabel,
       address,
       addressId,
       addresses,
@@ -453,6 +460,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       pricing,
       mrpTotal,
       savingsAmount,
+      promotionLabel,
       address,
       addressId,
       addresses,

@@ -36,9 +36,11 @@ import {
   Tooltip,
 } from 'recharts';
 import { PolicyHelpButton } from '@/components/PolicyHelpButton';
+import { navigateToBookingEarnings } from '@/lib/finance/settlementAuditExport';
 
 interface Settlement {
   id: string;
+  vendorId?: string;
   vendorName: string;
   vendorRole?: string | null;
   businessType?: string | null;
@@ -106,6 +108,7 @@ export function SettlementDashboard() {
         const originalStatus = String(rawStatus).toLowerCase();
         return {
           id: s.id,
+          vendorId: s.vendor_id ?? s.vendorId ?? undefined,
           vendorName: s.vendorName ?? s.vendor_name ?? 'Unknown',
           vendorRole: s.vendor_role ?? null,
           businessType: s.business_type ?? null,
@@ -137,6 +140,31 @@ export function SettlementDashboard() {
       toast.error('Failed to load settlement data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenInBookingEarnings = async (settlement: Settlement) => {
+    try {
+      const res = await apiClient.get<any>(`/settlements/${settlement.id}`);
+      const bookings = res?.settlement?.bookings ?? [];
+      const firstBooking = bookings[0];
+      const bookingId = firstBooking?.id;
+      const vendorId = settlement.vendorId ?? res?.settlement?.vendor_id;
+      const dateRaw = settlement.date || firstBooking?.booking_date;
+      const d = dateRaw ? new Date(dateRaw) : new Date();
+      if (!vendorId) {
+        toast.error('Vendor not found for this settlement');
+        return;
+      }
+      navigateToBookingEarnings({
+        periodType: 'month',
+        year: d.getFullYear(),
+        month: d.getMonth() + 1,
+        vendorId: String(vendorId),
+        bookingId: bookingId ? String(bookingId) : undefined,
+      });
+    } catch {
+      toast.error('Could not open booking earnings for this settlement');
     }
   };
 
@@ -450,26 +478,35 @@ export function SettlementDashboard() {
                     </TableCell>
                     <TableCell>{settlement.date ? new Date(settlement.date).toLocaleDateString() : '—'}</TableCell>
                     <TableCell>
-                      {settlement.status !== 'Paid' && !String(settlement.id).startsWith('ve-') && (
+                      <div className="flex flex-wrap gap-2">
                         <Button
                           size="sm"
-                          variant={settlement.status === 'Failed' ? 'outline' : 'default'}
-                          onClick={() => handleProcessSettlement(settlement.id)}
-                          disabled={processing}
+                          variant="outline"
+                          onClick={() => void handleOpenInBookingEarnings(settlement)}
                         >
-                          {settlement.status === 'Failed' ? (
-                            <>
-                              <RotateCcw className="w-4 h-4 mr-2" />
-                              Retry
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle2 className="w-4 h-4 mr-2" />
-                              Process
-                            </>
-                          )}
+                          Open in Booking Earnings
                         </Button>
-                      )}
+                        {settlement.status !== 'Paid' && !String(settlement.id).startsWith('ve-') && (
+                          <Button
+                            size="sm"
+                            variant={settlement.status === 'Failed' ? 'outline' : 'default'}
+                            onClick={() => handleProcessSettlement(settlement.id)}
+                            disabled={processing}
+                          >
+                            {settlement.status === 'Failed' ? (
+                              <>
+                                <RotateCcw className="w-4 h-4 mr-2" />
+                                Retry
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                                Process
+                              </>
+                            )}
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ));

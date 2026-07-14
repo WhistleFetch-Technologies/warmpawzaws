@@ -1219,6 +1219,12 @@ export function UniversalServicesByStyle({
                               <ServicePricingDisplay
                                 basePrice={service.originalPrice || service.price}
                                 vendorDiscount={service.vendorDiscount}
+                                usePromoQuote
+                                vendorId={vendorId || undefined}
+                                serviceId={String(service.id || service.serviceId || '')}
+                                customerId={phone}
+                                serviceStyle={serviceStyle}
+                                serviceCategory={finalCategory}
                                 className="mb-1"
                               />
                               {isSelected && (
@@ -1616,6 +1622,12 @@ export function UniversalServicesByStyle({
                             <ServicePricingDisplay
                               basePrice={service.originalPrice || service.price}
                               vendorDiscount={service.vendorDiscount}
+                              usePromoQuote
+                              vendorId={String(provider.vendorId || vendorId || '')}
+                              serviceId={String(service.id || service.serviceId || '')}
+                              customerId={phone}
+                              serviceStyle={serviceStyle}
+                              serviceCategory={finalCategory}
                               className="mb-1"
                             />
                             <p className="mb-2 text-[11px] leading-4 text-gray-500 break-words">

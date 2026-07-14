@@ -1,6 +1,10 @@
 import { resolveProductCommission } from './resolve-ecommerce-commission-rate';
 import { getSellerMonthlyRevenue } from './seller-commission-rate-helpers';
 import { isCommissionConfigurationError } from './commission-configuration-error';
+import {
+  applySettlementPreviewToCommissionableGross,
+  readSettlementPreviewFromMetadata,
+} from '../discount-engine/settlement/settlement-hook-bridge';
 
 export interface SellerCommissionRateResult {
   rate: number | null;
@@ -40,4 +44,13 @@ export async function resolveSellerCommissionRate(
     }
     throw err;
   }
+}
+
+/** Apply settlement preview to seller order subtotal when AUTHORITATIVE. */
+export function resolveSellerCommissionableAmount(
+  orderSubtotal: number,
+  orderMetadata?: unknown
+): number {
+  const preview = readSettlementPreviewFromMetadata(orderMetadata);
+  return applySettlementPreviewToCommissionableGross(orderSubtotal, preview);
 }

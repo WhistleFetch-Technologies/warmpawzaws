@@ -26,11 +26,19 @@ import {
   ChevronDown,
   ChevronRight,
   RefreshCw,
+  Tag,
+  Scale,
   type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { usePathname } from 'next/navigation';
-import { apiClient } from '@/lib/api-client';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { filterMarketingSidebarNavItems, isLegacyPromotionUiEnabled } from '@/lib/legacy-promotion-ui';
+import {
+  MARKETING_PORTAL_NAV_GROUPS,
+  MARKETING_PORTAL_TOP_LINKS,
+  marketingPortalTopLinkActive,
+  type MarketingPortalNavGroup,
+} from '@/lib/marketing-portal-nav';
 import { getStoredAdminPermissions, hasAdminPortalPermission } from '@/lib/admin-permissions';
 import {
   adminPortalNavItemVisible,
@@ -67,6 +75,11 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   refunds: RefreshCw,
   roles: UserCog,
   marketing: Megaphone,
+  promotions: Tag,
+  'marketing-vendor-promotions': Users,
+  'policy-center': Scale,
+  'marketing-analytics': BarChart3,
+  'marketing-campaigns': Megaphone,
   'notification-engine': Bell,
   reports: BarChart3,
   'platform-settings': Settings,
@@ -93,6 +106,31 @@ function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void
       window.location.href = '/notification-engine';
     };
   }
+  if (item.id === 'promotions') {
+    return () => {
+      window.location.href = '/promotion-center';
+    };
+  }
+  if (item.id === 'marketing-vendor-promotions') {
+    return () => {
+      window.location.href = '/marketing/vendor-promotions';
+    };
+  }
+  if (item.id === 'policy-center') {
+    return () => {
+      window.location.href = '/policy-center';
+    };
+  }
+  if (item.id === 'marketing-analytics') {
+    return () => {
+      window.location.href = '/marketing/analytics';
+    };
+  }
+  if (item.id === 'marketing-campaigns') {
+    return () => {
+      window.location.href = '/marketing/campaigns';
+    };
+  }
   return () => onNavigate(item.id);
 }
 
@@ -113,6 +151,21 @@ function isNavItemActive(item: AdminPortalNavItem, activeView: string, pathname:
   if (item.id === 'marketing') {
     return pathname?.startsWith('/marketing') ?? false;
   }
+  if (item.id === 'promotions') {
+    return pathname?.startsWith('/promotions') ?? false;
+  }
+  if (item.id === 'marketing-vendor-promotions') {
+    return pathname?.startsWith('/marketing/vendor-promotions') ?? false;
+  }
+  if (item.id === 'policy-center') {
+    return pathname?.startsWith('/policy-center') ?? false;
+  }
+  if (item.id === 'marketing-analytics') {
+    return pathname?.startsWith('/marketing/analytics') ?? false;
+  }
+  if (item.id === 'marketing-campaigns') {
+    return pathname?.startsWith('/marketing/campaigns') ?? false;
+  }
   if (item.id === 'notification-engine') {
     return pathname?.startsWith('/notification-engine') ?? false;
   }
@@ -120,6 +173,35 @@ function isNavItemActive(item: AdminPortalNavItem, activeView: string, pathname:
     return item.pathPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
   }
   return false;
+}
+
+function canSeeMarketingLink(permissionNavId: string, hydrated: boolean): boolean {
+  if (!hydrated) return true;
+  const item = getAdminPortalMarketingNavItems().find((i) => i.id === permissionNavId);
+  if (!item) return true;
+  return canSeeNavItem(item, hydrated);
+}
+
+function isMarketingPortalLinkActive(href: string, pathname: string | null, searchParams: URLSearchParams | null): boolean {
+  if (!pathname) return false;
+  const [path, query = ''] = href.split('?');
+  const pathMatches = pathname === path || pathname.startsWith(`${path}/`);
+  if (!pathMatches) return false;
+  if (!query) return true;
+  const expected = new URLSearchParams(query);
+  const actual = searchParams ?? new URLSearchParams();
+  for (const [key, value] of expected.entries()) {
+    if (actual.get(key) !== value) return false;
+  }
+  return true;
+}
+
+function isMarketingPortalGroupActive(
+  group: MarketingPortalNavGroup,
+  pathname: string | null,
+  searchParams: URLSearchParams | null
+): boolean {
+  return group.links.some((link) => isMarketingPortalLinkActive(link.href, pathname, searchParams));
 }
 
 function canSeeNavItem(item: AdminPortalNavItem, hydrated: boolean): boolean {
@@ -135,17 +217,42 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
   const [open, setOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const legacyMarketingNav = isLegacyPromotionUiEnabled();
   const [marketingOpen, setMarketingOpen] = useState(false);
+  const [openMarketingGroups, setOpenMarketingGroups] = useState<Record<string, boolean>>({
+    'marketing-hub': true,
+    promotions: true,
+    notifications: false,
+  });
 
   useEffect(() => {
     setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine')) {
+    const inMarketing =
+      pathname?.startsWith('/marketing') ||
+      pathname?.startsWith('/notification-engine') ||
+      pathname?.startsWith('/notifications') ||
+      pathname?.startsWith('/promotion-center') ||
+      pathname?.startsWith('/promotions') ||
+      pathname?.startsWith('/policy-center');
+    if (inMarketing) {
       setMarketingOpen(true);
     }
-  }, [pathname]);
+    if (!legacyMarketingNav && pathname) {
+      setOpenMarketingGroups((prev) => {
+        const next = { ...prev };
+        for (const group of MARKETING_PORTAL_NAV_GROUPS) {
+          if (isMarketingPortalGroupActive(group, pathname, searchParams)) {
+            next[group.id] = true;
+          }
+        }
+        return next;
+      });
+    }
+  }, [pathname, searchParams, legacyMarketingNav]);
 
   useEffect(() => {
     const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
@@ -170,8 +277,31 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
 
   const visibleMarketingNav = useMemo(() => {
     if (!hydrated) return marketingNavItems;
-    return marketingNavItems.filter((item) => canSeeNavItem(item, hydrated));
+    const permitted = marketingNavItems.filter((item) => canSeeNavItem(item, hydrated));
+    return filterMarketingSidebarNavItems(permitted);
   }, [hydrated, marketingNavItems, pathname, activeView]);
+
+  const visibleMarketingTopLinks = useMemo(() => {
+    return MARKETING_PORTAL_TOP_LINKS.filter((link) =>
+      canSeeMarketingLink(link.permissionNavId, hydrated)
+    );
+  }, [hydrated]);
+
+  const visibleMarketingPortalGroups = useMemo(() => {
+    return MARKETING_PORTAL_NAV_GROUPS.map((group) => ({
+      ...group,
+      links: group.links.filter((link) => canSeeMarketingLink(link.permissionNavId, hydrated)),
+    })).filter((group) => group.links.length > 0);
+  }, [hydrated]);
+
+  const marketingSectionActive =
+    pathname?.startsWith('/marketing') ||
+    pathname?.startsWith('/notification-engine') ||
+    pathname?.startsWith('/notifications') ||
+    pathname?.startsWith('/promotion-center') ||
+    pathname?.startsWith('/promotions') ||
+    pathname?.startsWith('/policy-center') ||
+    false;
 
   const visibleFooterNav = useMemo(() => {
     if (!hydrated) return footerNavItems;
@@ -255,22 +385,22 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                 );
               })}
 
-              {visibleMarketingNav.length > 0 && (
+              {(legacyMarketingNav ? visibleMarketingNav.length > 0 : visibleMarketingTopLinks.length > 0) && (
                 <div className="pt-1">
                   <button
                     type="button"
                     onClick={() => setMarketingOpen((v) => !v)}
                     className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors rounded-lg ${
-                      pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine')
+                      marketingSectionActive
                         ? 'text-[#FF8C42] bg-orange-50 font-medium'
                         : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                     }`}
                   >
                     <Megaphone className="w-4 h-4 shrink-0" />
-                    <span className="truncate flex-1 text-left">Marketing & Promotions</span>
+                    <span className="truncate flex-1 text-left">Marketing</span>
                     {marketingOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </button>
-                  {marketingOpen && (
+                  {marketingOpen && legacyMarketingNav && (
                     <div className="ml-4 mt-1 space-y-1 border-l border-gray-200 pl-2">
                       {visibleMarketingNav.map((item) => {
                         const ChildIcon = NAV_ICONS[item.id] ?? Megaphone;
@@ -290,6 +420,30 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                           >
                             <ChildIcon className="w-4 h-4 shrink-0" />
                             <span className="truncate">{item.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {marketingOpen && !legacyMarketingNav && (
+                    <div className="ml-4 mt-1 space-y-1 border-l border-gray-200 pl-2">
+                      {visibleMarketingTopLinks.map((link) => {
+                        const linkActive = marketingPortalTopLinkActive(link, pathname);
+                        return (
+                          <button
+                            key={link.id}
+                            type="button"
+                            onClick={() => {
+                              window.location.href = link.href;
+                              setOpen(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm transition-colors rounded-lg ${
+                              linkActive
+                                ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                            }`}
+                          >
+                            {link.label}
                           </button>
                         );
                       })}

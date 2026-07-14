@@ -8,7 +8,7 @@ type CheckoutOrderSummaryProps = {
 };
 
 export function CheckoutOrderSummary({ sticky = true }: CheckoutOrderSummaryProps) {
-  const { cart, pricing, savingsAmount } = useCheckout();
+  const { cart, pricing, savingsAmount, promotionLabel } = useCheckout();
 
   return (
     <aside
@@ -18,11 +18,22 @@ export function CheckoutOrderSummary({ sticky = true }: CheckoutOrderSummaryProp
     >
       <h2 className="text-base font-bold text-slate-900 mb-4">Order summary</h2>
       {savingsAmount > 0 && (
-        <div className="mb-4 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
-          You save ₹{savingsAmount.toFixed(0)} on this order
+        <div className="mb-4 rounded-xl bg-emerald-50 px-3 py-2 text-sm">
+          <p className="font-semibold text-emerald-800">
+            You save ₹{savingsAmount.toFixed(0)} on this order
+          </p>
+          {promotionLabel ? (
+            <p className="text-xs text-emerald-700 mt-0.5">{promotionLabel}</p>
+          ) : null}
         </div>
       )}
-      <CheckoutPriceBreakdown cart={cart} pricing={pricing} compact={false} showItems />
+      <CheckoutPriceBreakdown
+        cart={cart}
+        pricing={pricing}
+        compact={false}
+        showItems
+        promotionLabel={promotionLabel}
+      />
     </aside>
   );
 }

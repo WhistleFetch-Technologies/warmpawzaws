@@ -22,6 +22,7 @@ import {
   playtimeLabel,
   type BoardingIntakeV1Payload,
 } from '@/lib/boarding-intake-notes';
+import { formatVendorFacingCustomerNotes } from '@/lib/vendor-facing-booking-notes';
 import { getVendorBookingVenuePillLabel } from '@/lib/vendor-utils';
 
 // Dynamically import PrescriptionDocument for A4 view
@@ -1944,12 +1945,16 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   )}
 
                   {/* Display Special Instructions if any (plain text; not raw boarding JSON) */}
-                  {booking.specialInstructions && (
-                    <div>
-                      <p className="text-sm text-gray-500">Customer Notes</p>
-                      <p className="text-sm text-gray-900 italic">"{booking.specialInstructions}"</p>
-                    </div>
-                  )}
+                  {(() => {
+                    const customerNotes = formatVendorFacingCustomerNotes(booking.specialInstructions);
+                    if (!customerNotes) return null;
+                    return (
+                      <div>
+                        <p className="text-sm text-gray-500">Customer Notes</p>
+                        <p className="text-sm text-gray-900 italic">&quot;{customerNotes}&quot;</p>
+                      </div>
+                    );
+                  })()}
 
                   {/* Display Resort/Hotel Metadata */}
                   {booking.metadata && (

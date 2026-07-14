@@ -616,6 +616,8 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                       onDetails={openVendorDetails}
                       onBookPlan={handleBookPlan}
                       onOpenCenterDetails={openVendorDetails}
+                      customerId={phone}
+                      serviceCategory="grooming"
                     />
                   );
                 })

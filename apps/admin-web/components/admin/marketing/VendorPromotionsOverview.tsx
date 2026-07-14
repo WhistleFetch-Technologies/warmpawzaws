@@ -34,6 +34,19 @@ interface VendorPromotion {
 
 interface VendorPromotionsOverviewProps {
   onBack?: () => void;
+  domain?: 'SERVICE' | 'ECOMMERCE';
+  title?: string;
+  subtitle?: string;
+  labels?: {
+    vendor: string;
+    categoryFilter: string;
+    categoryAll: string;
+    promotionMetric: string;
+    couponMetric: string;
+    emptyTitle: string;
+    emptyDescription: string;
+    searchPlaceholder: string;
+  };
 }
 
 const PROMO_TYPES = [
@@ -47,7 +60,36 @@ const PROMO_TYPES = [
   { id: 'loyalty', label: 'Loyalty', icon: Gift, color: 'violet' },
 ];
 
-export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewProps) {
+const DEFAULT_SERVICE_LABELS: Required<VendorPromotionsOverviewProps>['labels'] = {
+  vendor: 'Vendor',
+  categoryFilter: 'Service Categories',
+  categoryAll: 'All Service Categories',
+  promotionMetric: 'Service Promotions',
+  couponMetric: 'Service Coupons',
+  emptyTitle: 'No service vendor promotions found.',
+  emptyDescription: "Service vendors haven't created any promotions yet",
+  searchPlaceholder: 'Search service vendor, promotion, coupon, service...',
+};
+
+const DEFAULT_ECOMMERCE_LABELS: Required<VendorPromotionsOverviewProps>['labels'] = {
+  vendor: 'Seller',
+  categoryFilter: 'Product Categories',
+  categoryAll: 'All Product Categories',
+  promotionMetric: 'Product Promotions',
+  couponMetric: 'Product Coupons',
+  emptyTitle: 'No seller promotions found.',
+  emptyDescription: "Marketplace sellers haven't created any promotions yet",
+  searchPlaceholder: 'Search seller, promotion, coupon, product, SKU...',
+};
+
+export function VendorPromotionsOverview({
+  onBack,
+  domain = 'SERVICE',
+  title,
+  subtitle,
+  labels: labelsOverride,
+}: VendorPromotionsOverviewProps) {
+  const labels = labelsOverride ?? (domain === 'ECOMMERCE' ? DEFAULT_ECOMMERCE_LABELS : DEFAULT_SERVICE_LABELS);
   const [promotions, setPromotions] = useState<VendorPromotion[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, active: 0, product: 0, service: 0 });
@@ -67,7 +109,8 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
     try {
       const params = new URLSearchParams();
       if (filter.status !== 'all') params.append('status', filter.status);
-      if (filter.category !== 'all') params.append('category', filter.category);
+      params.append('category', domain === 'ECOMMERCE' ? 'product' : 'service');
+      if (filter.category !== 'all') params.append('subCategory', filter.category);
       if (filter.type !== 'all') params.append('type', filter.type);
       
       const res = await apiClient.get<any>(`/admin/vendor-promotions?${params.toString()}`);
@@ -108,13 +151,22 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
     return true;
   });
 
+  const promotionCount = filteredPromotions.filter((p) => !p.code).length;
+  const couponCount = filteredPromotions.filter((p) => Boolean(p.code)).length;
+  const displayTitle = title ?? (domain === 'ECOMMERCE' ? 'Seller Promotions' : 'Vendor Promotions');
+  const displaySubtitle =
+    subtitle ??
+    (domain === 'ECOMMERCE'
+      ? 'View and manage seller-created marketplace promotions'
+      : 'View and manage service vendor-created promotions');
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Vendor Promotions</h2>
-          <p className="text-slate-500 mt-1">View and manage all vendor-created promotions</p>
+          <h2 className="text-2xl font-bold text-slate-900">{displayTitle}</h2>
+          <p className="text-slate-500 mt-1">{displaySubtitle}</p>
         </div>
         <Button onClick={loadPromotions} variant="outline" className="flex items-center gap-2">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -130,7 +182,7 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
               <Tag className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-xs text-slate-500">Total</p>
+              <p className="text-xs text-slate-500">Total Promotions</p>
               <p className="text-xl font-bold text-slate-900">{stats.total}</p>
             </div>
           </div>
@@ -152,8 +204,8 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
               <Store className="w-5 h-5 text-orange-600" />
             </div>
             <div>
-              <p className="text-xs text-slate-500">Product Promos</p>
-              <p className="text-xl font-bold text-orange-600">{stats.product}</p>
+              <p className="text-xs text-slate-500">{labels.promotionMetric}</p>
+              <p className="text-xl font-bold text-orange-600">{promotionCount}</p>
             </div>
           </div>
         </Card>
@@ -163,8 +215,8 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
               <Scissors className="w-5 h-5 text-purple-600" />
             </div>
             <div>
-              <p className="text-xs text-slate-500">Service Promos</p>
-              <p className="text-xl font-bold text-purple-600">{stats.service}</p>
+              <p className="text-xs text-slate-500">{labels.couponMetric}</p>
+              <p className="text-xl font-bold text-purple-600">{couponCount}</p>
             </div>
           </div>
         </Card>
@@ -177,7 +229,7 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
-                placeholder="Search by name, code, or vendor..."
+                placeholder={labels.searchPlaceholder}
                 value={filter.search}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilter({ ...filter, search: e.target.value })}
                 className="pl-10"
@@ -202,9 +254,7 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
               <SelectValue placeholder="Category" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              <SelectItem value="product">Products</SelectItem>
-              <SelectItem value="service">Services</SelectItem>
+              <SelectItem value="all">{labels.categoryAll}</SelectItem>
             </SelectContent>
           </Select>
           
@@ -232,8 +282,8 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
         ) : filteredPromotions.length === 0 ? (
           <div className="p-12 text-center">
             <Tag className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-            <p className="text-slate-600 font-medium">No vendor promotions found</p>
-            <p className="text-sm text-slate-400 mt-1">Vendors haven't created any promotions yet</p>
+            <p className="text-slate-600 font-medium">{labels.emptyTitle}</p>
+            <p className="text-sm text-slate-400 mt-1">{labels.emptyDescription}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -241,10 +291,10 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
               <thead className="bg-slate-50 border-b border-slate-100">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Promotion</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Vendor</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">{labels.vendor}</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Type</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Discount</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Category</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">{labels.categoryFilter}</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Validity</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Usage</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 uppercase">Status</th>
@@ -287,7 +337,7 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant={promo.promo_category === 'product' ? 'secondary' : 'outline'}>
-                          {promo.promo_category === 'product' ? (
+                          {domain === 'ECOMMERCE' ? (
                             <><Store className="w-3 h-3 mr-1" />Product</>
                           ) : (
                             <><Scissors className="w-3 h-3 mr-1" />Service</>

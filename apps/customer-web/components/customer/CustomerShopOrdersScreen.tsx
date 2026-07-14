@@ -973,12 +973,12 @@ export function CustomerShopOrdersScreen({
                         <h4 className="font-semibold text-slate-900 text-sm mb-2">Payment</h4>
                         <div className="p-3 bg-slate-50 rounded-xl space-y-1.5 text-xs">
                           <div className="flex justify-between">
-                            <span className="text-slate-600">Subtotal</span>
+                            <span className="text-slate-600">Item total (MRP)</span>
                             <span className="text-slate-900">{formatPriceWithSymbol(order.subtotal)}</span>
                           </div>
                           {order.discount > 0 && (
                             <div className="flex justify-between">
-                              <span className="text-emerald-600">Discount</span>
+                              <span className="text-emerald-600">Promotion savings</span>
                               <span className="text-emerald-600">-{formatPriceWithSymbol(order.discount)}</span>
                             </div>
                           )}

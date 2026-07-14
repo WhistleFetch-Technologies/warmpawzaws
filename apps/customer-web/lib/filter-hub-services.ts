@@ -136,12 +136,15 @@ type ProviderRoleRow = {
 
 export function applyVetHubDiscoveryToProviders<
   T extends ProviderRoleRow & ProviderWithServices & { needsServiceFetch?: boolean },
->(providers: T[], options?: { keepProvidersPendingServiceFetch?: boolean }): T[] {
+  S extends HubServiceRow = HubServiceRow,
+>(providers: (T & { services?: S[] | null })[], options?: { keepProvidersPendingServiceFetch?: boolean }): T[] {
   const keepPending = options?.keepProvidersPendingServiceFetch ?? false;
   return filterVetHubProviderRows(providers)
     .map((provider) => ({
       ...provider,
-      services: filterServicesForVetHub(Array.isArray(provider.services) ? provider.services : []),
+      services: filterServicesForVetHub<S>(
+        Array.isArray(provider.services) ? provider.services : []
+      ),
     }))
     .filter((provider) => {
       if ((provider.services?.length ?? 0) > 0) return true;

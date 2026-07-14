@@ -1,8 +1,30 @@
 /**
- * Vendor product promotion evaluation — backend source of truth for discount math.
+ * @deprecated Legacy vendor product promotion engine — retained for OFF/fallback (Phase 8C removal candidate).
+ * Authoritative path: Unified Discount Resolver via resolveWithProductionMode.
  */
 
 import { isPromotionLiveInIst } from './promotion-date-bounds';
+import { applyMaximumDiscount } from '../discount-engine/benefits/math';
+import {
+  computeVendorBogoDiscountAmount,
+  computeVendorBundleDiscountAmount,
+  computeVendorStandardDiscountAmount,
+} from '../discount-engine/benefits/adapters/vendor-product-benefit.adapter';
+import {
+  shadowVendorProductBaseEligibility,
+  shadowVendorProductFullEligibility,
+} from '../discount-engine/rules/adapters/shadow-adapters';
+import {
+  vendorCartPromotionsToDiscountContext,
+  vendorPromoEvaluateToDiscountContext,
+} from '../discount-engine/adapters/context-mappers';
+import { invokeResolverAlongsideLegacy, resolveWithProductionMode } from '../discount-engine/resolver/production-bridge';
+import { mapResolverResultToCartPromotion } from '../discount-engine/resolver/resolver-result-mappers';
+import {
+  lineMatchesListingOwnershipScope,
+  normalizeListingOwnershipScope,
+  type ListingOwnershipScope,
+} from './compute-listing-ownership';
 
 export type CartLineItem = {
   productId: string;
@@ -11,6 +33,8 @@ export type CartLineItem = {
   category?: string;
   categoryId?: string;
   id?: string;
+  /** From products.listing_ownership — used when promo has listing_ownership_scope. */
+  listingOwnership?: string | null;
 };
 
 export type PromotionRow = {
@@ -32,6 +56,8 @@ export type PromotionRow = {
   target_audience?: string | null;
   applicable_products?: string[];
   applicable_categories?: string[];
+  /** all | own_brand | third_party — filters lines by products.listing_ownership */
+  listing_ownership_scope?: ListingOwnershipScope;
   buy_quantity?: number | null;
   get_quantity?: number | null;
   get_discount_percent?: number | null;
@@ -99,8 +125,12 @@ export function normalizePromotionRow(row: Record<string, unknown>): PromotionRo
     discount_value: parseFloat(String(row.discount_value ?? 0)) || 0,
     min_order_value:
       row.min_order_value != null ? parseFloat(String(row.min_order_value)) : null,
-    max_discount_amount:
-      row.max_discount_amount != null ? parseFloat(String(row.max_discount_amount)) : null,
+    max_discount_amount: (() => {
+      if (row.max_discount_amount == null || row.max_discount_amount === '') return null;
+      const n = parseFloat(String(row.max_discount_amount));
+      // 0.00 from seller forms means unlimited, not a hard ₹0 cap.
+      return Number.isFinite(n) && n > 0 ? n : null;
+    })(),
     start_date: String(row.start_date),
     end_date: String(row.end_date),
     is_active: row.is_active !== false,
@@ -109,6 +139,13 @@ export function normalizePromotionRow(row: Record<string, unknown>): PromotionRo
     target_audience: row.target_audience != null ? String(row.target_audience) : 'all',
     applicable_products: parseJsonbStringArray(row.applicable_products),
     applicable_categories: parseJsonbStringArray(row.applicable_categories),
+    listing_ownership_scope: normalizeListingOwnershipScope(
+      row.listing_ownership_scope ??
+        row.listingOwnershipScope ??
+        (row.metadata && typeof row.metadata === 'object'
+          ? (row.metadata as Record<string, unknown>).listingOwnershipScope
+          : undefined)
+    ),
     buy_quantity: row.buy_quantity != null ? parseInt(String(row.buy_quantity), 10) : null,
     get_quantity: row.get_quantity != null ? parseInt(String(row.get_quantity), 10) : null,
     get_discount_percent:
@@ -133,34 +170,44 @@ export function isPromotionEligible(
   ctx: EvaluateContext = {}
 ): { ok: boolean; message?: string } {
   const now = ctx.now ?? new Date();
-  if (!promo.is_active) return { ok: false, message: 'Promotion is not active' };
-  if (!isPromotionLiveInIst(promo.start_date, promo.end_date, now)) {
-    return { ok: false, message: 'Promotion is not valid for the current date' };
+  let result: { ok: boolean; message?: string };
+  if (!promo.is_active) result = { ok: false, message: 'Promotion is not active' };
+  else if (!isPromotionLiveInIst(promo.start_date, promo.end_date, now)) {
+    result = { ok: false, message: 'Promotion is not valid for the current date' };
+  } else if (ctx.vendorId && promo.vendor_id && promo.vendor_id !== ctx.vendorId) {
+    result = { ok: false, message: 'Promotion does not apply to this seller' };
+  } else if (promo.usage_limit != null && (promo.usage_count ?? 0) >= promo.usage_limit) {
+    result = { ok: false, message: 'This promotion has reached its usage limit' };
+  } else {
+    const audience = promo.target_audience || 'all';
+    const prior = ctx.priorVendorOrderCount ?? 0;
+    if ((audience === 'new_users' || promo.promotion_type === 'first_order') && prior > 0) {
+      result = { ok: false, message: 'This promotion is for new customers only' };
+    } else if (audience === 'returning_users' && prior === 0) {
+      result = { ok: false, message: 'This promotion is for returning customers only' };
+    } else {
+      result = { ok: true };
+    }
   }
-  if (ctx.vendorId && promo.vendor_id && promo.vendor_id !== ctx.vendorId) {
-    return { ok: false, message: 'Promotion does not apply to this seller' };
-  }
-  if (promo.usage_limit != null && (promo.usage_count ?? 0) >= promo.usage_limit) {
-    return { ok: false, message: 'This promotion has reached its usage limit' };
-  }
-  const audience = promo.target_audience || 'all';
-  const prior = ctx.priorVendorOrderCount ?? 0;
-  if (audience === 'new_users' || promo.promotion_type === 'first_order') {
-    if (prior > 0) return { ok: false, message: 'This promotion is for new customers only' };
-  }
-  if (audience === 'returning_users' && prior === 0) {
-    return { ok: false, message: 'This promotion is for returning customers only' };
-  }
-  return { ok: true };
+  return shadowVendorProductBaseEligibility(promo, ctx, result);
 }
 
 function lineProductId(item: CartLineItem): string {
-  return String(item.productId || item.id || '');
+  const raw = String(item.productId || item.id || '');
+  // Cart UI uses `productId::skuId` for variant lines; promotions target product UUIDs.
+  const sep = raw.indexOf('::');
+  return sep > 0 ? raw.slice(0, sep) : raw;
 }
 
 export function promotionAppliesToLine(promo: PromotionRow, item: CartLineItem): boolean {
   const productId = lineProductId(item);
   const categoryId = item.categoryId || item.category || '';
+
+  if (
+    !lineMatchesListingOwnershipScope(promo.listing_ownership_scope, item.listingOwnership)
+  ) {
+    return false;
+  }
 
   if (promo.promotion_type === 'category_discount') {
     const cats = promo.applicable_categories || [];
@@ -183,11 +230,7 @@ export function promotionAppliesToLine(promo: PromotionRow, item: CartLineItem):
 }
 
 function capDiscount(amount: number, promo: PromotionRow, maxBase: number): number {
-  let d = amount;
-  if (promo.max_discount_amount != null && d > promo.max_discount_amount) {
-    d = promo.max_discount_amount;
-  }
-  return Math.min(Math.max(0, d), maxBase);
+  return applyMaximumDiscount(amount, promo.max_discount_amount, maxBase);
 }
 
 function calculateBogo(promo: PromotionRow, items: CartLineItem[]): PromotionEvaluation | null {
@@ -214,7 +257,16 @@ function calculateBogo(promo: PromotionRow, items: CartLineItem[]): PromotionEva
   }
   if (discountAmount <= 0) return null;
   const subtotal = cartLineSubtotal(items);
-  discountAmount = capDiscount(discountAmount, promo, subtotal);
+  const legacyDiscount = capDiscount(discountAmount, promo, subtotal);
+  discountAmount = computeVendorBogoDiscountAmount({
+    items,
+    buyQuantity: promo.buy_quantity,
+    getQuantity: promo.get_quantity,
+    getDiscountPercent: promo.get_discount_percent,
+    maxDiscountAmount: promo.max_discount_amount,
+    originalAmount: subtotal,
+    legacyAmount: legacyDiscount,
+  });
   const desc =
     discountPercent === 100
       ? `Buy ${buyQty} Get ${getQty} FREE!`
@@ -243,7 +295,15 @@ function calculateBundle(promo: PromotionRow, items: CartLineItem[]): PromotionE
   const pct = promo.bundle_discount ?? 15;
   let discountAmount = (bundleTotal * pct) / 100;
   if (discountAmount <= 0) return null;
-  discountAmount = capDiscount(discountAmount, promo, cartLineSubtotal(items));
+  const legacyDiscount = capDiscount(discountAmount, promo, cartLineSubtotal(items));
+  discountAmount = computeVendorBundleDiscountAmount({
+    items,
+    bundleProductIds: bundleIds,
+    bundleDiscountPercent: pct,
+    maxDiscountAmount: promo.max_discount_amount,
+    originalAmount: cartLineSubtotal(items),
+    legacyAmount: legacyDiscount,
+  });
   return {
     discountAmount,
     promotionId: promo.id,
@@ -265,14 +325,23 @@ function calculateStandard(promo: PromotionRow, items: CartLineItem[]): Promotio
   if (applicable.length === 0) return null;
 
   const applicableTotal = applicable.reduce((s, i) => s + i.price * i.quantity, 0);
-  let discountAmount = 0;
+  let legacyDiscount = 0;
   if (promo.discount_type === 'percentage') {
-    discountAmount = (applicableTotal * promo.discount_value) / 100;
+    legacyDiscount = (applicableTotal * promo.discount_value) / 100;
   } else {
-    discountAmount = promo.discount_value;
+    legacyDiscount = promo.discount_value;
   }
+  if (legacyDiscount <= 0) return null;
+  const legacyCapped = capDiscount(legacyDiscount, promo, applicableTotal);
+  const discountAmount = computeVendorStandardDiscountAmount({
+    discountType: promo.discount_type,
+    discountValue: promo.discount_value,
+    applicableTotal,
+    maxDiscountAmount: promo.max_discount_amount,
+    originalAmount: cartTotal,
+    legacyAmount: legacyCapped,
+  });
   if (discountAmount <= 0) return null;
-  discountAmount = capDiscount(discountAmount, promo, applicableTotal);
 
   const desc =
     promo.discount_type === 'percentage'
@@ -298,13 +367,33 @@ export function evaluatePromotionDiscount(
 ): PromotionEvaluation | null {
   const eligibility = isPromotionEligible(promo, ctx);
   if (!eligibility.ok) return null;
-  if (items.length === 0) return null;
+
+  const resolverLabel =
+    promo.code || ctx.manualCode ? 'evaluatePromotionDiscount-code' : 'evaluatePromotionDiscount-auto';
+  const resolverContext = vendorPromoEvaluateToDiscountContext(promo, items, ctx);
+
+  if (items.length === 0) {
+    shadowVendorProductFullEligibility(promo, items, ctx, false);
+    invokeResolverAlongsideLegacy(resolverLabel, resolverContext);
+    return null;
+  }
 
   const bogo = calculateBogo(promo, items);
-  if (bogo) return bogo;
+  if (bogo) {
+    shadowVendorProductFullEligibility(promo, items, ctx, true);
+    invokeResolverAlongsideLegacy(resolverLabel, resolverContext);
+    return bogo;
+  }
   const bundle = calculateBundle(promo, items);
-  if (bundle) return bundle;
-  return calculateStandard(promo, items);
+  if (bundle) {
+    shadowVendorProductFullEligibility(promo, items, ctx, true);
+    invokeResolverAlongsideLegacy(resolverLabel, resolverContext);
+    return bundle;
+  }
+  const standard = calculateStandard(promo, items);
+  shadowVendorProductFullEligibility(promo, items, ctx, standard != null);
+  invokeResolverAlongsideLegacy(resolverLabel, resolverContext);
+  return standard;
 }
 
 export function evaluateAllPromotions(
@@ -332,43 +421,124 @@ export function calculateBestCartPromotion(
   totalSavings: number;
   bestPromotion: PromotionEvaluation | null;
   allPromotions: PromotionEvaluation[];
+  platformCouponDiscount?: number;
+  platformCouponId?: string;
 } {
   const originalTotal = cartLineSubtotal(items);
-  const all = evaluateAllPromotions(promotions, items, ctx);
+  const legacyCompute = () => {
+    const all = evaluateAllPromotions(promotions, items, ctx);
 
-  if (ctx.manualCode) {
-    const code = ctx.manualCode.toUpperCase();
-    const manual = all.find(
-      (e) => e.promotion.code?.toUpperCase() === code
+    invokeResolverAlongsideLegacy(
+      ctx.manualCode ? 'calculateBestCartPromotion-code' : 'calculateBestCartPromotion-auto',
+      vendorCartPromotionsToDiscountContext(promotions, items, ctx)
     );
-    if (manual) {
+
+    if (ctx.manualCode) {
+      const code = ctx.manualCode.toUpperCase();
+      const manual = all.find((e) => e.promotion.code?.toUpperCase() === code);
+      if (manual) {
+        return {
+          originalTotal,
+          discountedTotal: Math.max(0, originalTotal - manual.discountAmount),
+          totalSavings: manual.discountAmount,
+          bestPromotion: manual,
+          allPromotions: all,
+        };
+      }
       return {
         originalTotal,
-        discountedTotal: Math.max(0, originalTotal - manual.discountAmount),
-        totalSavings: manual.discountAmount,
-        bestPromotion: manual,
+        discountedTotal: originalTotal,
+        totalSavings: 0,
+        bestPromotion: null,
         allPromotions: all,
       };
     }
+
+    const autoEligible = all.filter((e) => e.autoApplyEligible);
+    const best = autoEligible[0] ?? null;
+    const savings = best?.discountAmount ?? 0;
     return {
       originalTotal,
-      discountedTotal: originalTotal,
-      totalSavings: 0,
-      bestPromotion: null,
+      discountedTotal: Math.max(0, originalTotal - savings),
+      totalSavings: savings,
+      bestPromotion: best,
       allPromotions: all,
     };
+  };
+
+  const resolverContext = vendorCartPromotionsToDiscountContext(promotions, items, ctx);
+
+  // Synchronous legacy API — run production mode via deasync pattern: only use sync return from legacy when OFF/SHADOW
+  // For AUTHORITATIVE, callers using async path should use calculateBestCartPromotionAsync
+  const mode = process.env.DISCOUNT_ENGINE_V2_RESOLVER_MODE?.trim().toUpperCase();
+  if (mode === 'AUTHORITATIVE') {
+    console.warn(
+      '[vendor-promotion-engine] calculateBestCartPromotion called synchronously while DISCOUNT_ENGINE_V2_RESOLVER_MODE=AUTHORITATIVE; use calculateBestCartPromotionAsync for resolver-backed results'
+    );
+  }
+  if (mode !== 'AUTHORITATIVE') {
+    return legacyCompute();
   }
 
-  const autoEligible = all.filter((e) => e.autoApplyEligible);
-  const best = autoEligible[0] ?? null;
-  const savings = best?.discountAmount ?? 0;
-  return {
-    originalTotal,
-    discountedTotal: Math.max(0, originalTotal - savings),
-    totalSavings: savings,
-    bestPromotion: best,
-    allPromotions: all,
+  // AUTHORITATIVE sync callers: fall back to legacy compute (ecommerce order path uses async helper)
+  return legacyCompute();
+}
+
+/** Async cart promotion resolution — supports AUTHORITATIVE resolver (E1/E2/E6). */
+export async function calculateBestCartPromotionAsync(
+  promotions: PromotionRow[],
+  items: CartLineItem[],
+  ctx: EvaluateContext = {},
+  options?: { platformCouponCode?: string }
+): Promise<ReturnType<typeof calculateBestCartPromotion>> {
+  const originalTotal = cartLineSubtotal(items);
+  const legacyResult = () => {
+    const base = calculateBestCartPromotion(promotions, items, ctx);
+    return base;
   };
+
+  const resolverContext = vendorCartPromotionsToDiscountContext(promotions, items, ctx);
+  if (options?.platformCouponCode) {
+    resolverContext.couponCode = options.platformCouponCode.trim().toUpperCase();
+    resolverContext.trigger = ctx.manualCode ? resolverContext.trigger : resolverContext.trigger;
+  }
+
+  const { value: cartResult } = await resolveWithProductionMode({
+    label: ctx.manualCode || options?.platformCouponCode
+      ? 'calculateBestCartPromotion-code'
+      : 'calculateBestCartPromotion-auto',
+    context: resolverContext,
+    legacy: legacyResult,
+    mapResolverToLegacy: (result) =>
+      mapResolverResultToCartPromotion(result, originalTotal),
+  });
+
+  if (
+    options?.platformCouponCode &&
+    (cartResult.platformCouponDiscount ?? 0) <= 0 &&
+    cartResult.totalSavings <= 0
+  ) {
+    const { resolveEcommercePlatformCoupon } = await import(
+      '../lib/services/promotion-code-validation-service'
+    );
+    const coupon = await resolveEcommercePlatformCoupon(
+      options.platformCouponCode,
+      originalTotal
+    );
+    if (coupon && coupon.discountAmount > 0) {
+      return {
+        originalTotal,
+        discountedTotal: Math.max(0, originalTotal - coupon.discountAmount),
+        totalSavings: coupon.discountAmount,
+        bestPromotion: null,
+        allPromotions: [],
+        platformCouponDiscount: coupon.discountAmount,
+        platformCouponId: coupon.couponId,
+      };
+    }
+  }
+
+  return cartResult;
 }
 
 export const PROMOTION_DISCOUNT_TOLERANCE = 1;

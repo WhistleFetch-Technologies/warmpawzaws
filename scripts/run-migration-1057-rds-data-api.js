@@ -1,0 +1,34 @@
+#!/usr/bin/env node
+/**
+ * Run migration 1057 on dev/prod via RDS Data API.
+ * Usage: ENVIRONMENT=dev|prod node scripts/run-migration-1057-rds-data-api.js
+ */
+const fs = require('fs');
+const path = require('path');
+const { splitPostgresStatements, executeSQL, query } = require('./rds-data-api-utils-dev');
+
+const MIGRATION_FILE = path.join(__dirname, '..', 'db', 'migrations', '1057_coupons_max_discount_amount.sql');
+
+async function main() {
+  const env = process.env.ENVIRONMENT || 'dev';
+  const sql = fs.readFileSync(MIGRATION_FILE, 'utf8');
+  const stmts = splitPostgresStatements(sql);
+  console.log(`Migration 1057 — ${stmts.length} statement(s) on ${env}\n`);
+
+  for (let i = 0; i < stmts.length; i++) {
+    console.log(`--- ${i + 1} / ${stmts.length} ---`);
+    await executeSQL(stmts[i], false);
+  }
+
+  const cols = await query(
+    `SELECT column_name, data_type FROM information_schema.columns
+     WHERE table_name = 'coupons' AND column_name = 'max_discount_amount'`
+  );
+  console.log('\nVerify column:', cols);
+  console.log('\nMigration 1057 complete.');
+}
+
+main().catch((e) => {
+  console.error('Migration failed:', e.message || e);
+  process.exit(1);
+});

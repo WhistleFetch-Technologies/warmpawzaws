@@ -4,14 +4,21 @@ import { X, Package, User, MapPin, CreditCard, Truck } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { VendorShipmentTrackingReadOnly } from '@/components/vendor/orders/VendorShipmentTrackingReadOnly';
+import { VendorOrderMoneySummary } from '@/components/vendor/orders/VendorOrderMoneySummary';
+import {
+  formatInrAmount,
+  vendorOrderItemCatalogTotal,
+} from '@/lib/vendor-order-money';
 
 interface OrderItem {
   id: string;
   product_id: string;
   product_name: string;
   quantity: number;
-  price: number;
-  total: number;
+  price?: number;
+  unit_price?: number;
+  total?: number;
+  total_price?: number;
   product_image?: string;
 }
 
@@ -27,6 +34,12 @@ interface Order {
   subtotal: number;
   tax_amount: number;
   shipping_amount: number;
+  discount_amount?: number;
+  promotion_source?: string | null;
+  vendor_promotion_amount?: number;
+  admin_promotion_amount?: number;
+  commission_amount?: number;
+  vendor_payout_amount?: number;
   payment_method: string;
   payment_status: string;
   shipping_address: any;
@@ -191,8 +204,16 @@ export function OrderDetailsModal({
                         <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-semibold text-gray-900">₹{item.total.toLocaleString()}</p>
-                        <p className="text-xs text-gray-500">₹{item.price.toLocaleString()} each</p>
+                        <p className="font-semibold text-gray-900 tabular-nums">
+                          {formatInrAmount(vendorOrderItemCatalogTotal(item))}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {formatInrAmount(
+                            Number(item.unit_price ?? item.price ?? 0) ||
+                              vendorOrderItemCatalogTotal(item) / Math.max(1, item.quantity || 1)
+                          )}{' '}
+                          each (catalog)
+                        </p>
                       </div>
                     </div>
                   ))
@@ -231,29 +252,8 @@ export function OrderDetailsModal({
               />
             )}
 
-            {/* Order Summary */}
-            <div className="border-t pt-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-gray-600">Subtotal</span>
-                <span className="font-medium text-gray-900">₹{fullOrder.subtotal.toLocaleString()}</span>
-              </div>
-              {fullOrder.tax_amount > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-600">Tax (GST)</span>
-                  <span className="font-medium text-gray-900">₹{fullOrder.tax_amount.toLocaleString()}</span>
-                </div>
-              )}
-              {fullOrder.shipping_amount > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-600">Shipping</span>
-                  <span className="font-medium text-gray-900">₹{fullOrder.shipping_amount.toLocaleString()}</span>
-                </div>
-              )}
-              <div className="flex justify-between items-center pt-2 border-t">
-                <span className="text-lg font-semibold text-gray-900">Total</span>
-                <span className="text-xl font-bold text-orange-600">₹{fullOrder.total_amount.toLocaleString()}</span>
-              </div>
-            </div>
+            {/* Vendor settlement money — catalog base; platform promo does not cut vendor goods */}
+            <VendorOrderMoneySummary order={fullOrder} />
 
             {/* Cancellation Info */}
             {fullOrder.cancelled_at && (

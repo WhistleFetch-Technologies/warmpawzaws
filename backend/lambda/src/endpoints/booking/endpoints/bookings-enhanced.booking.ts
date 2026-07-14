@@ -36,6 +36,17 @@ import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import {
+  buildBookingFinancialNotesMeta,
+  buildBookingPromotionNotesMeta,
+  serializeBookingFinancialMeta,
+  resolveBookingPromotions,
+  bookingPromotionIdentityMissing,
+} from '../../../lib/services/booking-promotion-service';
+import { resolveBookingServiceCategory } from '../../../lib/services/resolve-booking-service-category';
+import { enrichFinancialMetaWithSettlement } from '../../../finance/settlement/build-settlement-snapshot';
+import { appendSettlementPreviewToFinancialMeta } from '../../../discount-engine/settlement/financial-meta-bridge';
+import { discountsWithinTolerance } from '../../../utils/vendor-promotion-engine';
+import {
   SQL_BOOKING_BLOCKS_SLOT,
   paymentHoldExpiresAt,
   expirePaymentHolds,
@@ -1161,14 +1172,24 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           }
         }
 
+        // Resolve service category once for subscription + promotion matching (see resolve-booking-service-category.ts).
+        const serviceCategory = await resolveBookingServiceCategory({
+          vendorId: vendorId ? String(vendorId) : null,
+          service: service as Record<string, unknown>,
+          serviceId: finalServiceId ? String(finalServiceId) : serviceId ? String(serviceId) : null,
+          serviceName: String(
+            (service as any)?.service_name || (service as any)?.name || serviceName || ''
+          ),
+          explicitCategory:
+            body.serviceCategory ?? body.service_category ?? body.category ?? null,
+        });
+
         // ✅ CRITICAL FIX: Use SAVEPOINT to protect transaction from subscription query failures
         // The customer_subscriptions table or its columns (e.g. end_date) may not exist in dev/UAT,
         // which would abort the entire PostgreSQL transaction without a SAVEPOINT.
         try {
           // Skip subscription check when already using package
           if (!isPackageBooking) {
-          // Get service category for subscription matching
-          const serviceCategory = service.category || null;
           
           await client.query('SAVEPOINT sp_subscription_check');
           const activeSubscriptions = await client.query(
@@ -1239,6 +1260,111 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               ? Math.max(calculatedBasePrice, listedServerPrice)
               : calculatedBasePrice;
         const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : grossPayableBeforeWallet;
+
+        let resolvedBookingPromotions: Awaited<ReturnType<typeof resolveBookingPromotions>> | null =
+          null;
+        if (
+          !isPackageBooking &&
+          !isSubscriptionBooking &&
+          grossPayableBeforeWallet > 0 &&
+          vendorId
+        ) {
+          const serviceIdsForPromo =
+            selectedServices && selectedServices.length > 0
+              ? selectedServices.map((s: { serviceId?: string; id?: string }) =>
+                  String(s.serviceId || s.id || '')
+                ).filter(Boolean)
+              : finalServiceId
+                ? [String(finalServiceId)]
+                : serviceId
+                  ? [String(serviceId)]
+                  : [];
+
+          try {
+            const fmForPromo = body.financialMeta ?? body.financial_meta;
+            let promoValidationAmount = grossPayableBeforeWallet;
+            if (fmForPromo && typeof fmForPromo === 'object') {
+              const fm = fmForPromo as Record<string, unknown>;
+              const servicePrice = parseFloat(
+                String(fm.servicePrice ?? fm.service_price ?? '')
+              );
+              if (Number.isFinite(servicePrice) && servicePrice > 0) {
+                promoValidationAmount = servicePrice;
+              }
+            }
+            if (
+              listedServerPrice > 0 &&
+              promoValidationAmount !== grossPayableBeforeWallet &&
+              !(fmForPromo && typeof fmForPromo === 'object')
+            ) {
+              promoValidationAmount = Math.max(promoValidationAmount, listedServerPrice);
+            }
+
+            resolvedBookingPromotions = await resolveBookingPromotions({
+              vendorId: String(vendorId),
+              serviceIds: serviceIdsForPromo,
+              serviceStyle: serviceType || body.serviceStyle || body.service_style,
+              amount: promoValidationAmount,
+              customerId: customerId ? String(customerId) : undefined,
+              serviceCategory: serviceCategory || undefined,
+              couponCode:
+                (body.couponCode ?? body.coupon_code)
+                  ? String(body.couponCode ?? body.coupon_code).trim()
+                  : undefined,
+            });
+
+            const clientPromoDiscount = parseFloat(
+              String(body.discountAmount ?? body.discount_amount ?? 0)
+            );
+            const clientCouponDiscount = parseFloat(
+              String(body.couponDiscount ?? body.coupon_discount ?? 0)
+            );
+            const clientClaimedTotal =
+              (Number.isFinite(clientPromoDiscount) ? Math.max(0, clientPromoDiscount) : 0) +
+              (Number.isFinite(clientCouponDiscount) ? Math.max(0, clientCouponDiscount) : 0);
+
+            if (
+              clientClaimedTotal > 0 &&
+              !discountsWithinTolerance(
+                clientClaimedTotal,
+                resolvedBookingPromotions.totalSavings
+              )
+            ) {
+              throw new Error('PROMOTION_DISCOUNT_MISMATCH');
+            }
+          } catch (promoErr: unknown) {
+            const msg = promoErr instanceof Error ? promoErr.message : String(promoErr);
+            if (msg === 'PROMOTION_DISCOUNT_MISMATCH') throw promoErr;
+
+            const clientPromoDiscount = parseFloat(
+              String(body.discountAmount ?? body.discount_amount ?? 0)
+            );
+            const clientCouponDiscount = parseFloat(
+              String(body.couponDiscount ?? body.coupon_discount ?? 0)
+            );
+            const clientClaimedTotal =
+              (Number.isFinite(clientPromoDiscount) ? Math.max(0, clientPromoDiscount) : 0) +
+              (Number.isFinite(clientCouponDiscount) ? Math.max(0, clientCouponDiscount) : 0);
+            const fmEarly = body.financialMeta ?? body.financial_meta;
+            let fmClaimedDiscount = 0;
+            if (fmEarly && typeof fmEarly === 'object') {
+              const fm = fmEarly as Record<string, unknown>;
+              fmClaimedDiscount =
+                (parseFloat(String(fm.platformDiscount ?? fm.platform_discount ?? 0)) || 0) +
+                (parseFloat(String(fm.vendorDiscount ?? fm.vendor_discount ?? 0)) || 0) +
+                (parseFloat(String(fm.couponDiscount ?? fm.coupon_discount ?? 0)) || 0);
+            }
+            if (clientClaimedTotal > 0 || fmClaimedDiscount > 0) {
+              throw new Error('PROMOTION_RESOLUTION_REQUIRED');
+            }
+            console.warn(
+              '[BOOKING] promotion resolver unavailable — proceeding without server promo validation:',
+              msg
+            );
+            resolvedBookingPromotions = null;
+          }
+        }
+
         let diagnosticsPrepaidPaymentId: string | null = null;
         let paymentStatus = isPackageBooking ? 'completed' : isSubscriptionBooking ? 'paid' : 'pending';
         /** Hold slot but hide from vendor lists until Razorpay succeeds (vendor APIs filter pending_payment). */
@@ -1557,16 +1683,152 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
         if (promotionId && isValidUUID(String(promotionId))) {
           bookingData.promotion_id = promotionId;
+        } else if (resolvedBookingPromotions?.vendorPromotionId) {
+          bookingData.promotion_id = resolvedBookingPromotions.vendorPromotionId;
+        } else if (resolvedBookingPromotions?.platformPromotionId) {
+          bookingData.promotion_id = resolvedBookingPromotions.platformPromotionId;
         }
 
         const couponDiscountRaw = body.couponDiscount ?? body.discountAmount ?? body.discount_amount;
-        const couponCodeRaw = body.couponCode ?? body.coupon_code;
         const couponDisc = parseFloat(String(couponDiscountRaw ?? ''));
-        if (Number.isFinite(couponDisc) && couponDisc > 0) {
-          bookingData.discount_amount = Math.round(couponDisc * 100) / 100;
+        if (resolvedBookingPromotions && resolvedBookingPromotions.totalSavings > 0) {
+          bookingData.discount_amount =
+            Math.round(resolvedBookingPromotions.totalSavings * 100) / 100;
+        } else if (Number.isFinite(couponDisc) && couponDisc > 0) {
+          throw new Error('PROMOTION_RESOLUTION_REQUIRED');
         }
+
+        const winningApplied = resolvedBookingPromotions?.applied?.[0];
+        const promoNotesPayload = resolvedBookingPromotions &&
+          resolvedBookingPromotions.totalSavings > 0
+          ? {
+              vendorPromotionId: resolvedBookingPromotions.vendorPromotionId,
+              platformPromotionId: resolvedBookingPromotions.platformPromotionId,
+              vendorDiscount: resolvedBookingPromotions.vendorDiscountAmount,
+              platformDiscount: resolvedBookingPromotions.platformDiscountAmount,
+              promotionType: winningApplied?.promotionType ?? winningApplied?.source,
+              promotionSource: winningApplied?.source,
+              fundingType:
+                resolvedBookingPromotions.platformDiscountAmount > 0
+                  ? 'PLATFORM'
+                  : resolvedBookingPromotions.vendorDiscountAmount > 0
+                    ? 'VENDOR'
+                    : undefined,
+              policyFingerprint: resolvedBookingPromotions.settlement?.policyFingerprint,
+            }
+          : null;
+
+        if (promoNotesPayload) {
+          const promoMeta = buildBookingPromotionNotesMeta(promoNotesPayload);
+          bookingData.notes = bookingData.notes
+            ? `${bookingData.notes} | ${promoMeta}`
+            : promoMeta;
+        }
+
+        const couponCodeRaw = body.couponCode ?? body.coupon_code;
         if (couponCodeRaw && typeof couponCodeRaw === 'string' && couponCodeRaw.trim()) {
           bookingData.coupon_code = couponCodeRaw.trim().slice(0, 80);
+        }
+
+        const financialMetaRaw = body.financialMeta ?? body.financial_meta;
+        if (financialMetaRaw && typeof financialMetaRaw === 'object') {
+          const fm = financialMetaRaw as Record<string, unknown>;
+          const finalPaid = parseFloat(String(fm.finalPaid ?? fm.final_paid ?? ''));
+          const servicePrice = parseFloat(String(fm.servicePrice ?? fm.service_price ?? ''));
+          if (Number.isFinite(finalPaid) && finalPaid >= 0) {
+            bookingData.total_amount = Math.round(finalPaid * 100) / 100;
+          }
+          if (Number.isFinite(servicePrice) && servicePrice >= 0) {
+            bookingData.base_price = Math.round(servicePrice * 100) / 100;
+          }
+          const servicePriceForMeta = Number.isFinite(servicePrice) ? servicePrice : calculatedBasePrice;
+          const vendorDisc =
+            parseFloat(String(fm.vendorDiscount ?? fm.vendor_discount ?? 0)) ||
+            resolvedBookingPromotions?.vendorDiscountAmount ||
+            0;
+          const platformDisc =
+            parseFloat(String(fm.platformDiscount ?? fm.platform_discount ?? 0)) ||
+            resolvedBookingPromotions?.platformDiscountAmount ||
+            0;
+          const couponDisc = parseFloat(String(fm.couponDiscount ?? fm.coupon_discount ?? 0)) || 0;
+          const settlementVendorId = String(bookingData.vendor_id ?? body.vendorId ?? body.vendor_id ?? '');
+          let enrichedMeta = settlementVendorId
+            ? await enrichFinancialMetaWithSettlement({
+                vendorId: settlementVendorId,
+                servicePrice: servicePriceForMeta,
+                vendorDiscount: vendorDisc,
+                platformDiscount: platformDisc,
+                couponDiscount: couponDisc,
+                vendorPromotionId: resolvedBookingPromotions?.vendorPromotionId,
+                platformPromotionId: resolvedBookingPromotions?.platformPromotionId,
+                couponFundingType: 'PLATFORM',
+              })
+            : {
+                servicePrice: servicePriceForMeta,
+                vendorDiscount: vendorDisc,
+                platformDiscount: platformDisc,
+                couponDiscount: couponDisc,
+                subtotalAfterDiscounts:
+                  parseFloat(String(fm.subtotalAfterDiscounts ?? fm.subtotal_after_discounts ?? 0)) || undefined,
+                cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
+                sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
+                igst: parseFloat(String(fm.igst ?? 0)) || 0,
+                totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+                platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
+                convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
+                deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
+                walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
+                finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
+              };
+          if (!settlementVendorId) {
+            Object.assign(enrichedMeta, {
+              subtotalAfterDiscounts:
+                parseFloat(String(fm.subtotalAfterDiscounts ?? fm.subtotal_after_discounts ?? 0)) || undefined,
+              cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
+              sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
+              igst: parseFloat(String(fm.igst ?? 0)) || 0,
+              totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+              platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
+              convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
+              deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
+              walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
+              finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
+            });
+          } else {
+            enrichedMeta.finalPaid = Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount;
+            enrichedMeta.cgst = parseFloat(String(fm.cgst ?? 0)) || 0;
+            enrichedMeta.sgst = parseFloat(String(fm.sgst ?? 0)) || 0;
+            enrichedMeta.igst = parseFloat(String(fm.igst ?? 0)) || 0;
+            enrichedMeta.totalTax = parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0;
+            enrichedMeta.platformFee = parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0;
+            enrichedMeta.convenienceFee = parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0;
+            enrichedMeta.deliveryFee = parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0;
+            enrichedMeta.walletAmount = parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0;
+          }
+          if (resolvedBookingPromotions?.settlement) {
+            enrichedMeta = appendSettlementPreviewToFinancialMeta(
+              enrichedMeta,
+              resolvedBookingPromotions.settlement
+            );
+          }
+          const finNotes = serializeBookingFinancialMeta(enrichedMeta);
+          bookingData.notes = bookingData.notes
+            ? `${bookingData.notes} | ${finNotes}`
+            : finNotes;
+        }
+
+        if (
+          bookingPromotionIdentityMissing({
+            discountAmount: parseFloat(String(bookingData.discount_amount ?? 0)) || 0,
+            promotionId: bookingData.promotion_id ? String(bookingData.promotion_id) : null,
+            couponCode: bookingData.coupon_code ? String(bookingData.coupon_code) : null,
+            vendorPromotionId: resolvedBookingPromotions?.vendorPromotionId ?? null,
+            platformPromotionId: resolvedBookingPromotions?.platformPromotionId ?? null,
+            vendorDiscount: resolvedBookingPromotions?.vendorDiscountAmount,
+            platformDiscount: resolvedBookingPromotions?.platformDiscountAmount,
+          })
+        ) {
+          throw new Error('PROMOTION_IDENTITY_REQUIRED');
         }
 
         if (packagePurchaseIdToUse != null && packageSessionNumberToUse != null) {
@@ -2122,6 +2384,28 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           'This time slot is already booked. Please select a different time.',
           409,
           'SLOT_CONFLICT',
+          undefined,
+          requestId
+        );
+      }
+
+      if (errorMessage === 'PROMOTION_DISCOUNT_MISMATCH') {
+        return this.error(
+          'The promotion discount could not be verified. Refresh and try again.',
+          400,
+          'PROMOTION_DISCOUNT_MISMATCH',
+          undefined,
+          requestId
+        );
+      }
+      if (
+        errorMessage === 'PROMOTION_RESOLUTION_REQUIRED' ||
+        errorMessage === 'PROMOTION_IDENTITY_REQUIRED'
+      ) {
+        return this.error(
+          'A promotion discount was requested but could not be confirmed. Refresh offers and try again.',
+          400,
+          errorMessage,
           undefined,
           requestId
         );

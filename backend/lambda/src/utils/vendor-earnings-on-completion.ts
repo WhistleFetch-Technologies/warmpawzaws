@@ -24,6 +24,24 @@ import { resolveVendorId } from './vendor-resolve';
 
 import { getVendorCommissionRate, isCanonicalPackageParentBooking } from './vendor-commission-rate';
 
+import { applySettlementPreviewToCommissionableGross, extractSettlementPreviewFromBooking } from '../discount-engine/settlement/settlement-hook-bridge';
+
+import {
+  createFundingAwareVendorEarnings,
+} from '../finance/settlement/create-vendor-earnings-from-snapshot';
+
+import {
+  isFinanceFundingAwareSettlementEnabled,
+  useFundingAwareVendorEarnings,
+} from '../finance/settlement/finance-settlement-mode';
+
+import {
+  extractSettlementSnapshotFromBooking,
+  settlementSnapshotToVendorEarningsMetadata,
+} from '../finance/settlement/persist-settlement-snapshot';
+import { buildFundingAwareSettlementSnapshot } from '../finance/settlement/build-settlement-snapshot';
+import { parseBookingFinancialMeta } from '../discount-engine/settlement/settlement-hook-bridge';
+
 import { loadBookingServiceSnapshot } from './booking-service-snapshot';
 
 import { resolveVendorVisibleBookingAmount } from './entity-extractor';
@@ -222,9 +240,45 @@ export async function ensureVendorEarningsForCompletedBooking(
 
     const earningsVendorId = await resolveVendorId(rawVendorId);
 
+    let totalAmount = await resolveLedgerGrossForVendorCommission(booking, bookingId);
+
+    const merged = { ...booking, ...(await syncBookingGrossFromPaidSources(bookingId)) };
+
+    const realizedAt =
+
+      options?.realizedAt ?? pickBookingRealizedAtIso(merged) ?? new Date().toISOString();
+
+    if (isFinanceFundingAwareSettlementEnabled()) {
+      const faResult = await createFundingAwareVendorEarnings(
+        merged,
+        bookingId,
+        earningsVendorId,
+        totalAmount,
+        realizedAt,
+        logPrefix
+      );
+      if (useFundingAwareVendorEarnings() && faResult.inserted) {
+        await query(
+          `UPDATE vendors 
+           SET pending_payout = COALESCE(pending_payout, 0) + $1,
+               total_earnings = COALESCE(total_earnings, 0) + $1,
+               updated_at = NOW()
+           WHERE id = $2`,
+          [faResult.snapshot.vendorSettlement, earningsVendorId]
+        ).catch((err: unknown) =>
+          console.warn(`${logPrefix} vendor totals update:`, (err as Error)?.message)
+        );
+        return true;
+      }
+      if (useFundingAwareVendorEarnings()) {
+        return false;
+      }
+    }
+
     const commissionRate = await getVendorCommissionRate(earningsVendorId);
 
-    const totalAmount = await resolveLedgerGrossForVendorCommission(booking, bookingId);
+    const settlementPreviewLegacy = extractSettlementPreviewFromBooking(booking);
+    totalAmount = applySettlementPreviewToCommissionableGross(totalAmount, settlementPreviewLegacy);
 
     const commissionAmount = Math.round((totalAmount * commissionRate) / 100 * 100) / 100;
 
@@ -243,14 +297,6 @@ export async function ensureVendorEarningsForCompletedBooking(
       return false;
 
     }
-
-
-
-    const merged = { ...booking, ...(await syncBookingGrossFromPaidSources(bookingId)) };
-
-    const realizedAt =
-
-      options?.realizedAt ?? pickBookingRealizedAtIso(merged) ?? new Date().toISOString();
 
 
 
@@ -533,18 +579,107 @@ export async function realignPendingVendorEarningsForBooking(
   logPrefix = '[EARNINGS-REALIGN]'
 ): Promise<boolean> {
   const veRes = await query(
-    `SELECT id, vendor_id, amount, commission_amount, total_amount, status
+    `SELECT id, vendor_id, amount, commission_amount, total_amount, commission_rate, status, metadata
      FROM vendor_earnings WHERE booking_id = $1::uuid LIMIT 1`,
     [bookingId]
   ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
   const ve = veRes.rows?.[0];
   if (!ve || String(ve.status ?? '') !== 'pending') return false;
 
+  const earningsVendorId = String(ve.vendor_id ?? '');
+  let snapshot = extractSettlementSnapshotFromBooking(booking);
+
+  if (!snapshot && isFinanceFundingAwareSettlementEnabled()) {
+    const financial = parseBookingFinancialMeta(booking) ?? {};
+    const vendorBase =
+      parseFloat(String(financial.servicePrice ?? booking.base_price ?? 0)) || 0;
+    if (vendorBase > 0 && earningsVendorId) {
+      snapshot = await buildFundingAwareSettlementSnapshot({
+        vendorId: earningsVendorId,
+        vendorBasePrice: vendorBase,
+        vendorDiscount: parseFloat(String(financial.vendorDiscount ?? 0)) || 0,
+        platformDiscount: parseFloat(String(financial.platformDiscount ?? 0)) || 0,
+        couponDiscount: parseFloat(String(financial.couponDiscount ?? 0)) || 0,
+        vendorPromotionId: financial.vendorPromotionId
+          ? String(financial.vendorPromotionId)
+          : undefined,
+        platformPromotionId: financial.platformPromotionId
+          ? String(financial.platformPromotionId)
+          : undefined,
+        couponFundingType:
+          financial.couponFundingType === 'VENDOR' ? 'VENDOR' : 'PLATFORM',
+      });
+    }
+  }
+
+  if (snapshot && isFinanceFundingAwareSettlementEnabled()) {
+    const prevVendorAmount = Number(ve.amount ?? 0);
+    const vendorAmount = snapshot.vendorSettlement;
+    const delta = Math.round((vendorAmount - prevVendorAmount) * 100) / 100;
+    if (Math.abs(delta) < 0.01 &&
+        Math.abs(Number(ve.commission_rate ?? 0) - snapshot.commissionRate) < 0.01 &&
+        Math.abs(Number(ve.total_amount ?? 0) - snapshot.commissionBase) < 0.01) {
+      return false;
+    }
+
+    const metadata = settlementSnapshotToVendorEarningsMetadata(snapshot);
+    await query(
+      `UPDATE vendor_earnings
+       SET amount = $1::numeric,
+           commission_amount = $2::numeric,
+           total_amount = $3::numeric,
+           commission_rate = $4::numeric,
+           metadata = $5::jsonb
+       WHERE id = $6::uuid`,
+      [
+        vendorAmount,
+        snapshot.commissionAmount,
+        snapshot.commissionBase,
+        snapshot.commissionRate,
+        JSON.stringify(metadata),
+        ve.id,
+      ]
+    ).catch(async () => {
+      await query(
+        `UPDATE vendor_earnings
+         SET amount = $1::numeric,
+             commission_amount = $2::numeric,
+             total_amount = $3::numeric,
+             commission_rate = $4::numeric
+         WHERE id = $5::uuid`,
+        [
+          vendorAmount,
+          snapshot.commissionAmount,
+          snapshot.commissionBase,
+          snapshot.commissionRate,
+          ve.id,
+        ]
+      );
+    });
+
+    if (Math.abs(delta) >= 0.01) {
+      await query(
+        `UPDATE vendors
+         SET pending_payout = GREATEST(COALESCE(pending_payout, 0) + $1, 0),
+             total_earnings = GREATEST(COALESCE(total_earnings, 0) + $1, 0),
+             updated_at = NOW()
+         WHERE id = $2::uuid`,
+        [delta, earningsVendorId]
+      ).catch((err: unknown) =>
+        console.warn(`${logPrefix} vendor totals realign:`, (err as Error)?.message)
+      );
+    }
+
+    console.log(
+      `${logPrefix} booking ${bookingId}: funding-aware realign → base ${snapshot.commissionBase}, rate ${snapshot.commissionRate}%, vendor ${vendorAmount}`
+    );
+    return true;
+  }
+
   const gross = await resolveLedgerGrossForVendorCommission(booking, bookingId);
   const prevGross = Number(ve.total_amount ?? 0);
   if (!Number.isFinite(gross) || gross <= 0 || Math.abs(prevGross - gross) < 0.01) return false;
 
-  const earningsVendorId = String(ve.vendor_id ?? '');
   const commissionRate = await getVendorCommissionRate(earningsVendorId);
   const commissionAmount = Math.round((gross * commissionRate) / 100 * 100) / 100;
   const vendorAmount = Math.round((gross - commissionAmount) * 100) / 100;

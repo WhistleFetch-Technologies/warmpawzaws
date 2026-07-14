@@ -588,6 +588,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
           vs.is_enabled,
           vs.publish_status,
           vs.is_custom_service,
+          vs.metadata,
           vs.created_at,
           vs.updated_at
         FROM vendor_services vs
@@ -598,21 +599,39 @@ export function registerVendorServicesEndpoints(app: Hono) {
         [vendorId]
       );
 
-      const services = result.rows.map((row: any) => ({
-        id: row.id,
-        serviceId: row.service_id,
-        serviceName: row.service_name,
-        category: row.category,
-        subCategory: row.sub_category,
-        serviceStyle: row.service_style,
-        price: row.price,
-        customPrice: row.custom_price,
-        duration: row.duration_minutes,
-        customDuration: row.custom_duration,
-        isEnabled: row.is_enabled,
-        publishStatus: row.publish_status,
-        isCustomService: row.is_custom_service,
-      }));
+      const services = result.rows.map((row: any) => {
+        const metadata =
+          row.metadata && typeof row.metadata === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(row.metadata);
+                } catch {
+                  return {};
+                }
+              })()
+            : row.metadata && typeof row.metadata === 'object'
+              ? row.metadata
+              : {};
+        const price = row.custom_price ?? row.price;
+        return {
+          id: row.id,
+          serviceId: row.service_id,
+          serviceName: row.service_name,
+          name: row.service_name,
+          category: row.category,
+          subCategory: row.sub_category,
+          serviceStyle: row.service_style,
+          price,
+          customPrice: row.custom_price,
+          duration: row.duration_minutes,
+          customDuration: row.custom_duration,
+          isEnabled: row.is_enabled,
+          publishStatus: row.publish_status,
+          isCustomService: row.is_custom_service,
+          isPackage: metadata?.isPackage === true,
+          packageDetails: metadata?.packageDetails,
+        };
+      });
 
       console.log(`[VendorServices] Found ${services.length} enabled services for vendor ${vendorId}`);
 

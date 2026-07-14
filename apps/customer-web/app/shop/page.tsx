@@ -20,6 +20,7 @@ import { AddAddressModal } from '@/components/customer/shared/AddAddressModal';
 import { mapApiProductsList } from '@/components/shop/map-shop-product';
 import type { ShopCartItem, ShopCategory, ShopProduct } from '@/components/shop/shop-types';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
   filterShopCategoriesWithProducts,
   filterTopLevelShopCategories,
@@ -315,6 +316,8 @@ function ShopPageContent() {
           if (debouncedSearch) params.set('search', debouncedSearch);
           if (priceRange[0] > 0) params.set('min_price', String(priceRange[0]));
           if (priceRange[1] < 10000) params.set('max_price', String(priceRange[1]));
+          const customerId = getResolvedCustomerId();
+          if (customerId) params.set('customerId', customerId);
           return params;
         };
 
@@ -393,8 +396,11 @@ function ShopPageContent() {
   const loadFeaturedDeals = useCallback(async () => {
     try {
       setFeaturedLoading(true);
+      const featuredParams = new URLSearchParams({ featured: 'true', limit: '10' });
+      const customerId = getResolvedCustomerId();
+      if (customerId) featuredParams.set('customerId', customerId);
       const res = await apiClient.get<{ products?: unknown[] }>(
-        '/ecommerce/products?featured=true&limit=10'
+        `/ecommerce/products?${featuredParams.toString()}`
       );
       const raw = res?.products || [];
       const mapped = mapApiProductsList(raw).filter(

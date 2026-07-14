@@ -552,6 +552,9 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     if (bag.variant_value_2?.trim()) product.variant_value_2 = bag.variant_value_2.trim();
     if (bag.variant_attr_3?.trim()) product.variant_attr_3 = bag.variant_attr_3.trim();
     if (bag.variant_value_3?.trim()) product.variant_value_3 = bag.variant_value_3.trim();
+    if (bag.listing_ownership?.trim()) {
+      product.listing_ownership = bag.listing_ownership.trim();
+    }
 
     products.push(product);
   });

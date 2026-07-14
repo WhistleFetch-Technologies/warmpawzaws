@@ -512,6 +512,8 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                       onDetails={openTrainerDetails}
                       onBookPlan={handleBookPlan}
                       onOpenCenterDetails={openTrainerDetails}
+                      customerId={phone}
+                      serviceCategory="training"
                     />
                   );
                 })

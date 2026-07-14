@@ -10,8 +10,10 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
-import { calculateBestCartPromotion, discountsWithinTolerance, normalizePromotionRow, type CartLineItem } from '../utils/vendor-promotion-engine';
+import { calculateBestCartPromotionAsync, discountsWithinTolerance, normalizePromotionRow, type CartLineItem } from '../utils/vendor-promotion-engine';
 import { countPriorVendorOrders, recordVendorPromotionUsage } from '../utils/vendor-promotion-usage';
+import { resolveCommercialCampaignDiscount } from '../utils/resolve-commercial-campaign';
+import { selectEcommercePromotionWinnerAsync } from '../utils/ecommerce-promo-policy-winner';
 import {
   clampRecommendationLimit,
   resolveProductRecommendations,
@@ -510,14 +512,29 @@ app.post('/promotions/calculate-cart', async (c) => {
       return c.json({ success: false, error: 'items array required' }, 400);
     }
 
-    const cartLines = items.map((item: Record<string, unknown>) => ({
-      productId: String(item.productId || item.id || ''),
-      quantity: parseInt(String(item.quantity ?? 1), 10) || 1,
-      price: parseFloat(String(item.price ?? 0)) || 0,
-      category: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
-      categoryId: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
-      id: item.id ? String(item.id) : undefined,
-    }));
+    const rawCartLines = items.map((item: Record<string, unknown>) => {
+      const rawId = String(item.productId || item.id || '');
+      const sep = rawId.indexOf('::');
+      const productId = sep > 0 ? rawId.slice(0, sep) : rawId;
+      const ownershipRaw = item.listingOwnership ?? item.listing_ownership;
+      const listingOwnership =
+        ownershipRaw === 'own_brand' || ownershipRaw === 'third_party'
+          ? String(ownershipRaw)
+          : undefined;
+      return {
+        productId,
+        quantity: parseInt(String(item.quantity ?? 1), 10) || 1,
+        price: parseFloat(String(item.price ?? 0)) || 0,
+        category: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
+        categoryId: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
+        id: productId || undefined,
+        listingOwnership,
+      };
+    });
+    const { enrichLinesWithListingOwnership } = await import(
+      '../utils/compute-listing-ownership'
+    );
+    const cartLines = await enrichLinesWithListingOwnership(rawCartLines);
 
     let promotions: Record<string, unknown>[] = [];
 
@@ -543,34 +560,116 @@ app.post('/promotions/calculate-cart', async (c) => {
       normalizePromotionRow(p as Record<string, unknown>)
     );
 
-    const result = calculateBestCartPromotion(normalizedPromos, cartLines, {
+    const vendorAutoResult = await calculateBestCartPromotionAsync(normalizedPromos, cartLines, {
       vendorId,
       customerId,
       priorVendorOrderCount,
-      manualCode: manualCode || undefined,
     });
 
-    const best = result.bestPromotion;
+    const vendorCodeResult = manualCode
+      ? await calculateBestCartPromotionAsync(
+          normalizedPromos,
+          cartLines,
+          {
+            vendorId,
+            customerId,
+            priorVendorOrderCount,
+            manualCode: String(manualCode).trim(),
+          },
+          { platformCouponCode: String(manualCode).trim() },
+        )
+      : null;
+
+    const vendorAutoDiscount =
+      vendorAutoResult.bestPromotion?.discountAmount ?? vendorAutoResult.totalSavings ?? 0;
+    // Vendor-coded coupon (matched in vendor_promotions) — not platform coupons.
+    const vendorManualDiscount = vendorCodeResult?.bestPromotion?.discountAmount ?? 0;
+    const platformManualDiscount = vendorCodeResult?.platformCouponDiscount ?? 0;
+    const platformManualId = vendorCodeResult?.platformCouponId
+      ? String(vendorCodeResult.platformCouponId)
+      : null;
+
+    const vendorDiscount = Math.max(vendorAutoDiscount, vendorManualDiscount);
+    const vendorBestEval =
+      vendorManualDiscount >= vendorAutoDiscount && vendorCodeResult?.bestPromotion
+        ? vendorCodeResult.bestPromotion
+        : vendorAutoResult.bestPromotion;
+
+    let adminAutoDiscount = 0;
+    let adminBestEval = null as typeof vendorBestEval;
+    try {
+      const campaignResult = await resolveCommercialCampaignDiscount({
+        cartLines,
+        customerId: customerId ? String(customerId) : null,
+      });
+      adminAutoDiscount = campaignResult.discountAmount;
+      adminBestEval = campaignResult.evaluation;
+    } catch (adminErr) {
+      console.warn('[promotions/calculate-cart] admin campaign evaluation skipped:', adminErr);
+    }
+
+    // Platform coupons (`coupons` table) compete as admin/platform-funded offers.
+    const adminDiscount = Math.max(adminAutoDiscount, platformManualDiscount);
+
+    const winner = await selectEcommercePromotionWinnerAsync({
+      vendorDiscount,
+      adminDiscount,
+    });
+    const winningDiscount = winner.discountAmount;
+    const promotionSource = winner.promotionSource ?? undefined;
+
+    type BestPayload = Record<string, unknown> | null;
+    let best: BestPayload = null;
+    if (winner.promotionSource === 'vendor' && vendorBestEval) {
+      best = {
+        ...vendorBestEval.promotion,
+        id: vendorBestEval.promotionId,
+        calculatedDiscount: vendorBestEval.discountAmount,
+        description: vendorBestEval.description,
+        type: vendorBestEval.promotionType,
+        promotionSource: 'vendor',
+      };
+    } else if (winner.promotionSource === 'admin') {
+      if (platformManualDiscount >= adminAutoDiscount && platformManualDiscount > 0) {
+        const codeLabel = manualCode ? String(manualCode).trim().toUpperCase() : 'PLATFORM';
+        best = {
+          id: platformManualId,
+          name: codeLabel,
+          code: codeLabel,
+          description: `${codeLabel} applied`,
+          calculatedDiscount: platformManualDiscount,
+          type: 'coupon',
+          promotionSource: 'admin',
+        };
+      } else if (adminBestEval) {
+        best = {
+          ...adminBestEval.promotion,
+          id: adminBestEval.promotionId,
+          calculatedDiscount: adminBestEval.discountAmount,
+          description: adminBestEval.description,
+          type: adminBestEval.promotionType,
+          promotionSource: 'admin',
+        };
+      }
+    }
+
+    const originalTotal = vendorAutoResult.originalTotal;
+    const discountedTotal = Math.max(0, originalTotal - winningDiscount);
 
     return c.json({
       success: true,
-      originalTotal: result.originalTotal,
-      bestPromotion: best
-        ? {
-            ...best.promotion,
-            calculatedDiscount: best.discountAmount,
-            description: best.description,
-            type: best.promotionType,
-          }
-        : null,
-      allPromotions: result.allPromotions.map((e) => ({
+      originalTotal,
+      bestPromotion: best,
+      allPromotions: vendorAutoResult.allPromotions.map((e) => ({
         ...e.promotion,
         calculatedDiscount: e.discountAmount,
         description: e.description,
         type: e.promotionType,
+        promotionSource: 'vendor' as const,
       })),
-      discountedTotal: result.discountedTotal,
-      totalSavings: result.totalSavings,
+      discountedTotal,
+      totalSavings: winningDiscount,
+      promotionSource: promotionSource ?? null,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);

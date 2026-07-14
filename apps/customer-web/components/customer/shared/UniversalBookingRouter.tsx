@@ -20,6 +20,11 @@ import {
   buildDefaultSlotsWithPastGuard,
   normalizeAvailableSlotsResponse,
 } from '@/lib/available-slots-response';
+import { ServiceBookingPromoSummary } from '../booking/ServiceBookingPromoSummary';
+import { CheckoutCouponPanel } from '@/components/customer/pricing/CheckoutCouponPanel';
+import { useBookingDiscountResolver } from '@/lib/pricing/use-booking-discount-resolver';
+import type { AppliedCheckoutCoupon } from '@/lib/pricing/coupon-validation';
+import type { UnifiedResolverResponse } from '@/lib/pricing/unified-resolver-response';
 
 interface UniversalBookingRouterProps {
   roleId: RoleId; // ✅ NEW: Role ID for universal component
@@ -826,6 +831,58 @@ export function UniversalBookingRouter({
 
   const selectedServiceOption = getSelectedServiceOption();
 
+  const bookingSummaryServiceIds = useMemo(() => {
+    const services = allSelectedServices?.length
+      ? allSelectedServices
+      : selectedServices?.length
+        ? selectedServices
+        : [selectedServiceOption];
+    return services
+      .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+      .filter(Boolean);
+  }, [allSelectedServices, selectedServices, selectedServiceOption]);
+
+  const bookingSummaryBaseAmount = useMemo(() => {
+    if (selectedPackageForSwitch) return 0;
+    const services = allSelectedServices?.length
+      ? allSelectedServices
+      : selectedServices?.length
+        ? selectedServices
+        : [selectedServiceOption];
+    return services.reduce(
+      (sum: number, s: any) => sum + safeNumber(s?.price ?? selectedServiceOption?.price ?? 0, 0),
+      0
+    );
+  }, [allSelectedServices, selectedServices, selectedServiceOption, selectedPackageForSwitch]);
+
+  const bookingDiscountResolver = useBookingDiscountResolver({
+    enabled:
+      Boolean(vendorId || doctorId) &&
+      bookingSummaryBaseAmount > 0 &&
+      !selectedPackageForSwitch,
+    vendorId: String(vendorId || doctorId || ''),
+    serviceIds: bookingSummaryServiceIds,
+    amount: bookingSummaryBaseAmount,
+    customerId: customerId || undefined,
+    serviceStyle: selectedServiceType,
+    serviceCategory: config.category,
+  });
+
+  const handleSummaryCouponApply = (
+    coupon: AppliedCheckoutCoupon,
+    quote?: UnifiedResolverResponse
+  ) => {
+    if (quote) {
+      bookingDiscountResolver.applyCouponFromQuote(quote, coupon.code);
+      return;
+    }
+    void bookingDiscountResolver.refresh(coupon.code);
+  };
+
+  const handleSummaryBookingQuote = (quote: UnifiedResolverResponse, couponCode: string) => {
+    bookingDiscountResolver.applyCouponFromQuote(quote, couponCode);
+  };
+
   // Get header title and icon based on step and service type
   const getHeaderInfo = () => {
     if (step === 'service') {
@@ -1127,6 +1184,7 @@ export function UniversalBookingRouter({
               selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
               customerPhone={phone}
               customerId={customerId || undefined}
+              initialAppliedCoupon={bookingDiscountResolver.appliedCoupon}
               onBack={() => setShowPaymentPage(false)}
               onPaymentAbandoned={() => {
                 if (selectedDate) void loadTimeSlots(selectedDate);
@@ -1442,7 +1500,7 @@ export function UniversalBookingRouter({
                 <span>{selectedPet?.name} ({selectedPet?.breed})</span>
               </div>
               <div className="pt-2 flex justify-between items-center font-semibold">
-                <span>Total</span>
+                <span>Subtotal</span>
                 <span className="text-orange-600">{formatPriceWithSymbol(
                   selectedPackageForSwitch
                     ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
@@ -1452,6 +1510,40 @@ export function UniversalBookingRouter({
                       })()
                 )}</span>
               </div>
+              {!selectedPackageForSwitch && (vendorId || doctorId) ? (
+                <ServiceBookingPromoSummary
+                  vendorId={vendorId || doctorId}
+                  customerId={customerId}
+                  serviceIds={bookingSummaryServiceIds}
+                  baseAmount={bookingSummaryBaseAmount}
+                  serviceStyle={selectedServiceType}
+                  serviceCategory={config.category}
+                  quote={bookingDiscountResolver.quote}
+                  couponCode={bookingDiscountResolver.activeCouponCode}
+                  loading={bookingDiscountResolver.loading}
+                />
+              ) : null}
+              {!selectedPackageForSwitch && (vendorId || doctorId) ? (
+                <CheckoutCouponPanel
+                  kind="service_booking"
+                  vendorId={vendorId || doctorId}
+                  customerId={customerId || undefined}
+                  serviceCategory={config.category}
+                  serviceIds={(allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption])
+                    .map((s: any) =>
+                      String(s?.id || s?.vendorServiceId || s?.serviceId || s?.service_id || '').trim()
+                    )
+                    .filter(Boolean)}
+                  serviceStyle={selectedServiceType}
+                  bookingBaseAmount={bookingSummaryBaseAmount}
+                  orderAmount={bookingSummaryBaseAmount}
+                  appliedCoupon={bookingDiscountResolver.appliedCoupon}
+                  onApplyCoupon={handleSummaryCouponApply}
+                  onBookingQuote={handleSummaryBookingQuote}
+                  onRemoveCoupon={() => void bookingDiscountResolver.removeCoupon()}
+                  alwaysShow
+                />
+              ) : null}
               {selectedPackageForSwitch && (
                 <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700 flex items-center gap-2">
                   <Package className="w-4 h-4" />

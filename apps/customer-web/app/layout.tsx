@@ -148,6 +148,12 @@ export default function RootLayout({
                     location.replace('/pet-boarding/vendor/placeholder?' + qs.toString());
                     return;
                   }
+                  var trackMatch = path.match(/^\\/track\\/([^/]+)$/);
+                  if (trackMatch && trackMatch[1] !== 'placeholder' && trackMatch[1] !== '_') {
+                    if (!qs.get('orderId')) qs.set('orderId', decodeURIComponent(trackMatch[1]));
+                    location.replace('/track/placeholder?' + qs.toString());
+                    return;
+                  }
                   if (qs.get('productId') || qs.get('product_id')) return;
                   var shopMatch = path.match(/^\\/shop\\/([^/]+)$/);
                   if (shopMatch && shopMatch[1] !== 'placeholder' && shopMatch[1] !== '_') {

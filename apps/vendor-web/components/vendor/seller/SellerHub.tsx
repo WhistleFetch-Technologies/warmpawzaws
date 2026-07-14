@@ -9,6 +9,7 @@ import {
   BarChart3,
   Settings,
   Tag,
+  Megaphone,
   FileText,
   IndianRupee,
   Menu,
@@ -23,9 +24,33 @@ import { InventoryManagement, type InventoryManagementHandle } from './Inventory
 import { SellerOrderManagement } from './SellerOrderManagement';
 import { SellerInvoicesHub } from './SellerInvoicesHub';
 import { CommissionCalculator } from './CommissionCalculator';
-import { PromotionsManagement } from './PromotionsManagement';
+import dynamic from 'next/dynamic';
 import { SellerAnalytics } from './SellerAnalytics';
 import { SellerSettings, type SellerSettingsHandle } from './SellerSettings';
+
+/** Lazy-load promo/campaign bundles so a wizard hooks bug cannot crash Dashboard on import. */
+const PromotionsManagement = dynamic(
+  () => import('./PromotionsManagement').then((m) => m.PromotionsManagement),
+  { ssr: false, loading: () => <SellerTabLoading label="promotions" /> }
+);
+const VendorCommercialCampaigns = dynamic(
+  () =>
+    import('@/components/vendor/campaigns/VendorCommercialCampaigns').then(
+      (m) => m.VendorCommercialCampaigns
+    ),
+  { ssr: false, loading: () => <SellerTabLoading label="campaigns" /> }
+);
+
+function SellerTabLoading({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-[240px] items-center justify-center">
+      <div className="text-center">
+        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-orange-200 border-t-orange-500" />
+        <p className="mt-3 text-sm text-slate-500">Loading {label}…</p>
+      </div>
+    </div>
+  );
+}
 
 export type SellerHubTab =
   | 'dashboard'
@@ -35,6 +60,7 @@ export type SellerHubTab =
   | 'invoices'
   | 'commission'
   | 'promotions'
+  | 'campaigns'
   | 'analytics'
   | 'settings';
 
@@ -56,6 +82,7 @@ export const SELLER_HUB_NAVIGATION: {
   { id: 'invoices', label: 'GST Invoices', icon: FileText, description: 'Tax invoices' },
   { id: 'commission', label: 'Commission', icon: IndianRupee, description: 'Earnings & fees' },
   { id: 'promotions', label: 'Promotions', icon: Tag, description: 'Offers & discounts' },
+  { id: 'campaigns', label: 'Campaigns', icon: Megaphone, description: 'Campaign participation' },
   { id: 'analytics', label: 'Analytics', icon: BarChart3, description: 'Performance data' },
   {
     id: 'settings',
@@ -257,6 +284,9 @@ export function SellerHubMainPanels({
       )}
       {activeTab === 'commission' && <CommissionCalculator sellerId={sellerId} />}
       {activeTab === 'promotions' && <PromotionsManagement sellerId={sellerId} />}
+      {activeTab === 'campaigns' && (
+        <VendorCommercialCampaigns vendorId={sellerId} surface="ecommerce" />
+      )}
       {activeTab === 'analytics' && <SellerAnalytics sellerId={sellerId} />}
       {activeTab === 'settings' && (
         <SellerSettings

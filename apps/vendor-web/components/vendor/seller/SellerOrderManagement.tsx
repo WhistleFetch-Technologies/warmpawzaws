@@ -14,6 +14,12 @@ import {
   type VendorShipmentFormValues,
 } from '@/components/vendor/orders/VendorShipmentDetailsForm';
 import { VendorShipmentTrackingReadOnly } from '@/components/vendor/orders/VendorShipmentTrackingReadOnly';
+import { VendorOrderMoneySummary } from '@/components/vendor/orders/VendorOrderMoneySummary';
+import {
+  formatInrAmount,
+  resolveVendorOrderMoney,
+  vendorOrderItemCatalogTotal,
+} from '@/lib/vendor-order-money';
 
 const EMPTY_SHIPMENT_FORM: VendorShipmentFormValues = {
   carrierId: '',
@@ -365,9 +371,19 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
                     </div>
                     <div className="text-right flex items-center gap-4">
                       <div>
-                        <p className="font-bold text-slate-900 text-lg">
-                          ₹{parseFloat(order.total_amount || 0).toLocaleString()}
-                        </p>
+                        {(() => {
+                          const money = resolveVendorOrderMoney(order);
+                          return (
+                            <>
+                              <p className="font-bold text-slate-900 text-lg tabular-nums">
+                                {formatInrAmount(money.vendorGoodsAmount)}
+                              </p>
+                              <p className="text-[11px] text-slate-500">
+                                {money.isVendorFunded ? 'After your promo' : 'Your catalog'}
+                              </p>
+                            </>
+                          );
+                        })()}
                         <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(orderStatus)}`}>
                           {getStatusIcon(orderStatus)}
                           {orderStatus}
@@ -524,7 +540,9 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
                             <p className="text-sm text-slate-500">Qty: {item.quantity}</p>
                           </div>
                         </div>
-                        <p className="font-bold text-slate-900">₹{parseFloat(item.total || item.unit_price * item.quantity || 0).toLocaleString()}</p>
+                        <p className="font-bold text-slate-900 tabular-nums">
+                          {formatInrAmount(vendorOrderItemCatalogTotal(item))}
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -533,25 +551,8 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
                 )}
               </div>
 
-              {/* Order Summary */}
-              <div className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-xl p-4 space-y-2">
-                <div className="flex justify-between text-slate-600">
-                  <span>Subtotal</span>
-                  <span>₹{parseFloat(selectedOrder.subtotal || 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Shipping</span>
-                  <span>₹{parseFloat(selectedOrder.shipping_amount || 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Tax (GST)</span>
-                  <span>₹{parseFloat(selectedOrder.tax_amount || 0).toLocaleString()}</span>
-                </div>
-                <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-lg text-slate-900">
-                  <span>Total</span>
-                  <span className="text-orange-600">₹{parseFloat(selectedOrder.total_amount || 0).toLocaleString()}</span>
-                </div>
-              </div>
+              {/* Vendor settlement money — catalog base; platform promo does not cut vendor goods */}
+              <VendorOrderMoneySummary order={selectedOrder} />
             </div>
           </div>
         </div>
