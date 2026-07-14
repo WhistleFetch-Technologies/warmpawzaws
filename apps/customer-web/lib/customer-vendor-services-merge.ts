@@ -4,6 +4,46 @@
  * Merge and dedupe by vendor_services.id so booking UIs see custom vendor packages everywhere.
  */
 
+/** Expandable list card preview */
+export const VENDOR_SERVICES_PREVIEW_LIMIT = 5;
+/** Profile Services tab page size (infinite scroll) */
+export const VENDOR_SERVICES_PROFILE_PAGE_SIZE = 10;
+
+export type VendorServicesPageMeta = {
+  total: number;
+  offset: number;
+  limit: number | null;
+  hasMore: boolean;
+};
+
+export function parseVendorServicesPageMeta(
+  res: Record<string, unknown> | null | undefined
+): VendorServicesPageMeta {
+  if (!res || typeof res !== 'object') {
+    return { total: 0, offset: 0, limit: null, hasMore: false };
+  }
+  const mergedLen = mergeCustomerVendorServicesPayload(res as any).length;
+  const total = Number(res.total);
+  const offset = Number(res.offset);
+  const limitRaw = res.limit;
+  const limit =
+    limitRaw != null && String(limitRaw).trim() !== ''
+      ? Number(limitRaw)
+      : null;
+  const hasMore =
+    typeof res.hasMore === 'boolean'
+      ? res.hasMore
+      : Number.isFinite(total) && Number.isFinite(offset) && limit != null
+        ? offset + mergedLen < total
+        : false;
+  return {
+    total: Number.isFinite(total) ? total : mergedLen,
+    offset: Number.isFinite(offset) ? offset : 0,
+    limit: limit != null && Number.isFinite(limit) ? limit : null,
+    hasMore,
+  };
+}
+
 export function mergeCustomerVendorServicesPayload(
   res: { services?: unknown[]; packages?: unknown[] } | null | undefined
 ): any[] {

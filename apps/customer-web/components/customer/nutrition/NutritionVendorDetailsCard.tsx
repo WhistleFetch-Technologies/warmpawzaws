@@ -10,6 +10,7 @@ import {
   MealKitchenStatusBanner,
 } from '@/components/customer/nutrition/MealKitchenStatusBanner';
 import { isMealKitchenClosed, mealKitchenClosedMessage } from '@/lib/meal-kitchen-availability';
+import { CachedImage } from '@/components/shared/CachedImage';
 
 /** Vendor shape from discovery, meal search rows, or navigation snapshot */
 export type NutritionVendorCardModel = {
@@ -144,8 +145,7 @@ export function NutritionVendorDetailsCard({
       <div className="flex items-start gap-4">
         {photo ? (
           <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-slate-100 bg-slate-50">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={photo} alt="" className="h-full w-full object-cover" />
+            <CachedImage src={photo} alt="" className="h-full w-full object-cover" />
           </div>
         ) : (
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] text-lg font-bold text-[#FF8C42] ring-1 ring-orange-100/60">

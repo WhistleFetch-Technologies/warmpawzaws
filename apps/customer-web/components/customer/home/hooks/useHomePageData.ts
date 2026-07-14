@@ -297,69 +297,12 @@ export function useHomePageData({
   const loadServicesFromAPI = useCallback(async () => {
     try {
       setServicesLoading(true);
-      let locationParams = '';
-      if (typeof window !== 'undefined') {
-        try {
-          const customerLat = localStorage.getItem('customer_latitude');
-          const customerLng = localStorage.getItem('customer_longitude');
-          if (customerLat && customerLng) {
-            locationParams = `&latitude=${encodeURIComponent(customerLat)}&longitude=${encodeURIComponent(customerLng)}`;
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-      const phoneParam = phone ? `&phone=${encodeURIComponent(phone)}` : '';
+      // Skip full discover-services fan-out on home (cards are heavy); keep static/fallback tiles + products.
       const productRequest = isCustomerEcommerceEnabled()
         ? apiClient.get('/products?featured=true&limit=3')
         : Promise.resolve({ products: [] });
 
-      const [groomingResult, vetResult, productsResult] = await Promise.allSettled([
-        apiClient.get(
-          `/customer/discover-services?category=grooming&serviceStyle=at_center${locationParams}${phoneParam}`
-        ),
-        apiClient.get(
-          `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}${phoneParam}`
-        ),
-        productRequest,
-      ]);
-
-      if (groomingResult.status === 'fulfilled') {
-        const groomingResp = groomingResult.value as Record<string, unknown>;
-        const services = (groomingResp?.services || groomingResp?.vendors || []) as Record<string, unknown>[];
-        if (services.length > 0) {
-          setGroomingServices(
-            services.slice(0, 3).map((s) => ({
-              id: s.id || s.vendorServiceId,
-              title: s.serviceName || s.name || 'Grooming Service',
-              price: `₹${s.price || s.basePrice || 999}`,
-              rating: s.rating != null ? Number(s.rating) : undefined,
-              reviewCount: Number(s.reviewCount ?? s.review_count ?? 0) || 0,
-              serviceStyle: s.serviceStyle || 'at_center',
-              description: s.description || 'Professional grooming service',
-              vendorId: s.vendorId,
-            }))
-          );
-        }
-      }
-
-      if (vetResult.status === 'fulfilled') {
-        const vetResp = vetResult.value as Record<string, unknown>;
-        const services = (vetResp?.services || vetResp?.vendors || []) as Record<string, unknown>[];
-        if (services.length > 0) {
-          setVetServicesData(
-            services.slice(0, 3).map((s) => ({
-              id: s.id || s.vendorServiceId,
-              title: s.serviceName || s.name || 'Vet Service',
-              price: `₹${s.price || s.basePrice || 499}`,
-              serviceStyle: s.serviceStyle || 'clinic',
-              description: s.description || 'Veterinary service',
-              type: s.serviceStyle === 'at_home' ? 'visit' : s.serviceStyle === 'tele' ? 'video' : 'clinic',
-              vendorId: s.vendorId,
-            }))
-          );
-        }
-      }
+      const [productsResult] = await Promise.allSettled([productRequest]);
 
       if (productsResult.status === 'fulfilled') {
         const productsResp = productsResult.value as { products?: Record<string, unknown>[] };

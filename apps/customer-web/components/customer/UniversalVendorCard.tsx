@@ -8,6 +8,7 @@ import { trackClick } from '@/lib/analytics';
 import { StarRating } from '@/components/customer/shared/StarRating';
 import { resolveVendorRatingForCard } from '@/lib/resolve-vendor-rating';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import { CachedImage } from '@/components/shared/CachedImage';
 
 // ✅ FIX: Add promotion type for vendor discounts display
 interface VendorPromotion {
@@ -217,17 +218,17 @@ export function UniversalVendorCard({
           {vendor.photos && vendor.photos.length > 1 ? (
             <div className="flex gap-1 w-full h-full">
               {vendor.photos.slice(0, 3).map((url, i) => (
-                <img key={i} src={url} alt="" className="w-1/3 h-full object-cover flex-1" onError={(e) => (e.target as HTMLImageElement).style.display = 'none'} />
+                <CachedImage key={i} src={url} alt="" className="w-1/3 h-full object-cover flex-1" />
               ))}
             </div>
           ) : (
             <div className={`w-full h-full bg-gradient-to-br ${colorClass} flex items-center justify-center text-3xl`}>
               {!listingImageFailed && singlePhotoUrl ? (
-                <img 
-                  src={singlePhotoUrl} 
+                <CachedImage
+                  src={singlePhotoUrl}
                   alt={vendor.vendorName}
                   className="w-full h-full object-cover"
-                  onError={() => setListingImageFailed(true)}
+                  onUnavailable={() => setListingImageFailed(true)}
                 />
               ) : (
                 icon

@@ -60,6 +60,11 @@ import {
   getVendorListingPhotoUrl,
 } from '../../../utils/vendor-listing-photo';
 import {
+  DISCOVERY_LIST_DEFAULT_MAX,
+  enrichDiscoveryListVendor,
+  enrichDiscoveryListVendorsConcurrent,
+} from '../../../utils/discovery-list-enrich';
+import {
   addDaysToYmd,
   dayOfWeekFromYmd,
   DEFAULT_MIN_NOTICE_MINUTES,
@@ -2631,6 +2636,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         c.req.query('specializationId') ||
         ''
       ).trim();
+      /** Opt-in: attach slim services[] on cards. Default = cards only (priceMin/Max/serviceCount). */
+      const fullEnrichDiscover =
+        c.req.query('fullEnrich') === 'true' || c.req.query('full') === 'true';
       // Accept lat/lon and latitude/longitude aliases (different parts of the
       // app use different spellings — keep them all working).
       let latitude = c.req.query('latitude') || c.req.query('lat');
@@ -2654,7 +2662,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const rules = await getDiscoveryRules(
         roleId || category || 'all', 'discover', serviceStyle as string, category || undefined
       );
-      const maxResults = Math.min(100, Math.max(1, rules.discovery_max_results ?? 50));
+      const limitFromQuery = parseInt(String(c.req.query('limit') || ''), 10);
+      const maxResults = Math.min(
+        DISCOVERY_LIST_DEFAULT_MAX,
+        Math.max(
+          1,
+          Number.isFinite(limitFromQuery) && limitFromQuery > 0
+            ? limitFromQuery
+            : (rules.discovery_max_results ?? DISCOVERY_LIST_DEFAULT_MAX)
+        )
+      );
       const radius = discoveryCustomerRadiusKm({
         rules,
         serviceStyleNorm: serviceStyleNormDiscover,
@@ -3010,117 +3027,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       /** Filled after vendor SQL runs; enrichVendor reads resolved specialization labels. */
       let vendorSpecBundleForDiscover = new Map<string, { raw: string[]; displayLabels: string[] }>();
 
-      // Enrichment
+      // Fast-list enrich (shared with by-style): parallel, one listing thumb, slim services.
       const enrichVendor = async (vendor: any) => {
-        // Load matching published services first. Do NOT drop by role_config here: primary
-        // role (e.g. veterinarian) often omits at_home in serviceStyles even when the same
-        // account publishes a custom dog-walk (at_home). vendor_services is source of truth.
         const services = await fetchServices(vendor.vendor_id, vendor.role_name);
-        if (services.length === 0) return null;
-
-        // Role UI fields
-        let roleCfg: any = {};
-        try {
-          roleCfg = typeof vendor.role_config === 'string'
-            ? (vendor.role_config ? JSON.parse(vendor.role_config) : {})
-            : (vendor.role_config || {});
-        } catch { roleCfg = {}; }
-        const roleIcon = roleCfg?.icon || null;
-        const roleImage = roleCfg?.iconUrl || roleCfg?.image || null;
-        const roleCategory = roleCfg?.category || roleCfg?.customer_service || null;
-        const customerService = roleCfg?.customer_service || null;
-
-        const distResult = await distResolverDiscover.resolve({
-          id: vendor.vendor_id,
-          latitude: vendor.latitude,
-          longitude: vendor.longitude,
-          pincode: vendor.pincode,
-          address: vendor.address,
-          city: vendor.city,
-          state: vendor.state,
-        });
-
-        let nextAvailable: any = null;
-        try {
-          nextAvailable = await getNextAvailableSlot(
-            vendor.vendor_id, vendor.phone || '', acceptableStyles
-          );
-        } catch { /* non-fatal */ }
-
-        // No computed slot (no vendor_availability_v2 or fully booked): still list provider — booking flow uses slots API.
-        if (!nextAvailable) {
-          nextAvailable = {
-            date: '',
-            time: '',
-            display: sittingDiscoveryRelaxed ? 'Contact for availability' : 'Tap to view availability',
-          };
-        }
-
-        // Photos + rating + price
-        let photos: string[] = [];
-        try {
-          const meta = typeof vendor.metadata === 'string'
-            ? JSON.parse(vendor.metadata || '{}')
-            : vendor.metadata;
-          const raw = meta?.facility_photos || meta?.photos || [];
-          const rawPhotos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
-          const regeneratedPhotos = await Promise.all(
-            rawPhotos.map(async (photoUrl: string) => {
-              const regenerated = await regeneratePresignedUrl(photoUrl);
-              return regenerated;
-            })
-          );
-          photos = regeneratedPhotos.filter((url): url is string => url !== null && url !== undefined);
-        } catch { }
-
-        const photoUrl = await getVendorListingPhotoUrl(vendor);
-        const prices = services.map((s: any) => s.price).filter((p: number) => p > 0);
-        const priceMin = prices.length > 0 ? Math.min(...prices) : undefined;
-        const priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
-
         const specBundle = vendorSpecBundleForDiscover.get(vendor.vendor_id);
-        const specializations = specBundle?.displayLabels?.length ? specBundle.displayLabels : [];
-        const specialization =
-          specializations.length > 0 ? specializations.join(' · ') : null;
-
-        return {
-          id: vendor.vendor_id,
-          vendorId: vendor.vendor_id,
-          providerId: vendor.vendor_id,
-          providerType: 'vendor' as const,
-          name: vendor.business_name || vendor.owner_name,
-          phone: vendor.phone,
-          address: vendor.address,
-          city: vendor.city,
-          roleId: vendor.role_id || null,
-          role: vendor.role_display_name || vendor.role_name,
-          roleName: vendor.role_name || vendor.role_display_name || '',
-          roleDisplayName: vendor.role_display_name || '',
-          roleIcon,
-          roleImage,
-          roleCategory,
-          customerService,
-          vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
-          photo: photoUrl,
-          photoUrl: photoUrl,
-          rating: parseFloat(vendor.avg_rating || '0'),
-          reviewCount: parseInt(vendor.review_count || '0', 10),
-          distance: distResult?.km ?? null,
-          distanceKm: distResult?.km ?? null,
-          distanceText: distResult?.distanceText ?? null,
-          nextAvailable,
-          serviceStyles: acceptableStyles,
-          isVerified: true,
-          isOnline: vendorRowIsOnline(vendor.is_online),
-          is_online: vendor.is_online,
-          photos: photos.length > 0 ? photos : undefined,
-          priceMin: priceMin && priceMin > 0 ? priceMin : undefined,
-          priceMax: priceMax && priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
-          bestForProblem: problemTitle || undefined,
-          specializations,
-          specialization,
+        return enrichDiscoveryListVendor({
+          vendor,
           services,
-        };
+          acceptableStyles,
+          distResolver: distResolverDiscover,
+          getNextAvailableSlot,
+          defaultAvailabilityDisplay: sittingDiscoveryRelaxed
+            ? 'Contact for availability'
+            : 'Tap to view availability',
+          problemTitle: problemTitle || undefined,
+          specializations: specBundle?.displayLabels?.length ? specBundle.displayLabels : [],
+          fullServices: fullEnrichDiscover,
+        });
       };
 
       const vendorExistsDiscover = await buildDiscoveryVendorExistsSql({
@@ -3185,22 +3108,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           service_distance_km: row.service_distance_km,
         });
       }
-      console.log('vendorRows', vendorRows.rows, acceptableStyles, catTextExact, catTextLike, catUUIDs);
-      // 6) Enrich and filter
-      const seen = new Set<string>();
-      const providers: any[] = [];
-
-      for (const row of vendorRows.rows) {
-        if (seen.has(row.vendor_id)) continue;
-        const provider = await enrichVendor(row);
-        if (provider) {
-          seen.add(row.vendor_id);
-          providers.push(provider);
-        }
-      }
+      console.log('vendorRows', vendorRows.rows?.length, acceptableStyles, catTextExact, catTextLike, catUUIDs);
+      // 6) Enrich and filter (bounded concurrency — all categories/styles)
+      const providers = await enrichDiscoveryListVendorsConcurrent(
+        vendorRows.rows || [],
+        enrichVendor
+      );
 
       // 7) Post-filters
-      let results = providers;
+      let results = providers as any[];
       if (minRatingVal != null && minRatingVal > 0) {
         results = results.filter((p) => p.rating >= minRatingVal);
       }
@@ -3252,7 +3168,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           case 'rating':
             return b.rating - a.rating;
           case 'price':
-            return (a.services[0]?.price || 0) - (b.services[0]?.price || 0);
+            return (Number(a.priceMin) || 0) - (Number(b.priceMin) || 0);
           case 'relevance':
           default: {
             const score = (p: any) =>
@@ -3264,12 +3180,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       });
 
-      // 9) Respond
+      // 9) Respond — providers only (no vendors[] twin; cards omit services[] by default)
       return c.json({
         success: true,
         style: serviceStyle,
         providers: results,
-        vendors: results,
         total: results.length,
         appliedFilters: {
           minRating: minRatingVal,
@@ -5017,14 +4932,31 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         console.log(`[Vendor Services] Service styles after filter:`, serviceStylesAfter);
       }
 
-      const packages = combined.filter((s: any) => s.isPackage);
-      const services = combined;
+      const total = combined.length;
+      const limitRaw = c.req.query('limit');
+      const offsetRaw = c.req.query('offset');
+      const offset = Math.max(0, parseInt(String(offsetRaw || '0'), 10) || 0);
+      /** Omit `limit` → full list (booking routers). Preview/profile pass limit. */
+      let page = combined;
+      let limit: number | null = null;
+      if (limitRaw != null && String(limitRaw).trim() !== '') {
+        limit = Math.min(100, Math.max(1, parseInt(String(limitRaw), 10) || 20));
+        page = combined.slice(offset, offset + limit);
+      }
+
+      const packages = page.filter((s: any) => s.isPackage);
+      const services = page;
+      const hasMore = limit != null ? offset + page.length < total : false;
 
       return c.json({
         success: true,
         services,
         packages,
-        count: combined.length,
+        count: page.length,
+        total,
+        limit: limit ?? total,
+        offset,
+        hasMore,
         hasActivePackage: hasActivePackageForVendor,
       });
 
@@ -6554,6 +6486,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         c.req.query('specializationId') ||
         ''
       ).trim();
+      /** Opt-in: attach slim services[] on cards. Default = cards only (priceMin/Max/serviceCount). */
+      const fullEnrichByStyle =
+        c.req.query('fullEnrich') === 'true' || c.req.query('full') === 'true';
       // Accept lat/lon and latitude/longitude aliases (different parts of the
       // app use different spellings — keep them all working).
       let latitude = c.req.query('latitude') || c.req.query('lat');
@@ -6583,8 +6518,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         roleId || category || 'all', 'discover', serviceStyle, category || undefined
       );
 
-      //get the max results, default radius, radius, max distance, min rating, sort by from the rules
-      const maxResults = Math.min(100, Math.max(1, rules.discovery_max_results ?? 50));
+      // Cap list cards for TTI; optional `limit` query further clamps.
+      const limitFromQueryByStyle = parseInt(String(c.req.query('limit') || ''), 10);
+      const maxResults = Math.min(
+        DISCOVERY_LIST_DEFAULT_MAX,
+        Math.max(
+          1,
+          Number.isFinite(limitFromQueryByStyle) && limitFromQueryByStyle > 0
+            ? limitFromQueryByStyle
+            : (rules.discovery_max_results ?? DISCOVERY_LIST_DEFAULT_MAX)
+        )
+      );
       const radius = discoveryCustomerRadiusKm({
         rules,
         serviceStyleNorm: serviceStyleNormByStyle,
@@ -6974,113 +6918,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let vendorSpecBundleForByStyle = new Map<string, { raw: string[]; displayLabels: string[] }>();
 
       /**
-       * Turn a raw vendor row into a fully enriched provider object.
-       * Returns null when the vendor has zero matching published services.
-       * (No role_config gate: cross-persona add-ons e.g. vet + dog walk at_home — see discover-services.)
+       * Fast-list enrich (shared with discover-services). Null when zero matching services.
+       * No role_config gate: vendor_services is source of truth for cross-persona add-ons.
        */
       const enrichVendor = async (vendor: any) => {
         const services = await fetchServices(vendor.vendor_id, vendor.role_name);
-
-        if (services.length === 0) return null;
-
-        // Parse role config for UI (icon/image/category/customer_service)
-        let roleCfg: any = {};
-        try {
-          roleCfg = typeof vendor.role_config === 'string'
-            ? (vendor.role_config ? JSON.parse(vendor.role_config) : {})
-            : (vendor.role_config || {});
-        } catch { roleCfg = {}; }
-        const roleIcon = roleCfg?.icon || null;
-        const roleImage = roleCfg?.iconUrl || roleCfg?.image || null;
-        const roleCategory = roleCfg?.category || roleCfg?.customer_service || null;
-        const customerService = roleCfg?.customer_service || null;
-
-        const distResult = await distResolverByStyle.resolve({
-          id: vendor.vendor_id,
-          latitude: vendor.latitude,
-          longitude: vendor.longitude,
-          pincode: vendor.pincode,
-          address: vendor.address,
-          city: vendor.city,
-          state: vendor.state,
-        });
-        let nextAvailable: any = null;
-        try {
-          nextAvailable = await getNextAvailableSlot(
-            vendor.vendor_id, vendor.phone || '', acceptableStyles
-          );
-        } catch { /* non-fatal */ }
-
-        if (!nextAvailable) {
-          nextAvailable = { date: '', time: '', display: 'Tap to view availability' };
-        }
-
-        const prices = services.map((s: any) => s.price).filter((p: number) => p > 0);
-        const priceMin = prices.length > 0 ? Math.min(...prices) : undefined;
-        const priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
-
-        // Photos from vendor metadata (facility_photos / photos)
-        let photos: string[] = [];
-        try {
-          const meta = typeof vendor.metadata === 'string'
-            ? JSON.parse(vendor.metadata || '{}')
-            : vendor.metadata;
-          const raw = meta?.facility_photos || meta?.photos || [];
-          const rawPhotos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
-          const regeneratedPhotos = await Promise.all(
-            rawPhotos.map(async (photoUrl: string) => {
-              const regenerated = await regeneratePresignedUrl(photoUrl);
-              return regenerated;
-            })
-          );
-          photos = regeneratedPhotos.filter((url): url is string => url !== null && url !== undefined);
-        } catch { /* non-fatal */ }
-
-        const photoUrl = await getVendorListingPhotoUrl(vendor);
-
         const specBundle = vendorSpecBundleForByStyle.get(vendor.vendor_id);
-        const specializations = specBundle?.displayLabels?.length ? specBundle.displayLabels : [];
-        const specialization =
-          specializations.length > 0 ? specializations.join(' · ') : null;
-
-        return {
-          id: vendor.vendor_id,
-          vendorId: vendor.vendor_id,
-          providerId: vendor.vendor_id,
-          providerType: 'vendor' as const,
-          name: vendor.business_name || vendor.owner_name,
-          phone: vendor.phone,
-          address: vendor.address,
-          city: vendor.city,
-          roleId: vendor.role_id || null,
-          role: vendor.role_display_name || vendor.role_name,
-          roleName: vendor.role_name || vendor.role_display_name || '',
-          roleDisplayName: vendor.role_display_name || '',
-          roleIcon,
-          roleImage,
-          roleCategory,
-          customerService,
-          vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
-          photo: photoUrl,
-          photoUrl: photoUrl,
-          rating: parseFloat(vendor.avg_rating || '0'),
-          reviewCount: parseInt(vendor.review_count || '0', 10),
-          distance: distResult?.km ?? null,
-          distanceKm: distResult?.km ?? null,
-          distanceText: distResult?.distanceText ?? null,
-          nextAvailable,
-          serviceStyles: acceptableStyles,
-          isVerified: true,
-          isOnline: vendorRowIsOnline(vendor.is_online),
-          is_online: vendor.is_online,
-          photos: photos.length > 0 ? photos : undefined,
-          priceMin: priceMin && priceMin > 0 ? priceMin : undefined,
-          priceMax: priceMax && priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
-          bestForProblem: problemTitle || undefined,
-          specializations,
-          specialization,
+        return enrichDiscoveryListVendor({
+          vendor,
           services,
-        };
+          acceptableStyles,
+          distResolver: distResolverByStyle,
+          getNextAvailableSlot,
+          defaultAvailabilityDisplay: 'Tap to view availability',
+          problemTitle: problemTitle || undefined,
+          specializations: specBundle?.displayLabels?.length ? specBundle.displayLabels : [],
+          fullServices: fullEnrichByStyle,
+        });
       };
 
       // ────────────────────────────────────────────────────────
@@ -7171,27 +7025,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           service_distance_km: row.service_distance_km,
         });
       }
-      console.log('providers_______________________________>', acceptableStyles, catTextExact, catTextLike, catUUIDs, vendorRows.rows);
+      console.log(
+        '[by-style] vendorRows',
+        vendorRows.rows?.length,
+        acceptableStyles,
+        catTextExact,
+        catTextLike,
+        catUUIDs
+      );
 
-
-      // 6. ENRICH ALL VENDORS
-      //    Run enrichVendor() on every row; it returns null for
-      //    vendors that should be excluded, so we filter those.
-
-      const seen = new Set<string>();
-      const providers: any[] = [];
-
-      for (const row of vendorRows.rows) {
-        if (seen.has(row.vendor_id)) continue;
-        const provider = await enrichVendor(row);
-        if (provider) {
-          seen.add(row.vendor_id);
-          providers.push(provider);
-        }
-      }
+      // 6. ENRICH ALL VENDORS (bounded concurrency — all categories/styles)
+      const providers = await enrichDiscoveryListVendorsConcurrent(
+        vendorRows.rows || [],
+        enrichVendor
+      );
 
       // 7. FILTER
-      let results = providers;
+      let results = providers as any[];
 
       if (minRatingVal != null && minRatingVal > 0) {
         results = results.filter((p) => p.rating >= minRatingVal);
@@ -7251,7 +7101,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             return b.rating - a.rating;
 
           case 'price':
-            return (a.services[0]?.price || 0) - (b.services[0]?.price || 0);
+            return (Number(a.priceMin) || 0) - (Number(b.priceMin) || 0);
 
           case 'relevance':
           default: {
@@ -7265,13 +7115,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       });
 
       // ────────────────────────────────────────────────────────
-      // 9. RESPOND
+      // 9. RESPOND — providers only (FE already uses providers || vendors)
       // ────────────────────────────────────────────────────────
       return c.json({
         success: true,
         style: serviceStyle,
         providers: results,
-        vendors: results, // backward compatibility
         total: results.length,
         specializationApplied: specializationByStyleFragment.length > 0 ? specializationFilterByStyle : null,
         appliedFilters: {

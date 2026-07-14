@@ -16,8 +16,13 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { fetchDiscoveryList } from '@/lib/discovery-list-fetch';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
-import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import {
+  mergeCustomerVendorServicesPayload,
+  parseVendorServicesPageMeta,
+  VENDOR_SERVICES_PREVIEW_LIMIT,
+} from '@/lib/customer-vendor-services-merge';
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
@@ -86,6 +91,9 @@ export interface ClinicProvider {
   services: ClinicServiceRow[];
   /** When true, expand triggers GET vendor services */
   needsServiceFetch?: boolean;
+  serviceCount?: number;
+  priceMin?: number;
+  hasMoreServices?: boolean;
   vendorType?: string;
 }
 
@@ -224,6 +232,9 @@ function mapByStyleProvider(p: any): ClinicProvider | null {
     isVerified: !!p.isVerified,
     services,
     needsServiceFetch: services.length === 0,
+    serviceCount: Number(p.serviceCount ?? p.service_count) || services.length || undefined,
+    priceMin: Number(p.priceMin ?? p.price_min) || undefined,
+    hasMoreServices: false,
     vendorType: p.vendorType,
   };
 }
@@ -252,9 +263,10 @@ export function ClinicListView({
       setFetchingServicesFor(clinicId);
       try {
         const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+        const limitQ = `limit=${VENDOR_SERVICES_PREVIEW_LIMIT}&offset=0`;
         const res = (await apiClient.get(
-          `/customer/vendor/${clinicId}/services?serviceStyle=at_center&category=${HUB_DISCOVERY_VET.servicesApiCategory}${phoneParam}`
-        ).catch(() => apiClient.get(`/vendor/${clinicId}/services`))) as any;
+          `/customer/vendor/${clinicId}/services?serviceStyle=at_center&category=${HUB_DISCOVERY_VET.servicesApiCategory}${phoneParam}&${limitQ}`
+        ).catch(() => apiClient.get(`/vendor/${clinicId}/services?${limitQ}`))) as any;
         let services: any[] = [];
         const servicesData = res;
         if (servicesData?.services && Array.isArray(servicesData.services)) {
@@ -275,8 +287,19 @@ export function ClinicListView({
         const rows = filterServicesForVetHub<ClinicServiceRow>(
           services.map((s: any, i: number) => mapApiServiceToRow(s, clinicId, i))
         );
+        const meta = parseVendorServicesPageMeta(res as Record<string, unknown>);
         setClinics((prev) =>
-          prev.map((c) => (c.id === clinicId ? { ...c, services: rows, needsServiceFetch: false } : c))
+          prev.map((c) =>
+            c.id === clinicId
+              ? {
+                  ...c,
+                  services: rows,
+                  needsServiceFetch: false,
+                  hasMoreServices: meta.hasMore || (meta.total > 0 && rows.length < meta.total),
+                  serviceCount: meta.total || c.serviceCount || rows.length,
+                }
+              : c
+          )
         );
       } catch (e) {
         console.error('[CLINIC-LIST] vendor services fetch failed', e);
@@ -299,7 +322,7 @@ export function ClinicListView({
     const specParam = specialization
       ? `&specialization=${encodeURIComponent(specialization)}`
       : '';
-    const response = (await apiClient.get(
+    const response = (await fetchDiscoveryList(
       `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}${specParam}`
     )) as any;
     const servicesData = response.vendors || response.services || [];
@@ -391,7 +414,7 @@ export function ClinicListView({
         const specParam = specialization
           ? `&specialization=${encodeURIComponent(specialization)}`
           : '';
-        const response = (await apiClient.get(
+        const response = (await fetchDiscoveryList(
           `/customer/services/by-style?style=at_center&category=vet&roleId=${encodeURIComponent(roleId)}${locationParams}${phoneParam}${specParam}`
         )) as any;
         if (!response.success) return [];
@@ -552,7 +575,11 @@ export function ClinicListView({
         return list.sort((a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999));
       case 'price': {
         const minP = (c: ClinicProvider) =>
-          c.services.length ? Math.min(...c.services.map((s) => s.price)) : 999999;
+          c.services.length
+            ? Math.min(...c.services.map((s) => s.price))
+            : c.priceMin != null && c.priceMin > 0
+              ? c.priceMin
+              : 999999;
         return list.sort((a, b) => minP(a) - minP(b));
       }
       default:
@@ -568,8 +595,8 @@ export function ClinicListView({
   ];
 
   const minPriceForClinic = (c: ClinicProvider) => {
-    if (!c.services.length) return null;
-    return Math.min(...c.services.map((s) => s.price));
+    if (c.services.length) return Math.min(...c.services.map((s) => s.price));
+    return c.priceMin != null && c.priceMin > 0 ? c.priceMin : null;
   };
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
@@ -829,7 +856,6 @@ export function ClinicListView({
                                   <div className="shrink-0 text-right">
                                     <ServicePricingDisplay
                                       basePrice={service.price}
-                                      usePromoQuote
                                       vendorId={String(clinic.id)}
                                       serviceId={String(service.vendorServiceId)}
                                       customerId={phone}
@@ -863,6 +889,19 @@ export function ClinicListView({
                               </div>
                             );
                           })}
+                          {(clinic.hasMoreServices ||
+                            (clinic.serviceCount != null &&
+                              clinic.serviceCount > clinic.services.length)) && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="w-full text-[#FF8C42] hover:bg-orange-50"
+                              onClick={(e) => openClinicDetails(e, clinic.id)}
+                            >
+                              View more services
+                            </Button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -871,9 +910,11 @@ export function ClinicListView({
                   {!expanded && (
                     <div className="px-4 py-3 bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                       <div className="text-sm text-gray-600">
-                        {clinic.services.length > 0 ? (
+                        {(clinic.serviceCount != null && clinic.serviceCount > 0) ||
+                        clinic.services.length > 0 ? (
                           <>
-                            {clinic.services.length} service{clinic.services.length !== 1 ? 's' : ''}{' '}
+                            {clinic.serviceCount ?? clinic.services.length} service
+                            {(clinic.serviceCount ?? clinic.services.length) !== 1 ? 's' : ''}{' '}
                             available
                             {minP != null && (
                               <span className="text-gray-900 font-medium">
@@ -883,7 +924,7 @@ export function ClinicListView({
                             )}
                           </>
                         ) : clinic.needsServiceFetch ? (
-                          <span className="text-gray-500">Tap to load services & prices</span>
+                          <span className="text-gray-500">Tap View Services to see prices</span>
                         ) : (
                           <span className="text-gray-500">No services available</span>
                         )}
