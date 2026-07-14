@@ -6,6 +6,7 @@
 import { isValidUUID } from '../types/entities';
 import { resolvePersistedDiscountDomain } from './commercial-discount-domain';
 import { promotionEndDateToIso, promotionStartDateToIso } from './promotion-date-bounds';
+import { normalizeListingOwnershipScope } from './compute-listing-ownership';
 
 export function normalizePromotionDiscountType(raw: unknown): 'percentage' | 'fixed' {
   const value = String(raw || 'percentage').trim().toLowerCase();
@@ -167,6 +168,11 @@ export function buildPromotionPersistenceFromAdminBody(
   const applicableProducts = parseServicesList(
     body.applicable_products ?? (selectedTargets as any).products
   );
+  const listingOwnershipScope = normalizeListingOwnershipScope(
+    body.listing_ownership_scope ??
+      body.listingOwnershipScope ??
+      (selectedTargets as any).listing_ownership_scope
+  );
 
   const discountDomain = resolvePersistedDiscountDomain(body, 'SERVICE');
   // Ecommerce must never persist bare shared "all" — that collapses into Services lists.
@@ -235,6 +241,7 @@ export function buildPromotionPersistenceFromAdminBody(
       ...baseMetadata,
       ...incomingMetadata,
       applicableProducts,
+      listingOwnershipScope,
       targetScopes,
       selectedTargets,
       discount_domain: discountDomain,
@@ -245,6 +252,7 @@ export function buildPromotionPersistenceFromAdminBody(
         ...(((incomingMetadata as any)?.promotionTarget || {}) as Record<string, unknown>),
         targetScopes,
         selectedTargets,
+        listingOwnershipScope,
         serviceCategory: serviceCategory || 'all',
         serviceStyle: serviceStyle || 'all',
         discountDomain,
@@ -288,6 +296,12 @@ export function buildEcommerceAdminPromotionRecord(
     body.target_audience ?? body.targetAudience ?? 'all',
   ).trim();
 
+  const listingOwnershipScope = normalizeListingOwnershipScope(
+    body.listing_ownership_scope ??
+      body.listingOwnershipScope ??
+      meta.listingOwnershipScope
+  );
+
   return {
     name: base.name,
     description: base.description ?? null,
@@ -308,6 +322,7 @@ export function buildEcommerceAdminPromotionRecord(
       applicableProducts.length > 0 ? JSON.stringify(applicableProducts) : null,
     applicable_categories:
       applicableCategories.length > 0 ? JSON.stringify(applicableCategories) : null,
+    listing_ownership_scope: listingOwnershipScope,
     funded_by: 'admin',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -351,6 +366,10 @@ export function mergeAdminPromotionUpdateBody(
     applicable_category_ids: body.applicable_category_ids,
     applicable_service_ids: body.applicable_service_ids,
     applicable_products: body.applicable_products,
+    listing_ownership_scope:
+      body.listing_ownership_scope ??
+      body.listingOwnershipScope ??
+      existing.listing_ownership_scope,
     promotion_type: body.promotion_type ?? body.promotionType ?? body.type ?? existing.promotion_type,
     is_spotlight: body.is_spotlight ?? existing.is_spotlight,
     metadata: body.metadata ?? existingMeta,

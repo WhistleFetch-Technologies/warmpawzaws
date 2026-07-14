@@ -17,6 +17,8 @@ const PROMOTION_MIGRATIONS = [
   '1056_promotions_max_uses_columns.sql',
   '1057_coupons_max_discount_amount.sql',
   '1046_commercial_discount_campaigns.sql',
+  '1063_ecommerce_admin_promotions.sql',
+  '1064_ecommerce_order_settlements.sql',
 ];
 
 async function tableExists(name) {

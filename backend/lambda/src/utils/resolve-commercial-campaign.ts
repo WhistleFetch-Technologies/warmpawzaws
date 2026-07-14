@@ -28,6 +28,7 @@ import {
   type PromotionEvaluation,
   type PromotionRow,
 } from './vendor-promotion-engine';
+import { normalizeListingOwnershipScope } from './compute-listing-ownership';
 
 /** Legacy `promotions` table uses different column names — translate into PromotionRow shape. */
 function normalizeLegacyPlatformPromotionRow(row: Record<string, unknown>): PromotionRow {
@@ -83,6 +84,12 @@ function normalizeLegacyPlatformPromotionRow(row: Record<string, unknown>): Prom
       row.target_audience != null ? String(row.target_audience) : 'all',
     applicable_products: applicableProducts,
     applicable_categories: applicableCategories,
+    listing_ownership_scope: normalizeListingOwnershipScope(
+      row.listing_ownership_scope ??
+        row.listingOwnershipScope ??
+        meta.listingOwnershipScope ??
+        meta.listing_ownership_scope
+    ),
   };
 }
 

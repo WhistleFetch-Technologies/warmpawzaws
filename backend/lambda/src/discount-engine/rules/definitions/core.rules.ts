@@ -290,14 +290,14 @@ export class ProductScopeRule implements DiscountRule {
     if (items.length === 0) return pass(this.ruleName, { skipped: 'no items' });
     const products = ctx.applicableProducts || [];
     const categories = ctx.applicableCategories || [];
-    if (products.length === 0 && categories.length === 0) return pass(this.ruleName);
-    const hasApplicable = items.some((item) => {
-      const productId = String(item.productId || item.id || '');
-      const categoryId = item.categoryId || item.category || '';
-      if (products.length > 0 && products.includes(productId)) return true;
-      if (categories.length > 0 && categoryId && categories.includes(categoryId)) return true;
-      return false;
-    });
+    const ownershipScoped = (() => {
+      const scope = String(ctx.listingOwnershipScope || 'all').trim().toLowerCase();
+      return Boolean(scope && scope !== 'all' && scope !== 'both');
+    })();
+    if (products.length === 0 && categories.length === 0 && !ownershipScoped) {
+      return pass(this.ruleName);
+    }
+    const hasApplicable = items.some((item) => productAppliesToLine(ctx, item));
     if (!hasApplicable) {
       return fail(this.ruleName, 'No applicable products in cart');
     }
@@ -318,11 +318,15 @@ export class CategoryRule implements DiscountRule {
   evaluate(ctx: RuleContext): RuleResult {
     const items = ctx.items ?? [];
     const cats = ctx.applicableCategories || [];
-    if (cats.length === 0) return pass(this.ruleName);
-    const has = items.some((i) => {
-      const categoryId = i.categoryId || i.category || '';
-      return Boolean(categoryId && cats.includes(categoryId));
-    });
+    if (cats.length === 0) {
+      const scope = String(ctx.listingOwnershipScope || 'all').trim().toLowerCase();
+      if (!scope || scope === 'all' || scope === 'both') return pass(this.ruleName);
+      const hasOwnedMatch = items.some((i) => productAppliesToLine(ctx, i));
+      return hasOwnedMatch
+        ? pass(this.ruleName)
+        : fail(this.ruleName, 'No products match ownership scope');
+    }
+    const has = items.some((i) => productAppliesToLine(ctx, i));
     if (!has) return fail(this.ruleName, 'No products in applicable categories');
     return pass(this.ruleName);
   }
@@ -516,9 +520,16 @@ function normalizeStyle(raw: unknown): string {
   return value;
 }
 
+function listingOwnershipAllowed(ctx: RuleContext, item: CartLineItem): boolean {
+  const scope = String(ctx.listingOwnershipScope || 'all').trim().toLowerCase();
+  if (!scope || scope === 'all' || scope === 'both') return true;
+  return item.listingOwnership === scope;
+}
+
 function productAppliesToLine(ctx: RuleContext, item: CartLineItem): boolean {
   const productId = String(item.productId || item.id || '');
   const categoryId = item.categoryId || item.category || '';
+  if (!listingOwnershipAllowed(ctx, item)) return false;
   if (ctx.promotionType === 'category_discount') {
     const cats = ctx.applicableCategories || [];
     if (cats.length === 0) return true;

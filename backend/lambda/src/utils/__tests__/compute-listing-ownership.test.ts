@@ -2,6 +2,8 @@ import {
   parseListingOwnershipInput,
   validateAndApplyVendorDeclaredOwnership,
   ListingOwnershipRequiredError,
+  normalizeListingOwnershipScope,
+  lineMatchesListingOwnershipScope,
 } from '../compute-listing-ownership';
 import { query } from '../../database/rds-connection';
 
@@ -10,6 +12,26 @@ jest.mock('../../database/rds-connection', () => ({
 }));
 
 const mockQuery = query as jest.MockedFunction<typeof query>;
+
+describe('normalizeListingOwnershipScope', () => {
+  it('normalizes aliases and defaults to all', () => {
+    expect(normalizeListingOwnershipScope('own_brand')).toBe('own_brand');
+    expect(normalizeListingOwnershipScope('Owned products')).toBe('own_brand');
+    expect(normalizeListingOwnershipScope('third-party')).toBe('third_party');
+    expect(normalizeListingOwnershipScope('both')).toBe('all');
+    expect(normalizeListingOwnershipScope(undefined)).toBe('all');
+  });
+});
+
+describe('lineMatchesListingOwnershipScope', () => {
+  it('all matches any line; exclusive scopes require exact ownership', () => {
+    expect(lineMatchesListingOwnershipScope('all', null)).toBe(true);
+    expect(lineMatchesListingOwnershipScope('own_brand', 'own_brand')).toBe(true);
+    expect(lineMatchesListingOwnershipScope('own_brand', 'third_party')).toBe(false);
+    expect(lineMatchesListingOwnershipScope('own_brand', null)).toBe(false);
+    expect(lineMatchesListingOwnershipScope('third_party', 'third_party')).toBe(true);
+  });
+});
 
 describe('parseListingOwnershipInput', () => {
   it('parses own brand aliases', () => {

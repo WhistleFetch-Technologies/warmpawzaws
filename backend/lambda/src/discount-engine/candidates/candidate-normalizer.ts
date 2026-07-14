@@ -117,6 +117,12 @@ export class CandidateNormalizer {
         applicableCategories:
           (row as PromotionRow).applicable_categories ??
           parseJsonbStringArray(r.applicable_categories),
+        listingOwnershipScope: String(
+          (row as PromotionRow).listing_ownership_scope ??
+            r.listing_ownership_scope ??
+            r.listingOwnershipScope ??
+            'all'
+        ),
         minOrderValue:
           r.min_order_value != null
             ? parseNum(r.min_order_value)

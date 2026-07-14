@@ -49,6 +49,12 @@ export function PromotionSummary({
       {row('Discount', discount)}
       {row('Audience', form.audience.replace(/_/g, ' '))}
       {row('Targets', targets || '—')}
+      {form.listingOwnershipScope && form.listingOwnershipScope !== 'all'
+        ? row(
+            'Product ownership',
+            form.listingOwnershipScope === 'own_brand' ? 'Owned only' : 'Third party only'
+          )
+        : null}
       {form.minAmount ? row('Min amount', `₹${form.minAmount}`) : null}
       {form.usageLimit ? row('Usage limit', String(form.usageLimit)) : null}
       {row('Schedule', `${form.startDate} → ${form.endDate}`)}

@@ -98,4 +98,41 @@ describe('vendor-promotion-engine', () => {
     expect(evaluatePromotionDiscount(p, lines, { priorVendorOrderCount: 1 })).toBeNull();
     expect(evaluatePromotionDiscount(p, lines, { priorVendorOrderCount: 0 })?.discountAmount).toBe(25);
   });
+
+  it('listing_ownership_scope own_brand only discounts owned lines', () => {
+    const ownedLines: CartLineItem[] = [
+      { productId: 'p1', quantity: 2, price: 100, listingOwnership: 'own_brand' },
+      { productId: 'p2', quantity: 1, price: 50, listingOwnership: 'third_party' },
+    ];
+    const p = promo({
+      id: 'own',
+      discount_value: 10,
+      listing_ownership_scope: 'own_brand',
+    });
+    const result = evaluatePromotionDiscount(p, ownedLines);
+    expect(result?.discountAmount).toBe(20);
+    expect(result?.affectedProductIds).toEqual(['p1']);
+  });
+
+  it('listing_ownership_scope third_party excludes own_brand lines', () => {
+    const mixed: CartLineItem[] = [
+      { productId: 'p1', quantity: 2, price: 100, listingOwnership: 'own_brand' },
+      { productId: 'p2', quantity: 1, price: 50, listingOwnership: 'third_party' },
+    ];
+    const p = promo({
+      id: 'tp',
+      discount_value: 10,
+      listing_ownership_scope: 'third_party',
+    });
+    expect(evaluatePromotionDiscount(p, mixed)?.discountAmount).toBe(5);
+  });
+
+  it('listing_ownership_scope all keeps prior behavior', () => {
+    const mixed: CartLineItem[] = [
+      { productId: 'p1', quantity: 1, price: 100, listingOwnership: 'own_brand' },
+      { productId: 'p2', quantity: 1, price: 100, listingOwnership: 'third_party' },
+    ];
+    const p = promo({ id: 'all', discount_value: 10, listing_ownership_scope: 'all' });
+    expect(evaluatePromotionDiscount(p, mixed)?.discountAmount).toBe(20);
+  });
 });

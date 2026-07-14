@@ -43,12 +43,25 @@ export function SellerPromotionsHub({ sellerId }: { sellerId: string }) {
       const nextCatalog: PromotionTargetCatalog = {
         products: products.map((p: any) => {
           const price = p.price != null ? Number(p.price) : undefined;
+          const listingOwnership =
+            p.listing_ownership === 'own_brand' || p.listing_ownership === 'third_party'
+              ? p.listing_ownership
+              : null;
+          const ownershipLabel =
+            listingOwnership === 'own_brand'
+              ? 'Owned'
+              : listingOwnership === 'third_party'
+                ? 'Third party'
+                : null;
+          const priceLabel =
+            price != null && Number.isFinite(price) ? `₹${price}` : undefined;
           return {
             id: String(p.id),
             label: String(p.name),
-            subtitle: price != null && Number.isFinite(price) ? `₹${price}` : undefined,
+            subtitle: [priceLabel, ownershipLabel].filter(Boolean).join(' · ') || undefined,
             price: price != null && Number.isFinite(price) ? price : undefined,
             group: p.category,
+            listingOwnership,
           };
         }),
         categories: categories.map((c) => ({ id: c, label: c })),

@@ -10,6 +10,8 @@ export interface DiscountCandidateRules {
   targetAudience?: string;
   applicableProducts?: string[];
   applicableCategories?: string[];
+  /** all | own_brand | third_party */
+  listingOwnershipScope?: string;
   applicableServices?: string[];
   applicableServiceStyles?: string[];
   serviceCategory?: string;

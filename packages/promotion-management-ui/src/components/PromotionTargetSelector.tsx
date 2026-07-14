@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import type {
+  ListingOwnershipScope,
   PromotionTargetCatalog,
   SmartTargetCatalogAdapter,
   SmartTargetFlowId,
@@ -64,6 +65,68 @@ function optionsForScope(scope: TargetScopeId, catalog: PromotionTargetCatalog):
   }
 }
 
+const OWNERSHIP_SCOPE_OPTIONS: {
+  id: ListingOwnershipScope;
+  label: string;
+  hint: string;
+}[] = [
+  { id: 'all', label: 'Both', hint: 'Owned and third-party products' },
+  { id: 'own_brand', label: 'Owned', hint: 'Vendor own-brand products only' },
+  { id: 'third_party', label: 'Third party', hint: 'Resold / third-party products only' },
+];
+
+function ownershipBadge(ownership?: TargetOption['listingOwnership']): string | null {
+  if (ownership === 'own_brand') return 'Owned';
+  if (ownership === 'third_party') return 'Third party';
+  return null;
+}
+
+function filterByListingOwnership(
+  items: TargetOption[],
+  scope: ListingOwnershipScope
+): TargetOption[] {
+  if (scope === 'all') return items;
+  return items.filter((o) => o.listingOwnership === scope);
+}
+
+function ListingOwnershipScopeControl({
+  value,
+  onChange,
+}: {
+  value: ListingOwnershipScope;
+  onChange: (scope: ListingOwnershipScope) => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Product ownership
+      </p>
+      <p className="text-xs text-slate-500">
+        After choosing a seller, limit this offer to owned products, third-party products, or both.
+      </p>
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Product ownership">
+        {OWNERSHIP_SCOPE_OPTIONS.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            role="radio"
+            aria-checked={value === opt.id}
+            title={opt.hint}
+            onClick={() => onChange(opt.id)}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+              value === opt.id
+                ? 'border-orange-500 bg-orange-50 text-orange-800'
+                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CheckboxList({
   items,
   selected,
@@ -77,24 +140,37 @@ function CheckboxList({
 }) {
   return (
     <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-100 divide-y" role="listbox">
-      {items.map((o) => (
-        <label
-          key={o.id}
-          className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-slate-50"
-        >
-          <input
-            type="checkbox"
-            checked={selected.includes(o.id)}
-            onChange={() => onToggle(o.id)}
-            className="rounded text-orange-500"
-            aria-label={o.label}
-          />
-          <div className="min-w-0 flex-1">
-            <p className="font-medium text-slate-900 truncate">{o.label?.trim() ? o.label : 'Unnamed item'}</p>
-            {o.subtitle ? <p className="text-xs text-slate-500 truncate">{o.subtitle}</p> : null}
-          </div>
-        </label>
-      ))}
+      {items.map((o) => {
+        const badge = ownershipBadge(o.listingOwnership);
+        return (
+          <label
+            key={o.id}
+            className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer hover:bg-slate-50"
+          >
+            <input
+              type="checkbox"
+              checked={selected.includes(o.id)}
+              onChange={() => onToggle(o.id)}
+              className="rounded text-orange-500"
+              aria-label={o.label}
+              name={`${namePrefix}-${o.id}`}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 min-w-0">
+                <p className="font-medium text-slate-900 truncate">
+                  {o.label?.trim() ? o.label : 'Unnamed item'}
+                </p>
+                {badge ? (
+                  <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                    {badge}
+                  </span>
+                ) : null}
+              </div>
+              {o.subtitle ? <p className="text-xs text-slate-500 truncate">{o.subtitle}</p> : null}
+            </div>
+          </label>
+        );
+      })}
     </div>
   );
 }
@@ -196,16 +272,20 @@ function SmartPromotionTargetSelector({
   adapter,
   selectedScopes,
   selectedTargets,
+  listingOwnershipScope,
   onScopesChange,
   onTargetsChange,
+  onListingOwnershipScopeChange,
 }: {
   surface: SmartTargetSurface;
   catalog: PromotionTargetCatalog;
   adapter?: SmartTargetCatalogAdapter;
   selectedScopes: TargetScopeId[];
   selectedTargets: Partial<Record<TargetScopeId, string[]>>;
+  listingOwnershipScope: ListingOwnershipScope;
   onScopesChange: (scopes: TargetScopeId[]) => void;
   onTargetsChange: (targets: Partial<Record<TargetScopeId, string[]>>) => void;
+  onListingOwnershipScopeChange?: (scope: ListingOwnershipScope) => void;
 }) {
   const adminSurface = surface === 'ecommerce' ? 'ecommerce' : 'marketing';
   const flows: SmartTargetFlowId[] =
@@ -438,11 +518,38 @@ function SmartPromotionTargetSelector({
   );
   const partnerTotalPages = Math.max(1, Math.ceil(partnerOptions.length / SMART_PAGE_SIZE));
 
-  const inventoryPageItems = inventoryOptions.slice(
+  const ownershipFilteredInventory = useMemo(
+    () =>
+      adminSurface === 'ecommerce'
+        ? filterByListingOwnership(inventoryOptions, listingOwnershipScope)
+        : inventoryOptions,
+    [adminSurface, inventoryOptions, listingOwnershipScope]
+  );
+  const inventoryPageItems = ownershipFilteredInventory.slice(
     inventoryPage * SMART_PAGE_SIZE,
     (inventoryPage + 1) * SMART_PAGE_SIZE
   );
-  const inventoryTotalPages = Math.max(1, Math.ceil(inventoryOptions.length / SMART_PAGE_SIZE));
+  const inventoryTotalPages = Math.max(
+    1,
+    Math.ceil(ownershipFilteredInventory.length / SMART_PAGE_SIZE)
+  );
+
+  const applyListingOwnershipScope = (scope: ListingOwnershipScope) => {
+    onListingOwnershipScopeChange?.(scope);
+    if (adminSurface !== 'ecommerce' || !selectedPartnerId) return;
+    const allowed = new Set(
+      filterByListingOwnership(inventoryOptions, scope).map((o) => o.id)
+    );
+    const current = selectedTargets[inventoryScope] ?? [];
+    const nextProducts = current.filter((id) => allowed.has(id));
+    if (nextProducts.length !== current.length) {
+      syncScopes({
+        ...selectedTargets,
+        vendors: [selectedPartnerId],
+        [inventoryScope]: nextProducts,
+      });
+    }
+  };
 
   const categories = catalog.categories ?? [];
   const categoryFiltered = useMemo(
@@ -775,11 +882,22 @@ function SmartPromotionTargetSelector({
                     ))}
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <ListingOwnershipScopeControl
+                  value={listingOwnershipScope}
+                  onChange={applyListingOwnershipScope}
+                />
+              )}
 
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                  {adminSurface === 'marketing' ? '3. Select inventory' : '2. Select products'}
+                  {adminSurface === 'marketing'
+                    ? '3. Select inventory'
+                    : listingOwnershipScope === 'all'
+                      ? '2. Select products'
+                      : listingOwnershipScope === 'own_brand'
+                        ? '2. Select owned products'
+                        : '2. Select third-party products'}
                 </p>
                 <SearchField
                   value={inventoryQuery}
@@ -800,6 +918,15 @@ function SmartPromotionTargetSelector({
                     message="No published inventory found for this vendor."
                     hint="Only enabled, approved listings appear here."
                   />
+                ) : ownershipFilteredInventory.length === 0 ? (
+                  <TargetEmptyState
+                    message={
+                      listingOwnershipScope === 'own_brand'
+                        ? 'No owned products for this seller.'
+                        : 'No third-party products for this seller.'
+                    }
+                    hint="Try switching product ownership, or choose another seller."
+                  />
                 ) : (
                   <>
                     <div className="flex gap-2">
@@ -810,7 +937,7 @@ function SmartPromotionTargetSelector({
                           syncScopes({
                             ...selectedTargets,
                             vendors: selectedPartnerId ? [selectedPartnerId] : [],
-                            [inventoryScope]: inventoryOptions.map((o) => o.id),
+                            [inventoryScope]: ownershipFilteredInventory.map((o) => o.id),
                           })
                         }
                       >
@@ -865,15 +992,21 @@ function StaticPromotionTargetSelector({
   catalog,
   selectedScopes,
   selectedTargets,
+  listingOwnershipScope,
   onScopesChange,
   onTargetsChange,
+  onListingOwnershipScopeChange,
+  showListingOwnershipFilter,
 }: {
   enabledScopes: TargetScopeId[];
   catalog: PromotionTargetCatalog;
   selectedScopes: TargetScopeId[];
   selectedTargets: Partial<Record<TargetScopeId, string[]>>;
+  listingOwnershipScope: ListingOwnershipScope;
   onScopesChange: (scopes: TargetScopeId[]) => void;
   onTargetsChange: (targets: Partial<Record<TargetScopeId, string[]>>) => void;
+  onListingOwnershipScopeChange?: (scope: ListingOwnershipScope) => void;
+  showListingOwnershipFilter?: boolean;
 }) {
   const [activeScope, setActiveScope] = useState<TargetScopeId>(
     enabledScopes.find((s) => s !== 'entire_platform' && s !== 'all_products') ?? 'services'
@@ -896,8 +1029,12 @@ function StaticPromotionTargetSelector({
 
   const options = useMemo(() => {
     const all = optionsForScope(activeScope, catalog);
-    return filterOptionsByQuery(all, query);
-  }, [activeScope, catalog, query]);
+    const ownershipFiltered =
+      showListingOwnershipFilter && activeScope === 'products'
+        ? filterByListingOwnership(all, listingOwnershipScope)
+        : all;
+    return filterOptionsByQuery(ownershipFiltered, query);
+  }, [activeScope, catalog, listingOwnershipScope, query, showListingOwnershipFilter]);
 
   const pageItems = options.slice(page * STATIC_PAGE_SIZE, (page + 1) * STATIC_PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(options.length / STATIC_PAGE_SIZE));
@@ -910,7 +1047,23 @@ function StaticPromotionTargetSelector({
     onTargetsChange({ ...selectedTargets, [activeScope]: Array.from(set) });
   };
 
+  const applyListingOwnershipScope = (scope: ListingOwnershipScope) => {
+    onListingOwnershipScopeChange?.(scope);
+    if (!showListingOwnershipFilter) return;
+    const allowed = new Set(
+      filterByListingOwnership(catalog.products ?? [], scope).map((o) => o.id)
+    );
+    const current = selectedTargets.products ?? [];
+    const nextProducts = current.filter((id) => allowed.has(id));
+    if (nextProducts.length !== current.length) {
+      onTargetsChange({ ...selectedTargets, products: nextProducts });
+    }
+  };
+
   const selectionCount = Object.values(selectedTargets).reduce((n, ids) => n + (ids?.length ?? 0), 0);
+  const showOwnership =
+    Boolean(showListingOwnershipFilter) &&
+    (selectedScopes.includes('products') || selectedScopes.includes('categories'));
 
   return (
     <div className="space-y-4">
@@ -930,6 +1083,13 @@ function StaticPromotionTargetSelector({
           </button>
         ))}
       </div>
+
+      {showOwnership ? (
+        <ListingOwnershipScopeControl
+          value={listingOwnershipScope}
+          onChange={applyListingOwnershipScope}
+        />
+      ) : null}
 
       {!selectedScopes.includes('entire_platform') && selectionCount > 0 ? (
         <TargetSelectionSummary summary={`${selectionCount} item${selectionCount === 1 ? '' : 's'} selected`} />
@@ -991,7 +1151,7 @@ function StaticPromotionTargetSelector({
           {pageItems.length === 0 ? (
             <TargetEmptyState
               message="No matching items in this catalog."
-              hint="Try another scope or refresh the dashboard."
+              hint="Try another scope, ownership filter, or refresh the dashboard."
             />
           ) : (
             <CheckboxList items={pageItems} selected={selected} onToggle={toggleId} namePrefix="static" />
@@ -1009,8 +1169,10 @@ export function PromotionTargetSelector({
   catalog,
   selectedScopes,
   selectedTargets,
+  listingOwnershipScope = 'all',
   onScopesChange,
   onTargetsChange,
+  onListingOwnershipScopeChange,
   smartTargetSurface,
   smartTargetAdapter,
 }: {
@@ -1018,8 +1180,10 @@ export function PromotionTargetSelector({
   catalog: PromotionTargetCatalog;
   selectedScopes: TargetScopeId[];
   selectedTargets: Partial<Record<TargetScopeId, string[]>>;
+  listingOwnershipScope?: ListingOwnershipScope;
   onScopesChange: (scopes: TargetScopeId[]) => void;
   onTargetsChange: (targets: Partial<Record<TargetScopeId, string[]>>) => void;
+  onListingOwnershipScopeChange?: (scope: ListingOwnershipScope) => void;
   /** When marketing or ecommerce — Smart Context UX. Omit for vendor static mode. */
   smartTargetSurface?: SmartTargetSurface;
   smartTargetAdapter?: SmartTargetCatalogAdapter;
@@ -1032,8 +1196,10 @@ export function PromotionTargetSelector({
         adapter={smartTargetAdapter}
         selectedScopes={selectedScopes}
         selectedTargets={selectedTargets}
+        listingOwnershipScope={listingOwnershipScope}
         onScopesChange={onScopesChange}
         onTargetsChange={onTargetsChange}
+        onListingOwnershipScopeChange={onListingOwnershipScopeChange}
       />
     );
   }
@@ -1044,8 +1210,11 @@ export function PromotionTargetSelector({
       catalog={catalog}
       selectedScopes={selectedScopes}
       selectedTargets={selectedTargets}
+      listingOwnershipScope={listingOwnershipScope}
       onScopesChange={onScopesChange}
       onTargetsChange={onTargetsChange}
+      onListingOwnershipScopeChange={onListingOwnershipScopeChange}
+      showListingOwnershipFilter={smartTargetSurface === 'vendor' || enabledScopes.includes('products')}
     />
   );
 }

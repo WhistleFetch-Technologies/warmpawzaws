@@ -20,6 +20,11 @@ import {
 } from '../discount-engine/adapters/context-mappers';
 import { invokeResolverAlongsideLegacy, resolveWithProductionMode } from '../discount-engine/resolver/production-bridge';
 import { mapResolverResultToCartPromotion } from '../discount-engine/resolver/resolver-result-mappers';
+import {
+  lineMatchesListingOwnershipScope,
+  normalizeListingOwnershipScope,
+  type ListingOwnershipScope,
+} from './compute-listing-ownership';
 
 export type CartLineItem = {
   productId: string;
@@ -28,6 +33,8 @@ export type CartLineItem = {
   category?: string;
   categoryId?: string;
   id?: string;
+  /** From products.listing_ownership — used when promo has listing_ownership_scope. */
+  listingOwnership?: string | null;
 };
 
 export type PromotionRow = {
@@ -49,6 +56,8 @@ export type PromotionRow = {
   target_audience?: string | null;
   applicable_products?: string[];
   applicable_categories?: string[];
+  /** all | own_brand | third_party — filters lines by products.listing_ownership */
+  listing_ownership_scope?: ListingOwnershipScope;
   buy_quantity?: number | null;
   get_quantity?: number | null;
   get_discount_percent?: number | null;
@@ -130,6 +139,13 @@ export function normalizePromotionRow(row: Record<string, unknown>): PromotionRo
     target_audience: row.target_audience != null ? String(row.target_audience) : 'all',
     applicable_products: parseJsonbStringArray(row.applicable_products),
     applicable_categories: parseJsonbStringArray(row.applicable_categories),
+    listing_ownership_scope: normalizeListingOwnershipScope(
+      row.listing_ownership_scope ??
+        row.listingOwnershipScope ??
+        (row.metadata && typeof row.metadata === 'object'
+          ? (row.metadata as Record<string, unknown>).listingOwnershipScope
+          : undefined)
+    ),
     buy_quantity: row.buy_quantity != null ? parseInt(String(row.buy_quantity), 10) : null,
     get_quantity: row.get_quantity != null ? parseInt(String(row.get_quantity), 10) : null,
     get_discount_percent:
@@ -186,6 +202,12 @@ function lineProductId(item: CartLineItem): string {
 export function promotionAppliesToLine(promo: PromotionRow, item: CartLineItem): boolean {
   const productId = lineProductId(item);
   const categoryId = item.categoryId || item.category || '';
+
+  if (
+    !lineMatchesListingOwnershipScope(promo.listing_ownership_scope, item.listingOwnership)
+  ) {
+    return false;
+  }
 
   if (promo.promotion_type === 'category_discount') {
     const cats = promo.applicable_categories || [];

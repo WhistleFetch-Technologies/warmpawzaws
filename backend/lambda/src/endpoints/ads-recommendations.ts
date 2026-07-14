@@ -512,10 +512,15 @@ app.post('/promotions/calculate-cart', async (c) => {
       return c.json({ success: false, error: 'items array required' }, 400);
     }
 
-    const cartLines = items.map((item: Record<string, unknown>) => {
+    const rawCartLines = items.map((item: Record<string, unknown>) => {
       const rawId = String(item.productId || item.id || '');
       const sep = rawId.indexOf('::');
       const productId = sep > 0 ? rawId.slice(0, sep) : rawId;
+      const ownershipRaw = item.listingOwnership ?? item.listing_ownership;
+      const listingOwnership =
+        ownershipRaw === 'own_brand' || ownershipRaw === 'third_party'
+          ? String(ownershipRaw)
+          : undefined;
       return {
         productId,
         quantity: parseInt(String(item.quantity ?? 1), 10) || 1,
@@ -523,8 +528,13 @@ app.post('/promotions/calculate-cart', async (c) => {
         category: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
         categoryId: item.categoryId || item.category ? String(item.categoryId || item.category) : undefined,
         id: productId || undefined,
+        listingOwnership,
       };
     });
+    const { enrichLinesWithListingOwnership } = await import(
+      '../utils/compute-listing-ownership'
+    );
+    const cartLines = await enrichLinesWithListingOwnership(rawCartLines);
 
     let promotions: Record<string, unknown>[] = [];
 

@@ -59,7 +59,19 @@ import { countActiveEcommerceAdminPromotions } from '../utils/count-active-ecomm
 async function persistPromotionInsert(promotionData: Record<string, unknown>) {
   if (isEcommerceAdminPromotionDomain(promotionData)) {
     const ecommerceRecord = buildEcommerceAdminPromotionRecord(promotionData);
-    return await insert('ecommerce_admin_promotions', ecommerceRecord);
+    try {
+      return await insert('ecommerce_admin_promotions', ecommerceRecord);
+    } catch (insertError: unknown) {
+      const msg = String((insertError as { message?: string })?.message || '');
+      if (msg.includes('column "listing_ownership_scope"')) {
+        console.warn(
+          '[Promotions] listing_ownership_scope column missing on ecommerce_admin_promotions — apply migration 1072'
+        );
+        delete ecommerceRecord.listing_ownership_scope;
+        return await insert('ecommerce_admin_promotions', ecommerceRecord);
+      }
+      throw insertError;
+    }
   }
 
   const payload = { ...promotionData };
@@ -172,14 +184,34 @@ async function persistPromotionUpdate(id: string, updateData: Record<string, unk
     });
     delete ecommerceRecord.created_at;
     delete ecommerceRecord.usage_count;
-    await update(
-      'ecommerce_admin_promotions',
-      { id },
-      {
-        ...ecommerceRecord,
-        updated_at: new Date().toISOString(),
-      },
-    );
+    try {
+      await update(
+        'ecommerce_admin_promotions',
+        { id },
+        {
+          ...ecommerceRecord,
+          updated_at: new Date().toISOString(),
+        },
+      );
+    } catch (updateError: unknown) {
+      const msg = String((updateError as { message?: string })?.message || '');
+      if (msg.includes('column "listing_ownership_scope"')) {
+        console.warn(
+          '[Promotions] listing_ownership_scope column missing on ecommerce_admin_promotions update — apply migration 1072'
+        );
+        delete ecommerceRecord.listing_ownership_scope;
+        await update(
+          'ecommerce_admin_promotions',
+          { id },
+          {
+            ...ecommerceRecord,
+            updated_at: new Date().toISOString(),
+          },
+        );
+      } else {
+        throw updateError;
+      }
+    }
     return;
   }
 

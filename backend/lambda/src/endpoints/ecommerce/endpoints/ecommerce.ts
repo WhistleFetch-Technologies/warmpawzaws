@@ -781,11 +781,12 @@ export function registerEcommerceEndpoints(app: Hono) {
         return raw === 'admin' || raw === 'vendor' ? raw : null;
       })();
 
-      const cartLines: CartLineItem[] = orderItems.map((oi) => {
+      const rawCartLines: CartLineItem[] = orderItems.map((oi) => {
         const raw = items.find(
           (it: Record<string, unknown>) =>
             String(it.productId || it.product_id || '') === String(oi.product_id)
         );
+        const ownershipRaw = raw?.listingOwnership ?? raw?.listing_ownership;
         return {
           productId: String(oi.product_id),
           quantity: oi.quantity,
@@ -798,8 +799,16 @@ export function registerEcommerceEndpoints(app: Hono) {
             raw?.categoryId || raw?.category
               ? String(raw.categoryId || raw.category)
               : undefined,
+          listingOwnership:
+            ownershipRaw === 'own_brand' || ownershipRaw === 'third_party'
+              ? String(ownershipRaw)
+              : undefined,
         };
       });
+      const { enrichLinesWithListingOwnership } = await import(
+        '../../../utils/compute-listing-ownership'
+      );
+      const cartLines = await enrichLinesWithListingOwnership(rawCartLines);
 
       let serverPromoDiscount = 0;
       let appliedPromotionId: string | null = promoId ? String(promoId) : null;

@@ -327,6 +327,7 @@ export function PromotionWizard({
                   catalog={catalog}
                   selectedScopes={form.targetScopes}
                   selectedTargets={form.selectedTargets}
+                  listingOwnershipScope={form.listingOwnershipScope}
                   onScopesChange={(targetScopes) =>
                     patch({
                       // Smart Context owns broad scopes (entire_platform / all_products).
@@ -339,7 +340,13 @@ export function PromotionWizard({
                     })
                   }
                   onTargetsChange={(selectedTargets) => patch({ selectedTargets })}
-                  smartTargetSurface={scope.smartTargetSurface}
+                  onListingOwnershipScopeChange={(listingOwnershipScope) =>
+                    patch({ listingOwnershipScope })
+                  }
+                  smartTargetSurface={
+                    scope.smartTargetSurface ??
+                    (scope.mode === 'vendor_seller' ? 'vendor' : undefined)
+                  }
                   smartTargetAdapter={smartTargetAdapter}
                 />
                 {step === 2 && stepBlockingIssues.length > 0 ? (

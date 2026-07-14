@@ -86,6 +86,12 @@ export type SmartTargetCatalogAdapter = {
   ) => Promise<TargetOption[]>;
 };
 
+/** Matches products.listing_ownership — used to filter seller inventory in promo targeting. */
+export type ListingOwnership = 'own_brand' | 'third_party';
+
+/** Promo scope over listing ownership: both, owned only, or third-party only. */
+export type ListingOwnershipScope = 'all' | ListingOwnership;
+
 export type TargetOption = {
   id: string;
   label: string;
@@ -93,6 +99,7 @@ export type TargetOption = {
   group?: string;
   /** Numeric price for preview calculations (optional — subtitle may also carry ₹ display). */
   price?: number;
+  listingOwnership?: ListingOwnership | null;
 };
 
 export type PromotionTargetCatalog = {
@@ -115,6 +122,11 @@ export type PromotionWizardForm = {
   audience: AudienceId;
   targetScopes: TargetScopeId[];
   selectedTargets: Partial<Record<TargetScopeId, string[]>>;
+  /**
+   * When targeting a seller (or seller catalog), optionally limit to owned vs third-party SKUs.
+   * Default `all` = both. Persisted as listing_ownership_scope.
+   */
+  listingOwnershipScope: ListingOwnershipScope;
   discountType: 'percentage' | 'fixed';
   discountValue: number;
   maxDiscount?: number;
@@ -200,6 +212,7 @@ export const DEFAULT_WIZARD_FORM = (): PromotionWizardForm => ({
   // Empty by default — user must choose "What does this apply to?" (never silent apply-all).
   targetScopes: [],
   selectedTargets: {},
+  listingOwnershipScope: 'all',
   discountType: 'percentage',
   discountValue: 10,
   startDate: new Date().toISOString().split('T')[0],

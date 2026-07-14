@@ -87,6 +87,7 @@ export function candidateToRuleContext(
     serviceCategory: runtime.serviceCategory ?? candidate.rules.serviceCategory,
     applicableProducts: candidate.rules.applicableProducts,
     applicableCategories: candidate.rules.applicableCategories,
+    listingOwnershipScope: candidate.rules.listingOwnershipScope,
     applicableServices: candidate.rules.applicableServices,
     applicableServiceStyles: candidate.rules.applicableServiceStyles,
     bundleProducts: candidate.benefits.bundleProductIds,

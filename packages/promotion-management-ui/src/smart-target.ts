@@ -195,9 +195,17 @@ export function formatSmartTargetSummary(
 
   const vendorId = form.selectedTargets.vendors?.[0];
   const vendorLabel = catalog?.vendors?.find((v) => v.id === vendorId)?.label ?? 'Selected vendor';
+  const ownershipBit =
+    form.listingOwnershipScope === 'own_brand'
+      ? ' · owned'
+      : form.listingOwnershipScope === 'third_party'
+        ? ' · third party'
+        : '';
   if (surface === 'ecommerce') {
     const n = form.selectedTargets.products?.length ?? 0;
-    return n ? `${vendorLabel} · ${n} product${n === 1 ? '' : 's'}` : `${vendorLabel} · products`;
+    return n
+      ? `${vendorLabel} · ${n} product${n === 1 ? '' : 's'}${ownershipBit}`
+      : `${vendorLabel} · products${ownershipBit}`;
   }
 
   const type = inferInventoryTypeFromForm(form);

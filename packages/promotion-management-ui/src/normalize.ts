@@ -142,6 +142,29 @@ export function couponToWizardForm(c: NormalizedCouponItem, catalog?: PromotionT
   return promotionToWizardForm(asPromo, catalog);
 }
 
+function parseListingOwnershipScope(raw: Record<string, unknown>): PromotionWizardForm['listingOwnershipScope'] {
+  const meta =
+    raw.metadata && typeof raw.metadata === 'object'
+      ? (raw.metadata as Record<string, unknown>)
+      : {};
+  const promoTarget =
+    meta.promotionTarget && typeof meta.promotionTarget === 'object'
+      ? (meta.promotionTarget as Record<string, unknown>)
+      : {};
+  const value = String(
+    raw.listing_ownership_scope ??
+      raw.listingOwnershipScope ??
+      meta.listingOwnershipScope ??
+      promoTarget.listingOwnershipScope ??
+      'all'
+  )
+    .trim()
+    .toLowerCase();
+  if (value === 'own_brand' || value === 'owned') return 'own_brand';
+  if (value === 'third_party' || value === 'third-party') return 'third_party';
+  return 'all';
+}
+
 export function promotionToWizardForm(
   p: NormalizedPromotionItem,
   catalog?: PromotionTargetCatalog
@@ -170,5 +193,6 @@ export function promotionToWizardForm(
     autoApply: p.kind === 'promotion',
     targetScopes: parsed.targetScopes,
     selectedTargets: parsed.selectedTargets,
+    listingOwnershipScope: parseListingOwnershipScope(raw),
   };
 }

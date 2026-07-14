@@ -275,5 +275,17 @@ export function summarizeTargetsFromRow(
   labelIds('vendors', parsed.selectedTargets.vendors);
   labelIds('styles', parsed.selectedTargets.styles);
 
+  const meta =
+    row.metadata && typeof row.metadata === 'object'
+      ? (row.metadata as Record<string, unknown>)
+      : {};
+  const ownership = String(
+    row.listing_ownership_scope ?? row.listingOwnershipScope ?? meta.listingOwnershipScope ?? 'all'
+  )
+    .trim()
+    .toLowerCase();
+  if (ownership === 'own_brand') parts.push('owned products');
+  else if (ownership === 'third_party') parts.push('third-party products');
+
   return parts.length ? parts.join(' · ') : 'Custom targets';
 }

@@ -114,6 +114,9 @@ function productsOptionalSelectExprs(cols: Set<string>) {
       ? 'p.specifications'
       : "'{}'::jsonb AS specifications",
     barcode: cols.has('barcode') ? 'p.barcode' : 'NULL::text AS barcode',
+    listingOwnership: cols.has('listing_ownership')
+      ? 'p.listing_ownership'
+      : 'NULL::text AS listing_ownership',
   };
 }
 
@@ -500,6 +503,7 @@ class GetVendorProductsHandler extends BaseHandler {
         weight: weightSelect,
         specifications: specificationsSelect,
         barcode: barcodeSelect,
+        listingOwnership: listingOwnershipSelect,
       } = productsOptionalSelectExprs(cols);
 
       // Build query - use stock column (stock_quantity was renamed to stock in migration 013)
@@ -526,6 +530,7 @@ class GetVendorProductsHandler extends BaseHandler {
           ${weightSelect},
           ${specificationsSelect},
           ${barcodeSelect},
+          ${listingOwnershipSelect},
           p.hsn_code,
           p.gst_rate,
           p.category,
@@ -911,6 +916,7 @@ class GetVendorProductHandler extends BaseHandler {
         weight: weightSelect,
         specifications: specificationsSelect,
         barcode: barcodeSelect,
+        listingOwnership: listingOwnershipSelect,
       } = productsOptionalSelectExprs(cols);
 
       // ✅ FIX: Use explicit column selection to avoid stock_quantity column error
@@ -936,6 +942,7 @@ class GetVendorProductHandler extends BaseHandler {
                 ${weightSelect},
                 ${specificationsSelect},
                 ${barcodeSelect},
+                ${listingOwnershipSelect},
                 p.hsn_code,
                 p.gst_rate,
                 p.category,

@@ -44,6 +44,8 @@ export interface RuleContext {
 
   applicableProducts?: string[];
   applicableCategories?: string[];
+  /** all | own_brand | third_party */
+  listingOwnershipScope?: string;
   applicableServices?: string[];
   applicableServiceStyles?: string[];
   bundleProducts?: string[];

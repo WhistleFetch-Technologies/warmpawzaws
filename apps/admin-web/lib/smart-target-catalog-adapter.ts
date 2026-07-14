@@ -72,13 +72,23 @@ function mapProductRow(p: Record<string, unknown>): TargetOption | null {
     priceRaw != null && priceRaw !== '' && Number.isFinite(Number(priceRaw))
       ? Number(priceRaw)
       : undefined;
+  const ownershipRaw = p.listing_ownership ?? p.listingOwnership;
+  const listingOwnership =
+    ownershipRaw === 'own_brand' || ownershipRaw === 'third_party' ? ownershipRaw : null;
+  const ownershipLabel =
+    listingOwnership === 'own_brand'
+      ? 'Owned'
+      : listingOwnership === 'third_party'
+        ? 'Third party'
+        : null;
+  const priceLabel = price != null ? `₹${price}` : p.sku ? String(p.sku) : undefined;
   return {
     id,
     label: String(p.name ?? p.title ?? id),
-    subtitle:
-      price != null ? `₹${price}` : p.sku ? String(p.sku) : undefined,
+    subtitle: [priceLabel, ownershipLabel].filter(Boolean).join(' · ') || undefined,
     price,
     group: p.category ? String(p.category) : undefined,
+    listingOwnership,
   };
 }
 

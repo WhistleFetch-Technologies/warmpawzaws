@@ -19,6 +19,7 @@ import {
   promotionEndDateToIso,
   promotionStartDateToIso,
 } from './promotion-date-bounds';
+import { normalizeListingOwnershipScope } from './compute-listing-ownership';
 
 export type VendorSellerOfferBody = {
   name: string;
@@ -36,6 +37,7 @@ export type VendorSellerOfferBody = {
   target_audience?: string;
   applicable_products?: string[] | null;
   applicable_categories?: string[] | null;
+  listing_ownership_scope?: string | null;
   buy_quantity?: number | null;
   get_quantity?: number | null;
   get_discount_percent?: number | null;
@@ -117,6 +119,7 @@ function buildVendorPromotionRow(vendorId: string, body: VendorSellerOfferBody):
     applicable_categories: body.applicable_categories?.length
       ? body.applicable_categories
       : null,
+    listing_ownership_scope: normalizeListingOwnershipScope(body.listing_ownership_scope),
     buy_quantity: body.buy_quantity || null,
     get_quantity: body.get_quantity || null,
     get_discount_percent: body.get_discount_percent || null,
@@ -146,7 +149,22 @@ export async function createVendorEcommerceOfferV2(
     }
   }
 
-  const promoRows = await insert('vendor_promotions', buildVendorPromotionRow(vendorId, body));
+  const promoPayload = buildVendorPromotionRow(vendorId, body);
+  let promoRows: Record<string, unknown>[];
+  try {
+    promoRows = await insert('vendor_promotions', promoPayload);
+  } catch (insertError: unknown) {
+    const msg = String((insertError as { message?: string })?.message || '');
+    if (msg.includes('column "listing_ownership_scope"')) {
+      console.warn(
+        '[vendor-ecommerce-offer-v2] listing_ownership_scope missing — apply migration 1072'
+      );
+      delete promoPayload.listing_ownership_scope;
+      promoRows = await insert('vendor_promotions', promoPayload);
+    } else {
+      throw insertError;
+    }
+  }
   const promotion = normalizeDbRow(promoRows[0] as Record<string, unknown>)!;
   const promotionId = String(promotion.id);
 
@@ -252,6 +270,11 @@ export async function updateVendorEcommerceOfferV2(
   if (body.applicable_categories !== undefined) {
     const arr = body.applicable_categories as string[] | null;
     updateData.applicable_categories = arr?.length ? arr : null;
+  }
+  if (body.listing_ownership_scope !== undefined) {
+    updateData.listing_ownership_scope = normalizeListingOwnershipScope(
+      body.listing_ownership_scope
+    );
   }
   if (body.bundle_products !== undefined) {
     const arr = body.bundle_products as string[] | null;
