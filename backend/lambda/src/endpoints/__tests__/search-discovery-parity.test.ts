@@ -393,12 +393,15 @@ describe('buildDiscoveryVendorExistsSql', () => {
     expect(keys.catTextExact).toEqual(expect.arrayContaining(['walker', 'pet_walker']));
   });
 
-  it('resolveDiscoveryCategoryKeys expands vet hub with general and diagnostics catalog labels', () => {
+  it('resolveDiscoveryCategoryKeys expands vet hub with diagnostics labels but not unrestricted general', () => {
     const keys = resolveDiscoveryCategoryKeys({ category: 'vet' });
     expect(keys.catTextExact).toEqual(
-      expect.arrayContaining(['general', 'diagnostics & lab', 'diagnostics', 'veterinary services'])
+      expect.arrayContaining(['diagnostics & lab', 'diagnostics', 'veterinary services'])
     );
+    // "general" is role-gated (empty/general + vet roles only) — not an unrestricted alias
+    expect(keys.catTextExact).not.toContain('general');
     expect(keys.catTextExact).not.toContain('pet sitter');
+    expect(keys.catTextExact).not.toContain('training');
   });
 
   it('resolveDiscoveryCategoryKeys expands walker hub with walking & exercise labels', () => {
@@ -411,8 +414,9 @@ describe('buildDiscoveryVendorExistsSql', () => {
   it('vendorServicesHubCategoryBindParams aligns vet booking with discover-services keys', () => {
     const bind = vendorServicesHubCategoryBindParams('vet');
     expect(bind?.exact).toEqual(
-      expect.arrayContaining(['general', 'diagnostics & lab', 'veterinary services'])
+      expect.arrayContaining(['diagnostics & lab', 'veterinary services'])
     );
+    expect(bind?.exact).not.toContain('general');
     const walkerBind = vendorServicesHubCategoryBindParams('walking');
     expect(walkerBind?.exact).toEqual(expect.arrayContaining(['walking & exercise']));
   });
@@ -426,22 +430,34 @@ describe('buildDiscoveryVendorExistsSql', () => {
     expect(sqlVendorServicesHubCategoryFilter('grooming', 'vs', 2, 3)).toBeNull();
   });
 
-  it('sqlVetHubExcludeNonVetServices excludes grooming catalog without service_name matching', () => {
+  it('sqlVetHubExcludeNonVetServices excludes grooming/training/walking catalog without service_name matching', () => {
     const sql = sqlVetHubExcludeNonVetServices('vs');
     expect(sql).toContain("sc_vet_ex.category_id");
     expect(sql).toContain("'grooming'");
+    expect(sql).toContain("'training'");
+    expect(sql).toContain("'walking'");
     expect(sql).toContain("LIKE 'groom_%'");
-    expect(sql).not.toContain('service_name');
+    expect(sql).toContain("LIKE 'train_%'");
+    expect(sql).not.toContain('vs.service_name');
   });
 
-  it('buildDiscoveryVendorExistsSql appends vet grooming exclusion for vet hub', async () => {
+  it('sqlVendorServicesHubCategoryFilter role-gates empty and general for vet hub', () => {
+    const vetSql = sqlVendorServicesHubCategoryFilter('vet', 'vs', 2, 3);
+    expect(vetSql).toContain("= 'general'");
+    expect(vetSql).toContain('vet_clinic');
+  });
+
+  it('buildDiscoveryVendorExistsSql role-gates general and excludes non-vet catalog for vet hub', async () => {
     const { sql } = await buildDiscoveryVendorExistsSql({
       category: 'vet',
-      serviceStyle: 'at_center',
+      serviceStyle: 'at_home',
       paramOffset: 1,
     });
     expect(sql).toContain("sc_vet_ex.category_id");
     expect(sql).toContain("'grooming'");
+    expect(sql).toContain("'training'");
+    expect(sql).toContain("= 'general'");
+    expect(sql).toContain('vet_solo');
   });
 });
 

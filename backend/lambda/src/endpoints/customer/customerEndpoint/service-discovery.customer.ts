@@ -43,6 +43,8 @@ import {
   sqlVendorServicesHubCategoryFilter,
   vendorServicesHubCategoryBindParams,
   sqlVetHubExcludeNonVetServices,
+  sqlVetHubPlaceholderCategoryOr,
+  VET_HUB_PLACEHOLDER_CATEGORY_ROLES_SQL,
   isVetHubCategoryRequest,
   TRAINING_HUB_ROLE_SQL_IN_LIST,
   BEHAVIOR_HUB_ROLE_SQL_IN_LIST,
@@ -2851,7 +2853,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             : '';
         const vetCategoryEmptyForFetch =
           !sitterRoleBypass && isVetCategoryDiscovery
-            ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
+            ? ` OR (
+                (
+                  TRIM(COALESCE(vs.category, '')) = ''
+                  OR LOWER(TRIM(COALESCE(vs.category, ''))) = 'general'
+                )
+                AND EXISTS (
+                  SELECT 1 FROM vendors v2
+                  JOIN roles r2 ON r2.id = v2.role_id
+                  WHERE v2.id = $1
+                    AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ${VET_HUB_PLACEHOLDER_CATEGORY_ROLES_SQL}
+                )
+              )`
             : '';
         const trainingCategoryAliasFetchOr =
           !sitterRoleBypass && trainingDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
@@ -6819,7 +6832,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           : '';
 
       const vetCategoryEmptyOrByStyle = isVetCategoryDiscoveryByStyle
-        ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
+        ? ` OR ${sqlVetHubPlaceholderCategoryOr('vs', 'v.role_id')}`
         : '';
 
       const vetExcludeNonVetSqlByStyle = isVetCategoryDiscoveryByStyle
@@ -6871,7 +6884,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ? ` OR LOWER(TRIM(COALESCE(vs.category, ''))) = 'training'`
             : '';
         const vetCategoryEmptyForFetchByStyle = isVetCategoryDiscoveryByStyle
-          ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND EXISTS (SELECT 1 FROM vendors v2 JOIN roles r2 ON r2.id = v2.role_id WHERE v2.id = $1 AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
+          ? ` OR (
+              (
+                TRIM(COALESCE(vs.category, '')) = ''
+                OR LOWER(TRIM(COALESCE(vs.category, ''))) = 'general'
+              )
+              AND EXISTS (
+                SELECT 1 FROM vendors v2
+                JOIN roles r2 ON r2.id = v2.role_id
+                WHERE v2.id = $1
+                  AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ${VET_HUB_PLACEHOLDER_CATEGORY_ROLES_SQL}
+              )
+            )`
           : '';
         const categoryFilterSql = (catTextExact.length + catUUIDs.length > 0) ? `
           AND (

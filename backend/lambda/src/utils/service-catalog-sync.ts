@@ -121,3 +121,71 @@ export function normalizeServiceStyle(style: string | null | undefined): string 
   if (s === 'centre') return 'at_center';
   return (ALLOWED_STYLES as readonly string[]).includes(s) ? s : 'at_center';
 }
+
+const CATEGORY_ID_DISPLAY_NAMES: Record<string, string> = {
+  veterinary: 'Veterinary Services',
+  diagnostic: 'Diagnostics & Lab',
+  diagnostics: 'Diagnostics & Lab',
+  grooming: 'Grooming & Hygiene',
+  training: 'Training',
+  walking: 'Walking',
+  boarding: 'Boarding & Daycare',
+  emergency: 'Emergency',
+  pharmacy: 'Pharmacy',
+  nutrition: 'Nutrition',
+  behavioral: 'Behavioral',
+  behaviour: 'Behavioral',
+};
+
+function humanizeCategorySlug(slug: string): string {
+  return String(slug)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Resolve admin/catalog category label from stored category_name + category_id.
+ * Never invent "General" — that is a specialization tag, not a service category.
+ */
+export function resolveServiceCatalogCategoryDisplay(service: {
+  category_name?: string | null;
+  category_id?: string | null;
+}): { category_id: string; category_name: string } {
+  const cid = String(service.category_id ?? '').trim();
+  const rawName = String(service.category_name ?? '').trim();
+  const cidLower = cid.toLowerCase();
+
+  if (
+    rawName &&
+    !(rawName.toLowerCase() === 'general' && cid && cidLower !== 'general')
+  ) {
+    return { category_id: cid || rawName, category_name: rawName };
+  }
+
+  if (cid) {
+    const mapped = CATEGORY_ID_DISPLAY_NAMES[cidLower];
+    return {
+      category_id: cid,
+      category_name: mapped ?? humanizeCategorySlug(cid),
+    };
+  }
+
+  return { category_id: '', category_name: '' };
+}
+
+/** Role-scoped catalog views may fall back to the role's category label when a row has no category set. */
+export function resolveServiceCatalogCategoryDisplayWithRoleFallback(
+  service: { category_name?: string | null; category_id?: string | null },
+  roleFallback?: { categoryId?: string; categoryName?: string } | null
+): { category_id: string; category_name: string } {
+  const resolved = resolveServiceCatalogCategoryDisplay(service);
+  if (resolved.category_name) return resolved;
+  const fallbackName = roleFallback?.categoryName?.trim();
+  if (fallbackName) {
+    return {
+      category_id: roleFallback?.categoryId?.trim() || fallbackName,
+      category_name: fallbackName,
+    };
+  }
+  return resolved;
+}

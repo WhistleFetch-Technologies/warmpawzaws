@@ -25,7 +25,7 @@ import {
   normalizeVendorServiceRowForPackage,
 } from '@/lib/vendor-package-purchase-nav';
 import { toast } from 'sonner';
-import { filterServicesForVetHub } from '@/lib/filter-hub-services';
+import { filterServicesForVetHub, resolveServiceCategoryDisplayLabel, applyVetHubDiscoveryToProviders, isNonVetProviderRow } from '@/lib/filter-hub-services';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
@@ -185,11 +185,12 @@ function mapApiServiceToRow(p: any, vendorId: string, index: number): ClinicServ
 }
 
 function mapByStyleProvider(p: any): ClinicProvider | null {
+  if (isNonVetProviderRow(p)) return null;
   if (isSoloVendor(p)) return null;
   const id = String(p.providerId || p.vendorId || p.id || '');
   if (!id) return null;
   const rawServices = Array.isArray(p.services) ? p.services : [];
-  const services = filterServicesForVetHub(
+  const services = filterServicesForVetHub<ClinicServiceRow>(
     rawServices.map((s: any, i: number) => mapApiServiceToRow(s, id, i))
   );
   const nextSlot = resolveNextAvailableLabel(p);
@@ -270,7 +271,7 @@ export function ClinicListView({
         } else if (Array.isArray(servicesData)) {
           services = servicesData;
         }
-        const rows = filterServicesForVetHub(
+        const rows = filterServicesForVetHub<ClinicServiceRow>(
           services.map((s: any, i: number) => mapApiServiceToRow(s, clinicId, i))
         );
         setClinics((prev) =>
@@ -305,6 +306,7 @@ export function ClinicListView({
     const clinicsOnly = servicesData.filter((service: any) => !isSoloVendor(service));
     const vendorMap = new Map<string, ClinicProvider>();
     clinicsOnly.forEach((service: any) => {
+      if (isNonVetProviderRow(service)) return;
       const vendorId = String(service.vendorId || service.id || '');
       if (!vendorId) return;
       const nextSlot = resolveNextAvailableLabel(service);
@@ -323,7 +325,7 @@ export function ClinicListView({
         const raw = service.services;
         let rows: ClinicServiceRow[] = [];
         if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'object') {
-          rows = filterServicesForVetHub(
+          rows = filterServicesForVetHub<ClinicServiceRow>(
             raw.map((s: any, i: number) => mapApiServiceToRow(s, vendorId, i))
           );
         }
@@ -419,7 +421,7 @@ export function ClinicListView({
           const fallbackResponse = (await apiClient.get('/vendors?role=veterinarian')) as any;
           if (fallbackResponse?.vendors?.length > 0) {
             mapped = fallbackResponse.vendors
-              .filter((v: any) => !isSoloVendor(v))
+              .filter((v: any) => !isSoloVendor(v) && !isNonVetProviderRow(v))
               .map((v: any) => {
                 const id = String(v.id);
                 return {
@@ -443,7 +445,7 @@ export function ClinicListView({
         }
       }
 
-      setClinics(mapped);
+      setClinics(applyVetHubDiscoveryToProviders(mapped, { keepProvidersPendingServiceFetch: true }));
     } catch (error) {
       console.error('Error loading clinics:', error);
       setClinics([]);
@@ -833,7 +835,7 @@ export function ClinicListView({
                                     <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                                     <span>{service.duration} mins</span>
                                     <span className="text-gray-300">·</span>
-                                    <span>{service.category || 'Vet Care'}</span>
+                                    <span>{resolveServiceCategoryDisplayLabel(service) || 'Vet Care'}</span>
                                   </div>
                                   <Button
                                     type="button"

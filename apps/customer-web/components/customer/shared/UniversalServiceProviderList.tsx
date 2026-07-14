@@ -20,6 +20,10 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import {
+  applyVetHubDiscoveryToProviders,
+  isVetHubDiscoveryConfig,
+} from '@/lib/filter-hub-services';
 
 // ============================================================================
 // TYPES
@@ -698,9 +702,14 @@ export function UniversalServiceProviderList({
           nextAvailableSlot: resolveNextAvailableLabel(p),
         }));
 
+        let finalProviders = cleanedProviders;
+        if (isVetHubDiscoveryConfig({ discoverCategory: category, servicesApiCategory: category })) {
+          finalProviders = applyVetHubDiscoveryToProviders(cleanedProviders);
+        }
+
         // Set providers from primary endpoint
-        setProviders(cleanedProviders);
-        console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
+        setProviders(finalProviders);
+        console.log(`✅ Loaded ${finalProviders.length} providers for ${category}/${serviceStyle}`);
       } else {
         console.warn(`⚠️ Primary endpoint returned success=false or no providers for ${category}/${serviceStyle}`);
         setProviders([]);

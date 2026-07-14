@@ -148,17 +148,42 @@ export type DiscoveryCategoryKeys = {
 /**
  * Vet hub discovery: catalog / vendor_services.category labels beyond vet-keyword matches.
  * Narrow allowlist — does not include cross-hub categories (e.g. pet sitter, grooming).
+ * Note: "general" is intentionally omitted here; it is role-gated via
+ * sqlVetHubPlaceholderCategoryOr / vetCategoryEmptyOr (empty OR general + vet roles only).
+ * Treating unrestricted "general" let trainer/walker at_home rows leak into Vet → Home Visit.
  */
 export const VET_DISCOVERY_CATEGORY_ALIAS_KEYS: readonly string[] = [
   'vet care',
   'veterinary',
   'veterinarian',
   'veterinary services',
-  'general',
   'diagnostics & lab',
   'diagnostics',
   'diagnostic',
 ];
+
+/** Roles allowed when vendor_services.category is empty or the placeholder "general". */
+export const VET_HUB_PLACEHOLDER_CATEGORY_ROLES_SQL = `('vet_clinic', 'veterinarian', 'vet_solo', 'vet')`;
+
+/**
+ * Match empty / "General" service category only for vet-role vendors.
+ * `vendorRoleIdExpr` is typically `v.role_id` when the vendor row is already joined.
+ */
+export function sqlVetHubPlaceholderCategoryOr(
+  vsAlias: string,
+  vendorRoleIdExpr: string
+): string {
+  return `(
+    (
+      TRIM(COALESCE(${vsAlias}.category, '')) = ''
+      OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) = 'general'
+    )
+    AND ${vendorRoleIdExpr} IN (
+      SELECT id FROM roles
+      WHERE LOWER(TRIM(COALESCE(name, ''))) IN ${VET_HUB_PLACEHOLDER_CATEGORY_ROLES_SQL}
+    )
+  )`;
+}
 
 export function appendVetDiscoveryCategoryAliasKeys(rawCategoryKeys: string[], category?: string): void {
   if (category && category.toLowerCase() === 'vet') {
@@ -198,23 +223,36 @@ export function isWalkerHubCategoryRequest(categoryRaw: string): boolean {
 }
 
 /**
- * Vet hub: exclude grooming catalog services even when vs.category = 'general'.
+ * Vet hub: exclude non-vet catalog / category services (grooming, training, walking)
+ * even when vs.category = 'general'.
  * Do not match by service_name — catalog has both groom_ear and vet_ear_cleaning_medical.
  */
 export function sqlVetHubExcludeNonVetServices(vsAlias = 'vs'): string {
   return `
     AND NOT (
       LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) = ANY(ARRAY[
-        'grooming','grooming & hygiene','pet_groomer','pet_grooming'
+        'grooming','grooming & hygiene','pet_groomer','pet_grooming',
+        'training','training & behavior','training & behaviorist',
+        'walking','walking & exercise','walker','pet walker','dog walker',
+        'dog_walker','pet_walker'
       ]::text[])
       OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) LIKE '%groom%'
+      OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) LIKE '%train%'
+      OR (
+        LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) LIKE '%walk%'
+        AND LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) NOT LIKE '%walk-in%'
+      )
     )
     AND NOT EXISTS (
       SELECT 1 FROM service_catalog sc_vet_ex
       WHERE sc_vet_ex.id = ${vsAlias}.service_id
         AND (
-          LOWER(TRIM(COALESCE(sc_vet_ex.category_id, ''))) = 'grooming'
+          LOWER(TRIM(COALESCE(sc_vet_ex.category_id, ''))) IN ('grooming', 'training', 'walking')
           OR LOWER(TRIM(COALESCE(sc_vet_ex.service_id, ''))) LIKE 'groom_%'
+          OR LOWER(TRIM(COALESCE(sc_vet_ex.service_id, ''))) LIKE 'train_%'
+          OR LOWER(TRIM(COALESCE(sc_vet_ex.service_id, ''))) LIKE 'walk_%'
+          OR LOWER(TRIM(COALESCE(sc_vet_ex.service_id, ''))) LIKE 'behavior_%'
+          OR LOWER(TRIM(COALESCE(sc_vet_ex.service_id, ''))) LIKE 'tra-%'
         )
     )`;
 }
@@ -251,12 +289,15 @@ export function sqlVendorServicesHubCategoryFilter(
         LOWER(COALESCE(${vsAlias}.category,'')) = ANY($${exactParamIndex}::text[])
         OR LOWER(COALESCE(${vsAlias}.category,'')) LIKE ANY($${likeParamIndex}::text[])
         OR (
-          TRIM(COALESCE(${vsAlias}.category, '')) = ''
+          (
+            TRIM(COALESCE(${vsAlias}.category, '')) = ''
+            OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) = 'general'
+          )
           AND EXISTS (
             SELECT 1 FROM vendors v_hub
             LEFT JOIN roles r_hub ON v_hub.role_id = r_hub.id
             WHERE v_hub.id = ${vsAlias}.vendor_id
-              AND LOWER(TRIM(COALESCE(r_hub.name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')
+              AND LOWER(TRIM(COALESCE(r_hub.name, ''))) IN ${VET_HUB_PLACEHOLDER_CATEGORY_ROLES_SQL}
           )
         )
       )`;
@@ -588,7 +629,7 @@ export async function buildDiscoveryVendorExistsSql(
 
   const vetCategoryEmptyOr =
     !sittingDiscoveryRelaxed && isVetCategoryDiscovery
-      ? ` OR (TRIM(COALESCE(${vsAlias}.category, '')) = '' AND ${vAlias}.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
+      ? ` OR ${sqlVetHubPlaceholderCategoryOr(vsAlias, `${vAlias}.role_id`)}`
       : '';
 
   const vetExcludeNonVetSql =

@@ -291,9 +291,11 @@ export function BoardingVendorExpandableCard({
                                 : `${plan.duration} mins`}
                             </Badge>
                           )}
-                          <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
-                            {plan.categoryLabel?.trim() || planBadgeLabel}
-                          </Badge>
+                          {plan.categoryLabel?.trim() ? (
+                            <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
+                              {plan.categoryLabel}
+                            </Badge>
+                          ) : null}
                         </div>
                       </div>
                       <div className="text-right">

@@ -24,6 +24,7 @@ import { shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
+import { resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
@@ -1001,8 +1002,8 @@ export function GroomingServicesByStyle({
                                   <Clock className="w-3.5 h-3.5 text-gray-600" />
                                   {service.duration} mins
                                 </span>
-                                {service.category && (
-                                  <span className="px-2.5 py-1 bg-gray-100 rounded-lg text-gray-600">{service.category}</span>
+                                {resolveServiceCategoryDisplayLabel(service) && (
+                                  <span className="px-2.5 py-1 bg-gray-100 rounded-lg text-gray-600">{resolveServiceCategoryDisplayLabel(service)}</span>
                                 )}
                               </div>
                             </div>
@@ -1463,9 +1464,9 @@ export function GroomingServicesByStyle({
                                   <Clock className="w-3 h-3 mr-1" />
                                   {service.duration} mins
                                 </Badge>
-                                {service.category && (
+                                {resolveServiceCategoryDisplayLabel(service) && (
                                   <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
-                                    {service.category}
+                                    {resolveServiceCategoryDisplayLabel(service)}
                                   </Badge>
                                 )}
                               </div>

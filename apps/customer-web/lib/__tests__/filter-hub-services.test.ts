@@ -1,8 +1,92 @@
 import {
   filterProvidersServicesForVetHub,
   filterServicesForVetHub,
+  filterVetHubProviderRows,
   isGroomingServiceForVetHub,
+  resolveServiceCategoryDisplayLabel,
+  applyVetHubDiscoveryToProviders,
 } from '../filter-hub-services';
+
+describe('resolveServiceCategoryDisplayLabel', () => {
+  it('shows Grooming instead of General for groom_ear', () => {
+    expect(
+      resolveServiceCategoryDisplayLabel({
+        category: 'General',
+        catalogServiceSlug: 'groom_ear',
+      })
+    ).toBe('Grooming');
+  });
+
+  it('hides bare General when not vet catalog', () => {
+    expect(resolveServiceCategoryDisplayLabel({ category: 'General' })).toBeUndefined();
+  });
+});
+
+describe('filterVetHubProviderRows', () => {
+  it('drops groomer-center providers from vet hub rows', () => {
+    const rows = [
+      { id: 'vet-1', roleDisplayName: 'Veterinary Clinic' },
+      { id: 'g-1', roleDisplayName: 'Groomer (Center)' },
+    ];
+    expect(filterVetHubProviderRows(rows).map((r) => r.id)).toEqual(['vet-1']);
+  });
+
+  it('drops trainer_solo and pet walker from vet home visit rows', () => {
+    const rows = [
+      { id: 'vet-1', roleDisplayName: 'Veterinary Clinic' },
+      { id: 't-1', roleDisplayName: 'Trainer (Solo)', role: 'trainer_solo' },
+      { id: 'w-1', roleDisplayName: 'Pet walker', role: 'walker' },
+    ];
+    expect(filterVetHubProviderRows(rows).map((r) => r.id)).toEqual(['vet-1']);
+  });
+});
+
+describe('applyVetHubDiscoveryToProviders', () => {
+  it('drops groomer with only grooming services from vet home visit list', () => {
+    const rows = [
+      {
+        id: 'g-1',
+        roleDisplayName: 'Groomer (Center)',
+        services: [{ name: 'Ear Cleaning', category: 'General', catalogServiceSlug: 'groom_ear' }],
+      },
+      {
+        id: 'vet-1',
+        roleDisplayName: 'Veterinary Clinic',
+        services: [{ name: 'Checkup', category: 'Veterinary Services' }],
+      },
+    ];
+    expect(applyVetHubDiscoveryToProviders(rows).map((r) => r.id)).toEqual(['vet-1']);
+  });
+
+  it('drops trainers that leaked via General at_home services', () => {
+    const rows = [
+      {
+        id: 't-1',
+        roleDisplayName: 'Trainer (Solo)',
+        role: 'trainer_solo',
+        services: [{ name: 'Daily training', category: 'General', catalogServiceSlug: 'TRA-001' }],
+      },
+      {
+        id: 'vet-1',
+        roleDisplayName: 'Veterinary Clinic',
+        services: [{ name: 'Home Visit', category: 'Veterinary Services' }],
+      },
+    ];
+    expect(applyVetHubDiscoveryToProviders(rows).map((r) => r.id)).toEqual(['vet-1']);
+  });
+
+  it('keeps vet clinic pending service fetch when no embedded services', () => {
+    const rows = [
+      {
+        id: 'vet-1',
+        roleDisplayName: 'Veterinary Clinic',
+        services: [],
+        needsServiceFetch: true,
+      },
+    ];
+    expect(applyVetHubDiscoveryToProviders(rows, { keepProvidersPendingServiceFetch: true })).toHaveLength(1);
+  });
+});
 
 describe('isGroomingServiceForVetHub', () => {
   it('flags groom_ear with General category (grooming catalog mis-tagged)', () => {
