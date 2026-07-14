@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { dedupeHeroPhotoUrls } from '@/lib/vendor-display-media';
+import { CachedImage } from '@/components/shared/CachedImage';
 
 type VendorHeroPhotoCarouselProps = {
   photos: string[];
@@ -56,7 +57,7 @@ export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: Vendor
   if (uniquePhotos.length === 1) {
     return (
       <div className={frameClassName}>
-        <img src={uniquePhotos[0]} alt={name} className="h-full w-full object-cover" />
+        <CachedImage src={uniquePhotos[0]} alt={name} className="h-full w-full object-cover" />
         <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/40 via-transparent to-transparent" />
       </div>
     );
@@ -72,7 +73,7 @@ export function VendorHeroPhotoCarousel({ photos, name, frameClassName }: Vendor
       >
         {uniquePhotos.map((src, i) => (
           <div key={`${i}-${src}`} className="h-full w-full min-w-full flex-shrink-0 snap-center snap-always">
-            <img src={src} alt={`${name} — photo ${i + 1}`} className="h-full w-full object-cover" draggable={false} />
+            <CachedImage src={src} alt={`${name} — photo ${i + 1}`} className="h-full w-full object-cover" />
           </div>
         ))}
       </div>

@@ -21,6 +21,7 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { formatDistanceDisplay } from '@/lib/distance-display';
+import { CachedImage } from '@/components/shared/CachedImage';
 
 interface UniversalVendorListViewProps {
   roleId: string;
@@ -248,7 +249,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                     <div className="flex gap-3">
                       <div className="flex-shrink-0">
                         {person.photo ? (
-                          <img src={person.photo} alt={person.name} className="w-14 h-14 rounded-full object-cover" />
+                          <CachedImage src={person.photo} alt={person.name} className="w-14 h-14 rounded-full object-cover" />
                         ) : (
                           <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center">
                             <UserCircle2 className="w-8 h-8 text-gray-400" />

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Star, MapPin, Calendar, ArrowRight, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { CachedImage } from '@/components/shared/CachedImage';
 
 interface PreviousProvider {
   providerId: string;
@@ -117,7 +118,7 @@ export function PreviousProvidersCarousel({
               {/* Provider Image */}
               <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white flex-shrink-0">
                 {provider.providerImage ? (
-                  <img
+                  <CachedImage
                     src={provider.providerImage}
                     alt={provider.providerName}
                     className="w-full h-full rounded-full object-cover"

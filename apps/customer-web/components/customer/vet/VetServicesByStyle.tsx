@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { fetchDiscoveryList } from '@/lib/discovery-list-fetch';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
@@ -15,7 +16,16 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
-import { filterProvidersServicesForVetHub, resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
+import {
+  applyVetHubDiscoveryToProviders,
+  filterServicesForVetHub,
+  resolveServiceCategoryDisplayLabel,
+} from '@/lib/filter-hub-services';
+import {
+  mergeCustomerVendorServicesPayload,
+  parseVendorServicesPageMeta,
+  VENDOR_SERVICES_PREVIEW_LIMIT,
+} from '@/lib/customer-vendor-services-merge';
 import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
@@ -66,6 +76,11 @@ interface Provider {
   distance?: number | null;
   isVerified?: boolean;
   isIndividualProvider?: boolean;
+  serviceCount?: number;
+  priceMin?: number;
+  hasMoreServices?: boolean;
+  servicesLoading?: boolean;
+  needsServiceFetch?: boolean;
   services: {
     id: string;
     serviceId: string;
@@ -123,6 +138,73 @@ export function VetServicesByStyle({
     }
   }, [launchGate.ready, launchGate.blocked, serviceStyle, vendorId, specialization]);
 
+  useEffect(() => {
+    if (!selectedProvider) return;
+    let cancelled = false;
+    let shouldFetch = false;
+    let vid = '';
+    setProviders((prev) => {
+      const current = prev.find((p) => p.providerId === selectedProvider);
+      if (!current || current.services.length > 0 || current.servicesLoading) return prev;
+      vid = String(current.vendorId || current.providerId || '');
+      if (!vid) return prev;
+      shouldFetch = true;
+      return prev.map((p) =>
+        p.providerId === selectedProvider ? { ...p, servicesLoading: true } : p
+      );
+    });
+    if (!shouldFetch || !vid) return;
+    (async () => {
+      try {
+        const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+        const res = (await apiClient.get(
+          `/customer/vendor/${vid}/services?serviceStyle=${serviceStyle}&category=${category}${phoneParam}&limit=${VENDOR_SERVICES_PREVIEW_LIMIT}&offset=0`
+        )) as any;
+        if (cancelled) return;
+        const rows = filterServicesForVetHub(
+          mergeCustomerVendorServicesPayload(res).map((s: any) => ({
+            id: String(s.id || s.service_id || ''),
+            serviceId: String(s.serviceId || s.id || s.service_id || ''),
+            name: s.name || s.service_name || 'Service',
+            price: Number(s.price || 0) || 0,
+            originalPrice: Number(s.price || 0) || 0,
+            vendorDiscount: s.vendor_discount || s.discount || 0,
+            duration: Number(s.duration || 30) || 30,
+            description: s.description,
+            category: s.category || s.category_name,
+            isPackage: !!s.isPackage,
+          }))
+        );
+        const meta = parseVendorServicesPageMeta(res as Record<string, unknown>);
+        setProviders((prev) =>
+          prev.map((p) =>
+            p.providerId === selectedProvider
+              ? {
+                  ...p,
+                  services: rows,
+                  servicesLoading: false,
+                  needsServiceFetch: false,
+                  hasMoreServices: meta.hasMore || (meta.total > 0 && rows.length < meta.total),
+                  serviceCount: meta.total || p.serviceCount || rows.length,
+                }
+              : p
+          )
+        );
+      } catch {
+        if (!cancelled) {
+          setProviders((prev) =>
+            prev.map((p) =>
+              p.providerId === selectedProvider ? { ...p, servicesLoading: false } : p
+            )
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProvider, phone, serviceStyle, category]);
+
   const loadServicesByStyle = async () => {
     // Get customer location from localStorage for distance-based sorting
     let locationParams = '';
@@ -143,7 +225,7 @@ export function VetServicesByStyle({
       const specializationParam = specialization
         ? `&specialization=${encodeURIComponent(specialization)}`
         : '';
-      const response = await apiClient.get(
+      const response = await fetchDiscoveryList(
         `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`
       ) as any;
 
@@ -158,9 +240,24 @@ export function VetServicesByStyle({
           );
         }
         
-        // Set providers from primary endpoint
-          setProviders(filterProvidersServicesForVetHub(providerData));
-          console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
+        const normalized = (providerData as any[]).map((p) => {
+          const providerId = String(p.providerId || p.id || p.vendorId || '');
+          const services = Array.isArray(p.services) ? p.services : [];
+          return {
+            ...p,
+            providerId,
+            vendorId: p.vendorId || providerId,
+            photo: p.photo || p.photoUrl,
+            serviceCount: Number(p.serviceCount ?? p.service_count) || services.length || undefined,
+            priceMin: Number(p.priceMin ?? p.price_min) || undefined,
+            services,
+            needsServiceFetch: services.length === 0,
+          };
+        });
+        setProviders(
+          applyVetHubDiscoveryToProviders(normalized, { keepProvidersPendingServiceFetch: true }) as Provider[]
+        );
+        console.log(`✅ [Vet] Loaded ${normalized.length} provider cards (${serviceStyle})`);
       } else {
         console.warn(`⚠️ [Vet] Primary endpoint returned success=false or no providers`);
         setProviders([]);
@@ -843,7 +940,6 @@ export function VetServicesByStyle({
                               <ServicePricingDisplay
                                 basePrice={service.originalPrice || service.price}
                                 vendorDiscount={service.vendorDiscount}
-                                usePromoQuote
                                 vendorId={vendorId || undefined}
                                 serviceId={String(service.id || service.serviceId || '')}
                                 customerId={phone}
@@ -1226,7 +1322,6 @@ export function VetServicesByStyle({
                             <ServicePricingDisplay
                               basePrice={service.originalPrice || service.price}
                               vendorDiscount={service.vendorDiscount}
-                              usePromoQuote
                               vendorId={String(provider.vendorId || vendorId || '')}
                               serviceId={String(service.id || service.serviceId || '')}
                               customerId={phone}
@@ -1254,25 +1349,38 @@ export function VetServicesByStyle({
                   </div>
                 )}
 
-                {/* Quick Book - when not expanded */}
-                {!expanded && provider.services.length > 0 && (
+                {!expanded && (
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      {provider.services.length} service{provider.services.length !== 1 ? 's' : ''} available
-                      {provider.services[0] && (
-                        <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(
-                          Math.min(...provider.services.map(s => {
-                            // ✅ FIX GAP-7.1: Use discounted price if available
-                            const basePrice = s.originalPrice || s.price;
-                            const finalPrice = s.vendorDiscount 
-                              ? basePrice * (1 - s.vendorDiscount / 100)
-                              : basePrice;
-                            return finalPrice;
-                          }))
-                        )}</span>
-                      )}
-                      {provider.services[0] && (
-                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                      {(provider.serviceCount ?? provider.services.length) > 0 ? (
+                        <>
+                          {provider.serviceCount ?? provider.services.length} service
+                          {(provider.serviceCount ?? provider.services.length) !== 1 ? 's' : ''}{' '}
+                          available
+                          {(provider.services.length > 0 || provider.priceMin) && (
+                            <span className="text-gray-900 font-medium">
+                              {' '}
+                              from{' '}
+                              {formatPriceWithSymbol(
+                                provider.services.length > 0
+                                  ? Math.min(
+                                      ...provider.services.map((s) => {
+                                        const basePrice = s.originalPrice || s.price;
+                                        return s.vendorDiscount
+                                          ? basePrice * (1 - s.vendorDiscount / 100)
+                                          : basePrice;
+                                      })
+                                    )
+                                  : Number(provider.priceMin) || 0
+                              )}
+                            </span>
+                          )}
+                          {(provider.services.length > 0 || provider.priceMin) && (
+                            <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-gray-500">Tap View Services to see prices</span>
                       )}
                     </div>
                     <Button
