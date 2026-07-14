@@ -119,6 +119,9 @@ export async function uploadPhotoWithProgress(
         // Use presigned URL (url) for verification since public URL may be blocked in dev
         if (verifyUpload) {
           const urlToVerify = uploadResult.url || uploadResult.publicUrl;
+          if (!urlToVerify) {
+            throw new Error('Upload verification failed: Photo URL is missing');
+          }
           const verified = await verifyPhotoUpload(urlToVerify);
           if (!verified) {
             throw new Error('Upload verification failed: Photo URL is not accessible');
