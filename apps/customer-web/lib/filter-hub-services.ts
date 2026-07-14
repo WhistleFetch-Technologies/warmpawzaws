@@ -124,8 +124,18 @@ export function filterProvidersServicesForVetHub<T extends ProviderWithServices>
  * When `keepProvidersPendingServiceFetch` is true, vendors with empty embedded services
  * (needs lazy fetch) are kept — used by clinic list cards.
  */
+type ProviderRoleRow = {
+  roleDisplayName?: unknown;
+  roleName?: unknown;
+  role?: unknown;
+  providerType?: unknown;
+  category?: unknown;
+  serviceCategory?: unknown;
+  service_category?: unknown;
+};
+
 export function applyVetHubDiscoveryToProviders<
-  T extends Record<string, unknown> & ProviderWithServices & { needsServiceFetch?: boolean },
+  T extends ProviderRoleRow & ProviderWithServices & { needsServiceFetch?: boolean },
 >(providers: T[], options?: { keepProvidersPendingServiceFetch?: boolean }): T[] {
   const keepPending = options?.keepProvidersPendingServiceFetch ?? false;
   return filterVetHubProviderRows(providers)
@@ -136,14 +146,14 @@ export function applyVetHubDiscoveryToProviders<
     .filter((provider) => {
       if ((provider.services?.length ?? 0) > 0) return true;
       return keepPending && provider.needsServiceFetch === true;
-    });
+    }) as T[];
 }
 
 /**
  * Non-vet personas must not appear on vet hub vendor lists (Home Visit, clinic, featured).
  * Covers groomers, trainers, and walkers that previously leaked via vs.category = "General".
  */
-export function isNonVetProviderRow(row: Record<string, unknown>): boolean {
+export function isNonVetProviderRow(row: ProviderRoleRow): boolean {
   const role = String(
     row.roleDisplayName ?? row.roleName ?? row.role ?? row.providerType ?? ''
   )
@@ -180,7 +190,7 @@ export function isNonVetProviderRow(row: Record<string, unknown>): boolean {
   return blockedRoles.some((r) => role.includes(r) || role === r);
 }
 
-export function filterVetHubProviderRows<T extends Record<string, unknown>>(rows: T[]): T[] {
+export function filterVetHubProviderRows<T extends ProviderRoleRow>(rows: T[]): T[] {
   return rows.filter((row) => !isNonVetProviderRow(row));
 }
 

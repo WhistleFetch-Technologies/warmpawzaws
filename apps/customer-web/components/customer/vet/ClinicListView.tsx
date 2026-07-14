@@ -190,7 +190,7 @@ function mapByStyleProvider(p: any): ClinicProvider | null {
   const id = String(p.providerId || p.vendorId || p.id || '');
   if (!id) return null;
   const rawServices = Array.isArray(p.services) ? p.services : [];
-  const services = filterServicesForVetHub(
+  const services = filterServicesForVetHub<ClinicServiceRow>(
     rawServices.map((s: any, i: number) => mapApiServiceToRow(s, id, i))
   );
   const nextSlot = resolveNextAvailableLabel(p);
@@ -271,7 +271,7 @@ export function ClinicListView({
         } else if (Array.isArray(servicesData)) {
           services = servicesData;
         }
-        const rows = filterServicesForVetHub(
+        const rows = filterServicesForVetHub<ClinicServiceRow>(
           services.map((s: any, i: number) => mapApiServiceToRow(s, clinicId, i))
         );
         setClinics((prev) =>
@@ -325,7 +325,7 @@ export function ClinicListView({
         const raw = service.services;
         let rows: ClinicServiceRow[] = [];
         if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'object') {
-          rows = filterServicesForVetHub(
+          rows = filterServicesForVetHub<ClinicServiceRow>(
             raw.map((s: any, i: number) => mapApiServiceToRow(s, vendorId, i))
           );
         }
