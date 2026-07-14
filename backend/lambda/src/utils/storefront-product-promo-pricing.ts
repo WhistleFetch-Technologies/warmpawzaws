@@ -4,6 +4,10 @@
  * picks Best Offer or stacks per ECOMMERCE Policy Center, and sets transient compare_at / price fields.
  */
 import { query } from '../database/rds-connection';
+import {
+  parseListingOwnershipInput,
+  type ListingOwnership,
+} from './compute-listing-ownership';
 import { parsePositiveMoney, productDiscountPercent } from './product-ecommerce-pricing';
 import { getActiveCommercialCampaignPromotions } from './resolve-commercial-campaign';
 import {
@@ -24,6 +28,15 @@ export type StorefrontPromoApplied = {
   discountPercent: number;
 };
 
+/** Resolve listing ownership for storefront promo evaluation (Owned / Third party scopes). */
+export function storefrontLineListingOwnership(
+  product: Record<string, unknown>,
+): ListingOwnership | null {
+  const raw = product.listing_ownership ?? product.listingOwnership;
+  if (raw === 'own_brand' || raw === 'third_party') return raw;
+  return parseListingOwnershipInput(raw != null ? String(raw) : null);
+}
+
 function buildSingleItemCartLine(
   product: Record<string, unknown>,
   catalogPrice: number,
@@ -41,6 +54,8 @@ function buildSingleItemCartLine(
     price: catalogPrice,
     categoryId,
     category,
+    // Required so listing_ownership_scope own_brand/third_party admin promos can match PLP/PDP.
+    listingOwnership: storefrontLineListingOwnership(product),
   };
 }
 

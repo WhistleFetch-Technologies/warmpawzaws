@@ -65,4 +65,14 @@ describe('promo listing_ownership_scope eligibility', () => {
     };
     expect(lines.filter((l) => applies(promo, l)).map((l) => l.productId)).toEqual(['p1']);
   });
+
+  it('storefront bug: own_brand promo cannot apply when listingOwnership omitted from line', () => {
+    const promo = {
+      listing_ownership_scope: 'own_brand',
+      applicable_products: ['p1'],
+    };
+    expect(applies(promo, { productId: 'p1' })).toBe(false);
+    expect(applies(promo, { productId: 'p1', listingOwnership: 'own_brand' })).toBe(true);
+  });
 });
+
