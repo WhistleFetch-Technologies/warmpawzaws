@@ -147,13 +147,14 @@ function buildSampleRow(sampleCategory: string): string[] {
     '42010000',
     'Country of Origin: India',
     '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
+    '', // Warmpawz Product ID — blank for new products
+    '', // Product Group ID — upload-scoped variant grouping only
+    '', // Variant Attribute 1
+    '', // Variant Value 1
+    '', // Variant Attribute 2
+    '', // Variant Value 2
+    '', // Variant Attribute 3
+    '', // Variant Value 3
     'Third party',
   ];
 }
