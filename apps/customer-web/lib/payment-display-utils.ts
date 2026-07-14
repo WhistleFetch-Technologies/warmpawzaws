@@ -59,6 +59,29 @@ export function formatPaymentSourcesShortLabel(sources: PaymentSource[]): string
   return sources.map((s) => s.label).join(' + ');
 }
 
+/** Wallet amount from financial meta when list APIs omit paymentSources / wallet rows. */
+export function extractWalletAmountFromBookingRaw(raw: Record<string, unknown>): number {
+  const metaBags: unknown[] = [
+    raw.wp_financial_meta,
+    raw.financialMeta,
+    raw.financial_meta,
+  ];
+  const nestedMeta = raw.metadata;
+  if (nestedMeta && typeof nestedMeta === 'object') {
+    const m = nestedMeta as Record<string, unknown>;
+    metaBags.push(m.wp_financial_meta, m.financialMeta, m.financial_meta, m);
+  }
+  for (const bag of metaBags) {
+    if (!bag || typeof bag !== 'object') continue;
+    const row = bag as Record<string, unknown>;
+    const wallet = parseFloat(String(row.walletAmount ?? row.wallet_amount ?? ''));
+    if (Number.isFinite(wallet) && wallet > 0.009) {
+      return Math.round(wallet * 100) / 100;
+    }
+  }
+  return 0;
+}
+
 /** Resolve payment sources from API payload or legacy payment_method field. */
 export function derivePaymentSourcesFromBooking(raw: Record<string, unknown>): PaymentSource[] {
   const fromApi = normalizePaymentSources(raw.paymentSources ?? raw.payment_sources);
@@ -69,6 +92,16 @@ export function derivePaymentSourcesFromBooking(raw: Record<string, unknown>): P
 
   const total =
     parseFloat(String(raw.total_amount ?? raw.totalAmount ?? raw.price ?? '0')) || 0;
+  const walletFromMeta = extractWalletAmountFromBookingRaw(raw);
+  if (walletFromMeta > 0.009) {
+    const gateway = Math.max(0, Math.round((total - walletFromMeta) * 100) / 100);
+    return buildCheckoutPaymentSources({
+      walletAmount: walletFromMeta,
+      gatewayAmount: gateway,
+      gatewayMethod: String(raw.payment_method ?? raw.paymentMethod ?? 'razorpay'),
+    });
+  }
+
   const method = String(raw.payment_method ?? raw.paymentMethod ?? '').toLowerCase();
   if (total > 0.009 && method && method !== 'pending') {
     return buildCheckoutPaymentSources({ gatewayAmount: total, gatewayMethod: method });

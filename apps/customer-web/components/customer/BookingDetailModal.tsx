@@ -1102,12 +1102,24 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                     </div>
                     <div className="text-right">
                       {bookingFinancial ? (
-                        <PriceDisplay
-                          originalPrice={bookingFinancial.servicePrice}
-                          currentPrice={bookingFinancial.finalPaid}
-                          size="sm"
-                          showSavings={bookingFinancial.totalSavings > 0}
-                        />
+                        bookingFinancial.totalSavings > 0 ? (
+                          <PriceDisplay
+                            originalPrice={bookingFinancial.servicePrice}
+                            currentPrice={Math.max(
+                              0,
+                              bookingFinancial.servicePrice - bookingFinancial.totalSavings
+                            )}
+                            size="sm"
+                            showSavings
+                          />
+                        ) : (
+                          <p className="font-bold text-[#FF8C42]">
+                            ₹
+                            {bookingFinancial.servicePrice > 0
+                              ? bookingFinancial.servicePrice
+                              : bookingFinancial.finalPaid}
+                          </p>
+                        )
                       ) : (
                         <p className="font-bold text-[#FF8C42]">₹{booking.totalAmount ?? booking.price ?? 0}</p>
                       )}
