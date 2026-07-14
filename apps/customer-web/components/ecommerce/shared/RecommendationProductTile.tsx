@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { ShopProduct } from '@/components/shop/shop-types';
 import { ShopCartQuantityControl } from '@/components/shop/ShopCartQuantityControl';
 import { CachedImage } from '@/components/shared/CachedImage';
+import { pickShopProductListingImage } from '@/lib/product-listing-image';
 
 type RecommendationProductTileProps = {
   product: ShopProduct;
@@ -23,14 +24,12 @@ export function RecommendationProductTile({
   onQuantityChange,
 }: RecommendationProductTileProps) {
   const [imageFailed, setImageFailed] = useState(false);
-  const primaryImage =
-    product.images?.length && product.images[0] && !imageFailed
-      ? String(product.images[0]).trim()
-      : '';
+  const listingImage = pickShopProductListingImage(product);
+  const primaryImage = listingImage && !imageFailed ? listingImage : '';
 
   useEffect(() => {
     setImageFailed(false);
-  }, [product.id, product.images?.[0]]);
+  }, [product.id, product.thumbUrl, product.images?.[0]]);
 
   const body = (
     <>

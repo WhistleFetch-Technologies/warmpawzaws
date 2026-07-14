@@ -1,31 +1,22 @@
 'use client';
 
 import React, { memo, useCallback } from 'react';
-import Image from 'next/image';
 import { ChevronRight, Sparkles } from 'lucide-react';
-import { PresignableImage } from '@/components/shared/PresignableImage';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { SectionHeader } from '../shared/SectionHeader';
 import { getForYouCardTheme } from '../utils/for-you-card-theme';
 import type { ForYouRecommendationItem } from '../hooks/useForYouRecommendations';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
 function CardImage({ src, alt }: { src: string; alt: string }) {
-  if (src.startsWith('/') && !src.includes('amazonaws.com')) {
-    return (
-      <Image
-        src={src}
-        alt={alt}
-        width={64}
-        height={64}
-        className="h-16 w-16 rounded-full object-cover ring-2 ring-white/90"
-        unoptimized
-      />
-    );
-  }
   return (
-    <div className="h-16 w-16 overflow-hidden rounded-full ring-2 ring-white/90">
-      <PresignableImage src={src} alt={alt} className="h-full w-full object-cover" />
-    </div>
+    <CachedImage
+      src={src}
+      alt={alt}
+      width={64}
+      height={64}
+      className="h-16 w-16 rounded-full object-cover ring-2 ring-white/90"
+    />
   );
 }
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import {
   Star,
   ChevronRight,
@@ -459,7 +459,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 </div>
 
                 <div className={BOARDING_CARD_IMAGE}>
-                  <Image
+                  <CachedImage
                     src={image}
                     alt={title}
                     fill

@@ -26,11 +26,17 @@ export function isStaticLocalImageSrc(src: string | null | undefined): boolean {
   return trimmed.startsWith('/') && !trimmed.includes('amazonaws.com');
 }
 
-/** Extract S3 object key from a URL or bare key for managed media. */
+/** Extract S3 / media-CDN object key from a URL or bare key for managed media. */
 export function extractS3ImageKey(src: string): string | null {
   const trimmed = src.trim();
-  if (!trimmed || trimmed.startsWith('data:')) return null;
-  if (!trimmed.includes('amazonaws.com')) {
+  if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return null;
+
+  const looksManagedHost =
+    trimmed.includes('amazonaws.com') ||
+    /\.cloudfront\.net\//i.test(trimmed) ||
+    /\/\/media\.warmpawz\.com\//i.test(trimmed);
+
+  if (!looksManagedHost) {
     if (/\.(webp|jpe?g|png|gif)(\?|$)/i.test(trimmed) && !trimmed.startsWith('http')) {
       return trimmed.replace(/^\/+/, '');
     }
@@ -48,7 +54,7 @@ export function extractS3ImageKey(src: string): string | null {
 export function cacheKeyForImageSrc(src: string | null | undefined): string | null {
   if (!src) return null;
   const trimmed = src.trim();
-  if (!trimmed) return null;
+  if (!trimmed || trimmed.startsWith('blob:')) return null;
 
   if (isStaticLocalImageSrc(trimmed)) {
     const path = trimmed.split('?')[0].split('#')[0];
@@ -58,7 +64,14 @@ export function cacheKeyForImageSrc(src: string | null | undefined): string | nu
   const s3Key = extractS3ImageKey(trimmed);
   if (s3Key) return `s3:${s3Key}`;
 
-  return `url:${trimmed}`;
+  // Do not IndexedDB-cache arbitrary third-party URLs (unbounded / unstable).
+  return null;
+}
+
+/** Static paths and managed S3/CDN keys are safe to persist in IndexedDB. */
+export function isIndexedDbCacheableImageSrc(src: string | null | undefined): boolean {
+  const key = cacheKeyForImageSrc(src);
+  return Boolean(key && (key.startsWith('static:') || key.startsWith('s3:')));
 }
 
 function openDb(): Promise<IDBDatabase | null> {
@@ -162,7 +175,10 @@ export async function fetchAndCacheImageSrc(
   if (existing) return existing;
 
   try {
-    const res = await fetch(src, { ...init, credentials: 'same-origin' });
+    const credentials =
+      init?.credentials ??
+      (isStaticLocalImageSrc(src) ? 'same-origin' : 'omit');
+    const res = await fetch(src, { ...init, credentials, mode: init?.mode ?? 'cors' });
     if (!res.ok) return null;
     const blob = await res.blob();
     if (!blob.size) return null;
@@ -196,11 +212,9 @@ export function scheduleStaticImagePrewarm(paths: string[]): void {
   const run = () => {
     void prewarmStaticImagePaths(paths);
   };
-  const ric = (window as Window & { requestIdleCallback?: typeof requestIdleCallback })
-    .requestIdleCallback;
-  if (typeof ric === 'function') {
-    ric(run, { timeout: 4000 });
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(run, { timeout: 4000 });
   } else {
-    setTimeout(run, 1500);
+    globalThis.setTimeout(run, 1500);
   }
 }

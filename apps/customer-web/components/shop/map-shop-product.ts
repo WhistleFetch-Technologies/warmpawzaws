@@ -8,6 +8,7 @@ import {
   resolveProductSellingPrice,
 } from '@/lib/shop-product-pricing';
 import type { ShopProduct } from './shop-types';
+import { normalizeProductImagesList } from '@/lib/product-listing-image';
 
 export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct | null {
   const id = canonicalProductId(p);
@@ -58,7 +59,13 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
     original_price: listPriceForDiscountDisplay(enrichedSelling, compareAt),
     rating,
     review_count: rc,
-    images: (p.images as string[]) || [],
+    images: normalizeProductImagesList(p.images),
+    thumbUrl:
+      typeof p.thumbUrl === 'string' && p.thumbUrl.trim()
+        ? p.thumbUrl.trim()
+        : typeof p.thumb_url === 'string' && p.thumb_url.trim()
+          ? p.thumb_url.trim()
+          : undefined,
     emoji: (p.emoji as string) || '🐾',
     name: String(p.name ?? ''),
     description: String(p.description ?? ''),

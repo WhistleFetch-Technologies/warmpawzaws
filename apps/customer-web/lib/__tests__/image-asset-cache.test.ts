@@ -1,6 +1,7 @@
 import {
   cacheKeyForImageSrc,
   extractS3ImageKey,
+  isIndexedDbCacheableImageSrc,
   isStaticLocalImageSrc,
 } from '../image-asset-cache';
 
@@ -18,11 +19,20 @@ describe('image-asset-cache keys', () => {
     expect(cacheKeyForImageSrc('/images/home/vet.webp?v=1')).toBe('static:/images/home/vet.webp');
   });
 
-  it('builds s3 cache keys from presigned URLs', () => {
+  it('builds s3 cache keys from presigned URLs (stable across signatures)', () => {
     const url =
       'https://warmpawz-prod-user-uploads.s3.ap-south-1.amazonaws.com/products/v1/abc.thumb.webp?X-Amz-Signature=foo';
+    const url2 =
+      'https://warmpawz-prod-user-uploads.s3.ap-south-1.amazonaws.com/products/v1/abc.thumb.webp?X-Amz-Signature=bar';
     expect(cacheKeyForImageSrc(url)).toBe('s3:products/v1/abc.thumb.webp');
+    expect(cacheKeyForImageSrc(url2)).toBe('s3:products/v1/abc.thumb.webp');
     expect(extractS3ImageKey(url)).toBe('products/v1/abc.thumb.webp');
+    expect(isIndexedDbCacheableImageSrc(url)).toBe(true);
+  });
+
+  it('does not IndexedDB-cache arbitrary third-party URLs', () => {
+    expect(cacheKeyForImageSrc('https://cdn.example.com/photo.jpg')).toBeNull();
+    expect(isIndexedDbCacheableImageSrc('https://cdn.example.com/photo.jpg')).toBe(false);
   });
 
   it('returns null for empty src', () => {

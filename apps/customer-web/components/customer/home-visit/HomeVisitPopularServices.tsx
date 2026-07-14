@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo, useCallback } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { HorizontalScrollRow } from '../home/shared/HorizontalScrollRow';
 import {
   HOME_VISIT_POPULAR_ITEMS,
@@ -43,7 +43,7 @@ function HomeVisitPopularServicesComponent({ onNavigate }: HomeVisitPopularServi
           >
             <div className="overflow-hidden rounded-2xl border border-emerald-100/80 bg-white shadow-sm transition-transform duration-200 active:scale-[0.98]">
               <div className="relative h-24 w-full overflow-hidden bg-gradient-to-br from-emerald-50 to-green-50">
-                <Image
+                <CachedImage
                   src={item.imageUrl}
                   alt={item.title}
                   fill
@@ -53,7 +53,6 @@ function HomeVisitPopularServicesComponent({ onNavigate }: HomeVisitPopularServi
                       ? 'object-contain object-bottom p-1.5'
                       : 'object-cover'
                   }
-                  unoptimized
                 />
                 {item.imageFit !== 'contain' && (
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-white/80 via-transparent to-transparent" />

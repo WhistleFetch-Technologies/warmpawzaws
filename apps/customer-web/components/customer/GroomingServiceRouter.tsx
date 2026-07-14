@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import {
   Scissors,
   Home as HomeIcon,
@@ -403,13 +403,13 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               </div>
               <div className="relative flex w-[38%] shrink-0 items-center justify-center px-2 py-3 sm:w-[40%] sm:px-3">
                 <div className="grooming-banner-img-float relative aspect-[4/5] w-[88%] max-w-[130px] sm:max-w-[145px]">
-                  <Image
+                  <CachedImage
                     src={GROOMING_BANNER.image}
                     alt="Premium pet grooming"
                     fill
                     className="object-contain object-center drop-shadow-sm"
                     sizes="145px"
-                    priority
+                    loading="eager"
                   />
                 </div>
               </div>
@@ -462,7 +462,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   className="group flex flex-col items-center gap-1.5 text-left"
                 >
                   <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm transition-all group-hover:border-orange-200 group-hover:shadow-md">
-                    <Image
+                    <CachedImage
                       src={need.image}
                       alt={need.name}
                       fill
@@ -493,7 +493,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
                 >
                   <div className="relative h-28 w-full sm:h-32">
-                    <Image
+                    <CachedImage
                       src={service.image}
                       alt={service.name}
                       fill

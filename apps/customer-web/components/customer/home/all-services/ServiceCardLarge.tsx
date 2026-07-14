@@ -1,9 +1,8 @@
 'use client';
 
 import React, { memo } from 'react';
-import Image from 'next/image';
 import { ArrowUpRight } from 'lucide-react';
-import { PresignableImage } from '@/components/shared/PresignableImage';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { ServiceDescriptionInline } from '../../shared/ServiceDescriptionInline';
 import { getCategoryCardImageUrl } from '../constants/category-card-images';
 import { COMING_SOON_HOME_SERVICE_SCREENS } from '../types';
@@ -17,23 +16,13 @@ export interface ServiceCardLargeProps {
 }
 
 function CategoryCardImage({ src, alt }: { src: string; alt: string }) {
-  if (src.startsWith('/') && !src.includes('amazonaws.com')) {
-    return (
-      <Image
-        src={src}
-        alt={alt}
-        fill
-        sizes="(max-width: 480px) 45vw, 200px"
-        className="object-cover transition-transform duration-500 group-hover:scale-105"
-        unoptimized
-      />
-    );
-  }
   return (
-    <PresignableImage
+    <CachedImage
       src={src}
       alt={alt}
-      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+      fill
+      sizes="(max-width: 480px) 45vw, 200px"
+      className="object-cover transition-transform duration-500 group-hover:scale-105"
     />
   );
 }

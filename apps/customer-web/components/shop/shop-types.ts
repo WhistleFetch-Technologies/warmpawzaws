@@ -9,6 +9,8 @@ export interface ShopProduct {
   display_price?: number;
   original_price?: number;
   images: string[];
+  /** Optional list-context thumb URL when API provides it separately from `images`. */
+  thumbUrl?: string;
   emoji?: string;
   rating: number;
   review_count: number;

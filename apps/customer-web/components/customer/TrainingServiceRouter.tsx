@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import {
   GraduationCap,
   Building2,
@@ -431,7 +431,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
                 >
                   <div className="relative h-28 w-full sm:h-32">
-                    <Image
+                    <CachedImage
                       src={service.image}
                       alt={service.name}
                       fill
