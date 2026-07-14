@@ -499,6 +499,8 @@ export default function ProductDetailClient() {
   }, [product?.original_price, product?.price]);
 
   const catalogUnitPrice = useMemo(() => {
+    // Storefront enrichment sets price=selling and original_price=MRP. Non-SKU
+    // catalog base must be MRP so productPromoRatio is applied only once (PLP Option A).
     const catalogFallback = product?.original_price ?? product?.price ?? 0;
     if (productSkus.length > 0) {
       return resolveSkuPriceForSelection(
@@ -508,7 +510,7 @@ export default function ProductDetailClient() {
         product?.variations,
       );
     }
-    return product?.price ?? 0;
+    return catalogFallback;
   }, [productSkus, selectedVariations, product?.original_price, product?.price, product?.variations]);
 
   const displayPrice = useMemo(() => {
