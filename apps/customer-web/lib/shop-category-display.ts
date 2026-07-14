@@ -59,6 +59,10 @@ export function normalizeShopCategoryRow(row: Record<string, unknown>): ShopCate
     getShopCategoryStaticImageUrl(name) ||
     (slug ? getShopCategoryStaticImageUrl(slug) : undefined);
 
+  const parentRaw = row.parent_category_id;
+  const parent_category_id =
+    parentRaw != null && String(parentRaw).trim() ? String(parentRaw).trim() : undefined;
+
   return {
     id: String(row.id ?? ''),
     name,
@@ -68,6 +72,7 @@ export function normalizeShopCategoryRow(row: Record<string, unknown>): ShopCate
       row.product_count != null
         ? parseInt(String(row.product_count), 10) || 0
         : undefined,
+    parent_category_id,
   };
 }
 
@@ -76,6 +81,28 @@ export function sortShopCategories(categories: ShopCategory[]): ShopCategory[] {
     const orderA = a.display_order ?? 0;
     const orderB = b.display_order ?? 0;
     if (orderA !== orderB) return orderA - orderB;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/** Pet Food subcategory chip order on /shop (Therapeutic Food first). */
+const PET_FOOD_SUBCATEGORY_CHIP_ORDER = [
+  'Therapeutic Food',
+  'Dry Pet Food',
+  'Wet Pet Food',
+  'Puppy Food',
+  'Adult Food',
+  'Pet Treats',
+] as const;
+
+export function sortPetFoodSubcategoriesForShop(subcategories: ShopCategory[]): ShopCategory[] {
+  const orderIndex = new Map(PET_FOOD_SUBCATEGORY_CHIP_ORDER.map((name, i) => [name, i]));
+  return [...subcategories].sort((a, b) => {
+    const idxA = orderIndex.get(a.name as (typeof PET_FOOD_SUBCATEGORY_CHIP_ORDER)[number]);
+    const idxB = orderIndex.get(b.name as (typeof PET_FOOD_SUBCATEGORY_CHIP_ORDER)[number]);
+    if (idxA != null && idxB != null) return idxA - idxB;
+    if (idxA != null) return -1;
+    if (idxB != null) return 1;
     return a.name.localeCompare(b.name);
   });
 }
@@ -102,6 +129,55 @@ export function filterShopCategoriesWithProducts(categories: ShopCategory[]): Sh
   return categories.filter((c) => (c.product_count ?? 0) > 0);
 }
 
+/** Keep only top-level categories, excluding subcategories (e.g. "Dry Pet Food" under "Pet Food"). */
+export function filterTopLevelShopCategories(categories: ShopCategory[]): ShopCategory[] {
+  return categories.filter((c) => !c.parent_category_id);
+}
+
+/** Known Pet Food subcategories seeded in db/migrations/1068 — used when parent_category_id is missing in DB. */
+const PET_FOOD_SUBCATEGORY_NAMES = new Set([
+  'Dry Pet Food',
+  'Wet Pet Food',
+  'Puppy Food',
+  'Adult Food',
+  'Pet Treats',
+  'Therapeutic Food',
+]);
+
+/** Backfill parent_category_id for seeded Pet Food subcategories when the column was not persisted. */
+export function applyKnownPetFoodSubcategoryParents(categories: ShopCategory[]): ShopCategory[] {
+  const petFood = categories.find((c) => c.name === 'Pet Food' && !c.parent_category_id);
+  if (!petFood) return categories;
+
+  return categories.map((c) => {
+    if (c.parent_category_id || !PET_FOOD_SUBCATEGORY_NAMES.has(c.name)) return c;
+    return { ...c, parent_category_id: petFood.id };
+  });
+}
+
+/**
+ * Shop page needs subcategory tabs even when a subcategory has zero products tagged directly
+ * (products may still live under the parent "Pet Food" id). Merge active subcategories whose
+ * parent is in the top-level list returned by with_products_only.
+ */
+export function mergeShopSubcategoriesForStorefront(
+  allCategories: ShopCategory[],
+  topLevelWithProducts: ShopCategory[]
+): ShopCategory[] {
+  const withParents = applyKnownPetFoodSubcategoryParents(allCategories);
+  const topLevelIds = new Set(topLevelWithProducts.map((c) => c.id));
+  const subcategories = withParents.filter(
+    (c) => c.parent_category_id && topLevelIds.has(c.parent_category_id)
+  );
+  return sortShopCategories([...topLevelWithProducts, ...subcategories]);
+}
+
+/**
+ * Flat top-level category list for surfaces that render one row/grid of chips or tiles
+ * (home "Shop by category" grid, etc). Subcategories are intentionally excluded here —
+ * the /shop page fetches categories itself (see loadCategories in app/shop/page.tsx) so it
+ * can keep subcategories for its second-level tab row.
+ */
 export async function fetchShopCategoriesWithProducts(): Promise<ShopCategory[]> {
   const res = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>(
     SHOP_CATEGORIES_WITH_PRODUCTS_PATH
@@ -112,5 +188,5 @@ export async function fetchShopCategoriesWithProducts(): Promise<ShopCategory[]>
       ? raw.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
       : []
   );
-  return filterShopCategoriesWithProducts(mapped);
+  return filterTopLevelShopCategories(filterShopCategoriesWithProducts(mapped));
 }

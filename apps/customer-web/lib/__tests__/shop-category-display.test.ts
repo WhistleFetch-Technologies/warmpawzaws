@@ -4,6 +4,7 @@ import {
   mapApiCategoriesToShop,
   normalizeShopCategoryRow,
   resolveShopCategoryParam,
+  sortPetFoodSubcategoriesForShop,
   sortShopCategories,
 } from '../shop-category-display';
 
@@ -96,6 +97,19 @@ describe('shop-category-display', () => {
     it('returns empty when categories list is empty', () => {
       expect(resolveShopCategoryParam('pet-food', [])).toBe('');
     });
+  });
+
+  it('sorts Pet Food subcategories with Therapeutic Food first', () => {
+    const sorted = sortPetFoodSubcategoriesForShop([
+      { id: 'dry', name: 'Dry Pet Food', display_order: 12 },
+      { id: 'wet', name: 'Wet Pet Food', display_order: 13 },
+      { id: 'ther', name: 'Therapeutic Food', display_order: 16 },
+    ]);
+    expect(sorted.map((c) => c.name)).toEqual([
+      'Therapeutic Food',
+      'Dry Pet Food',
+      'Wet Pet Food',
+    ]);
   });
 
   describe('filterShopCategoriesWithProducts', () => {

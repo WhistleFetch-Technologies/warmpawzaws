@@ -1,12 +1,13 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { BottomNavigation } from '@/components/customer/bottomNavigation/BottomNavigation';
 import { ShopCatalogSection } from '@/components/shop/ShopCatalogSection';
 import { ShopCategoryScroller } from '@/components/shop/ShopCategoryScroller';
+import { ShopSubCategoryScroller } from '@/components/shop/ShopSubCategoryScroller';
 import { ShopDeliveryBar } from '@/components/shop/ShopDeliveryBar';
 import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerPlacementBanners';
 import { ShopPageHeader } from '@/components/shop/ShopPageHeader';
@@ -21,8 +22,11 @@ import type { ShopCartItem, ShopCategory, ShopProduct } from '@/components/shop/
 import { apiClient } from '@/lib/api-client';
 import {
   filterShopCategoriesWithProducts,
+  filterTopLevelShopCategories,
   mapApiCategoriesToShop,
+  mergeShopSubcategoriesForStorefront,
   resolveShopCategoryParam,
+  sortPetFoodSubcategoriesForShop,
   SHOP_CATEGORIES_WITH_PRODUCTS_PATH,
 } from '@/lib/shop-category-display';
 import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
@@ -42,6 +46,10 @@ import {
   readCheckoutAddressId,
   writeCheckoutAddressId,
 } from '@/lib/ecommerce/checkout-address-storage';
+import {
+  productMatchesPetFoodSubcategory,
+  resolvePetFoodSubcategoryProductQuery,
+} from '@/lib/pet-food-subcategory-classifier';
 import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
 
 /** Shop listing cart line: parent id, or parent::listingSku when product has variants. */
@@ -141,6 +149,8 @@ function ShopPageContent() {
 
   const selectedDeliveryAddressRef = useRef<DeliveryAddress | null>(null);
   const loadProductsGenRef = useRef(0);
+  /** Parent-catalog offset when client-filtering Pet Food subcategories (API still on parent id). */
+  const parentCatalogOffsetRef = useRef(0);
   /** Last ?category= value applied from Next searchParams (skip chip/local changes). */
   const lastAppliedUrlCategoryRef = useRef<string | null>(null);
   /** UUID after slug resolve — used to ignore stale slug still held by useSearchParams. */
@@ -242,17 +252,30 @@ function ShopPageContent() {
    * Load storefront category chips once per mount (categories that have products).
    */
   const loadCategories = useCallback(async () => {
-    const categoriesRes = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>(
-      SHOP_CATEGORIES_WITH_PRODUCTS_PATH
-    );
-    const rawCategories = categoriesRes?.categories;
-    const mapped = filterShopCategoriesWithProducts(
+    const normalizeRows = (raw: unknown) =>
       mapApiCategoriesToShop(
-        Array.isArray(rawCategories)
-          ? rawCategories.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
+        Array.isArray(raw)
+          ? raw.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
           : []
-      )
+      );
+
+    const [withProductsRes, allCategoriesRes] = await Promise.all([
+      apiClient.get<{ categories?: Array<Record<string, unknown>> }>(
+        SHOP_CATEGORIES_WITH_PRODUCTS_PATH
+      ),
+      apiClient.get<{ categories?: Array<Record<string, unknown>> }>('/ecommerce/categories'),
+    ]);
+
+    const topLevelWithProducts = filterShopCategoriesWithProducts(
+      filterTopLevelShopCategories(normalizeRows(allCategoriesRes?.categories))
     );
+    const mapped = mergeShopSubcategoriesForStorefront(
+      normalizeRows(allCategoriesRes?.categories),
+      topLevelWithProducts.length > 0
+        ? topLevelWithProducts
+        : filterShopCategoriesWithProducts(normalizeRows(withProductsRes?.categories))
+    );
+
     setCategories(mapped);
     setCategoriesReady(true);
     return mapped;
@@ -260,6 +283,8 @@ function ShopPageContent() {
 
   /**
    * Fetch one page of products and either replace (reset=true) or append (reset=false).
+   * Pet Food subcategories query the parent category and filter client-side until the
+   * backend classifier filter is deployed.
    */
   const loadProducts = useCallback(
     async (reset: boolean, currentOffset: number, currentCategory: string) => {
@@ -268,31 +293,74 @@ function ShopPageContent() {
       if (reset) {
         setLoading(true);
         setError(null);
+        parentCatalogOffsetRef.current = 0;
       } else {
         setLoadingMore(true);
       }
 
       try {
-        const effectiveCategory = currentCategory;
+        const { apiCategoryId, subcategoryName } = resolvePetFoodSubcategoryProductQuery(
+          currentCategory,
+          categories
+        );
+        const useSubcategoryFilter = Boolean(subcategoryName);
+        const parentBatchLimit = 50;
 
-        const params = new URLSearchParams();
-        if (effectiveCategory) params.set('category', effectiveCategory);
-        params.set('sort', sortBy);
-        params.set('limit', String(SHOP_PAGE_SIZE));
-        params.set('offset', String(currentOffset));
-        if (debouncedSearch) params.set('search', debouncedSearch);
-        if (priceRange[0] > 0) params.set('min_price', String(priceRange[0]));
-        if (priceRange[1] < 10000) params.set('max_price', String(priceRange[1]));
+        const buildParams = (offset: number, limit: number) => {
+          const params = new URLSearchParams();
+          if (apiCategoryId) params.set('category', apiCategoryId);
+          params.set('sort', sortBy);
+          params.set('limit', String(limit));
+          params.set('offset', String(offset));
+          if (debouncedSearch) params.set('search', debouncedSearch);
+          if (priceRange[0] > 0) params.set('min_price', String(priceRange[0]));
+          if (priceRange[1] < 10000) params.set('max_price', String(priceRange[1]));
+          return params;
+        };
 
-        const productsRes = await apiClient.get<{
-          products?: unknown[];
-          hasMore?: boolean;
-          total?: number;
-        }>(`/ecommerce/products?${params.toString()}`);
+        const fetchPage = async (offset: number, limit: number) => {
+          const productsRes = await apiClient.get<{
+            products?: unknown[];
+            hasMore?: boolean;
+            total?: number;
+          }>(`/ecommerce/products?${buildParams(offset, limit).toString()}`);
+          const rawList = productsRes?.products || [];
+          return {
+            products: mapApiProductsList(rawList),
+            hasMore: productsRes?.hasMore ?? rawList.length >= limit,
+          };
+        };
 
-        const rawList = productsRes?.products || [];
-        const newProducts = mapApiProductsList(rawList);
-        const more = productsRes?.hasMore ?? newProducts.length >= SHOP_PAGE_SIZE;
+        let newProducts: ShopProduct[] = [];
+        let more = false;
+
+        if (useSubcategoryFilter && subcategoryName) {
+          let parentOffset = reset ? 0 : parentCatalogOffsetRef.current;
+          let parentHasMore = true;
+
+          while (newProducts.length < SHOP_PAGE_SIZE && parentHasMore) {
+            const page = await fetchPage(parentOffset, parentBatchLimit);
+            if (gen !== loadProductsGenRef.current) return;
+
+            parentOffset += page.products.length;
+            parentHasMore = page.hasMore && page.products.length > 0;
+
+            const matched = page.products.filter((p) =>
+              productMatchesPetFoodSubcategory(p, subcategoryName)
+            );
+            newProducts = [...newProducts, ...matched];
+
+            if (page.products.length === 0) break;
+          }
+
+          parentCatalogOffsetRef.current = parentOffset;
+          more = parentHasMore;
+        } else {
+          const page = await fetchPage(reset ? 0 : currentOffset, SHOP_PAGE_SIZE);
+          if (gen !== loadProductsGenRef.current) return;
+          newProducts = page.products;
+          more = page.hasMore;
+        }
 
         if (gen !== loadProductsGenRef.current) return;
 
@@ -314,8 +382,7 @@ function ShopPageContent() {
         else setLoadingMore(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sortBy, debouncedSearch, priceRange, SHOP_PAGE_SIZE],
+    [sortBy, debouncedSearch, priceRange, SHOP_PAGE_SIZE, categories],
   );
 
   const loadMoreProducts = useCallback(() => {
@@ -532,6 +599,40 @@ function ShopPageContent() {
   );
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
+  /**
+   * Pet Food-style subcategory tabs (Dry/Wet/Puppy/Adult/Treats): `selectedCategory` stays
+   * the single source of truth — it holds either a top-level id or a child id. Picking a
+   * subcategory just re-points `selectedCategory` at the child, so the existing URL sync and
+   * `loadProducts` flow keep working unchanged; the backend rolls up parent -> children when
+   * a top-level id is selected. These are purely derived views over `categories` for rendering.
+   */
+  const categoryById = useMemo(() => {
+    const map = new Map<string, ShopCategory>();
+    categories.forEach((c) => map.set(c.id, c));
+    return map;
+  }, [categories]);
+
+  const topCategories = useMemo(
+    () => categories.filter((c) => !c.parent_category_id),
+    [categories]
+  );
+
+  const activeTopCategoryId = useMemo(() => {
+    if (!selectedCategory) return '';
+    return categoryById.get(selectedCategory)?.parent_category_id || selectedCategory;
+  }, [selectedCategory, categoryById]);
+
+  const activeSubCategories = useMemo(() => {
+    if (!activeTopCategoryId) return [];
+    const subs = categories.filter((c) => c.parent_category_id === activeTopCategoryId);
+    return sortPetFoodSubcategoriesForShop(subs);
+  }, [categories, activeTopCategoryId]);
+
+  const activeSubCategoryId = useMemo(() => {
+    if (!selectedCategory) return '';
+    return categoryById.get(selectedCategory)?.parent_category_id ? selectedCategory : '';
+  }, [selectedCategory, categoryById]);
+
   // Search, sort, and price filtering are now server-side.
   // `products` is the final list to render; no client-side filter step.
 
@@ -581,9 +682,14 @@ function ShopPageContent() {
               onOpenFilters={() => setShowFilterSheet(true)}
             />
             <ShopCategoryScroller
-              categories={categories}
-              selectedCategory={selectedCategory}
+              categories={topCategories}
+              selectedCategory={activeTopCategoryId}
               onSelectCategory={applyCategorySelection}
+            />
+            <ShopSubCategoryScroller
+              subCategories={activeSubCategories}
+              selectedSubCategory={activeSubCategoryId}
+              onSelectSubCategory={(id) => applyCategorySelection(id || activeTopCategoryId)}
             />
           </div>
         </header>
