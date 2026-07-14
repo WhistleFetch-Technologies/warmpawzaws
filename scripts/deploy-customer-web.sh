@@ -278,13 +278,30 @@ fi
 
 echo -e "${BLUE}🧩 Updating extensionless route content-types to text/html...${NC}"
 HTML_ALIAS_UPDATED=0
+HTML_ALIAS_FAILED=0
 while IFS= read -r aliasfile; do
   rel_path="${aliasfile#apps/${APP_NAME}/dist/}"
-  aws s3 cp "$aliasfile" "s3://${S3_BUCKET}/${rel_path}" \
-    --content-type "text/html; charset=utf-8" >/dev/null
-  HTML_ALIAS_UPDATED=$((HTML_ALIAS_UPDATED + 1))
+  # On Windows, aws s3 cp can hit "stream is not seekable" — retry via a temp seekable copy.
+  if aws s3 cp "$aliasfile" "s3://${S3_BUCKET}/${rel_path}" \
+      --content-type "text/html; charset=utf-8" >/dev/null 2>&1; then
+    HTML_ALIAS_UPDATED=$((HTML_ALIAS_UPDATED + 1))
+  else
+    tmp=$(mktemp)
+    cp "$aliasfile" "$tmp"
+    if aws s3 cp "$tmp" "s3://${S3_BUCKET}/${rel_path}" \
+        --content-type "text/html; charset=utf-8" >/dev/null 2>&1; then
+      HTML_ALIAS_UPDATED=$((HTML_ALIAS_UPDATED + 1))
+    else
+      echo -e "${YELLOW}⚠️  content-type update failed for ${rel_path}${NC}"
+      HTML_ALIAS_FAILED=$((HTML_ALIAS_FAILED + 1))
+    fi
+    rm -f "$tmp"
+  fi
 done < <(find "apps/${APP_NAME}/dist" -type f ! -name "*.*")
 echo -e "${GREEN}✅ Updated content-type for ${HTML_ALIAS_UPDATED} extensionless routes${NC}"
+if [ "$HTML_ALIAS_FAILED" -gt 0 ]; then
+  echo -e "${YELLOW}⚠️  ${HTML_ALIAS_FAILED} extensionless routes failed content-type update (continuing)${NC}"
+fi
 
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"
 # Quote each path so shells do not expand wildcards (e.g. /_next/*) before aws sees them.
