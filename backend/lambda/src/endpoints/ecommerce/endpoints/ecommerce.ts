@@ -86,21 +86,29 @@ import {
   productIdIsExcludedFromEcommerceStorefront,
   storefrontExcludeMealProductsSql,
 } from '../../../utils/ecommerce-storefront-product-filter';
+import { buildStorefrontCategoryFilter } from '../../../utils/storefront-category-filter';
 
 const ADMIN_CATEGORY_SELECT = `
   SELECT id::text AS id, name, description, display_order, is_active, image_url,
-         default_commission_rate, created_at
+         default_commission_rate, parent_category_id::text AS parent_category_id, created_at
   FROM ecommerce_categories
   ORDER BY display_order ASC, name ASC`;
 
 const ADMIN_CATEGORY_SELECT_NO_IMAGE = `
   SELECT id::text AS id, name, description, display_order, is_active, created_at,
-         default_commission_rate
+         default_commission_rate, parent_category_id::text AS parent_category_id
   FROM ecommerce_categories
   ORDER BY display_order ASC, name ASC`;
 
 const ADMIN_CATEGORY_SELECT_LEGACY = `
-  SELECT id::text AS id, name, description, display_order, is_active, image_url, created_at
+  SELECT id::text AS id, name, description, display_order, is_active, image_url, created_at,
+         parent_category_id::text AS parent_category_id
+  FROM ecommerce_categories
+  ORDER BY display_order ASC, name ASC`;
+
+const ADMIN_CATEGORY_SELECT_NO_PARENT = `
+  SELECT id::text AS id, name, description, display_order, is_active, image_url,
+         default_commission_rate, created_at
   FROM ecommerce_categories
   ORDER BY display_order ASC, name ASC`;
 
@@ -108,13 +116,31 @@ async function queryAdminCategories() {
   try {
     return await query(ADMIN_CATEGORY_SELECT);
   } catch (dbError: any) {
+    if (dbError.message?.includes('parent_category_id') || dbError.code === '42703') {
+      try {
+        return await query(ADMIN_CATEGORY_SELECT_NO_PARENT);
+      } catch (parentFallbackErr: any) {
+        if (
+          parentFallbackErr.message?.includes('default_commission_rate') ||
+          parentFallbackErr.code === '42703'
+        ) {
+          return await query(
+            `SELECT id::text AS id, name, description, display_order, is_active, created_at
+             FROM ecommerce_categories
+             ORDER BY display_order ASC, name ASC`
+          );
+        }
+        throw parentFallbackErr;
+      }
+    }
     if (dbError.message?.includes('default_commission_rate') || dbError.code === '42703') {
       try {
         return await query(ADMIN_CATEGORY_SELECT_NO_IMAGE);
       } catch (inner: any) {
         if (inner.message?.includes('column "image_url"') || inner.code === '42703') {
           return await query(
-            `SELECT id::text AS id, name, description, display_order, is_active, created_at
+            `SELECT id::text AS id, name, description, display_order, is_active, created_at,
+                    parent_category_id::text AS parent_category_id
              FROM ecommerce_categories
              ORDER BY display_order ASC, name ASC`
           );
@@ -449,13 +475,12 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       if (category) {
-        if (isValidUUID(category)) {
-          whereClause += ` AND p.category_id = $${paramIndex}::uuid`;
-        } else {
-          whereClause += ` AND LOWER(TRIM(COALESCE(p.category, ''))) = LOWER(TRIM($${paramIndex}))`;
+        const categoryFilter = await buildStorefrontCategoryFilter(category, paramIndex);
+        if (categoryFilter) {
+          whereClause += categoryFilter.clause;
+          filterParams.push(...categoryFilter.params);
+          paramIndex = categoryFilter.nextParamIndex;
         }
-        filterParams.push(category);
-        paramIndex++;
       }
 
       if (search) {
@@ -1249,13 +1274,23 @@ export function registerEcommerceEndpoints(app: Hono) {
    */
   app.get("/products/:productId", (c) => handleGetPublicProductById(c, '[products/:productId]'));
 
+/**
+ * Product count per category, rolled up to include child (sub)category products.
+ * e.g. selecting "Pet Food" (parent) still counts products tagged directly under
+ * "Dry Pet Food" / "Wet Pet Food" / etc so the parent chip stays visible and accurate.
+ */
 async function storefrontCategoryProductCountLateral(): Promise<string> {
   const exclude = await storefrontExcludeMealProductsSql();
   return `
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS product_count
       FROM products p
-      WHERE p.category_id = ec.id
+      WHERE (
+        p.category_id = ec.id
+        OR p.category_id IN (
+          SELECT id FROM ecommerce_categories WHERE parent_category_id = ec.id
+        )
+      )
         AND p.is_active = true
         AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
         ${exclude}
@@ -1278,7 +1313,7 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
       try {
         categories = await query(
           `SELECT ec.id::text AS id, ec.name, ec.description, ec.display_order, ec.is_active,
-                  ec.image_url, ec.created_at,
+                  ec.image_url, ec.created_at, ec.parent_category_id::text AS parent_category_id,
                   COALESCE(pc.product_count, 0) AS product_count
            FROM ecommerce_categories ec
            ${categoryLateral}
@@ -1297,10 +1332,38 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
             message: 'Categories table not initialized. Please seed categories via admin panel.',
           });
         }
-        if (dbError.message?.includes('column "image_url"') || dbError.code === '42703') {
+        if (dbError.message?.includes('parent_category_id') || dbError.code === '42703') {
+          try {
+            categories = await query(
+              `SELECT ec.id::text AS id, ec.name, ec.description, ec.display_order, ec.is_active,
+                      ec.image_url, ec.created_at,
+                      COALESCE(pc.product_count, 0) AS product_count
+               FROM ecommerce_categories ec
+               ${categoryLateral}
+               WHERE ec.is_active = true
+               ${withProductsOnly ? 'AND COALESCE(pc.product_count, 0) > 0' : ''}
+               ORDER BY ec.display_order ASC, ec.name ASC`
+            );
+          } catch (noParentErr: any) {
+            if (noParentErr.message?.includes('column "image_url"') || noParentErr.code === '42703') {
+              categories = await query(
+                `SELECT ec.id::text AS id, ec.name, ec.description, ec.display_order, ec.is_active,
+                        ec.created_at,
+                        COALESCE(pc.product_count, 0) AS product_count
+                 FROM ecommerce_categories ec
+                 ${categoryLateral}
+                 WHERE ec.is_active = true
+                 ${withProductsOnly ? 'AND COALESCE(pc.product_count, 0) > 0' : ''}
+                 ORDER BY ec.display_order ASC, ec.name ASC`
+              );
+            } else {
+              throw noParentErr;
+            }
+          }
+        } else if (dbError.message?.includes('column "image_url"') || dbError.code === '42703') {
           categories = await query(
             `SELECT ec.id::text AS id, ec.name, ec.description, ec.display_order, ec.is_active,
-                    ec.created_at,
+                    ec.created_at, ec.parent_category_id::text AS parent_category_id,
                     COALESCE(pc.product_count, 0) AS product_count
              FROM ecommerce_categories ec
              ${categoryLateral}
@@ -2306,6 +2369,7 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
           display_order: item.display_order,
           is_active: item.is_active,
           image_url: item.image_url,
+          parent_category_id: item.parent_category_id,
         };
         if (item.default_commission_rate != null) {
           row.default_commission_rate = item.default_commission_rate;
@@ -2331,7 +2395,17 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
               409
             );
           }
-          if (dbErr.message?.includes('default_commission_rate') || dbErr.code === '42703') {
+          if (
+            dbErr.message?.includes('parent_category_id') &&
+            (dbErr.code === '42703' || dbErr.message?.includes('does not exist'))
+          ) {
+            const { parent_category_id: _p, ...rowWithoutParent } = row;
+            if (item.id && isEcommerceCategoryUuid(item.id)) {
+              await update('ecommerce_categories', { id: item.id }, rowWithoutParent);
+            } else {
+              await insert('ecommerce_categories', rowWithoutParent);
+            }
+          } else if (dbErr.message?.includes('default_commission_rate') || dbErr.code === '42703') {
             const { default_commission_rate: _c, ...rowWithoutCommission } = row;
             if (item.id && isEcommerceCategoryUuid(item.id)) {
               await update('ecommerce_categories', { id: item.id }, rowWithoutCommission);

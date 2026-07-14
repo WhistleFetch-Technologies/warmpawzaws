@@ -29,6 +29,8 @@ export type EcommerceCategoryPublicRow = {
   returns_enabled: boolean;
   /** Storefront-active products in this category (public catalog only). */
   product_count: number;
+  /** Parent category id for hierarchical (sub)categories, or null for top-level. */
+  parent_category_id: string | null;
   created_at?: string;
 };
 
@@ -61,6 +63,10 @@ export async function mapCategoryRowForPublic(
       ? Math.max(0, parseInt(String(productCountRaw), 10) || 0)
       : 0;
 
+  const parentRaw = row.parent_category_id ?? row.parentCategoryId ?? row.parentId;
+  const parent_category_id =
+    parentRaw != null && String(parentRaw).trim() ? String(parentRaw).trim() : null;
+
   return {
     id: String(row.id ?? ''),
     name: String(row.name ?? '').trim(),
@@ -71,6 +77,7 @@ export async function mapCategoryRowForPublic(
     default_commission_rate: defaultCommissionRate,
     returns_enabled,
     product_count,
+    parent_category_id,
     created_at: row.created_at != null ? String(row.created_at) : undefined,
   };
 }
@@ -92,6 +99,7 @@ export function parseAdminCategoryPayloadItem(item: Record<string, unknown>): {
   image_url: string | null;
   default_commission_rate: number | null;
   returns_enabled: boolean;
+  parent_category_id: string | null;
 } {
   const name = String(item.name ?? '').trim();
   const rawId = item.id != null ? String(item.id).trim() : '';
@@ -107,6 +115,11 @@ export function parseAdminCategoryPayloadItem(item: Record<string, unknown>): {
 
   const rawImage = item.image_url ?? item.imageUrl ?? item.icon;
   const image_url = normalizeCategoryImageUrlForStorage(rawImage);
+
+  const rawParentId = item.parent_category_id ?? item.parentCategoryId ?? item.parentId;
+  const parentIdStr = rawParentId != null ? String(rawParentId).trim() : '';
+  const parent_category_id =
+    parentIdStr && isEcommerceCategoryUuid(parentIdStr) && parentIdStr !== id ? parentIdStr : null;
 
   return {
     id,
@@ -124,5 +137,6 @@ export function parseAdminCategoryPayloadItem(item: Record<string, unknown>): {
       item.returns_enabled === 'true' ||
       item.returnsEnabled === true ||
       item.returnsEnabled === 'true',
+    parent_category_id,
   };
 }
