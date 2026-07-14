@@ -23,6 +23,7 @@ import {
   clearNeedsPasswordSetup,
 } from '@/lib/session-utils';
 import { Eye, EyeOff } from 'lucide-react';
+import { CachedImage } from '@/components/shared/CachedImage';
 import {
   FORGOT_PASSWORD_RETRY_CONFIG,
   LOGIN_OTP_RETRY_CONFIG,
@@ -852,7 +853,7 @@ function AuthPageContent() {
           <div className={authHeaderClass} style={authOrangeHeaderStyle}>
             {/* Warmpawz Logo */}
             <div className={authLogoRingClass}>
-              <img src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
+              <CachedImage src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
             </div>
 
             {/* Title */}
@@ -1012,7 +1013,7 @@ function AuthPageContent() {
         <div className={authHeaderClass} style={authOrangeHeaderStyle}>
           {/* Warmpawz Logo */}
           <div className={authLogoRingClass}>
-            <img src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
+            <CachedImage src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
 
           {/* Welcome Text */}
