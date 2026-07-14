@@ -156,7 +156,7 @@ export function applyVetHubDiscoveryToProviders<
  * Non-vet personas must not appear on vet hub vendor lists (Home Visit, clinic, featured).
  * Covers groomers, trainers, and walkers that previously leaked via vs.category = "General".
  */
-export function isNonVetProviderRole(row: ProviderRoleRow): boolean {
+export function isNonVetProviderRow(row: ProviderRoleRow): boolean {
   const role = String(
     row.roleDisplayName ?? row.roleName ?? row.role ?? row.providerType ?? ''
   )
@@ -194,7 +194,7 @@ export function isNonVetProviderRole(row: ProviderRoleRow): boolean {
 }
 
 export function filterVetHubProviderRows<T extends ProviderRoleRow>(rows: T[]): T[] {
-  return rows.filter((row) => !isNonVetProviderRole(row));
+  return rows.filter((row) => !isNonVetProviderRow(row));
 }
 
 export function isVetHubDiscoveryConfig(config: {
