@@ -27,7 +27,7 @@ const PET_FOOD_SUBCATEGORY_REGEX: Readonly<Record<PetFoodSubcategoryName, RegExp
     /\b(wet|gravy|chunks in gravy|in gravy|canned|pouch|pouches|moist|pate|paté|broth|stew)\b/i,
   'Dry Pet Food': /\b(dry|kibble|kibbles|pellets|crunchy)\b/i,
   'Therapeutic Food':
-    /\b(therapeutic|prescription|renal|kidney|urinary|digestive|gastrointestinal|hypoallergenic|hydrolyzed|veterinary|clinical|recovery|hepatic|cardiac|vet diet|prescription diet)\b/i,
+    /\b(therapeutic|prescription diet|vet diet|prescription|renal|kidney|urinary|digestive|gastrointestinal|hypoallergenic|hydrolyzed|recovery|hepatic|cardiac)\b/i,
   'Puppy Food': /\b(puppy|puppies|kitten|kittens|junior)\b/i,
   'Adult Food': /\b(adult|senior|mature|7\+ years|1\+ year|1\+ years)\b/i,
 };
@@ -43,7 +43,7 @@ export function classifyPetFoodSubcategory(
   description?: unknown
 ): PetFoodSubcategoryName | null {
   const text = `${String(name ?? '').trim()} ${String(description ?? '').trim()}`.trim();
-  if (!text) return null;
+  if (!text || /\b(cat litter|litter tray|litter box|litter mat)\b/i.test(text)) return null;
 
   for (const subName of PET_FOOD_SUBCATEGORY_NAMES) {
     if (PET_FOOD_SUBCATEGORY_REGEX[subName].test(text)) return subName;

@@ -28,7 +28,7 @@ export const PET_FOOD_SUBCATEGORY_REGEX: Readonly<
     '(wet|gravy|chunks in gravy|in gravy|canned|pouch|pouches|moist|pate|pat[eé]|broth|stew)',
   'Dry Pet Food': '(dry|kibble|kibbles|pellets|crunchy)',
   'Therapeutic Food':
-    '(therapeutic|prescription|renal|kidney|urinary|digestive|gastrointestinal|hypoallergenic|hydrolyzed|veterinary|clinical|recovery|hepatic|cardiac|vet diet|prescription diet)',
+    '(therapeutic|prescription diet|vet diet|prescription|renal|kidney|urinary|digestive|gastrointestinal|hypoallergenic|hydrolyzed|recovery|hepatic|cardiac)',
   'Puppy Food': '(puppy|puppies|kitten|kittens|junior)',
   'Adult Food': '(adult|senior|mature|7\\+ years|1\\+ year|1\\+ years)',
 };
@@ -41,13 +41,19 @@ export function productTextBlob(name: unknown, description?: unknown): string {
   return `${String(name ?? '').trim()} ${String(description ?? '').trim()}`.trim().toLowerCase();
 }
 
+/** Non-food Pet Food catalog rows should not match food subcategory keyword rules. */
+export function isPetFoodSubcategoryExcludedProduct(name: unknown, description?: unknown): boolean {
+  const text = productTextBlob(name, description);
+  return /\b(cat litter|litter tray|litter box|litter mat)\b/i.test(text);
+}
+
 /** Classify combined product text into a Pet Food subcategory name, or null if no rule matches. */
 export function classifyPetFoodSubcategory(
   name: unknown,
   description?: unknown
 ): PetFoodSubcategoryName | null {
   const text = productTextBlob(name, description);
-  if (!text) return null;
+  if (!text || isPetFoodSubcategoryExcludedProduct(name, description)) return null;
 
   for (const subName of PET_FOOD_SUBCATEGORY_NAMES) {
     const re = new RegExp(PET_FOOD_SUBCATEGORY_REGEX[subName], 'i');
@@ -85,5 +91,7 @@ export function petFoodSubcategoryParentProductMatchSql(
     .join(' AND ');
 
   const matchSelf = `${text} ~ '${PET_FOOD_SUBCATEGORY_REGEX[subcategoryName]}'`;
-  return excludeHigher ? `(${excludeHigher} AND ${matchSelf})` : matchSelf;
+  const litterExclude = `${text} !~ '(cat litter|litter tray|litter box|litter mat)'`;
+  const core = excludeHigher ? `(${excludeHigher} AND ${matchSelf})` : matchSelf;
+  return `(${core} AND ${litterExclude})`;
 }
