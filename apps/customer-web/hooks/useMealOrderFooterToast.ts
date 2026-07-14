@@ -1,10 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { HOME_POLL_PROFILE, isDocumentHidden, pollBackoffMs } from '@/lib/home-poll-profile';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
-import { isMealOrderAwaitingPayment, isMealPaymentHoldExpired } from '@/lib/payment-hold-ui';
 import { resolveEffectiveMealDeliveryState } from '@warmpawz/shared-types';
 import {
   normalizeMealFooterStatus,
@@ -12,8 +11,6 @@ import {
   writeMealFooterDismissed,
   type MealFooterActiveOrder,
 } from '@/lib/meal-order-footer-toast';
-
-const POLL_MS = 5_000;
 
 function extractOrdersArray(res: unknown): Record<string, unknown>[] {
   const r = res as { orders?: unknown[]; data?: { orders?: unknown[] } };
@@ -63,86 +60,6 @@ function mapMealsActiveRow(row: Record<string, unknown>): MealFooterActiveOrder 
   };
 }
 
-/** Same source as Meal Plan Orders page — proven to return preparing rows. */
-function mapMealPlanOrdersRow(row: Record<string, unknown>): MealFooterActiveOrder | null {
-  const orderId = String(row.id ?? row.orderId ?? '');
-  if (!orderId) return null;
-
-  const rawStatus = String(row.status ?? '').trim();
-  const lower = rawStatus.toLowerCase();
-  if (['delivered', 'cancelled', 'refunded'].includes(lower)) return null;
-
-  const normalized = normalizeMealFooterStatus(rawStatus);
-  if (!normalized) return null;
-
-  // Payment hold only applies before kitchen/delivery — not once vendor is preparing.
-  const pastPaymentGate = ['preparing', 'ready_for_pickup', 'picked_up', 'on_the_way', 'delivered'].includes(
-    normalized,
-  );
-  if (!pastPaymentGate) {
-    const paymentCtx = {
-      status: rawStatus,
-      paymentStatus: (row.payment_status ?? row.paymentStatus) as string | undefined,
-      paymentHoldExpiresAt: (row.payment_hold_expires_at ?? row.paymentHoldExpiresAt) as string | null | undefined,
-      createdAt: (row.created_at ?? row.createdAt) as string | undefined,
-    };
-    if (isMealPaymentHoldExpired(paymentCtx)) return null;
-    if (isMealOrderAwaitingPayment(paymentCtx)) return null;
-  }
-
-  return {
-    orderId,
-    orderNumber: row.order_number != null ? String(row.order_number) : undefined,
-    vendorName:
-      row.vendor_name != null
-        ? String(row.vendor_name)
-        : row.vendorName != null
-          ? String(row.vendorName)
-          : undefined,
-    status: normalized,
-    logisticsStatus: null,
-    riderName: null,
-    riderMessage: null,
-    etaMinutes: null,
-  };
-}
-
-async function resolveCustomerIdForFooter(phone: string): Promise<string | null> {
-  const cached = getResolvedCustomerId();
-  if (cached) return cached;
-  try {
-    const res = (await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(phone)}`)) as {
-      customer?: { id?: string };
-      id?: string;
-    };
-    const id = res?.customer?.id || res?.id;
-    return id ? String(id) : null;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchMealPlanOrderRows(phone: string): Promise<Record<string, unknown>[]> {
-  const customerId = await resolveCustomerIdForFooter(phone);
-  const q = new URLSearchParams();
-  if (customerId) q.set('customerId', customerId);
-  q.set('phone', phone);
-
-  let rows = extractOrdersArray(await apiClient.get(`/customer/meal-plan-orders?${q.toString()}`));
-
-  if (rows.length === 0 && customerId) {
-    try {
-      rows = extractOrdersArray(
-        await apiClient.get(`/meal/orders/customer/${encodeURIComponent(customerId)}`),
-      );
-    } catch {
-      /* primary route may be enough */
-    }
-  }
-
-  return rows;
-}
-
 function pickBestOrder(orders: MealFooterActiveOrder[]): MealFooterActiveOrder | null {
   if (!orders.length) return null;
   const priority: Record<string, number> = {
@@ -170,91 +87,137 @@ async function enrichWithEta(order: MealFooterActiveOrder): Promise<MealFooterAc
   }
 }
 
-async function fetchMealFooterCandidates(phone: string): Promise<MealFooterActiveOrder[]> {
+/**
+ * Footer heartbeat: only /orders/meals/active (not meal-plan-orders history).
+ * Orders / meal-plan pages keep their own on-demand meal-plan-orders fetch.
+ */
+export async function fetchMealFooterActiveOnly(phone: string): Promise<MealFooterActiveOrder[]> {
+  const activeRes = await apiClient.get(`/customer/${phone}/orders/meals/active`);
   const candidates: MealFooterActiveOrder[] = [];
-
-  // Primary: same API as /orders/meal-plans (user sees PREPARING here).
-  try {
-    for (const row of await fetchMealPlanOrderRows(phone)) {
-      const mapped = mapMealPlanOrdersRow(row);
-      if (mapped) candidates.push(mapped);
-    }
-  } catch {
-    /* try fallback */
+  for (const row of extractOrdersArray(activeRes)) {
+    const mapped = mapMealsActiveRow(row);
+    if (mapped) candidates.push(mapped);
   }
+  return candidates;
+}
 
-  // Secondary: logistics-enriched active list (when SQL succeeds).
-  try {
-    const activeRes = await apiClient.get(`/customer/${phone}/orders/meals/active`);
-    for (const row of extractOrdersArray(activeRes)) {
-      const mapped = mapMealsActiveRow(row);
-      if (mapped) candidates.push(mapped);
-    }
-  } catch {
-    /* meal-plan-orders may be enough */
-  }
-
-  const byId = new Map<string, MealFooterActiveOrder>();
-  for (const c of candidates) {
-    const prev = byId.get(c.orderId);
-    if (!prev) {
-      byId.set(c.orderId, c);
-      continue;
-    }
-    const best = pickBestOrder([prev, c]);
-    if (best) byId.set(c.orderId, best);
-  }
-
-  return [...byId.values()];
+function mealIntervalForOrder(hasLiveOrder: boolean): number {
+  return hasLiveOrder ? HOME_POLL_PROFILE.mealLiveMs : HOME_POLL_PROFILE.mealIdleMs;
 }
 
 export function useMealOrderFooterToast(customerPhone: string | null | undefined) {
   const [order, setOrder] = useState<MealFooterActiveOrder | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const orderRef = useRef<MealFooterActiveOrder | null>(null);
+  const failuresRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    orderRef.current = order;
+  }, [order]);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
 
   const load = useCallback(async () => {
     if (!isCustomerMealPlansEnabled()) {
       setOrder(null);
       setDismissed(false);
-      return;
+      return null;
     }
     const phone = (customerPhone || '').replace(/\D/g, '').slice(-10);
     if (phone.length < 10) {
       setOrder(null);
       setDismissed(false);
-      return;
+      return null;
     }
 
     try {
-      const mapped = await fetchMealFooterCandidates(phone);
+      const mapped = await fetchMealFooterActiveOnly(phone);
       const best = pickBestOrder(mapped);
+      failuresRef.current = 0;
 
       if (best) {
         const enriched = await enrichWithEta(best);
         setOrder(enriched);
         setDismissed(readMealFooterDismissed(enriched.orderId));
-        return;
+        return enriched;
       }
 
       setOrder(null);
       setDismissed(false);
+      return null;
     } catch {
-      /* keep last order on transient errors */
+      failuresRef.current += 1;
+      return orderRef.current;
     }
   }, [customerPhone]);
 
+  const scheduleNext = useCallback(
+    (hasLive: boolean) => {
+      clearTimer();
+      if (typeof document !== 'undefined' && isDocumentHidden()) return;
+      const base = mealIntervalForOrder(hasLive);
+      const delay = pollBackoffMs(base, failuresRef.current);
+      timerRef.current = setTimeout(() => {
+        void (async () => {
+          if (isDocumentHidden()) return;
+          const next = await load();
+          scheduleNext(Boolean(next));
+        })();
+      }, delay);
+    },
+    [clearTimer, load]
+  );
+
   useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), POLL_MS);
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void load();
+    let cancelled = false;
+    let appListener: { remove: () => Promise<void> } | undefined;
+
+    const runVisibleCycle = () => {
+      if (cancelled || isDocumentHidden()) return;
+      void (async () => {
+        const next = await load();
+        if (!cancelled) scheduleNext(Boolean(next));
+      })();
     };
-    document.addEventListener('visibilitychange', onVisible);
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        clearTimer();
+      } else {
+        runVisibleCycle();
+      }
+    };
+
+    runVisibleCycle();
+    document.addEventListener('visibilitychange', onVisibility);
+
+    void (async () => {
+      try {
+        const cap = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+        if (!cap?.isNativePlatform?.()) return;
+        const { App } = await import(/* webpackIgnore: true */ '@capacitor/app');
+        appListener = await App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) runVisibleCycle();
+          else clearTimer();
+        });
+      } catch {
+        /* non-Capacitor */
+      }
+    })();
+
     return () => {
-      clearInterval(id);
-      document.removeEventListener('visibilitychange', onVisible);
+      cancelled = true;
+      clearTimer();
+      document.removeEventListener('visibilitychange', onVisibility);
+      appListener?.remove().catch(() => undefined);
     };
-  }, [load]);
+  }, [clearTimer, load, scheduleNext]);
 
   const dismiss = useCallback(() => {
     if (!order) return;

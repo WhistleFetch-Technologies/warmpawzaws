@@ -19,6 +19,8 @@ import {
   persistPetsToLocalStorage,
   writeCachedPetsForPhone,
 } from '@/lib/customer-pets-cache';
+import { getResolvedCustomerId, persistCustomerDatabaseId } from '@/lib/customer-id-storage';
+import { HOME_POLL_PROFILE, withPollJitter } from '@/lib/home-poll-profile';
 
 export type { HomeCarouselBanner };
 export { readCachedPetsFromStorage, persistPetsToLocalStorage };
@@ -419,11 +421,19 @@ export function useHomePageData({
 
   useEffect(() => {
     if (!phone) return;
+    const id = getResolvedCustomerId();
+    if (id) {
+      setCustomerId(id);
+      return;
+    }
     apiClient
       .get(`/customer/by-phone?phone=${encodeURIComponent(phone)}`)
       .then((r) => {
         const resp = r as { customer?: { id?: string } };
-        if (resp?.customer?.id) setCustomerId(resp.customer.id);
+        if (resp?.customer?.id) {
+          persistCustomerDatabaseId(resp.customer.id);
+          setCustomerId(resp.customer.id);
+        }
       })
       .catch(() => {});
   }, [phone, refreshKey]);
@@ -436,9 +446,25 @@ export function useHomePageData({
     }
     let cancelled = false;
     const fetchUnread = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       try {
+        const userId = customerId || getResolvedCustomerId();
+        if (userId) {
+          const data = await apiClient.get<{
+            unreadCount?: number;
+            notifications?: { is_read?: boolean; read?: boolean }[];
+          }>(`/notifications?userId=${encodeURIComponent(userId)}&userType=customer&limit=1`);
+          if (cancelled) return;
+          if (typeof data.unreadCount === 'number') {
+            setNotificationUnreadCount(data.unreadCount);
+            return;
+          }
+          const list = data.notifications ?? [];
+          setNotificationUnreadCount(list.filter((n) => !(n.is_read ?? n.read)).length);
+          return;
+        }
         const data = await apiClient.get<{ notifications?: { is_read?: boolean; read?: boolean }[] }>(
-          `/customer/notifications?phone=${encodeURIComponent(clean)}&limit=50`
+          `/customer/notifications?phone=${encodeURIComponent(clean)}&limit=10`
         );
         if (cancelled) return;
         const list = data.notifications ?? [];
@@ -448,12 +474,12 @@ export function useHomePageData({
       }
     };
     void fetchUnread();
-    const interval = setInterval(fetchUnread, 90_000);
+    const interval = setInterval(fetchUnread, withPollJitter(HOME_POLL_PROFILE.notifBadgeMs));
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [phone, refreshKey, notificationInboxVersion]);
+  }, [phone, refreshKey, notificationInboxVersion, customerId]);
 
   useEffect(() => {
     const clean = (phone || '').replace(/[^0-9]/g, '');
@@ -463,9 +489,10 @@ export function useHomePageData({
     }
     let cancelled = false;
     const fetchUnread = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       try {
         const b = await fetchCustomerMessageUnreadBreakdown({
-          customerId: customerId || undefined,
+          customerId: customerId || getResolvedCustomerId() || undefined,
           phoneForApi: phone,
         });
         if (!cancelled) setCombinedMessageUnreadCount(b.total);
@@ -474,7 +501,7 @@ export function useHomePageData({
       }
     };
     void fetchUnread();
-    const interval = setInterval(fetchUnread, 90_000);
+    const interval = setInterval(fetchUnread, withPollJitter(HOME_POLL_PROFILE.messageBadgeMs));
     return () => {
       cancelled = true;
       clearInterval(interval);

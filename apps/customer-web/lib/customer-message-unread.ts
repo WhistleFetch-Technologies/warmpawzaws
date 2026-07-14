@@ -124,8 +124,47 @@ function sumVendorUnreadFromConversations(conversations: ConvRow[]): number {
   return s;
 }
 
-const SUPPORT_TICKET_DETAIL_CAP = 15;
-const SUPPORT_FETCH_CHUNK = 5;
+/**
+ * List-row unread heuristic (no per-ticket detail GET).
+ * Prefer explicit unread flags; else compare updated_at vs customer_viewed_at / local seen tip.
+ */
+export function supportTicketListRowIndicatesUnread(row: Record<string, unknown>): boolean {
+  const id = row?.id != null ? String(row.id).trim() : '';
+  if (!id) return false;
+  const status = String(row?.status || '').toLowerCase();
+  if (EXCLUDED_TICKET_STATUSES.has(status)) return false;
+
+  if (row.has_unread === true || row.hasUnread === true || row.customer_has_unread === true) {
+    return true;
+  }
+  const explicitUnread = Number(row.unread_count ?? row.unreadCount ?? 0);
+  if (Number.isFinite(explicitUnread) && explicitUnread > 0) return true;
+
+  const tipRaw =
+    row.last_message_at ??
+    row.lastMessageAt ??
+    row.last_updated_at ??
+    row.lastUpdatedAt ??
+    row.updated_at ??
+    row.updatedAt;
+  const tipMs = tipRaw != null ? new Date(String(tipRaw)).getTime() : NaN;
+  if (!Number.isFinite(tipMs) || tipMs <= 0) {
+    // No activity timestamps — do not inflate badge
+    return false;
+  }
+
+  const viewedRaw = row.customer_viewed_at ?? row.customerViewedAt;
+  if (viewedRaw) {
+    const viewedMs = new Date(String(viewedRaw)).getTime();
+    if (Number.isFinite(viewedMs) && viewedMs > 0 && viewedMs >= tipMs) return false;
+  }
+
+  const seenLocal = getSupportSeenUpToMs(id);
+  if (seenLocal > 0 && seenLocal >= tipMs) return false;
+
+  // Never viewed, or last view older than tip → unread for badge
+  return true;
+}
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -163,34 +202,8 @@ export async function fetchCustomerMessageUnreadBreakdown(opts: {
         offset: 0,
       })) as { tickets?: Record<string, unknown>[] };
       const tickets = Array.isArray(res?.tickets) ? res.tickets : [];
-      const candidateIds: string[] = [];
       for (const t of tickets) {
-        const id = t?.id != null ? String(t.id).trim() : '';
-        if (!id) continue;
-        const status = String(t?.status || '').toLowerCase();
-        if (EXCLUDED_TICKET_STATUSES.has(status)) continue;
-        candidateIds.push(id);
-        if (candidateIds.length >= SUPPORT_TICKET_DETAIL_CAP) break;
-      }
-
-      for (let i = 0; i < candidateIds.length; i += SUPPORT_FETCH_CHUNK) {
-        const chunk = candidateIds.slice(i, i + SUPPORT_FETCH_CHUNK);
-        const details = await Promise.all(
-          chunk.map(async (ticketId) => {
-            try {
-              const d = (await supportCrmApi.getTicket(ticketId)) as SupportDetailShape & {
-                success?: boolean;
-              };
-              return { ticketId, d };
-            } catch {
-              return { ticketId, d: null as SupportDetailShape | null };
-            }
-          })
-        );
-        for (const { ticketId, d } of details) {
-          if (d == null || !d.ticket) continue;
-          if (supportTicketDetailIndicatesUnreadForCustomer(d, ticketId)) unread_support_messages += 1;
-        }
+        if (supportTicketListRowIndicatesUnread(t)) unread_support_messages += 1;
       }
     } catch {
       unread_support_messages = 0;
