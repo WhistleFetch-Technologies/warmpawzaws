@@ -194,13 +194,17 @@ export async function fetchAndCacheImageSrc(
   }
 }
 
-/** Pre-warm static paths on idle (no-op on SSR). */
+/** Pre-warm static paths on idle (no-op on SSR). Skips paths already in IDB. */
 export async function prewarmStaticImagePaths(paths: string[]): Promise<void> {
   if (typeof window === 'undefined') return;
   const unique = [...new Set(paths.filter((p) => isStaticLocalImageSrc(p)))];
   for (const path of unique) {
     try {
+      const existing = await getCachedImageBlobUrl(path);
+      if (existing) continue;
       await fetchAndCacheImageSrc(path);
+      // Yield so hub navigations are not starved by a long prewarm train.
+      await new Promise((r) => globalThis.setTimeout(r, 120));
     } catch {
       // best-effort
     }
@@ -212,9 +216,10 @@ export function scheduleStaticImagePrewarm(paths: string[]): void {
   const run = () => {
     void prewarmStaticImagePaths(paths);
   };
+  // Late idle: prefer first paint / service hub images over background warm.
   if (typeof window.requestIdleCallback === 'function') {
-    window.requestIdleCallback(run, { timeout: 4000 });
+    window.requestIdleCallback(run, { timeout: 12000 });
   } else {
-    globalThis.setTimeout(run, 1500);
+    globalThis.setTimeout(run, 4000);
   }
 }
