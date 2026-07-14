@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo, useCallback } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { ArrowUp, ChevronRight, TrendingUp } from 'lucide-react';
 import { SectionHeader } from '../shared/SectionHeader';
 import { trendingRoleIdToCategorySlug } from '../utils/trending-category';
@@ -87,13 +87,12 @@ function TrendingNowSectionComponent({
               {/* Category icon + rank badge */}
               <div className="relative shrink-0">
                 <div className="relative h-[3.25rem] w-[3.25rem] overflow-hidden rounded-xl shadow-sm">
-                  <Image
+                  <CachedImage
                     src={iconSrc}
                     alt=""
                     fill
                     className="object-cover"
                     sizes="52px"
-                    unoptimized
                   />
                 </div>
                 <div
@@ -136,13 +135,12 @@ function TrendingNowSectionComponent({
                         className="relative h-6 w-6 overflow-hidden rounded-full border-2 border-white bg-gray-100"
                         style={{ zIndex: avatars.length - avatarIndex }}
                       >
-                        <Image
+                        <CachedImage
                           src={src}
                           alt=""
                           fill
                           className="object-cover"
                           sizes="24px"
-                          unoptimized
                         />
                       </div>
                     ))}

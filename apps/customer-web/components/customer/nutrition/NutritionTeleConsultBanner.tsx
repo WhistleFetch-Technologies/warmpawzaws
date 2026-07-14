@@ -1,6 +1,6 @@
 'use client';
 
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import {
   Video,
   Zap,
@@ -97,13 +97,13 @@ export function NutritionTeleConsultBanner({ onClick, className = '' }: Nutritio
                 className="nutrition-banner-img-glow pointer-events-none absolute inset-[10%] rounded-[1.75rem] bg-gradient-to-b from-white/60 via-emerald-50/40 to-white/30"
                 aria-hidden
               />
-              <Image
+              <CachedImage
                 src={BANNER_IMAGE}
                 alt="Pet doctor video consultation on laptop"
                 fill
                 className="relative z-[1] object-contain object-center drop-shadow-[0_8px_20px_rgba(34,197,94,0.18)]"
                 sizes="160px"
-                priority
+                loading="eager"
               />
             </div>
           </div>

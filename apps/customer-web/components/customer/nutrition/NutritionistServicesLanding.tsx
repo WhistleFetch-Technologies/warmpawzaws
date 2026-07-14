@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import {
   Apple,
   UtensilsCrossed,
@@ -268,7 +268,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                       ) : null}
                     </div>
                     <div className="pointer-events-none absolute bottom-0 right-0 z-[2] h-[72%] w-[48%]">
-                      <Image
+                      <CachedImage
                         src={service.image}
                         alt=""
                         fill

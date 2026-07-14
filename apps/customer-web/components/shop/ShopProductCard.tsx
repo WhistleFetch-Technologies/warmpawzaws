@@ -8,6 +8,7 @@ import { ShopCartQuantityControl } from './ShopCartQuantityControl';
 import type { ShopProduct } from './shop-types';
 import { getProductDiscountPercent } from './map-shop-product';
 import { CachedImage } from '@/components/shared/CachedImage';
+import { pickShopProductListingImage } from '@/lib/product-listing-image';
 
 const PRODUCT_CARD_SHADOW =
   'shadow-[0_2px_6px_rgba(15,23,42,0.22),0_8px_24px_rgba(15,23,42,0.14)]';
@@ -31,14 +32,12 @@ export function ShopProductCard({
   const [imageFailed, setImageFailed] = React.useState(false);
 
   const wishlistPid = canonicalProductId(product as unknown as Record<string, unknown>) || product.id;
-  const primaryImage =
-    product.images?.length && product.images[0] && !imageFailed
-      ? String(product.images[0]).trim()
-      : '';
+  const listingImage = pickShopProductListingImage(product);
+  const primaryImage = listingImage && !imageFailed ? listingImage : '';
 
   React.useEffect(() => {
     setImageFailed(false);
-  }, [product.id, product.images?.[0]]);
+  }, [product.id, product.thumbUrl, product.images?.[0]]);
 
   const discount = getProductDiscountPercent(product);
   const outOfStock = product.stock === 0;

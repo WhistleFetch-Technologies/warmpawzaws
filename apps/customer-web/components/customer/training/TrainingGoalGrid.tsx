@@ -1,6 +1,6 @@
 'use client';
 
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { GraduationCap, PawPrint } from 'lucide-react';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import {
@@ -106,7 +106,7 @@ export function TrainingGoalGrid({ problems, onNavigate }: TrainingGoalGridProps
 
                 <div className="absolute inset-x-0 bottom-0 top-6 flex items-end justify-center px-0.5 pb-0.5 sm:top-7 sm:px-1 sm:pb-1">
                   <div className="relative h-full w-full">
-                    <Image
+                    <CachedImage
                       src={image}
                       alt=""
                       fill

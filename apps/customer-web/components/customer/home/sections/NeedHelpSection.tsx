@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import {
   Headphones,
   Heart,
@@ -155,13 +155,12 @@ function NeedHelpSectionComponent({ onNavigate, className = '' }: NeedHelpSectio
                 <span className="text-[9px] font-bold leading-none text-[#FF7A00]">24/7</span>
               </div>
 
-              <Image
+              <CachedImage
                 src={SUPPORT_IMAGE}
                 alt="Warmpawz support mascot ready to help"
                 width={336}
                 height={336}
                 className="need-help-mascot-float relative z-[1] h-auto w-full object-contain object-bottom drop-shadow-sm"
-                unoptimized
               />
             </div>
           </div>

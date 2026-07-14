@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback, type MouseEvent } from "react";
-import Image from "next/image";
+import { CachedImage } from "@/components/shared/CachedImage";
 import {
   Home,
   Star,
@@ -421,13 +421,13 @@ export function PetSitterServiceRouter({
                 </div>
                 <div className="relative flex w-[42%] shrink-0 items-end justify-center pb-5 pr-2 pt-2 sm:w-[44%] sm:pb-6 sm:pr-3">
                   <div className="relative aspect-[5/4] w-full max-w-[168px]">
-                    <Image
+                    <CachedImage
                       src={SITTING_BANNER_IMAGE}
                       alt="Dog and cat relaxing at home"
                       fill
                       className="object-contain object-bottom"
                       sizes="168px"
-                      priority
+                      loading="eager"
                     />
                   </div>
                 </div>
@@ -527,7 +527,7 @@ export function PetSitterServiceRouter({
                         </p>
                       </div>
                       <div className={SITTING_CARD_IMAGE}>
-                        <Image
+                        <CachedImage
                           src={opt.image}
                           alt={opt.title}
                           fill

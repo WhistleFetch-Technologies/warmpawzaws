@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { PresignableImage } from '@/components/shared/PresignableImage';
+import { apiClient } from '@/lib/api-client';
 import {
   fetchAndCacheImageSrc,
   getCachedImageBlobUrl,
-  isStaticLocalImageSrc,
+  isIndexedDbCacheableImageSrc,
 } from '@/lib/image-asset-cache';
 
 type CachedImageProps = {
@@ -21,9 +21,22 @@ type CachedImageProps = {
   onUnavailable?: () => void;
 };
 
+async function refreshSignedUrlIfNeeded(url: string): Promise<string | null> {
+  if (!url.includes('amazonaws.com')) return null;
+  try {
+    const data = await apiClient.get<{ success?: boolean; signedUrl?: string }>(
+      `/storage/refresh-url?url=${encodeURIComponent(url)}`
+    );
+    if (data?.success && data.signedUrl) return data.signedUrl;
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
 /**
- * Renders images with IndexedDB cache for same-origin static paths (/images/**).
- * S3 / presigned URLs delegate to PresignableImage (refresh on 403).
+ * Renders images with IndexedDB cache for static `/images/**` and managed S3/CDN keys.
+ * Presigned URL expiry: refresh via API, then re-cache under the stable s3: key.
  */
 export function CachedImage({
   src,
@@ -39,18 +52,20 @@ export function CachedImage({
 }: CachedImageProps) {
   const [displaySrc, setDisplaySrc] = useState<string>(src?.trim() || '');
   const [failed, setFailed] = useState(false);
+  const [triedRefresh, setTriedRefresh] = useState(false);
 
-  const isStatic = isStaticLocalImageSrc(src);
+  const cacheable = isIndexedDbCacheableImageSrc(src);
 
   useEffect(() => {
     const raw = src?.trim() || '';
     setFailed(false);
+    setTriedRefresh(false);
     if (!raw) {
       setDisplaySrc('');
       return;
     }
 
-    if (!isStaticLocalImageSrc(raw)) {
+    if (!isIndexedDbCacheableImageSrc(raw)) {
       setDisplaySrc(raw);
       return;
     }
@@ -68,9 +83,10 @@ export function CachedImage({
       if (cancelled) return;
       if (fetched) {
         setDisplaySrc(fetched);
-      } else {
-        setDisplaySrc(raw);
+        return;
       }
+      // CORS / network miss: still render original URL (img tag does not need CORS).
+      setDisplaySrc(raw);
     })();
 
     return () => {
@@ -78,40 +94,55 @@ export function CachedImage({
     };
   }, [src]);
 
-  const handleStaticError = useCallback(() => {
+  const markUnavailable = useCallback(() => {
     setFailed(true);
     onUnavailable?.();
   }, [onUnavailable]);
 
+  const handleError = useCallback(async () => {
+    const raw = src?.trim() || '';
+    if (!raw) {
+      markUnavailable();
+      return;
+    }
+
+    if (!triedRefresh && raw.includes('amazonaws.com')) {
+      setTriedRefresh(true);
+      const refreshed = await refreshSignedUrlIfNeeded(raw);
+      if (refreshed) {
+        const cached = await fetchAndCacheImageSrc(refreshed);
+        setDisplaySrc(cached || refreshed);
+        return;
+      }
+    }
+
+    // Blob stale/corrupt: fall back to network once.
+    if (displaySrc.startsWith('blob:') && displaySrc !== raw) {
+      setDisplaySrc(raw);
+      return;
+    }
+
+    markUnavailable();
+  }, [src, triedRefresh, displaySrc, markUnavailable]);
+
   if (!src?.trim() || failed) return null;
 
-  if (!isStatic) {
+  if (!cacheable) {
     const external = (src || '').trim();
-    if (!external.includes('amazonaws.com')) {
-      return (
-        <img
-          src={external}
-          alt={alt}
-          className={className}
-          style={style}
-          width={width}
-          height={height}
-          loading={loading}
-          decoding="async"
-          onError={() => {
-            setFailed(true);
-            onUnavailable?.();
-          }}
-        />
-      );
-    }
     return (
-      <PresignableImage
-        src={src}
+      <img
+        src={external}
         alt={alt}
         className={className}
         style={style}
-        onUnavailable={onUnavailable}
+        width={width}
+        height={height}
+        loading={loading}
+        decoding="async"
+        onError={() => {
+          setFailed(true);
+          onUnavailable?.();
+        }}
       />
     );
   }
@@ -138,7 +169,9 @@ export function CachedImage({
       sizes={sizes}
       loading={loading}
       decoding="async"
-      onError={handleStaticError}
+      onError={() => {
+        void handleError();
+      }}
     />
   );
 }

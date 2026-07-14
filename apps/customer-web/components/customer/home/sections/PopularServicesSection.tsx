@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo, useMemo } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import { Sparkles } from 'lucide-react';
 import { filterPopularServicesForReviewAccount } from '@/lib/app-review-demo-account';
 import { HorizontalScrollRow } from '../shared/HorizontalScrollRow';
@@ -52,13 +52,12 @@ function PopularServicesSectionComponent({
             >
               <div className="p-3 pb-0">
                 <div className="relative h-28 w-full overflow-hidden rounded-2xl bg-gradient-to-br from-orange-50 to-pink-50">
-                  <Image
+                  <CachedImage
                     src={item.imageUrl}
                     alt=""
                     fill
                     className="object-cover"
                     sizes="160px"
-                    unoptimized
                   />
                   <span
                     className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/90 bg-white/95 shadow-[0_2px_8px_rgba(0,0,0,0.12)] backdrop-blur-[2px]"

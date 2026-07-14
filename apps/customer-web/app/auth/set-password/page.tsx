@@ -11,6 +11,7 @@ import {
   registerBackHandler,
 } from '@/lib/navigation/back-handler-registry';
 import { clearNeedsPasswordSetup, getStoredCustomerJwtForSession } from '@/lib/session-utils';
+import { CachedImage } from '@/components/shared/CachedImage';
 
 const noRetry = { maxRetries: 0, retryableStatusCodes: [] as number[], retryableErrors: [] as string[] };
 
@@ -261,7 +262,7 @@ export default function SetPasswordPage() {
         </div>
         <div className="px-6 pb-12 flex flex-col items-center">
           <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-xl mb-4 p-2">
-            <img src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
+            <CachedImage src="/logo.webp" alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-black text-center">
             {hasExistingPassword ? 'Change password' : 'Create password'}

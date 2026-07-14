@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, type MouseEvent } from 'react';
-import Image from 'next/image';
+import { CachedImage } from '@/components/shared/CachedImage';
 import {
   Dog,
   Star,
@@ -765,14 +765,13 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
         {/* Professional Pet Walking banner — full illustration on right, cream + gradient on left */}
         <div className="relative min-h-[172px] overflow-hidden rounded-2xl border border-orange-100/80 bg-[#FFF9F0] shadow-sm sm:min-h-[180px]">
           <div className="absolute inset-y-0 right-0 z-0 w-[54%] bg-gradient-to-br from-orange-50/90 via-amber-50/70 to-orange-100/40 sm:w-[50%]">
-            <Image
+            <CachedImage
               src={WALKING_BANNER_ILLUSTRATION}
               alt=""
               fill
               className="object-contain object-bottom object-right px-1 pb-0 pt-2 sm:px-2"
               sizes="(max-width: 640px) 50vw, 240px"
-              priority
-              aria-hidden
+              loading="eager"
             />
           </div>
           <div
@@ -823,7 +822,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                 className="group flex h-full min-w-0 flex-col text-left"
               >
                 <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-slate-100 bg-slate-100 shadow-sm transition-all group-hover:border-orange-200 group-hover:shadow-md">
-                  <Image
+                  <CachedImage
                     src={need.image}
                     alt={need.name}
                     fill
