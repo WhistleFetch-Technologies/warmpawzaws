@@ -32,7 +32,8 @@ export function applyMaximumDiscount(
   maxBase: number
 ): number {
   let d = safeCurrencyMath(discountAmount);
-  if (maxDiscount != null && d > maxDiscount) {
+  // 0 / negative means "no cap" — seller UI often persists 0.00 instead of NULL.
+  if (maxDiscount != null && maxDiscount > 0 && d > maxDiscount) {
     d = maxDiscount;
   }
   return Math.min(clampNonNegative(d), clampNonNegative(maxBase));

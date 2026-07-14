@@ -2,8 +2,8 @@
  * Vendor-facing ecommerce money view.
  *
  * Catalog subtotal (P) is always the vendor base. Who funds the promotion:
- * - admin/platform → vendor still settles on P (minus commission); platform absorbs D
- * - vendor        → vendor settles on (P − D) minus commission
+ * - admin/platform → vendor still settles on P (minus commission on original T); platform absorbs D
+ * - vendor        → vendor settles on (P − D) minus commission on discounted taxable
  */
 
 export type VendorPromotionSource = 'vendor' | 'admin' | null;

@@ -102,10 +102,11 @@ function buildVendorPromotionRow(vendorId: string, body: VendorSellerOfferBody):
       body.min_order_value != null && body.min_order_value !== ''
         ? parseFloat(String(body.min_order_value))
         : null,
-    max_discount_amount:
-      body.max_discount_amount != null && body.max_discount_amount !== ''
-        ? parseFloat(String(body.max_discount_amount))
-        : null,
+    max_discount_amount: (() => {
+      if (body.max_discount_amount == null || body.max_discount_amount === '') return null;
+      const n = parseFloat(String(body.max_discount_amount));
+      return Number.isFinite(n) && n > 0 ? n : null;
+    })(),
     start_date: promotionStartDateToIso(body.start_date),
     end_date: promotionEndDateToIso(body.end_date),
     is_active: body.is_active !== false,

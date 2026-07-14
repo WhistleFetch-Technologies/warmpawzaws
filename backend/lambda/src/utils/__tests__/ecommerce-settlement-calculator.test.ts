@@ -5,8 +5,9 @@ import {
 } from '../ecommerce-settlement-calculator';
 
 /**
- * Worked example from the Ecommerce Settlement Engine plan §1:
- * MRP ₹1180, GST 18% ⇒ T=₹1000, G=₹180; commission 10% ⇒ Comm=₹100; discount D=₹118.
+ * Worked example:
+ * MRP ₹1180, GST 18% ⇒ T=₹1000, G=₹180; commission 10% ⇒ Comm=₹100 on full T;
+ * discount D=₹118 → Paid=₹1062 ⇒ vendor-funded T'=₹900, Comm'=₹90.
  */
 const MERCHANDISE_VALUE = 1180;
 const GST_RATE = 18;
@@ -44,7 +45,7 @@ describe('calculateEcommerceSettlement — Scenario 1: no promotion', () => {
 });
 
 describe('calculateEcommerceSettlement — Scenario 2: vendor-funded promotion', () => {
-  it('vendor absorbs the discount in full; commission is unaffected', () => {
+  it('vendor absorbs D; commission is on discounted taxable amount', () => {
     const result = calculateEcommerceSettlement({
       merchandiseValue: MERCHANDISE_VALUE,
       gstRate: GST_RATE,
@@ -53,9 +54,11 @@ describe('calculateEcommerceSettlement — Scenario 2: vendor-funded promotion',
       discountAmount: DISCOUNT_AMOUNT,
     });
 
-    expect(result.commissionAmount).toBeCloseTo(100, 2);
-    expect(result.vendorPayoutAmount).toBeCloseTo(962, 2);
-    expect(result.platformNetAmount).toBeCloseTo(100, 2);
+    // Paid = 1062; T' = 1062/1.18 ≈ 900; Comm' = 90
+    expect(result.taxableValue).toBeCloseTo(900, 2);
+    expect(result.commissionAmount).toBeCloseTo(90, 2);
+    expect(result.vendorPayoutAmount).toBeCloseTo(972, 2);
+    expect(result.platformNetAmount).toBeCloseTo(90, 2);
     expect(result.customerPayableGoods).toBeCloseTo(1062, 2);
     expect(settlementReconciles(result)).toBe(true);
   });
@@ -79,8 +82,8 @@ describe('calculateEcommerceSettlement — Scenario 3: admin/platform-funded pro
   });
 });
 
-describe('calculateEcommerceSettlement — commission is always on the original taxable value', () => {
-  it('commission is identical across all three scenarios for the same order', () => {
+describe('calculateEcommerceSettlement — vendor commission base differs from admin', () => {
+  it('vendor-funded commission is lower than full-price commission for the same D', () => {
     const base = {
       merchandiseValue: MERCHANDISE_VALUE,
       gstRate: GST_RATE,
@@ -98,8 +101,8 @@ describe('calculateEcommerceSettlement — commission is always on the original 
       discountAmount: DISCOUNT_AMOUNT,
     });
 
-    expect(none.commissionAmount).toBe(vendor.commissionAmount);
-    expect(vendor.commissionAmount).toBe(admin.commissionAmount);
+    expect(admin.commissionAmount).toBe(none.commissionAmount);
+    expect(vendor.commissionAmount).toBeLessThan(admin.commissionAmount);
   });
 });
 
@@ -124,6 +127,17 @@ describe('calculateEcommerceSettlement — edge cases', () => {
     });
     expect(result.gstAmount).toBeCloseTo(180, 2);
     expect(result.commissionAmount).toBeCloseTo(100, 2);
+  });
+
+  it('infers GST from taxableValue for vendor-funded discounted commission', () => {
+    const result = calculateEcommerceSettlement({
+      merchandiseValue: 1180,
+      taxableValue: 1000,
+      commissionRate: COMMISSION_RATE,
+      promotionSource: 'vendor',
+      discountAmount: DISCOUNT_AMOUNT,
+    });
+    expect(result.commissionAmount).toBeCloseTo(90, 2);
   });
 
   it('never returns a negative vendor payout even for large discounts', () => {

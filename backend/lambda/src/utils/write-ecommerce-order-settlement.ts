@@ -59,9 +59,14 @@ export async function writeEcommerceOrderSettlementLedgerRow(orderId: string): P
       discountAmount,
     });
 
-    // Prefer the commission actually stored on the order (audited at payment-verify) over
-    // the recomputed one, in case the persisted commission_rate/amount predate this call.
-    const finalCommissionAmount = commissionAmount != null ? commissionAmount : result.commissionAmount;
+    // Prefer stored commission for admin/no-promo (order-create audit). For vendor-funded,
+    // always use calculator so commission is based on discounted taxable (P − D).
+    const finalCommissionAmount =
+      promotionSource === 'vendor'
+        ? result.commissionAmount
+        : commissionAmount != null
+          ? commissionAmount
+          : result.commissionAmount;
 
     await query(
       `INSERT INTO ecommerce_order_settlements (

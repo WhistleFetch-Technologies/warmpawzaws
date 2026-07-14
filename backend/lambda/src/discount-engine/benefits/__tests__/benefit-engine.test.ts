@@ -30,6 +30,8 @@ describe('benefit-engine math', () => {
     expect(applyMaximumDiscount(200, 150, 1000)).toBe(150);
     expect(applyMaximumDiscount(500, null, 300)).toBe(300);
     expect(applyMaximumDiscount(-10, null, 100)).toBe(0);
+    // 0 means unlimited (seller UI stores 0.00 instead of null)
+    expect(applyMaximumDiscount(200, 0, 1000)).toBe(200);
   });
 
   it('percentage with cap', () => {

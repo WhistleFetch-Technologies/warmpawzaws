@@ -42,7 +42,7 @@ type CartPromotionSelectProps = {
   cartItems?: CartPromoLineItem[];
   customerId?: string;
   selected: SelectedCartPromotion | null;
-  onApply: (promo: SelectedCartPromotion) => void;
+  onApply: (promo: SelectedCartPromotion) => void | Promise<void>;
   onRemove: () => void;
   className?: string;
 };
@@ -169,14 +169,14 @@ export function CartPromotionSelect({
         return;
       }
 
-      onApply({
+      // Parent re-runs Best Offer (calculate-cart) so a weaker coupon cannot replace auto.
+      await onApply({
         code: result.coupon.code,
         discountAmount: toFiniteNumber(result.coupon.discountAmount),
         promotionId: result.coupon.promotionId ?? promo.id,
         label: result.coupon.label || promo.name,
         source: promo.source === 'platform' ? 'admin' : 'vendor',
       });
-      toast.success('Coupon applied');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Could not apply promotion';
       setError(msg);

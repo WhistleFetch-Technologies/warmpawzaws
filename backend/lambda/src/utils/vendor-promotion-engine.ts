@@ -116,8 +116,12 @@ export function normalizePromotionRow(row: Record<string, unknown>): PromotionRo
     discount_value: parseFloat(String(row.discount_value ?? 0)) || 0,
     min_order_value:
       row.min_order_value != null ? parseFloat(String(row.min_order_value)) : null,
-    max_discount_amount:
-      row.max_discount_amount != null ? parseFloat(String(row.max_discount_amount)) : null,
+    max_discount_amount: (() => {
+      if (row.max_discount_amount == null || row.max_discount_amount === '') return null;
+      const n = parseFloat(String(row.max_discount_amount));
+      // 0.00 from seller forms means unlimited, not a hard ₹0 cap.
+      return Number.isFinite(n) && n > 0 ? n : null;
+    })(),
     start_date: String(row.start_date),
     end_date: String(row.end_date),
     is_active: row.is_active !== false,

@@ -101,6 +101,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   }, []);
 
   const sellerPromotionPricing = useMemo(() => {
+    // Best Offer: only the winning offer is priced (auto XOR selected code).
     const autoDiscount = selectedPromo ? 0 : (autoPromo?.discountAmount ?? 0);
     const codeDiscount = selectedPromo?.discountAmount ?? 0;
     if (autoDiscount <= 0 && codeDiscount <= 0) return undefined;
@@ -110,7 +111,6 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       label: selectedPromo?.label ?? autoPromo?.label,
       promotionId: selectedPromo?.promotionId ?? autoPromo?.promotionId,
       code: selectedPromo?.code,
-      // Auto-applied promos come from POST /promotions/calculate-cart (vendor or admin winner).
       source: selectedPromo ? selectedPromo.source : (autoPromo?.source ?? 'vendor'),
     };
   }, [selectedPromo, autoPromo]);
@@ -302,9 +302,80 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     }
   }, [autoPromo, selectedPromo, persistPromoForCheckout]);
 
-  const handleApplyPromo = (promo: SelectedCartPromotion) => {
-    setSelectedPromo(promo);
-    persistPromoForCheckout(promo);
+  const handleApplyPromo = async (promo: SelectedCartPromotion) => {
+    // Re-run Best Offer with this code so a weaker coupon cannot replace a stronger auto promo.
+    try {
+      const res = await apiClient.post<{
+        bestPromotion?: {
+          id?: string;
+          name?: string;
+          description?: string;
+          code?: string;
+          calculatedDiscount?: number;
+          promotionSource?: 'vendor' | 'admin';
+        };
+        totalSavings?: number;
+        promotionSource?: 'vendor' | 'admin' | null;
+      }>('/promotions/calculate-cart', {
+        ...(primaryVendorId ? { vendorId: primaryVendorId } : {}),
+        customerId: getResolvedCustomerId() || undefined,
+        items: cartPromoItems,
+        manualCode: promo.code,
+      });
+
+      const savings = Number(res?.totalSavings ?? res?.bestPromotion?.calculatedDiscount ?? 0);
+      const source: 'vendor' | 'admin' =
+        (res?.bestPromotion?.promotionSource ?? res?.promotionSource) === 'admin'
+          ? 'admin'
+          : 'vendor';
+      const best = res?.bestPromotion;
+      const codeUpper = promo.code.trim().toUpperCase();
+      const bestCode = String(best?.code || '').trim().toUpperCase();
+      const wonBySelectedCode =
+        savings > 0 &&
+        (bestCode === codeUpper ||
+          (best?.id != null &&
+            promo.promotionId != null &&
+            String(best.id) === String(promo.promotionId)) ||
+          // Platform coupon payload may omit id match but source+amount align with validate-code.
+          (source === promo.source &&
+            Math.abs(savings - Number(promo.discountAmount || 0)) <= 1));
+
+      if (!wonBySelectedCode) {
+        // Stronger auto (or other) offer wins — keep auto, do not pin the weaker coupon.
+        setSelectedPromo(null);
+        if (savings > 0) {
+          setAutoPromo({
+            discountAmount: savings,
+            promotionId: best?.id,
+            label: best?.description || best?.name || 'Promotion applied',
+            source,
+          });
+          toast.message(
+            `Better offer already applied (−₹${Math.round(savings)}). Coupon not used.`
+          );
+        } else {
+          toast.error('Coupon is not the best available offer for this cart');
+        }
+        persistPromoForCheckout(null);
+        return;
+      }
+
+      const applied: SelectedCartPromotion = {
+        code: promo.code,
+        discountAmount: savings,
+        promotionId: best?.id ?? promo.promotionId,
+        label: best?.description || best?.name || promo.label,
+        source,
+      };
+      setSelectedPromo(applied);
+      persistPromoForCheckout(applied);
+      toast.success('Coupon applied');
+    } catch {
+      // Fallback: use validated coupon as selected (server re-validates at order create).
+      setSelectedPromo(promo);
+      persistPromoForCheckout(promo);
+    }
   };
 
   const handleRemovePromo = () => {

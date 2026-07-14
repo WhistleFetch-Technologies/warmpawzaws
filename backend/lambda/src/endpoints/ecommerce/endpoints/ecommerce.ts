@@ -858,20 +858,22 @@ export function registerEcommerceEndpoints(app: Hono) {
             : null;
 
           const autoDiscount = autoResult.bestPromotion?.discountAmount ?? autoResult.totalSavings ?? 0;
-          const codeDiscount =
-            codeResult?.bestPromotion?.discountAmount ??
-            codeResult?.totalSavings ??
-            codeResult?.platformCouponDiscount ??
-            0;
-          vendorCandidateDiscount = Math.max(autoDiscount, codeDiscount);
+          const vendorManualDiscount = codeResult?.bestPromotion?.discountAmount ?? 0;
+          const platformManualDiscount = codeResult?.platformCouponDiscount ?? 0;
+          vendorCandidateDiscount = Math.max(autoDiscount, vendorManualDiscount);
           const bestEval =
-            codeDiscount >= autoDiscount
-              ? codeResult?.bestPromotion
+            vendorManualDiscount >= autoDiscount && codeResult?.bestPromotion
+              ? codeResult.bestPromotion
               : autoResult.bestPromotion;
           if (bestEval) {
             vendorCandidateId = bestEval.promotionId;
-          } else if (codeResult?.platformCouponId && codeDiscount > 0) {
-            vendorCandidateId = codeResult.platformCouponId;
+          }
+          // Platform coupons are admin-funded — fold into admin candidate below.
+          if (platformManualDiscount > 0 && codeResult?.platformCouponId) {
+            if (platformManualDiscount > adminCandidateDiscount) {
+              adminCandidateDiscount = platformManualDiscount;
+              adminCandidateId = String(codeResult.platformCouponId);
+            }
           }
         } catch (promoErr) {
           console.warn('[ecommerce/orders] vendor promotion validation skipped:', promoErr);
@@ -887,12 +889,35 @@ export function registerEcommerceEndpoints(app: Hono) {
             customerId: customerId ? String(customerId) : null,
           });
           if (campaignResult.discountAmount > 0 && campaignResult.promotionId) {
-            adminCandidateDiscount = campaignResult.discountAmount;
-            adminCandidateId = campaignResult.promotionId;
-            campaignIsLegacy = campaignResult.isLegacy;
+            if (campaignResult.discountAmount > adminCandidateDiscount) {
+              adminCandidateDiscount = campaignResult.discountAmount;
+              adminCandidateId = campaignResult.promotionId;
+              campaignIsLegacy = campaignResult.isLegacy;
+            }
           }
         } catch (promoErr) {
           console.warn('[ecommerce/orders] admin campaign validation skipped:', promoErr);
+        }
+
+        // When client sent promotionSource=admin, tryVendor is skipped — still resolve
+        // platform `coupons` table codes for Best Offer.
+        if (couponCode && adminCandidateDiscount <= 0) {
+          try {
+            const { resolveEcommercePlatformCoupon } = await import(
+              '../../../lib/services/promotion-code-validation-service'
+            );
+            const lineSubtotal = cartLines.reduce((s, l) => s + l.price * l.quantity, 0);
+            const platformCoupon = await resolveEcommercePlatformCoupon(
+              String(couponCode).trim(),
+              lineSubtotal
+            );
+            if (platformCoupon && platformCoupon.discountAmount > 0) {
+              adminCandidateDiscount = platformCoupon.discountAmount;
+              adminCandidateId = platformCoupon.couponId;
+            }
+          } catch (couponErr) {
+            console.warn('[ecommerce/orders] platform coupon lookup skipped:', couponErr);
+          }
         }
       }
 
@@ -1157,14 +1182,17 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
-      // Fix B/Phase 2: resolve and store commission immediately at order creation so it is
-      // available before payment verification. Commission is ALWAYS on the original ex-GST
-      // taxable value (T) of each line — a discount (vendor OR admin funded) never reduces
-      // it. applyOrderCommissionAudit serves as a reconcile pass later.
+      // Resolve commission at order creation. Admin/platform discounts keep commission on
+      // original ex-GST taxable T. Vendor-funded discounts commission on discounted goods
+      // (scale line taxable by (P − D) / P). applyOrderCommissionAudit reconciles later.
       if (firstVendorId) {
         try {
+          const vendorDiscountScale =
+            promotionSource === 'vendor' && subtotal > 0
+              ? Math.max(0, subtotal - discountAmount) / subtotal
+              : 1;
           const lineItemsForCommission = orderItems.map((item, idx) => ({
-            lineSubtotal: lineTaxableValues[idx] ?? item.total,
+            lineSubtotal: (lineTaxableValues[idx] ?? item.total) * vendorDiscountScale,
             productId: item.product_id ?? null,
             categoryId: (item as Record<string, unknown>).category_id as string | null ?? null,
           }));

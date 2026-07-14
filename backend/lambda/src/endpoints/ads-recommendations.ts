@@ -572,29 +572,34 @@ app.post('/promotions/calculate-cart', async (c) => {
 
     const vendorAutoDiscount =
       vendorAutoResult.bestPromotion?.discountAmount ?? vendorAutoResult.totalSavings ?? 0;
-    const vendorCodeDiscount =
-      vendorCodeResult?.bestPromotion?.discountAmount ??
-      vendorCodeResult?.totalSavings ??
-      vendorCodeResult?.platformCouponDiscount ??
-      0;
-    const vendorDiscount = Math.max(vendorAutoDiscount, vendorCodeDiscount);
+    // Vendor-coded coupon (matched in vendor_promotions) — not platform coupons.
+    const vendorManualDiscount = vendorCodeResult?.bestPromotion?.discountAmount ?? 0;
+    const platformManualDiscount = vendorCodeResult?.platformCouponDiscount ?? 0;
+    const platformManualId = vendorCodeResult?.platformCouponId
+      ? String(vendorCodeResult.platformCouponId)
+      : null;
+
+    const vendorDiscount = Math.max(vendorAutoDiscount, vendorManualDiscount);
     const vendorBestEval =
-      vendorCodeDiscount >= vendorAutoDiscount
-        ? vendorCodeResult?.bestPromotion
+      vendorManualDiscount >= vendorAutoDiscount && vendorCodeResult?.bestPromotion
+        ? vendorCodeResult.bestPromotion
         : vendorAutoResult.bestPromotion;
 
-    let adminDiscount = 0;
+    let adminAutoDiscount = 0;
     let adminBestEval = null as typeof vendorBestEval;
     try {
       const campaignResult = await resolveCommercialCampaignDiscount({
         cartLines,
         customerId: customerId ? String(customerId) : null,
       });
-      adminDiscount = campaignResult.discountAmount;
+      adminAutoDiscount = campaignResult.discountAmount;
       adminBestEval = campaignResult.evaluation;
     } catch (adminErr) {
       console.warn('[promotions/calculate-cart] admin campaign evaluation skipped:', adminErr);
     }
+
+    // Platform coupons (`coupons` table) compete as admin/platform-funded offers.
+    const adminDiscount = Math.max(adminAutoDiscount, platformManualDiscount);
 
     const winner = await selectEcommercePromotionWinnerAsync({
       vendorDiscount,
@@ -603,28 +608,48 @@ app.post('/promotions/calculate-cart', async (c) => {
     const winningDiscount = winner.discountAmount;
     const promotionSource = winner.promotionSource ?? undefined;
 
-    const best =
-      winner.promotionSource === 'admin'
-        ? adminBestEval
-        : winner.promotionSource === 'vendor'
-          ? vendorBestEval
-          : null;
+    type BestPayload = Record<string, unknown> | null;
+    let best: BestPayload = null;
+    if (winner.promotionSource === 'vendor' && vendorBestEval) {
+      best = {
+        ...vendorBestEval.promotion,
+        id: vendorBestEval.promotionId,
+        calculatedDiscount: vendorBestEval.discountAmount,
+        description: vendorBestEval.description,
+        type: vendorBestEval.promotionType,
+        promotionSource: 'vendor',
+      };
+    } else if (winner.promotionSource === 'admin') {
+      if (platformManualDiscount >= adminAutoDiscount && platformManualDiscount > 0) {
+        const codeLabel = manualCode ? String(manualCode).trim().toUpperCase() : 'PLATFORM';
+        best = {
+          id: platformManualId,
+          name: codeLabel,
+          code: codeLabel,
+          description: `${codeLabel} applied`,
+          calculatedDiscount: platformManualDiscount,
+          type: 'coupon',
+          promotionSource: 'admin',
+        };
+      } else if (adminBestEval) {
+        best = {
+          ...adminBestEval.promotion,
+          id: adminBestEval.promotionId,
+          calculatedDiscount: adminBestEval.discountAmount,
+          description: adminBestEval.description,
+          type: adminBestEval.promotionType,
+          promotionSource: 'admin',
+        };
+      }
+    }
+
     const originalTotal = vendorAutoResult.originalTotal;
     const discountedTotal = Math.max(0, originalTotal - winningDiscount);
 
     return c.json({
       success: true,
       originalTotal,
-      bestPromotion: best
-        ? {
-            ...best.promotion,
-            id: best.promotionId,
-            calculatedDiscount: best.discountAmount,
-            description: best.description,
-            type: best.promotionType,
-            promotionSource,
-          }
-        : null,
+      bestPromotion: best,
       allPromotions: vendorAutoResult.allPromotions.map((e) => ({
         ...e.promotion,
         calculatedDiscount: e.discountAmount,
