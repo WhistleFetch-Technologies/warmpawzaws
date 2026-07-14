@@ -247,14 +247,22 @@ aws s3 sync "apps/${APP_NAME}/dist/" "s3://${S3_BUCKET}/" --delete --exclude "*.
 
 if [ -d "apps/${APP_NAME}/dist/images" ]; then
   echo -e "${BLUE}📷 Uploading static images with long cache headers...${NC}"
+  # cp --recursive + REPLACE ensures Cache-Control is applied even when bytes are unchanged
+  # (aws s3 sync skips metadata-only updates for identical content).
+  aws s3 cp "apps/${APP_NAME}/dist/images/" "s3://${S3_BUCKET}/images/" \
+    --recursive \
+    --cache-control "${STATIC_CACHE_CONTROL}" \
+    --metadata-directive REPLACE
   aws s3 sync "apps/${APP_NAME}/dist/images/" "s3://${S3_BUCKET}/images/" \
     --delete \
+    --exact-timestamps \
     --cache-control "${STATIC_CACHE_CONTROL}"
 fi
 
 if [ -f "apps/${APP_NAME}/dist/logo.webp" ]; then
   aws s3 cp "apps/${APP_NAME}/dist/logo.webp" "s3://${S3_BUCKET}/logo.webp" \
-    --cache-control "${STATIC_CACHE_CONTROL}"
+    --cache-control "${STATIC_CACHE_CONTROL}" \
+    --metadata-directive REPLACE
 fi
 
 if [ $? -eq 0 ]; then
@@ -275,17 +283,18 @@ done < <(find "apps/${APP_NAME}/dist" -type f ! -name "*.*")
 echo -e "${GREEN}✅ Updated content-type for ${HTML_ALIAS_UPDATED} extensionless routes${NC}"
 
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"
-INVALIDATION_PATHS="/index.html /runtime-config.js /_next/*"
+# Quote each path so shells do not expand wildcards (e.g. /_next/*) before aws sees them.
+INVALIDATION_PATH_ARGS=( "/index.html" "/runtime-config.js" "/_next/*" )
 if git rev-parse HEAD~1 >/dev/null 2>&1; then
   if git diff --name-only HEAD~1 HEAD -- "apps/${APP_NAME}/public/images" "apps/${APP_NAME}/public/logo.webp" 2>/dev/null | grep -q .; then
-    INVALIDATION_PATHS="${INVALIDATION_PATHS} /images/* /logo.webp"
+    INVALIDATION_PATH_ARGS+=( "/images/*" "/logo.webp" )
     echo -e "${BLUE}   Static images changed in last commit — including /images/* and /logo.webp${NC}"
   fi
 fi
 
 INVALIDATION_ID=$(aws cloudfront create-invalidation \
   --distribution-id "${CLOUDFRONT_DIST_ID}" \
-  --paths ${INVALIDATION_PATHS} \
+  --paths "${INVALIDATION_PATH_ARGS[@]}" \
   --query 'Invalidation.Id' \
   --output text)
 
