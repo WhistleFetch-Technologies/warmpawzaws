@@ -44,7 +44,7 @@ function effectiveCapKm(
  * Client-side defense: drop providers outside discover-services radius when coords are known.
  * Tele is nationwide. Pet sitting keeps rows with unknown distance (backend sittingRelaxed parity).
  */
-export function filterHubDiscoveryRowsByRadius<T extends Record<string, unknown>>(
+export function filterHubDiscoveryRowsByRadius<T extends object>(
   rows: T[],
   opts: {
     serviceStyle: HubDiscoveryRadiusStyle;
@@ -59,8 +59,9 @@ export function filterHubDiscoveryRowsByRadius<T extends Record<string, unknown>
   if (!opts.latitude?.trim() || !opts.longitude?.trim()) return rows;
 
   const filtered = rows.filter((row) => {
-    const km = pickProviderDistanceKm(row);
-    const cap = effectiveCapKm(opts.serviceStyle, row, opts.maxDistanceKm);
+    const asRecord = row as Record<string, unknown>;
+    const km = pickProviderDistanceKm(asRecord);
+    const cap = effectiveCapKm(opts.serviceStyle, asRecord, opts.maxDistanceKm);
     if (cap == null) return true;
     if (km == null) {
       if (opts.serviceStyle === 'at_home') return true;

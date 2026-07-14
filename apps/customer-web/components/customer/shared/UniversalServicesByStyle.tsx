@@ -372,7 +372,7 @@ export function UniversalServicesByStyle({
             serviceStyle: 'at_center',
             latitude,
             longitude,
-          }) as unknown as Provider[];
+          });
 
           setProviders(listProviders);
           console.log(
@@ -422,7 +422,7 @@ export function UniversalServicesByStyle({
           latitude,
           longitude,
           sittingRelaxed: finalCategory === 'sitting',
-        }) as unknown as Provider[];
+        });
 
         setProviders(finalProviders);
         console.log(`✅ [${config.roleName}] Loaded ${finalProviders.length} solo/staff provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
