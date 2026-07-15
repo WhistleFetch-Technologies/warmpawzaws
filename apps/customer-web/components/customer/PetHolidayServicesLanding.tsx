@@ -104,7 +104,7 @@ export function PetHolidayServicesLanding({ phone, onBack, onNavigate }: PetHoli
                 </div>
                 <div className="flex items-center justify-between pt-3 border-t border-slate-50">
                   <div className="text-sm">
-                    <span className="line-through text-slate-400 text-xs">₹19,999</span>
+                    <span className="cw-price-strike text-slate-400 text-xs">₹19,999</span>
                     <span className="ml-2 font-bold text-slate-900">₹14,999</span>
                   </div>
                   <Button size="sm" className="bg-cyan-600 text-white hover:bg-cyan-700 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_holiday' })}>

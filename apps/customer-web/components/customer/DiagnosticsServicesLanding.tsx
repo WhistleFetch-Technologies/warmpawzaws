@@ -618,7 +618,7 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                       <span className="text-xl font-bold text-teal-600">₹{pkg.price}</span>
                       {pkg.originalPrice != null &&
                         hasEffectivePriceReduction(pkg.originalPrice, pkg.price) && (
-                        <span className="text-sm text-gray-400 line-through">₹{pkg.originalPrice}</span>
+                        <span className="text-sm text-gray-400 cw-price-strike">₹{pkg.originalPrice}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">

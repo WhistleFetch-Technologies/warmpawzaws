@@ -1117,7 +1117,7 @@ export function WalkerBookingRouter({
                       </div>
                       <div className="text-right">
                         <span className="text-lg font-bold text-[#FF8C42]">₹1,799</span>
-                        <p className="text-xs text-gray-400 line-through">₹2,495</p>
+                        <p className="text-xs text-gray-400 cw-price-strike">₹2,495</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1133,7 +1133,7 @@ export function WalkerBookingRouter({
                       </div>
                       <div className="text-right">
                         <span className="text-lg font-bold text-[#FF8C42]">₹2,999</span>
-                        <p className="text-xs text-gray-400 line-through">₹4,990</p>
+                        <p className="text-xs text-gray-400 cw-price-strike">₹4,990</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

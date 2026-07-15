@@ -393,7 +393,7 @@ export function MealSubscriptionFlow({
                     <div className="text-right">
                       {plan.discountedPrice && plan.discountedPrice < plan.price ? (
                         <div>
-                          <span className="text-sm text-gray-400 line-through">₹{plan.price}</span>
+                          <span className="text-sm text-gray-400 cw-price-strike">₹{plan.price}</span>
                           <span className="text-lg font-bold text-[#FF8C42] ml-1">₹{plan.discountedPrice}</span>
                         </div>
                       ) : (

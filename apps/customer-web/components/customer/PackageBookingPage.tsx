@@ -1253,7 +1253,7 @@ export function PackageBookingPage({
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="text-sm font-semibold text-green-700">You Save ₹{savings}</div>
-                        <div className="text-xs text-green-600 line-through">Regular: ₹{regularPrice}</div>
+                        <div className="text-xs text-green-600">Regular: <span className="cw-price-strike">₹{regularPrice}</span></div>
                       </div>
                       <div className="text-2xl font-bold text-green-700">₹{pkg.totalPrice}</div>
                     </div>
