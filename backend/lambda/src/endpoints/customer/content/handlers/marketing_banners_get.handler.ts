@@ -1,36 +1,7 @@
 import type { Context } from 'hono';
-/**
- * ============================================================================
- * CUSTOMER CONTENT ENDPOINTS
- * ============================================================================
- * 
- * Provides content endpoints for customer home page:
- * - GET /customer/banners - Get active banners for home screen
- * - GET /customer/articles - Get published articles for home screen
- * - GET /customer/announcements - Get active announcements (What's New)
- * - GET /customer/featured-packages - Get featured service packages
- * 
- * Date: 2026-01-20
- * ============================================================================
- */
+import { executemarketingBannersGet } from '../services/marketing_banners_get.service';
 
-import { Hono } from 'hono';
-import { query, select } from '../../../../database/rds-connection';
-import {
-  resolveFeaturedVendorsRequestScreen,
-  canonicalScreenForSpotlightRow,
-} from '../../../../utils/featured-vendor-service-context';
-import {
-  enrichBannersWithNavTargets,
-  resolveBannerCtaNavigation,
-} from '../../../../utils/banner-cta-resolver';
-import { listPublishedCustomerArticlesForCustomer } from '../../../../utils/content-page-articles';
-import { presignBannerImageForDisplay } from '../../../../utils/banner-s3-image';
-import {
-  createLaunchGeoFilter,
-  shouldIncludeFeaturedSpotlightRow,
-} from '../../../../lib/customer-launch-geo-filter';
-
+/** HTTP adapter — delegates to service layer. */
 export async function marketingBannersGetHandler(c: Context) {
-    return app.fetch(new Request(c.req.url.replace('/marketing/banners', '/customer/banners'), c.req.raw));
+  return executemarketingBannersGet(c);
 }

@@ -1,64 +1,7 @@
 import type { Context } from 'hono';
-/**
- * ============================================================================
- * SPECIALIZED SERVICE FLOWS - 360 DEGREE CUSTOMER-VENDOR MATCHING
- * ============================================================================
- * 
- * Complete end-to-end flows for specialized pet services:
- * - Adoption: Pet catalog, adoption requests, applications
- * - Breeder: Puppy listings, purchase inquiries, reservations
- * - Peer to Peer: Pet matching, match requests, messaging
- * - Pet Holidays: Package builder, bookings, itinerary
- * - Relocation: Quote calculator, booking, tracking
- * 
- * Date: 2026-01-19
- * ============================================================================
- */
+import { executevendorVendoridAdoptionapplicationsGet } from '../services/vendor_vendorid_adoptionapplications_get.service';
 
-import { Hono } from 'hono';
-import { select, insert, update, query } from '../../../../database/rds-connection';
-import { isValidUUID } from '../../../../types/entities';
-
+/** HTTP adapter — delegates to service layer. */
 export async function vendorVendoridAdoptionapplicationsGetHandler(c: Context) {
-    try {
-      const { vendorId } = c.req.param();
-      const status = c.req.query('status');
-
-      let applicationsQuery = `
-        SELECT 
-          aa.*,
-          p.name as pet_name,
-          p.breed as pet_breed,
-          p.photos as pet_photos,
-          c.full_name as customer_name,
-          c.phone as customer_phone,
-          c.email as customer_email
-        FROM adoption_applications aa
-        LEFT JOIN pets p ON aa.pet_id = p.id
-        LEFT JOIN customers c ON aa.customer_id = c.id
-        WHERE aa.vendor_id = $1
-      `;
-
-      const params: any[] = [vendorId];
-      let paramIndex = 2;
-
-      if (status) {
-        applicationsQuery += ` AND aa.status = $${paramIndex}`;
-        params.push(status);
-        paramIndex++;
-      }
-
-      applicationsQuery += ` ORDER BY aa.submitted_at DESC`;
-
-      const applications = await query(applicationsQuery, params).catch(() => ({ rows: [] }));
-
-      return c.json({
-        success: true,
-        applications: applications.rows,
-        total: applications.rows.length,
-      });
-    } catch (error: any) {
-      console.error('Error fetching adoption applications:', error);
-      return c.json({ success: true, applications: [], total: 0 });
-    }
+  return executevendorVendoridAdoptionapplicationsGet(c);
 }

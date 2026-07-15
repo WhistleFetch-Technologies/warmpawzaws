@@ -1,0 +1,34 @@
+import { query, select, insert, update } from '../../../../database/rds-connection';
+
+export async function dbServicesByStyle0(text) {
+  return await query(
+          `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+          [strictFromText]
+        )
+}
+
+export async function dbServicesByStyle1(text) {
+  return await query(
+          `SELECT id::text FROM service_categories
+           WHERE COALESCE(is_active, true) = true
+             AND (
+               LOWER(TRIM(category_id)) = ANY($1::text[])
+               OR LOWER(TRIM(name)) = ANY($1::text[])
+             )`,
+          [['boarding', 'pet_boarding', 'pet boarding']]
+        )
+}
+
+export async function dbServicesByStyle2(sql, params) {
+  return await query(sql, params)
+}
+
+export async function dbServicesByStyle3(vendorSql, vendorParamsByStyle) {
+  return await query(vendorSql, vendorParamsByStyle);
+}
+
