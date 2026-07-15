@@ -123,12 +123,16 @@ export function buildPromotionPersistenceFromAdminBody(
   const endDateInput =
     body.valid_until ?? body.validUntil ?? body.endDate ?? body.end_date;
 
+  // pg rows give Date objects; String(date) mangles them ("Tue Jul ..." splits
+  // at the leading "T" → "" → RangeError). Pass Dates straight to the IST
+  // helpers, which recover the IST calendar day.
+  const toHelperInput = (raw: unknown): string | Date =>
+    raw instanceof Date ? raw : String(raw).split('T')[0];
+
   const startDate = startDateInput
-    ? promotionStartDateToIso(String(startDateInput).split('T')[0])
+    ? promotionStartDateToIso(toHelperInput(startDateInput))
     : promotionStartDateToIso(new Date().toISOString().split('T')[0]);
-  const endDate = endDateInput
-    ? promotionEndDateToIso(String(endDateInput).split('T')[0])
-    : null;
+  const endDate = endDateInput ? promotionEndDateToIso(toHelperInput(endDateInput)) : null;
 
   const applicableServices = buildApplicableServicesFromBody(body);
   const selectedTargets =
@@ -344,8 +348,10 @@ export function mergeAdminPromotionUpdateBody(
     description: body.description ?? existing.description,
     discount_type: body.discount_type ?? body.discountType ?? existing.discount_type,
     discount_value: body.discount_value ?? body.discountValue ?? existing.discount_value,
-    valid_from: body.valid_from ?? body.validFrom ?? body.startDate ?? existing.start_date,
-    valid_until: body.valid_until ?? body.validUntil ?? body.endDate ?? existing.end_date,
+    valid_from:
+      body.valid_from ?? body.validFrom ?? body.startDate ?? body.start_date ?? existing.start_date,
+    valid_until:
+      body.valid_until ?? body.validUntil ?? body.endDate ?? body.end_date ?? existing.end_date,
     min_order_value: body.min_order_value ?? body.minOrderAmount ?? existing.min_order_amount,
     max_discount: body.max_discount ?? body.maxDiscountAmount ?? existing.max_discount_amount,
     usage_limit: body.usage_limit ?? body.usageLimit ?? existing.max_uses,

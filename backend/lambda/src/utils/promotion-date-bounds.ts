@@ -5,6 +5,16 @@
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
+/** Normalize Date objects (e.g. pg driver rows) to the IST calendar day (YYYY-MM-DD). */
+function coerceCalendarInput(input: unknown): string {
+  if (input instanceof Date) {
+    if (Number.isNaN(input.getTime())) return '';
+    // Stored bounds are IST midnight/EOD as UTC; shift so we recover the IST day.
+    return new Date(input.getTime() + IST_OFFSET_MS).toISOString().split('T')[0];
+  }
+  return String(input ?? '').trim();
+}
+
 function parseCalendarDate(input: string): { y: number; m: number; d: number } | null {
   const trimmed = String(input || '').trim();
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
@@ -28,18 +38,29 @@ function istEndOfDayUtc(y: number, m: number, d: number): Date {
   return new Date(utcMs);
 }
 
-export function promotionStartDateToIso(input: string): string {
-  const parts = parseCalendarDate(input);
+export function promotionStartDateToIso(input: string | Date): string {
+  const coerced = coerceCalendarInput(input);
+  const parts = parseCalendarDate(coerced);
   if (!parts) {
-    return new Date(input).toISOString();
+    const fallback = new Date(coerced);
+    if (Number.isNaN(fallback.getTime())) {
+      // Never throw RangeError (Invalid time value) on bad input — default to today IST.
+      return promotionStartDateToIso(new Date());
+    }
+    return fallback.toISOString();
   }
   return istStartOfDayUtc(parts.y, parts.m, parts.d).toISOString();
 }
 
-export function promotionEndDateToIso(input: string): string {
-  const parts = parseCalendarDate(input);
+export function promotionEndDateToIso(input: string | Date): string {
+  const coerced = coerceCalendarInput(input);
+  const parts = parseCalendarDate(coerced);
   if (!parts) {
-    return new Date(input).toISOString();
+    const fallback = new Date(coerced);
+    if (Number.isNaN(fallback.getTime())) {
+      return promotionEndDateToIso(new Date());
+    }
+    return fallback.toISOString();
   }
   return istEndOfDayUtc(parts.y, parts.m, parts.d).toISOString();
 }

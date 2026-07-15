@@ -209,12 +209,30 @@ export function createAdminSmartTargetAdapter(
 
     async loadSellerProducts(sellerId: string, search: string): Promise<TargetOption[]> {
       if (surface !== 'ecommerce') return [];
-      const res = await apiClient
-        .get<{ products?: Record<string, unknown>[] }>(
-          `/vendor/${sellerId}/products?limit=500&offset=0`
-        )
-        .catch(() => ({ products: [] }));
-      const rows = (res.products ?? [])
+      // Page through the full inventory — large sellers (e.g. Glenand ~1800+
+      // products) were silently truncated at the first 500, so ownership
+      // filters under-counted owned/third-party targets.
+      const PAGE_SIZE = 500;
+      const MAX_PRODUCTS = 10000;
+      const all: Record<string, unknown>[] = [];
+      for (let offset = 0; offset < MAX_PRODUCTS; offset += PAGE_SIZE) {
+        const res = await apiClient
+          .get<{ products?: Record<string, unknown>[] }>(
+            `/vendor/${sellerId}/products?limit=${PAGE_SIZE}&offset=${offset}`
+          )
+          .catch(() => ({ products: [] }));
+        const page = res.products ?? [];
+        all.push(...page);
+        if (page.length < PAGE_SIZE) break;
+      }
+      const seen = new Set<string>();
+      const rows = all
+        .filter((p) => {
+          const id = String(p.id ?? '').trim();
+          if (!id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        })
         .filter(isEligiblePublishedInventory)
         .map(mapProductRow)
         .filter(Boolean) as TargetOption[];
