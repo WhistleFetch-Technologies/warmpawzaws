@@ -84,17 +84,34 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
   if (unpaidWalletCandidates.length > 0) {
     try {
       const ids = unpaidWalletCandidates.map((b: any) => b.id);
-      const wtRows = await query(
-        `SELECT booking_id::text AS bid,
-                COALESCE(SUM(ABS(amount::numeric)), 0)::text AS wsum
-         FROM wallet_transactions
-         WHERE booking_id = ANY($1::uuid[])
-           AND LOWER(TRIM(COALESCE(transaction_type::text, ''))) IN (
-             'debit', 'd', 'payment', 'purchase', 'withdraw'
-           )
-         GROUP BY booking_id`,
-        [ids]
-      );
+      // Live schema keys booking debits by reference_id (wallet-operations.ts writes
+      // reference_type='booking_payment'); booking_id only exists on legacy schemas.
+      let wtRows;
+      try {
+        wtRows = await query(
+          `SELECT reference_id::text AS bid,
+                  COALESCE(SUM(ABS(amount::numeric)), 0)::text AS wsum
+           FROM wallet_transactions
+           WHERE reference_id = ANY($1::uuid[])
+             AND LOWER(TRIM(COALESCE(transaction_type::text, ''))) IN (
+               'debit', 'd', 'payment', 'purchase', 'withdraw'
+             )
+           GROUP BY reference_id`,
+          [ids]
+        );
+      } catch {
+        wtRows = await query(
+          `SELECT booking_id::text AS bid,
+                  COALESCE(SUM(ABS(amount::numeric)), 0)::text AS wsum
+           FROM wallet_transactions
+           WHERE booking_id = ANY($1::uuid[])
+             AND LOWER(TRIM(COALESCE(transaction_type::text, ''))) IN (
+               'debit', 'd', 'payment', 'purchase', 'withdraw'
+             )
+           GROUP BY booking_id`,
+          [ids]
+        );
+      }
       const sumByBooking = new Map<string, number>();
       for (const r of wtRows.rows || []) {
         sumByBooking.set(String(r.bid), parseFloat(String(r.wsum || '0')) || 0);
