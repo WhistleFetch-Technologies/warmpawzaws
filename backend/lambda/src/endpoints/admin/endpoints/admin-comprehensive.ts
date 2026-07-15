@@ -12,6 +12,8 @@
  */
 
 import { Hono } from 'hono';
+import type { APIGatewayProxyEventV2, Context } from 'aws-lambda';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, update, insert, deleteRows, upsert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
@@ -2974,8 +2976,8 @@ async function updateVendorDocumentsHelper(
       headers: {},
       pathParameters: { vendorId },
       requestContext: { http: { method: 'GET', path: `/admin/vendors/${vendorId}/documents` } }
-    },
-    { awsRequestId: `req-${Date.now()}`, functionName: 'warmpawz-api-handler' }
+    } as unknown as APIGatewayProxyEventV2,
+    { awsRequestId: `req-${Date.now()}`, functionName: 'warmpawz-api-handler' } as Context
   );
 
   const docsData = JSON.parse(docsResult.body);
@@ -3906,12 +3908,12 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
   app.post('/admin/vendors/:vendorId/vendor-portal-code', async (c) => {
     try {
       const vendorId = c.req.param('vendorId');
-      const adminId = c.get('userId') as string | undefined;
+      const adminId = (c.get as unknown as (key: string) => string | undefined)('userId');
       const result = await createVendorPortalCode({ adminId, vendorId });
       if (!result.ok) {
         return c.json(
           { success: false, error: result.error, code: result.errorCode },
-          result.status
+          result.status as ContentfulStatusCode
         );
       }
       return c.json({
@@ -4396,7 +4398,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     console.log(`[UpdateVendorDocuments] PATCH request for vendor: ${vendorId}`);
 
     try {
-      const adminId = c.get('userId') || c.get('userRole') || 'system';
+      const adminId = (c.get as unknown as (key: string) => string | undefined)('userId') || (c.get as unknown as (key: string) => string | undefined)('userRole') || 'system';
       const formData = await c.req.formData();
       const result = await updateVendorDocumentsHelper(vendorId, formData, adminId);
 

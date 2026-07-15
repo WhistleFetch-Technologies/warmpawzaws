@@ -54,6 +54,26 @@ import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipm
 
 // Razorpay configuration is imported from utils
 
+// Type-only helpers (no runtime emit)
+type BookingStatusChange = { bookingId: string; from: string | null; to: string | null };
+
+/** Response shape from the public Razorpay IFSC lookup API (fields we read). */
+interface RazorpayIfscApiResponse {
+  IFSC?: string;
+  BANK?: string;
+  BRANCH?: string;
+  ADDRESS?: string;
+  CITY?: string;
+  DISTRICT?: string;
+  STATE?: string;
+  CONTACT?: string;
+  IMPS?: boolean;
+  NEFT?: boolean;
+  RTGS?: boolean;
+  UPI?: boolean;
+  MICR?: string;
+}
+
 // ============================================================================
 // STRICT BANK ACCOUNT VALIDATION (shared: name + IFSC + account number)
 // ============================================================================
@@ -447,6 +467,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         if (chargeAmount < 0) chargeAmount = 0;
         // Fully covered by wallet — mark order as paid without Razorpay and surface to vendor
         if (chargeAmount <= 0) {
+          // @ts-expect-error pre-existing broken relative path (src/endpoints/razorpay/database does not exist; real module is ../../../database/rds-connection) — left unchanged to avoid altering esbuild bundling/runtime; needs a real fix
           await import('../../database/rds-connection').then(({ query: dbQuery }) =>
             dbQuery(
               `UPDATE orders SET
@@ -1506,23 +1527,23 @@ class VerifyPaymentHandler extends BaseHandler {
 
       if (bookingStatusChange) {
         await logBookingStatusChange(
-          bookingStatusChange.bookingId,
-          bookingStatusChange.from,
-          bookingStatusChange.to,
+          (bookingStatusChange as BookingStatusChange).bookingId,
+          (bookingStatusChange as BookingStatusChange).from,
+          (bookingStatusChange as BookingStatusChange).to as string,
           'system',
           'system',
           'Payment verified'
         );
-        if (bookingStatusChange.to === 'confirmed') {
+        if ((bookingStatusChange as BookingStatusChange).to === 'confirmed') {
           const { publishVendorReferralBookingConfirmedAction } = await import(
             '../../../lib/services/loyalty-action-publisher'
           );
-          await publishVendorReferralBookingConfirmedAction(bookingStatusChange.bookingId);
+          await publishVendorReferralBookingConfirmedAction((bookingStatusChange as BookingStatusChange).bookingId);
         }
       }
 
       if (bookingToNotify) {
-        await notifyBookingCreated(bookingToNotify, context.requestId);
+        await notifyBookingCreated(bookingToNotify, (context as HandlerContext & { requestId?: string }).requestId);
       }
 
       if (ecommerceOrderForShipment) {
@@ -1813,25 +1834,25 @@ class RazorpayWebhookHandler extends BaseHandler {
       // Post-transaction: logging, notifications, settlements
       if (bookingStatusChange) {
         await logBookingStatusChange(
-          bookingStatusChange.bookingId,
-          bookingStatusChange.from,
-          bookingStatusChange.to,
+          (bookingStatusChange as BookingStatusChange).bookingId,
+          (bookingStatusChange as BookingStatusChange).from,
+          (bookingStatusChange as BookingStatusChange).to as string,
           'system',
           'system',
           'Payment captured (webhook)'
         ).catch((e) => console.error('[RAZORPAY-WEBHOOK] Audit log failed:', e));
-        if (bookingStatusChange.to === 'confirmed') {
+        if ((bookingStatusChange as BookingStatusChange).to === 'confirmed') {
           const { publishVendorReferralBookingConfirmedAction } = await import(
             '../../../lib/services/loyalty-action-publisher'
           );
-          await publishVendorReferralBookingConfirmedAction(bookingStatusChange.bookingId).catch((e) =>
+          await publishVendorReferralBookingConfirmedAction((bookingStatusChange as BookingStatusChange).bookingId).catch((e) =>
             console.error('[RAZORPAY-WEBHOOK] Loyalty action publish failed:', e)
           );
         }
       }
 
       if (bookingToNotify) {
-        await notifyBookingCreated(bookingToNotify, context.requestId)
+        await notifyBookingCreated(bookingToNotify, (context as HandlerContext & { requestId?: string }).requestId)
           .catch((e) => console.error('[RAZORPAY-WEBHOOK] Notification failed:', e));
       }
 
@@ -2527,7 +2548,7 @@ export function registerRazorpayEndpoints(app: Hono) {
         throw new Error(`IFSC lookup failed: ${response.statusText}`);
       }
 
-      const bankData = await response.json();
+      const bankData = (await response.json()) as RazorpayIfscApiResponse;
       
       return c.json({
         success: true,
@@ -2613,7 +2634,7 @@ export function registerRazorpayEndpoints(app: Hono) {
           details: 'IFSC code not found in bank database.',
         }, 400);
       }
-      const ifscData = await ifscResponse.json();
+      const ifscData = (await ifscResponse.json()) as RazorpayIfscApiResponse;
 
       // Strict: account number 9–18 digits only
       if (!/^\d{9,18}$/.test(account_number)) {

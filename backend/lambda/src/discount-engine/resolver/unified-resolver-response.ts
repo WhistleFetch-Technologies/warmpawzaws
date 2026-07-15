@@ -20,7 +20,7 @@ import { getSettlementMode } from '../settlement/settlement-mode';
 import { getStackMode } from '../stack/stack-mode';
 import { getPriorityMode } from '../policy/runtime-policy-loader';
 import type { AppliedDiscount } from '../models/discount-result';
-import type { ResolverResult } from './types';
+import type { PriorityDiagnostics, ResolverResult } from './types';
 import type { BookingPromotionResult } from '../../utils/service-promotion-engine';
 import type { OfferResolutionResult } from './offer-resolution';
 
@@ -138,7 +138,7 @@ function splitSavings(applied: UnifiedResolverAppliedOffer[]): Omit<
 }
 
 export function buildPolicySnapshot(
-  runtimePolicy: RuntimePolicy,
+  runtimePolicy: RuntimePolicy & { policyFingerprint?: string },
   bundle?: DiscountPolicyBundle
 ): UnifiedResolverPolicySnapshot {
   const rules = ensureBusinessRules({
@@ -321,7 +321,7 @@ function enrichRejectedOffer(
 
 function mapRejectedFromResolver(result: ResolverResult): UnifiedResolverRejectedOffer[] {
   const rejected: UnifiedResolverRejectedOffer[] = [];
-  const priority = result.metadata?.priority;
+  const priority = result.metadata?.priority as PriorityDiagnostics | undefined;
   const resolutionRejected =
     (priority?.autoPhase?.rejectedByLimit ?? []).concat(
       priority?.couponPhase?.rejectedByLimit ?? []

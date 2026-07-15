@@ -41,7 +41,7 @@ async function getGoogleMapsApiKey(): Promise<string> {
     const jsonKey = json?.apiKey || json?.api_key || json?.key;
     if (jsonKey) {
       _googleMapsKeyCache = jsonKey;
-      return _googleMapsKeyCache;
+      return _googleMapsKeyCache as string;
     }
     const key = await getSecret('google-maps/api-key');
     if (key) _googleMapsKeyCache = key;
@@ -516,7 +516,7 @@ class GPSTrackingServiceImpl {
         clearTimeout(timeoutId);
 
         if (response.ok) {
-          const data = await response.json();
+          const data = (await response.json()) as { rows?: { elements?: any[] }[] };
           const element = data.rows?.[0]?.elements?.[0];
           
           if (element?.status === 'OK') {
@@ -539,7 +539,7 @@ class GPSTrackingServiceImpl {
               );
               clearTimeout(polyTimeout);
               if (directionsResponse.ok) {
-                const directionsData = await directionsResponse.json();
+                const directionsData = (await directionsResponse.json()) as { routes?: any[] };
                 routePolyline = directionsData.routes?.[0]?.overview_polyline?.points;
               }
             } catch (e) {

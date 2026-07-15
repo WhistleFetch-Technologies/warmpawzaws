@@ -7,6 +7,7 @@ import { getCampaignEngine } from '../discount-engine/campaign';
 import { DiscountDomain } from '../discount-engine/enums/discount-domain';
 import { loadRuntimePolicy } from '../discount-engine/policy/runtime-policy-loader';
 import { getActivePolicyBundle } from '../discount-engine/policy/policy-persistence';
+import type { DiscountPolicyBundle } from '../discount-engine/config/business-rules-mapper';
 import { getAnalyticsEngine, isAnalyticsEnabled } from '../discount-engine/analytics';
 import type { CommercialCopilotToolRequest } from './tools-core';
 
@@ -116,7 +117,10 @@ async function getRuntimePolicySummary(domainRaw: string) {
     String(domainRaw || 'SERVICE').toUpperCase() === 'ECOMMERCE'
       ? DiscountDomain.ECOMMERCE
       : DiscountDomain.SERVICE;
-  const active = await getActivePolicyBundle();
+  const active = (await getActivePolicyBundle()) as Awaited<
+    ReturnType<typeof getActivePolicyBundle>
+  > &
+    Partial<DiscountPolicyBundle>;
   const runtime = loadRuntimePolicy(domain, {
     publishId: active.publishId,
     priority: active.priority,
@@ -128,7 +132,7 @@ async function getRuntimePolicySummary(domainRaw: string) {
   return {
     domain,
     policyFingerprint: runtime.policyFingerprint,
-    winningStrategy: runtime.priority?.winningStrategy ?? runtime.priority,
+    winningStrategy: (runtime.priority as { winningStrategy?: string })?.winningStrategy ?? runtime.priority,
     stack: runtime.stack,
     fundingDefaults: runtime.funding,
     published: true,

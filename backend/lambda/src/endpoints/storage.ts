@@ -16,6 +16,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
@@ -498,7 +499,7 @@ export function registerStorageEndpoints(app: Hono) {
       return c.json(toUploadJsonResponse(asset));
     } catch (error: any) {
       if (error instanceof ImageProcessingError) {
-        return c.json({ error: error.message }, error.statusCode);
+        return c.json({ error: error.message }, error.statusCode as ContentfulStatusCode);
       }
       console.error('❌ Error uploading media:', error);
       return c.json({ error: error.message }, 500);

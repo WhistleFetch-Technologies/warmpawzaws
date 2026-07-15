@@ -5263,7 +5263,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           try {
             const styleArray = serviceStyle === 'at_center' ? ['at_center', 'at_vendor'] : serviceStyle === 'tele' ? ['tele', 'online', 'video_consultation'] : [serviceStyle].filter(Boolean);
             if (styleArray.length > 0) {
-              nextAvailable = await getNextAvailableSlot(vendor.id, vendor.phone || '', styleArray);
+              nextAvailable = await getNextAvailableSlot(vendor.id, vendor.phone || '', styleArray as string[]);
             }
           } catch (_) { }
 
@@ -5323,7 +5323,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           ? { lat: customerLatNum, lng: customerLngNum }
           : null;
       const vendorRadiusByIdSearch = await loadVendorRadiusMetaByIds(
-        enrichedVendors.map((v: { id: string }) => String(v.id))
+        enrichedVendors.map((v: any) => String(v.id))
       );
       const radiusFiltered = filterSearchResultsByDiscoveryRules({
         vendors: enrichedVendors.map((v: any) => ({
@@ -5342,7 +5342,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         vendorRadiusById: vendorRadiusByIdSearch,
       });
       const allowedVendorIdsSearch = new Set(radiusFiltered.vendors.map((v) => v.id));
-      const filteredEnrichedVendors = enrichedVendors.filter((v: { id: string }) =>
+      const filteredEnrichedVendors = enrichedVendors.filter((v: any) =>
         allowedVendorIdsSearch.has(String(v.id))
       );
 

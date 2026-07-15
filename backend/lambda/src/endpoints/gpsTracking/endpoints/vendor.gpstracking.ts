@@ -37,6 +37,7 @@ import { isValidUUID } from '../../../types/entities';
 import { geocodeAddress } from '../../../lib/utils/geocode';
 import { resolveVendorId } from '../../../utils/vendor-resolve';
 import { publishNotification } from 'src/utils/sns-client';
+import type { NotificationEvent } from 'src/utils/sns-client';
 import { startTracking, completeTracking, updateLocation, getTrackingStatus } from 'src/lib/services/gpsServices/gps-tracking-service';
 import { acceptBookingRequestSchema, checkInRequestSchema, completeBookingRequestSchema, endSessionRequestSchema, locationUpdateRequestSchema, markArrivedRequestSchema, otpVerifyRequestSchema, rejectBookingRequestSchema, startSessionRequestSchema, startTravelRequestSchema } from 'src/zodContracts/gpsTracking.contract';
 import { validateBody } from 'src/middleware/validation-middleware';
@@ -307,7 +308,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       const { bookingId } = c.req.param();
       const { otp, vendorId } = (c as any).get('validatedBody') as z.infer<typeof completeBookingRequestSchema>;
 
-      console.log(`[COMPLETE-BOOKING] Request body------------------------>: ${JSON.stringify(c.req.body)}`);
+      console.log(`[COMPLETE-BOOKING] Request body------------------------>: ${JSON.stringify((c.req as unknown as { body: unknown }).body)}`);
       console.log(`[COMPLETE-BOOKING] OTP: ${otp}, Vendor ID: ${vendorId}`);
       console.log(`[COMPLETE-BOOKING] Booking ID: ${bookingId}`);
       // Resolve vendorId (may be vendor_identity.id) to canonical vendors.id
@@ -988,7 +989,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
               vendorId: resolvedVendorId,
               action: 'track_live',
             },
-          });
+          } as unknown as NotificationEvent);
         } catch (notifError) {
           console.warn('[START-TRAVEL] Failed to send notification:', notifError);
         }
@@ -1102,7 +1103,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             vendorId,
             action: 'meet_vendor',
           },
-        });
+        } as unknown as NotificationEvent);
       } catch (notifError) {
         console.warn('[MARK-ARRIVED] Failed to send notification:', notifError);
       }
@@ -1492,7 +1493,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
                     bookingId,
                     trackingSessionId: newSessions[0].id,
                   },
-                });
+                } as unknown as NotificationEvent);
               } catch (notifError) {
                 console.error('Failed to send tracking notification:', notifError);
                 // Non-critical, continue

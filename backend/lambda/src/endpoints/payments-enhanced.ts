@@ -36,6 +36,9 @@ import { writeBookingFinancialSnapshotIfMissing } from '../utils/booking-financi
 import { debitCustomerWalletForBookingInTransaction } from '../utils/wallet-operations';
 import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
 
+// Type-only helper (no runtime emit)
+type BookingStatusChange = { bookingId: string; from: string | null; to: string | null };
+
 // ============================================================================
 // PAYMENT HANDLERS
 // ============================================================================
@@ -562,9 +565,9 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           if (bookingStatusChange) {
             try {
               await logBookingStatusChange(
-                bookingStatusChange.bookingId,
-                bookingStatusChange.from,
-                bookingStatusChange.to,
+                (bookingStatusChange as BookingStatusChange).bookingId,
+                (bookingStatusChange as BookingStatusChange).from,
+                (bookingStatusChange as BookingStatusChange).to as string,
                 'system',
                 'system',
                 'Payment completed (wallet)'
@@ -625,9 +628,9 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           if (bookingStatusChange) {
             try {
               await logBookingStatusChange(
-                bookingStatusChange.bookingId,
-                bookingStatusChange.from,
-                bookingStatusChange.to,
+                (bookingStatusChange as BookingStatusChange).bookingId,
+                (bookingStatusChange as BookingStatusChange).from,
+                (bookingStatusChange as BookingStatusChange).to as string,
                 'system',
                 'system',
                 'Wallet covered booking total (fees may remain on payment row)'
@@ -833,9 +836,9 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
         // Log booking status change (if any)
         if (bookingStatusChange) {
           await logBookingStatusChange(
-            bookingStatusChange.bookingId,
-            bookingStatusChange.from,
-            bookingStatusChange.to,
+            (bookingStatusChange as BookingStatusChange).bookingId,
+            (bookingStatusChange as BookingStatusChange).from,
+            (bookingStatusChange as BookingStatusChange).to as string,
             'system',
             'system',
             'Payment captured'

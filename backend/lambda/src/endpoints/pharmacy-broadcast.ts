@@ -15,6 +15,7 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { websocketService } from '../lib/services/websocket-service';
@@ -818,8 +819,8 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
-    const result = await createOrderHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await createOrderHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -834,8 +835,8 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
-    const result = await expandRadiusHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await expandRadiusHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -851,8 +852,8 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
-    const result = await acceptOrderHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await acceptOrderHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -868,8 +869,8 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
-    const result = await submitInvoiceHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await submitInvoiceHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -884,8 +885,8 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
-    const result = await getStatusHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await getStatusHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -914,8 +915,8 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast-expansion', functionVersion: '$LATEST' };
-    const result = await processExpansionsHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast-expansion', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await processExpansionsHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -935,8 +936,8 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
-    const result = await expansionStatusHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await expansionStatusHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

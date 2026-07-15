@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { query, select } from '../../../database/rds-connection';
 import {
   resolveFeaturedVendorsRequestScreen,
@@ -309,15 +310,15 @@ export function registerCustomerContentEndpoints(app: Hono) {
         })
       );
 
-      const data: { success?: boolean; page?: Record<string, unknown>; error?: string } = await resp
+      const data: { success?: boolean; page?: Record<string, unknown>; error?: string } = (await resp
         .json()
-        .catch(() => ({}));
+        .catch(() => ({}))) as { success?: boolean; page?: Record<string, unknown>; error?: string };
 
       if (!resp.ok || !data?.success || !data?.page) {
         const status = resp.status === 404 ? 404 : resp.status >= 400 ? resp.status : 404;
         return c.json(
           { success: false, error: (data as { error?: string })?.error || 'Article not found' },
-          status
+          status as ContentfulStatusCode
         );
       }
 

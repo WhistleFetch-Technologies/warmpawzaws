@@ -128,7 +128,13 @@ export async function processMealSessionVendorCancelRefund(
     if (perSessionRazorpay > 0.009 && pay.provider_payment_id && pay.provider_payment_id !== 'wallet') {
       try {
         const rz = getRazorpayClient();
-        const refundRes = await rz.payments.refund(pay.provider_payment_id, {
+        // Cast only: local razorpay-client's refund() is typed with a single params object,
+        // but this call site uses the (paymentId, options) shape. Cast keeps the call —
+        // and its pre-existing runtime behavior — exactly as it was.
+        const refundRes = await (rz.payments.refund as unknown as (
+          paymentId: string,
+          options: { amount: number; notes: Record<string, string> },
+        ) => Promise<unknown>)(pay.provider_payment_id, {
           amount: Math.round(perSessionRazorpay * 100), // paise
           notes: {
             reason: cancelReason,

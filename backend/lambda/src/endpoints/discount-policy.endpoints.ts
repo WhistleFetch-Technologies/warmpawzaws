@@ -22,6 +22,7 @@ import {
 } from '../discount-engine/policy/policy-persistence';
 import { simulatePolicyWithResolver } from '../discount-engine/resolver/policy-simulator';
 import type { SimulatorOfferInput } from '../discount-engine/resolver/policy-simulator';
+import type { UnifiedResolverResponse } from '../discount-engine/resolver/unified-resolver-response';
 import { query, insert } from '../database/rds-connection';
 
 function normalizeBundle(raw: DiscountPolicyBundle): DiscountPolicyBundle {
@@ -313,8 +314,8 @@ export function registerDiscountPolicyEndpoints(app: Hono) {
     return c.json({
       success: true,
       mode: 'resolver',
-      ...quote,
-      eligibleOffers: quote.appliedOffers.concat(
+      ...(quote as Omit<UnifiedResolverResponse, 'success'>),
+      eligibleOffers: (quote.appliedOffers as unknown[]).concat(
         quote.rejectedOffers.map((r) => ({
           offerType: r.offerType ?? r.id,
           label: r.name ?? r.id,

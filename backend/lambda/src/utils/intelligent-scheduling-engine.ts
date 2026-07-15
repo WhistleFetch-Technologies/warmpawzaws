@@ -567,7 +567,7 @@ export async function getNextAvailableSlot(
       date: dateStr,
       serviceStyle,
       serviceDuration
-    });
+    } as SchedulingRequest);
     
     const availableSlot = slots.find(s => s.available);
     if (availableSlot) {
@@ -599,7 +599,7 @@ export async function checkSlotAvailability(
     date,
     serviceStyle,
     serviceDuration
-  });
+  } as SchedulingRequest);
   
   const slot = slots.find(s => s.time === time);
   
@@ -623,7 +623,10 @@ export async function calculateEstimatedArrival(
   customerLocation: { lat: number; lng: number },
   scheduledTime: string
 ): Promise<{ arrivalTime: string; travelMinutes: number; distanceKm: number }> {
-  const vendorLocation = await getVendorLocation(vendorId, staffId);
+  const vendorLocation = await (getVendorLocation as unknown as (
+    vendorId: string,
+    staffId?: string
+  ) => Promise<{ lat: number; lng: number } | null>)(vendorId, staffId);
   
   if (!vendorLocation) {
     // If no location, assume vendor is at customer location (for tele/center services)

@@ -66,7 +66,7 @@ function getCanonicalServiceStyles(config: any): string[] {
       return code;
     })
     .filter((c: string | null): c is string => !!c && CANONICAL_SERVICE_STYLE_CODES.includes(c as any));
-  return [...new Set(codes)];
+  return [...new Set<string>(codes)];
 }
 
 // ============================================================================

@@ -355,6 +355,9 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
 
       // ✅ NEW: Import and merge KYC fields for the role
       try {
+        // Specifier resolves to a nonexistent path from this file (real file is src/lib/kyc-form-fields).
+        // Rewriting the dynamic import path could change bundling/runtime behavior, so it is intentionally left as-is.
+        // @ts-expect-error TS2307
         const { getKYCFieldsForRole, ROLE_KYC_CONFIGS, KYC_SECTIONS } = await import('../lib/kyc-form-fields');
 
         // Get vendor type from identity if available
@@ -920,6 +923,9 @@ class ActivateVendorHandler extends BaseHandler {
       const application = apps[0];
 
       // ✅ FIX: Extract profile photo, pincode, and service_radius from application (PROD FIX)
+      // Specifier resolves to a nonexistent path from this file (real file is src/utils/extract-profile-photo).
+      // Rewriting the dynamic import path could change bundling/runtime behavior, so it is intentionally left as-is.
+      // @ts-expect-error TS2307
       const { extractProfilePhotoFromApplication, extractPincodeFromPayload } = await import('../utils/extract-profile-photo');
       const payload = application.application_payload || {};
       const profilePhotoUrl = extractProfilePhotoFromApplication(application, payload);

@@ -353,8 +353,9 @@ class PushNotificationServiceImpl {
     Object.entries(sanitized).forEach(([key, value]) => {
       const placeholder = `{${key}}`;
       const str = value != null ? String(value) : '';
-      title = title.replaceAll(placeholder, str);
-      body = body.replaceAll(placeholder, str);
+      // `replaceAll` exists on the Node.js runtime; cast because tsconfig lib predates es2021.
+      title = (title as any).replaceAll(placeholder, str);
+      body = (body as any).replaceAll(placeholder, str);
     });
     body = body.replace(/\s{2,}/g, ' ').trim();
 

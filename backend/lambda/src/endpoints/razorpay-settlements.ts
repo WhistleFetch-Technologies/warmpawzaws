@@ -480,7 +480,7 @@ class ProcessSettlementHandler extends BaseHandler {
    * create payout, call Razorpay Payouts API, update status/failure_reason.
    */
   private async handleProcessBySettlementIds(settlementIds: string[]): Promise<HandlerResponse> {
-    const results: { id: string; success: boolean; payoutId?: string; error?: string }[] = [];
+    const results: { id: string; success: boolean; payoutId?: string; error?: string; razorpayMessage?: string }[] = [];
     const razorpayClient = getRazorpayClient();
 
     for (const sid of settlementIds) {

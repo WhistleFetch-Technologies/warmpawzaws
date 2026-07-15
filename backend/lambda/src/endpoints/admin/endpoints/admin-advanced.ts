@@ -1263,7 +1263,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   });
 
   app.get('/admin/rbac/users', async (c) => {
-    const callerId = c.get('userId') as string | undefined;
+    const callerId = (c.get as unknown as (key: string) => string | undefined)('userId');
     if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
       return c.json({ success: false, error: 'RBAC management permission required' }, 403);
     }
@@ -1276,7 +1276,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/rbac/users/create', async (c) => {
     try {
-      const callerId = c.get('userId') as string | undefined;
+      const callerId = (c.get as unknown as (key: string) => string | undefined)('userId');
       if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
         return c.json({ success: false, error: 'RBAC management permission required' }, 403);
       }
@@ -1319,7 +1319,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.put('/admin/rbac/users/:userId/role', async (c) => {
     try {
-      const callerId = c.get('userId') as string | undefined;
+      const callerId = (c.get as unknown as (key: string) => string | undefined)('userId');
       if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
         return c.json({ success: false, error: 'RBAC management permission required' }, 403);
       }
@@ -1363,7 +1363,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.delete('/admin/rbac/users/:userId', async (c) => {
     try {
-      const callerId = c.get('userId') as string | undefined;
+      const callerId = (c.get as unknown as (key: string) => string | undefined)('userId');
       const emailHint = rbacCallerEmailHint(c);
       if (!(await canManageRbacAdmin(callerId, emailHint))) {
         return c.json({ success: false, error: 'RBAC management permission required' }, 403);

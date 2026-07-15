@@ -14,6 +14,7 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 
@@ -266,8 +267,8 @@ export function registerSubscriptionPlansAdminEndpoints(app: Hono) {
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
-    const result = await getPlansHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await getPlansHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -283,8 +284,8 @@ export function registerSubscriptionPlansAdminEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
-    const result = await createPlanHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await createPlanHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -300,8 +301,8 @@ export function registerSubscriptionPlansAdminEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
-    const result = await updatePlanHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await updatePlanHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -316,8 +317,8 @@ export function registerSubscriptionPlansAdminEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
-    const result = await deletePlanHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await deletePlanHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

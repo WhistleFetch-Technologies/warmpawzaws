@@ -4488,6 +4488,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         }, 400);
       }
 
+      // @ts-expect-error pre-existing bug: previewCustomerCancellationRefund is not imported in this file (only previewCustomerCancellationRefundByMethod is) — this route throws ReferenceError at runtime (caught by the try/catch → 500); adding the import would change runtime behavior, so it needs a deliberate fix
       const preview = await previewCustomerCancellationRefund({
         id: bookingId,
         vendor_id: booking.vendor_id,

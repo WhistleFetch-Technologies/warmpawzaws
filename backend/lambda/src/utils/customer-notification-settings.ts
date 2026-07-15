@@ -15,7 +15,10 @@ export const DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS = {
   newsletter: false,
 } as const;
 
-export type CustomerNotificationSettings = typeof DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS;
+export type CustomerNotificationSettings = Record<
+  keyof typeof DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS,
+  boolean
+>;
 
 export function normalizeCustomerNotificationSettings(raw: unknown): CustomerNotificationSettings {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};

@@ -15,6 +15,7 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 
@@ -160,11 +161,11 @@ class CheckSubscriptionCoverageHandler extends BaseHandler {
             subscriptionName: sub.subscription_name,
             isUnlimited,
             usedCount,
-            remainingCount: isUnlimited ? null : (usageLimit - usedCount),
+            remainingCount: isUnlimited ? null : ((usageLimit as number) - (usedCount as number)),
             expiresAt: sub.end_date,
             message: isUnlimited 
               ? 'Covered by unlimited subscription' 
-              : `Covered by subscription (${usageLimit - usedCount} visits remaining)`,
+              : `Covered by subscription (${(usageLimit as number) - (usedCount as number)} visits remaining)`,
           } as SubscriptionCoverage);
         }
       }
@@ -353,7 +354,10 @@ export function registerSubscriptionBookingEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
-    const result = await checkCoverageHandler.execute(event, context);
+    const result = await checkCoverageHandler.execute(
+      event as unknown as APIGatewayProxyEvent,
+      context as unknown as Context
+    );
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -370,7 +374,10 @@ export function registerSubscriptionBookingEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
-    const result = await createBookingHandler.execute(event, context);
+    const result = await createBookingHandler.execute(
+      event as unknown as APIGatewayProxyEvent,
+      context as unknown as Context
+    );
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 

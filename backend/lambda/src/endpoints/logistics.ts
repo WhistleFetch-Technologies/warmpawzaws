@@ -23,6 +23,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -881,7 +882,7 @@ export function registerLogisticsEndpoints(app: Hono) {
         typeof upstream === 'number' && upstream >= 400 && upstream < 600
           ? upstream
           : 502;
-      return c.json({ success: false, error: error.message || 'Pidge get order failed' }, status);
+      return c.json({ success: false, error: error.message || 'Pidge get order failed' }, status as ContentfulStatusCode);
     }
   });
 
@@ -928,7 +929,7 @@ export function registerLogisticsEndpoints(app: Hono) {
           : 502;
       return c.json(
         { success: false, error: error.message || 'Pidge cancel order failed' },
-        status
+        status as ContentfulStatusCode
       );
     }
   });

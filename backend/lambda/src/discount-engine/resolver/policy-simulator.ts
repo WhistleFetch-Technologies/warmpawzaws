@@ -10,7 +10,10 @@ import type { DiscountPolicyBundle } from '../config/business-rules-mapper';
 import { loadRuntimePolicy } from '../policy/runtime-policy-loader';
 import type { DiscountContext } from '../models/discount-context';
 import { resolveOffers } from './offer-resolution';
-import type { CandidateBenefitOutcome } from './types';
+import type { CandidateBenefitOutcome, ResolverResult } from './types';
+import type { DiscountCandidate } from '../candidates/types';
+import type { BenefitResult } from '../benefits/types';
+import type { DiscountFunding } from '../enums/discount-funding';
 import {
   mapResolverResultToUnifiedResponse,
   type UnifiedResolverResponse,
@@ -81,16 +84,16 @@ function buildSyntheticBenefits(
         owner: mapping.owner,
         trigger: mapping.trigger,
         domain: DiscountDomain.SERVICE,
-        funding: mapping.owner === DiscountOwner.VENDOR ? 'VENDOR' : 'PLATFORM',
+        funding: (mapping.owner === DiscountOwner.VENDOR ? 'VENDOR' : 'PLATFORM') as DiscountFunding,
         exclusive: false,
         priorityWeight: offer.priorityWeight ?? 0,
         metadata: { offerType: offer.offerType },
-      },
+      } as unknown as DiscountCandidate,
       benefit: {
         appliedBenefit: 'standard',
         rawAmount: discountAmount,
         cappedAmount: discountAmount,
-      },
+      } as unknown as BenefitResult,
       discountAmount,
     });
   }
@@ -132,7 +135,7 @@ export function simulatePolicyWithResolver(
     trigger: b.candidate.trigger,
     funding: b.candidate.funding,
     discountAmount: b.discountAmount,
-    benefitType: b.benefit.appliedBenefit,
+    benefitType: (b as unknown as CandidateBenefitOutcome).benefit.appliedBenefit,
     order: idx + 1,
     metadata: { source: b.candidate.source },
   }));
@@ -201,7 +204,7 @@ export function simulatePolicyWithResolver(
     },
   };
 
-  return mapResolverResultToUnifiedResponse(syntheticResult, runtimePolicy, {
+  return mapResolverResultToUnifiedResponse(syntheticResult as unknown as ResolverResult, runtimePolicy, {
     resolverSource: 'v2',
     offerResolution,
     bundle,

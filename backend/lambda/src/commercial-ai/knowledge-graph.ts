@@ -42,7 +42,7 @@ export function knowledgeGraphSummary(focus?: string): string {
       .join('\n');
   }
   const key = focus.toLowerCase().replace(/s$/, '');
-  const node = (COMMERCIAL_KNOWLEDGE_GRAPH as Record<string, { relatesTo: string[]; description: string }>)[key];
+  const node = (COMMERCIAL_KNOWLEDGE_GRAPH as Record<string, { relatesTo: readonly string[]; description: string }>)[key];
   if (!node) return '';
   return `${focus}: ${node.description}\nRelated: ${node.relatesTo.join(', ')}`;
 }

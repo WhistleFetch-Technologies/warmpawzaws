@@ -115,7 +115,8 @@ function pickNumber(...vals: unknown[]): number | null {
 function formatFetchFailure(e: unknown): string {
   if (!(e instanceof Error)) return String(e);
   const parts = [e.message];
-  const c = e.cause;
+  // Error.cause requires the es2022 lib; the runtime (Node 18+) supports it.
+  const c = (e as Error & { cause?: unknown }).cause;
   if (c instanceof Error) {
     parts.push(c.message);
     const code = (c as NodeJS.ErrnoException).code;

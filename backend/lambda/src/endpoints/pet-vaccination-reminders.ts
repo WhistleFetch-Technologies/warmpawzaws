@@ -40,7 +40,7 @@ export function registerPetVaccinationReminderEndpoints(app: Hono) {
       const petId = typeof body?.petId === 'string' ? body.petId.trim() : undefined;
 
       const result = await processVaccinationReminders({ dryRun, customerId, petId });
-      return c.json({ success: true, ...result });
+      return c.json({ success: true, ...(result as Record<string, unknown>) });
     } catch (error: unknown) {
       console.error('[reminders/vaccinations/process] Error:', error);
       return c.json(
@@ -69,7 +69,7 @@ export function registerPetVaccinationReminderEndpoints(app: Hono) {
         (typeof body?.petId === 'string' ? body.petId : c.req.query('petId'))?.trim() || undefined;
 
       const result = await processVaccinationReminders({ dryRun, customerId, petId });
-      return c.json({ success: true, ...result });
+      return c.json({ success: true, ...(result as Record<string, unknown>) });
     } catch (error: unknown) {
       console.error('[reminders/vaccinations/process/manual] Error:', error);
       return c.json(

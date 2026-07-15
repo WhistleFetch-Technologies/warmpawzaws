@@ -9,6 +9,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { query, select, insert, update } from '../database/rds-connection';
 import { buildTrackingUrl, getCarrierDisplayName } from '../utils/logistics/carrier-patterns';
 import { markOrderShippedByVendor } from '../utils/logistics/vendor-mark-shipped';
@@ -105,7 +106,7 @@ export function registerSelfManagedLogisticsEndpoints(app: Hono) {
       });
 
       if (!result.success) {
-        return c.json({ success: false, error: result.error }, result.statusCode || 400);
+        return c.json({ success: false, error: result.error }, (result.statusCode || 400) as ContentfulStatusCode);
       }
 
       return c.json({
