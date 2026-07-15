@@ -11,14 +11,12 @@ import { AmenitiesSection } from '@/components/customer/shared/AmenitiesSection'
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import {
   fetchGuestVendorProfile,
-  fetchGuestVendorServices,
   guestVendorServiceId,
   guestVendorServiceLabel,
   guestVendorServicePrice,
   type GuestVendorProfileResponse,
   type GuestVendorProfileService,
 } from '@/lib/guest-vendor-profile-api';
-import { VENDOR_SERVICES_PROFILE_PAGE_SIZE } from '@/lib/customer-vendor-services-merge';
 import {
   buildGuestBookingLoginUrl,
   type VendorShareNavigationParams,
@@ -46,7 +44,6 @@ export function GuestVendorShareProfile({ vendorId, shareParams }: GuestVendorSh
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<GuestVendorProfileResponse | null>(null);
-  const [guestServices, setGuestServices] = useState<GuestVendorProfileService[]>([]);
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
@@ -54,29 +51,20 @@ export function GuestVendorShareProfile({ vendorId, shareParams }: GuestVendorSh
     (async () => {
       setLoading(true);
       setLoadError(false);
-      const [data, servicesPage] = await Promise.all([
-        fetchGuestVendorProfile(vendorId),
-        fetchGuestVendorServices(vendorId, {
-          limit: VENDOR_SERVICES_PROFILE_PAGE_SIZE,
-          offset: 0,
-          serviceStyle: shareParams.serviceStyle || undefined,
-        }),
-      ]);
+      const data = await fetchGuestVendorProfile(vendorId);
       if (cancelled) return;
       if (!data) {
         setProfile(null);
-        setGuestServices([]);
         setLoadError(true);
       } else {
         setProfile(data);
-        setGuestServices(servicesPage?.services ?? []);
       }
       setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [vendorId, shareParams.serviceStyle]);
+  }, [vendorId]);
 
   const vendor = profile?.vendor;
   const displayName =
@@ -105,15 +93,15 @@ export function GuestVendorShareProfile({ vendorId, shareParams }: GuestVendorSh
   }, [vendor]);
 
   const services = useMemo(() => {
-    const rows = guestServices;
+    const rows = profile?.services ?? [];
     const styleFilter = String(shareParams.serviceStyle ?? '').toLowerCase();
     if (!styleFilter) return rows;
     return rows.filter((row) => {
-      const st = String(row.service_style ?? (row as any).serviceStyle ?? '').toLowerCase();
+      const st = String(row.service_style ?? '').toLowerCase();
       if (!st) return true;
       return st === styleFilter;
     });
-  }, [guestServices, shareParams.serviceStyle]);
+  }, [profile?.services, shareParams.serviceStyle]);
 
   const handleBook = (service?: GuestVendorProfileService) => {
     const serviceId = service ? guestVendorServiceId(service) : undefined;

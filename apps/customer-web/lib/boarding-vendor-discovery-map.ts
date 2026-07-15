@@ -140,8 +140,6 @@ export interface BoardingVendorCard {
 export interface BoardingListVendor extends BoardingVendorCard {
   planRows: BoardingPlanRow[];
   needsServiceFetch: boolean;
-  /** More services exist beyond preview (GET …/services?limit=5). */
-  hasMoreServices?: boolean;
   isVerified?: boolean;
 }
 

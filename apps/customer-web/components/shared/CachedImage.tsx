@@ -58,8 +58,9 @@ function scheduleIdleWarm(raw: string): void {
 /**
  * Renders images with IndexedDB cache for static `/images/**` and managed S3/CDN keys.
  *
- * - IDB hit: paint blob only (no prior http request → no cancelled WebPs in DevTools).
- * - IDB miss: paint the normal URL once and never swap to blob on this mount; warm IDB idle.
+ * First paint uses the normal URL (one network load via <img>). IndexedDB is warmed
+ * idle in the background — we do not block or re-download solely to populate cache.
+ * On later visits, IDB blob URLs serve without another network trip.
  */
 export function CachedImage({
   src,
@@ -73,8 +74,7 @@ export function CachedImage({
   loading = 'lazy',
   onUnavailable,
 }: CachedImageProps) {
-  const [displaySrc, setDisplaySrc] = useState<string>('');
-  const [ready, setReady] = useState(() => !isIndexedDbCacheableImageSrc(src));
+  const [displaySrc, setDisplaySrc] = useState<string>(src?.trim() || '');
   const [failed, setFailed] = useState(false);
   const [triedRefresh, setTriedRefresh] = useState(false);
 
@@ -87,31 +87,27 @@ export function CachedImage({
     setTriedRefresh(false);
     if (!raw) {
       setDisplaySrc('');
-      setReady(true);
       return;
     }
 
+    // Always paint the normal URL first (parity with previous next/image / <img>).
+    setDisplaySrc(raw);
+
     if (!isIndexedDbCacheableImageSrc(raw)) {
-      setDisplaySrc(raw);
-      setReady(true);
       return;
     }
 
     let cancelled = false;
-    setReady(false);
-    setDisplaySrc('');
 
     (async () => {
       const cached = await getCachedImageBlobUrl(raw);
       if (cancelled) return;
       if (cached) {
+        // Instant repeat visit — swap to blob (no network).
         setDisplaySrc(cached);
-        setReady(true);
         return;
       }
-      // Miss: commit http src once — never swap to blob on this mount (avoids ERR_ABORTED).
-      setDisplaySrc(raw);
-      setReady(true);
+      // Miss: leave <img src=raw> to load once; warm IDB without a second display path.
       scheduleIdleWarm(raw);
     })();
 
@@ -173,9 +169,6 @@ export function CachedImage({
     );
   }
 
-  // Wait for IDB resolve so we don't paint http then abort when swapping to blob.
-  if (!ready || !displaySrc) return null;
-
   // Absolute fill layout only — object-fit comes from className / style (see classNameForFill).
   const imgStyle: React.CSSProperties = fill
     ? {
@@ -189,7 +182,7 @@ export function CachedImage({
 
   return (
     <img
-      src={displaySrc}
+      src={displaySrc || src}
       alt={alt}
       className={resolvedClassName}
       style={imgStyle}

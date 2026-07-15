@@ -19,11 +19,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
-import {
-  mergeCustomerVendorServicesPayload,
-  parseVendorServicesPageMeta,
-  VENDOR_SERVICES_PROFILE_PAGE_SIZE,
-} from '@/lib/customer-vendor-services-merge';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { StarRating } from '../shared/StarRating';
@@ -142,33 +138,38 @@ export function BoardingVendorProfileView({
     loadVendor();
   }, [vendorId]);
 
-  const [plansHasMore, setPlansHasMore] = useState(false);
-  const [plansOffset, setPlansOffset] = useState(0);
-  const [plansLoadingMore, setPlansLoadingMore] = useState(false);
-
   const loadVendor = async () => {
     try {
       setLoading(true);
-      // First paint: no /customer/facility — hero uses listing photoUrl from vendor shell
-      const limitQ = `limit=${VENDOR_SERVICES_PROFILE_PAGE_SIZE}&offset=0`;
-      const [vendorResponse, servicesResponse] = await Promise.all([
+      const [vendorResponse, servicesResponse, facilityRes] = await Promise.all([
         apiClient.get(`/customer/vendor/${vendorId}`),
         apiClient
-          .get(`/customer/vendor/${vendorId}/services?category=boarding&${limitQ}`)
-          .catch(() =>
-            apiClient.get(
-              `/customer/vendor/${vendorId}/services?serviceStyle=at_center&${limitQ}`
-            )
-          ),
+          .get(`/customer/vendor/${vendorId}/services?category=boarding`)
+          .catch(() => apiClient.get(`/customer/vendor/${vendorId}/services?serviceStyle=at_center`)),
+        apiClient.get(`/customer/facility/${vendorId}`).catch(() => null),
       ]);
 
-      setFacilityForHero(null);
+      const fr = facilityRes as Record<string, unknown> | null;
+      let facilityRoot: Record<string, unknown> | null = null;
+      if (fr && typeof fr === 'object' && fr.success !== false && (fr.facility || fr.vendor)) {
+        facilityRoot = fr;
+        if (fr.facility && typeof fr.facility === 'object') {
+          setFacilityForHero(fr.facility as Record<string, unknown>);
+        } else {
+          setFacilityForHero(null);
+        }
+      } else {
+        setFacilityForHero(null);
+      }
 
       const vendorData = (vendorResponse as any)?.vendor || vendorResponse;
       const vendorRow =
         vendorData && typeof vendorData === 'object' ? (vendorData as Record<string, unknown>) : {};
 
-      const merged: Record<string, unknown> = { ...vendorRow };
+      const merged: Record<string, unknown> = facilityRoot
+        ? { ...mergeCustomerFacilityPayload(facilityRoot), ...vendorRow }
+        : { ...vendorRow };
+
       setVendorRaw(merged);
 
       const { amenities, customAmenities } = resolveCustomerVendorAmenities(merged);
@@ -186,9 +187,6 @@ export function BoardingVendorProfileView({
       }
 
       let mapped = mapBoardingPlans(services);
-      const meta = parseVendorServicesPageMeta(servicesData as Record<string, unknown>);
-      setPlansOffset(mapped.length);
-      setPlansHasMore(meta.hasMore || (meta.total > 0 && mapped.length < meta.total));
 
       /**
        * Fallback: align with discovery/listing data source in case vendor-services
@@ -224,12 +222,7 @@ export function BoardingVendorProfileView({
         timing:
           String(merged.timing ?? merged.businessHours ?? merged.operatingHours ?? '').trim() ||
           '9:00 AM - 8:00 PM',
-        photos: (() => {
-          const listing = String(merged.photoUrl ?? merged.photo ?? '').trim();
-          if (listing) return [listing];
-          const arr = Array.isArray(merged.photos) ? merged.photos : merged.gallery;
-          return (Array.isArray(arr) ? arr : []) as string[];
-        })(),
+        photos: (Array.isArray(merged.photos) ? merged.photos : merged.gallery) as string[] | undefined ?? [],
         amenities,
         customAmenities,
         isVerified: !!(merged.isVerified ?? merged.is_verified),
@@ -542,47 +535,6 @@ export function BoardingVendorProfileView({
                     </button>
                   );
                 })}
-                {plansHasMore && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full text-[#FF8C42] border-[#FF8C42]/40"
-                    disabled={plansLoadingMore}
-                    onClick={async () => {
-                      if (plansLoadingMore) return;
-                      setPlansLoadingMore(true);
-                      try {
-                        const limitQ = `limit=${VENDOR_SERVICES_PROFILE_PAGE_SIZE}&offset=${plansOffset}`;
-                        const servicesData = (await apiClient.get(
-                          `/customer/vendor/${vendorId}/services?category=boarding&${limitQ}`
-                        ).catch(() =>
-                          apiClient.get(
-                            `/customer/vendor/${vendorId}/services?serviceStyle=at_center&${limitQ}`
-                          )
-                        )) as any;
-                        const rows = mapBoardingPlans(
-                          mergeCustomerVendorServicesPayload(servicesData)
-                        );
-                        const meta = parseVendorServicesPageMeta(
-                          servicesData as Record<string, unknown>
-                        );
-                        setPublishedPlans((prev) => {
-                          const seen = new Set(prev.map((p) => p.rowId));
-                          const merged = [...prev, ...rows.filter((r) => !seen.has(r.rowId))];
-                          setPlansOffset(merged.length);
-                          setPlansHasMore(
-                            meta.hasMore || (meta.total > 0 && merged.length < meta.total)
-                          );
-                          return merged;
-                        });
-                      } finally {
-                        setPlansLoadingMore(false);
-                      }
-                    }}
-                  >
-                    {plansLoadingMore ? 'Loading…' : 'Load more services'}
-                  </Button>
-                )}
               </div>
             )}
           </div>

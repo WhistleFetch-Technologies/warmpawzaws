@@ -9,7 +9,6 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { NutritionistBookingRouter } from './NutritionistBookingRouter';
 import { DietConsultationVendorsProps, Vendor } from './constants/interface';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
-import { CachedImage } from '@/components/shared/CachedImage';
 
 
 
@@ -56,15 +55,33 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
       }
 
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-      // Single primary discover — avoid 4× full list fan-out
-      const url = `/customer/services/by-style?style=tele&category=nutrition&roleId=nutritionist${locationParams}${phoneParam}`;
-      const response = await apiClient.get(url).catch((err) => {
-        console.warn('[DietConsultationVendors] discovery call failed:', url, err?.message || err);
-        return null;
-      });
+      const nutritionTeleEndpoints = [
+        `/customer/services/by-style?style=tele&category=nutritionist&roleId=nutritionist${locationParams}${phoneParam}`,
+        `/customer/services/by-style?style=tele&category=nutrition${locationParams}${phoneParam}`,
+        `/customer/discover-services?category=nutritionist&serviceStyle=tele${locationParams}${phoneParam}`,
+        `/customer/discover-services?category=nutrition&serviceStyle=tele${locationParams}${phoneParam}`,
+      ];
 
-      const list = (response as any)?.providers || (response as any)?.vendors || [];
-      const vendorList: Vendor[] = list.map((provider: any) => ({
+      const responses = await Promise.all(
+        nutritionTeleEndpoints.map((url) =>
+          apiClient.get(url).catch((err) => {
+            console.warn('[DietConsultationVendors] discovery call failed:', url, err?.message || err);
+            return null;
+          })
+        )
+      );
+
+      const providersById = new Map<string, any>();
+      for (const response of responses) {
+        const list = (response as any)?.providers || (response as any)?.vendors || [];
+        for (const provider of list) {
+          const id = String(provider?.id || provider?.vendorId || provider?.providerId || '').trim();
+          if (!id) continue;
+          if (!providersById.has(id)) providersById.set(id, provider);
+        }
+      }
+
+      const vendorList: Vendor[] = Array.from(providersById.values()).map((provider: any) => ({
         id: provider.id || provider.vendorId || provider.providerId,
         vendorId: provider.id || provider.vendorId || provider.providerId,
         providerId: provider.id || provider.vendorId || provider.providerId,
@@ -83,7 +100,7 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
       }));
 
       setVendors(vendorList);
-      console.log(`[DietConsultationVendors] Loaded ${vendorList.length} tele nutrition vendors`);
+      console.log(`[DietConsultationVendors] Loaded ${vendorList.length} merged tele nutrition vendors`);
     } catch (error: any) {
       console.error('❌ Error loading vendors:', error);
       toast.error('Failed to load vendors. Please try again.');
@@ -206,7 +223,7 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
                     {/* Vendor Icon/Avatar */}
                     <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
                       {vendor.photoUrl ? (
-                        <CachedImage src={vendor.photoUrl} alt={vendor.name} className="w-full h-full object-cover" />
+                        <img src={vendor.photoUrl} alt={vendor.name} className="w-full h-full object-cover" />
                       ) : (
                         <Video className="w-6 h-6 text-green-600" />
                       )}

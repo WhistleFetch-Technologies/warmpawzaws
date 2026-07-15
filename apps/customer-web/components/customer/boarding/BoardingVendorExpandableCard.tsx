@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type MouseEvent } from 'react';
+import type { MouseEvent } from 'react';
 import {
   MapPin,
   Clock,
@@ -16,7 +16,6 @@ import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceListingPrice } from '@/components/customer/pricing/ServiceListingPrice';
-import { CachedImage } from '@/components/shared/CachedImage';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
@@ -75,7 +74,7 @@ export function BoardingVendorExpandableCard({
   showPriceDisclaimer = false,
   customerId,
   serviceCategory,
-  usePromoQuote = false,
+  usePromoQuote = true,
 }: BoardingVendorExpandableCardProps) {
   const centerProfileVendorId =
     pickCustomerVendorAccountId((v.raw ?? {}) as Record<string, unknown>) || v.id;
@@ -86,23 +85,12 @@ export function BoardingVendorExpandableCard({
   /** When only "View Services" expands, header can still collapse an open card (parity with tapping header again in default mode). */
   const headerActsAsCollapse = !headerTapExpandsServices && expanded;
   const headerInteractive = headerTapExpandsServices || headerActsAsCollapse;
-  const [photoUnavailable, setPhotoUnavailable] = useState(false);
 
   const raw = (v.raw ?? {}) as Record<string, any>;
   const roleLabel = String(
     raw.roleDisplayName || raw.roleName || raw.vendorType || ''
   ).trim();
   const nextSlot = resolveNextAvailableLabel(raw);
-  const listedServiceCount = Number(raw.serviceCount ?? raw.service_count);
-  const displayServiceCount =
-    Number.isFinite(listedServiceCount) && listedServiceCount > 0
-      ? listedServiceCount
-      : v.planRows.length > 0
-        ? v.planRows.length
-        : null;
-  const showViewMoreServices =
-    !!v.hasMoreServices ||
-    (displayServiceCount != null && displayServiceCount > v.planRows.length && v.planRows.length > 0);
 
   return (
     <Card className="bg-white rounded-xl border border-gray-100 shadow-sm">
@@ -125,12 +113,11 @@ export function BoardingVendorExpandableCard({
         }`}
       >
         <div className="flex gap-3">
-          {v.photo && !photoUnavailable ? (
-            <CachedImage
+          {v.photo ? (
+            <img
               src={v.photo}
               alt={v.name}
               className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
-              onUnavailable={() => setPhotoUnavailable(true)}
             />
           ) : (
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center text-2xl flex-shrink-0 border border-orange-100/50">
@@ -360,20 +347,6 @@ export function BoardingVendorExpandableCard({
                   </div>
                 );
               })}
-              {showViewMoreServices && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="w-full text-[#FF8C42] hover:bg-orange-50"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenCenterDetails(e, centerProfileVendorId);
-                  }}
-                >
-                  View more services
-                </Button>
-              )}
             </div>
           )}
         </div>
@@ -382,10 +355,9 @@ export function BoardingVendorExpandableCard({
       {!expanded && (
         <div className="px-4 py-3 bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="text-sm text-gray-600">
-            {displayServiceCount != null || v.planRows.length > 0 ? (
+            {v.planRows.length > 0 ? (
               <>
-                {displayServiceCount ?? v.planRows.length} service
-                {(displayServiceCount ?? v.planRows.length) !== 1 ? 's' : ''} available
+                {v.planRows.length} service{v.planRows.length !== 1 ? 's' : ''} available
                 {minP != null && (
                   <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(minP)}</span>
                 )}
@@ -394,7 +366,7 @@ export function BoardingVendorExpandableCard({
                 )}
               </>
             ) : v.needsServiceFetch ? (
-              <span className="text-gray-500">Tap View Services to see prices</span>
+              <span className="text-gray-500">Tap to load services & prices</span>
             ) : (
               <span className="text-gray-500">No priced services in listing — open details</span>
             )}
