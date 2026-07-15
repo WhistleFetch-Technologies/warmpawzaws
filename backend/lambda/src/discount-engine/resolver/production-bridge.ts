@@ -8,7 +8,10 @@ import {
   isResolverEnabled,
 } from '../policy/resolver-mode';
 import type { PriorityDiagnostics, SettlementDiagnostics, StackDiagnostics } from './types';
-import { isResolverResultAuthoritativeUsable } from './resolver-result-mappers';
+import {
+  isResolverResultAuthoritativeUsable,
+  isResolverResultCleanEmpty,
+} from './resolver-result-mappers';
 
 export type ProductionFallbackLog = {
   label: string;
@@ -132,6 +135,14 @@ export type ProductionResolveOptions<TLegacy> = {
   mapResolverToLegacy: (result: ResolverResult) => TLegacy;
   /** Optional shadow compare when mode=SHADOW */
   compareShadow?: (legacy: TLegacy, resolver: ResolverResult) => void;
+  /**
+   * AUTHORITATIVE only: treat a clean zero-savings result ("no discount applies")
+   * as a v2 decision instead of falling back to legacy. Safe for auto-discovery
+   * paths (booking/cart promotion resolution) where empty simply means no active
+   * promotions. Leave false for code/coupon validation — an empty result there may
+   * mean V2 doesn't recognise the code, and legacy must stay the deciding path.
+   */
+  acceptEmptyResult?: boolean;
 };
 
 /**
@@ -170,7 +181,10 @@ export async function resolveWithProductionMode<TLegacy>(
   // AUTHORITATIVE — try V2, fall back to legacy on any failure
   try {
     const resolverResult = await runResolverPipeline(options.context);
-    if (isResolverResultAuthoritativeUsable(resolverResult)) {
+    const usable =
+      isResolverResultAuthoritativeUsable(resolverResult) ||
+      (options.acceptEmptyResult === true && isResolverResultCleanEmpty(resolverResult));
+    if (usable && resolverResult) {
       const mapped = options.mapResolverToLegacy(resolverResult);
       logProductionResolution({
         label: options.label,
