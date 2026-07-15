@@ -6,11 +6,11 @@ import {
   resolvePostgresCustomerIdFromAuthHeaders,
   selectCustomerIdByPhoneLast10,
 } from '../repos/customer-auth.repo';
-import { hasMeaningfulStoredPassword } from '../utils/password-hash.utils';
+import { hasMeaningfulStoredPassword } from '../services/password-hash.utils';
 import {
   mergeChangePasswordRequestBody,
   pickStr,
-} from '../utils/password-body.utils';
+} from '../services/password-body.utils';
 
 export class ChangePasswordHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {

@@ -1,8 +1,8 @@
 import type { Context } from 'hono';
 import { query } from '../../../../database/rds-connection';
 import { resolvePostgresCustomerIdFromAuthHeaders } from '../repos/customer-auth.repo';
-import { authHeadersFromCustomerRequest } from '../utils/password-body.utils';
-import { hasMeaningfulStoredPassword } from '../utils/password-hash.utils';
+import { authHeadersFromCustomerRequest } from '../services/password-body.utils';
+import { hasMeaningfulStoredPassword } from '../services/password-hash.utils';
 
 export async function handleCustomerAccountStatus(c: Context) {
   const customerId = await resolvePostgresCustomerIdFromAuthHeaders(authHeadersFromCustomerRequest(c));

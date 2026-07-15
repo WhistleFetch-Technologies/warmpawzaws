@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import {
   omitEmptyPasswordKeys,
   omitUndefinedShallow,
-} from '../utils/password-body.utils';
+} from '../services/password-body.utils';
 
 export function createApiGatewayEventFromParsedBody(req: Context['req'], parsed: Record<string, unknown>): any {
   const headers: Record<string, string> = {};

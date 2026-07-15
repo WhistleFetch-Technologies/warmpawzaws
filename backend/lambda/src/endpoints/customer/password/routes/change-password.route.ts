@@ -1,11 +1,11 @@
 import type { Hono } from 'hono';
 import { ChangePasswordHandler } from '../handlers/change-password.handler';
-import { mergeHonoJsonBodyFromRequest } from '../utils/password-body.utils';
+import { mergeHonoJsonBodyFromRequest } from '../services/password-body.utils';
 import {
   createApiGatewayEventFromParsedBody,
   createLambdaContext,
   mergeChangePasswordParsedBody,
-} from '../utils/lambda-event.utils';
+} from '../services/lambda-event.utils';
 
 export function registerChangePasswordRoute(app: Hono) {
   const changePasswordHandler = new ChangePasswordHandler();

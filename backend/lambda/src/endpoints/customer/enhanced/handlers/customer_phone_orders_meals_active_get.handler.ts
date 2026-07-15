@@ -1,0 +1,93 @@
+import type { Context } from 'hono';
+/**
+ * ============================================================================
+ * CUSTOMER ENDPOINTS - ENHANCED VERSION (PHASE 5)
+ * ============================================================================
+ * 
+ * Migrated to use:
+ * - BaseHandlerEnhanced for CloudWatch logging and error handling
+ * - API Contracts (Zod) for validation
+ * - Standardized response format
+ * 
+ * Endpoints:
+ * - GET /customer/:customerId - Get customer profile
+ * - GET /customer/by-phone - Get customer by phone
+ * - PUT /customer/:customerId - Update customer profile
+ * - GET /customer/:customerId/pets - Get customer pets
+ * - POST /customer/:customerId/pets - Add pet
+ * 
+ * Date: 2026-01-28
+ * Phase: 5
+ * ============================================================================
+ */
+
+import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
+import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../../../../handler/base-handler-enhanced';
+import { query, select, insert, update } from '../../../../database/rds-connection';
+import {
+  UpdateCustomerProfileRequestSchema,
+  AddPetRequestSchema,
+} from '@warmpawz/api-contracts/customers';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../../utils/entity-extractor';
+import { isValidUUID } from '../../../../types/entities';
+import { presignS3GetUrlIfApplicable } from '../../../../utils/s3-media-presign';
+import {
+  extractHealthRecordsForClient,
+  extractVaccinationsForClient,
+} from '../../../../utils/pet-health-normalize';
+import {
+  normalizeBloodTypeForStorage,
+  resolveBloodTypeFromPayload,
+} from '../../../../lib/pet-blood-types';
+import { findCustomerByPhone } from '../../../../utils/customer-phone-lookup';
+import { getDiscoveryRules } from '../../../../lib/rule-engine';
+import {
+  resolveCustomerMealPlanOrderDisplayTotals,
+} from '../../../../utils/meal-order-pricing';
+import {
+  resolveEffectiveMealDeliveryState,
+  isTerminalMealDeliveryState,
+  shouldShowMealRiderFooterBar,
+  mealRiderDeliveryMessage,
+} from '../../../../utils/meal-delivery-effective-state';
+import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../../services/meal-subscription/meal-subscription-operations-service';
+import { expireMealPaymentHolds } from '../../../../utils/meal-payment-hold';
+import { getMealRefundReviewCustomerMetadata } from '../../../../utils/meal-refund-cases';
+
+export async function customerPhoneOrdersMealsActiveGetHandler(c: Context) {
+    try {
+      const phone = c.req.param('phone');
+
+      let customer: any | null = null;
+      try {
+        customer = await findCustomerByPhone(phone);
+      } catch (error: any) {
+        console.error('[meals/active] Error fetching customer:', error);
+        return c.json({ success: true, orders: [] }, 200);
+      }
+      if (!customer) {
+        return c.json({ success: true, orders: [] });
+      }
+
+      let ordersResult: any;
+      try {
+        ordersResult = await query(MEAL_ACTIVE_ORDERS_SQL, [customer.id]);
+      } catch (error: any) {
+        console.warn('[meals/active] Error fetching orders (returning empty):', error?.message);
+        return c.json({ success: true, orders: [] }, 200);
+      }
+
+      const orders = ((ordersResult as any)?.rows || [])
+        .map(mapMealActiveOrderRow)
+        .filter(Boolean);
+
+      return c.json({
+        success: true,
+        orders,
+      });
+    } catch (error: any) {
+      console.error('[meals/active] Error fetching active meal orders:', error);
+      return c.json({ success: true, orders: [] }, 200);
+    }
+}

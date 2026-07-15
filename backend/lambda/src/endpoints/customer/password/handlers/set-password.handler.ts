@@ -3,7 +3,7 @@ import { query } from '../../../../database/rds-connection';
 import { hashCustomerPasswordBcrypt } from '../../../../lib/services/auth/customer-password-crypto';
 import { updateCustomerPasswordHashWithAuthVersionBump } from '../../../../lib/services/auth/customer-auth-version-support';
 import { resolvePostgresCustomerIdFromAuthHeaders } from '../repos/customer-auth.repo';
-import { authHeadersFromCustomerRequest, mergeHonoJsonBodyFromRequest } from '../utils/password-body.utils';
+import { authHeadersFromCustomerRequest, mergeHonoJsonBodyFromRequest } from '../services/password-body.utils';
 
 export async function handleCustomerSetPassword(c: Context) {
   const customerId = await resolvePostgresCustomerIdFromAuthHeaders(authHeadersFromCustomerRequest(c));

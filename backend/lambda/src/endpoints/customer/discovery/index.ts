@@ -25,7 +25,7 @@ import { registerPricingQuoteRoute } from './routes/pricing-quote.route';
 import { registerDiagnosticsVendorByPhoneRoute } from './routes/diagnostics-vendor-by-phone.route';
 import { registerDiagnosticsApproveVendorRoute } from './routes/diagnostics-approve-vendor.route';
 
-export { getCoordinates } from './shared/legacy-helpers';
+export { getCoordinates } from './repos/legacy-helpers.repo';
 
 export function registerServiceDiscoveryEndpoints(app: Hono) {
   registerDiscoveryMetaRoute(app);
