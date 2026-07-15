@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { fetchDiscoveryList } from '@/lib/discovery-list-fetch';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { filterHubDiscoveryRowsByRadius } from '@/lib/hub-discovery-radius-filter';
 import {
@@ -16,10 +15,6 @@ import {
   filterVetHubProviderRows,
   isVetHubDiscoveryConfig,
 } from '@/lib/filter-hub-services';
-import {
-  parseVendorServicesPageMeta,
-  VENDOR_SERVICES_PREVIEW_LIMIT,
-} from '@/lib/customer-vendor-services-merge';
 
 function extractRows(data: any): any[] {
   if (!data) return [];
@@ -83,7 +78,7 @@ export function useHubVendorDiscovery(
         }
 
         try {
-          const data = await fetchDiscoveryList<any>(endpoint);
+          const data = await apiClient.get<any>(endpoint);
           rows = extractRows(data);
         } catch (e) {
           console.warn('[useHubVendorDiscovery] discover-services failed:', e);
@@ -95,7 +90,7 @@ export function useHubVendorDiscovery(
             if (config.fallbackByStyle.roleId) {
               altUrl += `&roleId=${encodeURIComponent(config.fallbackByStyle.roleId)}`;
             }
-            const altRes = await fetchDiscoveryList<any>(altUrl);
+            const altRes = await apiClient.get<any>(altUrl);
             const alt = altRes?.vendors ?? altRes?.providers ?? altRes;
             if (Array.isArray(alt)) rows = alt;
             else if (alt?.services && Array.isArray(alt.services)) rows = alt.services;
@@ -155,31 +150,20 @@ export function useHubVendorDiscovery(
     async (vendorId: string) => {
       setFetchingPlansFor(vendorId);
       try {
-        const limitQ = `limit=${VENDOR_SERVICES_PREVIEW_LIMIT}&offset=0`;
         const servicesResponse = await apiClient
-          .get(
-            `/customer/vendor/${vendorId}/services?category=${encodeURIComponent(config.servicesApiCategory)}&${limitQ}`
-          )
+          .get(`/customer/vendor/${vendorId}/services?category=${encodeURIComponent(config.servicesApiCategory)}`)
           .catch(() =>
             apiClient.get(
-              `/customer/vendor/${vendorId}/services?serviceStyle=${encodeURIComponent(config.serviceStyle)}&${limitQ}`
+              `/customer/vendor/${vendorId}/services?serviceStyle=${encodeURIComponent(config.serviceStyle)}`
             )
           );
         const mapped = mapServicesApiResponseToPlanRows(servicesResponse);
         const rows = isVetHubDiscoveryConfig(config)
           ? filterPlanRowsForVetHub(mapped)
           : mapped;
-        const meta = parseVendorServicesPageMeta(servicesResponse as Record<string, unknown>);
         setVendors((prev) =>
           prev.map((v) =>
-            v.id === vendorId
-              ? {
-                  ...v,
-                  planRows: rows,
-                  needsServiceFetch: false,
-                  hasMoreServices: meta.hasMore || (meta.total > 0 && rows.length < meta.total),
-                }
-              : v
+            v.id === vendorId ? { ...v, planRows: rows, needsServiceFetch: false } : v
           )
         );
       } catch (e) {

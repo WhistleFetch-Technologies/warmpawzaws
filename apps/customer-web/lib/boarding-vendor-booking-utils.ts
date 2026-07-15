@@ -10,12 +10,8 @@ import {
 } from '@/lib/vendor-package-purchase-nav';
 
 export function minPriceForVendor(v: BoardingListVendor): number | null {
-  if (v.planRows.length) {
-    return Math.min(...v.planRows.map((p) => p.price));
-  }
-  const raw = (v.raw || {}) as Record<string, unknown>;
-  const fromCard = Number(raw.priceMin ?? raw.price_min);
-  return Number.isFinite(fromCard) && fromCard > 0 ? fromCard : null;
+  if (!v.planRows.length) return null;
+  return Math.min(...v.planRows.map((p) => p.price));
 }
 
 export function priceForCard(v: BoardingListVendor, slug: BoardingServiceSlug): string {

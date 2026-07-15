@@ -81,56 +81,6 @@ export async function fetchGuestVendorProfile(
   }
 }
 
-/** Guest services page (GET /public/vendor/:id/services) — use limit so PreviewServiceRow applies. */
-export async function fetchGuestVendorServices(
-  vendorId: string,
-  opts?: { limit?: number; offset?: number; serviceStyle?: string; category?: string }
-): Promise<{
-  services: GuestVendorProfileService[];
-  total: number;
-  hasMore: boolean;
-} | null> {
-  const id = String(vendorId ?? '').trim();
-  if (!id) return null;
-  const base = getApiBaseUrl().replace(/\/+$/, '');
-  const limit = opts?.limit ?? 10;
-  const offset = opts?.offset ?? 0;
-  const qs = new URLSearchParams();
-  qs.set('limit', String(limit));
-  qs.set('offset', String(offset));
-  if (opts?.serviceStyle) qs.set('serviceStyle', opts.serviceStyle);
-  if (opts?.category) qs.set('category', opts.category);
-  const path = `/public/vendor/${encodeURIComponent(id)}/services?${qs.toString()}`;
-  try {
-    const res = await fetch(`${base}${path}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      services?: GuestVendorProfileService[];
-      total?: number;
-      hasMore?: boolean;
-    };
-    const services = Array.isArray(data.services) ? data.services : [];
-    return {
-      services: services.map((s) => ({
-        ...s,
-        // Map preview fields into legacy guest helpers
-        service_name: (s as any).name ?? s.service_name,
-        service_style: (s as any).serviceStyle ?? s.service_style,
-        description: (s as any).shortDescription ?? s.description,
-        custom_price: (s as any).price ?? s.custom_price,
-      })),
-      total: Number(data.total) || services.length,
-      hasMore: !!data.hasMore,
-    };
-  } catch {
-    return null;
-  }
-}
-
 export function guestVendorServiceLabel(row: GuestVendorProfileService): string {
   return String(row.name ?? row.service_name ?? 'Service').trim() || 'Service';
 }

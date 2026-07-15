@@ -24,8 +24,6 @@ import {
   applyVetHubDiscoveryToProviders,
   isVetHubDiscoveryConfig,
 } from '@/lib/filter-hub-services';
-import { CachedImage } from '@/components/shared/CachedImage';
-import { fetchDiscoveryList } from '@/lib/discovery-list-fetch';
 
 // ============================================================================
 // TYPES
@@ -359,11 +357,11 @@ function ProviderCard({ provider, serviceStyle, showPriceDisclaimer = false, isP
             {provider.photos && provider.photos.length > 1 ? (
               <div className="flex h-full">
                 {provider.photos.slice(0, 3).map((url, i) => (
-                  <CachedImage key={i} src={url} alt="" className="w-1/3 h-full object-cover" />
+                  <img key={i} src={url} alt="" className="w-1/3 h-full object-cover" />
                 ))}
               </div>
             ) : provider.photo ? (
-              <CachedImage
+              <img
                 src={provider.photo}
                 alt={provider.name}
                 className="w-full h-full object-cover"
@@ -674,7 +672,7 @@ export function UniversalServiceProviderList({
 
       // Fetch providers for this service style and category
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-      const response = await fetchDiscoveryList(
+      const response = await apiClient.get(
         `/customer/services/by-style?style=${serviceStyle}&category=${category}&roleId=${roleId}${locationParams}${specializationParam}${problemTitleParam}${phoneParam}`
       ) as any;
 

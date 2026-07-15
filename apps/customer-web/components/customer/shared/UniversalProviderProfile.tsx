@@ -4,8 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Star, Clock, MapPin, Phone, Video, Home, Building2,
   Shield, Award, GraduationCap, Heart, Share2, Check, X, Calendar,
-  ChevronRight, Plus, User, MessageCircle, Image as ImageIcon, Sparkles,
-  Loader2,
+  ChevronRight, Plus, User, MessageCircle, Image as ImageIcon, Sparkles
 } from 'lucide-react';
 import { AmenitiesSection } from './AmenitiesSection';
 import { Button } from '@/components/ui/button';
@@ -25,12 +24,6 @@ import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
 import { resolveCustomerVendorAmenities, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { shareVendorProfile, universalCategoryToSharePersona } from '@/lib/vendor-profile-share';
-import { CachedImage } from '@/components/shared/CachedImage';
-import {
-  mergeCustomerVendorServicesPayload,
-  parseVendorServicesPageMeta,
-  VENDOR_SERVICES_PROFILE_PAGE_SIZE,
-} from '@/lib/customer-vendor-services-merge';
 
 // ============================================================================
 // TYPES
@@ -252,69 +245,6 @@ export function UniversalProviderProfile({
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [profileAmenities, setProfileAmenities] = useState<string[]>(provider.amenities || []);
   const [profileCustomAmenities, setProfileCustomAmenities] = useState<string[]>([]);
-  const [listedServices, setListedServices] = useState<Service[]>(() => provider.services || []);
-  const [servicesHasMore, setServicesHasMore] = useState(false);
-  const [servicesLoadingMore, setServicesLoadingMore] = useState(false);
-  const [servicesOffset, setServicesOffset] = useState(() => (provider.services || []).length);
-
-  const mapVendorServiceRow = useCallback(
-    (s: any): Service => ({
-      id: String(s.id || s.service_id || ''),
-      serviceId: String(s.serviceId || s.id || s.service_id || ''),
-      name: String(s.name || s.service_name || s.serviceName || 'Service'),
-      description: s.description || s.custom_description || undefined,
-      price: Number(s.price || s.custom_price || 0) || 0,
-      duration: Number(s.duration || s.custom_duration || s.duration_minutes || 30) || 30,
-      popular: !!s.popular,
-      categoryName: s.categoryName || s.category_name || s.category || undefined,
-      serviceStyle: String(s.serviceStyle || s.service_style || serviceStyle),
-    }),
-    [serviceStyle]
-  );
-
-  const loadServicesPage = useCallback(
-    async (offset: number, append: boolean) => {
-      const vid = String(provider.vendorId || provider.providerId || '').trim();
-      if (!vid) return;
-      setServicesLoadingMore(true);
-      try {
-        const phoneQ = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-        const res = (await apiClient.get(
-          `/customer/vendor/${vid}/services?serviceStyle=${encodeURIComponent(serviceStyle)}&category=${encodeURIComponent(category)}${phoneQ}&limit=${VENDOR_SERVICES_PROFILE_PAGE_SIZE}&offset=${offset}`
-        )) as Record<string, unknown>;
-        const rows = mergeCustomerVendorServicesPayload(res).map(mapVendorServiceRow);
-        const meta = parseVendorServicesPageMeta(res);
-        setListedServices((prev) => {
-          if (!append) return rows;
-          const seen = new Set(prev.map((x) => x.id));
-          return [...prev, ...rows.filter((r) => r.id && !seen.has(r.id))];
-        });
-        const nextOffset = offset + rows.length;
-        setServicesOffset(nextOffset);
-        setServicesHasMore(meta.hasMore || (meta.total > 0 && nextOffset < meta.total));
-      } catch (err) {
-        console.warn('[UniversalProviderProfile] services page failed', err);
-        if (!append) setListedServices(provider.services || []);
-      } finally {
-        setServicesLoadingMore(false);
-      }
-    },
-    [provider.vendorId, provider.providerId, provider.services, phone, serviceStyle, category, mapVendorServiceRow]
-  );
-
-  useEffect(() => {
-    setListedServices(provider.services || []);
-    setServicesOffset((provider.services || []).length);
-    setServicesHasMore(false);
-    // Card-only / sponsored open with empty services — load first page
-    if (!(provider.services || []).length) {
-      void loadServicesPage(0, false);
-    } else if ((provider.services || []).length >= VENDOR_SERVICES_PROFILE_PAGE_SIZE) {
-      // Likely truncated parent payload — offer load more from same offset
-      setServicesHasMore(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when navigating to another provider
-  }, [provider.providerId, provider.vendorId]);
 
   const showFacilitiesAmenitiesOnAbout =
     shouldShowVendorAmenities(serviceStyle) &&
@@ -474,7 +404,7 @@ export function UniversalProviderProfile({
 
     try {
       setLoadingSlots(true);
-      const selectedList = servicesMatchingSelection(listedServices, selectedServices);
+      const selectedList = servicesMatchingSelection(provider.services, selectedServices);
       const sumMinutes = selectedList.reduce((sum, s) => sum + serviceDurationMinutes(s), 0);
       const totalDuration = Math.max(15, sumMinutes > 0 ? sumMinutes : 30);
       const serviceIds = selectedList
@@ -513,8 +443,8 @@ export function UniversalProviderProfile({
     if (selectedDate && showBookingForm) {
       void loadTimeSlots(selectedDate);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid re-running on every services array identity
-  }, [selectedDate, showBookingForm, selectedServices, serviceStyle, listedServices]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid re-running on every `provider.services` array identity from parent
+  }, [selectedDate, showBookingForm, selectedServices, serviceStyle]);
 
   const loadReviews = async () => {
     const vendorId = provider.vendorId || provider.providerId;
@@ -558,7 +488,7 @@ export function UniversalProviderProfile({
   };
 
   // Calculate total for selected services
-  const selectedServicesList = servicesMatchingSelection(listedServices, selectedServices);
+  const selectedServicesList = servicesMatchingSelection(provider.services, selectedServices);
   const totalAmount = selectedServicesList.reduce((sum, s) => sum + s.price, 0);
   const totalDuration = selectedServicesList.reduce((sum, s) => sum + s.duration, 0);
 
@@ -640,9 +570,9 @@ export function UniversalProviderProfile({
         {/* Photo Banner */}
         <div className="h-48 bg-gradient-to-br from-orange-400 to-amber-500 relative">
           {provider.photo && (
-            <CachedImage
-              src={provider.photo}
-              alt={provider.name}
+            <img 
+              src={provider.photo} 
+              alt={provider.name} 
               className="w-full h-full object-cover opacity-30"
             />
           )}
@@ -697,7 +627,7 @@ export function UniversalProviderProfile({
               {/* Avatar */}
               <div className="w-20 h-20 rounded-xl overflow-hidden bg-gradient-to-br from-orange-100 to-amber-100 flex-shrink-0 border-4 border-white shadow-lg -mt-8">
                 {provider.photo ? (
-                  <CachedImage src={provider.photo} alt={provider.name} className="w-full h-full object-cover" />
+                  <img src={provider.photo} alt={provider.name} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-orange-500">
                     {provider.name.charAt(0)}
@@ -959,98 +889,67 @@ export function UniversalProviderProfile({
             {activeTab === 'services' && (
               <div className="space-y-3">
                 <h3 className="font-medium text-gray-700">Available Services</h3>
-                {servicesLoadingMore && listedServices.length === 0 ? (
-                  <Card className="p-6 text-center">
-                    <div className="flex items-center justify-center gap-2 text-gray-500 text-sm">
-                      <Loader2 className="h-4 w-4 animate-spin text-[#FF8C42]" />
-                      Loading services…
-                    </div>
-                  </Card>
-                ) : listedServices.length === 0 ? (
+                {provider.services.length === 0 ? (
                   <Card className="p-6 text-center">
                     <p className="text-gray-500">No services available</p>
                   </Card>
                 ) : (
-                  <>
-                    {listedServices.map((service) => {
-                      const isSelected = selectedServices.has(service.id);
-                      return (
-                        <Card
-                          key={service.id}
-                          className={`p-4 cursor-pointer transition-all ${
-                            isSelected ? 'border-orange-500 bg-orange-50' : 'hover:border-orange-200'
-                          }`}
-                          onClick={() => toggleService(service.id)}
-                        >
-                          <div className="flex w-full min-w-0 items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex min-w-0 items-center gap-2">
-                                <h4 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
-                                  {service.name}
-                                </h4>
-                                {service.popular && (
-                                  <Badge className="bg-amber-100 text-amber-700 text-xs shrink-0">Popular</Badge>
-                                )}
-                              </div>
-                              {service.description?.trim() && (
-                                <div className="mt-1">
-                                  <ServiceDescriptionInline
-                                    description={service.description}
-                                    title={service.name}
-                                    className="m-0 text-sm leading-5 text-gray-500"
-                                  />
-                                </div>
+                  provider.services.map((service) => {
+                    const isSelected = selectedServices.has(service.id);
+                    return (
+                      <Card 
+                        key={service.id}
+                        className={`p-4 cursor-pointer transition-all ${
+                          isSelected ? 'border-orange-500 bg-orange-50' : 'hover:border-orange-200'
+                        }`}
+                        onClick={() => toggleService(service.id)}
+                      >
+                        <div className="flex w-full min-w-0 items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <h4 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
+                                {service.name}
+                              </h4>
+                              {service.popular && (
+                                <Badge className="bg-amber-100 text-amber-700 text-xs shrink-0">Popular</Badge>
                               )}
-                              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                                <span className="flex min-w-0 items-center gap-1">
-                                  <Clock className="h-3 w-3 shrink-0" />
-                                  {service.duration} mins
-                                </span>
-                                {service.categoryName && (
-                                  <span className="min-w-0 break-words">{service.categoryName}</span>
-                                )}
-                              </div>
                             </div>
-                            <div className="ml-2 flex shrink-0 flex-col items-end gap-2">
-                              <p className="font-bold tabular-nums text-[#FF8C42] whitespace-nowrap">
-                                {formatPriceWithSymbol(service.price)}
-                              </p>
-                              <div
-                                className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                                  isSelected
-                                    ? 'bg-orange-500 border-orange-500'
-                                    : 'border-gray-300'
-                                }`}
-                              >
-                                {isSelected && <Check className="w-4 h-4 text-white" />}
+                            {service.description?.trim() && (
+                              <div className="mt-1">
+                                <ServiceDescriptionInline
+                                  description={service.description}
+                                  title={service.name}
+                                  className="m-0 text-sm leading-5 text-gray-500"
+                                />
                               </div>
+                            )}
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                              <span className="flex min-w-0 items-center gap-1">
+                                <Clock className="h-3 w-3 shrink-0" />
+                                {service.duration} mins
+                              </span>
+                              {service.categoryName && (
+                                <span className="min-w-0 break-words">{service.categoryName}</span>
+                              )}
                             </div>
                           </div>
-                          <p className="mt-2 text-right text-[11px] leading-4 text-gray-500 break-words">
-                            {INDICATIVE_PRICING_NOTE}
-                          </p>
-                        </Card>
-                      );
-                    })}
-                    {servicesHasMore && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full text-[#FF8C42] border-[#FF8C42]/40"
-                        disabled={servicesLoadingMore}
-                        onClick={() => void loadServicesPage(servicesOffset, true)}
-                      >
-                        {servicesLoadingMore ? (
-                          <span className="inline-flex items-center gap-2">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Loading…
-                          </span>
-                        ) : (
-                          'Load more services'
-                        )}
-                      </Button>
-                    )}
-                  </>
+                          <div className="ml-2 flex shrink-0 flex-col items-end gap-2">
+                            <p className="font-bold tabular-nums text-[#FF8C42] whitespace-nowrap">
+                              {formatPriceWithSymbol(service.price)}
+                            </p>
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                              isSelected 
+                                ? 'bg-orange-500 border-orange-500' 
+                                : 'border-gray-300'
+                            }`}>
+                              {isSelected && <Check className="w-4 h-4 text-white" />}
+                            </div>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-right text-[11px] leading-4 text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
+                      </Card>
+                    );
+                  })
                 )}
               </div>
             )}

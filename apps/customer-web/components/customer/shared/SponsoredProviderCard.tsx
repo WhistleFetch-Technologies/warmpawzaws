@@ -8,7 +8,6 @@ import { apiClient } from '@/lib/api-client';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
-import { CachedImage } from '@/components/shared/CachedImage';
 
 interface SponsoredProvider {
   id: string;
@@ -139,7 +138,7 @@ export function SponsoredProviderCard({
           {/* Photo */}
           <div className="w-16 h-16 rounded-xl overflow-hidden bg-white/20 flex-shrink-0">
             {provider.photo ? (
-              <CachedImage src={provider.photo} alt={provider.name} className="w-full h-full object-cover" />
+              <img src={provider.photo} alt={provider.name} className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-white text-xl font-bold">
                 {provider.name?.charAt(0)}
@@ -206,9 +205,9 @@ export function SponsoredProviderCard({
         <div className="relative flex-shrink-0">
           <div className="w-20 h-20 rounded-xl overflow-hidden bg-gradient-to-br from-orange-100 to-amber-100 shadow-md">
             {provider.photo ? (
-              <CachedImage
-                src={provider.photo}
-                alt={provider.name}
+              <img 
+                src={provider.photo} 
+                alt={provider.name} 
                 className="w-full h-full object-cover"
               />
             ) : (
@@ -364,7 +363,7 @@ export function TopProvidersSection({
             <div className="relative">
               <div className="w-32 h-24 bg-gradient-to-br from-gray-100 to-gray-200">
                 {provider.photo ? (
-                  <CachedImage src={provider.photo} alt={provider.name} className="w-full h-full object-cover" />
+                  <img src={provider.photo} alt={provider.name} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-gray-300">
                     {provider.name?.charAt(0)}
