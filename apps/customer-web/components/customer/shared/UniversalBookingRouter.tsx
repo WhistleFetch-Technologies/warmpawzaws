@@ -1694,7 +1694,7 @@ export function UniversalBookingRouter({
                       </div>
                       <div className="text-right flex-shrink-0 ml-2">
                         <span className="text-base sm:text-lg font-bold text-orange-600">₹1,799</span>
-                        <p className="text-xs text-gray-400 line-through">₹2,495</p>
+                        <p className="text-xs text-gray-400 cw-price-strike">₹2,495</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1710,7 +1710,7 @@ export function UniversalBookingRouter({
                       </div>
                       <div className="text-right flex-shrink-0 ml-2">
                         <span className="text-base sm:text-lg font-bold text-orange-600">₹2,999</span>
-                        <p className="text-xs text-gray-400 line-through">₹4,990</p>
+                        <p className="text-xs text-gray-400 cw-price-strike">₹4,990</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">

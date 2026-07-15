@@ -115,7 +115,7 @@ export function ResortServicesLanding({ phone, onBack, onNavigate }: ResortServi
                 </div>
                 <div className="flex items-center justify-between pt-3 border-t border-slate-50">
                   <div className="text-sm">
-                    <span className="line-through text-slate-400 text-xs">₹4999</span>
+                    <span className="cw-price-strike text-slate-400 text-xs">₹4999</span>
                     <span className="ml-2 font-bold text-slate-900">₹3999</span>
                   </div>
                   <Button size="sm" className="bg-teal-600 text-white hover:bg-teal-700 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('resort_booking')}>

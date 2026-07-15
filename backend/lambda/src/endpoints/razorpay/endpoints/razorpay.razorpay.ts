@@ -21,6 +21,10 @@ import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, insert, update, withTransaction } from '../../../database/rds-connection';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
+import {
+  resolveExpectedBookingCharge,
+  type ExpectedBookingCharge,
+} from '../../../utils/booking-charge-enforcement';
 import { createHmac, randomUUID } from 'crypto';
 import { getRazorpayConfig, getRazorpayAuthHeader, getRazorpayClient, razorpayRequest } from '../../../utils/payments/razorpay-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
@@ -705,6 +709,64 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         }
       }
 
+      // ✅ DEFENSE-IN-DEPTH: never trust the client amount for booking payments.
+      // Clients that skip /payments/create (which computes GST + platform fees) used to
+      // get charged exactly what they sent — see prod booking 6b49e9bd (base price, no GST).
+      // Floor-only: raise under-payments to the server-computed payable; never lower the
+      // client amount (it may legitimately include components we cannot see here).
+      // Fail OPEN on errors — this must not block payments.
+      let enforcedCharge: ExpectedBookingCharge | null = null;
+      let chargeWasEnforced = false;
+      if (
+        booking &&
+        bookingId &&
+        !isPharmacyOrder &&
+        !isEcommerceOrder &&
+        !isDiagnosticsOrder &&
+        !isBookingPrepaid &&
+        !isWalletTopup &&
+        String(booking.payment_status || '').toLowerCase() !== 'paid'
+      ) {
+        try {
+          enforcedCharge = await resolveExpectedBookingCharge({
+            bookingId: String(bookingId),
+            booking,
+          });
+          if (enforcedCharge && enforcedCharge.expectedCash - chargeAmount > 1) {
+            console.warn(
+              '[RAZORPAY-CREATE-ORDER] Client amount below server-computed payable — enforcing server amount',
+              {
+                bookingId,
+                clientAmount: chargeAmount,
+                expectedCash: enforcedCharge.expectedCash,
+                grossTotal: enforcedCharge.grossTotal,
+                baseAmount: enforcedCharge.baseAmount,
+                gstTotal: enforcedCharge.gst?.total ?? 0,
+                feesTotal: enforcedCharge.feesTotal,
+                walletPaid: enforcedCharge.walletPaid,
+                completedNonWalletPaid: enforcedCharge.completedNonWalletPaid,
+                source: enforcedCharge.source,
+              }
+            );
+            chargeAmount = enforcedCharge.expectedCash;
+            chargeWasEnforced = true;
+          } else if (enforcedCharge && chargeAmount - enforcedCharge.expectedCash > 1) {
+            // Client sent more than we can account for — keep it, but leave a trace.
+            console.warn('[RAZORPAY-CREATE-ORDER] Client amount above server-computed payable', {
+              bookingId,
+              clientAmount: chargeAmount,
+              expectedCash: enforcedCharge.expectedCash,
+              source: enforcedCharge.source,
+            });
+          }
+        } catch (enforceError: any) {
+          console.error(
+            '[RAZORPAY-CREATE-ORDER] Booking charge enforcement skipped (fail-open):',
+            enforceError?.message || enforceError
+          );
+        }
+      }
+
       const orderData: any = {
         amount: Math.round(Number(chargeAmount) * 100),
         currency: currency,
@@ -882,7 +944,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             [razorpayOrder.id, Number(chargeAmount), currency, existingPayment.rows[0].id]
           );
         } else {
-          await insert('payments', {
+          const paymentRow: Record<string, unknown> = {
             booking_id: bookingId,
             customer_id: customerIdFinal,
             vendor_id: vendorIdFinal,
@@ -891,7 +953,30 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             currency: currency,
             payment_method: 'razorpay',
             payment_status: 'pending',
-          });
+          };
+          // Enforcement recomputed GST (client skipped /payments/create) — persist the
+          // breakdown so reporting/settlement sees the tax component (columns from
+          // migration 510; guarded in case a schema lacks them).
+          if (chargeWasEnforced && enforcedCharge?.source === 'computed' && enforcedCharge.gst) {
+            try {
+              const colsRes = await query(
+                `SELECT column_name FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'payments'
+                   AND column_name IN ('gst_amount', 'cgst_amount', 'sgst_amount', 'igst_amount', 'gst_rule_id')`
+              );
+              const gstCols = new Set(colsRes.rows.map((r: { column_name: string }) => r.column_name));
+              if (gstCols.has('gst_amount')) paymentRow.gst_amount = enforcedCharge.gst.total;
+              if (gstCols.has('cgst_amount')) paymentRow.cgst_amount = enforcedCharge.gst.cgst;
+              if (gstCols.has('sgst_amount')) paymentRow.sgst_amount = enforcedCharge.gst.sgst;
+              if (gstCols.has('igst_amount')) paymentRow.igst_amount = enforcedCharge.gst.igst;
+              if (gstCols.has('gst_rule_id') && enforcedCharge.gst.ruleId) {
+                paymentRow.gst_rule_id = enforcedCharge.gst.ruleId;
+              }
+            } catch (gstColErr: any) {
+              console.warn('[RAZORPAY-CREATE-ORDER] Skipping GST columns on payment row:', gstColErr?.message);
+            }
+          }
+          await insert('payments', paymentRow);
         }
       }
 
@@ -900,6 +985,9 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         amount: razorpayOrder.amount / 100,
         currency: razorpayOrder.currency,
         keyId: config.keyId,
+        // Signals the client that the server raised the amount to include GST/fees
+        // (clients must always render the returned amount, not their own).
+        ...(chargeWasEnforced ? { amountEnforced: true } : {}),
       });
     } catch (error: any) {
       if (isCommissionConfigurationError(error)) {

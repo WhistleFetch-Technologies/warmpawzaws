@@ -501,7 +501,7 @@ export function HomeServiceLanding({
                         )}
                       </div>
                       {pkg.originalPrice > pkg.price && (
-                        <span className="text-sm text-gray-400 line-through">₹{pkg.originalPrice}</span>
+                        <span className="text-sm text-gray-400 cw-price-strike">₹{pkg.originalPrice}</span>
                       )}
                     </div>
                   </div>

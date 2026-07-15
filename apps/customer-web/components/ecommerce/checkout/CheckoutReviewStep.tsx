@@ -124,8 +124,8 @@ export function CheckoutReviewStep() {
                 <div className="shrink-0 text-right">
                   {hasPromotion ? (
                     <>
-                      <div className="text-xs text-slate-400 line-through tabular-nums">
-                        ₹{lineMrp.toFixed(0)}
+                      <div className="text-xs text-slate-400 tabular-nums">
+                        <span className="cw-price-strike">₹{lineMrp.toFixed(0)}</span>
                       </div>
                       <span className="font-medium text-slate-900 tabular-nums">
                         ₹{linePayable.toFixed(0)}

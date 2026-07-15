@@ -151,7 +151,7 @@ export function FreeTrialSelector({ customerId, vendorId, onTrialBooked }: FreeT
 
             {/* Price Strike */}
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-sm text-gray-400 line-through">
+              <span className="text-sm text-gray-400 cw-price-strike">
                 ₹{trial.originalPrice}
               </span>
               <span className="text-xl font-bold text-green-600">FREE</span>

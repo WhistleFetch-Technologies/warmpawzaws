@@ -323,6 +323,28 @@ body {
   display: none;
 }
 
+/* Struck-out (was) prices: slanted 1px strike instead of line-through so digits stay legible
+ * (a straight mid-line makes ₹1,800 read like ₹1,000). Inherits text color via currentColor. */
+@layer utilities {
+  .cw-price-strike {
+    position: relative;
+    display: inline-block;
+    text-decoration: none;
+  }
+
+  .cw-price-strike::after {
+    content: '';
+    position: absolute;
+    left: -0.05em;
+    right: -0.05em;
+    top: 50%;
+    height: 1px;
+    background: currentColor;
+    transform: rotate(-6deg);
+    pointer-events: none;
+  }
+}
+
 /* Sonner (sonner@2.x): global safe-area offsets for all toasts — requires viewport-fit=cover in layout */
 @layer utilities {
   /**
