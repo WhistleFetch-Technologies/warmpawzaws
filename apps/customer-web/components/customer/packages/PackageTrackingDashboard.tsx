@@ -677,7 +677,7 @@ export function PackageTrackingDashboard({
                   <span
                     className={
                       hasEffectivePriceReduction(pkg.originalPrice, pkg.paidPrice)
-                        ? 'text-gray-400 line-through'
+                        ? 'text-gray-400 cw-price-strike'
                         : 'text-gray-600'
                     }
                   >

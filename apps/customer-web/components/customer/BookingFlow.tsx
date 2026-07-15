@@ -1428,7 +1428,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
 
                 <div className="flex justify-between">
                   <span className="text-gray-500">Service Fee</span>
-                  <span className={`font-medium ${subscriptionCoverage?.covered ? 'line-through text-gray-400' : ''}`}>
+                  <span className={`font-medium ${subscriptionCoverage?.covered ? 'cw-price-strike text-gray-400' : ''}`}>
                     ₹{service.price}
                   </span>
                 </div>

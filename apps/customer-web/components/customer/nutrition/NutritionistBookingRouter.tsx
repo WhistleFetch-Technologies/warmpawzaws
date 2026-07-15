@@ -1189,7 +1189,7 @@ export function NutritionistBookingRouter({
                       </div>
                       <div className="text-right">
                         <span className="text-lg font-bold text-orange-600">₹4,499</span>
-                        <p className="text-xs text-gray-400 line-through">₹4,995</p>
+                        <p className="text-xs text-gray-400 cw-price-strike">₹4,995</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1205,7 +1205,7 @@ export function NutritionistBookingRouter({
                       </div>
                       <div className="text-right">
                         <span className="text-lg font-bold text-orange-600">₹9,999</span>
-                        <p className="text-xs text-gray-400 line-through">₹12,990</p>
+                        <p className="text-xs text-gray-400 cw-price-strike">₹12,990</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

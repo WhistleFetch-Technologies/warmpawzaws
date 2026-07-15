@@ -177,7 +177,7 @@ export function SalePrice({
       <span className={`font-bold text-slate-900 ${textSizes[size].sale}`}>₹{salePrice.toLocaleString()}</span>
       {showReduction && (
         <>
-          <span className={`text-slate-400 line-through ${textSizes[size].original}`}>₹{originalPrice.toLocaleString()}</span>
+          <span className={`text-slate-400 cw-price-strike ${textSizes[size].original}`}>₹{originalPrice.toLocaleString()}</span>
           <span className={`bg-emerald-100 text-emerald-700 font-semibold px-1.5 py-0.5 rounded ${textSizes[size].badge}`}>
             {actualDiscount}% off
           </span>

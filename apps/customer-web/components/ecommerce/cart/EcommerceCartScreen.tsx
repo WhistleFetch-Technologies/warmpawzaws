@@ -585,8 +585,8 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         {hasPromotion ? (
                           <>
-                            <span className="text-xs text-slate-400 line-through tabular-nums">
-                              ₹{unitMrp} MRP
+                            <span className="text-xs text-slate-400 tabular-nums">
+                              <span className="cw-price-strike">₹{unitMrp}</span> MRP
                             </span>
                             <span className="font-bold text-[#FF8C42] tabular-nums">
                               ₹{(linePayable / item.quantity).toFixed(0)}

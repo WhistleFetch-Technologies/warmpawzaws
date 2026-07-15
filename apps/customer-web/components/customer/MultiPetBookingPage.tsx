@@ -350,8 +350,8 @@ export function MultiPetBookingPage({
                         }
                       </div>
                       {isSelected && !isFirstSelected && (
-                        <div className="text-xs text-gray-500 line-through">
-                          ₹{service.price}
+                        <div className="text-xs text-gray-500">
+                          <span className="cw-price-strike">₹{service.price}</span>
                         </div>
                       )}
                     </div>
