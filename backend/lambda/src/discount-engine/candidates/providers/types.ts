@@ -15,6 +15,11 @@ export interface CandidateLoadContext {
   amount?: number;
   /** When set, providers return these rows without querying (tests / preloaded handlers). */
   preloadedRows?: unknown[];
+  /**
+   * Per-source preloaded rows (batch quote path). Presence of an array for a source —
+   * including an empty one — skips that provider's DB load entirely.
+   */
+  preloadedRowsBySource?: Partial<Record<DiscountSource, unknown[]>>;
 }
 
 /**

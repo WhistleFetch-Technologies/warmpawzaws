@@ -10,12 +10,14 @@ import {
 } from '../adapters/context-mappers';
 
 export const METADATA_PRELOADED_ROWS = 'preloadedRows';
+export const METADATA_PRELOADED_ROWS_BY_SOURCE = 'preloadedRowsBySource';
 export const METADATA_PRIOR_VENDOR_BOOKING_COUNT = 'priorVendorBookingCount';
 export const METADATA_COUPON_USAGE_COUNT = 'couponUsageCount';
 export const METADATA_EVALUATION_MODE = 'evaluationMode';
 
 export function discountContextToLoadContext(context: DiscountContext): CandidateLoadContext {
   const preloaded = context.metadata?.[METADATA_PRELOADED_ROWS];
+  const preloadedBySource = context.metadata?.[METADATA_PRELOADED_ROWS_BY_SOURCE];
   return {
     domain: context.domain,
     vendorId: context.vendorId,
@@ -27,6 +29,10 @@ export function discountContextToLoadContext(context: DiscountContext): Candidat
     serviceStyle: context.booking?.serviceStyle,
     amount: context.amount,
     preloadedRows: Array.isArray(preloaded) ? preloaded : undefined,
+    preloadedRowsBySource:
+      preloadedBySource && typeof preloadedBySource === 'object'
+        ? (preloadedBySource as CandidateLoadContext['preloadedRowsBySource'])
+        : undefined,
   };
 }
 
