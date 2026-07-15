@@ -1,0 +1,56 @@
+import type { Hono } from 'hono';
+import { registerDiscoveryMetaRoute } from './routes/discovery-meta.route';
+import { registerDiscoveryCountRoute } from './routes/discovery-count.route';
+import { registerDebugTrainingVendorsRoute } from './routes/debug-training-vendors.route';
+import { registerDebugAtCenterVendorsRoute } from './routes/debug-at-center-vendors.route';
+import { registerCustomerServicesRoute } from './routes/customer-services.route';
+import { registerCustomerServicesPlatformRoute } from './routes/customer-services-platform.route';
+import { registerDiscoverServicesRoute } from './routes/discover-services.route';
+import { registerVendorAvailableSlotsRoute } from './routes/vendor-available-slots.route';
+import { registerVendorServicesRoute } from './routes/vendor-services.route';
+import { registerPublicVendorProfileRoute } from './routes/public-vendor-profile.route';
+import { registerCustomerVendorProfileRoute } from './routes/customer-vendor-profile.route';
+import { registerVendorsSearchRoute } from './routes/vendors-search.route';
+import { registerAutocompleteRoute } from './routes/autocomplete.route';
+import { registerRadarProvidersRoute } from './routes/radar-providers.route';
+import { registerDiscoverByProblemRoute } from './routes/discover-by-problem.route';
+import { registerVendorFacilityGetRoute } from './routes/vendor-facility-get.route';
+import { registerVendorFacilityPutRoute } from './routes/vendor-facility-put.route';
+import { registerVendorFacilityUploadRoute } from './routes/vendor-facility-upload.route';
+import { registerCustomerFacilityRoute } from './routes/customer-facility.route';
+import { registerClinicVendorServicesRoute } from './routes/clinic-vendor-services.route';
+import { registerServicesByStyleRoute } from './routes/services-by-style.route';
+import { registerVendorsListRoute } from './routes/vendors-list.route';
+import { registerPricingQuoteRoute } from './routes/pricing-quote.route';
+import { registerDiagnosticsVendorByPhoneRoute } from './routes/diagnostics-vendor-by-phone.route';
+import { registerDiagnosticsApproveVendorRoute } from './routes/diagnostics-approve-vendor.route';
+
+export { getCoordinates } from './shared/legacy-helpers';
+
+export function registerServiceDiscoveryEndpoints(app: Hono) {
+  registerDiscoveryMetaRoute(app);
+  registerDiscoveryCountRoute(app);
+  registerDebugTrainingVendorsRoute(app);
+  registerDebugAtCenterVendorsRoute(app);
+  registerCustomerServicesRoute(app);
+  registerCustomerServicesPlatformRoute(app);
+  registerDiscoverServicesRoute(app);
+  registerVendorAvailableSlotsRoute(app);
+  registerVendorServicesRoute(app);
+  registerPublicVendorProfileRoute(app);
+  registerCustomerVendorProfileRoute(app);
+  registerVendorsSearchRoute(app);
+  registerAutocompleteRoute(app);
+  registerRadarProvidersRoute(app);
+  registerDiscoverByProblemRoute(app);
+  registerVendorFacilityGetRoute(app);
+  registerVendorFacilityPutRoute(app);
+  registerVendorFacilityUploadRoute(app);
+  registerCustomerFacilityRoute(app);
+  registerClinicVendorServicesRoute(app);
+  registerServicesByStyleRoute(app);
+  registerVendorsListRoute(app);
+  registerPricingQuoteRoute(app);
+  registerDiagnosticsVendorByPhoneRoute(app);
+  registerDiagnosticsApproveVendorRoute(app);
+}
