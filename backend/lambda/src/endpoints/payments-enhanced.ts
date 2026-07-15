@@ -32,6 +32,7 @@ import {
   CreatePaymentRequestSchema,
 } from '@warmpawz/api-contracts/payments';
 import { calculateFinalFees, mapCatalogCategoryToBusinessType } from '../utils/feeCalculator';
+import { writeBookingFinancialSnapshotIfMissing } from '../utils/booking-financial-snapshot';
 import { debitCustomerWalletForBookingInTransaction } from '../utils/wallet-operations';
 import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
 
@@ -496,6 +497,32 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
 
       // Log initial status
       await logPaymentStatusChange(payment.id, null, payment.payment_status);
+
+      // Snapshot the computed breakdown onto the booking (write-once) so booking
+      // detail renders GST/fees even if this payment row never completes.
+      try {
+        await writeBookingFinancialSnapshotIfMissing(String(bookingId), {
+          servicePrice: feeBaseAmount,
+          vendorDiscount: 0,
+          platformDiscount: 0,
+          couponDiscount: 0,
+          subtotalAfterDiscounts: feeBaseAmount,
+          cgst: cgstAmount,
+          sgst: sgstAmount,
+          igst: igstAmount,
+          totalTax: gstAmount,
+          platformFee,
+          convenienceFee,
+          deliveryFee,
+          walletAmount: walletDebitedAmount,
+          finalPaid: totalAmount,
+        });
+      } catch (snapshotErr: any) {
+        console.warn(
+          '[PAYMENT-CREATE] Booking financial snapshot write failed (non-blocking):',
+          snapshotErr?.message
+        );
+      }
 
       // Full wallet at create: payment is completed immediately (no Razorpay webhook). Confirm booking and notify like payment.captured.
       if (payment.payment_status === 'completed' && payment.booking_id) {

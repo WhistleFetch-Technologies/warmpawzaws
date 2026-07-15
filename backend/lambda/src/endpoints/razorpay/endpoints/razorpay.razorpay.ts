@@ -25,6 +25,7 @@ import {
   resolveExpectedBookingCharge,
   type ExpectedBookingCharge,
 } from '../../../utils/booking-charge-enforcement';
+import { writeBookingFinancialSnapshotIfMissing } from '../../../utils/booking-financial-snapshot';
 import { createHmac, randomUUID } from 'crypto';
 import { getRazorpayConfig, getRazorpayAuthHeader, getRazorpayClient, razorpayRequest } from '../../../utils/payments/razorpay-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
@@ -954,29 +955,66 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             payment_method: 'razorpay',
             payment_status: 'pending',
           };
-          // Enforcement recomputed GST (client skipped /payments/create) — persist the
-          // breakdown so reporting/settlement sees the tax component (columns from
-          // migration 510; guarded in case a schema lacks them).
-          if (chargeWasEnforced && enforcedCharge?.source === 'computed' && enforcedCharge.gst) {
+          // Enforcement recomputed GST + fees (client skipped /payments/create) — persist the
+          // breakdown so reporting/settlement sees the tax component and refunds can exclude
+          // fees (columns from migrations 410/510; guarded in case a schema lacks them).
+          if (chargeWasEnforced && enforcedCharge?.source === 'computed' && (enforcedCharge.gst || enforcedCharge.fees)) {
             try {
               const colsRes = await query(
                 `SELECT column_name FROM information_schema.columns
                  WHERE table_schema = 'public' AND table_name = 'payments'
-                   AND column_name IN ('gst_amount', 'cgst_amount', 'sgst_amount', 'igst_amount', 'gst_rule_id')`
+                   AND column_name IN ('gst_amount', 'cgst_amount', 'sgst_amount', 'igst_amount', 'gst_rule_id',
+                                       'platform_fee', 'convenience_fee', 'total_amount', 'fee_breakdown')`
               );
               const gstCols = new Set(colsRes.rows.map((r: { column_name: string }) => r.column_name));
-              if (gstCols.has('gst_amount')) paymentRow.gst_amount = enforcedCharge.gst.total;
-              if (gstCols.has('cgst_amount')) paymentRow.cgst_amount = enforcedCharge.gst.cgst;
-              if (gstCols.has('sgst_amount')) paymentRow.sgst_amount = enforcedCharge.gst.sgst;
-              if (gstCols.has('igst_amount')) paymentRow.igst_amount = enforcedCharge.gst.igst;
-              if (gstCols.has('gst_rule_id') && enforcedCharge.gst.ruleId) {
-                paymentRow.gst_rule_id = enforcedCharge.gst.ruleId;
+              if (enforcedCharge.gst) {
+                if (gstCols.has('gst_amount')) paymentRow.gst_amount = enforcedCharge.gst.total;
+                if (gstCols.has('cgst_amount')) paymentRow.cgst_amount = enforcedCharge.gst.cgst;
+                if (gstCols.has('sgst_amount')) paymentRow.sgst_amount = enforcedCharge.gst.sgst;
+                if (gstCols.has('igst_amount')) paymentRow.igst_amount = enforcedCharge.gst.igst;
+                if (gstCols.has('gst_rule_id') && enforcedCharge.gst.ruleId) {
+                  paymentRow.gst_rule_id = enforcedCharge.gst.ruleId;
+                }
               }
+              if (enforcedCharge.fees) {
+                if (gstCols.has('platform_fee')) paymentRow.platform_fee = enforcedCharge.fees.platformFee;
+                if (gstCols.has('convenience_fee')) paymentRow.convenience_fee = enforcedCharge.fees.convenienceFee;
+                if (gstCols.has('fee_breakdown')) paymentRow.fee_breakdown = JSON.stringify(enforcedCharge.fees);
+              }
+              if (gstCols.has('total_amount')) paymentRow.total_amount = enforcedCharge.grossTotal;
             } catch (gstColErr: any) {
-              console.warn('[RAZORPAY-CREATE-ORDER] Skipping GST columns on payment row:', gstColErr?.message);
+              console.warn('[RAZORPAY-CREATE-ORDER] Skipping GST/fee columns on payment row:', gstColErr?.message);
             }
           }
           await insert('payments', paymentRow);
+
+          // Snapshot the enforced breakdown onto the booking (write-once) so booking
+          // detail renders GST/fees without depending on this payment row's fate.
+          if (chargeWasEnforced && enforcedCharge?.source === 'computed') {
+            try {
+              await writeBookingFinancialSnapshotIfMissing(String(bookingId), {
+                servicePrice: enforcedCharge.baseAmount,
+                vendorDiscount: 0,
+                platformDiscount: 0,
+                couponDiscount: 0,
+                subtotalAfterDiscounts: enforcedCharge.baseAmount,
+                cgst: enforcedCharge.gst?.cgst ?? 0,
+                sgst: enforcedCharge.gst?.sgst ?? 0,
+                igst: enforcedCharge.gst?.igst ?? 0,
+                totalTax: enforcedCharge.gst?.total ?? 0,
+                platformFee: enforcedCharge.fees?.platformFee ?? 0,
+                convenienceFee: enforcedCharge.fees?.convenienceFee ?? 0,
+                deliveryFee: enforcedCharge.fees?.deliveryFee ?? 0,
+                walletAmount: enforcedCharge.walletPaid,
+                finalPaid: enforcedCharge.expectedCash,
+              });
+            } catch (snapshotErr: any) {
+              console.warn(
+                '[RAZORPAY-CREATE-ORDER] Booking financial snapshot write failed (non-blocking):',
+                snapshotErr?.message
+              );
+            }
+          }
         }
       }
 
