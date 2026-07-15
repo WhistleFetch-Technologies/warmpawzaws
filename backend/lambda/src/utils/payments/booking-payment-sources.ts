@@ -79,16 +79,27 @@ export async function resolveBookingPaymentSources(
   let walletTotal = 0;
   let gatewayMethod: string | null = null;
 
+  // Live schema keys booking debits by reference_id; booking_id only exists on legacy schemas.
   try {
     const wt = await query<{ total: string }>(
       `SELECT COALESCE(SUM(amount::numeric), 0)::text AS total
        FROM wallet_transactions
-       WHERE booking_id = $1::uuid AND transaction_type = 'debit'`,
+       WHERE reference_id = $1::uuid AND transaction_type = 'debit'`,
       [bookingId]
     );
     walletTotal = parseFloat(String(wt.rows[0]?.total ?? '0')) || 0;
   } catch {
-    /* wallet_transactions may lack booking_id in older schemas */
+    try {
+      const wt = await query<{ total: string }>(
+        `SELECT COALESCE(SUM(amount::numeric), 0)::text AS total
+         FROM wallet_transactions
+         WHERE booking_id = $1::uuid AND transaction_type = 'debit'`,
+        [bookingId]
+      );
+      walletTotal = parseFloat(String(wt.rows[0]?.total ?? '0')) || 0;
+    } catch {
+      /* wallet_transactions may lack both columns in very old schemas */
+    }
   }
 
   try {
@@ -161,17 +172,30 @@ export async function resolveBookingPaymentSourcesBatch(
   const walletById = new Map<string, number>();
   try {
     const wt = await query<{ booking_id: string; total: string }>(
-      `SELECT booking_id::text, COALESCE(SUM(amount::numeric), 0)::text AS total
+      `SELECT reference_id::text AS booking_id, COALESCE(SUM(amount::numeric), 0)::text AS total
        FROM wallet_transactions
-       WHERE booking_id = ANY($1::uuid[]) AND transaction_type = 'debit'
-       GROUP BY booking_id`,
+       WHERE reference_id = ANY($1::uuid[]) AND transaction_type = 'debit'
+       GROUP BY reference_id`,
       [ids]
     );
     for (const row of wt.rows) {
       walletById.set(row.booking_id, parseFloat(row.total) || 0);
     }
   } catch {
-    /* non-fatal */
+    try {
+      const wt = await query<{ booking_id: string; total: string }>(
+        `SELECT booking_id::text, COALESCE(SUM(amount::numeric), 0)::text AS total
+         FROM wallet_transactions
+         WHERE booking_id = ANY($1::uuid[]) AND transaction_type = 'debit'
+         GROUP BY booking_id`,
+        [ids]
+      );
+      for (const row of wt.rows) {
+        walletById.set(row.booking_id, parseFloat(row.total) || 0);
+      }
+    } catch {
+      /* non-fatal */
+    }
   }
 
   const gatewayMethodById = new Map<string, string>();

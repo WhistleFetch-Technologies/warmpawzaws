@@ -92,11 +92,13 @@ export async function expirePaymentHolds(options?: {
         if (locked.rows.length === 0) return;
         if (String(locked.rows[0].status) !== 'pending_payment') return;
 
+        // payments_payment_status_check allows only pending/processing/completed/failed/refunded/
+        // partially_refunded — 'expired' violated it and rolled back every expiry attempt.
         await client.query(
           `UPDATE payments
            SET payment_status = CASE
              WHEN LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed') THEN payment_status
-             ELSE 'expired'
+             ELSE 'failed'
            END,
            updated_at = NOW()
            WHERE booking_id = $1::uuid`,

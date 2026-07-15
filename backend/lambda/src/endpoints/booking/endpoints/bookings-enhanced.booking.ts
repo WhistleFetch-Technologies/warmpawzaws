@@ -1837,22 +1837,32 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 (parseFloat(String(fmWallet.walletAmount ?? fmWallet.wallet_amount ?? 0)) || 0) * 100
               ) / 100;
           }
+          const discountCovers = discountCover + 0.009 >= calculatedFinalAmount;
           const covered =
-            discountCover + walletCover + 0.009 >= calculatedFinalAmount ||
-            discountCover + 0.009 >= calculatedFinalAmount ||
-            walletCover + 0.009 >= calculatedFinalAmount;
+            discountCovers || discountCover + walletCover + 0.009 >= calculatedFinalAmount;
           if (!covered) {
             bookingData.total_amount = calculatedFinalAmount;
             console.warn(
               `[BOOKING] Ignoring unverified finalPaid=0 (discount=${discountCover}, wallet=${walletCover}); keeping server amount ₹${calculatedFinalAmount}`
             );
-          } else if (paymentStatus === 'pending') {
+          } else if (discountCovers && paymentStatus === 'pending') {
+            // 100% promo: genuinely nothing to collect — confirm immediately.
             paymentStatus = 'paid';
             bookingRowStatus = 'confirmed';
             bookingData.payment_status = paymentStatus;
             bookingData.status = bookingRowStatus;
             console.log(
-              '[BOOKING] Payable amount is ₹0 after discounts/wallet — confirming without payment hold'
+              '[BOOKING] Payable amount is ₹0 after discounts — confirming without payment hold'
+            );
+          } else if (paymentStatus === 'pending') {
+            // Wallet must actually be debited before the vendor is notified. Keep the booking on a
+            // payment hold; /payments/create debits the wallet and flips it to confirmed/paid.
+            // (Confirming here produced confirmed-but-never-charged bookings when the debit failed.)
+            bookingRowStatus = 'pending_payment';
+            bookingData.status = bookingRowStatus;
+            bookingData.payment_status = paymentStatus;
+            console.log(
+              '[BOOKING] ₹0 payable relies on wallet — holding as pending_payment until wallet debit commits'
             );
           }
         }

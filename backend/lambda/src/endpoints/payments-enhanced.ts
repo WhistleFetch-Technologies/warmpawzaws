@@ -326,6 +326,39 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       // Total amount including fees (fees are added on top of tax-inclusive request amount)
       const totalAmount = amount + gstAmount + feesTotal;
 
+      // Clients send `amount` as the cash payable AFTER wallet, so a fully-wallet checkout
+      // arrives as amount=0 + walletAmount>0 — the wallet slice IS the payable.
+      const walletIntent = useWallet ? Math.max(0, Number(walletAmount) || 0) : 0;
+      const walletOnlyPayment = totalAmount <= 0.009 && walletIntent > 0;
+
+      // Nothing to charge at all (100% promo): payments.check_payment_amount_positive
+      // forbids a ₹0 row, and there is no money movement to record anyway.
+      if (totalAmount <= 0.009 && walletIntent <= 0) {
+        console.log('[PAYMENT-CREATE] Zero payable with no wallet slice — skipping payment row');
+        return this.success(
+          {
+            paymentId: null,
+            status: 'completed',
+            message: 'No payment required (zero payable)',
+            isNew: false,
+            walletUsed: false,
+            walletAmount: 0,
+            remainingAmount: 0,
+            fees: {
+              baseAmount: amount,
+              platformFee,
+              convenienceFee,
+              deliveryFee,
+              packagingFee,
+              gstAmount,
+              totalAmount,
+              breakdown: feesBreakdown,
+            },
+          },
+          requestId
+        );
+      }
+
       let walletDebited = false;
       let remainingAmount = totalAmount;
       let walletDebitedAmount = 0;
@@ -336,14 +369,21 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         payment = await withTransaction(async (client) => {
         let walletApplied = 0;
         if (useWallet && effectiveCustomerId) {
-          const walletCap =
-            walletAmount > 0 ? Math.min(Number(walletAmount), totalAmount) : totalAmount;
+          // Wallet-only: totalAmount is 0 (client already netted the wallet out), so cap by the
+          // wallet slice itself; otherwise cap by the payable total as before.
+          const walletCap = walletOnlyPayment
+            ? walletIntent
+            : walletAmount > 0
+              ? Math.min(Number(walletAmount), totalAmount)
+              : totalAmount;
           const wbalRes = await client.query(
             `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
             [effectiveCustomerId]
           );
           const bal = parseFloat(String(wbalRes.rows[0]?.b ?? '0')) || 0;
-          const targetDebit = Math.min(walletCap, bal, totalAmount);
+          const targetDebit = walletOnlyPayment
+            ? Math.min(walletCap, bal)
+            : Math.min(walletCap, bal, totalAmount);
           if (targetDebit > 0) {
             const idem =
               idempotencyKey != null && String(idempotencyKey).trim() !== ''
@@ -359,6 +399,14 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           }
         }
 
+        if (walletOnlyPayment && walletApplied < walletIntent - 0.009) {
+          const insufficientErr: Error & { step?: string } = new Error(
+            'Wallet balance is insufficient to cover this booking'
+          );
+          insufficientErr.step = 'wallet_debit';
+          throw insufficientErr;
+        }
+
         const roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
         const fullyWallet = walletApplied > 0 && roundedRemain < 0.01;
 
@@ -366,11 +414,19 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           booking_id: bookingId, // ✅ bookingId is REQUIRED - booking should already exist
           customer_id: effectiveCustomerId,
           vendor_id: vendorId || booking.vendor_id,
-          amount: amount, // Base service amount
+          // check_payment_amount_positive forbids ₹0 rows — for wallet-only payments record the
+          // wallet-covered amount (honest accounting) instead of the ₹0 cash remainder.
+          amount: walletOnlyPayment ? walletApplied : amount,
           currency: 'INR',
           payment_method: fullyWallet ? 'wallet' : (paymentMethod || 'razorpay'),
           payment_status: fullyWallet ? 'completed' : 'pending',
         };
+        if (walletApplied > 0) {
+          paymentData.wallet_amount_used = walletApplied;
+        }
+        if (fullyWallet) {
+          paymentData.completed_at = new Date().toISOString();
+        }
 
         // Add tax fields if calculated
         if (gstAmount > 0) {
