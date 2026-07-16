@@ -23,6 +23,7 @@ import { extractEntityIds, normalizeDbRow, buildVendorResponse } from '../../../
 import { isValidUUID, normalizeVendorService } from '../../../types/entities';
 import { resolveVendorById } from './vendorProfile.vendor';
 import { normalizeSessionPackageDetails } from '../../../lib/session-package-normalize';
+import { areSpecializationRowsValidForCatalogSlug } from '../../../utils/vendor-spec-category-slugs';
 
 // ----------------------------------------------------------------------------
 // Category normalization helpers
@@ -1885,23 +1886,40 @@ export function registerVendorServicesEndpoints(app: Hono) {
             400
           );
         }
-        const specRows = await query(
-          `SELECT sm.specialization_id
-           FROM specialization_master sm
-           INNER JOIN service_categories sc ON sc.id = $1::uuid
-           WHERE sm.specialization_id = ANY($2::text[])
-             AND sm.is_active = true
-             AND LOWER(TRIM(COALESCE(sm.category_id, ''))) = LOWER(TRIM(COALESCE(sc.category_id, '')))`,
-          [normalizedCategoryId, effectiveSpecIds]
+        // Same slug expansion as GET /vendor/specializations/by-category — Pet Sitting
+        // catalogue often stores specialization_master.category_id as `boarding`.
+        const slugRes = await query(
+          `SELECT category_id FROM service_categories WHERE id = $1::uuid LIMIT 1`,
+          [normalizedCategoryId]
         );
-        const okIds = new Set((specRows.rows || []).map((r: any) => String(r.specialization_id)));
-        for (const sid of effectiveSpecIds) {
-          if (!okIds.has(String(sid))) {
-            return c.json(
-              { error: 'Each specialization must belong to the selected service category.' },
-              400
-            );
-          }
+        const catalogSlug =
+          slugRes.rows?.[0]?.category_id != null
+            ? String(slugRes.rows[0].category_id).trim()
+            : '';
+        if (!catalogSlug) {
+          return c.json(
+            { error: 'Each specialization must belong to the selected service category.' },
+            400
+          );
+        }
+        const specRows = await query(
+          `SELECT sm.specialization_id, sm.name, sm.display_name, sm.category_id, sm.applicable_roles
+           FROM specialization_master sm
+           WHERE sm.specialization_id = ANY($1::text[])
+             AND sm.is_active = true`,
+          [effectiveSpecIds]
+        );
+        if (
+          !areSpecializationRowsValidForCatalogSlug(
+            specRows.rows || [],
+            catalogSlug,
+            effectiveSpecIds.map((sid: unknown) => String(sid))
+          )
+        ) {
+          return c.json(
+            { error: 'Each specialization must belong to the selected service category.' },
+            400
+          );
         }
       }
       // Create base service first (use effective price: package price when isPackage, else top-level price)
