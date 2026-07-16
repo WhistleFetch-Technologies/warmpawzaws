@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerPaymentsPhoneGet0() {
+export async function dbCustomerPaymentsPhoneGet0(customerId) {
   return await query(
           `SELECT * FROM customer_payment_methods
            WHERE customer_id = $1

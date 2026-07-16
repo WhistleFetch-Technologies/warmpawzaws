@@ -18,7 +18,7 @@ export async function executecustomerCustomeridAddressesGet(c: Context) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      const addresses = await customer_customerid_addresses_getRepo.dbCustomerCustomeridAddressesGet2().catch(() => ({ rows: [] }));
+      const addresses = await customer_customerid_addresses_getRepo.dbCustomerCustomeridAddressesGet2(customer).catch(() => ({ rows: [] }));
 
       return c.json({
         success: true,

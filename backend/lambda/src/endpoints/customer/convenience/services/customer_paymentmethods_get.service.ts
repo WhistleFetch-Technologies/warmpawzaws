@@ -45,7 +45,7 @@ export async function executecustomerPaymentmethodsGet(c: Context) {
 
       let rows: any[] = [];
       try {
-        const r = await customer_paymentmethods_getRepo.dbCustomerPaymentmethodsGet0()
+        const r = await customer_paymentmethods_getRepo.dbCustomerPaymentmethodsGet0(customerId)
         rows = (r.rows || []).filter((row: Record<string, unknown>) =>
           isPaymentMethodRowVisible(row)
         );

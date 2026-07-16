@@ -202,13 +202,13 @@ export async function executediscoverByProblem(c: Context) {
         let rating = 0;
         let reviewCount = 0;
         try {
-          const rev = await discover_by_problemRepo.dbDiscoverByProblem1()
+          const rev = await discover_by_problemRepo.dbDiscoverByProblem1(vendorId)
           rating = parseFloat(rev.rows[0]?.avg_rating || '0');
           reviewCount = parseInt(rev.rows[0]?.c || '0', 10);
         } catch (_) { }
         let specializations: string[] = [];
         try {
-          const specRes = await discover_by_problemRepo.dbDiscoverByProblem2()
+          const specRes = await discover_by_problemRepo.dbDiscoverByProblem2(vendorId)
           specializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
         } catch (_) { }
         if (specializations.length === 0 && row.specializations) {

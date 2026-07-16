@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerPhoneBookingsUpcomingcallsGet0(customerId, time, b, v, s, sv, p) {
+export async function dbCustomerPhoneBookingsUpcomingcallsGet0(customerId, time, statusFilter, timeFilter, b, v, s, sv, p) {
   return await query(
           `SELECT b.id, b.booking_date, b.booking_time, b.status,
                   (b.booking_date + b.booking_time::time) as scheduled_at,

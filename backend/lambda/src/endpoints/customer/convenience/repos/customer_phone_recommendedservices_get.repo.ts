@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerPhoneRecommendedservicesGet0(s, b) {
+export async function dbCustomerPhoneRecommendedservicesGet0(customerId, s, b) {
   return await query(
         `SELECT DISTINCT s.category
          FROM bookings b
@@ -11,6 +11,6 @@ export async function dbCustomerPhoneRecommendedservicesGet0(s, b) {
          ORDER BY b.created_at DESC
          LIMIT 10`,
         [customerId]
-      )
+      );
 }
 

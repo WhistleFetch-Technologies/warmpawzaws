@@ -40,7 +40,7 @@ export async function executecustomerPaymentsPhoneGet(c: Context) {
 
       let rows: any[] = [];
       try {
-        const r = await customer_payments_phone_getRepo.dbCustomerPaymentsPhoneGet0()
+        const r = await customer_payments_phone_getRepo.dbCustomerPaymentsPhoneGet0(customerId)
         rows = (r.rows || []).filter((row: Record<string, unknown>) =>
           isPaymentMethodRowVisible(row)
         );

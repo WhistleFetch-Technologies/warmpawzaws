@@ -39,7 +39,7 @@ export async function executecustomerPhonePreferencesGet(c: Context) {
       const phone = c.req.param('phone');
 
       // Get customer by phone
-      const customers = await customer_phone_preferences_getRepo.dbCustomerPhonePreferencesGet0()
+      const customers = await customer_phone_preferences_getRepo.dbCustomerPhonePreferencesGet0(phone)
       if (customers.length === 0) {
         return c.json({ error: 'Customer not found' }, 404);
       }

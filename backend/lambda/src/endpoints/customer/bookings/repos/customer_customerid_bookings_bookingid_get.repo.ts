@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerCustomeridBookingsBookingidGet0(text, SQL_PACKAGE_PURCHASE_SELECT, v, br_svc, s, b, st, p, name, species, breed, age_years, weight_kg) {
+export async function dbCustomerCustomeridBookingsBookingidGet0(bookingId, customerId, text, SQL_BOOKING_SERVICE_LATERAL, SQL_PACKAGE_PURCHASE_JOIN, SQL_PACKAGE_PURCHASE_SELECT, v, br_svc, s, b, st, p, name, species, breed, age_years, weight_kg) {
   return await query(
         `SELECT b.*,
                 ${SQL_PACKAGE_PURCHASE_SELECT.trim()},
@@ -44,14 +44,14 @@ export async function dbCustomerCustomeridBookingsBookingidGet0(text, SQL_PACKAG
       );
 }
 
-export async function dbCustomerCustomeridBookingsBookingidGet1() {
+export async function dbCustomerCustomeridBookingsBookingidGet1(bookingId) {
   return await query(
         'SELECT * FROM prescriptions WHERE booking_id = $1',
         [bookingId]
       );
 }
 
-export async function dbCustomerCustomeridBookingsBookingidGet2() {
+export async function dbCustomerCustomeridBookingsBookingidGet2(bookingId, customerId) {
   return await query(
         'SELECT * FROM reviews WHERE booking_id = $1 AND customer_id = $2',
         [bookingId, customerId]

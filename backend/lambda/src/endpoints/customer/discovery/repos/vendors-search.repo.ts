@@ -4,7 +4,7 @@ export async function dbVendorsSearch0(vendorQuery, params) {
   return await query(vendorQuery, params);
 }
 
-export async function dbVendorsSearch1() {
+export async function dbVendorsSearch1(customerId) {
   return await query(
               `SELECT DISTINCT vendor_id FROM package_purchases
                WHERE customer_id = $1 AND status = 'active'
@@ -41,7 +41,7 @@ export async function dbVendorsSearch5(vendor) {
           );
 }
 
-export async function dbVendorsSearch6(staffQuery) {
+export async function dbVendorsSearch6(roleId, limit, staffQuery) {
   return await query(staffQuery, [roleId, limit]);
 }
 

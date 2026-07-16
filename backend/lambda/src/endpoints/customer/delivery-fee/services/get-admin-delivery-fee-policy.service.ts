@@ -8,7 +8,7 @@ import { POLICY_KEY } from '../constants';
 
 export async function executegetAdminDeliveryFeePolicy(c: Context) {
   try {
-    const r = await get_admin_delivery_fee_policyRepo.dbGetAdminDeliveryFeePolicy0()
+    const r = await get_admin_delivery_fee_policyRepo.dbGetAdminDeliveryFeePolicy0(POLICY_KEY)
     if (r.rows.length === 0) {
       return c.json({
         success: true,

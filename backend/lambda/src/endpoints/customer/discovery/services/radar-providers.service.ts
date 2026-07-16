@@ -73,7 +73,7 @@ export async function executeradarProviders(c: Context) {
 
       const limitCount = Math.min(100, maxResults);
       // Get vendors with location within radius (rule-book radius + max_results)
-      const vendors = await radar_providersRepo.dbRadarProviders0(lat, lng, serviceType, radius, limitCount);
+      const vendors = await radar_providersRepo.dbRadarProviders0(lat, lng, radius, limitCount, serviceType);
 
       return c.json({
         success: true,

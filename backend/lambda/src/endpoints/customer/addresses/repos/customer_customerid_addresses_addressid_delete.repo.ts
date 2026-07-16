@@ -8,7 +8,7 @@ export async function dbCustomerCustomeridAddressesAddressidDelete1(customerId) 
   return await select('customers', { phone: customerId });
 }
 
-export async function dbCustomerCustomeridAddressesAddressidDelete2() {
+export async function dbCustomerCustomeridAddressesAddressidDelete2(addressId, customer) {
   return await query(
         'DELETE FROM customer_addresses WHERE id = $1 AND customer_id = $2',
         [addressId, customer[0].id]

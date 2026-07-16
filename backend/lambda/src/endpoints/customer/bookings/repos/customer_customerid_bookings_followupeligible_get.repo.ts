@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerCustomeridBookingsFollowupeligibleGet0(text, interval, v, br_svc, s, b) {
+export async function dbCustomerCustomeridBookingsFollowupeligibleGet0(customerId, followUpDays, text, interval, SQL_BOOKING_SERVICE_LATERAL, v, br_svc, s, b) {
   return await query(
         `SELECT b.*,
                 v.business_name as vendor_name,

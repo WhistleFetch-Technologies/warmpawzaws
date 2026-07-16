@@ -1,12 +1,12 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbVendorVendoridMatingrequestsGet0() {
+export async function dbVendorVendoridMatingrequestsGet0(vendorId) {
   return await query(`
         SELECT id FROM pets WHERE vendor_id = $1
-      `, [vendorId])
+      `, [vendorId]);
 }
 
-export async function dbVendorVendoridMatingrequestsGet1(fp, tp, fc, mr) {
+export async function dbVendorVendoridMatingrequestsGet1(petIds, fp, tp, fc, mr) {
   return await query(`
         SELECT 
           mr.*,
@@ -22,6 +22,6 @@ export async function dbVendorVendoridMatingrequestsGet1(fp, tp, fc, mr) {
         LEFT JOIN customers fc ON mr.from_customer_id = fc.id
         WHERE mr.to_pet_id = ANY($1)
         ORDER BY mr.created_at DESC
-      `, [petIds])
+      `, [petIds]);
 }
 

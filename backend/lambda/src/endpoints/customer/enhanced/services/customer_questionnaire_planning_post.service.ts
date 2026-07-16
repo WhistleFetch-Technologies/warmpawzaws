@@ -49,7 +49,7 @@ export async function executecustomerQuestionnairePlanningPost(c: Context) {
         const customers = await customer_questionnaire_planning_postRepo.dbCustomerQuestionnairePlanningPost0(customerId)
         customer = customers[0];
       } else if (phone) {
-        const customers = await customer_questionnaire_planning_postRepo.dbCustomerQuestionnairePlanningPost1()
+        const customers = await customer_questionnaire_planning_postRepo.dbCustomerQuestionnairePlanningPost1(phone)
         customer = customers[0];
       }
 

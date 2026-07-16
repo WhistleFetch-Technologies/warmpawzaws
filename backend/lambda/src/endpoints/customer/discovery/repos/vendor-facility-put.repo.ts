@@ -26,7 +26,7 @@ export async function dbVendorFacilityPut4(actualVendorId, updateData) {
   return await update('vendors', { id: actualVendorId }, updateData);
 }
 
-export async function dbVendorFacilityPut5() {
+export async function dbVendorFacilityPut5(actualVendorId) {
   return await query('DELETE FROM vendor_specializations WHERE vendor_id = $1', [actualVendorId]);
 }
 

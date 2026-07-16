@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerContentPagesSlugGet0(title, slug, content, category, is_published, metadata, created_at, queryParams) {
+export async function dbCustomerContentPagesSlugGet0(placeholders, title, slug, content, category, is_published, metadata, created_at, queryParams) {
   return await query(
         `SELECT 
           id,
@@ -16,7 +16,7 @@ export async function dbCustomerContentPagesSlugGet0(title, slug, content, categ
         WHERE slug IN (${placeholders}) AND is_published = true
         LIMIT 1`,
         queryParams
-      )
+      );
 }
 
 export async function dbCustomerContentPagesSlugGet1(title, slug, content, category, is_published, metadata, created_at) {

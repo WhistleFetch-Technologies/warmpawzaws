@@ -1,20 +1,20 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbOrderBaseHandlers0() {
+export async function dbOrderBaseHandlers0(customerId) {
   return await query(
             'SELECT phone FROM customers WHERE id = $1',
             [customerId]
           );
 }
 
-export async function dbOrderBaseHandlers1() {
+export async function dbOrderBaseHandlers1(customerPhone) {
   return await query(
             'SELECT id FROM customers WHERE phone = $1',
             [customerPhone]
           );
 }
 
-export async function dbOrderBaseHandlers2() {
+export async function dbOrderBaseHandlers2(newCustomerId, customerName, customerPhone) {
   return await insert('customers', {
               id: newCustomerId,
               name: customerName,
@@ -25,11 +25,11 @@ export async function dbOrderBaseHandlers2() {
             });
 }
 
-export async function dbOrderBaseHandlers3() {
+export async function dbOrderBaseHandlers3(orderRow) {
   return await insert('orders', orderRow);
 }
 
-export async function dbOrderBaseHandlers4() {
+export async function dbOrderBaseHandlers4(orderId, line) {
   return await insert('order_items', {
             order_id: orderId,
             product_id: line.product_id,
@@ -42,15 +42,15 @@ export async function dbOrderBaseHandlers4() {
           });
 }
 
-export async function dbOrderBaseHandlers5() {
+export async function dbOrderBaseHandlers5(ordersQuery, params) {
   return await query(ordersQuery, params);
 }
 
-export async function dbOrderBaseHandlers6() {
-  return await query(itemsQuery, [orderIds])
+export async function dbOrderBaseHandlers6(orderIds, itemsQuery) {
+  return await query(itemsQuery, [orderIds]);
 }
 
-export async function dbOrderBaseHandlers7() {
+export async function dbOrderBaseHandlers7(customerId) {
   return await query(`
         SELECT 
           COUNT(*) as total,
@@ -67,7 +67,7 @@ export async function dbOrderBaseHandlers7() {
       `, [customerId]);
 }
 
-export async function dbOrderBaseHandlers8() {
+export async function dbOrderBaseHandlers8(orderId, customerId, v, c, o) {
   return await query(`
         SELECT 
           o.*,
@@ -85,7 +85,7 @@ export async function dbOrderBaseHandlers8() {
       `, [orderId, customerId]);
 }
 
-export async function dbOrderBaseHandlers9() {
+export async function dbOrderBaseHandlers9(orderId, SQL_PRODUCT_IMAGE_SELECT, s, p, oi) {
   return await query(`
         SELECT 
           oi.*,
@@ -102,7 +102,7 @@ export async function dbOrderBaseHandlers9() {
       `, [orderId]);
 }
 
-export async function dbOrderBaseHandlers10() {
+export async function dbOrderBaseHandlers10(orderId) {
   return await query(`
         SELECT * FROM order_status_history
         WHERE order_id = $1
@@ -110,7 +110,7 @@ export async function dbOrderBaseHandlers10() {
       `, [orderId]);
 }
 
-export async function dbOrderBaseHandlers11() {
+export async function dbOrderBaseHandlers11(orderId) {
   return await query(`
         SELECT * FROM shipments
         WHERE order_id = $1
@@ -118,7 +118,7 @@ export async function dbOrderBaseHandlers11() {
       `, [orderId]);
 }
 
-export async function dbOrderBaseHandlers12() {
+export async function dbOrderBaseHandlers12(orderId, customerId, v, c, o) {
   return await query(`
         SELECT 
           o.*,
@@ -138,7 +138,7 @@ export async function dbOrderBaseHandlers12() {
       `, [orderId, customerId]);
 }
 
-export async function dbOrderBaseHandlers13() {
+export async function dbOrderBaseHandlers13(orderId, s, p, oi) {
   return await query(`
         SELECT 
           oi.*,
@@ -154,14 +154,14 @@ export async function dbOrderBaseHandlers13() {
       `, [orderId]);
 }
 
-export async function dbOrderBaseHandlers14() {
+export async function dbOrderBaseHandlers14(orderId, customerId, order_status, customer_id, vendor_id, delivered_at) {
   return await query(
         'SELECT id, order_status, customer_id, vendor_id, delivered_at, shipping_address FROM orders WHERE id = $1 AND customer_id = $2',
         [orderId, customerId]
       );
 }
 
-export async function dbOrderBaseHandlers15() {
+export async function dbOrderBaseHandlers15(orderId, p, oi) {
   return await query(
         `SELECT oi.*, p.name as product_name FROM order_items oi
          LEFT JOIN products p ON oi.product_id = p.id
@@ -170,7 +170,7 @@ export async function dbOrderBaseHandlers15() {
       );
 }
 
-export async function dbOrderBaseHandlers16() {
+export async function dbOrderBaseHandlers16(orderId, order, returnNumber, primaryReason, totalRefundAmount, now) {
   return await insert('return_requests', {
         order_id: orderId,
         customer_id: order.customer_id,
@@ -189,7 +189,7 @@ export async function dbOrderBaseHandlers16() {
       });
 }
 
-export async function dbOrderBaseHandlers17() {
+export async function dbOrderBaseHandlers17(returnRequest, item, orderItem, qty, primaryReason, now) {
   return await insert('return_items', {
           return_request_id: returnRequest.id,
           order_item_id: item.orderItemId,
@@ -203,7 +203,7 @@ export async function dbOrderBaseHandlers17() {
         });
 }
 
-export async function dbOrderBaseHandlers18() {
+export async function dbOrderBaseHandlers18(orderId, now) {
   return await update('orders', { id: orderId }, {
         has_return_request: true,
         return_status: 'pending',
@@ -211,7 +211,7 @@ export async function dbOrderBaseHandlers18() {
       });
 }
 
-export async function dbOrderBaseHandlers19() {
+export async function dbOrderBaseHandlers19(orderId, primaryReason, now) {
   return await insert('order_status_history', {
         order_id: orderId,
         status: 'return_requested',
@@ -221,7 +221,7 @@ export async function dbOrderBaseHandlers19() {
       });
 }
 
-export async function dbOrderBaseHandlers20() {
+export async function dbOrderBaseHandlers20(orderId, customerId, uuid) {
   return await query(
         `SELECT id FROM orders WHERE id = $1::uuid AND customer_id = $2::uuid LIMIT 1`,
         [orderId, customerId]

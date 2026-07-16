@@ -66,13 +66,13 @@ export async function executeautocomplete(c: Context) {
       }
 
       // Search vendors
-      const vendors = await autocompleteRepo.dbAutocomplete0()
+      const vendors = await autocompleteRepo.dbAutocomplete0(limit)
 
       // Search services
-      const services = await autocompleteRepo.dbAutocomplete1()
+      const services = await autocompleteRepo.dbAutocomplete1(limit)
 
       // Search problems
-      const problems = await autocompleteRepo.dbAutocomplete2()
+      const problems = await autocompleteRepo.dbAutocomplete2(limit)
 
       const suggestions = [
         ...vendors.rows.map((v: any) => ({ text: v.name, type: v.type, id: v.id })),

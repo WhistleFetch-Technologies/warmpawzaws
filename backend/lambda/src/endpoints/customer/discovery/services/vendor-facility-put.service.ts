@@ -252,7 +252,7 @@ export async function executevendorFacilityPut(c: Context) {
         : null;
       if (specArr !== null) {
         try {
-          await vendor_facility_putRepo.dbVendorFacilityPut5()
+          await vendor_facility_putRepo.dbVendorFacilityPut5(actualVendorId)
           for (const spec of specArr) {
             const s = typeof spec === 'string' ? spec.trim() : (spec?.id ?? spec?.specializationId ?? String(spec));
             if (s) {

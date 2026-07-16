@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbDiagnosticsApproveVendor0(business_name, phone, status) {
+export async function dbDiagnosticsApproveVendor0(vendorId, business_name, phone, status) {
   return await query(`
         UPDATE vendors 
         SET 

@@ -14,10 +14,7 @@ export async function executecustomerPhoneReviewsBookingidSkipPost(c: Context) {
     }
 
     const customer = customers[0];
-    const bookings = await customer_phone_reviews_bookingid_skip_postRepo.dbCustomerPhoneReviewsBookingidSkipPost1(
-      bookingId,
-      customer.id
-    );
+    const bookings = await customer_phone_reviews_bookingid_skip_postRepo.dbCustomerPhoneReviewsBookingidSkipPost1(bookingId, customer.id, customerId);
     if (bookings.length === 0) {
       return c.json({ error: 'Booking not found' }, 404);
     }

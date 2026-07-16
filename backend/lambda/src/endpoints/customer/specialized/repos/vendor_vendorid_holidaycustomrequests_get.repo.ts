@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbVendorVendoridHolidaycustomrequestsGet0(c, hcr) {
+export async function dbVendorVendoridHolidaycustomrequestsGet0(vendorId, c, hcr) {
   return await query(`
         SELECT 
           hcr.*,
@@ -11,6 +11,6 @@ export async function dbVendorVendoridHolidaycustomrequestsGet0(c, hcr) {
         WHERE hcr.status = 'pending_quote'
         OR hcr.vendor_id = $1
         ORDER BY hcr.created_at DESC
-      `, [vendorId])
+      `, [vendorId]);
 }
 

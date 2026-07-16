@@ -72,7 +72,7 @@ export async function executeclinicVendorServices(c: Context) {
         return c.json({ error: 'Valid vendor ID is required', success: false }, 400);
       }
 
-      const clinicVendorOnline = await clinic_vendor_servicesRepo.dbClinicVendorServices0().catch(() => ({ rows: [] as any[] }));
+      const clinicVendorOnline = await clinic_vendor_servicesRepo.dbClinicVendorServices0(vendorId).catch(() => ({ rows: [] as any[] }));
       if (!clinicVendorOnline.rows?.length || !vendorRowIsOnline(clinicVendorOnline.rows[0]?.is_online)) {
         return c.json({ error: 'Vendor not found', success: false }, 404);
       }

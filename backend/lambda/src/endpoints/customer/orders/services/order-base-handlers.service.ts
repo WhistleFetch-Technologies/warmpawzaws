@@ -93,7 +93,7 @@ export class CreateCustomerOrderHandler extends BaseHandler {
       
       if (!customerPhone && customerId) {
         try {
-          const customers = await order_base_handlersRepo.dbOrderBaseHandlers0()
+          const customers = await order_base_handlersRepo.dbOrderBaseHandlers0(customerId)
           if (customers.rows.length > 0) {
             customerPhone = customers.rows[0].phone;
           }
@@ -128,7 +128,7 @@ export class CreateCustomerOrderHandler extends BaseHandler {
       let actualCustomerId = customerId;
       if (!actualCustomerId) {
         try {
-          const customers = await order_base_handlersRepo.dbOrderBaseHandlers1()
+          const customers = await order_base_handlersRepo.dbOrderBaseHandlers1(customerPhone)
           if (customers.rows.length > 0) {
             actualCustomerId = customers.rows[0].id;
           } else {
@@ -138,7 +138,7 @@ export class CreateCustomerOrderHandler extends BaseHandler {
                 ? (shippingAddress as { name?: string }).name
                 : undefined;
             const customerName = addrName || `Customer ${customerPhone.slice(-4)}`;
-            await order_base_handlersRepo.dbOrderBaseHandlers2()
+            await order_base_handlersRepo.dbOrderBaseHandlers2(newCustomerId, customerName, customerPhone)
             actualCustomerId = newCustomerId;
           }
         } catch (e: any) {
@@ -291,10 +291,10 @@ export class CreateCustomerOrderHandler extends BaseHandler {
       };
 
       try {
-        await order_base_handlersRepo.dbOrderBaseHandlers3()
+        await order_base_handlersRepo.dbOrderBaseHandlers3(orderRow)
 
         for (const line of orderItems) {
-          await order_base_handlersRepo.dbOrderBaseHandlers4()
+          await order_base_handlersRepo.dbOrderBaseHandlers4(orderId, line)
           if (line.skuRowIdForStock) {
             await decrementSkuStock(line.skuRowIdForStock, line.quantity);
           }
@@ -432,7 +432,7 @@ export class GetCustomerOrdersHandler extends BaseHandler {
       ordersQuery += ` ORDER BY CASE WHEN o.order_status = 'pending_payment' THEN 0 ELSE 1 END, o.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
-      const orders = await order_base_handlersRepo.dbOrderBaseHandlers5()
+      const orders = await order_base_handlersRepo.dbOrderBaseHandlers5(ordersQuery, params)
 
       // Get order items for each order
       const orderIds = orders.rows.map((o: any) => o.id);
@@ -452,7 +452,7 @@ export class GetCustomerOrdersHandler extends BaseHandler {
         LEFT JOIN ecommerce_categories ec ON ec.id = p.category_id
         WHERE oi.order_id = ANY($1)
       `;
-      const items = orderIds.length > 0 ? await order_base_handlersRepo.dbOrderBaseHandlers6(): { rows: [] };
+      const items = orderIds.length > 0 ? await order_base_handlersRepo.dbOrderBaseHandlers6(itemsQuery): { rows: [] };
 
       // Group items by order_id
       const itemsByOrder: Record<string, any[]> = {};
@@ -527,7 +527,7 @@ export class GetCustomerOrdersHandler extends BaseHandler {
       );
 
       // Get statistics
-      const statsQuery = await order_base_handlersRepo.dbOrderBaseHandlers7()
+      const statsQuery = await order_base_handlersRepo.dbOrderBaseHandlers7(customerId)
 
       return this.success({
         orders: ordersWithItems,
@@ -566,19 +566,19 @@ export class GetOrderDetailsHandler extends BaseHandler {
       }
 
       // Get order details
-      const order = await order_base_handlersRepo.dbOrderBaseHandlers8()
+      const order = await order_base_handlersRepo.dbOrderBaseHandlers8(v, c, o)
 
       if (order.rows.length === 0) {
         return this.error('Order not found', 404);
       }
 
       // Get order items
-      const items = await order_base_handlersRepo.dbOrderBaseHandlers9()
+      const items = await order_base_handlersRepo.dbOrderBaseHandlers9(s, p, oi)
 
       // Get order status history
-      const history = await order_base_handlersRepo.dbOrderBaseHandlers10()
+      const history = await order_base_handlersRepo.dbOrderBaseHandlers10(orderId)
 
-      const shipments = await order_base_handlersRepo.dbOrderBaseHandlers11()
+      const shipments = await order_base_handlersRepo.dbOrderBaseHandlers11(orderId)
 
       const orderRow = order.rows[0];
       const latestShipment = shipments.rows[0] || null;
@@ -627,14 +627,14 @@ export class GetOrderInvoiceHandler extends BaseHandler {
       }
 
       // Get order with all details
-      const order = await order_base_handlersRepo.dbOrderBaseHandlers12()
+      const order = await order_base_handlersRepo.dbOrderBaseHandlers12(v, c, o)
 
       if (order.rows.length === 0) {
         return this.error('Order not found', 404);
       }
 
       // Get order items with HSN codes
-      const items = await order_base_handlersRepo.dbOrderBaseHandlers13()
+      const items = await order_base_handlersRepo.dbOrderBaseHandlers13(s, p, oi)
 
       // Get tax breakdown from order or recalculate
       let taxBreakdown = null;
@@ -813,7 +813,7 @@ export class CustomerReturnOrderHandler extends BaseHandler {
         return this.error('At least one return item is required', 400);
       }
 
-      const orderResult = await order_base_handlersRepo.dbOrderBaseHandlers14()
+      const orderResult = await order_base_handlersRepo.dbOrderBaseHandlers14(order_status, customer_id, vendor_id, delivered_at)
 
       if (orderResult.rows.length === 0) {
         return this.error('Order not found', 404);
@@ -842,7 +842,7 @@ export class CustomerReturnOrderHandler extends BaseHandler {
         .then(({ cancelPendingLoyaltyAward }) => cancelPendingLoyaltyAward(orderId, 'return_initiated'))
         .catch((e) => console.warn('[CUSTOMER-ORDERS] cancelPendingLoyaltyAward failed:', e?.message));
 
-      const orderItemsResult = await order_base_handlersRepo.dbOrderBaseHandlers15()
+      const orderItemsResult = await order_base_handlersRepo.dbOrderBaseHandlers15(p, oi)
       const orderItemMap = new Map(
         (orderItemsResult.rows || []).map((row: Record<string, unknown>) => [String(row.id), row])
       );
@@ -861,17 +861,17 @@ export class CustomerReturnOrderHandler extends BaseHandler {
       const primaryReason = body.reason?.trim() || 'Customer return request';
       const now = new Date().toISOString();
 
-      const [returnRequest] = await order_base_handlersRepo.dbOrderBaseHandlers16()
+      const [returnRequest] = await order_base_handlersRepo.dbOrderBaseHandlers16(orderId, order, returnNumber, primaryReason, totalRefundAmount, now)
 
       for (const item of eligibleItems) {
         const orderItem = orderItemMap.get(item.orderItemId)!;
         const qty = item.maxReturnQuantity;
-        await order_base_handlersRepo.dbOrderBaseHandlers17()
+        await order_base_handlersRepo.dbOrderBaseHandlers17(returnRequest, item, orderItem, qty, primaryReason, now)
       }
 
-      await order_base_handlersRepo.dbOrderBaseHandlers18()
+      await order_base_handlersRepo.dbOrderBaseHandlers18(orderId, now)
 
-      await order_base_handlersRepo.dbOrderBaseHandlers19()
+      await order_base_handlersRepo.dbOrderBaseHandlers19(orderId, primaryReason, now)
 
       return this.success({
         success: true,
@@ -912,7 +912,7 @@ export class ShopOrderPaymentResumeHandler extends BaseHandler {
         return this.error('Customer ID is required', 401);
       }
 
-      const ownerCheck = await order_base_handlersRepo.dbOrderBaseHandlers20()
+      const ownerCheck = await order_base_handlersRepo.dbOrderBaseHandlers20(uuid)
       if (ownerCheck.rows.length === 0) {
         return this.error('Order not found', 404);
       }

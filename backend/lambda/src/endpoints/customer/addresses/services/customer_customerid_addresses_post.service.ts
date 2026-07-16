@@ -47,13 +47,13 @@ export async function executecustomerCustomeridAddressesPost(c: Context) {
       }
 
       // Check if first address (auto-default)
-      const existingAddresses = await customer_customerid_addresses_postRepo.dbCustomerCustomeridAddressesPost2().catch(() => ({ rows: [{ count: '0' }] }));
+      const existingAddresses = await customer_customerid_addresses_postRepo.dbCustomerCustomeridAddressesPost2(customer).catch(() => ({ rows: [{ count: '0' }] }));
 
       const shouldBeDefault = isDefault || parseInt(existingAddresses.rows[0]?.count || '0', 10) === 0;
 
       // If setting as default, unset all others
       if (shouldBeDefault) {
-        await customer_customerid_addresses_postRepo.dbCustomerCustomeridAddressesPost3().catch(() => { });
+        await customer_customerid_addresses_postRepo.dbCustomerCustomeridAddressesPost3(customer).catch(() => { });
       }
 
       // ✅ FIX: Process coordinates - normalize format and geocode if missing
@@ -105,7 +105,7 @@ export async function executecustomerCustomeridAddressesPost(c: Context) {
       const address = await customer_customerid_addresses_postRepo.dbCustomerCustomeridAddressesPost4(insertPayload)
 
       // Get all addresses
-      const allAddresses = await customer_customerid_addresses_postRepo.dbCustomerCustomeridAddressesPost5().catch(() => ({ rows: [] }));
+      const allAddresses = await customer_customerid_addresses_postRepo.dbCustomerCustomeridAddressesPost5(customer).catch(() => ({ rows: [] }));
 
       return c.json({
         success: true,

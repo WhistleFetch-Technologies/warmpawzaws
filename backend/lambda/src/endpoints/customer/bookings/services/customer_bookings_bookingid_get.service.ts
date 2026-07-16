@@ -39,7 +39,7 @@ export async function executecustomerBookingsBookingidGet(c: Context) {
 
       let resolvedCompletionOtp = booking.completion_otp ?? null;
       if (booking.status === 'in_progress' && booking.otp_verified && !resolvedCompletionOtp) {
-        const endRes = await customer_bookings_bookingid_getRepo.dbCustomerBookingsBookingidGet1().catch(() => ({ rows: [] }));
+        const endRes = await customer_bookings_bookingid_getRepo.dbCustomerBookingsBookingidGet1(bookingId).catch(() => ({ rows: [] }));
         resolvedCompletionOtp = (endRes as any).rows?.[0]?.otp_code ?? null;
       }
       if (
@@ -69,14 +69,14 @@ export async function executecustomerBookingsBookingidGet(c: Context) {
           } catch {
             /* non-fatal */
           }
-          const cap = await customer_bookings_bookingid_getRepo.dbCustomerBookingsBookingidGet2().catch(() => ({
+          const cap = await customer_bookings_bookingid_getRepo.dbCustomerBookingsBookingidGet2(bookingId).catch(() => ({
             rows: [],
           }));
           const newCo = (cap as any).rows?.[0]?.completion_otp;
           if (newCo != null && String(newCo).trim()) {
             resolvedCompletionOtp = String(newCo).trim();
           } else {
-            const er = await customer_bookings_bookingid_getRepo.dbCustomerBookingsBookingidGet3().catch(() => ({ rows: [] }));
+            const er = await customer_bookings_bookingid_getRepo.dbCustomerBookingsBookingidGet3(bookingId).catch(() => ({ rows: [] }));
             resolvedCompletionOtp = String((er as any).rows?.[0]?.otp_code || '').trim() || null;
           }
         }
@@ -92,7 +92,7 @@ export async function executecustomerBookingsBookingidGet(c: Context) {
       }
 
       // Get prescription if exists
-      const prescriptions = await customer_bookings_bookingid_getRepo.dbCustomerBookingsBookingidGet4()
+      const prescriptions = await customer_bookings_bookingid_getRepo.dbCustomerBookingsBookingidGet4(bookingId)
 
       // Get review if exists
       const reviews = await customer_bookings_bookingid_getRepo.dbCustomerBookingsBookingidGet5(booking)

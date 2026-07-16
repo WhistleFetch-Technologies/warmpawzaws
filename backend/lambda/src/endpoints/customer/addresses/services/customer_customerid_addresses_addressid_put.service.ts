@@ -29,7 +29,7 @@ export async function executecustomerCustomeridAddressesAddressidPut(c: Context)
 
       // If setting as default, unset all others
       if (updates.isDefault) {
-        await customer_customerid_addresses_addressid_putRepo.dbCustomerCustomeridAddressesAddressidPut2().catch(() => { });
+        await customer_customerid_addresses_addressid_putRepo.dbCustomerCustomeridAddressesAddressidPut2(customer).catch(() => { });
       }
 
       // ✅ FIX: Process coordinates - normalize format and geocode if missing

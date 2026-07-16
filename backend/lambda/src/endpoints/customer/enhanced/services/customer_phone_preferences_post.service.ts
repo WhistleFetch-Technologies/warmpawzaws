@@ -78,7 +78,7 @@ export async function executecustomerPhonePreferencesPost(c: Context) {
         await customer_phone_preferences_postRepo.dbCustomerPhonePreferencesPost1(preferencesData, JSON, customer)
       } else {
         // Insert new preferences
-        await customer_phone_preferences_postRepo.dbCustomerPhonePreferencesPost2(customer, preferencesData, JSON, journey_type, home_type, outdoor_space, work_schedule, activity_level, travel_frequency, monthly_budget, service_preferences, has_children, has_other_pets, $2, $3, $4, $5, $6, $7, $8, $9, executecustomerPhonePreferencesPost0, executecustomerPhonePreferencesPost1)
+        await customer_phone_preferences_postRepo.dbCustomerPhonePreferencesPost2(customer, preferencesData, JSON, journey_type, home_type, outdoor_space, work_schedule, activity_level, travel_frequency, monthly_budget, service_preferences, has_children, has_other_pets, $2, $3, $4, $5, $6, $7, $8, $9, executecustomerPhonePreferencesPost0, executecustomerPhonePreferencesPost1, $10, $11)
       }
 
       // Also update customer.preferences JSONB as backup

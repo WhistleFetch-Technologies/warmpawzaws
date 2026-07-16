@@ -46,9 +46,9 @@ export async function executecustomerNotificationsPhoneGet(c: Context) {
     const settings = await fetchCustomerNotificationSettings(customerId);
 
     try {
-      const notifications = await customer_notifications_phone_getRepo.dbCustomerNotificationsPhoneGet0()
+      const notifications = await customer_notifications_phone_getRepo.dbCustomerNotificationsPhoneGet0(customerId, limit)
 
-      const unreadCount = await customer_notifications_phone_getRepo.dbCustomerNotificationsPhoneGet1()
+      const unreadCount = await customer_notifications_phone_getRepo.dbCustomerNotificationsPhoneGet1(customerId)
 
       return c.json({
         success: true,

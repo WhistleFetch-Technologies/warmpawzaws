@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbAutocomplete0() {
+export async function dbAutocomplete0(limit, q) {
   return await query(
         `SELECT DISTINCT business_name as name, 'vendor' as type, id
          FROM vendors
@@ -10,7 +10,7 @@ export async function dbAutocomplete0() {
       );
 }
 
-export async function dbAutocomplete1() {
+export async function dbAutocomplete1(limit, q) {
   return await query(
         `SELECT DISTINCT name, 'service' as type, id
          FROM services
@@ -20,7 +20,7 @@ export async function dbAutocomplete1() {
       );
 }
 
-export async function dbAutocomplete2() {
+export async function dbAutocomplete2(limit, q) {
   return await query(
         `SELECT DISTINCT problem_name as name, 'problem' as type, id
          FROM problem_grid

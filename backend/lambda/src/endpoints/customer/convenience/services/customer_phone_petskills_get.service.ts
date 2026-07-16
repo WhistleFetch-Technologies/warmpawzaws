@@ -39,7 +39,7 @@ export async function executecustomerPhonePetskillsGet(c: Context) {
       }
 
       // Get all pets for this customer
-      const pets = await customer_phone_petskills_getRepo.dbCustomerPhonePetskillsGet0()
+      const pets = await customer_phone_petskills_getRepo.dbCustomerPhonePetskillsGet0(customerId)
 
       if (pets.rows.length === 0) {
         return c.json({ skills: [], success: true });

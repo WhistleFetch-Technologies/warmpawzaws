@@ -48,7 +48,7 @@ export async function executecustomerPaymentmethodsGet(c: Context) {
         const customers = await customer_paymentmethods_getRepo.dbCustomerPaymentmethodsGet0(customerId)
         customer = customers[0];
       } else if (phone) {
-        const customers = await customer_paymentmethods_getRepo.dbCustomerPaymentmethodsGet1()
+        const customers = await customer_paymentmethods_getRepo.dbCustomerPaymentmethodsGet1(phone)
         customer = customers[0];
       }
 

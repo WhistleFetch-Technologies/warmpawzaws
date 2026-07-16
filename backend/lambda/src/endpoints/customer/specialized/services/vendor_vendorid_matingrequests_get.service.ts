@@ -8,7 +8,7 @@ export async function executevendorVendoridMatingrequestsGet(c: Context) {
       const { vendorId } = c.req.param();
 
       // Get pets owned by this vendor (breeder)
-      const vendorPets = await vendor_vendorid_matingrequests_getRepo.dbVendorVendoridMatingrequestsGet0().catch(() => ({ rows: [] }));
+      const vendorPets = await vendor_vendorid_matingrequests_getRepo.dbVendorVendoridMatingrequestsGet0(vendorId).catch(() => ({ rows: [] }));
 
       if (vendorPets.rows.length === 0) {
         return c.json({ success: true, requests: [], total: 0 });

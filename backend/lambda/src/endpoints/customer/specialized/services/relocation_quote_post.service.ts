@@ -65,7 +65,7 @@ export async function executerelocationQuotePost(c: Context) {
       })
       .catch(async () => {
         await relocation_quote_postRepo.dbRelocationQuotePost1();
-        return relocation_quote_postRepo.dbRelocationQuotePost2({
+        const fallbackRow = {
           customer_id: customerId,
           customer_phone: customerPhone,
           origin,
@@ -73,7 +73,8 @@ export async function executerelocationQuotePost(c: Context) {
           transport_type: transportType || 'road',
           total_quote: totalQuote,
           status: 'pending',
-        });
+        };
+        return relocation_quote_postRepo.dbRelocationQuotePost2(fallbackRow);
       });
 
     return c.json({

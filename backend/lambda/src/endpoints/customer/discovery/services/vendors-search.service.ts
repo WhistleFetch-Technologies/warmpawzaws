@@ -178,7 +178,7 @@ export async function executevendorsSearch(c: Context) {
           const customerId = await resolveCustomerIdFromPhone(customerPhone);
           if (customerId) {
             await seedFinitePackagesMissingSessionsForScope({ query } as SqlClient, { customerId });
-            const activePackages = await vendors_searchRepo.dbVendorsSearch1()
+            const activePackages = await vendors_searchRepo.dbVendorsSearch1(customerId)
             (activePackages.rows || []).forEach((r: any) => {
               if (r.vendor_id) vendorIdsWithActivePackage.add(r.vendor_id);
             });

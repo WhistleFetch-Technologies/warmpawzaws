@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerFeaturedpackagesGet0(name, description, discount_type, discount_value, min_order_amount, applicable_services) {
+export async function dbCustomerFeaturedpackagesGet0(limit, name, description, discount_type, discount_value, min_order_amount, applicable_services) {
   return await query(
         `SELECT 
           id,
@@ -20,6 +20,6 @@ export async function dbCustomerFeaturedpackagesGet0(name, description, discount
         ORDER BY priority ASC, created_at DESC
         LIMIT $1`,
         [limit]
-      )
+      );
 }
 

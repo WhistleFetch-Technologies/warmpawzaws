@@ -70,7 +70,7 @@ export async function dbDebugAtCenterVendors2(v, r, vs) {
       `);
 }
 
-export async function dbDebugAtCenterVendors3(text, uuid, va, v) {
+export async function dbDebugAtCenterVendors3(vetIds, text, uuid, va, v) {
   return await query(`
           SELECT 
             va.vendor_id,

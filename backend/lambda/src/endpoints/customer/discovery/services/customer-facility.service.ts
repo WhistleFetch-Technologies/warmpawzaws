@@ -85,7 +85,7 @@ export async function executecustomerFacility(c: Context) {
       }
 
       // Get rating
-      const ratingResult = await customer_facilityRepo.dbCustomerFacility1()
+      const ratingResult = await customer_facilityRepo.dbCustomerFacility1(vendorId)
 
       // Get recent reviews
       const reviewsResult = await customer_facilityRepo.dbCustomerFacility2(c, r)

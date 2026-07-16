@@ -4,7 +4,7 @@ export async function dbCustomerPaymentmethodsGet0(customerId) {
   return await select('customers', { id: customerId });
 }
 
-export async function dbCustomerPaymentmethodsGet1() {
+export async function dbCustomerPaymentmethodsGet1(phone) {
   return await select('customers', { phone });
 }
 

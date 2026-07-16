@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbBreederInquiryPost0(vendor_id, name) {
+export async function dbBreederInquiryPost0(puppyId, vendor_id, name) {
   return await query(`SELECT id, vendor_id, name, price FROM pets WHERE id = $1`, [puppyId]);
 }
 

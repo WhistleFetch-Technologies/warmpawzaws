@@ -8,11 +8,11 @@ export async function dbCustomerCustomeridAddressesAddressidPut1(customerId) {
   return await select('customers', { phone: customerId });
 }
 
-export async function dbCustomerCustomeridAddressesAddressidPut2() {
+export async function dbCustomerCustomeridAddressesAddressidPut2(customer) {
   return await query(
           'UPDATE customer_addresses SET is_default = false WHERE customer_id = $1',
           [customer[0].id]
-        )
+        );
 }
 
 export async function dbCustomerCustomeridAddressesAddressidPut3(address_line2, city, state, pincode) {

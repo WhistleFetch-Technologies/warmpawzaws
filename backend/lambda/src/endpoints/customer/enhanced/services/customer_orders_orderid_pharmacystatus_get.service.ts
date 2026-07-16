@@ -43,7 +43,7 @@ export async function executecustomerOrdersOrderidPharmacystatusGet(c: Context) 
 
       if (orders.length === 0) {
         // Try to find in regular orders table
-        const { rows: regularOrders } = await customer_orders_orderid_pharmacystatus_getRepo.dbCustomerOrdersOrderidPharmacystatusGet1()
+        const { rows: regularOrders } = await customer_orders_orderid_pharmacystatus_getRepo.dbCustomerOrdersOrderidPharmacystatusGet1(orderId)
 
         if (regularOrders.length === 0) {
           return c.json({ success: false, error: 'Order not found' }, 404);

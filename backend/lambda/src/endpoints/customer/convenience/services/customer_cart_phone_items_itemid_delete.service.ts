@@ -38,7 +38,7 @@ export async function executecustomerCartPhoneItemsItemidDelete(c: Context) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      await customer_cart_phone_items_itemid_deleteRepo.dbCustomerCartPhoneItemsItemidDelete0()
+      await customer_cart_phone_items_itemid_deleteRepo.dbCustomerCartPhoneItemsItemidDelete0(itemId, customerId)
 
       return c.json({ success: true, message: 'Item removed from cart' });
     } catch (error: any) {

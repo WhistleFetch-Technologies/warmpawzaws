@@ -43,10 +43,10 @@ export async function executecustomerCustomeridBookingsBookingidGet(c: Context) 
       }
 
       // Get prescription if exists
-      const prescriptions = await customer_customerid_bookings_bookingid_getRepo.dbCustomerCustomeridBookingsBookingidGet1()
+      const prescriptions = await customer_customerid_bookings_bookingid_getRepo.dbCustomerCustomeridBookingsBookingidGet1(bookingId)
 
       // Get review if exists
-      const reviews = await customer_customerid_bookings_bookingid_getRepo.dbCustomerCustomeridBookingsBookingidGet2()
+      const reviews = await customer_customerid_bookings_bookingid_getRepo.dbCustomerCustomeridBookingsBookingidGet2(bookingId, customerId)
 
       const paymentFeeFields = await loadCustomerPaymentFeeFields(bookingId);
 

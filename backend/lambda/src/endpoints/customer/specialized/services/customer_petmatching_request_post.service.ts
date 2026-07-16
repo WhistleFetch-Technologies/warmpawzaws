@@ -22,7 +22,7 @@ export async function executecustomerPetmatchingRequestPost(c: Context) {
       }
 
       // Get target pet owner
-      const targetPet = await customer_petmatching_request_postRepo.dbCustomerPetmatchingRequestPost1()
+      const targetPet = await customer_petmatching_request_postRepo.dbCustomerPetmatchingRequestPost1(toPetId)
       if (targetPet.rows.length === 0) {
         return c.json({ error: 'Target pet not found' }, 404);
       }

@@ -6,10 +6,7 @@ export async function executevendorVendoridAdoptionPetsPetidPut(c: Context) {
     const { petId } = c.req.param();
     const petData = await c.req.json();
 
-    const updated = await vendor_vendorid_adoption_pets_petid_putRepo.dbVendorVendoridAdoptionPetsPetidPut0(
-      petId,
-      petData
-    );
+    const updated = await vendor_vendorid_adoption_pets_petid_putRepo.dbVendorVendoridAdoptionPetsPetidPut0(petId, petData);
 
     return c.json({
       success: true,

@@ -1,13 +1,13 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerPetmatchingRequestPost0(uuid) {
+export async function dbCustomerPetmatchingRequestPost0(fromPetId, fromCustomerId, uuid) {
   return await query(
         `SELECT id FROM pets WHERE id = $1 AND customer_id = $2::uuid`,
         [fromPetId, fromCustomerId]
       );
 }
 
-export async function dbCustomerPetmatchingRequestPost1() {
+export async function dbCustomerPetmatchingRequestPost1(toPetId) {
   return await query(`SELECT customer_id FROM pets WHERE id = $1`, [toPetId]);
 }
 

@@ -70,7 +70,7 @@ export class GetCustomerHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
-      const customers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers0()
+      const customers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers0(customerId)
       
       if (customers.length === 0) {
         return this.error('Customer not found', 404, 'NOT_FOUND', undefined, requestId);
@@ -103,7 +103,7 @@ export class GetCustomerByPhoneHandlerEnhanced extends BaseHandlerEnhanced {
       // Normalize phone - remove non-digits
       const cleanPhone = phone.replace(/\D/g, '');
       
-      const customers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers1()
+      const customers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers1(cleanPhone)
       
       if (customers.length === 0) {
         return this.error('Customer not found', 404, 'NOT_FOUND', undefined, requestId);
@@ -195,10 +195,10 @@ export class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
         updateData.floor = profileData.floor?.trim() || null;
       }
 
-      await enhanced_base_handlersRepo.dbEnhancedBaseHandlers2()
+      await enhanced_base_handlersRepo.dbEnhancedBaseHandlers2(customerId, updateData)
 
       // Get updated customer
-      const customers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers3()
+      const customers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers3(customerId)
 
       const row = customers[0];
       return this.success({
@@ -232,7 +232,7 @@ export class GetCustomerPetsHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
-      const pets = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers4()
+      const pets = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers4(customerId)
 
       return this.success({ pets }, requestId);
     } catch (error: any) {
@@ -301,7 +301,7 @@ export class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
         medical_history,
       };
 
-      const pets = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers5()
+      const pets = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers5(petData)
 
       // First-pet / profile loyalty: handled by action_sources → loyalty-events-consumer (not inline here).
 
@@ -336,7 +336,7 @@ export class DeactivateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
 
     try {
       // Get current customer
-      const existingCustomers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers6()
+      const existingCustomers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers6(customerId)
       if (existingCustomers.length === 0) {
         return this.error('Customer not found', 404, 'NOT_FOUND', undefined, requestId);
       }
@@ -356,9 +356,9 @@ export class DeactivateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         // Check for active bookings/orders before deletion
-        const activeBookings = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers7()
+        const activeBookings = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers7(customerId)
 
-        const activeOrders = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers8()
+        const activeOrders = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers8(customerId)
 
         if (parseInt(activeBookings.rows[0]?.count || '0', 10) > 0 ||
             parseInt(activeOrders.rows[0]?.count || '0', 10) > 0) {
@@ -372,7 +372,7 @@ export class DeactivateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         // Soft delete by setting is_active = false and updating
-        await enhanced_base_handlersRepo.dbEnhancedBaseHandlers9()
+        await enhanced_base_handlersRepo.dbEnhancedBaseHandlers9(customerId)
 
         return this.success({
           customerId,
@@ -381,7 +381,7 @@ export class DeactivateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
         }, requestId);
       } else {
         // Soft delete - deactivate account
-        await enhanced_base_handlersRepo.dbEnhancedBaseHandlers10()
+        await enhanced_base_handlersRepo.dbEnhancedBaseHandlers10(customerId)
 
         // Log audit entry
         try {

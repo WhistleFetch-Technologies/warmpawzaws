@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbVendorServices0(package_id) {
+export async function dbVendorServices0(customerId, resolvedVendorId, package_id) {
   return await query(
               `SELECT id, package_id, package_snapshot FROM package_purchases
                WHERE customer_id = $1 AND vendor_id = $2 AND status = 'active'
@@ -10,7 +10,7 @@ export async function dbVendorServices0(package_id) {
             );
 }
 
-export async function dbVendorServices1(pp) {
+export async function dbVendorServices1(resolvedVendorId, pp) {
   return await query(
                   `SELECT id, metadata FROM vendor_services WHERE id = $1 AND vendor_id = $2`,
                   [pp.package_id, resolvedVendorId]

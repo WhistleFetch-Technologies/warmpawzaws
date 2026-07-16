@@ -4,28 +4,28 @@ export async function dbCustomerProfileUnifiedIdentifierGet0(customerId) {
   return await select('customers', { id: customerId });
 }
 
-export async function dbCustomerProfileUnifiedIdentifierGet1() {
+export async function dbCustomerProfileUnifiedIdentifierGet1(customerId) {
   return await query(
           'SELECT * FROM customer_wallets WHERE customer_id = $1',
           [customerId]
         );
 }
 
-export async function dbCustomerProfileUnifiedIdentifierGet2() {
+export async function dbCustomerProfileUnifiedIdentifierGet2(customerId) {
   return await query(
           'SELECT * FROM customer_addresses WHERE customer_id = $1 ORDER BY is_default DESC, created_at DESC',
           [customerId]
         );
 }
 
-export async function dbCustomerProfileUnifiedIdentifierGet3() {
+export async function dbCustomerProfileUnifiedIdentifierGet3(customerId) {
   return await query(
           'SELECT * FROM bookings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50',
           [customerId]
         );
 }
 
-export async function dbCustomerProfileUnifiedIdentifierGet4() {
+export async function dbCustomerProfileUnifiedIdentifierGet4(customerId) {
   return await query(
           'SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50',
           [customerId]

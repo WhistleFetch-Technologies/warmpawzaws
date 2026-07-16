@@ -20,9 +20,7 @@ export async function executevendorVendoridAdoptionapplicationsApplicationidPut(
       );
 
     if (status === 'approved' && updated[0]?.pet_id) {
-      await vendor_vendorid_adoptionapplications_applicationid_putRepo.dbVendorVendoridAdoptionapplicationsApplicationidPut1(
-        updated[0].pet_id
-      );
+      await vendor_vendorid_adoptionapplications_applicationid_putRepo.dbVendorVendoridAdoptionapplicationsApplicationidPut1(updated[0].pet_id, petId);
     }
 
     return c.json({

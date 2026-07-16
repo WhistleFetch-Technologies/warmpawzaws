@@ -1,7 +1,7 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbRelocationBookPost0() {
-  return await query(`SELECT * FROM relocation_quotes WHERE id = $1`, [quoteId])
+export async function dbRelocationBookPost0(quoteId) {
+  return await query(`SELECT * FROM relocation_quotes WHERE id = $1`, [quoteId]);
 }
 
 export async function dbRelocationBookPost1(customerId, vendorId, quote, paymentMethod, JSON, quoteId) {

@@ -14,11 +14,11 @@ export async function executeputAdminDeliveryFeePolicy(c: Context) {
       return c.json({ success: false, error: parsed.error }, 400);
     }
     const jsonStr = JSON.stringify(parsed.policy);
-    const existing = await put_admin_delivery_fee_policyRepo.dbPutAdminDeliveryFeePolicy0();
+    const existing = await put_admin_delivery_fee_policyRepo.dbPutAdminDeliveryFeePolicy0(POLICY_KEY);
     if (existing.rows.length > 0) {
-      await put_admin_delivery_fee_policyRepo.dbPutAdminDeliveryFeePolicy1(jsonStr);
+      await put_admin_delivery_fee_policyRepo.dbPutAdminDeliveryFeePolicy1(jsonStr, jsonb);
     } else {
-      await put_admin_delivery_fee_policyRepo.dbPutAdminDeliveryFeePolicy2(jsonStr, DESCRIPTION);
+      await put_admin_delivery_fee_policyRepo.dbPutAdminDeliveryFeePolicy2(jsonStr, DESCRIPTION, jsonb, setting_value, setting_type, description, is_public, created_at, $3);
     }
     return c.json({ success: true, policy: parsed.policy });
   } catch (e: any) {

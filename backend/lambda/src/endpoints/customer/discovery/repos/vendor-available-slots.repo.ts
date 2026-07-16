@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbVendorAvailableSlots0(text, phone) {
+export async function dbVendorAvailableSlots0(vendorId, text, phone) {
   return await query(
           `SELECT vendor_id::text as vendor_id_text, phone, onboarding_status
            FROM vendor_identity 
@@ -10,11 +10,11 @@ export async function dbVendorAvailableSlots0(text, phone) {
         );
 }
 
-export async function dbVendorAvailableSlots1(text) {
+export async function dbVendorAvailableSlots1(linkedVendorId, text) {
   return await query(
             `SELECT * FROM vendors WHERE id::text = $1 LIMIT 1`,
             [linkedVendorId]
-          )
+          );
 }
 
 export async function dbVendorAvailableSlots2(text, vendor) {
@@ -36,7 +36,7 @@ export async function dbVendorAvailableSlots3(text, vendors, vendor, business_na
           )
 }
 
-export async function dbVendorAvailableSlots4(text) {
+export async function dbVendorAvailableSlots4(availId, text) {
   return await query(
             `SELECT COUNT(*) as count, 
                     array_agg(DISTINCT day_of_week) as days,
@@ -45,51 +45,51 @@ export async function dbVendorAvailableSlots4(text) {
              WHERE vendor_id::text = $1 
                AND (COALESCE(is_available, true) = true)`,
             [availId]
-          )
+          );
 }
 
-export async function dbVendorAvailableSlots5(text, business_name, status, is_active) {
+export async function dbVendorAvailableSlots5(availId, text, business_name, status, is_active) {
   return await query(
             `SELECT id::text, business_name, status, is_active, is_online 
              FROM vendors 
              WHERE id::text = $1`,
             [availId]
-          )
+          );
 }
 
-export async function dbVendorAvailableSlots6(text, phone) {
+export async function dbVendorAvailableSlots6(availId, text, phone) {
   return await query(
               `SELECT id::text, vendor_id::text, phone, onboarding_status 
                FROM vendor_identity 
                WHERE id::text = $1`,
               [availId]
-            )
+            );
 }
 
-export async function dbVendorAvailableSlots7(text) {
+export async function dbVendorAvailableSlots7(vendorId, text) {
   return await query(
             `SELECT COUNT(*) as count FROM vendor_availability_v2 WHERE vendor_id::text = $1`,
             [vendorId]
-          )
+          );
 }
 
-export async function dbVendorAvailableSlots8(text, vendor) {
+export async function dbVendorAvailableSlots8(finalVendorId, text, vendor) {
   return await query(
             `SELECT id::text, vendor_id::text, phone 
              FROM vendor_identity 
              WHERE phone = $1 OR vendor_id::text = $2`,
             [vendor.phone, finalVendorId]
-          )
+          );
 }
 
-export async function dbVendorAvailableSlots9(text) {
+export async function dbVendorAvailableSlots9(identityId, text) {
   return await query(
                 `SELECT COUNT(*) as count FROM vendor_availability_v2 WHERE vendor_id::text = $1`,
                 [identityId]
-              )
+              );
 }
 
-export async function dbVendorAvailableSlots10(text, day_of_week, service_style, service_type, is_available) {
+export async function dbVendorAvailableSlots10(availabilityIdsForQuery, text, day_of_week, service_style, service_type, is_available) {
   return await query(
             `SELECT vendor_id, day_of_week,
              COALESCE(service_styles, ARRAY[]::text[]) as service_styles,
@@ -105,45 +105,45 @@ export async function dbVendorAvailableSlots11() {
   return await query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`)
 }
 
-export async function dbVendorAvailableSlots12(text) {
+export async function dbVendorAvailableSlots12(resolvedVendorId, text) {
   return await query(
         `SELECT COALESCE(is_online, true) AS is_online FROM vendors WHERE id::text = $1 LIMIT 1`,
         [resolvedVendorId]
-      )
+      );
 }
 
-export async function dbVendorAvailableSlots13(date) {
+export async function dbVendorAvailableSlots13(resolvedVendorId, date) {
   return await query(
           `SELECT 1 FROM vendor_holidays_enhanced 
            WHERE vendor_id = $1 AND is_active = true
              AND ($2::date >= start_date AND $2::date <= end_date)
            LIMIT 1`,
           [resolvedVendorId, date]
-        )
+        );
 }
 
-export async function dbVendorAvailableSlots14() {
+export async function dbVendorAvailableSlots14(resolvedVendorId, date) {
   return await query(
             `SELECT 1 FROM vendor_holidays WHERE vendor_id = $1 AND date = $2 LIMIT 1`,
             [resolvedVendorId, date]
-          )
+          );
 }
 
 export async function dbVendorAvailableSlots15(staffQuery, params) {
   return await query(staffQuery, params)
 }
 
-export async function dbVendorAvailableSlots16() {
+export async function dbVendorAvailableSlots16(resolvedVendorId, date) {
   return await query(
             `SELECT booking_time, staff_id FROM bookings 
              WHERE vendor_id = $1 
              AND booking_date = $2 
              AND status NOT IN ('cancelled', 'rejected')`,
             [resolvedVendorId, date]
-          )
+          );
 }
 
-export async function dbVendorAvailableSlots17(text, day_of_week, service_style) {
+export async function dbVendorAvailableSlots17(availabilityIdsForQuery, text, day_of_week, service_style) {
   return await query(
           `SELECT vendor_id::text, day_of_week, 
                   COALESCE(service_styles, ARRAY[]::text[]) as service_styles,
@@ -156,7 +156,7 @@ export async function dbVendorAvailableSlots17(text, day_of_week, service_style)
         );
 }
 
-export async function dbVendorAvailableSlots18(text, day_of_week, service_type, is_available) {
+export async function dbVendorAvailableSlots18(canonicalVendorId, text, day_of_week, service_type, is_available) {
   return await query(
           `SELECT vendor_id::text, day_of_week, 
                   COALESCE(service_styles, ARRAY[]::text[]) as service_styles,
@@ -171,7 +171,7 @@ export async function dbVendorAvailableSlots18(text, day_of_week, service_type, 
         );
 }
 
-export async function dbVendorAvailableSlots19(int, text, dayOfWeekValues) {
+export async function dbVendorAvailableSlots19(canonicalVendorId, dayOfWeekValues, acceptableStylesForSlot, int, text) {
   return await query(
           `SELECT 
             COUNT(*) as total_count,
@@ -192,7 +192,7 @@ export async function dbVendorAvailableSlots19(int, text, dayOfWeekValues) {
         );
 }
 
-export async function dbVendorAvailableSlots20(text, int, va, dayOfWeekValues) {
+export async function dbVendorAvailableSlots20(availabilityIdsForQuery, dayOfWeekValues, acceptableStylesForSlot, text, int, va) {
   return await query(
           `SELECT va.id, va.day_of_week, 
                   COALESCE(va.time_window_start, va.start_time) as time_window_start, 
@@ -216,7 +216,7 @@ export async function dbVendorAvailableSlots20(text, int, va, dayOfWeekValues) {
         );
 }
 
-export async function dbVendorAvailableSlots21(text, int, va) {
+export async function dbVendorAvailableSlots21(availabilityIdsForQuery, dayOfWeekValues, text, int, va) {
   return await query(
             `SELECT va.id, va.day_of_week, 
                     COALESCE(va.time_window_start, va.start_time) as time_window_start, 
@@ -236,7 +236,7 @@ export async function dbVendorAvailableSlots21(text, int, va) {
           );
 }
 
-export async function dbVendorAvailableSlots22(text, int, va, v, dayOfWeekValues) {
+export async function dbVendorAvailableSlots22(availabilityIdsForQuery, dayOfWeekValues, acceptableStylesForSlot, text, int, va, v) {
   return await query(
                 `SELECT va.id, va.day_of_week, 
                       COALESCE(va.time_window_start, va.start_time) as time_window_start, 
@@ -269,7 +269,7 @@ export async function dbVendorAvailableSlots22(text, int, va, v, dayOfWeekValues
               );
 }
 
-export async function dbVendorAvailableSlots23(text, int, va, v) {
+export async function dbVendorAvailableSlots23(availabilityIdsForQuery, dayOfWeekValues, text, int, va, v) {
   return await query(
                   `SELECT va.id, va.day_of_week, 
                         COALESCE(va.time_window_start, va.start_time) as time_window_start, 
@@ -294,7 +294,7 @@ export async function dbVendorAvailableSlots23(text, int, va, v) {
                 );
 }
 
-export async function dbVendorAvailableSlots24(text, int, va) {
+export async function dbVendorAvailableSlots24(availabilityIdsForQuery, dayOfWeekValues, text, int, va) {
   return await query(
                     `SELECT va.id, va.day_of_week, 
                           COALESCE(va.time_window_start, va.start_time) as time_window_start, 
@@ -315,7 +315,7 @@ export async function dbVendorAvailableSlots24(text, int, va) {
                   );
 }
 
-export async function dbVendorAvailableSlots25(text, int, va) {
+export async function dbVendorAvailableSlots25(availabilityIdsForQuery, dayOfWeekValues, text, int, va) {
   return await query(
                       `SELECT va.id, va.day_of_week, 
                             COALESCE(va.time_window_start, va.start_time) as time_window_start, 
@@ -335,7 +335,7 @@ export async function dbVendorAvailableSlots25(text, int, va) {
                     );
 }
 
-export async function dbVendorAvailableSlots26(text, v) {
+export async function dbVendorAvailableSlots26(availabilityIdsForQuery, text, v) {
   return await query(
             `SELECT v.id::text, v.business_name, v.phone, v.status, v.is_active, v.is_online,
                     (SELECT COUNT(*) FROM vendor_availability_v2 WHERE vendor_id::text = v.id::text) as availability_count
@@ -347,16 +347,16 @@ export async function dbVendorAvailableSlots26(text, v) {
           );
 }
 
-export async function dbVendorAvailableSlots27(date, dayOfWeek) {
+export async function dbVendorAvailableSlots27(resolvedVendorId, dayOfWeek, date) {
   return await query(
           `SELECT start_time, end_time FROM vendor_breaks
            WHERE vendor_id = $1 AND is_active = true
              AND ((is_recurring = true AND day_of_week = $2) OR break_date = $3::date)`,
           [resolvedVendorId, dayOfWeek, date]
-        )
+        );
 }
 
-export async function dbVendorAvailableSlots28(duration_minutes) {
+export async function dbVendorAvailableSlots28(resolvedVendorId, date, duration_minutes) {
   return await query(
           `SELECT booking_time, 
                   COALESCE(total_duration_minutes, duration_minutes, 30) as duration_minutes
@@ -364,6 +364,6 @@ export async function dbVendorAvailableSlots28(duration_minutes) {
            WHERE vendor_id = $1 AND booking_date = $2
              AND status NOT IN ('cancelled', 'rejected', 'no_show')`,
           [resolvedVendorId, date]
-        )
+        );
 }
 

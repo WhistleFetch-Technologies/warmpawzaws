@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerOrdersOrderidPharmacystatusGet0(v, dt, po) {
+export async function dbCustomerOrdersOrderidPharmacystatusGet0(orderId, v, dt, po) {
   return await query(`
         SELECT 
           po.*,
@@ -18,7 +18,7 @@ export async function dbCustomerOrdersOrderidPharmacystatusGet0(v, dt, po) {
       `, [orderId]);
 }
 
-export async function dbCustomerOrdersOrderidPharmacystatusGet1() {
+export async function dbCustomerOrdersOrderidPharmacystatusGet1(orderId) {
   return await query(
           `SELECT * FROM orders WHERE id = $1`,
           [orderId]

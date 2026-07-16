@@ -8,7 +8,7 @@ export async function dbCustomerCustomeridBookingsGet1(bookingQuery, params) {
   return await query(bookingQuery, params);
 }
 
-export async function dbCustomerCustomeridBookingsGet2() {
+export async function dbCustomerCustomeridBookingsGet2(customerId) {
   return await query(
         `SELECT 
            COUNT(*) as total,

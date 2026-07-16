@@ -39,7 +39,7 @@ export async function executecustomerPaymentmethodsMethodidDelete(c: Context) {
       const methodId = c.req.param('methodId');
       
       // Soft delete by setting is_active = false
-      await customer_paymentmethods_methodid_deleteRepo.dbCustomerPaymentmethodsMethodidDelete0()
+      await customer_paymentmethods_methodid_deleteRepo.dbCustomerPaymentmethodsMethodidDelete0(methodId)
 
       return c.json({
         success: true,

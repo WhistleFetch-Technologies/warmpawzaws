@@ -18,7 +18,7 @@ export async function executecustomerCustomeridAddressesAddressidDelete(c: Conte
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      await customer_customerid_addresses_addressid_deleteRepo.dbCustomerCustomeridAddressesAddressidDelete2()
+      await customer_customerid_addresses_addressid_deleteRepo.dbCustomerCustomeridAddressesAddressidDelete2(addressId, customer)
 
       return c.json({
         success: true,

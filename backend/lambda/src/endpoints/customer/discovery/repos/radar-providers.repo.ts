@@ -1,13 +1,7 @@
 import { query } from '../../../../database/rds-connection';
 import { sqlVendorOnlineForCustomerDiscovery } from '../../../../lib/discovery-vendor-query';
 
-export async function dbRadarProviders0(
-  lat: number,
-  lng: number,
-  serviceType: string,
-  radius: number,
-  limitCount: number
-) {
+export async function dbRadarProviders0(lat, lng, radius, limitCount, serviceType) {
   return await query(
     `SELECT v.*, r.name as role_name,
      (6371 * acos(

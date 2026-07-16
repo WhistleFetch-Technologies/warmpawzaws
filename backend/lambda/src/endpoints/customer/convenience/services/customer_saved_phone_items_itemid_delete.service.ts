@@ -43,7 +43,7 @@ export async function executecustomerSavedPhoneItemsItemidDelete(c: Context) {
         return c.json({ error: 'Item id is required' }, 400);
       }
 
-      await customer_saved_phone_items_itemid_deleteRepo.dbCustomerSavedPhoneItemsItemidDelete0()
+      await customer_saved_phone_items_itemid_deleteRepo.dbCustomerSavedPhoneItemsItemidDelete0(customerId, id)
 
       return c.json({ success: true, message: 'Item removed from saved' });
     } catch (error: any) {

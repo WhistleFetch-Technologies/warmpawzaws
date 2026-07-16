@@ -69,7 +69,7 @@ export async function executecustomerPaymentsPhonePost(c: Context) {
       const isDefault = Boolean(body.isDefault ?? body.is_default);
 
       if (isDefault) {
-        await customer_payments_phone_postRepo.dbCustomerPaymentsPhonePost0().catch((e) =>
+        await customer_payments_phone_postRepo.dbCustomerPaymentsPhonePost0(customerId).catch((e) =>
           console.warn('[POST /customer/payments] clear defaults:', e?.message)
         );
       }

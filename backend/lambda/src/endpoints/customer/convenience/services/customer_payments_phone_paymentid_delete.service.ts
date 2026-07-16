@@ -39,7 +39,7 @@ export async function executecustomerPaymentsPhonePaymentidDelete(c: Context) {
       }
 
       // Delete the payment method
-      await customer_payments_phone_paymentid_deleteRepo.dbCustomerPaymentsPhonePaymentidDelete0().catch((error) => {
+      await customer_payments_phone_paymentid_deleteRepo.dbCustomerPaymentsPhonePaymentidDelete0(paymentId, customerId).catch((error) => {
         // Expected: notification may fail, but don't fail the main operation
         console.warn('[CUSTOMER-PHONE] Error sending notification:', error instanceof Error ? error.message : 'Unknown error');
       });

@@ -319,7 +319,7 @@ export async function executevendorAvailableSlots(c: Context) {
       }
       if (!isHoliday) {
         try {
-          const holLegacy = await vendor_available_slotsRepo.dbVendorAvailableSlots14().catch(() => ({ rows: [] }));
+          const holLegacy = await vendor_available_slotsRepo.dbVendorAvailableSlots14(resolvedVendorId, date).catch(() => ({ rows: [] }));
           if (holLegacy.rows.length > 0) isHoliday = true;
         } catch {
           // ignore
@@ -398,7 +398,7 @@ export async function executevendorAvailableSlots(c: Context) {
 
         if (staffSlotsResult.rows.length > 0) {
           // Get existing bookings to mark booked slots
-          const existingBookingsResult = await vendor_available_slotsRepo.dbVendorAvailableSlots16().catch(() => ({ rows: [] }));
+          const existingBookingsResult = await vendor_available_slotsRepo.dbVendorAvailableSlots16(resolvedVendorId, date).catch(() => ({ rows: [] }));
 
           // Group bookings by staff
           const bookedByStaff: Record<string, Set<string>> = {};

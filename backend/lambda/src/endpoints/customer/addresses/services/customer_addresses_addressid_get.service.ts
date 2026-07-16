@@ -11,7 +11,7 @@ export async function executecustomerAddressesAddressidGet(c: Context) {
       if (!isValidUUID(addressId)) {
         return c.json({ error: 'Invalid address id', success: false }, 400);
       }
-      const addresses = await customer_addresses_addressid_getRepo.dbCustomerAddressesAddressidGet0().catch(() => ({ rows: [] }));
+      const addresses = await customer_addresses_addressid_getRepo.dbCustomerAddressesAddressidGet0(addressId).catch(() => ({ rows: [] }));
       if (addresses.rows.length === 0) {
         return c.json({ error: 'Address not found' }, 404);
       }

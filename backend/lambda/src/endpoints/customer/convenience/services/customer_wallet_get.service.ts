@@ -68,17 +68,17 @@ export async function executecustomerWalletGet(c: Context) {
       let wallet: any = { balance: 0, currency: 'INR', pending_credits: 0 };
 
       try {
-        const walletResult = await customer_wallet_getRepo.dbCustomerWalletGet0()
+        const walletResult = await customer_wallet_getRepo.dbCustomerWalletGet0(customerId)
 
         if (walletResult.rows && walletResult.rows.length > 0) {
           wallet = walletResult.rows[0];
         } else {
           try {
-            await customer_wallet_getRepo.dbCustomerWalletGet1(balance)
+            await customer_wallet_getRepo.dbCustomerWalletGet1(customerId)
           } catch (insertError) {
             console.log('[WALLET] Could not create wallet (table may not exist)');
           }
-          const afterUpsert = await customer_wallet_getRepo.dbCustomerWalletGet2()
+          const afterUpsert = await customer_wallet_getRepo.dbCustomerWalletGet2(customerId)
           if (afterUpsert.rows && afterUpsert.rows.length > 0) {
             wallet = afterUpsert.rows[0];
           }

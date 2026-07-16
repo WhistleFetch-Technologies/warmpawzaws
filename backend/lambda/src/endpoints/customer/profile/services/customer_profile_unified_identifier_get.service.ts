@@ -59,7 +59,7 @@ export async function executecustomerProfileUnifiedIdentifierGet(c: Context) {
       // Fetch Wallet with better error handling
       let wallet: any = { balance: 0, currency: 'INR', status: 'active' };
       try {
-        const wallets = await customer_profile_unified_identifier_getRepo.dbCustomerProfileUnifiedIdentifierGet1()
+        const wallets = await customer_profile_unified_identifier_getRepo.dbCustomerProfileUnifiedIdentifierGet1(customerId)
         if (wallets.rows && wallets.rows.length > 0) {
           wallet = wallets.rows[0];
         }
@@ -71,7 +71,7 @@ export async function executecustomerProfileUnifiedIdentifierGet(c: Context) {
       // Fetch Addresses with better error handling
       let addresses: any = { rows: [] };
       try {
-        addresses = await customer_profile_unified_identifier_getRepo.dbCustomerProfileUnifiedIdentifierGet2()
+        addresses = await customer_profile_unified_identifier_getRepo.dbCustomerProfileUnifiedIdentifierGet2(customerId)
       } catch (error: any) {
         console.warn('Error fetching addresses (using empty):', error.message);
         // Continue with empty addresses
@@ -80,7 +80,7 @@ export async function executecustomerProfileUnifiedIdentifierGet(c: Context) {
       // Fetch Bookings with better error handling
       let bookings: any = { rows: [] };
       try {
-        bookings = await customer_profile_unified_identifier_getRepo.dbCustomerProfileUnifiedIdentifierGet3()
+        bookings = await customer_profile_unified_identifier_getRepo.dbCustomerProfileUnifiedIdentifierGet3(customerId)
       } catch (error: any) {
         console.warn('Error fetching bookings (using empty):', error.message);
         // Continue with empty bookings
@@ -89,7 +89,7 @@ export async function executecustomerProfileUnifiedIdentifierGet(c: Context) {
       // Fetch Orders with better error handling
       let orders: any = { rows: [] };
       try {
-        orders = await customer_profile_unified_identifier_getRepo.dbCustomerProfileUnifiedIdentifierGet4()
+        orders = await customer_profile_unified_identifier_getRepo.dbCustomerProfileUnifiedIdentifierGet4(customerId)
       } catch (error: any) {
         console.warn('Error fetching orders (using empty):', error.message);
         // Continue with empty orders

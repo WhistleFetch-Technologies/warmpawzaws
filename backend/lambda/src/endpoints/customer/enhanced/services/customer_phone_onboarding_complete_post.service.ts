@@ -41,7 +41,7 @@ export async function executecustomerPhoneOnboardingCompletePost(c: Context) {
       const { journeyType } = body;
 
       // Get customer by phone
-      const customers = await customer_phone_onboarding_complete_postRepo.dbCustomerPhoneOnboardingCompletePost0()
+      const customers = await customer_phone_onboarding_complete_postRepo.dbCustomerPhoneOnboardingCompletePost0(phone)
       if (customers.length === 0) {
         return c.json({ error: 'Customer not found' }, 404);
       }

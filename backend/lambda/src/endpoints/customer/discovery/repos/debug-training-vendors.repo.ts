@@ -122,7 +122,7 @@ export async function dbDebugTrainingVendors3(text, specialization_id, name) {
       `)
 }
 
-export async function dbDebugTrainingVendors4(text, v, vsp, sm, vsp2) {
+export async function dbDebugTrainingVendors4(specKeys, specIlike, text, v, vsp, sm, vsp2) {
   return await query(`
         SELECT
           v.id,
@@ -167,6 +167,6 @@ export async function dbDebugTrainingVendors4(text, v, vsp, sm, vsp2) {
         FROM vendors v
         WHERE LOWER(v.business_name) LIKE '%wrong%' OR LOWER(v.business_name) LIKE '%training center%'
         LIMIT 10
-      `, [specKeys, specIlike])
+      `, [specKeys, specIlike]);
 }
 

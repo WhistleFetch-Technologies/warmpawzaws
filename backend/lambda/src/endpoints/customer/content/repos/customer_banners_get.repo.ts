@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerBannersGet0(text, title, subtitle, image_url, cta_text, cta_link, type, display_order, metadata, start_date, now, limit, customerState) {
+export async function dbCustomerBannersGet0(bannerType, now, limit, customerState, customerCity, text, title, subtitle, image_url, cta_text, cta_link, type, display_order, metadata, start_date) {
   return await query(
         `SELECT 
           id,
@@ -44,6 +44,6 @@ export async function dbCustomerBannersGet0(text, title, subtitle, image_url, ct
         ORDER BY display_order ASC, created_at DESC
         LIMIT $3`,
         [bannerType, now, limit, customerState, customerCity]
-      )
+      );
 }
 

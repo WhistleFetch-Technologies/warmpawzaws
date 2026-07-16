@@ -13,7 +13,7 @@ export async function executerelocationBookPost(c: Context) {
       }
 
       // Get quote details
-      const quotes = await relocation_book_postRepo.dbRelocationBookPost0().catch(() => ({ rows: [] }));
+      const quotes = await relocation_book_postRepo.dbRelocationBookPost0(quoteId).catch(() => ({ rows: [] }));
       if (quotes.rows.length === 0) {
         return c.json({ error: 'Quote not found' }, 404);
       }

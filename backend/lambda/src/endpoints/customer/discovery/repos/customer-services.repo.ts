@@ -4,7 +4,7 @@ export async function dbCustomerServices0(vendorQuery, params) {
   return await query(vendorQuery, params);
 }
 
-export async function dbCustomerServices1(vs, s, sc, params) {
+export async function dbCustomerServices1(styleClause, vs, s, sc, params) {
   return await query(
             `SELECT vs.id as vs_id, vs.service_id, vs.service_name as vs_service_name, vs.custom_price, vs.custom_duration, vs.service_style, vs.category,
                     s.id as s_id, s.name as s_name, s.price as s_price, s.duration_minutes as s_duration,

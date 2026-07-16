@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbServicesByStyle0(text) {
+export async function dbServicesByStyle0(strictFromText, text) {
   return await query(
           `SELECT id::text FROM service_categories
            WHERE COALESCE(is_active, true) = true
@@ -9,7 +9,7 @@ export async function dbServicesByStyle0(text) {
                OR LOWER(TRIM(name)) = ANY($1::text[])
              )`,
           [strictFromText]
-        )
+        );
 }
 
 export async function dbServicesByStyle1(text) {

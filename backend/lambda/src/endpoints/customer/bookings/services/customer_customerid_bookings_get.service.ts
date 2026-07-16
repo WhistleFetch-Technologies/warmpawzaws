@@ -88,7 +88,7 @@ export async function executecustomerCustomeridBookingsGet(c: Context) {
         bookings.rows.map((b: any) => ({ id: b.id, total_amount: b.total_amount }))
       );
 
-      const statsQuery = await customer_customerid_bookings_getRepo.dbCustomerCustomeridBookingsGet2()
+      const statsQuery = await customer_customerid_bookings_getRepo.dbCustomerCustomeridBookingsGet2(customerId)
 
       const stats = statsQuery.rows[0];
 

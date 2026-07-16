@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbAdoptionPetsPetidGet0(v, p) {
+export async function dbAdoptionPetsPetidGet0(petId, v, p) {
   return await query(`
         SELECT 
           p.*,
@@ -18,7 +18,7 @@ export async function dbAdoptionPetsPetidGet0(v, p) {
       `, [petId]);
 }
 
-export async function dbAdoptionPetsPetidGet1(p, pet) {
+export async function dbAdoptionPetsPetidGet1(petId, p, pet) {
   return await query(`
         SELECT p.id, p.name, p.breed, p.age, p.photos, p.adoption_fee
         FROM pets p
@@ -26,6 +26,6 @@ export async function dbAdoptionPetsPetidGet1(p, pet) {
         AND p.id != $2
         AND p.status = 'available'
         LIMIT 4
-      `, [pet.pet_type, petId])
+      `, [pet.pet_type, petId]);
 }
 
