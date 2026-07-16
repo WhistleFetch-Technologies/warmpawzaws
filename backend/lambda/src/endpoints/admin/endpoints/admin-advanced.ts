@@ -264,10 +264,27 @@ class GetVendorTypesHandler extends BaseHandler {
   }
 }
 
+/** Canonical delivery styles — no DB table; matches admin promotion catalog defaults. */
+const CANONICAL_SERVICE_STYLES = [
+  { id: 'at_home', value: 'at_home', label: 'At home', name: 'At home' },
+  { id: 'at_center', value: 'at_center', label: 'At center', name: 'At center' },
+  { id: 'tele', value: 'tele', label: 'Tele consult', name: 'Tele consult' },
+];
+
 class GetServiceStylesHandler extends BaseHandler {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const serviceStyles = await select('service_styles', {});
-    return this.success({ serviceStyles });
+  async handle(_context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      const serviceStyles = await select('service_styles', {});
+      if (Array.isArray(serviceStyles) && serviceStyles.length > 0) {
+        return this.success({ serviceStyles });
+      }
+    } catch (err: unknown) {
+      const msg = String((err as { message?: string })?.message ?? err);
+      if (!msg.includes('service_styles') && !msg.includes('does not exist')) {
+        console.warn('[admin/catalog/service-styles] unexpected error, using canonical fallback', msg);
+      }
+    }
+    return this.success({ serviceStyles: CANONICAL_SERVICE_STYLES });
   }
 }
 

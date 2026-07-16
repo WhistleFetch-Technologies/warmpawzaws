@@ -272,6 +272,63 @@ export function isEcommerceAdminPromotionDomain(body: Record<string, unknown>): 
   return resolvePersistedDiscountDomain(body, 'SERVICE') === 'ECOMMERCE';
 }
 
+/**
+ * Strip admin/wizard camelCase aliases and ecommerce-only fields before INSERT/UPDATE on
+ * `promotions` (canonical column is min_order_amount — NOT min_order_value).
+ */
+export function sanitizePromotionsTablePayload(
+  data: Record<string, unknown>
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = { ...data };
+
+  if (payload.min_order_value !== undefined && payload.min_order_amount === undefined) {
+    payload.min_order_amount = payload.min_order_value;
+  }
+  delete payload.min_order_value;
+  delete payload.minOrderAmount;
+  delete payload.min_order_amount_alias;
+
+  // Wizard / API aliases that are not promotions columns
+  for (const key of [
+    'valid_from',
+    'valid_until',
+    'validFrom',
+    'validUntil',
+    'startDate',
+    'endDate',
+    'discountType',
+    'discountValue',
+    'maxDiscount',
+    'maxDiscountAmount',
+    'usageLimit',
+    'usageLimitPerUser',
+    'isActive',
+    'active',
+    'targetAudience',
+    'target_audience',
+    'promotionType',
+    'type',
+    'title',
+    'selected_targets',
+    'selectedTargets',
+    'target_scopes',
+    'targetScopes',
+    'applicable_category_ids',
+    'applicable_service_ids',
+    'applicable_products',
+    'applicable_categories',
+    'vendor_ids',
+    'listingOwnershipScope',
+    'max_discount',
+    'surface',
+    'domain',
+  ]) {
+    delete payload[key];
+  }
+
+  return payload;
+}
+
 /** Map admin wizard body → `ecommerce_admin_promotions` row (canonical shop promos). */
 export function buildEcommerceAdminPromotionRecord(
   body: Record<string, unknown>,
