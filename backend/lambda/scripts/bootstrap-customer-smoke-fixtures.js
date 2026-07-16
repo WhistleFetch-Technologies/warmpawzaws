@@ -3,26 +3,27 @@
  * Bootstrap smoke fixtures from dev RDS (read-only SELECTs) + optional UAT auth.
  * Output: scripts/_customer-smoke-fixtures.json (do not commit)
  *
- * Required env (typical Gate 2 run from RDS-capable host):
+ * Required env (typical Gate 2 run):
  *   SMOKE_BASE_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com
  *   ENVIRONMENT=dev
+ *   SMOKE_REQUIRE_RDS=1
  *
- * DB (one of):
- *   DATABASE_URL=postgresql://...
- *   or DB_HOST + DB_USER + DB_PASSWORD (+ DB_NAME)
- *   or AWS credentials + Secrets Manager (dev RDS master secret default)
+ * DB access (preferred → fallback):
+ *   1) RDS Data API ExecuteStatement (works without VPC; default when TCP unavailable)
+ *      SMOKE_USE_RDS_DATA_API=1  (default: auto — try Data API first)
+ *   2) DATABASE_URL / DB_HOST+creds / Secrets Manager + pg TCP
  *
  * Optional:
  *   SMOKE_CUSTOMER_PHONE=9845299005
- *   SMOKE_CUSTOMER_ID / SMOKE_BOOKING_ID / SMOKE_ORDER_ID / SMOKE_VENDOR_ID / ...
- *   SMOKE_REQUIRE_RDS=1  — exit 1 if RDS unavailable or customer not found
+ *   SMOKE_CUSTOMER_ID / SMOKE_BOOKING_ID / ...
  *
  * Usage:
  *   ENVIRONMENT=dev SMOKE_BASE_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com \
- *     node scripts/bootstrap-customer-smoke-fixtures.js
+ *     SMOKE_REQUIRE_RDS=1 node scripts/bootstrap-customer-smoke-fixtures.js
  */
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const { Pool } = require('pg');
 
 const OUT = path.join(__dirname, '_customer-smoke-fixtures.json');
@@ -33,6 +34,10 @@ const API_BASE =
   process.env.SMOKE_BASE_URL ||
   'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 const REQUIRE_RDS = process.env.SMOKE_REQUIRE_RDS === '1' || process.env.SMOKE_REQUIRE_RDS === 'true';
+const FORCE_DATA_API =
+  process.env.SMOKE_USE_RDS_DATA_API === '1' ||
+  process.env.SMOKE_USE_RDS_DATA_API === 'true' ||
+  process.env.SMOKE_USE_RDS_DATA_API !== '0';
 
 const PLACEHOLDER = {
   bookingId: '00000000-0000-0000-0000-000000000001',
@@ -63,12 +68,158 @@ const ARTICLE_CATEGORIES = [
   'general',
 ];
 
+function rowsFromDataApi(result) {
+  const cols = (result.columnMetadata || []).map((c) => c.name);
+  return (result.records || []).map((rec) => {
+    const row = {};
+    rec.forEach((field, i) => {
+      const key = cols[i] || `col_${i}`;
+      if (field == null || field.isNull) row[key] = null;
+      else if (field.stringValue !== undefined) row[key] = field.stringValue;
+      else if (field.longValue !== undefined) row[key] = field.longValue;
+      else if (field.doubleValue !== undefined) row[key] = field.doubleValue;
+      else if (field.booleanValue !== undefined) row[key] = field.booleanValue;
+      else if (field.arrayValue?.stringValues) row[key] = field.arrayValue.stringValues;
+      else row[key] = null;
+    });
+    return row;
+  });
+}
+
+function toDataApiParams(sql, params = []) {
+  const parameters = [];
+  const seen = new Set();
+  const namedSql = sql.replace(/\$(\d+)/g, (_, num) => {
+    const name = `p${num}`;
+    const idx = parseInt(num, 10) - 1;
+    if (!seen.has(name) && idx < params.length) {
+      seen.add(name);
+      const v = params[idx];
+      if (v === null || v === undefined) {
+        parameters.push({ name, value: { isNull: true } });
+      } else if (typeof v === 'number' && Number.isInteger(v)) {
+        parameters.push({ name, value: { longValue: v } });
+      } else if (typeof v === 'number') {
+        parameters.push({ name, value: { doubleValue: v } });
+      } else if (typeof v === 'boolean') {
+        parameters.push({ name, value: { booleanValue: v } });
+      } else if (Array.isArray(v)) {
+        parameters.push({
+          name,
+          value: { arrayValue: { stringValues: v.map(String) } },
+        });
+      } else {
+        parameters.push({ name, value: { stringValue: String(v) } });
+      }
+    }
+    return `:${name}`;
+  });
+  return { sql: namedSql, parameters };
+}
+
+async function getDataApiQuery() {
+  let RDSDataClient;
+  let ExecuteStatementCommand;
+  let useAwsCli = false;
+  try {
+    ({ RDSDataClient, ExecuteStatementCommand } = require('@aws-sdk/client-rds-data'));
+  } catch {
+    useAwsCli = true;
+  }
+
+  const clusterId = `warmpawz-${ENVIRONMENT}-cluster`;
+  const clusterInfo = JSON.parse(
+    execSync(
+      `aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --output json`,
+      { encoding: 'utf8' }
+    )
+  );
+  const cluster = clusterInfo.DBClusters?.[0];
+  if (!cluster) throw new Error(`RDS cluster not found: ${clusterId}`);
+  if (!cluster.HttpEndpointEnabled) {
+    throw new Error(`RDS Data API (HttpEndpoint) not enabled on ${clusterId}`);
+  }
+
+  const secretName =
+    ENVIRONMENT === 'prod'
+      ? 'warmpawz-prod-rds-master-20260207201049162400000001'
+      : process.env.DB_SECRET_NAME ||
+        'warmpawz-dev-rds-master-20260106164510791100000002';
+
+  let secretArn = cluster.MasterUserSecret?.SecretArn;
+  if (!secretArn) {
+    const describeSecret = JSON.parse(
+      execSync(
+        `aws secretsmanager describe-secret --secret-id "${secretName}" --region ${REGION} --output json`,
+        { encoding: 'utf8' }
+      )
+    );
+    secretArn = describeSecret.ARN;
+  }
+
+  const meta = {
+    resourceArn: cluster.DBClusterArn,
+    secretArn,
+    database: cluster.DatabaseName || process.env.DB_NAME || 'warmpawz',
+  };
+  const client = useAwsCli ? null : new RDSDataClient({ region: REGION });
+  const { execFileSync } = require('child_process');
+
+  console.log(
+    `  RDS Data API: ${clusterId} (${meta.database}) via ${useAwsCli ? 'aws-cli' : 'sdk'}`
+  );
+
+  return async function dataApiQuery(sql, params = []) {
+    try {
+      const { sql: namedSql, parameters } = toDataApiParams(sql, params);
+      let result;
+      if (useAwsCli) {
+        const args = [
+          'rds-data',
+          'execute-statement',
+          '--resource-arn',
+          meta.resourceArn,
+          '--secret-arn',
+          meta.secretArn,
+          '--database',
+          meta.database,
+          '--sql',
+          namedSql,
+          '--include-result-metadata',
+          '--region',
+          REGION,
+          '--output',
+          'json',
+        ];
+        if (parameters.length) {
+          args.push('--parameters', JSON.stringify(parameters));
+        }
+        result = JSON.parse(execFileSync('aws', args, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }));
+      } else {
+        result = await client.send(
+          new ExecuteStatementCommand({
+            ...meta,
+            sql: namedSql,
+            parameters: parameters.length ? parameters : undefined,
+            includeResultMetadata: true,
+          })
+        );
+      }
+      return { rows: rowsFromDataApi(result) };
+    } catch (e) {
+      console.warn(`  query skipped: ${e.message.split('\n')[0]}`);
+      return { rows: [] };
+    }
+  };
+}
+
 async function getPool() {
   if (process.env.DATABASE_URL) {
     return new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: { rejectUnauthorized: false },
       max: 2,
+      connectionTimeoutMillis: 8000,
     });
   }
 
@@ -81,6 +232,7 @@ async function getPool() {
       password: process.env.DB_PASSWORD,
       ssl: { rejectUnauthorized: false },
       max: 2,
+      connectionTimeoutMillis: 8000,
     });
   }
 
@@ -103,16 +255,17 @@ async function getPool() {
       password: creds.password,
       ssl: { rejectUnauthorized: false },
       max: 2,
+      connectionTimeoutMillis: 8000,
     });
   } catch (e) {
-    console.warn('DB connection unavailable:', e.message);
+    console.warn('DB pool unavailable:', e.message);
     return null;
   }
 }
 
-async function q(client, sql, params = []) {
+async function q(queryFn, sql, params = []) {
   try {
-    return await client.query(sql, params);
+    return await queryFn(sql, params);
   } catch (e) {
     console.warn(`  query skipped: ${e.message.split('\n')[0]}`);
     return { rows: [] };
@@ -161,7 +314,7 @@ function firstId(rows, ...keys) {
   return null;
 }
 
-async function loadFromRds(pool, phone) {
+async function loadFromRds(queryFn, phone) {
   const out = {
     rdsOk: false,
     customerId: null,
@@ -184,238 +337,300 @@ async function loadFromRds(pool, phone) {
     sources: {},
   };
 
-  const client = await pool.connect();
-  try {
-    out.rdsOk = true;
+  out.rdsOk = true;
 
-    const cust = await q(
-      client,
-      `SELECT id::text AS id, phone FROM customers
-       WHERE regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') LIKE $1
+  const cust = await q(
+    queryFn,
+    `SELECT id::text AS id, phone FROM customers
+     WHERE regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') LIKE $1
+     ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+    [`%${phone}%`]
+  );
+  out.customerId = firstId(cust.rows, 'id') || process.env.SMOKE_CUSTOMER_ID || null;
+  out.customerPhone = cust.rows[0]?.phone || phone;
+  out.sources.customer = !!out.customerId;
+
+  if (out.customerId) {
+    const booking = await q(
+      queryFn,
+      `SELECT id::text AS id FROM bookings
+       WHERE customer_id = $1::uuid
        ORDER BY created_at DESC NULLS LAST LIMIT 1`,
-      [`%${phone}%`]
+      [out.customerId]
     );
-    out.customerId = firstId(cust.rows, 'id') || process.env.SMOKE_CUSTOMER_ID || null;
-    out.customerPhone = cust.rows[0]?.phone || phone;
-    out.sources.customer = !!out.customerId;
+    out.bookingId = firstId(booking.rows, 'id');
+    out.sources.booking = !!out.bookingId;
 
-    if (out.customerId) {
-      const booking = await q(
-        client,
-        `SELECT id::text AS id FROM bookings
-         WHERE customer_id = $1::uuid
-         ORDER BY created_at DESC NULLS LAST LIMIT 1`,
-        [out.customerId]
-      );
-      out.bookingId = firstId(booking.rows, 'id');
-      out.sources.booking = !!out.bookingId;
+    // Appointments routes use bookings table (appointmentId = booking id)
+    out.appointmentId = out.bookingId;
+    out.sources.appointment = !!out.appointmentId;
 
-      // Appointments routes use bookings table (appointmentId = booking id)
-      out.appointmentId = out.bookingId;
-      out.sources.appointment = !!out.appointmentId;
-
-      const order = await q(
-        client,
-        `SELECT id::text AS id FROM orders
-         WHERE customer_id = $1::uuid
-         ORDER BY created_at DESC NULLS LAST LIMIT 1`,
-        [out.customerId]
-      );
-      out.orderId = firstId(order.rows, 'id');
-      out.sources.order = !!out.orderId;
-
-      const address = await q(
-        client,
-        `SELECT id::text AS id FROM customer_addresses
-         WHERE customer_id = $1::uuid
-         ORDER BY created_at DESC NULLS LAST LIMIT 1`,
-        [out.customerId]
-      );
-      out.addressId = firstId(address.rows, 'id');
-      out.sources.address = !!out.addressId;
-
-      const pet = await q(
-        client,
-        `SELECT id::text AS id FROM pets
-         WHERE customer_id = $1::uuid
-         ORDER BY created_at DESC NULLS LAST LIMIT 1`,
-        [out.customerId]
-      );
-      out.petId = firstId(pet.rows, 'id');
-      out.sources.pet = !!out.petId;
-
-      const cart = await q(
-        client,
-        `SELECT id::text AS id FROM cart_items
-         WHERE customer_id = $1::uuid
-         ORDER BY created_at DESC NULLS LAST LIMIT 1`,
-        [out.customerId]
-      );
-      out.itemId = firstId(cart.rows, 'id');
-      out.sources.cartItem = !!out.itemId;
-
-      if (!out.itemId) {
-        const wish = await q(
-          client,
-          `SELECT id::text AS id FROM customer_wishlist
-           WHERE customer_id = $1::uuid
-           ORDER BY created_at DESC NULLS LAST LIMIT 1`,
-          [out.customerId]
-        );
-        out.itemId = firstId(wish.rows, 'id');
-        out.sources.wishlistItem = !!out.itemId;
-      }
-
-      const pay = await q(
-        client,
-        `SELECT id::text AS id FROM customer_payment_methods
-         WHERE customer_id = $1::uuid
-         ORDER BY created_at DESC NULLS LAST LIMIT 1`,
-        [out.customerId]
-      );
-      out.paymentId = firstId(pay.rows, 'id');
-      out.sources.payment = !!out.paymentId;
-
-      const matchReq = await q(
-        client,
-        `SELECT id::text AS id FROM mating_requests
-         WHERE from_customer_id = $1::uuid OR to_customer_id = $1::uuid
-         ORDER BY created_at DESC NULLS LAST LIMIT 1`,
-        [out.customerId]
-      );
-      out.requestId = firstId(matchReq.rows, 'id');
-      out.sources.matingRequest = !!out.requestId;
-    }
-
-    // Vendor with at least one discoverable service (for slots / facility / search)
-    const vendor = await q(
-      client,
-      `SELECT v.id::text AS id
-       FROM vendors v
-       WHERE COALESCE(v.is_active, true) = true
-         AND (
-           LOWER(TRIM(COALESCE(v.status::text, ''))) IN ('approved', 'active', 'activated')
-           OR (LOWER(TRIM(COALESCE(v.status::text, ''))) = 'pending'
-               AND LOWER(TRIM(COALESCE(v.vendor_type::text, ''))) = 'solo')
-         )
-         AND EXISTS (
-           SELECT 1 FROM vendor_services vs
-           WHERE vs.vendor_id = v.id
-             AND COALESCE(vs.is_enabled, true) = true
-             AND (
-               vs.publish_status IN ('published', 'auto_published')
-               OR vs.publish_status IS NULL
-             )
-         )
-       ORDER BY v.created_at DESC NULLS LAST
-       LIMIT 1`
+    const order = await q(
+      queryFn,
+      `SELECT id::text AS id FROM orders
+       WHERE customer_id = $1::uuid
+       ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+      [out.customerId]
     );
-    out.vendorId = firstId(vendor.rows, 'id');
-    out.sources.vendorWithServices = !!out.vendorId;
+    out.orderId = firstId(order.rows, 'id');
+    out.sources.order = !!out.orderId;
+  }
 
-    if (!out.vendorId) {
-      const anyVendor = await q(
-        client,
-        `SELECT id::text AS id FROM vendors
-         WHERE COALESCE(is_active, true) = true
-         ORDER BY created_at DESC NULLS LAST LIMIT 1`
-      );
-      out.vendorId = firstId(anyVendor.rows, 'id');
-      out.sources.vendorFallback = !!out.vendorId;
-    }
-
-    if (out.vendorId) {
-      const svc = await q(
-        client,
-        `SELECT id::text AS id FROM vendor_services
-         WHERE vendor_id = $1::uuid
-           AND COALESCE(is_enabled, true) = true
-         ORDER BY created_at DESC NULLS LAST LIMIT 1`,
-        [out.vendorId]
-      );
-      out.serviceId = firstId(svc.rows, 'id');
-      out.sources.service = !!out.serviceId;
-    }
-
-    // Adoption / shelter pet (vendor-owned, available)
-    const adoptionPet = await q(
-      client,
-      `SELECT p.id::text AS id, p.vendor_id::text AS vendor_id
-       FROM pets p
-       WHERE p.vendor_id IS NOT NULL
-         AND (
-           LOWER(TRIM(COALESCE(p.status::text, ''))) IN ('available', 'active')
-           OR LOWER(TRIM(COALESCE(p.adoption_status::text, ''))) IN ('available', 'active')
-         )
-       ORDER BY p.created_at DESC NULLS LAST
-       LIMIT 1`
-    );
-    out.adoptionPetId = firstId(adoptionPet.rows, 'id');
-    out.sources.adoptionPet = !!out.adoptionPetId;
-    // :petId smoke param: customer pet first; fall back to shelter/adoption listing
-    if (!out.petId && out.adoptionPetId) {
-      out.petId = out.adoptionPetId;
-    }
-
-    // Content page slug (any published) — used by /customer/content/pages/:slug
-    const pageSlug = await q(
-      client,
-      `SELECT slug FROM content_pages
-       WHERE is_published = true
-         AND TRIM(COALESCE(slug, '')) <> ''
-       ORDER BY updated_at DESC NULLS LAST
-       LIMIT 1`
-    );
-    out.slug = pageSlug.rows[0]?.slug ? String(pageSlug.rows[0].slug) : null;
-    out.sources.contentSlug = !!out.slug;
-
-    // Article-visible category slug — preferred for /customer/articles/:slug when available
-    const articleSlug = await q(
-      client,
-      `SELECT slug FROM content_pages
-       WHERE is_published = true
-         AND TRIM(COALESCE(slug, '')) <> ''
-         AND LOWER(TRIM(COALESCE(category, ''))) = ANY($1::text[])
-       ORDER BY updated_at DESC NULLS LAST
-       LIMIT 1`,
-      [ARTICLE_CATEGORIES]
-    );
-    out.articleSlug = articleSlug.rows[0]?.slug ? String(articleSlug.rows[0].slug) : null;
-    out.sources.articleSlug = !!out.articleSlug;
-    if (out.articleSlug) {
-      // Smoke harness has a single :slug param — prefer article-visible slug when present
-      out.slug = out.articleSlug;
-    }
-
-    const quote = await q(
-      client,
-      `SELECT id::text AS id FROM relocation_quotes
+  // Any-row fallbacks when smoke phone customer has no booking/order yet
+  if (!out.bookingId) {
+    const anyBooking = await q(
+      queryFn,
+      `SELECT id::text AS id, customer_id::text AS customer_id FROM bookings
        ORDER BY created_at DESC NULLS LAST LIMIT 1`
     );
-    out.quoteId = firstId(quote.rows, 'id');
-    out.sources.quote = !!out.quoteId;
+    out.bookingId = firstId(anyBooking.rows, 'id');
+    out.appointmentId = out.bookingId;
+    out.sources.bookingAny = !!out.bookingId;
+    out.sources.appointment = !!out.appointmentId;
+  }
 
-    const app = await q(
-      client,
-      `SELECT id::text AS id FROM adoption_applications
-       ORDER BY COALESCE(submitted_at, created_at) DESC NULLS LAST LIMIT 1`
+  if (!out.orderId) {
+    const anyOrder = await q(
+      queryFn,
+      `SELECT id::text AS id FROM orders
+       ORDER BY created_at DESC NULLS LAST LIMIT 1`
     );
-    out.applicationId = firstId(app.rows, 'id');
-    out.sources.application = !!out.applicationId;
+    out.orderId = firstId(anyOrder.rows, 'id');
+    out.sources.orderAny = !!out.orderId;
+  }
 
-    if (!out.requestId) {
-      const anyReq = await q(
-        client,
-        `SELECT id::text AS id FROM mating_requests
-         ORDER BY created_at DESC NULLS LAST LIMIT 1`
+  if (out.customerId) {
+    const address = await q(
+      queryFn,
+      `SELECT id::text AS id FROM customer_addresses
+       WHERE customer_id = $1::uuid
+       ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+      [out.customerId]
+    );
+    out.addressId = firstId(address.rows, 'id');
+    out.sources.address = !!out.addressId;
+
+    const pet = await q(
+      queryFn,
+      `SELECT id::text AS id FROM pets
+       WHERE customer_id = $1::uuid
+       ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+      [out.customerId]
+    );
+    out.petId = firstId(pet.rows, 'id');
+    out.sources.pet = !!out.petId;
+
+    const cart = await q(
+      queryFn,
+      `SELECT id::text AS id FROM cart_items
+       WHERE customer_id = $1::uuid
+       ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+      [out.customerId]
+    );
+    out.itemId = firstId(cart.rows, 'id');
+    out.sources.cartItem = !!out.itemId;
+
+    if (!out.itemId) {
+      const wish = await q(
+        queryFn,
+        `SELECT id::text AS id FROM customer_wishlist
+         WHERE customer_id = $1::uuid
+         ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+        [out.customerId]
       );
-      out.requestId = firstId(anyReq.rows, 'id');
-      out.sources.matingRequestAny = !!out.requestId;
+      out.itemId = firstId(wish.rows, 'id');
+      out.sources.wishlistItem = !!out.itemId;
     }
 
-    return out;
-  } finally {
+    const pay = await q(
+      queryFn,
+      `SELECT id::text AS id FROM customer_payment_methods
+       WHERE customer_id = $1::uuid
+       ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+      [out.customerId]
+    );
+    out.paymentId = firstId(pay.rows, 'id');
+    out.sources.payment = !!out.paymentId;
+
+    const matchReq = await q(
+      queryFn,
+      `SELECT id::text AS id FROM mating_requests
+       WHERE from_customer_id = $1::uuid OR to_customer_id = $1::uuid
+       ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+      [out.customerId]
+    );
+    out.requestId = firstId(matchReq.rows, 'id');
+    out.sources.matingRequest = !!out.requestId;
+  }
+
+  // Vendor with at least one discoverable service (for slots / facility / search)
+  const vendor = await q(
+    queryFn,
+    `SELECT v.id::text AS id
+     FROM vendors v
+     WHERE COALESCE(v.is_active, true) = true
+       AND (
+         LOWER(TRIM(COALESCE(v.status::text, ''))) IN ('approved', 'active', 'activated')
+         OR (LOWER(TRIM(COALESCE(v.status::text, ''))) = 'pending'
+             AND LOWER(TRIM(COALESCE(v.vendor_type::text, ''))) = 'solo')
+       )
+       AND EXISTS (
+         SELECT 1 FROM vendor_services vs
+         WHERE vs.vendor_id = v.id
+           AND COALESCE(vs.is_enabled, true) = true
+           AND (
+             vs.publish_status IN ('published', 'auto_published')
+             OR vs.publish_status IS NULL
+           )
+       )
+     ORDER BY v.created_at DESC NULLS LAST
+     LIMIT 1`
+  );
+  out.vendorId = firstId(vendor.rows, 'id');
+  out.sources.vendorWithServices = !!out.vendorId;
+
+  if (!out.vendorId) {
+    const anyVendor = await q(
+      queryFn,
+      `SELECT id::text AS id FROM vendors
+       WHERE COALESCE(is_active, true) = true
+       ORDER BY created_at DESC NULLS LAST LIMIT 1`
+    );
+    out.vendorId = firstId(anyVendor.rows, 'id');
+    out.sources.vendorFallback = !!out.vendorId;
+  }
+
+  if (out.vendorId) {
+    const svc = await q(
+      queryFn,
+      `SELECT id::text AS id FROM vendor_services
+       WHERE vendor_id = $1::uuid
+         AND COALESCE(is_enabled, true) = true
+       ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+      [out.vendorId]
+    );
+    out.serviceId = firstId(svc.rows, 'id');
+    out.sources.service = !!out.serviceId;
+  }
+
+  // Adoption listing id (dev schema: adoption_listings, no pets.vendor_id)
+  const adoptionPet = await q(
+    queryFn,
+    `SELECT id::text AS id
+     FROM adoption_listings
+     WHERE LOWER(TRIM(COALESCE(status::text, ''))) IN ('available', 'active', 'published')
+        OR status IS NULL
+     ORDER BY created_at DESC NULLS LAST
+     LIMIT 1`
+  );
+  out.adoptionPetId = firstId(adoptionPet.rows, 'id');
+  out.sources.adoptionPet = !!out.adoptionPetId;
+  // Keep customer petId for pet routes; adoptionPetId is separate for specialized smoke
+  if (!out.petId && out.adoptionPetId) {
+    out.petId = out.adoptionPetId;
+  }
+
+  // Content page slug (any published) — used by /customer/content/pages/:slug
+  const pageSlug = await q(
+    queryFn,
+    `SELECT slug FROM content_pages
+     WHERE is_published = true
+       AND TRIM(COALESCE(slug, '')) <> ''
+     ORDER BY updated_at DESC NULLS LAST
+     LIMIT 1`
+  );
+  out.slug = pageSlug.rows[0]?.slug ? String(pageSlug.rows[0].slug) : null;
+  out.sources.contentSlug = !!out.slug;
+
+  // Article-visible category slug — inline IN list (Data API friendly; no array bind)
+  const catList = ARTICLE_CATEGORIES.map((c) => `'${c.replace(/'/g, "''")}'`).join(',');
+  const articleSlug = await q(
+    queryFn,
+    `SELECT slug FROM content_pages
+     WHERE is_published = true
+       AND TRIM(COALESCE(slug, '')) <> ''
+       AND LOWER(TRIM(COALESCE(category, ''))) IN (${catList})
+     ORDER BY updated_at DESC NULLS LAST
+     LIMIT 1`
+  );
+  out.articleSlug = articleSlug.rows[0]?.slug ? String(articleSlug.rows[0].slug) : null;
+  out.sources.articleSlug = !!out.articleSlug;
+  if (out.articleSlug) {
+    // Smoke harness has a single :slug param — prefer article-visible slug when present
+    out.slug = out.articleSlug;
+  }
+
+  // relocation_quotes may be absent on some envs; try pharmacy_quotes as soft fallback id only
+  const quote = await q(
+    queryFn,
+    `SELECT id::text AS id FROM pharmacy_quotes
+     ORDER BY created_at DESC NULLS LAST LIMIT 1`
+  );
+  out.quoteId = firstId(quote.rows, 'id');
+  out.sources.quote = !!out.quoteId;
+
+  const app = await q(
+    queryFn,
+    `SELECT id::text AS id FROM adoption_applications
+     ORDER BY COALESCE(submitted_at, created_at) DESC NULLS LAST LIMIT 1`
+  );
+  out.applicationId = firstId(app.rows, 'id');
+  out.sources.application = !!out.applicationId;
+
+  if (!out.requestId) {
+    const anyReq = await q(
+      queryFn,
+      `SELECT id::text AS id FROM mating_requests
+       ORDER BY created_at DESC NULLS LAST LIMIT 1`
+    );
+    out.requestId = firstId(anyReq.rows, 'id');
+    out.sources.matingRequestAny = !!out.requestId;
+  }
+
+  return out;
+}
+
+async function resolveQueryFn() {
+  // Prefer RDS Data API (no VPC) unless explicitly disabled
+  if (FORCE_DATA_API) {
+    try {
+      const dataApi = await getDataApiQuery();
+      return { queryFn: dataApi, mode: 'rds-data-api', cleanup: null };
+    } catch (e) {
+      console.warn('RDS Data API unavailable:', e.message.split('\n')[0]);
+      if (process.env.SMOKE_USE_RDS_DATA_API === '1' || process.env.SMOKE_USE_RDS_DATA_API === 'true') {
+        throw e;
+      }
+    }
+  }
+
+  const pool = await getPool();
+  if (!pool) return { queryFn: null, mode: null, cleanup: null };
+
+  // Probe TCP with short timeout — avoid hanging Gate 2 on laptop without VPC
+  try {
+    const client = await pool.connect();
     client.release();
+    return {
+      queryFn: (sql, params) => pool.query(sql, params),
+      mode: 'rds-tcp',
+      cleanup: () => pool.end(),
+    };
+  } catch (e) {
+    console.warn('RDS TCP unavailable:', e.message.split('\n')[0]);
+    try {
+      await pool.end();
+    } catch {
+      /* ignore */
+    }
+    // Fall back to Data API if TCP fails
+    try {
+      const dataApi = await getDataApiQuery();
+      return { queryFn: dataApi, mode: 'rds-data-api', cleanup: null };
+    } catch (e2) {
+      console.warn('RDS Data API fallback failed:', e2.message.split('\n')[0]);
+      return { queryFn: null, mode: null, cleanup: null };
+    }
   }
 }
 
@@ -426,7 +641,6 @@ async function main() {
   console.log(`  SMOKE_CUSTOMER_PHONE=${SMOKE_PHONE}`);
   console.log(`  SMOKE_REQUIRE_RDS=${REQUIRE_RDS ? '1' : '0'}`);
 
-  const pool = await getPool();
   const phone = SMOKE_PHONE.replace(/\D/g, '').slice(-10);
 
   let customerId = process.env.SMOKE_CUSTOMER_ID || null;
@@ -448,17 +662,29 @@ async function main() {
   let sources = { mode: 'placeholder' };
   let rdsOk = false;
 
-  if (!pool) {
+  let resolved;
+  try {
+    resolved = await resolveQueryFn();
+  } catch (e) {
+    console.error('RDS resolve failed:', e.message);
+    if (REQUIRE_RDS) process.exit(1);
+    resolved = { queryFn: null, mode: null, cleanup: null };
+  }
+
+  if (!resolved.queryFn) {
     if (REQUIRE_RDS) {
-      console.error('SMOKE_REQUIRE_RDS=1 but RDS connection failed. Set DATABASE_URL or AWS Secrets Manager access.');
+      console.error(
+        'SMOKE_REQUIRE_RDS=1 but RDS unavailable. Need AWS creds for Data API (ExecuteStatement) or DATABASE_URL / VPC TCP.'
+      );
       process.exit(1);
     }
-    console.warn('No RDS pool — writing placeholder UUIDs (expect many 404s in smoke).');
+    console.warn('No RDS — writing placeholder UUIDs (expect many 404s in smoke).');
   } else {
     try {
-      const loaded = await loadFromRds(pool, phone);
+      console.log(`  DB mode: ${resolved.mode}`);
+      const loaded = await loadFromRds(resolved.queryFn, phone);
       rdsOk = loaded.rdsOk;
-      sources = { mode: 'rds', ...loaded.sources };
+      sources = { mode: resolved.mode, ...loaded.sources };
 
       if (loaded.customerId) customerId = loaded.customerId;
       if (loaded.customerPhone) customerPhone = loaded.customerPhone;
@@ -489,10 +715,12 @@ async function main() {
         process.exit(1);
       }
     } finally {
-      try {
-        await pool.end();
-      } catch {
-        /* ignore */
+      if (resolved.cleanup) {
+        try {
+          await resolved.cleanup();
+        } catch {
+          /* ignore */
+        }
       }
     }
   }
