@@ -220,4 +220,43 @@ describe('resolveExpectedBookingCharge', () => {
     expect(result!.expectedCash).toBe(1836);
     expect(result!.fees).toEqual({ platformFee: 36, convenienceFee: 0, deliveryFee: 0, packagingFee: 0 });
   });
+
+  test('uses wp_financial_meta.finalPaid as locked all-in (no re-tax on total_amount)', async () => {
+    stubQueries({ orphanRow: null });
+
+    const result = await resolveExpectedBookingCharge({
+      bookingId: BOOKING_ID,
+      booking: {
+        total_amount: '2124',
+        base_price: '2000',
+        notes:
+          'wp_financial_meta:{"servicePrice":2000,"vendorDiscount":200,"couponDiscount":0,"subtotalAfterDiscounts":1800,"cgst":162,"sgst":162,"igst":0,"totalTax":324,"platformFee":0,"convenienceFee":0,"deliveryFee":0,"walletAmount":0,"finalPaid":2124}',
+      },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe('financial_snapshot');
+    expect(result!.grossTotal).toBe(2124);
+    expect(result!.expectedCash).toBe(2124);
+    expect(result!.gst?.total).toBe(324);
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
+    expect(mockedFees).not.toHaveBeenCalled();
+  });
+
+  test('treats total_amount as locked when it exceeds base_price (all-in without meta)', async () => {
+    stubQueries({ orphanRow: null });
+
+    const result = await resolveExpectedBookingCharge({
+      bookingId: BOOKING_ID,
+      booking: {
+        total_amount: '2124',
+        base_price: '1800',
+      },
+    });
+
+    expect(result!.source).toBe('booking_total');
+    expect(result!.grossTotal).toBe(2124);
+    expect(result!.expectedCash).toBe(2124);
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
+  });
 });

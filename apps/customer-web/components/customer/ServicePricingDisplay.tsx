@@ -73,12 +73,13 @@ export function ServicePricingDisplay({
       : finalVendorPrice;
 
   return (
-    <div className={`flex min-w-0 max-w-full flex-col gap-1 ${className}`}>
+    <div className={`flex min-w-0 max-w-[11rem] flex-col items-end gap-1 text-right ${className}`}>
       <PriceDisplay
         originalPrice={basePrice}
         currentPrice={finalPrice}
         size="md"
         showSavings={false}
+        align="end"
       />
       {showVendorDiscountChrome && (
         <SavingsBadge variant="vendor_offer" className="w-fit" />
