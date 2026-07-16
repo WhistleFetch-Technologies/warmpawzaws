@@ -2,10 +2,10 @@ import { query } from '../../../../database/rds-connection';
 
 export async function dbCustomerPhoneBookingsActivetrackingGet1(customerId: string) {
   return await query(
-    `SELECT b.id, b.booking_date, b.scheduled_at,
+    `SELECT b.id, b.booking_date, b.booking_datetime,
             b.status, b.service_style,
             COALESCE(v.business_name, s.name) as vendor_name,
-            COALESCE(v.profile_photo, s.photo) as vendor_photo,
+            COALESCE(v.profile_image, v.profile_photo_url, s.photo_url) as vendor_photo,
             COALESCE(vs.service_name, sv.name) as service_name,
             p.name as pet_name,
             gts.current_latitude, gts.current_longitude,
@@ -22,7 +22,7 @@ export async function dbCustomerPhoneBookingsActivetrackingGet1(customerId: stri
        AND b.status IN ('confirmed', 'in_progress', 'on_the_way', 'vendor_on_way', 'in_transit', 'arrived')
        AND COALESCE(b.service_style, b.service_type, '') IN ('at_home', 'home')
        AND b.status NOT IN ('completed', 'cancelled', 'no_show')
-     ORDER BY COALESCE(b.scheduled_at, b.booking_date) ASC
+     ORDER BY COALESCE(b.booking_datetime, b.booking_date::timestamp) ASC
      LIMIT 10`,
     [customerId]
   );

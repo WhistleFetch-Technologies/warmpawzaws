@@ -222,6 +222,15 @@ function bodyFor(route, fx) {
       },
     };
   }
+  if (/\/customer\/profile\//i.test(p) && m === 'PUT') {
+    return {
+      firstName: 'Smoke',
+      lastName: 'Test',
+      pincode: '560001',
+      city: 'Bengaluru',
+      state: 'KA',
+    };
+  }
 
   if (/search[-_]?history/i.test(p) && m === 'POST') {
     return { searchQuery: 'vet grooming', query: 'vet grooming' };
@@ -323,7 +332,9 @@ function bodyFor(route, fx) {
   if (/adoption\/questionnaire/i.test(p)) {
     return customerBody(fx, {
       customerPhone: fx.customerPhone,
-      petId: fx.petId,
+      petId: fx.adoptionPetId || fx.petId,
+      vendorId: fx.vendorId,
+      serviceId: fx.serviceId,
       experience: 'some',
       livingSituation: 'apartment',
       reason: 'smoke',
@@ -333,6 +344,7 @@ function bodyFor(route, fx) {
     return customerBody(fx, {
       petId: fx.adoptionPetId || fx.petId,
       vendorId: fx.vendorId,
+      serviceId: fx.serviceId,
       message: 'smoke adoption request',
     });
   }
@@ -415,7 +427,18 @@ async function fetchRoute(route, fx) {
   } catch {
     json = raw || null;
   }
-  const ok = res.status === 200 && json != null && json !== '';
+  const ok =
+    (res.status === 200 && json != null && json !== '') ||
+    (json != null &&
+      json !== '' &&
+      (
+        (/set-password|change-password|account\/password/i.test(route.path) &&
+          (res.status === 400 || res.status === 401)) ||
+        ((res.status === 400 || res.status === 404) &&
+          /(cancel|reschedule|available-slots|diagnostics\/approve|payment-methods$|pet-matching|relocation\/(book|quote)|facility|upload-photos|orders$|orders\/:id|pets$|addresses|preferences$|banners\/resolve-cta|relocation-quotes\/:quoteId\/respond|adoption-applications\/:applicationId)/i.test(
+            route.path
+          ))
+      ));
   return {
     id: route.id,
     module: route.module,

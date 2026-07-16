@@ -5,7 +5,7 @@ import * as adoption_questionnaire_postRepo from '../repos/adoption_questionnair
 export async function executeadoptionRequestPost(c: Context) {
   try {
     const body = await c.req.json();
-    const { customerId, customerPhone, petId, message, visitDate, visitTime, vendorId } = body;
+    const { customerId, customerPhone, petId, message, visitDate, visitTime, vendorId, serviceId } = body;
 
     if (!petId) {
       return c.json({ error: 'Pet ID is required' }, 400);
@@ -30,18 +30,23 @@ export async function executeadoptionRequestPost(c: Context) {
       });
     }
 
-    // Fallback when id is a customer pet (no adoption_listings.vendor_id): store application only
+    const resolvedVendorId = vendorId;
+    if (!resolvedVendorId || !customerId) {
+      return c.json({ error: 'vendorId and customerId are required when listing pet not found' }, 400);
+    }
+
     const application = await adoption_questionnaire_postRepo.dbAdoptionQuestionnairePost2(
-      customerId || null,
+      customerId,
       customerPhone,
       petId,
-      vendorId,
+      resolvedVendorId,
       null,
       null,
       null,
       null,
       message || 'adoption request',
-      null
+      null,
+      serviceId || null
     );
 
     return c.json({

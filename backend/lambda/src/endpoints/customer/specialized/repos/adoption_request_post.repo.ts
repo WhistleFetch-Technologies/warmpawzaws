@@ -16,10 +16,19 @@ export async function dbAdoptionRequestPost1(
   visitTime: string | undefined,
   message: string | undefined
 ) {
+  const svc = await query(
+    `SELECT id::text AS id FROM vendor_services WHERE vendor_id = $1::uuid AND COALESCE(is_enabled, true) = true LIMIT 1`,
+    [pet.vendor_id]
+  );
+  const serviceId = svc.rows?.[0]?.id;
+  if (!serviceId) {
+    throw new Error('No vendor service available for adoption visit booking');
+  }
   return await insert('bookings', {
     customer_id: customerId || null,
     customer_phone: customerPhone || null,
     vendor_id: pet.vendor_id,
+    service_id: serviceId,
     pet_id: petId,
     service_type: 'adoption_visit',
     booking_date: visitDate || new Date().toISOString().split('T')[0],

@@ -350,6 +350,41 @@ async function loadFromRds(queryFn, phone) {
   out.customerPhone = cust.rows[0]?.phone || phone;
   out.sources.customer = !!out.customerId;
 
+  // Prefer a fixture-rich customer (has booking + order) when smoke phone has none
+  if (out.customerId) {
+    const ownedCounts = await q(
+      queryFn,
+      `SELECT
+         (SELECT COUNT(*)::int FROM bookings b WHERE b.customer_id = $1::uuid) AS bookings,
+         (SELECT COUNT(*)::int FROM orders o WHERE o.customer_id = $1::uuid) AS orders`,
+      [out.customerId]
+    );
+    const bc = Number(ownedCounts.rows[0]?.bookings || 0);
+    const oc = Number(ownedCounts.rows[0]?.orders || 0);
+    out.sources.ownedBookings = bc;
+    out.sources.ownedOrders = oc;
+    if (bc === 0 || oc === 0) {
+      const rich = await q(
+        queryFn,
+        `SELECT c.id::text AS id, c.phone
+         FROM customers c
+         WHERE EXISTS (SELECT 1 FROM bookings b WHERE b.customer_id = c.id)
+           AND EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id)
+           AND TRIM(COALESCE(c.phone, '')) <> ''
+         ORDER BY (
+           (SELECT COUNT(*) FROM bookings b WHERE b.customer_id = c.id) +
+           (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id)
+         ) DESC
+         LIMIT 1`
+      );
+      if (rich.rows[0]?.id) {
+        out.customerId = String(rich.rows[0].id);
+        out.customerPhone = String(rich.rows[0].phone || out.customerPhone);
+        out.sources.switchedToRichCustomer = true;
+      }
+    }
+  }
+
   if (out.customerId) {
     const booking = await q(
       queryFn,

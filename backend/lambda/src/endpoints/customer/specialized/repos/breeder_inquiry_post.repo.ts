@@ -1,7 +1,18 @@
-import { query, insert, update } from '../../../../database/rds-connection';
+import { query, insert } from '../../../../database/rds-connection';
+
+async function resolveServiceId(vendorId: string) {
+  const svc = await query(
+    `SELECT id::text AS id FROM vendor_services WHERE vendor_id = $1::uuid AND COALESCE(is_enabled, true) = true LIMIT 1`,
+    [vendorId]
+  );
+  if (svc.rows?.[0]?.id) return String(svc.rows[0].id);
+  const anySvc = await query(
+    `SELECT id::text AS id FROM vendor_services WHERE COALESCE(is_enabled, true) = true LIMIT 1`
+  );
+  return anySvc.rows?.[0]?.id ? String(anySvc.rows[0].id) : null;
+}
 
 export async function dbBreederInquiryPost0(puppyId: string) {
-  // Prefer adoption_listings (vendor-owned); fall back to pets without vendor_id.
   const listing = await query(
     `SELECT id, vendor_id, pet_name as name, adoption_fee as price FROM adoption_listings WHERE id = $1`,
     [puppyId]
@@ -26,13 +37,19 @@ export async function dbBreederInquiryPost1(
   if (!resolvedVendorId) {
     throw new Error('vendorId is required when puppy has no vendor');
   }
+  const serviceId = await resolveServiceId(resolvedVendorId);
+  if (!serviceId) {
+    throw new Error('No vendor service available for breeder inquiry booking');
+  }
   return await insert('bookings', {
     customer_id: customerId || null,
     customer_phone: customerPhone || null,
     vendor_id: resolvedVendorId,
+    service_id: serviceId,
     pet_id: puppyId,
     service_type: 'breeder_inquiry',
     booking_date: visitDate || new Date().toISOString().split('T')[0],
+    booking_time: '10:00',
     status: 'inquiry',
     notes: message || `Purchase inquiry for ${puppy.name || 'puppy'}`,
     total_amount: puppy.price || 0,

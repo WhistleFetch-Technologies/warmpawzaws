@@ -7,7 +7,7 @@ export async function dbCustomerPhoneBookingsPendingreviewsGet1(
   return await query(
     `SELECT b.id, b.booking_date, b.completed_at,
             COALESCE(v.business_name, s.name) as vendor_name,
-            COALESCE(v.profile_photo, s.photo) as vendor_photo,
+            COALESCE(v.profile_image, v.profile_photo_url, s.photo_url) as vendor_photo,
             COALESCE(vs.service_name, sv.name) as service_name,
             p.name as pet_name
      FROM bookings b
