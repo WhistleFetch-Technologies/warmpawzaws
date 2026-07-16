@@ -83,6 +83,8 @@ export function isVaccinationService(params: {
 
 /**
  * Catalogue slug / UUID ref for Admin GST lookup (before resolveCatalogCategoryUuidFromRef).
+ * Priority: metadata override → service/catalog category id → categoryFallback → vet last-resort.
+ * Service category (e.g. custom boarding on a vet vendor) wins over vendor-role inference.
  */
 export async function resolveGstCatalogCategoryRefForBooking(params: {
   categoryIdFromCatalog?: string | null;
@@ -103,12 +105,14 @@ export async function resolveGstCatalogCategoryRefForBooking(params: {
   const catRef = params.categoryIdFromCatalog ? String(params.categoryIdFromCatalog).trim() : '';
   if (catRef) return catRef;
 
+  const fallback = params.categoryFallback ? String(params.categoryFallback).trim() : '';
+  if (fallback && fallback.toLowerCase() !== 'pet_services') return fallback;
+
+  // Last resort: vet vendors with no service/catalog category signal → veterinary (0%).
   if (isVetVendorRoleName(params.vendorRoleName)) {
     return 'veterinary';
   }
 
-  const fallback = params.categoryFallback ? String(params.categoryFallback).trim() : '';
-  if (fallback && fallback.toLowerCase() !== 'pet_services') return fallback;
   return null;
 }
 
@@ -139,7 +143,18 @@ type CatalogRow = {
   sub_category_name?: string;
   sc_metadata?: unknown;
   vs_metadata?: unknown;
+  /** vendor_services.category text (custom services) */
+  vs_category?: string;
+  /** vendor_services.category_id UUID → service_categories.id */
+  vs_category_id?: string;
 };
+
+const VS_CATALOG_SELECT = `SELECT sc.category_id, sc.category_name, sc.service_id, sc.service_name,
+              sc.sub_category_id, sc.sub_category_name,
+              sc.metadata AS sc_metadata, vs.metadata AS vs_metadata,
+              vs.category AS vs_category, vs.category_id::text AS vs_category_id
+       FROM vendor_services vs
+       LEFT JOIN service_catalog sc ON sc.id = vs.service_id`;
 
 async function loadCatalogContext(
   serviceId: string | null | undefined,
@@ -148,11 +163,7 @@ async function loadCatalogContext(
 ): Promise<CatalogRow | null> {
   if (serviceId && vendorId && isValidUUID(String(serviceId))) {
     const vendorSvcs = await query(
-      `SELECT sc.category_id, sc.category_name, sc.service_id, sc.service_name,
-              sc.sub_category_id, sc.sub_category_name,
-              sc.metadata AS sc_metadata, vs.metadata AS vs_metadata
-       FROM vendor_services vs
-       LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+      `${VS_CATALOG_SELECT}
        WHERE vs.vendor_id = $2::uuid
          AND (vs.id = $1::uuid OR vs.service_id = $1::uuid OR sc.id = $1::uuid)
        LIMIT 1`,
@@ -161,11 +172,7 @@ async function loadCatalogContext(
     if (vendorSvcs.rows?.length > 0) return vendorSvcs.rows[0] as CatalogRow;
   } else if (serviceId && vendorId) {
     const vendorSvcs = await query(
-      `SELECT sc.category_id, sc.category_name, sc.service_id, sc.service_name,
-              sc.sub_category_id, sc.sub_category_name,
-              sc.metadata AS sc_metadata, vs.metadata AS vs_metadata
-       FROM vendor_services vs
-       LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+      `${VS_CATALOG_SELECT}
        WHERE vs.id = $1::uuid
        LIMIT 1`,
       [serviceId],
@@ -203,7 +210,8 @@ async function loadCatalogContext(
     const bkg = await query(
       `SELECT sc.category_id, sc.category_name, sc.service_id, sc.service_name,
               sc.sub_category_id, sc.sub_category_name,
-              sc.metadata AS sc_metadata, vs.metadata AS vs_metadata
+              sc.metadata AS sc_metadata, vs.metadata AS vs_metadata,
+              vs.category AS vs_category, vs.category_id::text AS vs_category_id
        FROM bookings b
        JOIN vendor_services vs ON vs.id = b.service_id
        LEFT JOIN service_catalog sc ON sc.id = vs.service_id
@@ -239,22 +247,42 @@ export async function resolveServiceBookingTaxItem(
   const vendorRole = await resolveVendorRole(input.vendorRoleId, input.vendorId);
 
   if (ctx) {
-    if (!category) category = ctx.category_name || ctx.category_id;
+    // Prefer catalog name, then custom vendor_services.category, then catalog/vs category ids.
+    if (!category) {
+      category =
+        ctx.category_name ||
+        ctx.vs_category ||
+        ctx.category_id ||
+        ctx.vs_category_id ||
+        undefined;
+    }
     if (!amountIsTaxInclusive) {
       amountIsTaxInclusive =
         catalogPriceIncludesTaxMeta(ctx.sc_metadata) || catalogPriceIncludesTaxMeta(ctx.vs_metadata);
     }
   }
 
+  // Catalog row wins when present; custom services use vs.category_id (no service_catalog join).
+  const categoryIdFromCatalog =
+    (ctx?.category_id && String(ctx.category_id).trim()) ||
+    (ctx?.vs_category_id && String(ctx.vs_category_id).trim()) ||
+    null;
+
+  const categoryFallback =
+    category ||
+    (ctx?.vs_category ? String(ctx.vs_category).trim() : '') ||
+    (ctx?.category_name ? String(ctx.category_name).trim() : '') ||
+    null;
+
   const scCatRef = await resolveGstCatalogCategoryRefForBooking({
-    categoryIdFromCatalog: ctx?.category_id,
+    categoryIdFromCatalog,
     subCategoryIdFromCatalog: ctx?.sub_category_id,
     catalogServiceId: ctx?.service_id,
     serviceName: ctx?.service_name,
     subCategoryName: ctx?.sub_category_name,
     scMetadata: ctx?.sc_metadata,
     vsMetadata: ctx?.vs_metadata,
-    categoryFallback: category,
+    categoryFallback,
     vendorRoleName: vendorRole.roleName,
   });
 

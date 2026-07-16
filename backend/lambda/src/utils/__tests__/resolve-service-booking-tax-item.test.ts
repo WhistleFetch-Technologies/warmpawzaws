@@ -89,6 +89,35 @@ describe('resolveGstCatalogCategoryRefForBooking', () => {
     expect(ref).toBe('veterinary');
   });
 
+  it('uses boarding categoryFallback for vet custom boarding (not veterinary)', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      catalogServiceId: null,
+      serviceName: 'Smoke Custom Overnight Boarding',
+      categoryFallback: 'boarding',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('boarding');
+  });
+
+  it('uses Pet Boarding categoryFallback for vet custom service', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      categoryFallback: 'Pet Boarding',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('Pet Boarding');
+  });
+
+  it('prefers vs category id over vet role short-circuit', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: 'pet_boarding',
+      categoryFallback: 'Boarding',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('pet_boarding');
+  });
+
   it('does not infer veterinary for groomer when catalog category is null', async () => {
     const ref = await resolveGstCatalogCategoryRefForBooking({
       categoryIdFromCatalog: null,
@@ -99,7 +128,18 @@ describe('resolveGstCatalogCategoryRefForBooking', () => {
     expect(ref).toBeNull();
   });
 
-  it('ignores pet_services fallback', async () => {
+  it('ignores pet_services fallback then uses vet short-circuit when vendor is vet', async () => {
+    const ref = await resolveGstCatalogCategoryRefForBooking({
+      categoryIdFromCatalog: null,
+      catalogServiceId: 'groom_home',
+      serviceName: 'Home Grooming',
+      categoryFallback: 'pet_services',
+      vendorRoleName: 'vet_clinic',
+    });
+    expect(ref).toBe('veterinary');
+  });
+
+  it('ignores pet_services fallback for non-vet', async () => {
     const ref = await resolveGstCatalogCategoryRefForBooking({
       categoryIdFromCatalog: null,
       catalogServiceId: 'groom_home',
