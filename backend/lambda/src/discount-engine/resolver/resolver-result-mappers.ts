@@ -218,9 +218,16 @@ export function mapResolverResultToCouponValidation(result: ResolverResult): {
   };
 }
 
+function hasPriorityFallback(result: ResolverResult): boolean {
+  return Boolean(
+    result.metadata?.priority &&
+      (result.metadata.priority as { fallbackReason?: string }).fallbackReason
+  );
+}
+
 export function isResolverResultAuthoritativeUsable(result: ResolverResult | null): result is ResolverResult {
   if (!result) return false;
-  if (result.metadata?.priority && (result.metadata.priority as { fallbackReason?: string }).fallbackReason) {
+  if (hasPriorityFallback(result)) {
     return false;
   }
   const appliedWithSavings = result.applied.some((d) => d.discountAmount > 0);
@@ -229,4 +236,21 @@ export function isResolverResultAuthoritativeUsable(result: ResolverResult | nul
     return true;
   }
   return false;
+}
+
+/**
+ * A pipeline run that completed cleanly (no priority fallback) and found nothing to
+ * apply. Auto-discovery call sites may treat this as authoritative "no discount
+ * applies" instead of falling back to legacy — see acceptEmptyResult on
+ * resolveWithProductionMode. Code/coupon validation paths must NOT use this:
+ * an empty result there can mean V2 doesn't know the code, and legacy should decide.
+ */
+export function isResolverResultCleanEmpty(result: ResolverResult | null): result is ResolverResult {
+  if (!result) return false;
+  if (hasPriorityFallback(result)) return false;
+  return (
+    result.totalSavings <= 0 &&
+    result.applied.length === 0 &&
+    !result.benefitResults.some((b) => b.discountAmount > 0)
+  );
 }
