@@ -23,8 +23,6 @@ import { registerCustomerPhonePetskillsGetRoute } from './routes/customer_phone_
 import { registerCustomerPhoneBookingsActivetrackingGetRoute } from '../enhanced/routes/customer_phone_bookings_activetracking_get.route';
 import { registerCustomerPhoneBookingsPendingreviewsGetRoute } from '../enhanced/routes/customer_phone_bookings_pendingreviews_get.route';
 import { registerCustomerPhoneReviewsBookingidSkipPostRoute } from '../enhanced/routes/customer_phone_reviews_bookingid_skip_post.route';
-import { registerCustomerPhonePreferencesGetRoute } from '../enhanced/routes/customer_phone_preferences_get.route';
-import { registerCustomerPhonePreferencesPostRoute } from '../enhanced/routes/customer_phone_preferences_post.route';
 
 export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
   registerCustomerBookingsActiveGetRoute(app);
@@ -34,8 +32,8 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
   registerCustomerPhoneBookingsActivetrackingGetRoute(app);
   registerCustomerPhoneBookingsPendingreviewsGetRoute(app);
   registerCustomerPhoneReviewsBookingidSkipPostRoute(app);
-  registerCustomerPhonePreferencesGetRoute(app);
-  registerCustomerPhonePreferencesPostRoute(app);
+  // Phone preferences stay in enhanced (registered last) so profile's
+  // GET/PUT /customer/:customerId/preferences keeps develop precedence.
   registerCustomerBookingsGetRoute(app);
   registerCustomerCartPhoneGetRoute(app);
   registerCustomerCartPhoneItemsItemidPutRoute(app);

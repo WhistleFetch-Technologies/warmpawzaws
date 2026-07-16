@@ -214,7 +214,7 @@ export async function executevendorServices(c: Context) {
           const catParam = queryParams.length;
           /** Align with discover-services: catalog-only legacy `boarding` at_home counts as sitting; never all at_home rows for sitters. */
           servicesQuery += ` AND (
-            (LOWER(COALESCE(vs.category, '')) = LOWER(${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER(${catParam}) || '%')
+            (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
             OR (
               LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
               AND COALESCE(vs.is_custom_service, false) = false
@@ -272,7 +272,7 @@ export async function executevendorServices(c: Context) {
             }
           }
           servicesQuery += ` AND (
-            (LOWER(COALESCE(vs.category, '')) = LOWER(${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER(${catParam}) || '%')
+            (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
             ${boardingCatIdOr}
           )`;
         } else if (trainingBookingCategoryRequest) {
@@ -294,7 +294,7 @@ export async function executevendorServices(c: Context) {
             )`
               : '';
           servicesQuery += ` AND (
-            (LOWER(COALESCE(vs.category, '')) = LOWER(${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER(${catParam}) || '%')
+            (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
             OR ${sqlTrainingCategoryAliasOrVs('vs')}
             OR (
               TRIM(COALESCE(vs.category, '')) = ''
@@ -310,13 +310,13 @@ export async function executevendorServices(c: Context) {
         } else {
           queryParams.push(category);
           const catParam = queryParams.length;
-          servicesQuery += ` AND (LOWER(COALESCE(vs.category, '')) = LOWER(${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER(${catParam}) || '%')`;
+          servicesQuery += ` AND (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')`;
         }
       }
       if (serviceStyle && serviceStyle !== 'all') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
         queryParams.push(acceptableStyles);
-        servicesQuery += ` AND vs.service_style = ANY(${queryParams.length}::text[])`;
+        servicesQuery += ` AND vs.service_style = ANY($${queryParams.length}::text[])`;
         console.log(`[Vendor Services] SQL filter: serviceStyle=${serviceStyle}, acceptableStyles=${JSON.stringify(acceptableStyles)}`);
       }
 

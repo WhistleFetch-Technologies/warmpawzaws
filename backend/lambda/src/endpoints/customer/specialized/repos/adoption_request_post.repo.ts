@@ -1,10 +1,7 @@
 import { query, insert } from '../../../../database/rds-connection';
 
 export async function dbAdoptionRequestPost0(petId: string) {
-  return await query(
-    `SELECT id, vendor_id, pet_name as name FROM adoption_listings WHERE id = $1`,
-    [petId]
-  );
+  return await query(`SELECT id, vendor_id, name FROM pets WHERE id = $1`, [petId]);
 }
 
 export async function dbAdoptionRequestPost1(
@@ -16,26 +13,16 @@ export async function dbAdoptionRequestPost1(
   visitTime: string | undefined,
   message: string | undefined
 ) {
-  const svc = await query(
-    `SELECT id::text AS id FROM vendor_services WHERE vendor_id = $1::uuid AND COALESCE(is_enabled, true) = true LIMIT 1`,
-    [pet.vendor_id]
-  );
-  const serviceId = svc.rows?.[0]?.id;
-  if (!serviceId) {
-    throw new Error('No vendor service available for adoption visit booking');
-  }
   return await insert('bookings', {
-    customer_id: customerId || null,
-    customer_phone: customerPhone || null,
+    customer_id: customerId,
+    customer_phone: customerPhone,
     vendor_id: pet.vendor_id,
-    service_id: serviceId,
     pet_id: petId,
     service_type: 'adoption_visit',
     booking_date: visitDate || new Date().toISOString().split('T')[0],
     booking_time: visitTime || '10:00',
     status: 'pending',
-    notes: message || `Adoption inquiry for ${pet.name || 'pet'}`,
+    notes: message || `Adoption inquiry for ${pet.name}`,
     total_amount: 0,
-    base_price: 0,
   });
 }

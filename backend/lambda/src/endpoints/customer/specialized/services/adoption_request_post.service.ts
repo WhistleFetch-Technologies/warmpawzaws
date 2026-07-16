@@ -1,57 +1,35 @@
 import type { Context } from 'hono';
 import * as adoption_request_postRepo from '../repos/adoption_request_post.repo';
-import * as adoption_questionnaire_postRepo from '../repos/adoption_questionnaire_post.repo';
 
 export async function executeadoptionRequestPost(c: Context) {
   try {
     const body = await c.req.json();
-    const { customerId, customerPhone, petId, message, visitDate, visitTime, vendorId, serviceId } = body;
+    const { customerId, customerPhone, petId, message, visitDate, visitTime } = body;
 
     if (!petId) {
       return c.json({ error: 'Pet ID is required' }, 400);
     }
 
     const pets = await adoption_request_postRepo.dbAdoptionRequestPost0(petId);
-    if (pets.rows.length > 0) {
-      const pet = pets.rows[0];
-      const booking = await adoption_request_postRepo.dbAdoptionRequestPost1(
-        customerId,
-        customerPhone,
-        pet,
-        petId,
-        visitDate,
-        visitTime,
-        message
-      );
-      return c.json({
-        success: true,
-        booking: booking[0],
-        message: 'Adoption request submitted. The shelter will contact you shortly.',
-      });
+    if (pets.rows.length === 0) {
+      return c.json({ error: 'Pet not found' }, 404);
     }
 
-    const resolvedVendorId = vendorId;
-    if (!resolvedVendorId || !customerId) {
-      return c.json({ error: 'vendorId and customerId are required when listing pet not found' }, 400);
-    }
+    const pet = pets.rows[0];
 
-    const application = await adoption_questionnaire_postRepo.dbAdoptionQuestionnairePost2(
+    const booking = await adoption_request_postRepo.dbAdoptionRequestPost1(
       customerId,
       customerPhone,
+      pet,
       petId,
-      resolvedVendorId,
-      null,
-      null,
-      null,
-      null,
-      message || 'adoption request',
-      null,
-      serviceId || null
+      visitDate,
+      visitTime,
+      message
     );
 
     return c.json({
       success: true,
-      applicationId: application[0]?.id,
+      booking: booking[0],
       message: 'Adoption request submitted. The shelter will contact you shortly.',
     });
   } catch (error: any) {

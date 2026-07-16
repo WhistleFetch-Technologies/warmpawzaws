@@ -1,7 +1,5 @@
 import type { Context } from 'hono';
 import * as adoption_pets_petid_getRepo from '../repos/adoption_pets_petid_get.repo';
-import { Hono } from 'hono';
-import { isValidUUID } from '../../../../types/entities';
 
 export async function executeadoptionPetsPetidGet(c: Context) {
     try {
@@ -10,8 +8,7 @@ export async function executeadoptionPetsPetidGet(c: Context) {
       const petResult = await adoption_pets_petid_getRepo.dbAdoptionPetsPetidGet0(petId)
 
       if (petResult.rows.length === 0) {
-        // Empty listing table / non-adoption pet id — return empty success (smoke/fixture friendly)
-        return c.json({ success: true, pet: null, vendor: null, similarPets: [] });
+        return c.json({ error: 'Pet not found' }, 404);
       }
 
       const pet = petResult.rows[0];

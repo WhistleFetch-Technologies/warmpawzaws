@@ -36,12 +36,6 @@ export async function executeadoptionQuestionnairePost(c: Context) {
         resolvedVendorId = pets.rows[0].vendor_id;
       }
     }
-    if (!resolvedVendorId) {
-      return c.json({ error: 'vendorId is required' }, 400);
-    }
-    if (!petId) {
-      return c.json({ error: 'petId is required' }, 400);
-    }
 
     const application = await adoption_questionnaire_postRepo
       .dbAdoptionQuestionnairePost2(
@@ -54,8 +48,7 @@ export async function executeadoptionQuestionnairePost(c: Context) {
         otherPets,
         timeCommitment,
         reason,
-        additionalInfo,
-        body.serviceId || null
+        additionalInfo
       )
       .catch(async () => {
         await adoption_questionnaire_postRepo.dbAdoptionQuestionnairePost3();
@@ -69,8 +62,7 @@ export async function executeadoptionQuestionnairePost(c: Context) {
           otherPets,
           timeCommitment,
           reason,
-          additionalInfo,
-          body.serviceId || null
+          additionalInfo
         );
       });
 

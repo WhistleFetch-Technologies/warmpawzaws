@@ -4,7 +4,7 @@ import * as breeder_reserve_postRepo from '../repos/breeder_reserve_post.repo';
 export async function executebreederReservePost(c: Context) {
   try {
     const body = await c.req.json();
-    const { customerId, puppyId, depositAmount, vendorId } = body;
+    const { customerId, puppyId, depositAmount } = body;
 
     if (!puppyId || !customerId) {
       return c.json({ error: 'Puppy ID and Customer ID are required' }, 400);
@@ -17,12 +17,8 @@ export async function executebreederReservePost(c: Context) {
 
     const puppy = puppies.rows[0];
 
-    if (puppy.status && puppy.status !== 'available' && puppy.status !== 'active' && puppy.status !== 'published') {
+    if (puppy.status !== 'available') {
       return c.json({ error: 'This puppy is no longer available' }, 400);
-    }
-
-    if (!puppy.vendor_id && !vendorId) {
-      return c.json({ error: 'vendorId is required' }, 400);
     }
 
     await breeder_reserve_postRepo.dbBreederReservePost1(puppyId, customerId);
@@ -31,8 +27,7 @@ export async function executebreederReservePost(c: Context) {
       customerId,
       puppy,
       puppyId,
-      depositAmount,
-      vendorId
+      depositAmount
     );
 
     return c.json({

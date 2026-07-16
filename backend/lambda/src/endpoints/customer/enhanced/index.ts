@@ -20,6 +20,8 @@ import { registerCustomerPhoneOrdersMealsActiveGetRoute } from './routes/custome
 import { registerCustomerPhoneOrdersMealsRideractiveGetRoute } from './routes/customer_phone_orders_meals_rideractive_get.route';
 import { registerCustomerPhoneSubscriptionsActiveGetRoute } from './routes/customer_phone_subscriptions_active_get.route';
 import { registerCustomerOrdersOrderidPharmacystatusGetRoute } from './routes/customer_orders_orderid_pharmacystatus_get.route';
+import { registerCustomerPhonePreferencesGetRoute } from './routes/customer_phone_preferences_get.route';
+import { registerCustomerPhonePreferencesPostRoute } from './routes/customer_phone_preferences_post.route';
 
 export function registerCustomerEndpointsEnhanced(app: Hono) {
   registerCustomerByphoneGetRoute(app);
@@ -43,4 +45,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
   registerCustomerPhoneOrdersMealsRideractiveGetRoute(app);
   registerCustomerPhoneSubscriptionsActiveGetRoute(app);
   registerCustomerOrdersOrderidPharmacystatusGetRoute(app);
+  // Same order as develop: phone prefs after profile's :customerId/preferences
+  // (enhanced registers last in handler/index.ts).
+  registerCustomerPhonePreferencesGetRoute(app);
+  registerCustomerPhonePreferencesPostRoute(app);
 }

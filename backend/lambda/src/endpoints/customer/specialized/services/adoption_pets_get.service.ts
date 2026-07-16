@@ -1,7 +1,5 @@
 import type { Context } from 'hono';
 import * as adoption_pets_getRepo from '../repos/adoption_pets_get.repo';
-import { Hono } from 'hono';
-import { isValidUUID } from '../../../../types/entities';
 
 export async function executeadoptionPetsGet(c: Context) {
     try {
@@ -18,16 +16,16 @@ export async function executeadoptionPetsGet(c: Context) {
 
       let petQuery = `
         SELECT 
-          al.*,
-          al.pet_name as name,
+          p.*,
           v.business_name as vendor_name,
           v.city as vendor_city,
           v.phone as vendor_phone,
           v.address as vendor_address,
           COALESCE((SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id), 0) as vendor_rating
-        FROM adoption_listings al
-        INNER JOIN vendors v ON al.vendor_id = v.id
-        WHERE LOWER(TRIM(COALESCE(al.status, ''))) IN ('available', 'active', 'published')
+        FROM pets p
+        INNER JOIN vendors v ON p.vendor_id = v.id
+        WHERE p.listing_type IN ('adoption', 'rehoming')
+        AND p.status = 'available'
         AND v.status = 'approved'
         AND v.is_active = true
       `;
@@ -36,51 +34,52 @@ export async function executeadoptionPetsGet(c: Context) {
       let paramIndex = 1;
 
       if (vendorId) {
-        petQuery += ` AND al.vendor_id = $${paramIndex}`;
+        petQuery += ` AND p.vendor_id = $${paramIndex}`;
         params.push(vendorId);
         paramIndex++;
       }
 
       if (city) {
-        petQuery += ` AND (v.city ILIKE $${paramIndex} OR al.location_city ILIKE $${paramIndex})`;
+        petQuery += ` AND (v.city ILIKE $${paramIndex} OR p.location_city ILIKE $${paramIndex})`;
         params.push(`%${city}%`);
         paramIndex++;
       }
 
       if (petType) {
-        petQuery += ` AND LOWER(al.pet_type) = LOWER($${paramIndex})`;
+        petQuery += ` AND LOWER(p.pet_type) = LOWER($${paramIndex})`;
         params.push(petType);
         paramIndex++;
       }
 
       if (breed) {
-        petQuery += ` AND al.breed ILIKE $${paramIndex}`;
+        petQuery += ` AND p.breed ILIKE $${paramIndex}`;
         params.push(`%${breed}%`);
         paramIndex++;
       }
 
       if (gender) {
-        petQuery += ` AND LOWER(al.gender) = LOWER($${paramIndex})`;
+        petQuery += ` AND LOWER(p.gender) = LOWER($${paramIndex})`;
         params.push(gender);
         paramIndex++;
       }
 
       if (size) {
-        petQuery += ` AND LOWER(al.size) = LOWER($${paramIndex})`;
+        petQuery += ` AND LOWER(p.size) = LOWER($${paramIndex})`;
         params.push(size);
         paramIndex++;
       }
 
-      petQuery += ` ORDER BY al.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      petQuery += ` ORDER BY p.featured DESC NULLS LAST, p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const pets = await adoption_pets_getRepo.dbAdoptionPetsGet0(petQuery, params).catch(() => ({ rows: [] }));
 
       // Get total count
       let countQuery = `
-        SELECT COUNT(*) as total FROM adoption_listings al
-        INNER JOIN vendors v ON al.vendor_id = v.id
-        WHERE LOWER(TRIM(COALESCE(al.status, ''))) IN ('available', 'active', 'published')
+        SELECT COUNT(*) as total FROM pets p
+        INNER JOIN vendors v ON p.vendor_id = v.id
+        WHERE p.listing_type IN ('adoption', 'rehoming')
+        AND p.status = 'available'
         AND v.status = 'approved'
         AND v.is_active = true
       `;
@@ -90,7 +89,7 @@ export async function executeadoptionPetsGet(c: Context) {
         success: true,
         pets: pets.rows.map((pet: any) => ({
           id: pet.id,
-          name: pet.name || pet.pet_name,
+          name: pet.name,
           petType: pet.pet_type,
           breed: pet.breed,
           age: pet.age,
@@ -113,7 +112,7 @@ export async function executeadoptionPetsGet(c: Context) {
             rating: parseFloat(pet.vendor_rating || '0').toFixed(1),
           },
           location: pet.location_city || pet.vendor_city,
-          listingType: 'adoption',
+          listingType: pet.listing_type,
           featured: pet.featured,
         })),
         pagination: {

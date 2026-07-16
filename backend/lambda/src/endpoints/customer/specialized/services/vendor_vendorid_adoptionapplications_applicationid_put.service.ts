@@ -19,8 +19,9 @@ export async function executevendorVendoridAdoptionapplicationsApplicationidPut(
         reviewerNotes
       );
 
+    // If approved, update pet status
     if (status === 'approved' && updated[0]?.pet_id) {
-      await vendor_vendorid_adoptionapplications_applicationid_putRepo.dbVendorVendoridAdoptionapplicationsApplicationidPut1(updated[0].pet_id, petId);
+      await vendor_vendorid_adoptionapplications_applicationid_putRepo.dbVendorVendoridAdoptionapplicationsApplicationidPut1(updated[0].pet_id);
     }
 
     return c.json({

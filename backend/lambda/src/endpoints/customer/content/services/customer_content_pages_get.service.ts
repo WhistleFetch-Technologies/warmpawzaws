@@ -41,7 +41,7 @@ export async function executecustomerContentPagesGet(c: Context) {
       let paramIndex = 1;
 
       if (category) {
-        pagesQuery += ` AND category = ${paramIndex}`;
+        pagesQuery += ` AND category = $${paramIndex}`;
         params.push(category);
         paramIndex++;
       }
@@ -49,7 +49,7 @@ export async function executecustomerContentPagesGet(c: Context) {
       pagesQuery += ` ORDER BY 
         CASE WHEN (metadata->>'featured') IN ('true', 't', '1', 'yes') THEN 0 ELSE 1 END,
         updated_at DESC
-        LIMIT ${paramIndex} OFFSET ${paramIndex + 1}`;
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const pagesResult = await customer_content_pages_getRepo.dbCustomerContentPagesGet0(pagesQuery, params).catch(() => ({ rows: [] }));

@@ -36,14 +36,7 @@ export async function executecustomerPetmatchingRequestPost(c: Context) {
       const matchRequest = await customer_petmatching_request_postRepo.dbCustomerPetmatchingRequestPost2(fromPetId, toPetId, fromCustomerId, toCustomerId, message).catch(async () => {
         // Create table if not exists
         await customer_petmatching_request_postRepo.dbCustomerPetmatchingRequestPost3()
-        return insert('mating_requests', {
-          from_pet_id: fromPetId,
-          to_pet_id: toPetId,
-          from_customer_id: fromCustomerId,
-          to_customer_id: toCustomerId,
-          message: message,
-          status: 'pending',
-        });
+        return customer_petmatching_request_postRepo.dbCustomerPetmatchingRequestPost2(fromPetId, toPetId, fromCustomerId, toCustomerId, message);
       });
 
       return c.json({

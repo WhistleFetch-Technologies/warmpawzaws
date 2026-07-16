@@ -35,20 +35,7 @@ export async function executeholidaysBuildpackagePost(c: Context) {
       const customPackage = await holidays_buildpackage_postRepo.dbHolidaysBuildpackagePost0(customerId, destination, startDate, endDate, durationDays, numberOfPets, petTypes, activities, accommodationType, specialRequests, estimatedPrice).catch(async () => {
         // Create table if not exists
         await holidays_buildpackage_postRepo.dbHolidaysBuildpackagePost1()
-        return insert('holiday_custom_requests', {
-          customer_id: customerId,
-          destination: destination,
-          start_date: startDate,
-          end_date: endDate,
-          duration_days: durationDays,
-          number_of_pets: numberOfPets || 1,
-          pet_types: JSON.stringify(petTypes || ['dog']),
-          accommodation_type: accommodationType || 'standard',
-          activities: JSON.stringify(activities || []),
-          special_requests: specialRequests,
-          estimated_price: estimatedPrice,
-          status: 'pending_quote',
-        });
+        return holidays_buildpackage_postRepo.dbHolidaysBuildpackagePost0(customerId, destination, startDate, endDate, durationDays, numberOfPets, petTypes, activities, accommodationType, specialRequests, estimatedPrice);
       });
 
       return c.json({
