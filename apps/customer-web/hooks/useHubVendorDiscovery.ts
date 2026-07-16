@@ -127,10 +127,17 @@ export function useHubVendorDiscovery(
       }
 
       const { list, relaxedFilter: relaxed } = buildBoardingVendorListFromRows(rows, 'all');
+      // Slim discover-services cards omit services[] (serviceCount/priceMin only). Keep those
+      // vendors so expand can fetch plans — do not require planRows up front.
       const finalList = isVetHubDiscoveryConfig(config)
         ? list
             .map((v) => ({ ...v, planRows: filterPlanRowsForVetHub(v.planRows) }))
-            .filter((v) => v.planRows.length > 0)
+            .filter((v) => {
+              if (v.planRows.length > 0) return true;
+              const raw = (v.raw || {}) as Record<string, unknown>;
+              const serviceCount = Number(raw.serviceCount ?? raw.service_count ?? 0);
+              return v.needsServiceFetch && Number.isFinite(serviceCount) && serviceCount > 0;
+            })
         : list;
       setRelaxedFilter(relaxed);
       setVendors(finalList);

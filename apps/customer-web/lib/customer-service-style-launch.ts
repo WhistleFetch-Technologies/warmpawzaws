@@ -53,7 +53,8 @@ export function getCatalogEntry(
   catalog: ServiceLaunchCatalogEntry[],
   serviceId: string
 ): ServiceLaunchCatalogEntry | undefined {
-  return catalogByServiceId(catalog).get(normalizeServiceKey(serviceId));
+  // Map category aliases (nutrition → nutritionist) to catalog keys before lookup.
+  return catalogByServiceId(catalog).get(launchServiceIdFromCategory(serviceId));
 }
 
 /** True when style is launched or beta for the customer's resolved geo catalog. */
@@ -71,7 +72,7 @@ export function hasAnyLaunchedStyle(
   catalog: ServiceLaunchCatalogEntry[],
   serviceId: string
 ): boolean {
-  const svcKey = normalizeServiceKey(serviceId);
+  const svcKey = launchServiceIdFromCategory(serviceId);
   const entry = getCatalogEntry(catalog, svcKey);
   if (!entry) return false;
 
@@ -160,7 +161,8 @@ export function resolveServiceStyleLaunchFromCatalog(
   serviceStyle: string
 ): { status: LaunchStatusValue; inheritsParent: boolean } {
   const style = normalizeServiceStyleLaunchKey(serviceStyle);
-  const svcKey = normalizeServiceKey(serviceId);
+  // Always resolve via launch-id aliases so category="nutrition" hits catalog "nutritionist".
+  const svcKey = launchServiceIdFromCategory(serviceId);
   const entry = catalogByServiceId(catalog).get(svcKey);
   const parentStatus = (entry?.effectiveStatus || 'hidden') as LaunchStatusValue;
 

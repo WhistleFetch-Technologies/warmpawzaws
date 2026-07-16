@@ -308,6 +308,7 @@ export function UniversalServicesByStyle({
             if (!p.photo && p.photoUrl) {
               p.photo = p.photoUrl;
             }
+            p.services = Array.isArray(p.services) ? p.services : [];
             p.nextAvailableSlot = resolveNextAvailableLabel(p);
             return p;
           });
