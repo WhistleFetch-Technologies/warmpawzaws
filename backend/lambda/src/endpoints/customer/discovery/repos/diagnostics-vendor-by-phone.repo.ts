@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbDiagnosticsVendorByPhone0(phone, v, r) {
+export async function dbDiagnosticsVendorByPhone0(phone) {
   return await query(`
         SELECT 
           v.id, 
@@ -21,7 +21,7 @@ export async function dbDiagnosticsVendorByPhone0(phone, v, r) {
       `, [`%${phone}%`, phone]);
 }
 
-export async function dbDiagnosticsVendorByPhone1(vs, vendor) {
+export async function dbDiagnosticsVendorByPhone1(vendor) {
   return await query(`
         SELECT 
           vs.id, 

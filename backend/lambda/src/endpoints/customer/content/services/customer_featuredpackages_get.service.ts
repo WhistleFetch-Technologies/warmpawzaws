@@ -21,7 +21,7 @@ export async function executecustomerFeaturedpackagesGet(c: Context) {
       const limit = parseInt(c.req.query('limit') || '3', 10);
 
       // Try to get featured packages from promotions
-      const packagesResult = await customer_featuredpackages_getRepo.dbCustomerFeaturedpackagesGet0(name, description, discount_type, discount_value, min_order_amount, applicable_services).catch(() => ({ rows: [] }));
+      const packagesResult = await customer_featuredpackages_getRepo.dbCustomerFeaturedpackagesGet0(limit).catch(() => ({ rows: [] }));
 
       const packages = (packagesResult.rows || []).map((p: any) => ({
         id: p.id,

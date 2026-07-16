@@ -1,6 +1,7 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
+import { sqlVendorOnlineForCustomerDiscovery } from '../../../../lib/discovery-vendor-query';
 
-export async function dbDiscoveryMeta0(r, v, vs) {
+export async function dbDiscoveryMeta0() {
   return await query(`
         SELECT DISTINCT r.name AS roleName, r.display_name AS roleDisplayName
         FROM vendors v
@@ -17,7 +18,7 @@ export async function dbDiscoveryMeta0(r, v, vs) {
       `);
 }
 
-export async function dbDiscoveryMeta1(vs, v) {
+export async function dbDiscoveryMeta1() {
   return await query(`
         SELECT DISTINCT vs.service_style AS serviceStyle
         FROM vendor_services vs

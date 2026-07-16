@@ -6,7 +6,7 @@ export async function dbVendorVendoridMatingrequestsGet0(vendorId) {
       `, [vendorId]);
 }
 
-export async function dbVendorVendoridMatingrequestsGet1(petIds, fp, tp, fc, mr) {
+export async function dbVendorVendoridMatingrequestsGet1(petIds) {
   return await query(`
         SELECT 
           mr.*,

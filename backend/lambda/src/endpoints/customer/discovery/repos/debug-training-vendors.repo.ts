@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbDebugTrainingVendors0(v, r, vs) {
+export async function dbDebugTrainingVendors0() {
   return await query(`
         SELECT
           v.id,
@@ -36,7 +36,7 @@ export async function dbDebugTrainingVendors0(v, r, vs) {
       `);
 }
 
-export async function dbDebugTrainingVendors1(text, v, r, vs) {
+export async function dbDebugTrainingVendors1() {
   return await query(`
         SELECT DISTINCT ON (v.id)
           v.id,
@@ -94,7 +94,7 @@ export async function dbDebugTrainingVendors1(text, v, r, vs) {
       `);
 }
 
-export async function dbDebugTrainingVendors2(v, vsp) {
+export async function dbDebugTrainingVendors2() {
   return await query(`
         SELECT
           v.id,
@@ -108,7 +108,7 @@ export async function dbDebugTrainingVendors2(v, vsp) {
       `)
 }
 
-export async function dbDebugTrainingVendors3(text, specialization_id, name) {
+export async function dbDebugTrainingVendors3() {
   return await query(`
         SELECT id::text, specialization_id, name, display_name
         FROM specialization_master
@@ -122,7 +122,7 @@ export async function dbDebugTrainingVendors3(text, specialization_id, name) {
       `)
 }
 
-export async function dbDebugTrainingVendors4(specKeys, specIlike, text, v, vsp, sm, vsp2) {
+export async function dbDebugTrainingVendors4(specKeys, specIlike) {
   return await query(`
         SELECT
           v.id,

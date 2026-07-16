@@ -4,7 +4,7 @@ export async function dbRelocationBookPost0(quoteId) {
   return await query(`SELECT * FROM relocation_quotes WHERE id = $1`, [quoteId]);
 }
 
-export async function dbRelocationBookPost1(customerId, vendorId, quote, paymentMethod, JSON, quoteId) {
+export async function dbRelocationBookPost1(customerId, vendorId, quote, paymentMethod, quoteId) {
   return await insert('bookings', {
         customer_id: customerId || quote.customer_id,
         vendor_id: vendorId,

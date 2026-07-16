@@ -13,7 +13,7 @@ export async function executebreederInquiryPost(c: Context) {
       }
 
       // Get puppy details
-      const puppies = await breeder_inquiry_postRepo.dbBreederInquiryPost0(vendor_id, name)
+      const puppies = await breeder_inquiry_postRepo.dbBreederInquiryPost0(puppyId)
       if (puppies.rows.length === 0) {
         return c.json({ error: 'Puppy not found' }, 404);
       }

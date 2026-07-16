@@ -242,7 +242,7 @@ export async function executevendorsSearch(c: Context) {
             }
           } catch (_) { }
 
-          const servicesCountRes = await vendors_searchRepo.dbVendorsSearch4(vs, vendor)
+          const servicesCountRes = await vendors_searchRepo.dbVendorsSearch4(vendor)
           const servicesCount = parseInt(servicesCountRes.rows[0]?.count || '0');
           const minPriceRes = await vendors_searchRepo.dbVendorsSearch5(vendor)
           const minPrice = minPriceRes.rows[0]?.min_price != null ? parseFloat(minPriceRes.rows[0].min_price) : undefined;
@@ -326,10 +326,10 @@ export async function executevendorsSearch(c: Context) {
           WHERE s.is_active = true
             AND v.status = 'approved'
             AND v.is_active = true
-            AND (LOWER(r.name) = LOWER(executevendorsSearch) OR LOWER(r.display_name) = LOWER(executevendorsSearch))
+            AND (LOWER(r.name) = LOWER($1) OR LOWER(r.display_name) = LOWER($1))
           LIMIT $2
         `;
-        const staffResults = await vendors_searchRepo.dbVendorsSearch6(staffQuery)
+        const staffResults = await vendors_searchRepo.dbVendorsSearch6(roleId, limit, staffQuery)
         staff = staffResults.rows.map((s: any) => ({
           ...s,
           id: s.id,

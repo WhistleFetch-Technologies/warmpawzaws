@@ -30,7 +30,7 @@ export async function executecustomerBannersGet(c: Context) {
 
       // home_top (mapped to `main` for this query): legacy `main` + `home_top` only — not `home_middle`.
       // position=home_middle uses type = 'home_middle' via the third branch.
-      const bannersResult = await customer_banners_getRepo.dbCustomerBannersGet0(text, title, subtitle, image_url, cta_text, cta_link, type, display_order, metadata, start_date, now, limit, customerState).catch(() => ({ rows: [] }));
+      const bannersResult = await customer_banners_getRepo.dbCustomerBannersGet0(bannerType, now, limit, customerState, customerCity).catch(() => ({ rows: [] }));
 
       const parseMetadata = (raw: unknown): Record<string, unknown> => {
         if (raw == null) return {};

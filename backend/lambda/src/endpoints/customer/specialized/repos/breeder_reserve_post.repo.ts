@@ -1,10 +1,10 @@
 import { query, insert, update } from '../../../../database/rds-connection';
 
-export async function dbBreederReservePost0(puppyId, vendor_id, name, price) {
+export async function dbBreederReservePost0(puppyId) {
   return await query(`SELECT id, vendor_id, name, price, status FROM pets WHERE id = $1`, [puppyId]);
 }
 
-export async function dbBreederReservePost1(puppyId: string, customerId: string) {
+export async function dbBreederReservePost1(puppyId, customerId) {
   return await update('pets', { id: puppyId }, { status: 'reserved', reserved_by: customerId });
 }
 

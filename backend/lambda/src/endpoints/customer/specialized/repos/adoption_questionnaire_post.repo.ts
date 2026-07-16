@@ -1,25 +1,14 @@
 import { query, insert } from '../../../../database/rds-connection';
 
-export async function dbAdoptionQuestionnairePost0(customerPhone: string) {
+export async function dbAdoptionQuestionnairePost0(customerPhone) {
   return await query(`SELECT id FROM customers WHERE phone = $1`, [customerPhone]);
 }
 
-export async function dbAdoptionQuestionnairePost1(petId: string) {
+export async function dbAdoptionQuestionnairePost1(petId) {
   return await query(`SELECT vendor_id FROM pets WHERE id = $1`, [petId]);
 }
 
-export async function dbAdoptionQuestionnairePost2(
-  resolvedCustomerId: string,
-  customerPhone: string,
-  petId: string,
-  resolvedVendorId: string,
-  experience: string,
-  livingSituation: string,
-  otherPets: string,
-  timeCommitment: string,
-  reason: string,
-  additionalInfo: string
-) {
+export async function dbAdoptionQuestionnairePost2(resolvedCustomerId, customerPhone, petId, resolvedVendorId, experience, livingSituation, otherPets, timeCommitment, reason, additionalInfo) {
   return await insert('adoption_applications', {
     customer_id: resolvedCustomerId,
     customer_phone: customerPhone,
@@ -60,18 +49,7 @@ export async function dbAdoptionQuestionnairePost3() {
   `);
 }
 
-export async function dbAdoptionQuestionnairePost4(
-  resolvedCustomerId: string,
-  customerPhone: string,
-  petId: string,
-  resolvedVendorId: string,
-  experience: string,
-  livingSituation: string,
-  otherPets: string,
-  timeCommitment: string,
-  reason: string,
-  additionalInfo: string
-) {
+export async function dbAdoptionQuestionnairePost4(resolvedCustomerId, customerPhone, petId, resolvedVendorId, experience, livingSituation, otherPets, timeCommitment, reason, additionalInfo) {
   return await insert('adoption_applications', {
     customer_id: resolvedCustomerId,
     customer_phone: customerPhone,

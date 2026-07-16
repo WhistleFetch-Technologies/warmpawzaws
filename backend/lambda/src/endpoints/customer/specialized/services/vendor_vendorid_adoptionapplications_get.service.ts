@@ -20,7 +20,7 @@ export async function executevendorVendoridAdoptionapplicationsGet(c: Context) {
         FROM adoption_applications aa
         LEFT JOIN pets p ON aa.pet_id = p.id
         LEFT JOIN customers c ON aa.customer_id = c.id
-        WHERE aa.vendor_id = executevendorVendoridAdoptionapplicationsGet
+        WHERE aa.vendor_id = $1
       `;
 
       const params: any[] = [vendorId];

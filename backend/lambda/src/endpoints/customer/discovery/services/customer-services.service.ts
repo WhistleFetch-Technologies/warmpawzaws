@@ -114,7 +114,7 @@ export async function executecustomerServices(c: Context) {
             params.push(acceptableStyles);
             styleClause = ` AND vs.service_style = ANY(${params.length}::text[])`;
           }
-          const vendorServices = await customer_servicesRepo.dbCustomerServices1(vs, s, sc, params)
+          const vendorServices = await customer_servicesRepo.dbCustomerServices1(styleClause, params)
 
           return vendorServices.rows.map((row: any) => ({
             id: row.vs_id,

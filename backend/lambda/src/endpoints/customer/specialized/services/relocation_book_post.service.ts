@@ -26,7 +26,7 @@ export async function executerelocationBookPost(c: Context) {
       }
 
       // Create booking
-      const booking = await relocation_book_postRepo.dbRelocationBookPost1(customerId, vendorId, quote, paymentMethod, JSON, quoteId)
+      const booking = await relocation_book_postRepo.dbRelocationBookPost1(customerId, vendorId, quote, paymentMethod, quoteId)
 
       // Update quote status
       await relocation_book_postRepo.dbRelocationBookPost2(quoteId, vendorId)

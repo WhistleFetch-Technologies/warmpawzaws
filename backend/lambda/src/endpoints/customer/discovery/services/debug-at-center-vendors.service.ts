@@ -61,19 +61,19 @@ export async function executedebugAtCenterVendors(c: Context) {
       const category = c.req.query('category') || 'vet';
 
       // Query 1: All vendors with at_center services
-      const allVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors0(v, r, vs)
+      const allVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors0()
 
       // Query 2: Approved/active vendors with at_center services (non-solo)
-      const approvedVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors1(v, r, vs)
+      const approvedVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors1()
 
       // Query 3: Vet category vendors with at_center services
-      const vetVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors2(v, r, vs)
+      const vetVendors = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors2()
 
       // Query 4: Check availability for vet vendors
       let vetAvailability = [];
       if (vetVendors.rows.length > 0) {
         const vetIds = vetVendors.rows.map((v: any) => v.id);
-        const availabilityResult = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors3(text, uuid, va, v)
+        const availabilityResult = await debug_at_center_vendorsRepo.dbDebugAtCenterVendors3(vetIds)
         vetAvailability = availabilityResult.rows;
       }
 

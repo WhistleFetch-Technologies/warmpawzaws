@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbAdoptionRequestPost0(petId, vendor_id) {
+export async function dbAdoptionRequestPost0(petId) {
   return await query(`SELECT id, vendor_id, name FROM pets WHERE id = $1`, [petId]);
 }
 

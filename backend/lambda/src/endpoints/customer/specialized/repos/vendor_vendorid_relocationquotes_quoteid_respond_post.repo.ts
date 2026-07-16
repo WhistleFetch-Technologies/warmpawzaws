@@ -1,10 +1,6 @@
 import { update } from '../../../../database/rds-connection';
 
-export async function dbVendorVendoridRelocationquotesQuoteidRespondPost0(
-  quoteId: string,
-  vendorId: string,
-  finalPrice: number
-) {
+export async function dbVendorVendoridRelocationquotesQuoteidRespondPost0(quoteId, vendorId, finalPrice) {
   return await update(
     'relocation_quotes',
     { id: quoteId },

@@ -10,7 +10,7 @@ export async function executebreederReservePost(c: Context) {
       return c.json({ error: 'Puppy ID and Customer ID are required' }, 400);
     }
 
-    const puppies = await breeder_reserve_postRepo.dbBreederReservePost0(puppyId, vendor_id, name, price);
+    const puppies = await breeder_reserve_postRepo.dbBreederReservePost0(puppyId);
     if (puppies.rows.length === 0) {
       return c.json({ error: 'Puppy not found' }, 404);
     }

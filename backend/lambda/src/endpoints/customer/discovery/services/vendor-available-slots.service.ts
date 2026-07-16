@@ -82,7 +82,7 @@ export async function executevendorAvailableSlots(c: Context) {
       // ✅ CRITICAL: First check if input vendorId is a vendor_identity.id and get its linked vendor_id
       let linkedVendorId: string | null = null;
       try {
-        const viCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots0(text, phone)
+        const viCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots0(vendorId)
         if (viCheck.rows.length > 0) {
           const vi = viCheck.rows[0];
           console.log(`[SLOTS] Input is vendor_identity.id: ${vendorId}`);
@@ -113,7 +113,7 @@ export async function executevendorAvailableSlots(c: Context) {
         // ✅ FIX: If we found a linked vendor_id but resolveVendorById failed, try using the linked vendor_id directly
         if (linkedVendorId) {
           console.log(`[SLOTS] ⚠️ resolveVendorById failed, but found linked vendor_id: ${linkedVendorId}, trying direct lookup...`);
-          const directVendor = await vendor_available_slotsRepo.dbVendorAvailableSlots1(text).catch(() => ({ rows: [] }));
+          const directVendor = await vendor_available_slotsRepo.dbVendorAvailableSlots1(linkedVendorId).catch(() => ({ rows: [] }));
           if (directVendor.rows.length > 0) {
             resolvedVendorId = linkedVendorId;
             const availabilityIds = await getVendorIdsForAvailabilityLookup(resolvedVendorId);
@@ -133,7 +133,7 @@ export async function executevendorAvailableSlots(c: Context) {
         console.log(`[SLOTS] Vendor found: id=${vendor.id}, business_name=${vendor.business_name}, phone=${vendor.phone}`);
 
         // Check if availability exists for this vendor_id
-        const availabilityCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots2(text, vendor).catch(() => ({ rows: [{ count: 0 }] }));
+        const availabilityCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots2(vendor).catch(() => ({ rows: [{ count: 0 }] }));
 
         const availabilityCount = parseInt(availabilityCheck.rows[0]?.count || '0', 10);
         console.log(`[SLOTS] Availability records for vendor.id ${vendor.id}: ${availabilityCount}`);
@@ -145,7 +145,7 @@ export async function executevendorAvailableSlots(c: Context) {
 
         if (vendor.phone) {
           console.log(`[SLOTS] Checking for other vendors with same phone (${vendor.phone}) that have availability...`);
-          const duplicateVendors = await vendor_available_slotsRepo.dbVendorAvailableSlots3(text, vendors, vendor, business_name).catch(() => ({ rows: [] }));
+          const duplicateVendors = await vendor_available_slotsRepo.dbVendorAvailableSlots3(vendor).catch(() => ({ rows: [] }));
 
           if (duplicateVendors.rows.length > 0) {
             console.log(`[SLOTS] Found ${duplicateVendors.rows.length} vendor(s) with same phone:`);
@@ -191,17 +191,17 @@ export async function executevendorAvailableSlots(c: Context) {
         // ✅ CRITICAL: Check what availability exists for each ID
         console.log(`[SLOTS] Checking availability records...`);
         for (const availId of availabilityIdsForQuery) {
-          const availCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots4(text).catch(() => ({ rows: [{ count: 0, days: [], styles: [] }] }));
+          const availCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots4(availId).catch(() => ({ rows: [{ count: 0, days: [], styles: [] }] }));
           console.log(`[SLOTS]   - vendor_id ${availId}: ${availCheck.rows[0]?.count || 0} records, days: ${JSON.stringify(availCheck.rows[0]?.days)}, styles: ${JSON.stringify(availCheck.rows[0]?.styles)}`);
 
           // ✅ CRITICAL: Also check vendor status for this ID
-          const vendorStatusCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots5(text, business_name, status, is_active).catch(() => ({ rows: [] }));
+          const vendorStatusCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots5(availId).catch(() => ({ rows: [] }));
           if (vendorStatusCheck.rows.length > 0) {
             const v = vendorStatusCheck.rows[0];
             console.log(`[SLOTS]   - vendor status: id=${v.id}, status=${v.status}, is_active=${v.is_active}, is_online=${v.is_online}`);
           } else {
             // ✅ CRITICAL: Check if this is a vendor_identity.id
-            const identityCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots6(text, phone).catch(() => ({ rows: [] }));
+            const identityCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots6(availId).catch(() => ({ rows: [] }));
             if (identityCheck.rows.length > 0) {
               const vi = identityCheck.rows[0];
               console.log(`[SLOTS]   - This is vendor_identity.id: ${vi.id}, vendor_id: ${vi.vendor_id}, phone: ${vi.phone}`);
@@ -212,7 +212,7 @@ export async function executevendorAvailableSlots(c: Context) {
         // ✅ CRITICAL: Also check availability under the original input vendor ID (in case it's different)
         if (vendorId !== finalVendorId && !availabilityIdsForQuery.includes(vendorId)) {
           console.log(`[SLOTS] ⚠️ Input vendorId ${vendorId} not in availabilityIdsForQuery, checking availability directly...`);
-          const directAvailCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots7(text).catch(() => ({ rows: [{ count: 0 }] }));
+          const directAvailCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots7(vendorId).catch(() => ({ rows: [{ count: 0 }] }));
           console.log(`[SLOTS]   - Direct check for vendor_id ${vendorId}: ${directAvailCheck.rows[0]?.count || 0} records`);
           if (parseInt(directAvailCheck.rows[0]?.count || '0', 10) > 0) {
             console.log(`[SLOTS] ⚠️ WARNING: Availability exists under input vendorId ${vendorId} but it's not in availabilityIdsForQuery!`);
@@ -225,12 +225,12 @@ export async function executevendorAvailableSlots(c: Context) {
         // This handles the case where availability was saved under vendor_identity.id instead of vendors.id
         if (vendor.phone) {
           console.log(`[SLOTS] ⚠️ Checking ALL vendor_identity records for phone ${vendor.phone} to find availability...`);
-          const allIdentityRecords = await vendor_available_slotsRepo.dbVendorAvailableSlots8(text, vendor).catch(() => ({ rows: [] }));
+          const allIdentityRecords = await vendor_available_slotsRepo.dbVendorAvailableSlots8(finalVendorId, vendor).catch(() => ({ rows: [] }));
           console.log(`[SLOTS] Found ${allIdentityRecords.rows.length} vendor_identity records for this vendor`);
           for (const identityRow of allIdentityRecords.rows) {
             const identityId = identityRow.id;
             if (!availabilityIdsForQuery.includes(identityId)) {
-              const identityAvailCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots9(text).catch(() => ({ rows: [{ count: 0 }] }));
+              const identityAvailCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots9(identityId).catch(() => ({ rows: [{ count: 0 }] }));
               const availCount = parseInt(identityAvailCheck.rows[0]?.count || '0', 10);
               console.log(`[SLOTS]   - vendor_identity.id ${identityId}: ${availCount} availability records`);
               if (availCount > 0) {
@@ -255,7 +255,7 @@ export async function executevendorAvailableSlots(c: Context) {
       if (slotsDebug) {
         console.log(`[SLOTS] debug: resolvedVendorId=${resolvedVendorId}, canonicalVendorId=${canonicalVendorId}, availabilityIdsForQuery=${JSON.stringify(availabilityIdsForQuery)}, date=${date}, dayOfWeek=${dayOfWeek}, serviceStyle=${serviceStyle}`);
         try {
-          const va2DebugRows = await vendor_available_slotsRepo.dbVendorAvailableSlots10(text, day_of_week, service_style, service_type, is_available)
+          const va2DebugRows = await vendor_available_slotsRepo.dbVendorAvailableSlots10(availabilityIdsForQuery)
           const rows = (va2DebugRows?.rows ?? []).slice(0, 25);
           console.log(`[SLOTS] debug: VA2 total=${va2DebugRows?.rows?.length ?? 0}, dayOfWeek requested=${dayOfWeek}, sample=${JSON.stringify(rows)}`);
         } catch (e: any) {
@@ -290,7 +290,7 @@ export async function executevendorAvailableSlots(c: Context) {
       } catch (_) { /* ignore */ }
       const minBookingTime = new Date(now.getTime() + minNoticeMinutes * 60 * 1000);
 
-      const vendorOnlineRow = await vendor_available_slotsRepo.dbVendorAvailableSlots12(text).catch(() => ({ rows: [] }));
+      const vendorOnlineRow = await vendor_available_slotsRepo.dbVendorAvailableSlots12(resolvedVendorId).catch(() => ({ rows: [] }));
       const slotVendorOnline = vendorRowIsOnline(vendorOnlineRow.rows?.[0]?.is_online);
       if (!slotVendorOnline) {
         return c.json({
@@ -310,7 +310,7 @@ export async function executevendorAvailableSlots(c: Context) {
       // ---------- 1) Holiday check: no slots if vendor has holiday on this date ----------
       let isHoliday = false;
       try {
-        const holEnhanced = await vendor_available_slotsRepo.dbVendorAvailableSlots13(date).catch(() => ({ rows: [] }));
+        const holEnhanced = await vendor_available_slotsRepo.dbVendorAvailableSlots13(resolvedVendorId, date).catch(() => ({ rows: [] }));
         if (holEnhanced.rows.length > 0) {
           isHoliday = true;
         }
@@ -362,7 +362,7 @@ export async function executevendorAvailableSlots(c: Context) {
           INNER JOIN staff s ON sas.staff_id = s.id
           LEFT JOIN staff_slot_services sss ON sas.id = sss.slot_id
           LEFT JOIN services srv ON sss.service_id = srv.id
-          WHERE s.vendor_id = executevendorAvailableSlots
+          WHERE s.vendor_id = $1
           AND sas.date = $2
           AND sas.is_available = true
           AND s.is_active = true
@@ -515,7 +515,7 @@ export async function executevendorAvailableSlots(c: Context) {
       // ✅ DEBUG: Check if any availability records exist for this vendor
       try {
         // First, check if ANY records exist for ANY of the availabilityIds (to see if vendor_id matches)
-        const anyRecordsQuery = await vendor_available_slotsRepo.dbVendorAvailableSlots17(text, day_of_week, service_style)
+        const anyRecordsQuery = await vendor_available_slotsRepo.dbVendorAvailableSlots17(availabilityIdsForQuery)
         console.log(`[SLOTS] ========== ANY RECORDS FOR availabilityIdsForQuery ==========`);
         console.log(`[SLOTS] availabilityIdsForQuery: ${JSON.stringify(availabilityIdsForQuery)}`);
         console.log(`[SLOTS] Total records found: ${anyRecordsQuery.rows.length}`);
@@ -527,7 +527,7 @@ export async function executevendorAvailableSlots(c: Context) {
         }
 
         // Check ALL vendor_availability_v2 records for this vendor (no filters)
-        const allVA2Records = await vendor_available_slotsRepo.dbVendorAvailableSlots18(text, day_of_week, service_type, is_available)
+        const allVA2Records = await vendor_available_slotsRepo.dbVendorAvailableSlots18(canonicalVendorId)
         console.log(`[SLOTS] ========== ALL vendor_availability_v2 RECORDS FOR CANONICAL VENDOR ID ==========`);
         console.log(`[SLOTS] canonicalVendorId: ${canonicalVendorId}`);
         console.log(`[SLOTS] Total records: ${allVA2Records.rows.length}`);
@@ -538,7 +538,7 @@ export async function executevendorAvailableSlots(c: Context) {
         }
 
         // Diagnostic query with filters
-        const diagnosticQuery = await vendor_available_slotsRepo.dbVendorAvailableSlots19(int, text, dayOfWeekValues)
+        const diagnosticQuery = await vendor_available_slotsRepo.dbVendorAvailableSlots19(canonicalVendorId, dayOfWeekValues, acceptableStylesForSlot)
         const diag = diagnosticQuery.rows[0];
         console.log(`[SLOTS] Diagnostic: total=${diag.total_count}, day_match=${diag.day_match_count}, day_style_match=${diag.day_style_match_count}, day_style_enabled_match=${diag.day_style_enabled_match_count}`);
         console.log(`[SLOTS] Diagnostic: days=${JSON.stringify(diag.distinct_days)}, service_types=${JSON.stringify(diag.distinct_service_types)}`);
@@ -558,7 +558,7 @@ export async function executevendorAvailableSlots(c: Context) {
       let verificationSlots: any[] = [];
       try {
         // First try with service style filter but without vendor status filters
-        const directVerification = await vendor_available_slotsRepo.dbVendorAvailableSlots20(text, int, va, dayOfWeekValues)
+        const directVerification = await vendor_available_slotsRepo.dbVendorAvailableSlots20(availabilityIdsForQuery, dayOfWeekValues, acceptableStylesForSlot)
         console.log(`[SLOTS] Direct verification query (with service style filter) returned ${directVerification.rows.length} rows`);
         if (directVerification.rows.length > 0) {
           console.log(`[SLOTS] ✅ VERIFICATION SUCCESS: Found ${directVerification.rows.length} records matching service style`);
@@ -568,7 +568,7 @@ export async function executevendorAvailableSlots(c: Context) {
         } else {
           // Try without service style filter to see if records exist at all
           console.log(`[SLOTS] ⚠️ No records with service style filter, trying without service style filter...`);
-          const directVerificationNoStyle = await vendor_available_slotsRepo.dbVendorAvailableSlots21(text, int, va)
+          const directVerificationNoStyle = await vendor_available_slotsRepo.dbVendorAvailableSlots21(availabilityIdsForQuery, dayOfWeekValues)
           console.log(`[SLOTS] Direct verification query (no service style filter) returned ${directVerificationNoStyle.rows.length} rows`);
           if (directVerificationNoStyle.rows.length > 0) {
             console.log(`[SLOTS] ⚠️ Found ${directVerificationNoStyle.rows.length} records but service style filter excluded them`);
@@ -620,7 +620,7 @@ export async function executevendorAvailableSlots(c: Context) {
             console.log(`[SLOTS] Attempting query with style filter...`);
             let arrayQueryWithStyle: any = { rows: [] };
             try {
-              arrayQueryWithStyle = await vendor_available_slotsRepo.dbVendorAvailableSlots22(text, int, va, v, dayOfWeekValues)
+              arrayQueryWithStyle = await vendor_available_slotsRepo.dbVendorAvailableSlots22(availabilityIdsForQuery, dayOfWeekValues, acceptableStylesForSlot)
               console.log(`[SLOTS] Query with style filter succeeded: ${arrayQueryWithStyle.rows.length} rows`);
             } catch (err: any) {
               console.log(`[SLOTS] Query with style filter failed: ${err?.message}`);
@@ -640,7 +640,7 @@ export async function executevendorAvailableSlots(c: Context) {
               console.log(`[SLOTS] Attempting query without style filter...`);
               let arrayQueryNoStyle: any = { rows: [] };
               try {
-                arrayQueryNoStyle = await vendor_available_slotsRepo.dbVendorAvailableSlots23(text, int, va, v)
+                arrayQueryNoStyle = await vendor_available_slotsRepo.dbVendorAvailableSlots23(availabilityIdsForQuery, dayOfWeekValues)
                 console.log(`[SLOTS] Query without style filter succeeded: ${arrayQueryNoStyle.rows.length} rows`);
               } catch (err: any) {
                 console.log(`[SLOTS] Query without style filter failed: ${err?.message}`);
@@ -675,7 +675,7 @@ export async function executevendorAvailableSlots(c: Context) {
                 console.log(`[SLOTS] Attempting query without vendor status filters...`);
                 let noStatusFilterResult: any = { rows: [] };
                 try {
-                  noStatusFilterResult = await vendor_available_slotsRepo.dbVendorAvailableSlots24(text, int, va)
+                  noStatusFilterResult = await vendor_available_slotsRepo.dbVendorAvailableSlots24(availabilityIdsForQuery, dayOfWeekValues)
                   console.log(`[SLOTS] Query without vendor status filters succeeded: ${noStatusFilterResult.rows.length} rows`);
                 } catch (err: any) {
                   console.log(`[SLOTS] Query without vendor status filters failed: ${err?.message}`);
@@ -695,7 +695,7 @@ export async function executevendorAvailableSlots(c: Context) {
                   console.log(`[SLOTS] Attempting last resort query (no filters except vendor_id and day_of_week)...`);
                   let lastResortQuery: any = { rows: [] };
                   try {
-                    lastResortQuery = await vendor_available_slotsRepo.dbVendorAvailableSlots25(text, int, va)
+                    lastResortQuery = await vendor_available_slotsRepo.dbVendorAvailableSlots25(availabilityIdsForQuery, dayOfWeekValues)
                     console.log(`[SLOTS] Last resort query succeeded: ${lastResortQuery.rows.length} rows`);
                   } catch (err: any) {
                     console.log(`[SLOTS] Last resort query failed: ${err?.message}`);
@@ -797,7 +797,7 @@ export async function executevendorAvailableSlots(c: Context) {
         console.log(`[SLOTS] ⚠️ No availability records found after all queries`);
         // ✅ ENHANCED AVAILABILITY DEBUG: Check vendor status and online status
         try {
-          const vendorStatusCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots26(text, v)
+          const vendorStatusCheck = await vendor_available_slotsRepo.dbVendorAvailableSlots26(availabilityIdsForQuery)
           console.log(`[SLOTS] ⚠️ ENHANCED AVAILABILITY DEBUG - Vendor status check: ${JSON.stringify(vendorStatusCheck.rows)}`);
 
           // Check if vendor is offline or not approved
@@ -824,7 +824,7 @@ export async function executevendorAvailableSlots(c: Context) {
       // Breaks for this day
       let breaks: { startTime: string; endTime: string }[] = [];
       try {
-        const breakRows = await vendor_available_slotsRepo.dbVendorAvailableSlots27(date, dayOfWeek).catch(() => ({ rows: [] }));
+        const breakRows = await vendor_available_slotsRepo.dbVendorAvailableSlots27(resolvedVendorId, dayOfWeek, date).catch(() => ({ rows: [] }));
         breaks = breakRows.rows.map((r: any) => ({
           startTime: typeof r.start_time === 'string' ? r.start_time.substring(0, 5) : r.start_time,
           endTime: typeof r.end_time === 'string' ? r.end_time.substring(0, 5) : r.end_time,

@@ -84,7 +84,7 @@ export async function executepricingQuote(c: Context) {
       let taxCategoryId: string | null = null;
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
 
-      const vsRow = await pricing_quoteRepo.dbPricingQuote0(uuid, vs, vendor)
+      const vsRow = await pricing_quoteRepo.dbPricingQuote0(serviceId, vendor)
       if (vsRow.rows?.length > 0) {
         const vs = vsRow.rows[0];
         basePrice = vs.custom_price != null ? parseFloat(vs.custom_price) : parseFloat(vs.price || '0');
@@ -141,7 +141,7 @@ export async function executepricingQuote(c: Context) {
           }
         } catch (_) { }
       } else {
-        const catalogRow = await pricing_quoteRepo.dbPricingQuote1(uuid, base_price, category_id)
+        const catalogRow = await pricing_quoteRepo.dbPricingQuote1(serviceId)
         if (catalogRow.rows?.length > 0) {
           const sc = catalogRow.rows[0];
           basePrice = parseFloat(sc.base_price || '0');

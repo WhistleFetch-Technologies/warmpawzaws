@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbDiscoverServices0(text) {
+export async function dbDiscoverServices0() {
   return await query(
           `SELECT id::text FROM service_categories
            WHERE COALESCE(is_active, true) = true
@@ -12,7 +12,7 @@ export async function dbDiscoverServices0(text) {
         )
 }
 
-export async function dbDiscoverServices1(text) {
+export async function dbDiscoverServices1() {
   return await query(
           `SELECT id::text FROM service_categories
            WHERE COALESCE(is_active, true) = true

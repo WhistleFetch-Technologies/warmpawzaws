@@ -66,7 +66,7 @@ export async function executediagnosticsApproveVendor(c: Context) {
       }
 
       // Update vendor status to approved
-      const updateResult = await diagnostics_approve_vendorRepo.dbDiagnosticsApproveVendor0(business_name, phone, status)
+      const updateResult = await diagnostics_approve_vendorRepo.dbDiagnosticsApproveVendor0(vendorId)
 
       if (updateResult.rows.length === 0) {
         return c.json({ error: 'Vendor not found' }, 404);

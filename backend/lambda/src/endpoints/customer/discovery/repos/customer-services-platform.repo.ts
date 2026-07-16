@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerServicesPlatform0(information_schema) {
+export async function dbCustomerServicesPlatform0() {
   return await query(
         `SELECT EXISTS (
           SELECT FROM information_schema.tables 

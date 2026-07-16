@@ -75,16 +75,16 @@ export async function executevendorFacilityGet(c: Context) {
 
       // Get services
       // Check if is_global column exists
-      const serviceColumns = await vendor_facility_getRepo.dbVendorFacilityGet0(information_schema)
+      const serviceColumns = await vendor_facility_getRepo.dbVendorFacilityGet0()
       const hasIsGlobal = serviceColumns.rows.length > 0;
 
-      const services = await vendor_facility_getRepo.dbVendorFacilityGet1(vs, s, vendor)
+      const services = await vendor_facility_getRepo.dbVendorFacilityGet1(hasIsGlobal, vendor)
 
       // Get rating
       const ratingResult = await vendor_facility_getRepo.dbVendorFacilityGet2(vendor)
 
       // Get recent reviews
-      const recentReviews = await vendor_facility_getRepo.dbVendorFacilityGet3(c, r, vendor)
+      const recentReviews = await vendor_facility_getRepo.dbVendorFacilityGet3(vendor)
 
       // ✅ FIX: Extract facility data from vendor metadata and operating_hours
       const metadata = parseVendorMetadata(vendor.metadata);

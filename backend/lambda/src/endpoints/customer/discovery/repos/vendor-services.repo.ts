@@ -1,6 +1,7 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
+import { sqlPackagePurchaseActiveForListing } from '../../../../utils/package-session-eligibility';
 
-export async function dbVendorServices0(customerId, resolvedVendorId, package_id) {
+export async function dbVendorServices0(customerId, resolvedVendorId) {
   return await query(
               `SELECT id, package_id, package_snapshot FROM package_purchases
                WHERE customer_id = $1 AND vendor_id = $2 AND status = 'active'
@@ -24,7 +25,7 @@ export async function dbVendorServices2(pp) {
                   );
 }
 
-export async function dbVendorServices3(text) {
+export async function dbVendorServices3() {
   return await query(
               `SELECT id::text FROM service_categories
                WHERE COALESCE(is_active, true) = true

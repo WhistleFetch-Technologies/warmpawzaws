@@ -1,13 +1,13 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbVendorFacilityGet0(information_schema) {
+export async function dbVendorFacilityGet0() {
   return await query(
         `SELECT column_name FROM information_schema.columns 
          WHERE table_name = 'services' AND column_name = 'is_global'`
       );
 }
 
-export async function dbVendorFacilityGet1(vs, s, vendor) {
+export async function dbVendorFacilityGet1(hasIsGlobal, vendor) {
   return await query(
         `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style
          FROM services s
@@ -29,7 +29,7 @@ export async function dbVendorFacilityGet2(vendor) {
       );
 }
 
-export async function dbVendorFacilityGet3(c, r, vendor) {
+export async function dbVendorFacilityGet3(vendor) {
   return await query(
         `SELECT r.*, c.full_name as customer_name
          FROM reviews r

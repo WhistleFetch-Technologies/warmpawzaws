@@ -16,7 +16,7 @@ export async function executecustomerPetmatchingRequestPost(c: Context) {
         return c.json({ error: 'fromCustomerId (valid UUID) is required' }, 400);
       }
 
-      const ownerCheck = await customer_petmatching_request_postRepo.dbCustomerPetmatchingRequestPost0(uuid)
+      const ownerCheck = await customer_petmatching_request_postRepo.dbCustomerPetmatchingRequestPost0(fromPetId, fromCustomerId)
       if (ownerCheck.rows.length === 0) {
         return c.json({ error: 'fromPetId must be one of your pets' }, 403);
       }

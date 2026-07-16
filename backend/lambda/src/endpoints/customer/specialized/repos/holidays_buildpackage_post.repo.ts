@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbHolidaysBuildpackagePost0(customerId, destination, startDate, endDate, durationDays, numberOfPets, JSON, accommodationType, specialRequests, estimatedPrice) {
+export async function dbHolidaysBuildpackagePost0(customerId, destination, startDate, endDate, durationDays, numberOfPets, petTypes, activities, accommodationType, specialRequests, estimatedPrice) {
   return await insert('holiday_custom_requests', {
         customer_id: customerId,
         destination: destination,

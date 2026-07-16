@@ -65,22 +65,22 @@ export async function executedebugTrainingVendors(c: Context) {
       const hasVsCatId = await columnExists('vendor_services', 'category_id');
 
       // Show all trainer_center / training_center vendors and their at_center services
-      const vendorCheck = await debug_training_vendorsRepo.dbDebugTrainingVendors0(v, r, vs)
+      const vendorCheck = await debug_training_vendorsRepo.dbDebugTrainingVendors0()
 
       // Run the by-style EXISTS check for each vendor (full conditions including is_custom)
-      const byStyleCheck = await debug_training_vendorsRepo.dbDebugTrainingVendors1(text, v, r, vs)
+      const byStyleCheck = await debug_training_vendorsRepo.dbDebugTrainingVendors1()
 
       // Check specializations for "wrong persona" vendor specifically
-      const specCheck = await debug_training_vendorsRepo.dbDebugTrainingVendors2(v, vsp).catch(() => ({ rows: [] }));
+      const specCheck = await debug_training_vendorsRepo.dbDebugTrainingVendors2().catch(() => ({ rows: [] }));
 
       // Check what specialization_master has for basic_obedience
-      const masterCheck = await debug_training_vendorsRepo.dbDebugTrainingVendors3(text, specialization_id, name).catch(() => ({ rows: [] }));
+      const masterCheck = await debug_training_vendorsRepo.dbDebugTrainingVendors3().catch(() => ({ rows: [] }));
 
       // Simulate the exact sqlVendorMatchesDeclaredSpecialization SQL for 'basic_obedience'
       // This is exactly what the by-style endpoint runs when specialization=basic_obedience
       const specKeys = ['basic_obedience', 'basic obedience', 'obedience', 'd9466ca6-2809-45e5-8a40-13443d652e8f'];
       const specIlike = ['%basic\\_obedience%', '%basic obedience%', '%obedience%', '%d9466ca6-2809-45e5-8a40-13443d652e8f%'];
-      const specFilterSimulation = await debug_training_vendorsRepo.dbDebugTrainingVendors4(text, v, vsp, sm, vsp2).catch((e: any) => ({ rows: [], error: e?.message }));
+      const specFilterSimulation = await debug_training_vendorsRepo.dbDebugTrainingVendors4(specKeys, specIlike).catch((e: any) => ({ rows: [], error: e?.message }));
 
       return c.json({
         success: true,

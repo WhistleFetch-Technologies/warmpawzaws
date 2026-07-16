@@ -17,11 +17,11 @@ export async function executevendorVendoridRelocationquotesGet(c: Context) {
         FROM relocation_quotes rq
         LEFT JOIN customers c ON rq.customer_id = c.id
         WHERE rq.status = 'pending'
-        OR rq.vendor_id = executevendorVendoridRelocationquotesGet
+        OR rq.vendor_id = $1
         ORDER BY rq.created_at DESC
       `;
 
-      const quotes = await vendor_vendorid_relocationquotes_getRepo.dbVendorVendoridRelocationquotesGet0(quotesQuery).catch(() => ({ rows: [] }));
+      const quotes = await vendor_vendorid_relocationquotes_getRepo.dbVendorVendoridRelocationquotesGet0(vendorId, quotesQuery).catch(() => ({ rows: [] }));
 
       return c.json({
         success: true,

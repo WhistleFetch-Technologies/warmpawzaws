@@ -73,7 +73,7 @@ export async function executecustomerFacility(c: Context) {
       }
 
       // Get vendor details
-      const vendorResult = await customer_facilityRepo.dbCustomerFacility0(r, v)
+      const vendorResult = await customer_facilityRepo.dbCustomerFacility0(vendorId)
 
       if (vendorResult.rows.length === 0) {
         return c.json({ error: 'Vendor not found', success: false }, 404);
@@ -88,10 +88,10 @@ export async function executecustomerFacility(c: Context) {
       const ratingResult = await customer_facilityRepo.dbCustomerFacility1(vendorId)
 
       // Get recent reviews
-      const reviewsResult = await customer_facilityRepo.dbCustomerFacility2(c, r)
+      const reviewsResult = await customer_facilityRepo.dbCustomerFacility2(vendorId)
 
       // Get staff
-      const staffResult = await customer_facilityRepo.dbCustomerFacility3(name, role, experience_years)
+      const staffResult = await customer_facilityRepo.dbCustomerFacility3(vendorId)
 
       // ✅ FIX: Extract metadata for description, custom amenities, and photos
       const metadata = parseVendorMetadata(vendor.metadata);

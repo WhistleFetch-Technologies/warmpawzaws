@@ -64,7 +64,7 @@ export async function executediagnosticsVendorByPhone(c: Context) {
       }
 
       // Find vendor
-      const vendorResult = await diagnostics_vendor_by_phoneRepo.dbDiagnosticsVendorByPhone0(v, r)
+      const vendorResult = await diagnostics_vendor_by_phoneRepo.dbDiagnosticsVendorByPhone0(phone)
 
       if (vendorResult.rows.length === 0) {
         return c.json({
@@ -77,7 +77,7 @@ export async function executediagnosticsVendorByPhone(c: Context) {
       const vendor = vendorResult.rows[0];
 
       // Check services
-      const servicesResult = await diagnostics_vendor_by_phoneRepo.dbDiagnosticsVendorByPhone1(vs, vendor)
+      const servicesResult = await diagnostics_vendor_by_phoneRepo.dbDiagnosticsVendorByPhone1(vendor)
 
       // Check tele services specifically
       const teleServices = servicesResult.rows.filter(s =>

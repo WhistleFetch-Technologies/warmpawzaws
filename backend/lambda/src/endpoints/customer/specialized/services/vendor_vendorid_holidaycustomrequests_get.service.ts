@@ -7,7 +7,7 @@ export async function executevendorVendoridHolidaycustomrequestsGet(c: Context) 
     try {
       const { vendorId } = c.req.param();
 
-      const requests = await vendor_vendorid_holidaycustomrequests_getRepo.dbVendorVendoridHolidaycustomrequestsGet0(c, hcr).catch(() => ({ rows: [] }));
+      const requests = await vendor_vendorid_holidaycustomrequests_getRepo.dbVendorVendoridHolidaycustomrequestsGet0(vendorId).catch(() => ({ rows: [] }));
 
       return c.json({
         success: true,

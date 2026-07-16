@@ -29,7 +29,7 @@ export async function executecustomerFeaturedvendorsGet(c: Context) {
 
       const now = new Date().toISOString();
 
-      const result = await customer_featuredvendors_getRepo.dbCustomerFeaturedvendorsGet0(title, subtitle, image_url, cta_text, cta_link, role_id, service_category, metadata, display_order).catch(() => ({ rows: [] }));
+      const result = await customer_featuredvendors_getRepo.dbCustomerFeaturedvendorsGet0(now).catch(() => ({ rows: [] }));
 
       const phoneQ = c.req.query('phone') ?? c.req.query('customerPhone');
       const phone = Array.isArray(phoneQ) ? phoneQ[0] : phoneQ;

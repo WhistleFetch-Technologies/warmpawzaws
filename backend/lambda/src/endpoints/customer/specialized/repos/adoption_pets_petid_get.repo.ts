@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbAdoptionPetsPetidGet0(petId, v, p) {
+export async function dbAdoptionPetsPetidGet0(petId) {
   return await query(`
         SELECT 
           p.*,
@@ -18,7 +18,7 @@ export async function dbAdoptionPetsPetidGet0(petId, v, p) {
       `, [petId]);
 }
 
-export async function dbAdoptionPetsPetidGet1(petId, p, pet) {
+export async function dbAdoptionPetsPetidGet1(petId, pet) {
   return await query(`
         SELECT p.id, p.name, p.breed, p.age, p.photos, p.adoption_fee
         FROM pets p

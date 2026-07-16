@@ -55,7 +55,7 @@ export async function executecustomerContentPagesSlugGet(c: Context) {
       const placeholders = uniqueVariations.map((_, i) => `${i + 1}`).join(', ');
       const queryParams = uniqueVariations;
       
-      const pageResult = await customer_content_pages_slug_getRepo.dbCustomerContentPagesSlugGet0(title, slug, content, category, is_published, metadata, created_at, queryParams).catch((err) => {
+      const pageResult = await customer_content_pages_slug_getRepo.dbCustomerContentPagesSlugGet0(placeholders, slug, queryParams).catch((err) => {
         console.error('[ContentPageViewer API] Database query error:', err);
         return { rows: [] };
       });
@@ -69,7 +69,7 @@ export async function executecustomerContentPagesSlugGet(c: Context) {
         // Try case-insensitive search as fallback
         console.log('[ContentPageViewer API] Exact match failed, trying case-insensitive search');
         
-        const caseInsensitiveResult = await customer_content_pages_slug_getRepo.dbCustomerContentPagesSlugGet1(title, slug, content, category, is_published, metadata, created_at).catch(() => ({ rows: [] }));
+        const caseInsensitiveResult = await customer_content_pages_slug_getRepo.dbCustomerContentPagesSlugGet1(slug).catch(() => ({ rows: [] }));
 
         if (caseInsensitiveResult.rows && caseInsensitiveResult.rows.length > 0) {
           console.log('[ContentPageViewer API] Found via case-insensitive search');
@@ -95,7 +95,7 @@ export async function executecustomerContentPagesSlugGet(c: Context) {
         }
 
         // Log available slugs for debugging
-        const allPages = await customer_content_pages_slug_getRepo.dbCustomerContentPagesSlugGet2(title, is_published).catch(() => ({ rows: [] }));
+        const allPages = await customer_content_pages_slug_getRepo.dbCustomerContentPagesSlugGet2().catch(() => ({ rows: [] }));
         
         const availablePages = allPages.rows.map((p: any) => ({
           slug: p.slug,

@@ -118,7 +118,7 @@ export async function executediscoverByProblem(c: Context) {
           AND (
             (v.specializations IS NOT NULL AND v.specializations::text ILIKE $2) OR
             (v.metadata IS NOT NULL AND v.metadata->'specializations' IS NOT NULL AND (v.metadata->'specializations')::text ILIKE $2) OR
-            EXISTS (SELECT 1 FROM vendor_specializations vs WHERE vs.vendor_id = v.id AND (vs.specialization = ANY(executediscoverByProblem::text[]) OR vs.specialization ILIKE $2)) OR
+            EXISTS (SELECT 1 FROM vendor_specializations vs WHERE vs.vendor_id = v.id AND (vs.specialization = ANY($1::text[]) OR vs.specialization ILIKE $2)) OR
             EXISTS (SELECT 1 FROM vendor_services s WHERE s.vendor_id = v.id AND s.is_enabled = true AND (s.service_name ILIKE $2 OR (s.custom_description IS NOT NULL AND s.custom_description::text ILIKE $2)))
           )
       `;

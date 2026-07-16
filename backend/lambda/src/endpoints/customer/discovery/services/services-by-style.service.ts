@@ -198,7 +198,7 @@ export async function executeservicesByStyle(c: Context) {
         .filter(Boolean);
       let strictCategoryIds: string[] = [...strictFromUuid];
       if (strictFromText.length > 0) {
-        const slugRes = await services_by_styleRepo.dbServicesByStyle0(text).catch(() => ({ rows: [] as { id: string }[] }));
+        const slugRes = await services_by_styleRepo.dbServicesByStyle0(strictFromText).catch(() => ({ rows: [] as { id: string }[] }));
         for (const row of slugRes.rows || []) {
           if (row?.id && !strictCategoryIds.includes(row.id)) strictCategoryIds.push(row.id);
         }
@@ -273,7 +273,7 @@ export async function executeservicesByStyle(c: Context) {
 
       let boardingCustomCategoryIdOrByStyleSql = '';
       if (boardingDiscoverySearchByStyle && hasVsCategoryIdCol) {
-        const slugResByStyle = await services_by_styleRepo.dbServicesByStyle1(text).catch(() => ({ rows: [] as { id: string }[] }));
+        const slugResByStyle = await services_by_styleRepo.dbServicesByStyle1().catch(() => ({ rows: [] as { id: string }[] }));
         const idB = (slugResByStyle.rows || []).map((r: any) => r?.id).filter(Boolean);
         const UUID_RE_BS =
           /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

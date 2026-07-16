@@ -226,7 +226,7 @@ export async function executediscoverServices(c: Context) {
       const hasVsCategoryIdDiscover = await columnExists('vendor_services', 'category_id');
       let boardingCustomCategoryIdOrSql = '';
       if (boardingDiscoverySearch && hasVsCategoryIdDiscover) {
-        const slugRes = await discover_servicesRepo.dbDiscoverServices0(text).catch(() => ({ rows: [] as { id: string }[] }));
+        const slugRes = await discover_servicesRepo.dbDiscoverServices0().catch(() => ({ rows: [] as { id: string }[] }));
         const ids = (slugRes.rows || []).map((r: any) => r?.id).filter(Boolean);
         const UUID_RE =
           /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -244,7 +244,7 @@ export async function executediscoverServices(c: Context) {
 
       let trainingCustomCategoryIdOrSql = '';
       if (trainingDiscoverySearch && hasVsCategoryIdDiscover) {
-        const slugResTraining = await discover_servicesRepo.dbDiscoverServices1(text).catch(() => ({ rows: [] as { id: string }[] }));
+        const slugResTraining = await discover_servicesRepo.dbDiscoverServices1().catch(() => ({ rows: [] as { id: string }[] }));
         const idsT = (slugResTraining.rows || []).map((r: any) => r?.id).filter(Boolean);
         const UUID_RE_T =
           /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -311,7 +311,7 @@ export async function executediscoverServices(c: Context) {
                 AND EXISTS (
                   SELECT 1 FROM vendors v2
                   JOIN roles r2 ON r2.id = v2.role_id
-                  WHERE v2.id = executediscoverServices
+                  WHERE v2.id = $1
                     AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ${VET_HUB_PLACEHOLDER_CATEGORY_ROLES_SQL}
                 )
               )`
@@ -429,7 +429,7 @@ export async function executediscoverServices(c: Context) {
                  vs.category AS category_name
            FROM vendor_services vs
            LEFT JOIN services s ON vs.service_id = s.id
-           WHERE vs.vendor_id = executediscoverServices
+           WHERE vs.vendor_id = $1
              AND ${styleMatchSql}
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
             ${categoryFilterSql}${sittingRelaxedFetchCategorySql}

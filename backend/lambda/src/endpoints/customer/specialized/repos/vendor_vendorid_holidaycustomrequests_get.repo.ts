@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbVendorVendoridHolidaycustomrequestsGet0(vendorId, c, hcr) {
+export async function dbVendorVendoridHolidaycustomrequestsGet0(vendorId) {
   return await query(`
         SELECT 
           hcr.*,

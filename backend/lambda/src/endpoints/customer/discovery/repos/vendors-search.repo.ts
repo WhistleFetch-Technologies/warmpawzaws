@@ -1,4 +1,5 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
+import { sqlPackagePurchaseActiveForListing } from '../../../../utils/package-session-eligibility';
 
 export async function dbVendorsSearch0(vendorQuery, params) {
   return await query(vendorQuery, params);
@@ -27,7 +28,7 @@ export async function dbVendorsSearch3(vendor) {
   return await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [vendor.id]);
 }
 
-export async function dbVendorsSearch4(vs, vendor) {
+export async function dbVendorsSearch4(vendor) {
   return await query(
             `SELECT COUNT(*) as count FROM vendor_services vs WHERE vs.vendor_id = $1 AND vs.is_enabled = true AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)`,
             [vendor.id]

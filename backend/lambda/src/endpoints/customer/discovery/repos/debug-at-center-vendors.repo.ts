@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbDebugAtCenterVendors0(v, r, vs) {
+export async function dbDebugAtCenterVendors0() {
   return await query(`
         SELECT 
           v.id,
@@ -21,7 +21,7 @@ export async function dbDebugAtCenterVendors0(v, r, vs) {
       `);
 }
 
-export async function dbDebugAtCenterVendors1(v, r, vs) {
+export async function dbDebugAtCenterVendors1() {
   return await query(`
         SELECT 
           v.id,
@@ -45,7 +45,7 @@ export async function dbDebugAtCenterVendors1(v, r, vs) {
       `);
 }
 
-export async function dbDebugAtCenterVendors2(v, r, vs) {
+export async function dbDebugAtCenterVendors2() {
   return await query(`
         SELECT 
           v.id,
@@ -70,7 +70,7 @@ export async function dbDebugAtCenterVendors2(v, r, vs) {
       `);
 }
 
-export async function dbDebugAtCenterVendors3(vetIds, text, uuid, va, v) {
+export async function dbDebugAtCenterVendors3(vetIds) {
   return await query(`
           SELECT 
             va.vendor_id,

@@ -1,11 +1,6 @@
 import { update } from '../../../../database/rds-connection';
 
-export async function dbVendorVendoridAdoptionapplicationsApplicationidPut0(
-  applicationId: string,
-  vendorId: string,
-  status: string,
-  reviewerNotes: string
-) {
+export async function dbVendorVendoridAdoptionapplicationsApplicationidPut0(applicationId, vendorId, reviewerNotes) {
   return await update(
     'adoption_applications',
     { id: applicationId, vendor_id: vendorId },
@@ -17,6 +12,6 @@ export async function dbVendorVendoridAdoptionapplicationsApplicationidPut0(
   );
 }
 
-export async function dbVendorVendoridAdoptionapplicationsApplicationidPut1(petId: string) {
+export async function dbVendorVendoridAdoptionapplicationsApplicationidPut1(petId) {
   return await update('pets', { id: petId }, { status: 'adoption_pending' });
 }

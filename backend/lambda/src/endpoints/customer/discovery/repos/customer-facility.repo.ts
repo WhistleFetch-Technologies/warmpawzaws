@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerFacility0(vendorId, r, v) {
+export async function dbCustomerFacility0(vendorId) {
   return await query(
         `SELECT v.*, r.name as role_name, r.display_name as role_display_name,
                 r.config as role_config
@@ -19,7 +19,7 @@ export async function dbCustomerFacility1(vendorId) {
       );
 }
 
-export async function dbCustomerFacility2(vendorId, c, r) {
+export async function dbCustomerFacility2(vendorId) {
   return await query(
         `SELECT r.*, c.full_name as customer_name
          FROM reviews r
@@ -30,7 +30,7 @@ export async function dbCustomerFacility2(vendorId, c, r) {
       );
 }
 
-export async function dbCustomerFacility3(vendorId, name, role, experience_years) {
+export async function dbCustomerFacility3(vendorId) {
   return await query(
         `SELECT id, name, role, experience_years, is_active
          FROM staff WHERE vendor_id = $1 AND is_active = true`,

@@ -191,7 +191,7 @@ export async function executevendorFacilityPut(c: Context) {
             .toLowerCase()
             .replace(/-/g, '_');
           if (getCategoryFromRole(rn) === 'boarding') {
-            await vendor_facility_putRepo.dbVendorFacilityPut1(actualVendorId, jsonb, uuid, disclaimerPoints, JSON)
+            await vendor_facility_putRepo.dbVendorFacilityPut1(actualVendorId, disclaimerPoints)
           }
         } catch (syncBoardingDiscErr: any) {
           console.warn(
@@ -208,7 +208,7 @@ export async function executevendorFacilityPut(c: Context) {
         try {
           // Check if metadata column exists
           const { query } = await import('../../../database/rds-connection');
-          const columnCheck = await vendor_facility_putRepo.dbVendorFacilityPut2(information_schema)
+          const columnCheck = await vendor_facility_putRepo.dbVendorFacilityPut2()
 
           if (columnCheck.rows.length === 0) {
             // Column doesn't exist, add it

@@ -13,7 +13,7 @@ export async function executeadoptionRequestPost(c: Context) {
       }
 
       // Get pet details
-      const pets = await adoption_request_postRepo.dbAdoptionRequestPost0(vendor_id)
+      const pets = await adoption_request_postRepo.dbAdoptionRequestPost0(petId)
       if (pets.rows.length === 0) {
         return c.json({ error: 'Pet not found' }, 404);
       }

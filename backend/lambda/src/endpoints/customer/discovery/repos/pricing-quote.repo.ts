@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbPricingQuote0(serviceId, uuid, vs, vendor) {
+export async function dbPricingQuote0(serviceId, vendor) {
   return await query(
         `SELECT vs.id, vs.service_id, vs.price, vs.custom_price, vs.category, vs.metadata
          FROM vendor_services vs
@@ -10,7 +10,7 @@ export async function dbPricingQuote0(serviceId, uuid, vs, vendor) {
       );
 }
 
-export async function dbPricingQuote1(serviceId, uuid, base_price, category_id) {
+export async function dbPricingQuote1(serviceId) {
   return await query(
           `SELECT id, base_price, category_id, category_name FROM service_catalog WHERE (service_id = $1 OR id = $1::uuid) AND status = 'active'`,
           [serviceId]

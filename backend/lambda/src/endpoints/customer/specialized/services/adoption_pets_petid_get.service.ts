@@ -7,7 +7,7 @@ export async function executeadoptionPetsPetidGet(c: Context) {
     try {
       const { petId } = c.req.param();
 
-      const petResult = await adoption_pets_petid_getRepo.dbAdoptionPetsPetidGet0(v, p)
+      const petResult = await adoption_pets_petid_getRepo.dbAdoptionPetsPetidGet0(petId)
 
       if (petResult.rows.length === 0) {
         return c.json({ error: 'Pet not found' }, 404);
@@ -16,7 +16,7 @@ export async function executeadoptionPetsPetidGet(c: Context) {
       const pet = petResult.rows[0];
 
       // Get similar pets
-      const similarPets = await adoption_pets_petid_getRepo.dbAdoptionPetsPetidGet1(p, pet).catch(() => ({ rows: [] }));
+      const similarPets = await adoption_pets_petid_getRepo.dbAdoptionPetsPetidGet1(petId, pet).catch(() => ({ rows: [] }));
 
       return c.json({
         success: true,

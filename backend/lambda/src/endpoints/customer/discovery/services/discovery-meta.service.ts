@@ -62,8 +62,8 @@ export async function executediscoveryMeta(c: Context) {
 
     try {
       // Align with admin active vendors: (approved|active), any published/draft service, no r.is_active
-      const rolesResult = await discovery_metaRepo.dbDiscoveryMeta0(r, v, vs)
-      const stylesResult = await discovery_metaRepo.dbDiscoveryMeta1(vs, v)
+      const rolesResult = await discovery_metaRepo.dbDiscoveryMeta0()
+      const stylesResult = await discovery_metaRepo.dbDiscoveryMeta1()
       const roles = (rolesResult.rows || []).map((r: any) => ({
         roleId: r.rolename,
         roleName: r.rolename,

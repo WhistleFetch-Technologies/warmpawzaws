@@ -171,7 +171,7 @@ export async function executevendorServices(c: Context) {
         FROM vendor_services vs
         LEFT JOIN services s ON vs.service_id = s.id
         LEFT JOIN service_catalog sc ON vs.service_id = sc.id
-        WHERE vs.vendor_id = executevendorServices
+        WHERE vs.vendor_id = $1
           AND (vs.is_enabled = true OR vs.is_enabled IS NULL)
           AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
       `;
@@ -256,7 +256,7 @@ export async function executevendorServices(c: Context) {
           let boardingCatIdOr = '';
           const hasVsCatColBooking = await columnExists('vendor_services', 'category_id');
           if (hasVsCatColBooking) {
-            const brSlug = await vendor_servicesRepo.dbVendorServices3(text).catch(() => ({ rows: [] as { id: string }[] }));
+            const brSlug = await vendor_servicesRepo.dbVendorServices3().catch(() => ({ rows: [] as { id: string }[] }));
             const bids = (brSlug.rows || []).map((r: any) => r?.id).filter(Boolean);
             const UUID_RE_B =
               /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

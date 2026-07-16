@@ -32,7 +32,7 @@ export async function executeholidaysBuildpackagePost(c: Context) {
       const estimatedPrice = (basePrice * durationDays * (numberOfPets || 1)) + activityCost;
 
       // Save custom package request
-      const customPackage = await holidays_buildpackage_postRepo.dbHolidaysBuildpackagePost0(customerId, destination, startDate, endDate, durationDays, numberOfPets, JSON, accommodationType, specialRequests, estimatedPrice).catch(async () => {
+      const customPackage = await holidays_buildpackage_postRepo.dbHolidaysBuildpackagePost0(customerId, destination, startDate, endDate, durationDays, numberOfPets, petTypes, activities, accommodationType, specialRequests, estimatedPrice).catch(async () => {
         // Create table if not exists
         await holidays_buildpackage_postRepo.dbHolidaysBuildpackagePost1()
         return insert('holiday_custom_requests', {
