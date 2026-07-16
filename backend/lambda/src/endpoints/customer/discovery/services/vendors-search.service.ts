@@ -117,12 +117,12 @@ export async function executevendorsSearch(c: Context) {
       if (roleId) {
         const targetRoles = await resolveTargetRolesForDiscovery(null, roleId);
         if (targetRoles.length > 0) {
-          vendorQuery += ` AND r.name = ANY(${paramIndex}::text[])`;
+          vendorQuery += ` AND r.name = ANY($${paramIndex}::text[])`;
           params.push(targetRoles);
           paramIndex++;
         } else {
           // ✅ FIX: Use only role name/display_name comparison (case-insensitive), not id::text
-          vendorQuery += ` AND (LOWER(r.name) = LOWER(${paramIndex}) OR LOWER(r.display_name) = LOWER(${paramIndex}))`;
+          vendorQuery += ` AND (LOWER(r.name) = LOWER($${paramIndex}) OR LOWER(r.display_name) = LOWER($${paramIndex}))`;
           params.push(roleId);
           paramIndex++;
         }
@@ -134,7 +134,7 @@ export async function executevendorsSearch(c: Context) {
         vendorQuery += ` AND EXISTS (
           SELECT 1 FROM vendor_services vs 
           WHERE vs.vendor_id = v.id 
-            AND vs.service_style = ANY(${paramIndex}::text[]) 
+            AND vs.service_style = ANY($${paramIndex}::text[]) 
             AND vs.is_enabled = true 
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
         )`;
@@ -145,9 +145,9 @@ export async function executevendorsSearch(c: Context) {
       // Filter by search query (name, business_name, specialization)
       if (searchQuery) {
         vendorQuery += ` AND (
-          v.business_name ILIKE ${paramIndex} OR 
-          v.owner_name ILIKE ${paramIndex} OR
-          v.specialization ILIKE ${paramIndex}
+          v.business_name ILIKE $${paramIndex} OR 
+          v.owner_name ILIKE $${paramIndex} OR
+          v.specialization ILIKE $${paramIndex}
         )`;
         params.push(`%${searchQuery}%`);
         paramIndex++;
@@ -156,15 +156,15 @@ export async function executevendorsSearch(c: Context) {
       // Filter by location
       if (location) {
         vendorQuery += ` AND (
-          v.city ILIKE ${paramIndex} OR 
-          v.state ILIKE ${paramIndex} OR 
-          v.address ILIKE ${paramIndex}
+          v.city ILIKE $${paramIndex} OR 
+          v.state ILIKE $${paramIndex} OR 
+          v.address ILIKE $${paramIndex}
         )`;
         params.push(`%${location}%`);
         paramIndex++;
       }
 
-      vendorQuery += ` ORDER BY v.created_at DESC LIMIT ${paramIndex} OFFSET ${paramIndex + 1}`;
+      vendorQuery += ` ORDER BY v.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
       paramIndex += 2;
 

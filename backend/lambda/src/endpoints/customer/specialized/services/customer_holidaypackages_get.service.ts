@@ -33,36 +33,36 @@ export async function executecustomerHolidaypackagesGet(c: Context) {
       let paramIndex = 1;
 
       if (destination) {
-        packageQuery += ` AND hp.destination ILIKE ${paramIndex}`;
+        packageQuery += ` AND hp.destination ILIKE $${paramIndex}`;
         params.push(`%${destination}%`);
         paramIndex++;
       }
 
       if (durationMin) {
-        packageQuery += ` AND hp.duration_days >= ${paramIndex}`;
+        packageQuery += ` AND hp.duration_days >= $${paramIndex}`;
         params.push(parseInt(durationMin, 10));
         paramIndex++;
       }
 
       if (durationMax) {
-        packageQuery += ` AND hp.duration_days <= ${paramIndex}`;
+        packageQuery += ` AND hp.duration_days <= $${paramIndex}`;
         params.push(parseInt(durationMax, 10));
         paramIndex++;
       }
 
       if (priceMax) {
-        packageQuery += ` AND hp.price <= ${paramIndex}`;
+        packageQuery += ` AND hp.price <= $${paramIndex}`;
         params.push(parseFloat(priceMax));
         paramIndex++;
       }
 
       if (tourType) {
-        packageQuery += ` AND hp.tour_type = ${paramIndex}`;
+        packageQuery += ` AND hp.tour_type = $${paramIndex}`;
         params.push(tourType);
         paramIndex++;
       }
 
-      packageQuery += ` ORDER BY hp.featured DESC NULLS LAST, vendor_rating DESC NULLS LAST LIMIT ${paramIndex} OFFSET ${paramIndex + 1}`;
+      packageQuery += ` ORDER BY hp.featured DESC NULLS LAST, vendor_rating DESC NULLS LAST LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const packages = await customer_holidaypackages_getRepo.dbCustomerHolidaypackagesGet0(packageQuery, params).catch(() => ({ rows: [] }));

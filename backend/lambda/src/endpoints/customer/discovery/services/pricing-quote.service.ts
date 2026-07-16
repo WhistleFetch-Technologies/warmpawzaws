@@ -103,8 +103,8 @@ export async function executepricingQuote(c: Context) {
             (meta?.packageDetails && typeof meta.packageDetails === 'object');
           if (isPackageMeta) {
             try {
-              const { computeVendorPackagePurchase } = await import('../../../utils/vendor-package-razorpay-flow');
-              const { quotePackagePricing, resolvePackagePolicySnapshot } = await import('../../../utils/package-pricing');
+              const { computeVendorPackagePurchase } = await import('../../../../utils/vendor-package-razorpay-flow');
+              const { quotePackagePricing, resolvePackagePolicySnapshot } = await import('../../../../utils/package-pricing');
               const computed = await computeVendorPackagePurchase({
                 customerId: customerId || '00000000-0000-0000-0000-000000000000',
                 vendorIdRaw: String(vendor.id),
@@ -172,7 +172,7 @@ export async function executepricingQuote(c: Context) {
         resolvedVendorServiceId = String(vsRow.rows[0].id);
       }
 
-      const { resolveServiceBookingTaxItem } = await import('../../../utils/resolve-service-booking-tax-item');
+      const { resolveServiceBookingTaxItem } = await import('../../../../utils/resolve-service-booking-tax-item');
       const { taxItem } = await resolveServiceBookingTaxItem({
         serviceId: resolvedVendorServiceId || serviceId,
         vendorId: vendor.id,

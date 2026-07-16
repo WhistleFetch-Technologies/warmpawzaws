@@ -330,7 +330,11 @@ function bodyFor(route, fx) {
     });
   }
   if (/adoption\/request/i.test(p)) {
-    return customerBody(fx, { petId: fx.petId, message: 'smoke adoption request' });
+    return customerBody(fx, {
+      petId: fx.adoptionPetId || fx.petId,
+      vendorId: fx.vendorId,
+      message: 'smoke adoption request',
+    });
   }
   if (/relocation\/book/i.test(p)) {
     return customerBody(fx, {
@@ -349,10 +353,18 @@ function bodyFor(route, fx) {
     };
   }
   if (/breeder\/inquiry/i.test(p)) {
-    return customerBody(fx, { puppyId: fx.petId, message: 'smoke inquiry' });
+    return customerBody(fx, {
+      puppyId: fx.adoptionPetId || fx.petId,
+      vendorId: fx.vendorId,
+      message: 'smoke inquiry',
+    });
   }
   if (/breeder\/reserve/i.test(p)) {
-    return customerBody(fx, { puppyId: fx.petId, depositInr: 500 });
+    return customerBody(fx, {
+      puppyId: fx.adoptionPetId || fx.petId,
+      vendorId: fx.vendorId,
+      depositAmount: 500,
+    });
   }
   if (/petmatching\/request/i.test(p)) {
     return customerBody(fx, { petId: fx.petId, targetPetId: fx.petId, notes: 'smoke' });

@@ -129,12 +129,12 @@ export async function executediscoverByProblem(c: Context) {
       if (roleId) {
         const targetRoles = await resolveTargetRolesForDiscovery(null, roleId);
         if (targetRoles.length > 0) {
-          queryText += ` AND r.name = ANY(${paramIdx}::text[])`;
+          queryText += ` AND r.name = ANY($${paramIdx}::text[])`;
           params.push(targetRoles);
           paramIdx++;
         } else {
           // ✅ FIX: Use only role name comparison (case-insensitive), not id::text
-          queryText += ` AND (LOWER(r.name) = LOWER(${paramIdx}) OR LOWER(r.display_name) = LOWER(${paramIdx}))`;
+          queryText += ` AND (LOWER(r.name) = LOWER($${paramIdx}) OR LOWER(r.display_name) = LOWER($${paramIdx}))`;
           params.push(roleId);
           paramIdx++;
         }
@@ -145,7 +145,7 @@ export async function executediscoverByProblem(c: Context) {
         queryText += ` AND EXISTS (
           SELECT 1 FROM vendor_services vs 
           WHERE vs.vendor_id = v.id 
-            AND vs.service_style = ANY(${paramIdx}::text[])
+            AND vs.service_style = ANY($${paramIdx}::text[])
             AND vs.is_enabled = true 
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
         )`;
@@ -165,9 +165,9 @@ export async function executediscoverByProblem(c: Context) {
             CASE
               WHEN subquery.latitude IS NOT NULL AND subquery.longitude IS NOT NULL
               THEN (6371 * acos(
-                cos(radians(${paramIdx})) * cos(radians(CAST(subquery.latitude AS FLOAT))) *
-                cos(radians(CAST(subquery.longitude AS FLOAT)) - radians(${paramIdx + 1})) +
-                sin(radians(${paramIdx})) * sin(radians(CAST(subquery.latitude AS FLOAT)))
+                cos(radians($${paramIdx})) * cos(radians(CAST(subquery.latitude AS FLOAT))) *
+                cos(radians(CAST(subquery.longitude AS FLOAT)) - radians($${paramIdx + 1})) +
+                sin(radians($${paramIdx})) * sin(radians(CAST(subquery.latitude AS FLOAT)))
               ))
               ELSE NULL
             END AS distance_km

@@ -386,17 +386,23 @@ async function loadFromRds(queryFn, phone) {
     out.bookingId = firstId(anyBooking.rows, 'id');
     out.appointmentId = out.bookingId;
     out.sources.bookingAny = !!out.bookingId;
+    out.sources.bookingOwned = false;
     out.sources.appointment = !!out.appointmentId;
+  } else {
+    out.sources.bookingOwned = true;
   }
 
   if (!out.orderId) {
     const anyOrder = await q(
       queryFn,
-      `SELECT id::text AS id FROM orders
+      `SELECT id::text AS id, customer_id::text AS customer_id FROM orders
        ORDER BY created_at DESC NULLS LAST LIMIT 1`
     );
     out.orderId = firstId(anyOrder.rows, 'id');
     out.sources.orderAny = !!out.orderId;
+    out.sources.orderOwned = false;
+  } else {
+    out.sources.orderOwned = true;
   }
 
   if (out.customerId) {

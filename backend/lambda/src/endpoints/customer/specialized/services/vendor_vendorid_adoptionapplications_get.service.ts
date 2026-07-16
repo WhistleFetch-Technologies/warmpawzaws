@@ -27,7 +27,7 @@ export async function executevendorVendoridAdoptionapplicationsGet(c: Context) {
       let paramIndex = 2;
 
       if (status) {
-        applicationsQuery += ` AND aa.status = ${paramIndex}`;
+        applicationsQuery += ` AND aa.status = $${paramIndex}`;
         params.push(status);
         paramIndex++;
       }

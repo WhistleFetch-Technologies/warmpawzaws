@@ -14,6 +14,10 @@ export async function executevendorVendoridRelocationquotesQuoteidRespondPost(c:
         finalPrice
       );
 
+    if (!updated?.length) {
+      return c.json({ error: 'Quote not found' }, 404);
+    }
+
     return c.json({
       success: true,
       quote: updated[0],

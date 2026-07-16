@@ -1,66 +1,71 @@
 import { query, insert } from '../../../../database/rds-connection';
 
-export async function dbAdoptionQuestionnairePost0(customerPhone) {
-  return await query(`SELECT id FROM customers WHERE phone = $1`, [customerPhone]);
+export async function dbAdoptionQuestionnairePost0(customerPhone: string) {
+  return await query(`SELECT id from customers WHERE phone = $1`, [customerPhone]);
 }
 
-export async function dbAdoptionQuestionnairePost1(petId) {
-  return await query(`SELECT vendor_id FROM pets WHERE id = $1`, [petId]);
+export async function dbAdoptionQuestionnairePost1(petId: string) {
+  return await query(`SELECT vendor_id FROM adoption_listings WHERE id = $1`, [petId]);
 }
 
-export async function dbAdoptionQuestionnairePost2(resolvedCustomerId, customerPhone, petId, resolvedVendorId, experience, livingSituation, otherPets, timeCommitment, reason, additionalInfo) {
+/** Dev schema: adoption_applications has application_status + application_data (jsonb), not flat form columns. */
+export async function dbAdoptionQuestionnairePost2(
+  resolvedCustomerId: string | null,
+  customerPhone: string | undefined,
+  petId: string | undefined,
+  resolvedVendorId: string | undefined,
+  experience: unknown,
+  livingSituation: unknown,
+  otherPets: unknown,
+  timeCommitment: unknown,
+  reason: unknown,
+  additionalInfo: unknown
+) {
   return await insert('adoption_applications', {
     customer_id: resolvedCustomerId,
-    customer_phone: customerPhone,
-    pet_id: petId,
-    vendor_id: resolvedVendorId,
-    experience,
-    living_situation: livingSituation,
-    other_pets: otherPets,
-    time_commitment: timeCommitment,
-    reason,
-    additional_info: additionalInfo,
-    status: 'pending',
+    pet_id: petId || null,
+    application_status: 'pending',
+    application_data: {
+      customer_phone: customerPhone || null,
+      vendor_id: resolvedVendorId || null,
+      experience: experience || null,
+      living_situation: livingSituation || null,
+      other_pets: otherPets || null,
+      time_commitment: timeCommitment || null,
+      reason: reason || null,
+      additional_info: additionalInfo || null,
+    },
     submitted_at: new Date().toISOString(),
   });
 }
 
 export async function dbAdoptionQuestionnairePost3() {
-  return await query(`
-    CREATE TABLE IF NOT EXISTS adoption_applications (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      customer_id UUID,
-      customer_phone VARCHAR(20),
-      pet_id UUID,
-      vendor_id UUID,
-      experience VARCHAR(50),
-      living_situation VARCHAR(50),
-      other_pets VARCHAR(50),
-      time_commitment VARCHAR(50),
-      reason TEXT,
-      additional_info TEXT,
-      status VARCHAR(50) DEFAULT 'pending',
-      submitted_at TIMESTAMP DEFAULT NOW(),
-      reviewed_at TIMESTAMP,
-      reviewer_notes TEXT,
-      created_at TIMESTAMP DEFAULT NOW(),
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
+  // Table already exists on dev; keep no-op DDL for older envs that may lack it.
+  return await query(`SELECT 1`);
 }
 
-export async function dbAdoptionQuestionnairePost4(resolvedCustomerId, customerPhone, petId, resolvedVendorId, experience, livingSituation, otherPets, timeCommitment, reason, additionalInfo) {
-  return await insert('adoption_applications', {
-    customer_id: resolvedCustomerId,
-    customer_phone: customerPhone,
-    pet_id: petId,
-    vendor_id: resolvedVendorId,
+export async function dbAdoptionQuestionnairePost4(
+  resolvedCustomerId: string | null,
+  customerPhone: string | undefined,
+  petId: string | undefined,
+  resolvedVendorId: string | undefined,
+  experience: unknown,
+  livingSituation: unknown,
+  otherPets: unknown,
+  timeCommitment: unknown,
+  reason: unknown,
+  additionalInfo: unknown
+) {
+  return dbAdoptionQuestionnairePost2(
+    resolvedCustomerId,
+    customerPhone,
+    petId,
+    resolvedVendorId,
     experience,
-    living_situation: livingSituation,
-    other_pets: otherPets,
-    time_commitment: timeCommitment,
+    livingSituation,
+    otherPets,
+    timeCommitment,
     reason,
-    additional_info: additionalInfo,
-    status: 'pending',
-  });
+    additionalInfo
+  );
 }

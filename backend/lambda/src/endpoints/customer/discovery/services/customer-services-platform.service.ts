@@ -103,7 +103,7 @@ export async function executecustomerServicesPlatform(c: Context) {
 
         if (serviceStyle && serviceStyle !== 'all') {
           const acceptableStyles = acceptableStylesForService(serviceStyle);
-          fallbackQuery += ` AND vs.service_style = ANY(${paramIdx}::text[])`;
+          fallbackQuery += ` AND vs.service_style = ANY($${paramIdx}::text[])`;
           fallbackParams.push(acceptableStyles);
           paramIdx++;
         }
@@ -165,14 +165,14 @@ export async function executecustomerServicesPlatform(c: Context) {
       // Filter by service style
       if (serviceStyle && serviceStyle !== 'all') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
-        queryText += ` AND (service_style = ANY(${paramIndex}::text[]) OR service_style = 'all')`;
+        queryText += ` AND (service_style = ANY($${paramIndex}::text[]) OR service_style = 'all')`;
         params.push(acceptableStyles);
         paramIndex++;
       }
 
       // Filter by category
       if (category) {
-        queryText += ` AND (category_id = ${paramIndex} OR category_name ILIKE ${paramIndex + 1})`;
+        queryText += ` AND (category_id = $${paramIndex} OR category_name ILIKE $${paramIndex + 1})`;
         params.push(category);
         params.push(`%${category}%`);
         paramIndex += 2;

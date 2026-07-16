@@ -96,7 +96,7 @@ export async function executecustomerServices(c: Context) {
       // DB-driven: filter by category and/or roleId (only discoverable roles)
       const targetRoles = await resolveTargetRolesForDiscovery(category || null, roleId || null);
       if (targetRoles.length > 0) {
-        vendorQuery += ` AND r.name = ANY(${paramIndex}::text[])`;
+        vendorQuery += ` AND r.name = ANY($${paramIndex}::text[])`;
         params.push(targetRoles);
         paramIndex++;
       }
@@ -112,7 +112,7 @@ export async function executecustomerServices(c: Context) {
           if (serviceStyle) {
             const acceptableStyles = acceptableStylesForService(serviceStyle);
             params.push(acceptableStyles);
-            styleClause = ` AND vs.service_style = ANY(${params.length}::text[])`;
+            styleClause = ` AND vs.service_style = ANY($${params.length}::text[])`;
           }
           const vendorServices = await customer_servicesRepo.dbCustomerServices1(styleClause, params)
 

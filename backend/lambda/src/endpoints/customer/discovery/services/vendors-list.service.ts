@@ -97,26 +97,26 @@ export async function executevendorsList(c: Context) {
 
       // Filter by status
       if (status) {
-        vendorQuery += ` AND v.status = ${paramIndex}`;
+        vendorQuery += ` AND v.status = $${paramIndex}`;
         params.push(status);
         paramIndex++;
       }
 
       // Filter by role name
       if (role) {
-        vendorQuery += ` AND (r.name = ${paramIndex} OR r.display_name ILIKE ${paramIndex + 1})`;
+        vendorQuery += ` AND (r.name = $${paramIndex} OR r.display_name ILIKE $${paramIndex + 1})`;
         params.push(role, `%${role}%`);
         paramIndex += 2;
       }
 
       // Filter by city
       if (city) {
-        vendorQuery += ` AND v.city ILIKE ${paramIndex}`;
+        vendorQuery += ` AND v.city ILIKE $${paramIndex}`;
         params.push(`%${city}%`);
         paramIndex++;
       }
 
-      vendorQuery += ` ORDER BY avg_rating DESC, completed_bookings DESC LIMIT ${paramIndex}`;
+      vendorQuery += ` ORDER BY avg_rating DESC, completed_bookings DESC LIMIT $${paramIndex}`;
       params.push(limit);
 
       const result = await vendors_listRepo.dbVendorsList0(vendorQuery, params)

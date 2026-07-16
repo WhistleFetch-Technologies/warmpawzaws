@@ -30,12 +30,12 @@ export async function executerelocationServicesGet(c: Context) {
       let paramIndex = 1;
 
       if (origin) {
-        serviceQuery += ` AND (v.city ILIKE ${paramIndex} OR v.service_areas ILIKE ${paramIndex})`;
+        serviceQuery += ` AND (v.city ILIKE $${paramIndex} OR v.service_areas ILIKE $${paramIndex})`;
         params.push(`%${origin}%`);
         paramIndex++;
       }
 
-      serviceQuery += ` ORDER BY vendor_rating DESC NULLS LAST LIMIT ${paramIndex} OFFSET ${paramIndex + 1}`;
+      serviceQuery += ` ORDER BY vendor_rating DESC NULLS LAST LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const services = await relocation_services_getRepo.dbRelocationServicesGet0(serviceQuery, params).catch(() => ({ rows: [] }));

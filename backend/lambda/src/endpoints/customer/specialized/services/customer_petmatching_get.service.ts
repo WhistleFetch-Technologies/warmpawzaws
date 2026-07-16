@@ -38,36 +38,36 @@ export async function executecustomerPetmatchingGet(c: Context) {
       let paramIndex = 1;
 
       if (customerId && isValidUUID(customerId)) {
-        matchQuery += ` AND c.id != ${paramIndex}::uuid`;
+        matchQuery += ` AND c.id != $${paramIndex}::uuid`;
         params.push(customerId);
         paramIndex++;
       }
 
       if (breed) {
-        matchQuery += ` AND p.breed ILIKE ${paramIndex}`;
+        matchQuery += ` AND p.breed ILIKE $${paramIndex}`;
         params.push(`%${breed}%`);
         paramIndex++;
       }
 
       if (petType) {
-        matchQuery += ` AND LOWER(COALESCE(p.species, '')) = LOWER(${paramIndex})`;
+        matchQuery += ` AND LOWER(COALESCE(p.species, '')) = LOWER($${paramIndex})`;
         params.push(petType);
         paramIndex++;
       }
 
       if (gender) {
-        matchQuery += ` AND LOWER(COALESCE(p.gender, '')) = LOWER(${paramIndex})`;
+        matchQuery += ` AND LOWER(COALESCE(p.gender, '')) = LOWER($${paramIndex})`;
         params.push(gender);
         paramIndex++;
       }
 
       if (city) {
-        matchQuery += ` AND c.city ILIKE ${paramIndex}`;
+        matchQuery += ` AND c.city ILIKE $${paramIndex}`;
         params.push(`%${city}%`);
         paramIndex++;
       }
 
-      matchQuery += ` ORDER BY p.created_at DESC NULLS LAST LIMIT ${paramIndex} OFFSET ${paramIndex + 1}`;
+      matchQuery += ` ORDER BY p.created_at DESC NULLS LAST LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const profiles = await customer_petmatching_getRepo.dbCustomerPetmatchingGet0(matchQuery, params).catch((err) => {

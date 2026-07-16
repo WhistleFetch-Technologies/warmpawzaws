@@ -372,20 +372,20 @@ export async function executevendorAvailableSlots(c: Context) {
         let paramIndex = 3;
 
         if (staffId) {
-          staffQuery += ` AND s.id = ${paramIndex}`;
+          staffQuery += ` AND s.id = $${paramIndex}`;
           params.push(staffId);
           paramIndex++;
         }
 
         if (serviceId) {
-          staffQuery += ` AND sss.service_id = ${paramIndex}`;
+          staffQuery += ` AND sss.service_id = $${paramIndex}`;
           params.push(serviceId);
           paramIndex++;
         }
 
         // Filter by service style - removed since services table doesn't have service_style column
         // Service style filtering is handled at vendor_services level, not at staff_slot_services level
-        // staffQuery += ` AND (srv.service_style = ${paramIndex} OR srv.service_style IS NULL)`;
+        // staffQuery += ` AND (srv.service_style = $${paramIndex} OR srv.service_style IS NULL)`;
         // params.push(serviceStyle);
         // paramIndex++;
 

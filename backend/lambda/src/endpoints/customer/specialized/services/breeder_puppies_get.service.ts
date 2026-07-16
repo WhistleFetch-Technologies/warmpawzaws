@@ -37,42 +37,42 @@ export async function executebreederPuppiesGet(c: Context) {
       let paramIndex = 1;
 
       if (vendorId) {
-        puppyQuery += ` AND p.vendor_id = ${paramIndex}`;
+        puppyQuery += ` AND p.vendor_id = $${paramIndex}`;
         params.push(vendorId);
         paramIndex++;
       }
 
       if (breed) {
-        puppyQuery += ` AND p.breed ILIKE ${paramIndex}`;
+        puppyQuery += ` AND p.breed ILIKE $${paramIndex}`;
         params.push(`%${breed}%`);
         paramIndex++;
       }
 
       if (petType) {
-        puppyQuery += ` AND LOWER(p.pet_type) = LOWER(${paramIndex})`;
+        puppyQuery += ` AND LOWER(p.pet_type) = LOWER($${paramIndex})`;
         params.push(petType);
         paramIndex++;
       }
 
       if (city) {
-        puppyQuery += ` AND v.city ILIKE ${paramIndex}`;
+        puppyQuery += ` AND v.city ILIKE $${paramIndex}`;
         params.push(`%${city}%`);
         paramIndex++;
       }
 
       if (priceMin) {
-        puppyQuery += ` AND p.price >= ${paramIndex}`;
+        puppyQuery += ` AND p.price >= $${paramIndex}`;
         params.push(parseFloat(priceMin));
         paramIndex++;
       }
 
       if (priceMax) {
-        puppyQuery += ` AND p.price <= ${paramIndex}`;
+        puppyQuery += ` AND p.price <= $${paramIndex}`;
         params.push(parseFloat(priceMax));
         paramIndex++;
       }
 
-      puppyQuery += ` ORDER BY p.featured DESC NULLS LAST, v.is_certified DESC NULLS LAST, p.created_at DESC LIMIT ${paramIndex} OFFSET ${paramIndex + 1}`;
+      puppyQuery += ` ORDER BY p.featured DESC NULLS LAST, v.is_certified DESC NULLS LAST, p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const puppies = await breeder_puppies_getRepo.dbBreederPuppiesGet0(puppyQuery, params).catch(() => ({ rows: [] }));
