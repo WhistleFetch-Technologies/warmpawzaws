@@ -25,6 +25,7 @@ import {
   resolveExpectedBookingCharge,
   type ExpectedBookingCharge,
 } from '../../../utils/booking-charge-enforcement';
+import { writeBookingFinancialSnapshotIfMissing } from '../../../utils/booking-financial-snapshot';
 import { createHmac, randomUUID } from 'crypto';
 import { getRazorpayConfig, getRazorpayAuthHeader, getRazorpayClient, razorpayRequest } from '../../../utils/payments/razorpay-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
@@ -52,6 +53,26 @@ import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipment';
 
 // Razorpay configuration is imported from utils
+
+// Type-only helpers (no runtime emit)
+type BookingStatusChange = { bookingId: string; from: string | null; to: string | null };
+
+/** Response shape from the public Razorpay IFSC lookup API (fields we read). */
+interface RazorpayIfscApiResponse {
+  IFSC?: string;
+  BANK?: string;
+  BRANCH?: string;
+  ADDRESS?: string;
+  CITY?: string;
+  DISTRICT?: string;
+  STATE?: string;
+  CONTACT?: string;
+  IMPS?: boolean;
+  NEFT?: boolean;
+  RTGS?: boolean;
+  UPI?: boolean;
+  MICR?: string;
+}
 
 // ============================================================================
 // STRICT BANK ACCOUNT VALIDATION (shared: name + IFSC + account number)
@@ -446,6 +467,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         if (chargeAmount < 0) chargeAmount = 0;
         // Fully covered by wallet — mark order as paid without Razorpay and surface to vendor
         if (chargeAmount <= 0) {
+          // @ts-expect-error pre-existing broken relative path (src/endpoints/razorpay/database does not exist; real module is ../../../database/rds-connection) — left unchanged to avoid altering esbuild bundling/runtime; needs a real fix
           await import('../../database/rds-connection').then(({ query: dbQuery }) =>
             dbQuery(
               `UPDATE orders SET
@@ -954,29 +976,66 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             payment_method: 'razorpay',
             payment_status: 'pending',
           };
-          // Enforcement recomputed GST (client skipped /payments/create) — persist the
-          // breakdown so reporting/settlement sees the tax component (columns from
-          // migration 510; guarded in case a schema lacks them).
-          if (chargeWasEnforced && enforcedCharge?.source === 'computed' && enforcedCharge.gst) {
+          // Enforcement recomputed GST + fees (client skipped /payments/create) — persist the
+          // breakdown so reporting/settlement sees the tax component and refunds can exclude
+          // fees (columns from migrations 410/510; guarded in case a schema lacks them).
+          if (chargeWasEnforced && enforcedCharge?.source === 'computed' && (enforcedCharge.gst || enforcedCharge.fees)) {
             try {
               const colsRes = await query(
                 `SELECT column_name FROM information_schema.columns
                  WHERE table_schema = 'public' AND table_name = 'payments'
-                   AND column_name IN ('gst_amount', 'cgst_amount', 'sgst_amount', 'igst_amount', 'gst_rule_id')`
+                   AND column_name IN ('gst_amount', 'cgst_amount', 'sgst_amount', 'igst_amount', 'gst_rule_id',
+                                       'platform_fee', 'convenience_fee', 'total_amount', 'fee_breakdown')`
               );
               const gstCols = new Set(colsRes.rows.map((r: { column_name: string }) => r.column_name));
-              if (gstCols.has('gst_amount')) paymentRow.gst_amount = enforcedCharge.gst.total;
-              if (gstCols.has('cgst_amount')) paymentRow.cgst_amount = enforcedCharge.gst.cgst;
-              if (gstCols.has('sgst_amount')) paymentRow.sgst_amount = enforcedCharge.gst.sgst;
-              if (gstCols.has('igst_amount')) paymentRow.igst_amount = enforcedCharge.gst.igst;
-              if (gstCols.has('gst_rule_id') && enforcedCharge.gst.ruleId) {
-                paymentRow.gst_rule_id = enforcedCharge.gst.ruleId;
+              if (enforcedCharge.gst) {
+                if (gstCols.has('gst_amount')) paymentRow.gst_amount = enforcedCharge.gst.total;
+                if (gstCols.has('cgst_amount')) paymentRow.cgst_amount = enforcedCharge.gst.cgst;
+                if (gstCols.has('sgst_amount')) paymentRow.sgst_amount = enforcedCharge.gst.sgst;
+                if (gstCols.has('igst_amount')) paymentRow.igst_amount = enforcedCharge.gst.igst;
+                if (gstCols.has('gst_rule_id') && enforcedCharge.gst.ruleId) {
+                  paymentRow.gst_rule_id = enforcedCharge.gst.ruleId;
+                }
               }
+              if (enforcedCharge.fees) {
+                if (gstCols.has('platform_fee')) paymentRow.platform_fee = enforcedCharge.fees.platformFee;
+                if (gstCols.has('convenience_fee')) paymentRow.convenience_fee = enforcedCharge.fees.convenienceFee;
+                if (gstCols.has('fee_breakdown')) paymentRow.fee_breakdown = JSON.stringify(enforcedCharge.fees);
+              }
+              if (gstCols.has('total_amount')) paymentRow.total_amount = enforcedCharge.grossTotal;
             } catch (gstColErr: any) {
-              console.warn('[RAZORPAY-CREATE-ORDER] Skipping GST columns on payment row:', gstColErr?.message);
+              console.warn('[RAZORPAY-CREATE-ORDER] Skipping GST/fee columns on payment row:', gstColErr?.message);
             }
           }
           await insert('payments', paymentRow);
+
+          // Snapshot the enforced breakdown onto the booking (write-once) so booking
+          // detail renders GST/fees without depending on this payment row's fate.
+          if (chargeWasEnforced && enforcedCharge?.source === 'computed') {
+            try {
+              await writeBookingFinancialSnapshotIfMissing(String(bookingId), {
+                servicePrice: enforcedCharge.baseAmount,
+                vendorDiscount: 0,
+                platformDiscount: 0,
+                couponDiscount: 0,
+                subtotalAfterDiscounts: enforcedCharge.baseAmount,
+                cgst: enforcedCharge.gst?.cgst ?? 0,
+                sgst: enforcedCharge.gst?.sgst ?? 0,
+                igst: enforcedCharge.gst?.igst ?? 0,
+                totalTax: enforcedCharge.gst?.total ?? 0,
+                platformFee: enforcedCharge.fees?.platformFee ?? 0,
+                convenienceFee: enforcedCharge.fees?.convenienceFee ?? 0,
+                deliveryFee: enforcedCharge.fees?.deliveryFee ?? 0,
+                walletAmount: enforcedCharge.walletPaid,
+                finalPaid: enforcedCharge.expectedCash,
+              });
+            } catch (snapshotErr: any) {
+              console.warn(
+                '[RAZORPAY-CREATE-ORDER] Booking financial snapshot write failed (non-blocking):',
+                snapshotErr?.message
+              );
+            }
+          }
         }
       }
 
@@ -1468,23 +1527,23 @@ class VerifyPaymentHandler extends BaseHandler {
 
       if (bookingStatusChange) {
         await logBookingStatusChange(
-          bookingStatusChange.bookingId,
-          bookingStatusChange.from,
-          bookingStatusChange.to,
+          (bookingStatusChange as BookingStatusChange).bookingId,
+          (bookingStatusChange as BookingStatusChange).from,
+          (bookingStatusChange as BookingStatusChange).to as string,
           'system',
           'system',
           'Payment verified'
         );
-        if (bookingStatusChange.to === 'confirmed') {
+        if ((bookingStatusChange as BookingStatusChange).to === 'confirmed') {
           const { publishVendorReferralBookingConfirmedAction } = await import(
             '../../../lib/services/loyalty-action-publisher'
           );
-          await publishVendorReferralBookingConfirmedAction(bookingStatusChange.bookingId);
+          await publishVendorReferralBookingConfirmedAction((bookingStatusChange as BookingStatusChange).bookingId);
         }
       }
 
       if (bookingToNotify) {
-        await notifyBookingCreated(bookingToNotify, context.requestId);
+        await notifyBookingCreated(bookingToNotify, (context as HandlerContext & { requestId?: string }).requestId);
       }
 
       if (ecommerceOrderForShipment) {
@@ -1775,25 +1834,25 @@ class RazorpayWebhookHandler extends BaseHandler {
       // Post-transaction: logging, notifications, settlements
       if (bookingStatusChange) {
         await logBookingStatusChange(
-          bookingStatusChange.bookingId,
-          bookingStatusChange.from,
-          bookingStatusChange.to,
+          (bookingStatusChange as BookingStatusChange).bookingId,
+          (bookingStatusChange as BookingStatusChange).from,
+          (bookingStatusChange as BookingStatusChange).to as string,
           'system',
           'system',
           'Payment captured (webhook)'
         ).catch((e) => console.error('[RAZORPAY-WEBHOOK] Audit log failed:', e));
-        if (bookingStatusChange.to === 'confirmed') {
+        if ((bookingStatusChange as BookingStatusChange).to === 'confirmed') {
           const { publishVendorReferralBookingConfirmedAction } = await import(
             '../../../lib/services/loyalty-action-publisher'
           );
-          await publishVendorReferralBookingConfirmedAction(bookingStatusChange.bookingId).catch((e) =>
+          await publishVendorReferralBookingConfirmedAction((bookingStatusChange as BookingStatusChange).bookingId).catch((e) =>
             console.error('[RAZORPAY-WEBHOOK] Loyalty action publish failed:', e)
           );
         }
       }
 
       if (bookingToNotify) {
-        await notifyBookingCreated(bookingToNotify, context.requestId)
+        await notifyBookingCreated(bookingToNotify, (context as HandlerContext & { requestId?: string }).requestId)
           .catch((e) => console.error('[RAZORPAY-WEBHOOK] Notification failed:', e));
       }
 
@@ -2489,7 +2548,7 @@ export function registerRazorpayEndpoints(app: Hono) {
         throw new Error(`IFSC lookup failed: ${response.statusText}`);
       }
 
-      const bankData = await response.json();
+      const bankData = (await response.json()) as RazorpayIfscApiResponse;
       
       return c.json({
         success: true,
@@ -2575,7 +2634,7 @@ export function registerRazorpayEndpoints(app: Hono) {
           details: 'IFSC code not found in bank database.',
         }, 400);
       }
-      const ifscData = await ifscResponse.json();
+      const ifscData = (await ifscResponse.json()) as RazorpayIfscApiResponse;
 
       // Strict: account number 9–18 digits only
       if (!/^\d{9,18}$/.test(account_number)) {

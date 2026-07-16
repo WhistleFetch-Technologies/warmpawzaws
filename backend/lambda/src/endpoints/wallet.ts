@@ -133,10 +133,10 @@ class GetWalletHandler extends BaseHandler {
 
     // Optional denormalized columns (when migration 008+ applied) — keep DB in sync with ledger truth.
     try {
-      const colq = await query<{ column_name: string }>(
+      const colq = (await query(
         `SELECT column_name FROM information_schema.columns
          WHERE table_schema = 'public' AND table_name = 'customer_wallets'`
-      );
+      )) as { rows: Array<{ column_name: string }> };
       const cw = new Set(colq.rows.map((r) => r.column_name));
       if (cw.has('total_earned') && cw.has('total_spent')) {
         const hasUpd = cw.has('updated_at');

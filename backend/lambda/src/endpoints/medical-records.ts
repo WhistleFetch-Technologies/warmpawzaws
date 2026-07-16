@@ -20,6 +20,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { query, select, insert, update } from '../database/rds-connection';
 import { uploadToS3, generateS3Key } from '../utils/aws/aws-clients';
 
@@ -228,14 +229,14 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
 
     const aliasUrl = `/customer/${encodeURIComponent(phone)}/medical-records?type=vaccination`;
     const response = await app.fetch(new Request(aliasUrl, c.req.raw));
-    const payload = await response.json().catch(() => null);
+    const payload = (await response.json().catch(() => null)) as { records?: any[] } | null;
 
     const records = payload?.records || [];
     return c.json({
       success: true,
       vaccinations: records,
       total: records.length,
-    }, response.status);
+    }, response.status as ContentfulStatusCode);
   });
 
   /**
@@ -1497,7 +1498,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           if (match) {
             extractedKey = match[match.length - 1]; // Get the last capture group (the key)
             // ✅ FIX: Decode URL-encoded characters in the key (e.g., %20 -> space)
-            extractedKey = decodeURIComponent(extractedKey);
+            extractedKey = decodeURIComponent(extractedKey as string);
             break;
           }
         }

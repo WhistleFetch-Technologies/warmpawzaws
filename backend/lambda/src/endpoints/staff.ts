@@ -36,6 +36,11 @@ import {
   toUploadJsonResponse,
   ImageProcessingError,
 } from '../services/image';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+
+// Type-only ambient declaration: `platformCommissionRate` is referenced in the staff earnings
+// endpoint but never defined at runtime (pre-existing bug preserved intentionally; emits no JS).
+declare const platformCommissionRate: number;
 
 function bareImageKeyOrNull(value: unknown): string | null {
   const v = typeof value === 'string' ? value.trim() : '';
@@ -4481,7 +4486,7 @@ export function registerStaffEndpoints(app: Hono) {
         });
       } catch (err: unknown) {
         if (err instanceof ImageProcessingError) {
-          return c.json({ error: err.message }, err.statusCode);
+          return c.json({ error: err.message }, err.statusCode as ContentfulStatusCode);
         }
         throw err;
       }

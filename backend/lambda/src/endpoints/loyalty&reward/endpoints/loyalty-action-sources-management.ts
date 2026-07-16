@@ -483,7 +483,7 @@ class TestActionSourceHandler extends BaseHandler {
 		}
 	}
 
-	private resolveDotPath(expr: string, ctx: { res: any; req: any; jwt: any }): any {
+	private resolveDotPath(expr: string, ctx: { res: any; req?: any; jwt?: any }): any {
 		// Supports prefixes: $.field → res, $.body.field → req, $.jwt.sub → jwt
 		const trimmed = expr.trim();
 		if (!trimmed.startsWith('$.')) return undefined;

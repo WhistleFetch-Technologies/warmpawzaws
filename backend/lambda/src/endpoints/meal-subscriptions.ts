@@ -16,6 +16,7 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update, withTransaction } from '../database/rds-connection';
 import { fireVendorAppointmentScheduledSms, fireVendorMealOrderScheduledSms } from '../lib/vendor-appointment-sms';
@@ -535,7 +536,7 @@ class ProcessSubscriptionRenewalsHandler extends BaseHandler {
             subscriptionId: String(sub.id),
             customerName: String(sub.customer_name || 'Customer'),
             mealPlanName: String(sub.meal_plan_name || 'Meal plan'),
-            deliveryDate: nextDate,
+            deliveryDate: nextDate as unknown as string,
             orderId: mealOrder?.id != null ? String(mealOrder.id) : undefined,
           }).catch((e) => console.warn('[meal-subscriptions/cron] vendor due notify failed:', e));
 
@@ -628,8 +629,8 @@ export function registerMealSubscriptionEndpoints(app: Hono) {
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
-    const result = await getMealPlansHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await getMealPlansHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -645,8 +646,8 @@ export function registerMealSubscriptionEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
-    const result = await createSubHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await createSubHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -661,8 +662,8 @@ export function registerMealSubscriptionEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
-    const result = await getCustomerSubsHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await getCustomerSubsHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -678,8 +679,8 @@ export function registerMealSubscriptionEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
-    const result = await manageSubHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await manageSubHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -694,8 +695,8 @@ export function registerMealSubscriptionEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
-    const result = await processRenewalsHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await processRenewalsHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

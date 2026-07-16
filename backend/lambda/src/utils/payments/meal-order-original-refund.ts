@@ -36,11 +36,13 @@ async function callRazorpayRefund(
   notes: Record<string, string>,
 ): Promise<{ id: string; status: string }> {
   const razorpay = getRazorpayClient();
+  // Cast only: local razorpay-client's refund() param type omits `notes`; the extra
+  // property is passed through unchanged (client ignores it), no runtime change.
   const refundResult = await razorpay.payments.refund({
     payment_id: razorpayPaymentId,
     amount: Math.round(amountInr * 100),
     notes,
-  });
+  } as { payment_id: string; amount?: number });
   return {
     id: String((refundResult as { id?: string }).id ?? ''),
     status: String((refundResult as { status?: string }).status ?? 'processing'),

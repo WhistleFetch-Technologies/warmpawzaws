@@ -19,6 +19,7 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, insert, update } from '../../../database/rds-connection';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
@@ -638,7 +639,7 @@ class NotifyReadyHandler extends BaseHandler {
 
       // ✅ FIX: Send push notification
       try {
-        const { pushNotificationService } = await import('../aws/aws-sns-notification-service');
+        const { pushNotificationService } = await import('../../../aws/aws-sns-notification-service');
         await pushNotificationService.sendEventNotification({
           eventType: 'tele_call_incoming',
           recipientId: targetId,
@@ -688,8 +689,8 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
-    const result = await createOrJoinHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await createOrJoinHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -711,8 +712,8 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
-    const result = await createOrJoinHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await createOrJoinHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -727,8 +728,8 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
-    const result = await getInfoHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await getInfoHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -743,8 +744,8 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
-    const result = await attendeeStatusHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await attendeeStatusHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -760,8 +761,8 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
-    const result = await endHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await endHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -777,8 +778,8 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
-    const result = await notifyReadyHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await notifyReadyHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -873,7 +874,7 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
 
       // Send notification to the assigned provider
       try {
-        const { pushNotificationService } = await import('../aws/aws-sns-notification-service');
+        const { pushNotificationService } = await import('../../../aws/aws-sns-notification-service');
         
         // Get customer name
         const customers = await select('customers', { id: customerId });

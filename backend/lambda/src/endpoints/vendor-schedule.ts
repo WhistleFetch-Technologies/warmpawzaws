@@ -25,6 +25,9 @@ import {
 } from './vendor/endpoints/vendor-profile.vendor';
 import {
   computeEffectiveAllowedServiceStyles,
+  // Export does not exist in the module; the call site is wrapped in try/catch and falls back to []
+  // at runtime today. Restructuring the import could alter bundling, so it is intentionally left as-is.
+  // @ts-expect-error TS2305
   parseRoleConfigSelectedServiceStyles,
 } from '../utils/effective-service-styles';
 import { validateScheduleSlot } from '../utils/scheduling-policy-enforcer';

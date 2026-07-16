@@ -73,6 +73,7 @@ export function registerAddressEndpoints(app: Hono) {
       // When no saved addresses exist, use profile address/pincode so checkout doesn't block
       const cust = customer[0] as any;
       if (list.length === 0 && (cust?.address || cust?.pincode)) {
+        // Profile fallback intentionally omits the granular address fields (flatNo, houseNo, ...).
         list = [{
           id: 'profile',
           customerId: cust.id,
@@ -89,7 +90,7 @@ export function registerAddressEndpoints(app: Hono) {
           isDefault: true,
           createdAt: null,
           updatedAt: null,
-        }];
+        } as any];
       }
 
       return c.json({

@@ -79,7 +79,7 @@ async function runPlatformSettingJsonSafe(
     try {
       raw = JSON.parse(raw) as Record<string, unknown>;
     } catch {
-      return { key: k, found: true, valuePreview: raw.slice(0, 200) };
+      return { key: k, found: true, valuePreview: (raw as string).slice(0, 200) };
     }
   }
   if (k === 'admin:settings:aws' && raw && typeof raw === 'object') {

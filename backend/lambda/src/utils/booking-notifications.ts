@@ -164,7 +164,7 @@ export async function notifyBookingCreated(bookingId: string, requestId?: string
       eventId: randomUUID(),
       requestId: requestId || randomUUID(),
       sourceService: 'booking-notifier',
-    });
+    } as Parameters<typeof publishBookingCreated>[0]);
   } catch (error) {
     console.error('Failed to publish booking created event:', error);
   }

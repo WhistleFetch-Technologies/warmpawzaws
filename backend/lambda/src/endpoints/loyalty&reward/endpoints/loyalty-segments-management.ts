@@ -6,6 +6,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { randomUUID } from 'crypto';
 import { deleteRecord, insert, query, select, update } from 'src/database/rds-connection';
 import { HandlerContext, HandlerResponse } from 'src/handler/base-handler';
@@ -469,6 +470,10 @@ function createLambdaContext(): any {
 // REGISTER ENDPOINTS
 // ============================================================================
 
+// Handler.execute (base-handler-enhanced) is typed as APIGatewayProxyResultV2; at
+// runtime it always returns a structured { statusCode, body } object.
+type HandlerHttpResult = { body: string; statusCode: ContentfulStatusCode };
+
 export function registerLoyaltySegmentsManagementEndpoints(app: Hono) {
   const getSegmentsHandler = new GetLoyaltySegmentsHandler();
   const getSegmentHandler = new GetLoyaltySegmentHandler();
@@ -488,7 +493,7 @@ export function registerLoyaltySegmentsManagementEndpoints(app: Hono) {
       event.queryStringParameters = {};
     }
     const context = createLambdaContext();
-    const result = await getSegmentsHandler.execute(event, context);
+    const result = await getSegmentsHandler.execute(event, context) as HandlerHttpResult;
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -496,7 +501,7 @@ export function registerLoyaltySegmentsManagementEndpoints(app: Hono) {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
-    const result = await getSegmentHandler.execute(event, context);
+    const result = await getSegmentHandler.execute(event, context) as HandlerHttpResult;
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -504,7 +509,7 @@ export function registerLoyaltySegmentsManagementEndpoints(app: Hono) {
     const event = createApiGatewayEvent(c.req);
     event.body = JSON.stringify(await c.req.json());
     const context = createLambdaContext();
-    const result = await createSegmentHandler.execute(event, context);
+    const result = await createSegmentHandler.execute(event, context) as HandlerHttpResult;
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -513,7 +518,7 @@ export function registerLoyaltySegmentsManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     event.body = JSON.stringify(await c.req.json());
     const context = createLambdaContext();
-    const result = await updateSegmentHandler.execute(event, context);
+    const result = await updateSegmentHandler.execute(event, context) as HandlerHttpResult;
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -521,7 +526,7 @@ export function registerLoyaltySegmentsManagementEndpoints(app: Hono) {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
-    const result = await deleteSegmentHandler.execute(event, context);
+    const result = await deleteSegmentHandler.execute(event, context) as HandlerHttpResult;
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -530,7 +535,7 @@ export function registerLoyaltySegmentsManagementEndpoints(app: Hono) {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { customerId: c.req.param('customerId') };
     const context = createLambdaContext();
-    const result = await getCustomerSegmentsHandler.execute(event, context);
+    const result = await getCustomerSegmentsHandler.execute(event, context) as HandlerHttpResult;
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -538,7 +543,7 @@ export function registerLoyaltySegmentsManagementEndpoints(app: Hono) {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { customerId: c.req.param('customerId') };
     const context = createLambdaContext();
-    const result = await recalculateCustomerSegmentsHandler.execute(event, context);
+    const result = await recalculateCustomerSegmentsHandler.execute(event, context) as HandlerHttpResult;
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

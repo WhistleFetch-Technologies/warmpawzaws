@@ -110,6 +110,8 @@ describe('resolveExpectedBookingCharge', () => {
     expect(result!.grossTotal).toBe(2160);
     expect(result!.expectedCash).toBe(2060); // 2160 − 100 wallet
     expect(result!.gst).toEqual({ total: 324, cgst: 162, sgst: 162, igst: 0, ruleId: 'rule-1' });
+    // Row amount is a lump sum — fee components are unknown.
+    expect(result!.fees).toBeNull();
     // Server-priced row exists — no recompute needed.
     expect(mockedCalculateTax).not.toHaveBeenCalled();
   });
@@ -143,6 +145,7 @@ describe('resolveExpectedBookingCharge', () => {
     expect(result!.baseAmount).toBe(1800);
     expect(result!.gst?.total).toBe(324);
     expect(result!.feesTotal).toBe(36);
+    expect(result!.fees).toEqual({ platformFee: 36, convenienceFee: 0, deliveryFee: 0, packagingFee: 0 });
     expect(result!.grossTotal).toBe(2160);
     expect(result!.expectedCash).toBe(2160); // legacy client sent 1800 — enforcement raises it
     expect(mockedCalculateTax).toHaveBeenCalledTimes(1);
@@ -174,6 +177,7 @@ describe('resolveExpectedBookingCharge', () => {
     // gross = 2000 + 360 + 50 = 2410; cash = 2410 − 500 − 1000 = 910
     expect(result!.grossTotal).toBe(2410);
     expect(result!.expectedCash).toBe(910);
+    expect(result!.fees).toEqual({ platformFee: 40, convenienceFee: 10, deliveryFee: 0, packagingFee: 0 });
   });
 
   test('never returns negative cash when booking is overpaid', async () => {
@@ -214,5 +218,6 @@ describe('resolveExpectedBookingCharge', () => {
     expect(result!.gst).toBeNull();
     expect(result!.grossTotal).toBe(1836);
     expect(result!.expectedCash).toBe(1836);
+    expect(result!.fees).toEqual({ platformFee: 36, convenienceFee: 0, deliveryFee: 0, packagingFee: 0 });
   });
 });

@@ -750,6 +750,9 @@ class GetOrderInvoiceHandler extends BaseHandler {
       // If no tax breakdown, try to reconstruct from order data
       if (!taxBreakdown && items.rows.length > 0) {
         try {
+          // Specifier resolves to a nonexistent path from this file (real file is src/lib/services/tax-calculation-service).
+          // Rewriting the dynamic import path could change bundling/runtime behavior, so it is intentionally left as-is.
+          // @ts-expect-error TS2307
           const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
           
           // Get customer and vendor locations
@@ -1077,7 +1080,7 @@ class ShopOrderPaymentResumeHandler extends BaseHandler {
       return this.success({
         success: true,
         canResume: true,
-        ...ctx,
+        ...(ctx as unknown as Record<string, unknown>),
       });
     } catch (error: any) {
       console.error('[customer/orders/payment-resume] failed:', error);

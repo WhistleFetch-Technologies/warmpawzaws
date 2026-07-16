@@ -45,7 +45,7 @@ async function getGoogleMapsApiKey(): Promise<string | null> {
       new GetSecretValueCommand({ SecretId: secretName })
     );
     
-    const secret = JSON.parse(secretValue.SecretString);
+    const secret = JSON.parse(secretValue.SecretString as string);
     return secret.apiKey || secret.api_key || secret.key || null;
   } catch (error) {
     console.error('Error getting Google Maps API key:', error);
@@ -70,7 +70,11 @@ async function calculateETAWithGoogleMaps(
     const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin.lat},${origin.lng}&destinations=${destination.lat},${destination.lng}&key=${apiKey}&mode=driving`;
     
     const response = await fetch(url);
-    const data = await response.json();
+    interface DistanceMatrixResponse {
+      status: string;
+      rows: { elements: { status: string; distance: { value: number }; duration: { value: number } }[] }[];
+    }
+    const data = (await response.json()) as DistanceMatrixResponse;
 
     if (data.status === 'OK' && data.rows[0]?.elements[0]?.status === 'OK') {
       const element = data.rows[0].elements[0];

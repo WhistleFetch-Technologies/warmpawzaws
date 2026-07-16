@@ -26,6 +26,13 @@ export interface ExpectedBookingCharge {
   grossTotal: number;
   baseAmount: number;
   gst: { total: number; cgst: number; sgst: number; igst: number; ruleId: string | null } | null;
+  /** Fee components when this path computed them; null when unknown (payments_row source). */
+  fees: {
+    platformFee: number;
+    convenienceFee: number;
+    deliveryFee: number;
+    packagingFee: number;
+  } | null;
   feesTotal: number;
   walletPaid: number;
   completedNonWalletPaid: number;
@@ -142,6 +149,7 @@ export async function resolveExpectedBookingCharge(params: {
               ruleId: row.gst_rule_id ? String(row.gst_rule_id) : null,
             }
           : null,
+      fees: null,
       feesTotal: 0,
       walletPaid,
       completedNonWalletPaid,
@@ -205,23 +213,29 @@ export async function resolveExpectedBookingCharge(params: {
 
   // Same fee rules and fallback as /payments/create so both paths agree on the payable.
   let feesTotal = 0;
+  let fees: ExpectedBookingCharge['fees'] = null;
   try {
     const { calculateFinalFees, mapCatalogCategoryToBusinessType } = await import('./feeCalculator');
-    const fees = await calculateFinalFees({
+    const calculated = await calculateFinalFees({
       amount: baseAmount,
       type: 'booking',
       serviceStyle: String(serviceStyle || booking.service_type || ''),
       businessServiceType: mapCatalogCategoryToBusinessType(serviceCategory) || '',
     });
-    feesTotal = round2(
-      (fees.platformFee || 0) + (fees.convenienceFee || 0) + (fees.deliveryFee || 0) + (fees.packagingFee || 0)
-    );
+    fees = {
+      platformFee: round2(calculated.platformFee || 0),
+      convenienceFee: round2(calculated.convenienceFee || 0),
+      deliveryFee: round2(calculated.deliveryFee || 0),
+      packagingFee: round2(calculated.packagingFee || 0),
+    };
+    feesTotal = round2(fees.platformFee + fees.convenienceFee + fees.deliveryFee + fees.packagingFee);
   } catch (feeError: any) {
     console.warn(
       '[BOOKING-CHARGE-ENFORCEMENT] Fee calculation failed, using default platform fee:',
       feeError?.message || feeError
     );
     feesTotal = Math.min(Math.round((baseAmount * 2) / 100), 200);
+    fees = { platformFee: feesTotal, convenienceFee: 0, deliveryFee: 0, packagingFee: 0 };
   }
 
   const grossTotal = round2(baseAmount + gstTotal + feesTotal);
@@ -230,6 +244,7 @@ export async function resolveExpectedBookingCharge(params: {
     grossTotal,
     baseAmount,
     gst: gstTotal > 0 ? { total: gstTotal, cgst, sgst, igst, ruleId: gstRuleId } : null,
+    fees,
     feesTotal,
     walletPaid,
     completedNonWalletPaid,

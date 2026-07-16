@@ -16,6 +16,7 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 
@@ -1255,8 +1256,8 @@ export function registerDiagnosticsReportEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' };
-    const result = await assignAdhocHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await assignAdhocHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -1272,8 +1273,8 @@ export function registerDiagnosticsReportEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' };
-    const result = await assignSampleHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await assignSampleHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -1289,8 +1290,8 @@ export function registerDiagnosticsReportEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' };
-    const result = await updateSampleStatusHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await updateSampleStatusHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -1305,8 +1306,8 @@ export function registerDiagnosticsReportEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' };
-    const result = await getSampleStatusHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await getSampleStatusHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     const body = typeof result.body === 'string' ? (() => { try { return JSON.parse(result.body); } catch { return { success: false, error: 'Invalid response' }; } })() : result.body;
     return c.json(body, result.statusCode);
   });
@@ -1327,8 +1328,8 @@ export function registerDiagnosticsReportEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' };
-    const result = await uploadHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await uploadHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -1344,8 +1345,8 @@ export function registerDiagnosticsReportEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' };
-    const result = await reviewHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await reviewHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -1360,8 +1361,8 @@ export function registerDiagnosticsReportEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' };
-    const result = await getForBookingHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await getForBookingHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -1376,8 +1377,8 @@ export function registerDiagnosticsReportEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' };
-    const result = await getPendingHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'diagnostics-reports', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await getPendingHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 

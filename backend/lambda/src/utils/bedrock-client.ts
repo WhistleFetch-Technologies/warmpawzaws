@@ -255,8 +255,9 @@ export async function invokeBedrock(
         if (joined) return joined;
       }
     } else if (modelId.toLowerCase().includes('titan')) {
-      if (responseBody.results && responseBody.results.length > 0 && responseBody.results[0].outputText) {
-        return responseBody.results[0].outputText;
+      const titanResults = responseBody.results as Array<{ outputText?: string }> | undefined;
+      if (titanResults && titanResults.length > 0 && titanResults[0].outputText) {
+        return titanResults[0].outputText;
       }
     } else {
       if (responseBody.content && Array.isArray(responseBody.content) && responseBody.content.length > 0) {

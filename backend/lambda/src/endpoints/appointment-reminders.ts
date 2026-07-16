@@ -15,6 +15,7 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { getDiscoveryRules } from '../lib/rule-engine';
@@ -514,7 +515,7 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
-    const result = await checkChatHandler.execute(event, context);
+    const result = await checkChatHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -531,7 +532,7 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
         requestContext: { requestId: randomUUID() },
       };
       const context = { requestId: randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
-      const result = await getUpcomingHandler.execute(event, context);
+      const result = await getUpcomingHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
       // Graceful degradation: return 200 with empty on 4xx/5xx so customer home loads
       if (result.statusCode >= 400) {
         return c.json({ success: true, reminders: [] }, 200);
@@ -556,7 +557,7 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
-    const result = await sendRemindersHandler.execute(event, context);
+    const result = await sendRemindersHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -575,7 +576,7 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
-    const result = await scheduledJobHandler.execute(event, context);
+    const result = await scheduledJobHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -591,7 +592,7 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
-    const result = await manualTriggerHandler.execute(event, context);
+    const result = await manualTriggerHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

@@ -18,6 +18,9 @@ export type BookingFinancialSnapshot = {
   deliveryFee: number;
   totalTax: number;
   finalPaid: number;
+  /** True when the booking (or its payment row) shows the amount was actually collected. */
+  isPaid: boolean;
+  walletAmount: number;
   promotionNames: string[];
   couponCode?: string;
   lines: PriceBreakdownLine[];
@@ -148,14 +151,38 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
   const finMeta = parseFinancialMetaFromNotes(raw.notes);
   const paidFromPayment = num(raw.paid_amount ?? raw.paidAmount);
 
+  // Payment-row fields exposed by GET /customer/bookings/:bookingId (best payment row).
+  const paymentRowAmount = num(
+    raw.payment_amount ??
+      raw.paymentAmount ??
+      raw.payment_row_amount ??
+      raw.paymentRowAmount ??
+      raw.payable
+  );
+  const paymentRowStatus = String(
+    raw.payment_row_status ?? raw.paymentRowStatus ?? raw.payment_row_payment_status ?? ''
+  )
+    .trim()
+    .toLowerCase();
+  const bookingPaymentStatus = String(raw.payment_status ?? raw.paymentStatus ?? '')
+    .trim()
+    .toLowerCase();
+  const isPaid =
+    bookingPaymentStatus === 'paid' ||
+    bookingPaymentStatus === 'completed' ||
+    paymentRowStatus === 'completed';
+
   const basePrice = num(raw.base_price ?? raw.basePrice);
   const rowTotal = num(raw.total_amount ?? raw.totalAmount ?? raw.amount ?? raw.price);
+  // Without a booking-level snapshot, the payment row carries the enforced payable
+  // (base + GST + fees) which can exceed the stale booking total.
+  const fallbackPaid = paidFromPayment > 0 ? paidFromPayment : rowTotal;
   const finalPaid =
     finMeta && finMeta.finalPaid != null
       ? num(finMeta.finalPaid)
-      : paidFromPayment > 0
-        ? paidFromPayment
-        : rowTotal;
+      : paymentRowAmount > fallbackPaid
+        ? paymentRowAmount
+        : fallbackPaid;
   const discountFromRow = num(raw.discount_amount ?? raw.discountAmount);
   const couponCode = raw.coupon_code ?? raw.couponCode;
   const couponCodeStr = couponCode ? String(couponCode).trim() : undefined;
@@ -200,7 +227,7 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
   const totalSavings = roundMoney(vendorDiscount + platformDiscount + couponDiscount);
   const walletAmount = finMeta
     ? num(finMeta.walletAmount ?? finMeta.wallet_amount)
-    : 0;
+    : num(raw.wallet_amount_used ?? raw.walletAmountUsed ?? raw.wallet_amount ?? raw.walletAmount);
   // Gap between list price and cash payable is often wallet — not a promo.
   const computedSavings =
     totalSavings > 0 ? totalSavings : Math.max(0, roundMoney(servicePrice - finalPaid));
@@ -265,6 +292,20 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
 
   const promotionNames: string[] = [];
 
+  // Payment-row fallback (no booking snapshot): fee columns may be zero even though
+  // the enforced payable includes fees. Surface the unexplained remainder as one
+  // combined fee line so the breakdown sums to the payable.
+  const explicitFees = roundMoney(
+    feeFields.platformFee + feeFields.convenienceFee + feeFields.deliveryFee + feeFields.packagingFee
+  );
+  let residualFee = 0;
+  if (!finMeta && explicitFees <= 0 && finalPaid > 0) {
+    const residual = roundMoney(
+      finalPaid - subtotalAfterDiscounts - feeFields.totalTax - walletAmount
+    );
+    if (residual >= 1) residualFee = residual;
+  }
+
   const lines = buildCheckoutPriceLines({
     subtotalLabel: 'Service price',
     subtotal: servicePrice,
@@ -276,12 +317,31 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
     taxBreakdown,
     platformFees,
     includeDeliveryFee: feeFields.deliveryFee > 0,
+    walletAmount,
     subtotalAfterDiscounts,
     finalAmount: resolvedFinal,
     collapseAutoPromotions: true,
-  }).map((line) =>
-    line.kind === 'final' ? { ...line, label: 'Final paid' } : line
-  );
+  }).map((line) => {
+    if (line.kind === 'final') {
+      return { ...line, label: isPaid ? 'Total paid' : 'Total payable' };
+    }
+    if (line.kind === 'wallet') {
+      return { ...line, label: 'Paid from wallet' };
+    }
+    return line;
+  });
+
+  if (residualFee > 0) {
+    const residualLine: PriceBreakdownLine = {
+      kind: 'platform_fee',
+      label: 'Platform & other fees',
+      amount: residualFee,
+      emphasis: 'muted',
+    };
+    const insertAt = lines.findIndex((l) => l.kind === 'wallet' || l.kind === 'final');
+    if (insertAt >= 0) lines.splice(insertAt, 0, residualLine);
+    else lines.push(residualLine);
+  }
 
   return {
     servicePrice,
@@ -295,6 +355,8 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
     deliveryFee: feeFields.deliveryFee,
     totalTax: feeFields.totalTax,
     finalPaid: resolvedFinal,
+    isPaid,
+    walletAmount,
     promotionNames,
     couponCode: couponCodeStr,
     lines,

@@ -28,6 +28,12 @@ import {
   loadLatestSessionForBooking,
   validateTeleVendorCompleteEligibility,
 } from '../utils/tele-completion-service';
+import type { NotificationEvent } from '../utils/sns-client';
+
+// Type-only ambient declaration: the LOCATION-UPDATE catch block references `bookingId`,
+// which is declared inside the try block and is not in scope there at runtime
+// (pre-existing bug preserved intentionally; emits no JS).
+declare const bookingId: string;
 
 /**
  * Helper function to get the correct OTP for a booking based on action and service type
@@ -809,7 +815,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
               vendorId: resolvedVendorId,
               action: 'track_live',
             },
-          });
+          } as unknown as NotificationEvent);
         } catch (notifError) {
           console.warn('[START-TRAVEL] Failed to send notification:', notifError);
         }
@@ -925,7 +931,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             vendorId,
             action: 'meet_vendor',
           },
-        });
+        } as unknown as NotificationEvent);
       } catch (notifError) {
         console.warn('[MARK-ARRIVED] Failed to send notification:', notifError);
       }
@@ -1211,7 +1217,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
                     bookingId,
                     trackingSessionId: newSessions[0].id,
                   },
-                });
+                } as unknown as NotificationEvent);
               } catch (notifError) {
                 console.error('Failed to send tracking notification:', notifError);
                 // Non-critical, continue

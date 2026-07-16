@@ -36,14 +36,20 @@ import {
   SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../utils/customer-booking-package-fields';
 
-async function loadCustomerPaymentFeeFields(bookingId: string): Promise<Record<string, number>> {
+/**
+ * Fee/GST breakdown from the best payment row for the booking:
+ * completed/paid/success rows preferred, else the most recent row regardless of status
+ * (so legacy bookings with only a failed enforcement payment still render a breakdown).
+ */
+async function loadCustomerPaymentFeeFields(bookingId: string): Promise<Record<string, number | string>> {
   try {
     const pr = await query(
-      `SELECT amount, total_amount, platform_fee, convenience_fee, delivery_fee, cgst_amount, sgst_amount, igst_amount, gst_amount, fee_breakdown
+      `SELECT amount, total_amount, platform_fee, convenience_fee, delivery_fee, cgst_amount, sgst_amount, igst_amount, gst_amount, fee_breakdown, wallet_amount_used, payment_status
        FROM payments
        WHERE booking_id = $1::uuid
-         AND LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', 'paid', 'success')
-       ORDER BY created_at DESC
+       ORDER BY
+         CASE WHEN LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', 'paid', 'success') THEN 0 ELSE 1 END,
+         created_at DESC
        LIMIT 1`,
       [bookingId]
     );
@@ -55,9 +61,19 @@ async function loadCustomerPaymentFeeFields(bookingId: string): Promise<Record<s
       breakdown = breakdownFromFeeBreakdownJson(row.fee_breakdown);
     }
 
-    const paidAmount = parseFloat(String(row.total_amount ?? row.amount ?? 0)) || 0;
-    const out: Record<string, number> = {};
-    if (paidAmount > 0) out.paid_amount = paidAmount;
+    const rowStatus = String(row.payment_status ?? '').trim();
+    const rowCompleted = ['completed', 'paid', 'success'].includes(rowStatus.toLowerCase());
+    const paymentAmount = parseFloat(String(row.amount ?? 0)) || 0;
+    const payableAmount = parseFloat(String(row.total_amount ?? row.amount ?? 0)) || 0;
+    const walletAmountUsed = parseFloat(String(row.wallet_amount_used ?? 0)) || 0;
+
+    const out: Record<string, number | string> = {};
+    // paid_amount keeps its original meaning: amount on a completed capture only.
+    if (rowCompleted && payableAmount > 0) out.paid_amount = payableAmount;
+    if (paymentAmount > 0) out.payment_amount = paymentAmount;
+    if (payableAmount > 0) out.payable = payableAmount;
+    if (walletAmountUsed > 0) out.wallet_amount_used = walletAmountUsed;
+    if (rowStatus) out.payment_row_status = rowStatus;
 
     if (!hasMeaningfulCustomerPaidBreakdown(breakdown)) return out;
 

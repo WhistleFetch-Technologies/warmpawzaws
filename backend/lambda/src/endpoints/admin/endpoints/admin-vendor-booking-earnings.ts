@@ -3,6 +3,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { assertReportDate, parseYearMonthQuery } from '../../../utils/vendor-accrual-ist';
 import { buildSettlementAuditCsv } from '../../../utils/settlement-audit-csv';
 import {
@@ -161,7 +162,7 @@ export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
       );
 
       if ('error' in payloadOrError) {
-        return c.json({ success: false, error: payloadOrError.error }, payloadOrError.status);
+        return c.json({ success: false, error: payloadOrError.error }, payloadOrError.status as ContentfulStatusCode);
       }
 
       return c.json({
@@ -192,7 +193,7 @@ export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
       );
 
       if ('error' in payloadOrError) {
-        return c.text(payloadOrError.error, payloadOrError.status);
+        return c.text(payloadOrError.error, payloadOrError.status as ContentfulStatusCode);
       }
 
       const payload = payloadOrError;
@@ -261,7 +262,7 @@ export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
         String(c.req.query('month') || ''),
       );
       if ('error' in bounds) {
-        return c.text(bounds.error, bounds.status);
+        return c.text(bounds.error, bounds.status as ContentfulStatusCode);
       }
 
       const lines = await fetchAllVendorBookingEarningsLinesForIstRange(

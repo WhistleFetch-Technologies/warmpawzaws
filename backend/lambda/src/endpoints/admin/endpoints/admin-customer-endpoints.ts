@@ -833,7 +833,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
     if (!g.ok) return g.res;
     try {
       const customerId = c.req.param('customerId');
-      const adminId = (c.get('userId') as string | undefined) || g.userId;
+      const adminId = ((c.get as unknown as (key: string) => string | undefined)('userId')) || g.userId;
       const result = await createCustomerPortalCode({ adminId, customerId });
       if (!result.ok) {
         return c.json(
@@ -857,7 +857,7 @@ export function registerAdminCustomerEndpoints(app: Hono) {
     if (!g.ok) return g.res;
     try {
       const customerId = c.req.param('customerId');
-      const adminId = (c.get('userId') as string | undefined) || g.userId;
+      const adminId = ((c.get as unknown as (key: string) => string | undefined)('userId')) || g.userId;
       const codeResult = await createCustomerPortalCode({ adminId, customerId });
       if (!codeResult.ok) {
         return c.json(
