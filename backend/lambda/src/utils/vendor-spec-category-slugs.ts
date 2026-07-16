@@ -225,3 +225,30 @@ export function roleNamesForSpecCategoryQuery(
   }
   return expandedRoleNames;
 }
+
+/**
+ * Validate specialization_master rows against a service_categories.category_id slug.
+ * Must stay in sync with GET /vendor/specializations/by-category (DB slug expansion +
+ * sitter vs boarding row filter). Pet Sitting catalogue rows often store specs under
+ * category_id `boarding` in specialization_master.
+ */
+export function areSpecializationRowsValidForCatalogSlug(
+  rows: SpecializationMasterRow[],
+  catalogSlug: string,
+  requiredSpecIds: string[]
+): boolean {
+  if (!requiredSpecIds.length) return true;
+
+  const vendorPickSlugs = expandSpecCategorySlugs(catalogSlug).map(normalizeCatalogCategoryKey);
+  const dbQuerySlugSet = new Set(
+    expandSpecCategorySlugsForDbQuery(catalogSlug).map(normalizeCatalogCategoryKey)
+  );
+
+  const matchingCategory = (rows || []).filter((r) =>
+    dbQuerySlugSet.has(normalizeCatalogCategoryKey(String(r.category_id || '')))
+  );
+  const allowed = filterSpecializationMasterRowsForVendorCategory(matchingCategory, vendorPickSlugs);
+  const okIds = new Set(allowed.map((r) => String(r.specialization_id)));
+
+  return requiredSpecIds.every((sid) => okIds.has(String(sid)));
+}
