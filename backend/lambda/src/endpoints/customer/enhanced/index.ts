@@ -14,12 +14,7 @@ import { registerCustomerQuestionnairePlanningPostRoute } from './routes/custome
 import { registerCustomerPaymentmethodsGetRoute } from './routes/customer_paymentmethods_get.route';
 import { registerCustomerPaymentmethodsPostRoute } from './routes/customer_paymentmethods_post.route';
 import { registerCustomerPaymentmethodsMethodidDeleteRoute } from './routes/customer_paymentmethods_methodid_delete.route';
-import { registerCustomerPhonePreferencesGetRoute } from './routes/customer_phone_preferences_get.route';
-import { registerCustomerPhonePreferencesPostRoute } from './routes/customer_phone_preferences_post.route';
 import { registerCustomerPhoneOnboardingCompletePostRoute } from './routes/customer_phone_onboarding_complete_post.route';
-import { registerCustomerPhoneBookingsPendingreviewsGetRoute } from './routes/customer_phone_bookings_pendingreviews_get.route';
-import { registerCustomerPhoneReviewsBookingidSkipPostRoute } from './routes/customer_phone_reviews_bookingid_skip_post.route';
-import { registerCustomerPhoneBookingsActivetrackingGetRoute } from './routes/customer_phone_bookings_activetracking_get.route';
 import { registerCustomerPhoneOrdersPharmacyActiveGetRoute } from './routes/customer_phone_orders_pharmacy_active_get.route';
 import { registerCustomerPhoneOrdersMealsActiveGetRoute } from './routes/customer_phone_orders_meals_active_get.route';
 import { registerCustomerPhoneOrdersMealsRideractiveGetRoute } from './routes/customer_phone_orders_meals_rideractive_get.route';
@@ -42,12 +37,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
   registerCustomerPaymentmethodsGetRoute(app);
   registerCustomerPaymentmethodsPostRoute(app);
   registerCustomerPaymentmethodsMethodidDeleteRoute(app);
-  registerCustomerPhonePreferencesGetRoute(app);
-  registerCustomerPhonePreferencesPostRoute(app);
   registerCustomerPhoneOnboardingCompletePostRoute(app);
-  registerCustomerPhoneBookingsPendingreviewsGetRoute(app);
-  registerCustomerPhoneReviewsBookingidSkipPostRoute(app);
-  registerCustomerPhoneBookingsActivetrackingGetRoute(app);
   registerCustomerPhoneOrdersPharmacyActiveGetRoute(app);
   registerCustomerPhoneOrdersMealsActiveGetRoute(app);
   registerCustomerPhoneOrdersMealsRideractiveGetRoute(app);

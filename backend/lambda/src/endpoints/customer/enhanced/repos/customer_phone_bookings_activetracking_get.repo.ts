@@ -17,12 +17,12 @@ export async function dbCustomerPhoneBookingsActivetrackingGet1(customerId: stri
      LEFT JOIN vendor_services vs ON b.service_id = vs.id
      LEFT JOIN services sv ON b.service_id = sv.id
      LEFT JOIN pets p ON b.pet_id = p.id
-     WHERE gts.customer_id = $1
-       AND gts.status IN ('in_transit', 'arrived')
-       AND b.status IN ('confirmed', 'in_progress', 'on_the_way')
-       AND b.service_style = 'at_home'
+     WHERE b.customer_id = $1
+       AND gts.status IN ('in_transit', 'arrived', 'active', 'started')
+       AND b.status IN ('confirmed', 'in_progress', 'on_the_way', 'vendor_on_way', 'in_transit', 'arrived')
+       AND COALESCE(b.service_style, b.service_type, '') IN ('at_home', 'home')
        AND b.status NOT IN ('completed', 'cancelled', 'no_show')
-     ORDER BY b.scheduled_at ASC
+     ORDER BY COALESCE(b.scheduled_at, b.booking_date) ASC
      LIMIT 10`,
     [customerId]
   );

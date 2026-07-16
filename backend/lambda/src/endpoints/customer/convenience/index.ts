@@ -22,6 +22,9 @@ import { registerCustomerPhoneActivewalksGetRoute } from './routes/customer_phon
 import { registerCustomerPhonePetskillsGetRoute } from './routes/customer_phone_petskills_get.route';
 import { registerCustomerPhoneBookingsActivetrackingGetRoute } from '../enhanced/routes/customer_phone_bookings_activetracking_get.route';
 import { registerCustomerPhoneBookingsPendingreviewsGetRoute } from '../enhanced/routes/customer_phone_bookings_pendingreviews_get.route';
+import { registerCustomerPhoneReviewsBookingidSkipPostRoute } from '../enhanced/routes/customer_phone_reviews_bookingid_skip_post.route';
+import { registerCustomerPhonePreferencesGetRoute } from '../enhanced/routes/customer_phone_preferences_get.route';
+import { registerCustomerPhonePreferencesPostRoute } from '../enhanced/routes/customer_phone_preferences_post.route';
 
 export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
   registerCustomerBookingsActiveGetRoute(app);
@@ -30,6 +33,9 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
   // otherwise "active-tracking" / "pending-reviews" are parsed as UUIDs.
   registerCustomerPhoneBookingsActivetrackingGetRoute(app);
   registerCustomerPhoneBookingsPendingreviewsGetRoute(app);
+  registerCustomerPhoneReviewsBookingidSkipPostRoute(app);
+  registerCustomerPhonePreferencesGetRoute(app);
+  registerCustomerPhonePreferencesPostRoute(app);
   registerCustomerBookingsGetRoute(app);
   registerCustomerCartPhoneGetRoute(app);
   registerCustomerCartPhoneItemsItemidPutRoute(app);
