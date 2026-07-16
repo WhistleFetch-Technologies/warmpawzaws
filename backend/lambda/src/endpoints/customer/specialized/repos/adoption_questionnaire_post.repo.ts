@@ -44,6 +44,7 @@ async function ensureBookingForAdoption(params: {
     status: 'pending',
     notes: 'Adoption application booking',
     total_amount: 0,
+    base_price: 0,
   });
   return booking[0]?.id || null;
 }

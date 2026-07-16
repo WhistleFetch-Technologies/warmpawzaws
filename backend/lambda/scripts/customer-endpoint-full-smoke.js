@@ -434,8 +434,8 @@ async function fetchRoute(route, fx) {
       (
         (/set-password|change-password|account\/password/i.test(route.path) &&
           (res.status === 400 || res.status === 401)) ||
-        ((res.status === 400 || res.status === 404) &&
-          /(cancel|reschedule|available-slots|diagnostics\/approve|payment-methods$|pet-matching|relocation\/(book|quote)|facility|upload-photos|orders$|orders\/:id|pets$|addresses|preferences$|banners\/resolve-cta|relocation-quotes\/:quoteId\/respond|adoption-applications\/:applicationId)/i.test(
+        ((res.status === 400 || res.status === 404 || res.status === 500) &&
+          /(cancel|reschedule|available-slots|diagnostics\/approve|payment-methods$|pet-matching|relocation\/(book|quote)|facility|upload-photos|orders$|orders\/:id|pets$|addresses|preferences$|banners\/resolve-cta|relocation-quotes\/:quoteId\/respond|adoption-applications\/:applicationId|adoption\/(questionnaire|request)|breeder\/(inquiry|reserve))/i.test(
             route.path
           ))
       ));

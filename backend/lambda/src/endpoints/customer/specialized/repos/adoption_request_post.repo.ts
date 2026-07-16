@@ -36,5 +36,6 @@ export async function dbAdoptionRequestPost1(
     status: 'pending',
     notes: message || `Adoption inquiry for ${pet.name || 'pet'}`,
     total_amount: 0,
+    base_price: 0,
   });
 }

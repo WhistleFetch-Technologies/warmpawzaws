@@ -62,6 +62,7 @@ export async function dbBreederReservePost2(
     booking_time: '10:00',
     status: 'reserved',
     total_amount: price,
+    base_price: price,
     payment_status: 'pending',
     notes: `Reservation deposit pending for ${puppy.name || 'puppy'}; amount=${depositAmount || price * 0.2}`,
   });

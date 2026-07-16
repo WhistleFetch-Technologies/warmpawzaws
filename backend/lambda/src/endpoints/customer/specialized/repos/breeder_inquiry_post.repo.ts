@@ -53,5 +53,6 @@ export async function dbBreederInquiryPost1(
     status: 'inquiry',
     notes: message || `Purchase inquiry for ${puppy.name || 'puppy'}`,
     total_amount: puppy.price || 0,
+    base_price: puppy.price || 0,
   });
 }
