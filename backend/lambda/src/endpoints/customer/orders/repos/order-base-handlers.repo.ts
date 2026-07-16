@@ -82,7 +82,7 @@ export async function dbOrderBaseHandlers8(orderId: string, customerId: string) 
           v.phone as vendor_phone,
           v.email as vendor_email,
           v.address as vendor_address,
-          c.name as customer_name,
+          COALESCE(c.full_name, '') as customer_name,
           c.phone as customer_phone,
           c.email as customer_email
         FROM orders o
@@ -146,7 +146,7 @@ export async function dbOrderBaseHandlers12(orderId: string, customerId: string)
           v.email as vendor_email,
           v.address as vendor_address,
           v.gst_number as vendor_gst,
-          c.name as customer_name,
+          COALESCE(c.full_name, '') as customer_name,
           c.phone as customer_phone,
           c.email as customer_email,
           c.address as customer_address

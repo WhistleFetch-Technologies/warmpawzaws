@@ -70,12 +70,12 @@ export async function executecustomerCustomeridBookingsGet(c: Context) {
       let paramIndex = 2;
 
       if (status) {
-        bookingQuery += ` AND b.status = ${paramIndex}`;
+        bookingQuery += ` AND b.status = $${paramIndex}`;
         params.push(status);
         paramIndex++;
       }
 
-      bookingQuery += ` ORDER BY b.booking_date DESC, b.booking_time DESC LIMIT ${paramIndex} OFFSET ${paramIndex + 1}`;
+      bookingQuery += ` ORDER BY b.booking_date DESC, b.booking_time DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const bookings = await customer_customerid_bookings_getRepo.dbCustomerCustomeridBookingsGet1(bookingQuery, params)

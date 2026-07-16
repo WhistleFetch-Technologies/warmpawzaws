@@ -7,6 +7,7 @@ import { registerCustomerCustomeridBookingsFollowupeligibleGetRoute } from './ro
 export function registerCustomerBookingHistoryEndpoints(app: Hono) {
   registerCustomerCustomeridBookingsGetRoute(app);
   registerCustomerBookingsBookingidGetRoute(app);
-  registerCustomerCustomeridBookingsBookingidGetRoute(app);
+  // Static segment before :bookingId — otherwise "follow-up-eligible" is parsed as UUID.
   registerCustomerCustomeridBookingsFollowupeligibleGetRoute(app);
+  registerCustomerCustomeridBookingsBookingidGetRoute(app);
 }
