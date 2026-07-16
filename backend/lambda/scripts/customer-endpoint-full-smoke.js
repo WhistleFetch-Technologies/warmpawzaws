@@ -23,6 +23,72 @@ const BATCH = parseInt(
 );
 const RETRY_ONCE = !args.includes('--no-retry');
 
+/** Minimal valid v2 delivery fee policy (matches backend default shape). */
+const SMOKE_DELIVERY_FEE_POLICY = {
+  version: 2,
+  maxServiceRadiusKm: 10,
+  zones: [
+    {
+      id: 'zone_near',
+      name: 'Zone A',
+      sortOrder: 0,
+      minDistanceKm: 0,
+      maxDistanceKm: 5,
+      slabs: [
+        { minOrderInr: 0, maxOrderInr: 1000, deliveryFeeInr: 99 },
+        { minOrderInr: 1000, maxOrderInr: 1500, deliveryFeeInr: 49 },
+        { minOrderInr: 1500, maxOrderInr: null, deliveryFeeInr: 0 },
+      ],
+      surgeConfig: { weekend: true, festival: true, rain: true },
+    },
+    {
+      id: 'zone_mid',
+      name: 'Zone B',
+      sortOrder: 1,
+      minDistanceKm: 5,
+      maxDistanceKm: 10,
+      slabs: [
+        { minOrderInr: 0, maxOrderInr: 1000, deliveryFeeInr: 149 },
+        { minOrderInr: 1000, maxOrderInr: 1500, deliveryFeeInr: 99 },
+        { minOrderInr: 1500, maxOrderInr: 2000, deliveryFeeInr: 49 },
+        { minOrderInr: 2000, maxOrderInr: null, deliveryFeeInr: 0 },
+      ],
+      surgeConfig: { weekend: true, festival: true, rain: true },
+    },
+  ],
+  surges: {
+    weekendInr: 15,
+    festivalMinInr: 25,
+    festivalMaxInr: 40,
+    rainMinInr: 10,
+    rainMaxInr: 15,
+  },
+  runtimeSignals: { festivalActive: false, rainActive: false },
+  content: {
+    coverageSummary: 'Smoke test delivery policy',
+    rulesFreeDelivery: ['Order value meets eligible slab'],
+    importantNotes: ['Smoke harness fixture'],
+  },
+};
+
+function enc(v) {
+  return encodeURIComponent(String(v ?? ''));
+}
+
+function phoneQuery(fx, extra = '') {
+  const phone = fx.customerPhone || fx.queryDefaults?.phone || '';
+  const base = phone ? `?phone=${enc(phone)}` : '';
+  return extra ? (base ? `${base}&${extra}` : `?${extra}`) : base;
+}
+
+function customerBody(fx, fields = {}) {
+  return {
+    phone: fx.customerPhone,
+    customerId: fx.customerId,
+    ...fields,
+  };
+}
+
 const PARAM_MAP = {
   customerId: 'customerId',
   customerid: 'customerId',
@@ -66,40 +132,61 @@ function substitutePath(routePath, fx) {
 
 function queryFor(route, fx) {
   const p = route.path;
+  const phone = fx.customerPhone || fx.queryDefaults?.phone || '';
+  const vendorId = fx.vendorId || fx.queryDefaults?.vendorId || '';
+  const serviceId = fx.serviceId || fx.itemId || fx.queryDefaults?.serviceId || '';
+
+  if (/resolve-cta/i.test(p)) {
+    return '?ctaLink=shop&title=Shop&serviceStyle=at_center';
+  }
+  if (p === '/customer/profile' && route.method === 'GET') {
+    return phoneQuery(fx);
+  }
+  if (p === '/customer/bookings/active') {
+    return phoneQuery(fx);
+  }
+  if (p === '/customer/addresses' && route.method === 'GET') {
+    return phoneQuery(fx);
+  }
+  if (p === '/customer/pets' && route.method === 'GET') {
+    return phoneQuery(fx);
+  }
+  if (/latest-booking-by-vendor/i.test(p) && vendorId) {
+    return `?vendorId=${enc(vendorId)}`;
+  }
+  if (/pet-matching\/requests$/i.test(p) && fx.customerId) {
+    return `?customerId=${enc(fx.customerId)}&type=received`;
+  }
+  if (/services\/platform/i.test(p)) {
+    return '?roleId=vet&serviceStyle=at_center&category=vet';
+  }
+  if (/vendor-available-slots/i.test(p)) {
+    const parts = ['date=2026-07-20', 'serviceStyle=at_home', 'totalDuration=30'];
+    if (serviceId) parts.push(`serviceId=${enc(serviceId)}`);
+    return `?${parts.join('&')}`;
+  }
   if (/discover-services|discovery\/count/i.test(p)) {
     return '?category=vet&serviceStyle=at_center&limit=5';
   }
   if (/services\/by-style/i.test(p)) return '?style=at_center&category=vet';
-  if (/services\/platform/i.test(p)) return '?category=vet&serviceStyle=at_center';
   if (/customer\/services$/i.test(p)) return '?category=vet&limit=5';
-  if (/by-phone|byphone/i.test(p)) return `?phone=${encodeURIComponent(fx.customerPhone || '')}`;
-  if (/wallet/i.test(p) && /phone/.test(p)) return `?phone=${encodeURIComponent(fx.customerPhone || '')}`;
-  if (/bookings\?/i.test(p) || (/\/bookings$/i.test(p) && !/:bookingId/.test(p))) {
-    return `?phone=${encodeURIComponent(fx.customerPhone || '')}`;
-  }
-  if (/meal-plan-orders/i.test(p)) return `?phone=${encodeURIComponent(fx.customerPhone || '')}`;
-  if (/radar-providers|radar\/providers/i.test(p)) return '?lat=12.97&lng=77.59&radiusKm=5';
+  if (/by-phone|byphone/i.test(p)) return phoneQuery(fx);
+  if (/wallet\/transactions/i.test(p)) return phoneQuery(fx, 'limit=5');
+  if (/\/bookings$/i.test(p) && !/:bookingId|:phone/.test(p)) return phoneQuery(fx);
+  if (/meal-plan-orders/i.test(p)) return phoneQuery(fx);
+  if (/radar\/providers/i.test(p)) return '?lat=12.97&lng=77.59&radiusKm=5';
   if (/discover-by-problem/i.test(p)) return '?problem=skin';
   if (/vendors\/search/i.test(p)) return '?q=vet&limit=5';
-  if (/radar-providers/i.test(p)) return '?lat=12.97&lng=77.59&radiusKm=5';
   if (/autocomplete/i.test(p)) return '?q=vet';
-  if (/pricing-quote/i.test(p)) return '?serviceId=00000000-0000-0000-0000-000000000099';
-  if (/vendor-available-slots/i.test(p)) return '?date=2026-07-20';
-  if (/public-vendor-profile|customer-vendor-profile/i.test(p)) return '';
-  if (/banners\/resolvecta/i.test(p)) return '?cta=shop';
-  if (/articles\/[^/]+$/i.test(p)) return '';
-  if (/content-pages/i.test(p)) return '';
-  if (/identifier/i.test(p)) return '?identifier=9845299005';
-  if (/password-status|passwordstatus/i.test(p)) return '';
-  if (/wallet\/transactions/i.test(p)) return `?phone=${encodeURIComponent(fx.customerPhone || '')}&limit=5`;
-  if (/bookings\/active/i.test(p) && /:phone/.test(p)) return '';
-  if (/activewalks|upcomingcalls/i.test(p)) return '';
-  if (/followupeligible/i.test(p)) return '';
-  if (/paymentresume/i.test(p)) return '';
-  if (/invoice/i.test(p)) return '';
-  if (/pharmacystatus/i.test(p)) return '';
-  if (/breeder_puppies|adoption_pets/i.test(p)) return '?limit=5';
-  if (/relocation_services/i.test(p)) return '';
+  if (/pricing-quote/i.test(p) && route.method === 'GET') {
+    return serviceId ? `?serviceId=${enc(serviceId)}&vendorId=${enc(vendorId)}` : '';
+  }
+  if (/profile\/unified\/:identifier|profile\/:identifier/i.test(p)) {
+    return `?identifier=${enc(phone || fx.customerId || '')}`;
+  }
+  if (/password-status|passwordstatus/i.test(p)) return phoneQuery(fx);
+  if (/payment-methods/i.test(p) && route.method === 'GET') return phoneQuery(fx);
+  if (/breeder\/puppies|adoption\/pets$/i.test(p)) return '?limit=5';
   return '';
 }
 
@@ -109,57 +196,189 @@ function bodyFor(route, fx) {
   if (m === 'GET' || m === 'DELETE') return null;
 
   if (/delivery-fee\/calculate/i.test(p)) return { orderSubtotalInr: 500, distanceKm: 3 };
-  if (/delivery-fee-policy/i.test(p) && m === 'PUT') return { baseFeeInr: 40, perKmInr: 10 };
-  if (/set-password|setpassword/i.test(p)) return { password: 'TestPass123!' };
-  if (/profile$/i.test(p) && m === 'POST') return { name: 'Smoke Test', phone: fx.customerPhone };
-  if (/searchhistory/i.test(p) && m === 'POST') return { query: 'vet', category: 'vet' };
-  if (/preferences/i.test(p) && m === 'PUT') return { notificationsEnabled: true };
-  if (/addresses/i.test(p) && m === 'POST') {
+  if (/delivery-fee-policy/i.test(p) && m === 'PUT') return { policy: SMOKE_DELIVERY_FEE_POLICY };
+
+  if (/set-password|setpassword/i.test(p)) {
+    return { password: 'TestPass123!', confirmPassword: 'TestPass123!' };
+  }
+  if (/change-password|account\/password/i.test(p)) {
+    return customerBody(fx, {
+      currentPassword: 'WrongPass123!',
+      newPassword: 'TestPass123!',
+      confirmPassword: 'TestPass123!',
+    });
+  }
+
+  if (p === '/customer/profile' && m === 'POST') {
     return {
-      label: 'Home',
-      line1: '123 Test St',
+      phone: fx.customerPhone,
+      profile: {
+        firstName: 'Smoke',
+        lastName: 'Test',
+        pincode: '560001',
+        city: 'Bengaluru',
+        state: 'KA',
+      },
+    };
+  }
+
+  if (/searchhistory/i.test(p) && m === 'POST') {
+    return { searchQuery: 'vet grooming', query: 'vet grooming' };
+  }
+  if (/preferences/i.test(p) && m === 'PUT') {
+    return { notificationsEnabled: true, emailNotifications: true };
+  }
+  if (/preferences/i.test(p) && m === 'POST') {
+    return customerBody(fx, { emailNotifications: true, pushNotifications: true });
+  }
+
+  if (/addresses/i.test(p) && m === 'POST') {
+    const addr = {
+      name: 'Smoke Test',
+      phone: fx.customerPhone,
+      addressLine1: '123 Test Street',
+      houseNo: '12A',
       city: 'Bengaluru',
       state: 'KA',
       pincode: '560001',
       latitude: 12.97,
       longitude: 77.59,
+      label: 'Home',
     };
+    if (/:customerId\/addresses/.test(p)) return addr;
+    return customerBody(fx, addr);
   }
   if (/addresses/i.test(p) && (m === 'PUT' || m === 'PATCH')) {
-    return { label: 'Home', line1: '123 Test St', city: 'Bengaluru' };
+    return {
+      label: 'Home',
+      addressLine1: '123 Test Street',
+      city: 'Bengaluru',
+      state: 'KA',
+      pincode: '560001',
+    };
   }
-  if (/orders$/i.test(p) && m === 'POST') return { items: [], vendorId: fx.vendorId };
+
+  if (/orders$/i.test(p) && m === 'POST') {
+    return customerBody(fx, { items: [], vendorId: fx.vendorId });
+  }
   if (/return/i.test(p)) return { reason: 'smoke-test', items: [] };
   if (/cancel/i.test(p)) return { reason: 'smoke-test' };
-  if (/reschedule/i.test(p)) return { newDate: '2026-08-01', newTime: '10:00' };
-  if (/paymentmethods/i.test(p) && m === 'POST') return { type: 'upi', upiId: 'test@upi' };
-  if (/payments/i.test(p) && m === 'POST') return { amount: 100, method: 'upi' };
-  if (/cart/i.test(p) && (m === 'POST' || m === 'PUT')) return { quantity: 1, productId: fx.itemId };
-  if (/notifications/i.test(p) && m === 'PUT') return { pushEnabled: true };
-  if (/pets/i.test(p) && m === 'POST') return { name: 'SmokePet', species: 'dog', breed: 'mixed' };
-  if (/onboarding\/complete/i.test(p)) return { completed: true };
-  if (/preferences/i.test(p) && m === 'POST') return { emailNotifications: true };
-  if (/pricing-quote/i.test(p)) return { serviceId: fx.itemId, vendorId: fx.vendorId };
+  if (/reschedule/i.test(p)) {
+    return {
+      appointment_date: '2026-08-01',
+      appointment_time: '10:00',
+      reason: 'smoke-test',
+    };
+  }
+
+  if (/paymentmethods/i.test(p) && m === 'POST') {
+    return customerBody(fx, { type: 'upi', upiId: 'smoke@upi', isDefault: false });
+  }
+  if (/payments/i.test(p) && m === 'POST') {
+    return customerBody(fx, { amount: 100, method: 'upi', upiId: 'smoke@upi' });
+  }
+  if (/cart/i.test(p) && (m === 'POST' || m === 'PUT')) {
+    return { quantity: 1, productId: fx.itemId };
+  }
+  if (/notifications/i.test(p) && m === 'PUT') {
+    return { pushEnabled: true, emailEnabled: true };
+  }
+  if (/pets/i.test(p) && m === 'POST') {
+    const phone = String(fx.customerPhone || '').replace(/\D/g, '');
+    const e164 = phone.length === 10 ? `+91${phone}` : phone.startsWith('+') ? phone : `+${phone}`;
+    if (p === '/customer/pets' || /\/customer\/pets$/i.test(p)) {
+      return {
+        phone: e164,
+        pets: [{ name: 'SmokePet', type: 'Dog', breed: 'mixed', gender: 'Male' }],
+      };
+    }
+    return {
+      name: 'SmokePet',
+      species: 'dog',
+      breed: 'mixed',
+      gender: 'male',
+      age_years: 2,
+    };
+  }
+  if (/onboarding\/complete/i.test(p)) return { completed: true, journeyType: 'standard' };
+  if (/questionnaire\/planning/i.test(p)) {
+    return customerBody(fx, { answers: { lifestyle: 'active' } });
+  }
+  if (/pricing\/quote/i.test(p) && m === 'POST') {
+    return {
+      serviceId: fx.serviceId || fx.itemId,
+      vendorId: fx.vendorId,
+      petId: fx.petId,
+    };
+  }
   if (/vendor-facility/i.test(p) && m === 'PUT') return { description: 'smoke' };
-  if (/vendor-facility-upload/i.test(p)) return { imageUrl: 'https://example.com/x.jpg' };
-  if (/diagnostics-approve-vendor/i.test(p)) return { approved: true };
-  if (/adoption/i.test(p)) return { petId: fx.petId, message: 'smoke' };
-  if (/relocation/i.test(p)) return { fromCity: 'Bengaluru', toCity: 'Mumbai', petCount: 1 };
-  if (/breeder_inquiry/i.test(p)) return { message: 'smoke inquiry' };
-  if (/petmatching/i.test(p)) return { petId: fx.petId, notes: 'smoke' };
-  if (/holidays\/buildpackage/i.test(p)) return { startDate: '2026-08-01', endDate: '2026-08-05' };
-  if (/account\/password/i.test(p)) return { currentPassword: 'x', newPassword: 'TestPass123!' };
+  if (/vendor-facility-upload|facility.*upload/i.test(p)) {
+    return { imageUrl: 'https://example.com/smoke.jpg' };
+  }
+  if (/diagnostics-approve-vendor/i.test(p)) {
+    return customerBody(fx, { approved: true, vendorId: fx.vendorId });
+  }
+  if (/adoption\/questionnaire/i.test(p)) {
+    return customerBody(fx, {
+      customerPhone: fx.customerPhone,
+      petId: fx.petId,
+      experience: 'some',
+      livingSituation: 'apartment',
+      reason: 'smoke',
+    });
+  }
+  if (/adoption\/request/i.test(p)) {
+    return customerBody(fx, { petId: fx.petId, message: 'smoke adoption request' });
+  }
+  if (/relocation\/book/i.test(p)) {
+    return customerBody(fx, {
+      fromCity: 'Bengaluru',
+      toCity: 'Mumbai',
+      petCount: 1,
+      serviceId: fx.serviceId || fx.itemId,
+    });
+  }
+  if (/relocation\/quote/i.test(p)) {
+    return {
+      fromCity: 'Bengaluru',
+      toCity: 'Mumbai',
+      petCount: 1,
+      petSize: 'medium',
+    };
+  }
+  if (/breeder\/inquiry/i.test(p)) {
+    return customerBody(fx, { puppyId: fx.petId, message: 'smoke inquiry' });
+  }
+  if (/breeder\/reserve/i.test(p)) {
+    return customerBody(fx, { puppyId: fx.petId, depositInr: 500 });
+  }
+  if (/petmatching\/request/i.test(p)) {
+    return customerBody(fx, { petId: fx.petId, targetPetId: fx.petId, notes: 'smoke' });
+  }
+  if (/petmatching\/requests/i.test(p) && m === 'PUT') {
+    return { status: 'declined', message: 'smoke' };
+  }
+  if (/holidays\/build-package/i.test(p)) {
+    return {
+      startDate: '2026-08-01',
+      endDate: '2026-08-05',
+      petId: fx.petId,
+      vendorId: fx.vendorId,
+    };
+  }
+  if (/adoption-applications/i.test(p) && m === 'PUT') {
+    return { status: 'reviewed', notes: 'smoke' };
+  }
   if (/respond/i.test(p)) return { accepted: false, message: 'smoke' };
-  return {};
+  return customerBody(fx);
 }
 
 function authHeaders(route, fx) {
-  const h = { 'Content-Type': 'application/json' };
+  const h = { 'Content-Type': 'application/json', Accept: 'application/json' };
   if (fx.authToken) h.Authorization = `Bearer ${fx.authToken}`;
   if (fx.customerId) h['x-user-id'] = fx.customerId;
-  if (route.needsAuth || /customer\/|profile|password|wallet|cart|orders|appointments|bookings|payments|notifications|saved|paymentmethods|pets/i.test(route.path)) {
-    if (fx.customerPhone) h['x-user-phone'] = fx.customerPhone;
-  }
+  if (fx.customerPhone) h['x-user-phone'] = fx.customerPhone;
+  if (process.env.UAT_MODE === 'true' || fx.uatMode) h['x-uat-mode'] = 'true';
   return h;
 }
 
@@ -240,7 +459,15 @@ async function main() {
         itemId: '00000000-0000-0000-0000-000000000007',
         paymentId: '00000000-0000-0000-0000-000000000008',
         slug: 'about',
+        serviceId: '00000000-0000-0000-0000-000000000099',
         authToken: null,
+        queryDefaults: {
+          phone: '9845299005',
+          customerPhone: '9845299005',
+          roleId: 'vet',
+          serviceStyle: 'at_center',
+          category: 'vet',
+        },
       };
 
   console.log(`Customer full smoke — ${manifest.routes.length} routes — ${BASE}\n`);
