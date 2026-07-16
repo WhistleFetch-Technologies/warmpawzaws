@@ -1,20 +1,7 @@
 import type { Context } from 'hono';
-import { Hono } from 'hono';
-import {
-  resolveFeaturedVendorsRequestScreen,
-  canonicalScreenForSpotlightRow,
-} from '../../../../utils/featured-vendor-service-context';
-import {
-  enrichBannersWithNavTargets,
-  resolveBannerCtaNavigation,
-} from '../../../../utils/banner-cta-resolver';
-import { listPublishedCustomerArticlesForCustomer } from '../../../../utils/content-page-articles';
-import { presignBannerImageForDisplay } from '../../../../utils/banner-s3-image';
-import {
-  createLaunchGeoFilter,
-  shouldIncludeFeaturedSpotlightRow,
-} from '../../../../lib/customer-launch-geo-filter';
+import { executecustomerArticlesGet } from './customer_articles_get.service';
 
+/** Alias: /marketing/articles → same handler as /customer/articles */
 export async function executemarketingArticlesGet(c: Context) {
-    return app.fetch(new Request(c.req.url.replace('/marketing/articles', '/customer/articles'), c.req.raw));
+  return executecustomerArticlesGet(c);
 }

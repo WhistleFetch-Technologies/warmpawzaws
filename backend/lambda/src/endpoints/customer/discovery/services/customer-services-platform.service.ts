@@ -95,7 +95,7 @@ export async function executecustomerServicesPlatform(c: Context) {
           LEFT JOIN roles r ON v.role_id = r.id
           WHERE vs.is_enabled = true
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
-            AND (LOWER(r.name) = LOWER(executecustomerServicesPlatform) OR LOWER(r.display_name) = LOWER(executecustomerServicesPlatform))
+            AND (LOWER(r.name) = LOWER($1) OR LOWER(r.display_name) = LOWER($1))
         `;
 
         const fallbackParams: any[] = [roleId];
@@ -157,7 +157,7 @@ export async function executecustomerServicesPlatform(c: Context) {
         FROM service_catalog
         WHERE status = 'active'
           AND (publish_status IN ('published','auto_published') OR publish_status IS NULL)
-          AND executecustomerServicesPlatform = ANY(applicable_roles)
+          AND $1 = ANY(applicable_roles)
       `;
       const params: any[] = [roleId];
       let paramIndex = 2;

@@ -11,7 +11,7 @@ export async function executevendorVendoridAdoptionPetsGet(c: Context) {
       let petsQuery = `
         SELECT p.*
         FROM pets p
-        WHERE p.vendor_id = executevendorVendoridAdoptionPetsGet AND p.is_for_adoption = true
+        WHERE p.vendor_id = $1 AND p.is_for_adoption = true
       `;
 
       const params: any[] = [vendorId];

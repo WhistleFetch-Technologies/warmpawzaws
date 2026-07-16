@@ -421,7 +421,7 @@ export async function executeservicesByStyle(c: Context) {
               AND EXISTS (
                 SELECT 1 FROM vendors v2
                 JOIN roles r2 ON r2.id = v2.role_id
-                WHERE v2.id = executeservicesByStyle
+                WHERE v2.id = $1
                   AND LOWER(TRIM(COALESCE(r2.name, ''))) IN ${VET_HUB_PLACEHOLDER_CATEGORY_ROLES_SQL}
               )
             )`
@@ -478,7 +478,7 @@ export async function executeservicesByStyle(c: Context) {
            FROM vendor_services vs
            LEFT JOIN services s ON vs.service_id = s.id
            LEFT JOIN service_catalog sc ON vs.service_id = sc.id
-           WHERE vs.vendor_id = executeservicesByStyle
+           WHERE vs.vendor_id = $1
              AND vs.service_style = ANY($2::text[])
              ${isAtCenter ? "AND vs.service_style != 'at_home'" : ''}
             ${categoryFilterSql}
@@ -661,7 +661,7 @@ export async function executeservicesByStyle(c: Context) {
             FROM vendor_services vs
             WHERE vs.vendor_id = v.id
               AND ${sqlVendorServiceDiscoverable('vs', false)}
-              AND vs.service_style = ANY(executeservicesByStyle::text[])
+              AND vs.service_style = ANY($1::text[])
               ${(catTextExact.length + catUUIDs.length > 0) ? `
               AND (
                 ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}

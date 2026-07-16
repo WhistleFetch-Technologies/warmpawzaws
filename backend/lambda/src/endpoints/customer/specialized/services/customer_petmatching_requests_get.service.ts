@@ -26,7 +26,7 @@ export async function executecustomerPetmatchingRequestsGet(c: Context) {
           LEFT JOIN pets fp ON mr.from_pet_id = fp.id
           LEFT JOIN pets tp ON mr.to_pet_id = tp.id
           LEFT JOIN customers tc ON mr.to_customer_id = tc.id
-          WHERE mr.from_customer_id = executecustomerPetmatchingRequestsGet
+          WHERE mr.from_customer_id = $1
           ORDER BY mr.created_at DESC
         `;
       } else {
@@ -42,12 +42,12 @@ export async function executecustomerPetmatchingRequestsGet(c: Context) {
           LEFT JOIN pets fp ON mr.from_pet_id = fp.id
           LEFT JOIN pets tp ON mr.to_pet_id = tp.id
           LEFT JOIN customers fc ON mr.from_customer_id = fc.id
-          WHERE mr.to_customer_id = executecustomerPetmatchingRequestsGet
+          WHERE mr.to_customer_id = $1
           ORDER BY mr.created_at DESC
         `;
       }
 
-      const requests = await customer_petmatching_requests_getRepo.dbCustomerPetmatchingRequestsGet0(requestsQuery).catch(() => ({ rows: [] }));
+      const requests = await customer_petmatching_requests_getRepo.dbCustomerPetmatchingRequestsGet0(customerId, requestsQuery).catch(() => ({ rows: [] }));
 
       return c.json({
         success: true,

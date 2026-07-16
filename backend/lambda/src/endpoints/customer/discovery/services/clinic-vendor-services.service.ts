@@ -96,7 +96,7 @@ export async function executeclinicVendorServices(c: Context) {
           s.description as base_description
         FROM vendor_services vs
         LEFT JOIN services s ON vs.service_id = s.id
-        WHERE vs.vendor_id = executeclinicVendorServices 
+        WHERE vs.vendor_id = $1 
           AND vs.is_enabled = true 
           AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
       `;
