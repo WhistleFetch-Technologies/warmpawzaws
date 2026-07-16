@@ -36,13 +36,6 @@ import type {
   UnifiedDiscountResolver,
 } from './types';
 import type { DiscountCandidate } from '../candidates/types';
-import type {
-  PriorityDiagnostics,
-  ResolverResult,
-  SettlementDiagnostics,
-  StackDiagnostics,
-  UnifiedDiscountResolver,
-} from './types';
 import type { DiscountContext } from '../models/discount-context';
 import type { AppliedDiscount, DiscountBenefitLine } from '../models/discount-result';
 import { emptyDiscountEngineResult } from '../models/discount-result';
