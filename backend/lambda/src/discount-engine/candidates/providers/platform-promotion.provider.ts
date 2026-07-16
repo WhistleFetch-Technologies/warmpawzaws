@@ -9,6 +9,10 @@ export class PlatformPromotionCandidateProvider implements CandidateProvider {
     if (context.preloadedRows?.length) {
       return context.preloadedRows;
     }
+    const preloadedForSource = context.preloadedRowsBySource?.[this.source];
+    if (Array.isArray(preloadedForSource)) {
+      return preloadedForSource;
+    }
 
     try {
       let queryStr = `SELECT * FROM promotions

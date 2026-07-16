@@ -21,7 +21,9 @@ import { isValidUUID } from '../types/entities';
 import {
   listApplicableBookingPromotions,
   resolveBookingDiscountQuote,
+  resolveBookingDiscountQuoteBatch,
 } from '../lib/services/booking-promotion-service';
+import type { UnifiedResolverResponse } from '../discount-engine/resolver/unified-resolver-response';
 import { resolveBookingServiceCategory } from '../lib/services/resolve-booking-service-category';
 import { validateCouponInternal as validatePlatformCouponInternal } from '../lib/services/platform-coupon-service';
 import {
@@ -55,6 +57,36 @@ import {
   type CommercialDiscountDomain,
 } from '../utils/commercial-discount-domain';
 import { countActiveEcommerceAdminPromotions } from '../utils/count-active-ecommerce-promotions';
+
+/** calculate-booking HTTP payload — unified quote plus legacy field aliases for existing customer-web callers. */
+function buildCalculateBookingHttpPayload(quote: UnifiedResolverResponse) {
+  return {
+    ...quote,
+    originalAmount: quote.savings.originalAmount,
+    vendorDiscountAmount: quote.savings.vendorDiscountAmount,
+    platformDiscountAmount: quote.savings.platformDiscountAmount,
+    totalSavings: quote.savings.totalSavings,
+    finalAmount: quote.savings.finalAmount,
+    applied: quote.appliedOffers.map((o) => ({
+      id: o.id,
+      source: o.source === 'vendor' ? 'vendor' : 'platform',
+      name: o.name,
+      discountAmount: o.discountAmount,
+      promotionType: o.source === 'coupon' ? 'coupon' : o.offerType,
+    })),
+    bestPromotion: quote.winningPromotion
+      ? {
+          id: quote.winningPromotion.id,
+          source: quote.winningPromotion.source === 'vendor' ? 'vendor' : 'platform',
+          name: quote.winningPromotion.name,
+          calculatedDiscount: quote.winningPromotion.discountAmount,
+        }
+      : null,
+    policyApplicationStrategy: quote.currentPolicy.applicationStrategy,
+    winningStrategy: quote.currentPolicy.winningStrategy ?? null,
+    policyFingerprint: quote.currentPolicy.policyFingerprint,
+  };
+}
 
 async function persistPromotionInsert(promotionData: Record<string, unknown>) {
   if (isEcommerceAdminPromotionDomain(promotionData)) {
@@ -1174,36 +1206,104 @@ export function registerPromotionEndpoints(app: Hono) {
             : undefined,
       });
 
-      return c.json({
-        ...quote,
-        // Legacy field aliases for existing customer-web callers
-        originalAmount: quote.savings.originalAmount,
-        vendorDiscountAmount: quote.savings.vendorDiscountAmount,
-        platformDiscountAmount: quote.savings.platformDiscountAmount,
-        totalSavings: quote.savings.totalSavings,
-        finalAmount: quote.savings.finalAmount,
-        applied: quote.appliedOffers.map((o) => ({
-          id: o.id,
-          source: o.source === 'vendor' ? 'vendor' : 'platform',
-          name: o.name,
-          discountAmount: o.discountAmount,
-          promotionType: o.source === 'coupon' ? 'coupon' : o.offerType,
-        })),
-        bestPromotion: quote.winningPromotion
-          ? {
-              id: quote.winningPromotion.id,
-              source: quote.winningPromotion.source === 'vendor' ? 'vendor' : 'platform',
-              name: quote.winningPromotion.name,
-              calculatedDiscount: quote.winningPromotion.discountAmount,
-            }
-          : null,
-        policyApplicationStrategy: quote.currentPolicy.applicationStrategy,
-        winningStrategy: quote.currentPolicy.winningStrategy ?? null,
-        policyFingerprint: quote.currentPolicy.policyFingerprint,
-      });
+      return c.json(buildCalculateBookingHttpPayload(quote));
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error('Error calculating booking promotions:', msg);
+      return c.json({ success: false, error: msg }, 500);
+    }
+  });
+
+  /**
+   * POST /promotions/calculate-booking-batch
+   * Batched display-only quotes for service listing surfaces (one vendor, many services).
+   * Body: { vendorId, customerId?, serviceCategory?, items: [{ key, serviceId | serviceIds, amount, serviceStyle?, serviceCategory? }] }
+   * Each quote in the response matches the single calculate-booking payload shape.
+   */
+  app.post('/promotions/calculate-booking-batch', async (c) => {
+    try {
+      const body = await c.req.json();
+      const vendorId = String(body.vendorId || body.vendor_id || '').trim();
+      const customerId = body.customerId || body.customer_id;
+      const batchCategory = body.serviceCategory || body.service_category || body.category;
+      const rawItems = Array.isArray(body.items) ? body.items : [];
+
+      if (!vendorId || rawItems.length === 0) {
+        return c.json({ success: false, error: 'vendorId and items are required' }, 400);
+      }
+      if (rawItems.length > 200) {
+        return c.json({ success: false, error: 'items limit is 200 per request' }, 400);
+      }
+
+      type BatchHttpItem = {
+        key: string;
+        serviceIds: string[];
+        amount: number;
+        serviceStyle?: string;
+        explicitCategory?: string;
+      };
+      const items: BatchHttpItem[] = rawItems
+        .map((raw: Record<string, unknown>, index: number): BatchHttpItem => {
+          const serviceIdsRaw = raw.serviceIds ?? raw.service_ids;
+          const serviceIds = Array.isArray(serviceIdsRaw)
+            ? serviceIdsRaw.map((x: unknown) => String(x)).filter(Boolean)
+            : raw.serviceId || raw.service_id
+              ? [String(raw.serviceId || raw.service_id)]
+              : [];
+          return {
+            key: String(raw.key ?? index),
+            serviceIds,
+            amount: parseFloat(String(raw.amount ?? 0)) || 0,
+            serviceStyle:
+              raw.serviceStyle ?? raw.service_style
+                ? String(raw.serviceStyle ?? raw.service_style)
+                : undefined,
+            explicitCategory:
+              raw.serviceCategory ?? raw.service_category
+                ? String(raw.serviceCategory ?? raw.service_category)
+                : batchCategory
+                  ? String(batchCategory)
+                  : undefined,
+          };
+        })
+        .filter((item: BatchHttpItem) => item.amount > 0);
+
+      if (items.length === 0) {
+        return c.json({ success: true, quotes: [] });
+      }
+
+      // Same category resolution as the single endpoint — resolved once per batch
+      // since all items belong to one vendor listing surface.
+      const resolvedCategory = await resolveBookingServiceCategory({
+        vendorId,
+        serviceId: items[0].serviceIds[0],
+        explicitCategory: items[0].explicitCategory ?? null,
+      });
+
+      const results = await resolveBookingDiscountQuoteBatch({
+        vendorId,
+        customerId: customerId ? String(customerId) : undefined,
+        items: items.map((item) => ({
+          key: item.key,
+          serviceIds: item.serviceIds,
+          amount: item.amount,
+          serviceStyle: item.serviceStyle,
+          serviceCategory: item.explicitCategory ?? resolvedCategory ?? undefined,
+        })),
+      });
+
+      return c.json({
+        success: true,
+        quotes: results.map((r) => ({
+          key: r.key,
+          ...(r.quote
+            ? buildCalculateBookingHttpPayload(r.quote)
+            : { success: false, error: r.error ?? 'quote_failed' }),
+        })),
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('Error calculating booking promotions batch:', msg);
       return c.json({ success: false, error: msg }, 500);
     }
   });

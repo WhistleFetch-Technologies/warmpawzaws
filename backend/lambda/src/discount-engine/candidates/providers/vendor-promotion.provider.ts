@@ -9,6 +9,10 @@ export class VendorPromotionCandidateProvider implements CandidateProvider {
     if (context.preloadedRows?.length) {
       return context.preloadedRows;
     }
+    const preloadedForSource = context.preloadedRowsBySource?.[this.source];
+    if (Array.isArray(preloadedForSource)) {
+      return preloadedForSource;
+    }
     if (!context.vendorId) return [];
 
     try {

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PriceDisplay } from './PriceDisplay';
 import { SavingsBadge } from './SavingsBadge';
-import { fetchBookingDiscountQuote } from '@/lib/service-booking-pricing';
+import { fetchBookingDiscountQuoteBatched } from '@/lib/service-booking-pricing';
 import { roundMoney } from '@/lib/pricing/format';
 import { totalSavingsFromQuote } from '@/lib/pricing/unified-resolver-response';
 
@@ -68,14 +68,13 @@ export function ServiceListingPrice({
     if (!vendorId || basePrice <= 0) return;
     let cancelled = false;
     setLoading(true);
-    fetchBookingDiscountQuote({
+    fetchBookingDiscountQuoteBatched({
       vendorId,
       serviceIds: serviceId ? [serviceId] : [],
       amount: basePrice,
       customerId,
       serviceStyle: effectiveServiceStyle,
       serviceCategory,
-      displayPromotionsOnly: true,
     })
       .then((quote) => {
         if (cancelled || !quote) return;

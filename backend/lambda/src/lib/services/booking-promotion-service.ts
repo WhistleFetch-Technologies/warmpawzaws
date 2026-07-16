@@ -12,8 +12,14 @@ import { shadowPlatformPromoEligibility } from '../../discount-engine/rules/adap
 import { DiscountOwner } from '../../discount-engine/enums/discount-owner';
 import { resolveBookingParamsToDiscountContext } from '../../discount-engine/adapters/context-mappers';
 import {
+  METADATA_PRELOADED_ROWS_BY_SOURCE,
   METADATA_PRIOR_VENDOR_BOOKING_COUNT,
 } from '../../discount-engine/resolver/context-runtime';
+import { DiscountSource } from '../../discount-engine/enums/discount-source';
+import {
+  PlatformPromotionCandidateProvider,
+  VendorServicePromotionCandidateProvider,
+} from '../../discount-engine/candidates/providers';
 import {
   invokeResolverAlongsideLegacy,
   resolveWithProductionMode,
@@ -49,6 +55,18 @@ export type ResolveBookingPromotionsParams = {
   debugSessionId?: string;
 };
 
+/**
+ * Batch-shared work precomputed once per vendor (calculate-booking-batch).
+ * When provided, per-item resolution skips the corresponding DB round-trips.
+ */
+type BookingResolveSharedContext = {
+  /** serviceIds already normalized to vendor_services.id */
+  preNormalizedServiceIds?: string[];
+  priorVendorBookingCount?: number;
+  /** Raw candidate rows preloaded once and reused across items (V2 resolver path) */
+  preloadedRowsBySource?: Partial<Record<DiscountSource, unknown[]>>;
+};
+
 function normalizeStyle(raw: unknown): string {
   const value = String(raw || '').trim().toLowerCase();
   if (!value || value === 'all') return '';
@@ -62,12 +80,13 @@ function normalizeStyle(raw: unknown): string {
  * Vendor promotions store vendor_services.id in applicable_services.
  * Callers may send either vendor_services.id or catalog services.service_id — normalize to vendor_services.id.
  */
-export async function normalizeBookingServiceIds(
+export async function buildBookingServiceIdMap(
   vendorId: string,
   serviceIds: string[]
-): Promise<string[]> {
+): Promise<Map<string, string>> {
   const unique = [...new Set(serviceIds.map((x) => String(x).trim()).filter(Boolean))];
-  if (!vendorId || unique.length === 0) return unique;
+  const idMap = new Map<string, string>();
+  if (!vendorId || unique.length === 0) return idMap;
 
   try {
     const res = await query(
@@ -77,7 +96,6 @@ export async function normalizeBookingServiceIds(
          AND (id::text = ANY($2::text[]) OR service_id::text = ANY($2::text[]))`,
       [vendorId, unique]
     );
-    const idMap = new Map<string, string>();
     for (const row of (res as { rows?: Record<string, unknown>[] }).rows || []) {
       const vsId = String(row.vendor_service_id || '');
       if (!vsId) continue;
@@ -85,10 +103,20 @@ export async function normalizeBookingServiceIds(
       const catalogId = row.catalog_service_id ? String(row.catalog_service_id) : '';
       if (catalogId) idMap.set(catalogId, vsId);
     }
-    return unique.map((id) => idMap.get(id) || id);
   } catch {
-    return unique;
+    // Fall through — callers keep the ids they sent.
   }
+  return idMap;
+}
+
+export async function normalizeBookingServiceIds(
+  vendorId: string,
+  serviceIds: string[]
+): Promise<string[]> {
+  const unique = [...new Set(serviceIds.map((x) => String(x).trim()).filter(Boolean))];
+  if (!vendorId || unique.length === 0) return unique;
+  const idMap = await buildBookingServiceIdMap(vendorId, unique);
+  return unique.map((id) => idMap.get(id) || id);
 }
 
 function platformPromoMatchesContextWithShadow(
@@ -130,20 +158,26 @@ async function loadVendorServicePromotions(vendorId: string): Promise<ServicePro
 }
 
 async function loadPlatformPromotions(
-  params: ResolveBookingPromotionsParams
+  params: ResolveBookingPromotionsParams,
+  preloadedRawRows?: Record<string, unknown>[]
 ): Promise<PlatformPromotionRow[]> {
   try {
-    const res = await query(
-      `SELECT * FROM promotions
-       WHERE is_active = true
-         AND published = true
-         AND start_date <= CURRENT_DATE
-         AND (end_date IS NULL OR end_date >= CURRENT_DATE)
-         AND (usage_limit IS NULL OR usage_count < usage_limit)
-         AND (max_uses IS NULL OR usage_count < max_uses)
-         AND COALESCE(discount_value, 0) > 0`
-    );
-    const rows = (res as { rows?: Record<string, unknown>[] }).rows || [];
+    let rows: Record<string, unknown>[];
+    if (preloadedRawRows) {
+      rows = preloadedRawRows;
+    } else {
+      const res = await query(
+        `SELECT * FROM promotions
+         WHERE is_active = true
+           AND published = true
+           AND start_date <= CURRENT_DATE
+           AND (end_date IS NULL OR end_date >= CURRENT_DATE)
+           AND (usage_limit IS NULL OR usage_count < usage_limit)
+           AND (max_uses IS NULL OR usage_count < max_uses)
+           AND COALESCE(discount_value, 0) > 0`
+      );
+      rows = (res as { rows?: Record<string, unknown>[] }).rows || [];
+    }
     const matched: Record<string, unknown>[] = [];
     for (const row of rows) {
       if (!isAutoApplyPlatformPromotionRow(row)) continue;
@@ -186,27 +220,31 @@ async function loadPlatformPromotions(
 }
 
 async function resolveBookingPromotionsInternal(
-  params: ResolveBookingPromotionsParams
+  params: ResolveBookingPromotionsParams,
+  shared?: BookingResolveSharedContext
 ): Promise<{
   booking: BookingPromotionResult;
   source: 'v2' | 'legacy';
   resolverResult?: ResolverResult;
 }> {
-  const normalizedServiceIds = await normalizeBookingServiceIds(
-    params.vendorId,
-    params.serviceIds
-  );
+  const normalizedServiceIds =
+    shared?.preNormalizedServiceIds ??
+    (await normalizeBookingServiceIds(params.vendorId, params.serviceIds));
   const resolvedParams = { ...params, serviceIds: normalizedServiceIds };
 
   const priorVendorBookingCount =
-    resolvedParams.customerId && resolvedParams.vendorId
+    shared?.priorVendorBookingCount ??
+    (resolvedParams.customerId && resolvedParams.vendorId
       ? await countPriorVendorBookings(resolvedParams.customerId, resolvedParams.vendorId)
-      : 0;
+      : 0);
 
   const resolverContext = resolveBookingParamsToDiscountContext(resolvedParams, {
     couponCode: resolvedParams.couponCode,
     metadata: {
       [METADATA_PRIOR_VENDOR_BOOKING_COUNT]: priorVendorBookingCount,
+      ...(shared?.preloadedRowsBySource
+        ? { [METADATA_PRELOADED_ROWS_BY_SOURCE]: shared.preloadedRowsBySource }
+        : {}),
     },
   });
 
@@ -214,7 +252,7 @@ async function resolveBookingPromotionsInternal(
     label: 'resolveBookingPromotions',
     context: resolverContext,
     legacy: () =>
-      resolveBookingPromotionsLegacy(resolvedParams, priorVendorBookingCount),
+      resolveBookingPromotionsLegacy(resolvedParams, priorVendorBookingCount, shared),
     mapResolverToLegacy: mapResolverResultToBookingPromotion,
     // Auto-discovery: a clean empty result IS the answer ("no promotions apply").
     // Only coupon-code requests must keep the legacy fallback for empty results.
@@ -239,9 +277,13 @@ export async function resolveBookingPromotions(
 
 /** Unified resolver quote — used by service page, booking summary, payment, simulator. */
 export async function resolveBookingDiscountQuote(
-  params: ResolveBookingPromotionsParams & { displayPromotionsOnly?: boolean }
+  params: ResolveBookingPromotionsParams & { displayPromotionsOnly?: boolean },
+  shared?: BookingResolveSharedContext
 ): Promise<UnifiedResolverResponse> {
-  const { booking, source, resolverResult } = await resolveBookingPromotionsInternal(params);
+  const { booking, source, resolverResult } = await resolveBookingPromotionsInternal(
+    params,
+    shared
+  );
   const runtimePolicy = loadRuntimePolicy(DiscountDomain.SERVICE);
 
   if (resolverResult) {
@@ -352,15 +394,113 @@ async function buildLegacyCouponRejections(
   return [];
 }
 
+export type BookingDiscountQuoteBatchItem = {
+  /** Client correlation key — echoed back on the matching quote. */
+  key: string;
+  serviceIds: string[];
+  amount: number;
+  serviceStyle?: string;
+  serviceCategory?: string;
+};
+
+export type BookingDiscountQuoteBatchResult = {
+  key: string;
+  quote: UnifiedResolverResponse | null;
+  error?: string;
+};
+
+const BATCH_ITEM_CONCURRENCY = 8;
+
+/**
+ * Batched display-only quotes for service listing surfaces (one vendor, many services).
+ * Loads candidate rows, service-id normalization, and prior-booking count once,
+ * then runs the same V2 resolver pipeline per item without extra DB round-trips.
+ */
+export async function resolveBookingDiscountQuoteBatch(params: {
+  vendorId: string;
+  customerId?: string;
+  items: BookingDiscountQuoteBatchItem[];
+}): Promise<BookingDiscountQuoteBatchResult[]> {
+  const { vendorId, customerId, items } = params;
+  if (items.length === 0) return [];
+
+  const allServiceIds = items.flatMap((i) => i.serviceIds);
+  const [idMap, priorVendorBookingCount, vendorRows, platformRows] = await Promise.all([
+    buildBookingServiceIdMap(vendorId, allServiceIds),
+    customerId ? countPriorVendorBookings(customerId, vendorId) : Promise.resolve(0),
+    new VendorServicePromotionCandidateProvider().load({ vendorId }),
+    new PlatformPromotionCandidateProvider().load({}),
+  ]);
+
+  const preloadedRowsBySource: Partial<Record<DiscountSource, unknown[]>> = {
+    [DiscountSource.VENDOR_PROMOTION]: vendorRows,
+    [DiscountSource.PLATFORM_PROMOTION]: platformRows,
+  };
+
+  const results: BookingDiscountQuoteBatchResult[] = new Array(items.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      const item = items[index];
+      const normalizedIds = [
+        ...new Set(item.serviceIds.map((x) => String(x).trim()).filter(Boolean)),
+      ].map((id) => idMap.get(id) || id);
+      try {
+        const quote = await resolveBookingDiscountQuote(
+          {
+            vendorId,
+            customerId,
+            serviceIds: item.serviceIds,
+            amount: item.amount,
+            serviceStyle: item.serviceStyle,
+            serviceCategory: item.serviceCategory,
+            displayPromotionsOnly: true,
+          },
+          {
+            preNormalizedServiceIds: normalizedIds,
+            priorVendorBookingCount,
+            preloadedRowsBySource,
+          }
+        );
+        results[index] = { key: item.key, quote };
+      } catch (err) {
+        results[index] = {
+          key: item.key,
+          quote: null,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(BATCH_ITEM_CONCURRENCY, items.length) }, () => worker())
+  );
+  return results;
+}
+
 /**
  * @deprecated Legacy booking stack — retained for OFF mode and V2 fallback (Phase 8C removal candidate).
  */
 async function resolveBookingPromotionsLegacy(
   resolvedParams: ResolveBookingPromotionsParams,
-  priorVendorBookingCount: number
+  priorVendorBookingCount: number,
+  shared?: BookingResolveSharedContext
 ): Promise<BookingPromotionResult> {
-  const vendorPromotions = await loadVendorServicePromotions(resolvedParams.vendorId);
-  const platformPromotions = await loadPlatformPromotions(resolvedParams);
+  const preloadedVendorRows = shared?.preloadedRowsBySource?.[DiscountSource.VENDOR_PROMOTION];
+  const preloadedPlatformRows =
+    shared?.preloadedRowsBySource?.[DiscountSource.PLATFORM_PROMOTION];
+  const vendorPromotions = Array.isArray(preloadedVendorRows)
+    ? (preloadedVendorRows as Record<string, unknown>[]).map((row) =>
+        normalizeServicePromotionRow(row)
+      )
+    : await loadVendorServicePromotions(resolvedParams.vendorId);
+  const platformPromotions = await loadPlatformPromotions(
+    resolvedParams,
+    Array.isArray(preloadedPlatformRows)
+      ? (preloadedPlatformRows as Record<string, unknown>[])
+      : undefined
+  );
 
   let legacy = calculateBookingPromotionsStack({
     vendorPromotions,
