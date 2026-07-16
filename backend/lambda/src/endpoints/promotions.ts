@@ -41,6 +41,7 @@ import {
   mergeAdminPromotionUpdateBody,
   normalizePromotionDiscountType as normalizeAdminPromotionDiscountType,
   parseDateInput as parseAdminDateInput,
+  sanitizePromotionsTablePayload,
 } from '../utils/promotion-admin-persistence';
 import { isPromotionLiveInIst } from '../utils/promotion-date-bounds';
 import { promotionCategoriesMatch } from '../utils/platform-promotion-matching';
@@ -106,12 +107,19 @@ async function persistPromotionInsert(promotionData: Record<string, unknown>) {
     }
   }
 
-  const payload = { ...promotionData };
+  const payload = sanitizePromotionsTablePayload({ ...promotionData });
   for (;;) {
     try {
       return await insert('promotions', payload);
     } catch (insertError: unknown) {
       const msg = String((insertError as { message?: string })?.message || '');
+      if (msg.includes('column "min_order_value"') && payload.min_order_value !== undefined) {
+        if (payload.min_order_amount === undefined) {
+          payload.min_order_amount = payload.min_order_value;
+        }
+        delete payload.min_order_value;
+        continue;
+      }
       if (msg.includes('column "code"') && payload.code) {
         console.warn('[Promotions] Code column does not exist, retrying without code');
         delete payload.code;
@@ -247,13 +255,20 @@ async function persistPromotionUpdate(id: string, updateData: Record<string, unk
     return;
   }
 
-  const payload = { ...updateData };
+  const payload = sanitizePromotionsTablePayload({ ...updateData });
   for (;;) {
     try {
       await update('promotions', { id }, payload);
       return;
     } catch (updateError: unknown) {
       const msg = String((updateError as { message?: string })?.message || '');
+      if (msg.includes('column "min_order_value"') && payload.min_order_value !== undefined) {
+        if (payload.min_order_amount === undefined) {
+          payload.min_order_amount = payload.min_order_value;
+        }
+        delete payload.min_order_value;
+        continue;
+      }
       if (msg.includes('column "discount_domain"') && payload.discount_domain !== undefined) {
         console.warn('[Promotions] discount_domain column missing on update, persisting in metadata');
         const baseMeta =
@@ -814,7 +829,10 @@ export function registerPromotionEndpoints(app: Hono) {
       const promotionRows = promotions.rows ?? [];
 
       let ecommerceAdminRows: Record<string, unknown>[] = [];
-      if (serviceType === 'all' || serviceType === 'product' || serviceType === 'shop') {
+      const includeEcommerceAdmin =
+        commercialDomain !== 'SERVICE' &&
+        (serviceType === 'all' || serviceType === 'product' || serviceType === 'shop');
+      if (includeEcommerceAdmin) {
         try {
           const campaigns = await query(
             `SELECT * FROM ecommerce_admin_promotions
@@ -2009,8 +2027,9 @@ export function registerPromotionEndpoints(app: Hono) {
         return c.json({ error: targetingError }, 400);
       }
 
-      const promotionData: any = {
-        ...body,
+      // Do NOT spread raw body — wizard sends min_order_value / camelCase aliases that are
+      // not columns on `promotions` (canonical: min_order_amount).
+      const promotionData: Record<string, unknown> = {
         ...record,
         created_at: new Date().toISOString(),
       };
@@ -2160,10 +2179,13 @@ export function registerPromotionEndpoints(app: Hono) {
       discount_value: finalDiscountValue,
       min_order_amount: Number(finalMinOrder) > 0 ? finalMinOrder : null,
       max_discount_amount: Number(finalMaxDiscount) > 0 ? finalMaxDiscount : null,
-      start_date: finalValidFrom ? new Date(finalValidFrom) : new Date(),
+      // coupons.start_date / end_date are DATE — store calendar YYYY-MM-DD (not Date/ISO).
+      start_date: finalValidFrom
+        ? String(finalValidFrom).slice(0, 10)
+        : new Date().toISOString().split('T')[0],
       end_date: finalValidUntil
-        ? new Date(String(finalValidUntil))
-        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        ? String(finalValidUntil).slice(0, 10)
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       max_uses: Number(finalUsageLimit) > 0 ? finalUsageLimit : null,
       is_active: finalIsActive,
       applicable_to: targeting.applicable_to,
@@ -2394,11 +2416,12 @@ export function registerPromotionEndpoints(app: Hono) {
         updateData.max_discount_amount = body.max_discount !== undefined ? body.max_discount : body.maxDiscountAmount;
       }
       if (body.valid_from !== undefined || body.validFrom !== undefined) {
-        updateData.start_date = new Date(body.valid_from || body.validFrom);
+        const from = body.valid_from || body.validFrom;
+        updateData.start_date = from ? String(from).slice(0, 10) : undefined;
       }
       if (body.valid_until !== undefined || body.validUntil !== undefined) {
         const expiryDate = body.valid_until || body.validUntil;
-        updateData.end_date = expiryDate ? new Date(expiryDate) : null;
+        updateData.end_date = expiryDate ? String(expiryDate).slice(0, 10) : null;
       }
       if (body.usage_limit !== undefined || body.usageLimit !== undefined) {
         const limit = body.usage_limit !== undefined ? body.usage_limit : body.usageLimit;
@@ -2499,10 +2522,10 @@ export function registerPromotionEndpoints(app: Hono) {
           discount_type: finalDiscountType,
           discount_value: finalDiscountValue,
           min_order_amount: finalMinOrder > 0 ? finalMinOrder : null,
-          start_date: new Date(finalValidFrom),
+          start_date: String(finalValidFrom).slice(0, 10),
           end_date: finalValidUntil
-            ? new Date(finalValidUntil)
-            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            ? String(finalValidUntil).slice(0, 10)
+            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
           max_uses: finalUsageLimit > 0 ? finalUsageLimit : null,
           is_active: finalIsActive,
         };
