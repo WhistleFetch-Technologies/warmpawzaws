@@ -3125,7 +3125,7 @@ export function CustomerHomeComplete({
                   </div>
                   <div className="flex items-end justify-between">
                     <div>
-                      <span className="text-xs line-through text-white/70">₹3,999</span>
+                      <span className="text-xs cw-price-strike text-white/70">₹3,999</span>
                       <div className="text-2xl font-bold">₹2,499</div>
                     </div>
                     <button

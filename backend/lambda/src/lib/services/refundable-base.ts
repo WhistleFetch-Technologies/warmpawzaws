@@ -1,11 +1,12 @@
 /**
  * Refund tier math applies to **what the customer can get back** for the service/net amount:
  * - Prefer completed **payments** for the booking.
- * - **Platform fee** on each payment is never refundable (excluded from the base used for % refunds).
+ * - **Platform fee** and **convenience fee** on each payment are never refundable
+ *   (excluded from the base used for % refunds).
  * - **Coupons / promos**: net of `discount_amount` on the booking when no payment rows exist.
  *
  * Priority for refundable base:
- *  1) SUM(amount − platform_fee) for completed captures (authoritative when present).
+ *  1) SUM(amount − platform_fee − convenience_fee) for completed captures (authoritative when present).
  *  2) bookings.total_amount − COALESCE(bookings.discount_amount, 0) when no payments.
  *  3) bookings.total_amount alone.
  */
@@ -21,10 +22,14 @@ export type BookingMoneySnapshot = {
 };
 
 export type RefundablePaidBreakdown = {
-  /** Amount refund % / fees apply to (paid captures minus non-refundable platform fees). */
+  /** Amount refund % / fees apply to (paid captures minus non-refundable platform + convenience fees). */
   refundableBase: number;
   /** Sum of platform_fee on completed payments for this booking (for UI / disclosure). */
   platformFeeNonRefundable: number;
+  /** Sum of convenience_fee on completed payments for this booking (for UI / disclosure). */
+  convenienceFeeNonRefundable: number;
+  /** platformFeeNonRefundable + convenienceFeeNonRefundable. */
+  nonRefundableFees: number;
 };
 
 function roundMoney(n: number): number {
@@ -113,6 +118,7 @@ async function loadWalletCapturedInPayments(bookingId: string): Promise<number> 
 async function loadCompletedPaymentTotals(bookingId: string): Promise<{
   paidTotal: number;
   platformFeeTotal: number;
+  convenienceFeeTotal: number;
   refundableFromPayments: number;
 } | null> {
   if (!bookingId) return null;
@@ -121,7 +127,8 @@ async function loadCompletedPaymentTotals(bookingId: string): Promise<{
       `SELECT
          COALESCE(SUM(amount::numeric), 0)::text AS paid_total,
          COALESCE(SUM(COALESCE(platform_fee, 0)::numeric), 0)::text AS platform_fee_total,
-         COALESCE(SUM((amount::numeric - COALESCE(platform_fee, 0)::numeric)), 0)::text AS refundable_from_payments
+         COALESCE(SUM(COALESCE(convenience_fee, 0)::numeric), 0)::text AS convenience_fee_total,
+         COALESCE(SUM((amount::numeric - COALESCE(platform_fee, 0)::numeric - COALESCE(convenience_fee, 0)::numeric)), 0)::text AS refundable_from_payments
        FROM payments
        WHERE booking_id = $1::uuid
          AND payment_status = 'completed'`,
@@ -132,6 +139,7 @@ async function loadCompletedPaymentTotals(bookingId: string): Promise<{
     return {
       paidTotal: parseFloat(String(row.paid_total ?? '0')) || 0,
       platformFeeTotal: parseFloat(String(row.platform_fee_total ?? '0')) || 0,
+      convenienceFeeTotal: parseFloat(String(row.convenience_fee_total ?? '0')) || 0,
       refundableFromPayments: parseFloat(String(row.refundable_from_payments ?? '0')) || 0,
     };
   } catch {
@@ -148,6 +156,7 @@ async function loadCompletedPaymentTotals(bookingId: string): Promise<{
       return {
         paidTotal,
         platformFeeTotal: 0,
+        convenienceFeeTotal: 0,
         refundableFromPayments: paidTotal,
       };
     } catch {
@@ -157,14 +166,14 @@ async function loadCompletedPaymentTotals(bookingId: string): Promise<{
 }
 
 /**
- * Paid totals for refund math and platform-fee disclosure.
+ * Paid totals for refund math and platform/convenience fee disclosure.
  */
 export async function getRefundableCustomerPaidBreakdown(
   bookingId: string,
   bookingRow?: BookingMoneySnapshot | null
 ): Promise<RefundablePaidBreakdown> {
   if (!bookingId) {
-    return { refundableBase: 0, platformFeeNonRefundable: 0 };
+    return { refundableBase: 0, platformFeeNonRefundable: 0, convenienceFeeNonRefundable: 0, nonRefundableFees: 0 };
   }
 
   const br = bookingRow as BookingMoneySnapshot & {
@@ -180,37 +189,43 @@ export async function getRefundableCustomerPaidBreakdown(
   const walletInPayments = await loadWalletCapturedInPayments(bookingId);
 
   if (paymentTotals && (paymentTotals.paidTotal > 0 || walletPaid > 0)) {
-    const { paidTotal, platformFeeTotal, refundableFromPayments } = paymentTotals;
+    const { paidTotal, platformFeeTotal, convenienceFeeTotal, refundableFromPayments } = paymentTotals;
     const combinedRefundable = combineWalletAndPaymentRefundable(
       refundableFromPayments,
       walletPaid,
       walletInPayments
     );
     if (gross > 0 && paidTotal > gross + 0.01) {
-      const pfCapped = Math.min(platformFeeTotal, gross);
-      const refundableCapped = Math.max(0, gross - pfCapped);
+      const feesCapped = Math.min(platformFeeTotal + convenienceFeeTotal, gross);
+      const pfCapped = Math.min(platformFeeTotal, feesCapped);
+      const cfCapped = Math.max(0, feesCapped - pfCapped);
+      const refundableCapped = Math.max(0, gross - feesCapped);
       return {
         refundableBase: roundMoney(Math.min(combinedRefundable, refundableCapped)),
         platformFeeNonRefundable: roundMoney(pfCapped),
+        convenienceFeeNonRefundable: roundMoney(cfCapped),
+        nonRefundableFees: roundMoney(feesCapped),
       };
     }
     return {
       refundableBase: combinedRefundable,
       platformFeeNonRefundable: roundMoney(platformFeeTotal),
+      convenienceFeeNonRefundable: roundMoney(convenienceFeeTotal),
+      nonRefundableFees: roundMoney(platformFeeTotal + convenienceFeeTotal),
     };
   }
 
   if (walletPaid > 0) {
     const cap = fromBookingNet > 0 ? fromBookingNet : gross;
     const base = cap > 0 ? Math.min(walletPaid, cap) : walletPaid;
-    return { refundableBase: roundMoney(base), platformFeeNonRefundable: 0 };
+    return { refundableBase: roundMoney(base), platformFeeNonRefundable: 0, convenienceFeeNonRefundable: 0, nonRefundableFees: 0 };
   }
 
   if (fromBookingNet > 0) {
-    return { refundableBase: roundMoney(fromBookingNet), platformFeeNonRefundable: 0 };
+    return { refundableBase: roundMoney(fromBookingNet), platformFeeNonRefundable: 0, convenienceFeeNonRefundable: 0, nonRefundableFees: 0 };
   }
 
-  return { refundableBase: roundMoney(gross), platformFeeNonRefundable: 0 };
+  return { refundableBase: roundMoney(gross), platformFeeNonRefundable: 0, convenienceFeeNonRefundable: 0, nonRefundableFees: 0 };
 }
 
 /**

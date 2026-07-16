@@ -3,6 +3,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   vendorDispatchMealSubscriptionDelivery,
   vendorGetMealSubscriptionDelivery,
@@ -90,7 +91,7 @@ export function registerMealSubscriptionVendorOperationalEndpoints(app: Hono) {
     } catch (e: unknown) {
       const err = e as { message?: string; statusCode?: number };
       const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
-      return c.json({ success: false, error: err.message || 'Update failed' }, status);
+      return c.json({ success: false, error: err.message || 'Update failed' }, status as ContentfulStatusCode);
     }
   });
 
@@ -118,7 +119,7 @@ export function registerMealSubscriptionVendorOperationalEndpoints(app: Hono) {
     } catch (e: unknown) {
       const err = e as { message?: string; statusCode?: number };
       const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
-      return c.json({ success: false, error: err.message || 'Dispatch failed' }, status);
+      return c.json({ success: false, error: err.message || 'Dispatch failed' }, status as ContentfulStatusCode);
     }
   });
 

@@ -12,6 +12,7 @@
  */
 
 import { Hono } from 'hono';
+import type { APIGatewayProxyEventV2, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, update, insert, deleteRows, upsert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
@@ -2584,8 +2585,8 @@ async function updateVendorDocumentsHelper(
       headers: {},
       pathParameters: { vendorId },
       requestContext: { http: { method: 'GET', path: `/admin/vendors/${vendorId}/documents` } }
-    },
-    { awsRequestId: `req-${Date.now()}`, functionName: 'warmpawz-api-handler' }
+    } as unknown as APIGatewayProxyEventV2,
+    { awsRequestId: `req-${Date.now()}`, functionName: 'warmpawz-api-handler' } as Context
   );
 
   const docsData = JSON.parse(docsResult.body);
@@ -3953,7 +3954,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       const vendorId = c.req.param('vendorId');
       
       // Get admin ID from context (set by requireAdmin middleware)
-      const adminId = c.get('userId') || c.get('userRole') || 'system';
+      const adminId = (c.get as unknown as (key: string) => string | undefined)('userId') || (c.get as unknown as (key: string) => string | undefined)('userRole') || 'system';
 
       // Parse multipart form data
       const formData = await c.req.formData();

@@ -11,6 +11,13 @@ function formatINR(amount: number): string {
   return `₹${amount.toFixed(2)}`;
 }
 
+/**
+ * Wallet redemption for the shop checkout is temporarily disabled (business decision).
+ * Meal plans / subscriptions keep their own wallet flow (UniversalPaymentPage) — untouched.
+ * Flip to true to restore the wallet toggle here.
+ */
+const ECOM_WALLET_ENABLED = false;
+
 export function CheckoutPaymentStep() {
   const {
     phone,
@@ -29,19 +36,19 @@ export function CheckoutPaymentStep() {
 
   // Fetch wallet balance on mount
   useEffect(() => {
-    if (!phone) return;
+    if (!ECOM_WALLET_ENABLED || !phone) return;
     apiClient
-      .get<{ balance?: number; data?: { balance?: number } }>(`/customer/wallet/${encodeURIComponent(phone)}`)
+      .get<{ balance?: number; data?: { balance?: number } }>(`/customer/wallet?phone=${encodeURIComponent(phone)}`)
       .then((res) => {
         const bal = parseFloat(String(res?.balance ?? res?.data?.balance ?? '0'));
         setWalletBalance(isNaN(bal) ? 0 : bal);
       })
       .catch(() => setWalletBalance(0));
-  }, []);
+  }, [phone]);
 
   // Sync wallet amount applied with the context when toggle changes
   useEffect(() => {
-    if (!walletEnabled || walletBalance == null) {
+    if (!ECOM_WALLET_ENABLED || !walletEnabled || walletBalance == null) {
       setWalletAmountApplied(0);
       return;
     }
@@ -79,8 +86,8 @@ export function CheckoutPaymentStep() {
         onRemove={removeCoupon}
       />
 
-      {/* Wallet balance section */}
-      {walletBalance != null && walletBalance > 0 && (
+      {/* Wallet balance section (hidden while ECOM_WALLET_ENABLED is false) */}
+      {ECOM_WALLET_ENABLED && walletBalance != null && walletBalance > 0 && (
         <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">

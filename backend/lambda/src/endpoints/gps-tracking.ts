@@ -31,6 +31,7 @@ import {
 } from '../lib/services/gps-tracking-service';
 import { isUATMode } from '../lib/utils/uat-mode';
 import { geocodeAddress } from '../lib/utils/geocode';
+import type { NotificationEvent } from '../utils/sns-client';
 
 // Default/Mock coordinates for UAT mode (Mumbai central)
 const UAT_DEFAULT_DESTINATION: Location = {
@@ -83,8 +84,8 @@ export function registerGpsTrackingEndpoints(app: Hono) {
       let startLocation: Location;
       if (startLatitude && startLongitude) {
         startLocation = {
-          latitude: parseFloat(startLatitude),
-          longitude: parseFloat(startLongitude),
+          latitude: parseFloat(startLatitude as unknown as string),
+          longitude: parseFloat(startLongitude as unknown as string),
         };
       } else if (uatMode) {
         // Use default Mumbai location in UAT mode
@@ -326,7 +327,7 @@ export function registerGpsTrackingEndpoints(app: Hono) {
             vendorId,
             action: 'track_live',
           },
-        });
+        } as unknown as NotificationEvent);
       } catch (notifError) {
         console.warn('[GPS Tracking] Failed to send notification:', notifError);
       }

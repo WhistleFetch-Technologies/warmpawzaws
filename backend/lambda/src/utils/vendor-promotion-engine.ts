@@ -503,14 +503,18 @@ export async function calculateBestCartPromotionAsync(
     resolverContext.trigger = ctx.manualCode ? resolverContext.trigger : resolverContext.trigger;
   }
 
+  const isCodePath = Boolean(ctx.manualCode || options?.platformCouponCode);
   const { value: cartResult } = await resolveWithProductionMode({
-    label: ctx.manualCode || options?.platformCouponCode
+    label: isCodePath
       ? 'calculateBestCartPromotion-code'
       : 'calculateBestCartPromotion-auto',
     context: resolverContext,
     legacy: legacyResult,
     mapResolverToLegacy: (result) =>
       mapResolverResultToCartPromotion(result, originalTotal),
+    // Auto-discovery: clean empty = "no cart promotions" (v2-owned). Code paths
+    // keep the legacy fallback — empty may mean v2 doesn't know the code.
+    acceptEmptyResult: !isCodePath,
   });
 
   if (

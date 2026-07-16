@@ -82,6 +82,7 @@ import {
   getVariantSuggestionsForCategory,
 } from '@warmpawz/shared-types';
 import { PRODUCT_STATUS } from '../../../utils/product-status-constants';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 /** Cached information_schema snapshot so we avoid hitting metadata column when it is not migrated yet */
 const PRODUCTS_COLUMN_CACHE: { until: number; cols: Set<string> | null } = { until: 0, cols: null };
@@ -746,7 +747,7 @@ class CreateVendorProductHandler extends BaseHandler {
       );
 
       // Approval: always persist explicit status when column exists; vendors cannot self-publish to active.
-      let vendorLifecycleStatus = normalizeApprovalStatus(body.status);
+      let vendorLifecycleStatus: string = normalizeApprovalStatus(body.status);
       if (vendorLifecycleStatus === 'active') {
         vendorLifecycleStatus = 'pending';
       }
@@ -1712,7 +1713,7 @@ export function registerVendorProductsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       if (error instanceof ImageProcessingError) {
-        return c.json({ error: error.message }, error.statusCode);
+        return c.json({ error: error.message }, error.statusCode as ContentfulStatusCode);
       }
       console.error('Error uploading product image:', error);
       return c.json({ error: error.message || 'Failed to upload image' }, 500);

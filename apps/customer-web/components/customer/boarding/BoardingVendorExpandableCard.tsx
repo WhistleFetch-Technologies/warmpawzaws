@@ -265,76 +265,79 @@ export function BoardingVendorExpandableCard({
                     key={plan.rowId}
                     className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
                   >
-                    {/* Price + CTA on the right only; left = name, desc, duration/category (avoids flex overflow on narrow viewports) — same grid as ClinicListView */}
-                    <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_6.25rem] items-start gap-2">
-                      <div className="min-w-0 pr-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h5 className="font-medium text-gray-900 leading-5 line-clamp-2 break-words">
-                            {plan.name}
-                          </h5>
-                          {(plan.isPackage ||
-                            isVendorServicePackageRow(plan as unknown as Record<string, unknown>)) && (
-                            <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
-                              Package
-                            </span>
+                    {/* Row 1: name (left) | price (right). Row 2: meta | Book Now — matches ClinicListView */}
+                    <div className="space-y-3">
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h5 className="line-clamp-2 break-words font-medium leading-5 text-gray-900">
+                              {plan.name}
+                            </h5>
+                            {(plan.isPackage ||
+                              isVendorServicePackageRow(plan as unknown as Record<string, unknown>)) && (
+                              <span className="shrink-0 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                                Package
+                              </span>
+                            )}
+                          </div>
+                          {descTrim ? (
+                            <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                              <ServiceDescriptionInline
+                                description={descTrim}
+                                title={plan.name}
+                                className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
+                                dialogHint="Full description from the center (vendor-provided)"
+                              />
+                            </div>
+                          ) : (
+                            <p className="mt-1 line-clamp-2 text-sm italic text-gray-400">
+                              Boarding plan — tap Book Now to continue.
+                            </p>
                           )}
                         </div>
-                        {descTrim ? (
-                          <div onClick={(e) => e.stopPropagation()}>
-                            <ServiceDescriptionInline
-                              description={descTrim}
-                              title={plan.name}
-                              className="m-0 mt-1 text-sm leading-5 text-gray-500 line-clamp-3"
-                              dialogHint="Full description from the center (vendor-provided)"
+                        <div className="shrink-0 text-right">
+                          {usePromoQuote && promoVendorId ? (
+                            <ServiceListingPrice
+                              basePrice={plan.price}
+                              vendorId={promoVendorId}
+                              serviceId={String(plan.vendorServiceId ?? plan.serviceId ?? plan.rowId)}
+                              customerId={customerId}
+                              serviceStyle={plan.serviceStyle}
+                              serviceCategory={serviceCategory}
+                              size="md"
                             />
-                          </div>
-                        ) : (
-                          <p className="text-gray-400 text-sm mt-1 line-clamp-2 italic">
-                            Boarding plan — tap Book Now to continue.
-                          </p>
-                        )}
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          ) : (
+                            <div className="mb-1 text-lg font-bold tabular-nums text-[#FF8C42]">
+                              {formatPriceWithSymbol(plan.price)}
+                            </div>
+                          )}
+                          {showPriceDisclaimer && (
+                            <p className="mt-0.5 max-w-[9rem] text-[11px] leading-4 text-gray-500">
+                              {INDICATIVE_PRICING_NOTE}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
                           {plan.duration != null && plan.duration > 0 && (
-                            <Badge variant="outline" className="text-xs shrink-0">
-                              <Clock className="w-3 h-3 mr-1" />
+                            <Badge variant="outline" className="shrink-0 text-xs">
+                              <Clock className="mr-1 h-3 w-3" />
                               {plan.duration >= 60
                                 ? `${Math.round(plan.duration / 60)} hrs`
                                 : `${plan.duration} mins`}
                             </Badge>
                           )}
                           {plan.categoryLabel?.trim() ? (
-                            <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
+                            <Badge variant="secondary" className="max-w-full shrink-0 text-xs">
                               {plan.categoryLabel}
                             </Badge>
                           ) : null}
                         </div>
-                      </div>
-                      <div className="text-right">
-                        {usePromoQuote && promoVendorId ? (
-                          <ServiceListingPrice
-                            basePrice={plan.price}
-                            vendorId={promoVendorId}
-                            serviceId={String(plan.vendorServiceId ?? plan.serviceId ?? plan.rowId)}
-                            customerId={customerId}
-                            serviceStyle={plan.serviceStyle}
-                            serviceCategory={serviceCategory}
-                            size="md"
-                            className="mb-1 items-end"
-                          />
-                        ) : (
-                          <div className="text-lg font-bold text-[#FF8C42] mb-1 tabular-nums">
-                            {formatPriceWithSymbol(plan.price)}
-                          </div>
-                        )}
-                        {showPriceDisclaimer && (
-                          <p className="mb-2 text-[11px] leading-4 text-gray-500 break-words">
-                            {INDICATIVE_PRICING_NOTE}
-                          </p>
-                        )}
                         <Button
                           type="button"
                           size="sm"
-                          className="h-8 w-full bg-[#FF8C42] px-2 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
+                          className="h-8 shrink-0 rounded-full bg-[#FF8C42] px-5 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
                           onClick={(e) => {
                             e.stopPropagation();
                             onBookPlan(v, plan);

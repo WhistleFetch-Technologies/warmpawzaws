@@ -79,26 +79,37 @@ export async function resolveBookingPaymentSources(
   let walletTotal = 0;
   let gatewayMethod: string | null = null;
 
+  // Live schema keys booking debits by reference_id; booking_id only exists on legacy schemas.
   try {
-    const wt = await query<{ total: string }>(
+    const wt = (await query(
       `SELECT COALESCE(SUM(amount::numeric), 0)::text AS total
        FROM wallet_transactions
-       WHERE booking_id = $1::uuid AND transaction_type = 'debit'`,
+       WHERE reference_id = $1::uuid AND transaction_type = 'debit'`,
       [bookingId]
-    );
+    )) as { rows: Array<{ total: string }> };
     walletTotal = parseFloat(String(wt.rows[0]?.total ?? '0')) || 0;
   } catch {
-    /* wallet_transactions may lack booking_id in older schemas */
+    try {
+      const wt = (await query(
+        `SELECT COALESCE(SUM(amount::numeric), 0)::text AS total
+         FROM wallet_transactions
+         WHERE booking_id = $1::uuid AND transaction_type = 'debit'`,
+        [bookingId]
+      )) as { rows: Array<{ total: string }> };
+      walletTotal = parseFloat(String(wt.rows[0]?.total ?? '0')) || 0;
+    } catch {
+      /* wallet_transactions may lack both columns in very old schemas */
+    }
   }
 
   try {
-    const pr = await query<{ payment_method: string; amount: string; total_amount: string | null }>(
+    const pr = (await query(
       `SELECT payment_method, amount, total_amount
        FROM payments
        WHERE booking_id = $1::uuid AND payment_status = 'completed'
        ORDER BY created_at ASC`,
       [bookingId]
-    );
+    )) as { rows: Array<{ payment_method: string; amount: string; total_amount: string | null }> };
     for (const row of pr.rows) {
       const method = String(row.payment_method || '').toLowerCase();
       if (method === 'wallet') {
@@ -126,12 +137,12 @@ export async function resolveBookingPaymentSources(
 
   if ((!gatewayMethod || gatewayMethod === 'razorpay') && gatewayAmount > 0.009) {
     try {
-      const rp = await query<{ razorpay_payment_id: string | null }>(
+      const rp = (await query(
         `SELECT razorpay_payment_id FROM payments
          WHERE booking_id = $1::uuid AND razorpay_payment_id IS NOT NULL
          ORDER BY created_at DESC LIMIT 1`,
         [bookingId]
-      );
+      )) as { rows: Array<{ razorpay_payment_id: string | null }> };
       const pid = rp.rows[0]?.razorpay_payment_id;
       if (pid) {
         const { fetchRazorpayPaymentMethod } = await import('./razorpay-client');
@@ -160,29 +171,42 @@ export async function resolveBookingPaymentSourcesBatch(
 
   const walletById = new Map<string, number>();
   try {
-    const wt = await query<{ booking_id: string; total: string }>(
-      `SELECT booking_id::text, COALESCE(SUM(amount::numeric), 0)::text AS total
+    const wt = (await query(
+      `SELECT reference_id::text AS booking_id, COALESCE(SUM(amount::numeric), 0)::text AS total
        FROM wallet_transactions
-       WHERE booking_id = ANY($1::uuid[]) AND transaction_type = 'debit'
-       GROUP BY booking_id`,
+       WHERE reference_id = ANY($1::uuid[]) AND transaction_type = 'debit'
+       GROUP BY reference_id`,
       [ids]
-    );
+    )) as { rows: Array<{ booking_id: string; total: string }> };
     for (const row of wt.rows) {
       walletById.set(row.booking_id, parseFloat(row.total) || 0);
     }
   } catch {
-    /* non-fatal */
+    try {
+      const wt = (await query(
+        `SELECT booking_id::text, COALESCE(SUM(amount::numeric), 0)::text AS total
+         FROM wallet_transactions
+         WHERE booking_id = ANY($1::uuid[]) AND transaction_type = 'debit'
+         GROUP BY booking_id`,
+        [ids]
+      )) as { rows: Array<{ booking_id: string; total: string }> };
+      for (const row of wt.rows) {
+        walletById.set(row.booking_id, parseFloat(row.total) || 0);
+      }
+    } catch {
+      /* non-fatal */
+    }
   }
 
   const gatewayMethodById = new Map<string, string>();
   try {
-    const pr = await query<{ booking_id: string; payment_method: string }>(
+    const pr = (await query(
       `SELECT booking_id::text, payment_method
        FROM payments
        WHERE booking_id = ANY($1::uuid[]) AND payment_status = 'completed'
        ORDER BY created_at ASC`,
       [ids]
-    );
+    )) as { rows: Array<{ booking_id: string; payment_method: string }> };
     for (const row of pr.rows) {
       const m = String(row.payment_method || '').toLowerCase();
       if (m === 'wallet') continue;

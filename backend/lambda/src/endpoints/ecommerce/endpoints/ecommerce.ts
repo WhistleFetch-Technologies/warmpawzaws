@@ -16,6 +16,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { randomUUID } from 'crypto';
 import { select, insert, update, query, upsert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
@@ -655,7 +656,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         const existing = await checkIdempotencyKey(`ecommerce_order:${idempotencyKey}`);
         if (existing.exists) {
           const cached = typeof existing.response === 'string' ? JSON.parse(existing.response) : existing.response;
-          return c.json(cached, existing.httpStatus ?? 201);
+          return c.json(cached, (existing.httpStatus ?? 201) as ContentfulStatusCode);
         }
       }
 
@@ -956,7 +957,7 @@ export function registerEcommerceEndpoints(app: Hono) {
             );
             if (platformCoupon && platformCoupon.discountAmount > 0) {
               adminCandidateDiscount = platformCoupon.discountAmount;
-              adminCandidateId = platformCoupon.couponId;
+              adminCandidateId = platformCoupon.couponId as string;
               adminCandidateKind = 'coupon';
             }
           } catch (couponErr) {

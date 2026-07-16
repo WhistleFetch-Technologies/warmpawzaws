@@ -18,6 +18,8 @@ export type PriceDisplayProps = {
   suffix?: string;
   loading?: boolean;
   offerAvailable?: boolean;
+  /** Right-align price row (listing cards with price on the trailing edge). */
+  align?: 'start' | 'end';
   className?: string;
 };
 
@@ -38,6 +40,7 @@ export function PriceDisplay({
   suffix,
   loading = false,
   offerAvailable = false,
+  align = 'start',
   className = '',
 }: PriceDisplayProps) {
   const styles = sizeClasses[size];
@@ -45,10 +48,13 @@ export function PriceDisplay({
   const savings = hasReduction ? originalPrice - currentPrice : 0;
   const discountPercent =
     discountPercentOverride ?? computeDiscountPercent(originalPrice, currentPrice);
+  const alignEnd = align === 'end';
+  const colAlign = alignEnd ? 'items-end text-right' : '';
+  const rowAlign = alignEnd ? 'justify-end' : '';
 
   if (loading) {
     return (
-      <div className={`flex flex-col gap-1 ${className}`}>
+      <div className={`flex flex-col gap-1 ${colAlign} ${className}`}>
         <div className="h-5 w-20 animate-pulse rounded bg-slate-200" />
       </div>
     );
@@ -56,7 +62,7 @@ export function PriceDisplay({
 
   if (offerAvailable && !hasReduction) {
     return (
-      <div className={`flex flex-col gap-1 ${className}`}>
+      <div className={`flex flex-col gap-1 ${colAlign} ${className}`}>
         <span className={`text-[#FF8C42] ${styles.current}`}>Offer available</span>
         <span className={`text-slate-500 ${styles.original}`}>From {formatInr(originalPrice)}</span>
       </div>
@@ -64,10 +70,10 @@ export function PriceDisplay({
   }
 
   return (
-    <div className={`flex flex-col gap-1 ${className}`} aria-label="Price">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className={`flex flex-col gap-1 ${colAlign} ${className}`} aria-label="Price">
+      <div className={`flex flex-wrap items-center gap-2 ${rowAlign}`}>
         {hasReduction && (
-          <span className={`text-slate-400 line-through ${styles.original}`}>
+          <span className={`text-slate-400 cw-price-strike ${styles.original}`}>
             {formatInr(originalPrice)}
           </span>
         )}

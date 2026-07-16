@@ -32,8 +32,12 @@ import {
   CreatePaymentRequestSchema,
 } from '@warmpawz/api-contracts/payments';
 import { calculateFinalFees, mapCatalogCategoryToBusinessType } from '../utils/feeCalculator';
+import { writeBookingFinancialSnapshotIfMissing } from '../utils/booking-financial-snapshot';
 import { debitCustomerWalletForBookingInTransaction } from '../utils/wallet-operations';
 import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
+
+// Type-only helper (no runtime emit)
+type BookingStatusChange = { bookingId: string; from: string | null; to: string | null };
 
 // ============================================================================
 // PAYMENT HANDLERS
@@ -326,6 +330,39 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       // Total amount including fees (fees are added on top of tax-inclusive request amount)
       const totalAmount = amount + gstAmount + feesTotal;
 
+      // Clients send `amount` as the cash payable AFTER wallet, so a fully-wallet checkout
+      // arrives as amount=0 + walletAmount>0 — the wallet slice IS the payable.
+      const walletIntent = useWallet ? Math.max(0, Number(walletAmount) || 0) : 0;
+      const walletOnlyPayment = totalAmount <= 0.009 && walletIntent > 0;
+
+      // Nothing to charge at all (100% promo): payments.check_payment_amount_positive
+      // forbids a ₹0 row, and there is no money movement to record anyway.
+      if (totalAmount <= 0.009 && walletIntent <= 0) {
+        console.log('[PAYMENT-CREATE] Zero payable with no wallet slice — skipping payment row');
+        return this.success(
+          {
+            paymentId: null,
+            status: 'completed',
+            message: 'No payment required (zero payable)',
+            isNew: false,
+            walletUsed: false,
+            walletAmount: 0,
+            remainingAmount: 0,
+            fees: {
+              baseAmount: amount,
+              platformFee,
+              convenienceFee,
+              deliveryFee,
+              packagingFee,
+              gstAmount,
+              totalAmount,
+              breakdown: feesBreakdown,
+            },
+          },
+          requestId
+        );
+      }
+
       let walletDebited = false;
       let remainingAmount = totalAmount;
       let walletDebitedAmount = 0;
@@ -336,14 +373,21 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         payment = await withTransaction(async (client) => {
         let walletApplied = 0;
         if (useWallet && effectiveCustomerId) {
-          const walletCap =
-            walletAmount > 0 ? Math.min(Number(walletAmount), totalAmount) : totalAmount;
+          // Wallet-only: totalAmount is 0 (client already netted the wallet out), so cap by the
+          // wallet slice itself; otherwise cap by the payable total as before.
+          const walletCap = walletOnlyPayment
+            ? walletIntent
+            : walletAmount > 0
+              ? Math.min(Number(walletAmount), totalAmount)
+              : totalAmount;
           const wbalRes = await client.query(
             `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
             [effectiveCustomerId]
           );
           const bal = parseFloat(String(wbalRes.rows[0]?.b ?? '0')) || 0;
-          const targetDebit = Math.min(walletCap, bal, totalAmount);
+          const targetDebit = walletOnlyPayment
+            ? Math.min(walletCap, bal)
+            : Math.min(walletCap, bal, totalAmount);
           if (targetDebit > 0) {
             const idem =
               idempotencyKey != null && String(idempotencyKey).trim() !== ''
@@ -359,6 +403,14 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           }
         }
 
+        if (walletOnlyPayment && walletApplied < walletIntent - 0.009) {
+          const insufficientErr: Error & { step?: string } = new Error(
+            'Wallet balance is insufficient to cover this booking'
+          );
+          insufficientErr.step = 'wallet_debit';
+          throw insufficientErr;
+        }
+
         const roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
         const fullyWallet = walletApplied > 0 && roundedRemain < 0.01;
 
@@ -366,11 +418,19 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           booking_id: bookingId, // ✅ bookingId is REQUIRED - booking should already exist
           customer_id: effectiveCustomerId,
           vendor_id: vendorId || booking.vendor_id,
-          amount: amount, // Base service amount
+          // check_payment_amount_positive forbids ₹0 rows — for wallet-only payments record the
+          // wallet-covered amount (honest accounting) instead of the ₹0 cash remainder.
+          amount: walletOnlyPayment ? walletApplied : amount,
           currency: 'INR',
           payment_method: fullyWallet ? 'wallet' : (paymentMethod || 'razorpay'),
           payment_status: fullyWallet ? 'completed' : 'pending',
         };
+        if (walletApplied > 0) {
+          paymentData.wallet_amount_used = walletApplied;
+        }
+        if (fullyWallet) {
+          paymentData.completed_at = new Date().toISOString();
+        }
 
         // Add tax fields if calculated
         if (gstAmount > 0) {
@@ -441,6 +501,32 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       // Log initial status
       await logPaymentStatusChange(payment.id, null, payment.payment_status);
 
+      // Snapshot the computed breakdown onto the booking (write-once) so booking
+      // detail renders GST/fees even if this payment row never completes.
+      try {
+        await writeBookingFinancialSnapshotIfMissing(String(bookingId), {
+          servicePrice: feeBaseAmount,
+          vendorDiscount: 0,
+          platformDiscount: 0,
+          couponDiscount: 0,
+          subtotalAfterDiscounts: feeBaseAmount,
+          cgst: cgstAmount,
+          sgst: sgstAmount,
+          igst: igstAmount,
+          totalTax: gstAmount,
+          platformFee,
+          convenienceFee,
+          deliveryFee,
+          walletAmount: walletDebitedAmount,
+          finalPaid: totalAmount,
+        });
+      } catch (snapshotErr: any) {
+        console.warn(
+          '[PAYMENT-CREATE] Booking financial snapshot write failed (non-blocking):',
+          snapshotErr?.message
+        );
+      }
+
       // Full wallet at create: payment is completed immediately (no Razorpay webhook). Confirm booking and notify like payment.captured.
       if (payment.payment_status === 'completed' && payment.booking_id) {
         try {
@@ -479,9 +565,9 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           if (bookingStatusChange) {
             try {
               await logBookingStatusChange(
-                bookingStatusChange.bookingId,
-                bookingStatusChange.from,
-                bookingStatusChange.to,
+                (bookingStatusChange as BookingStatusChange).bookingId,
+                (bookingStatusChange as BookingStatusChange).from,
+                (bookingStatusChange as BookingStatusChange).to as string,
                 'system',
                 'system',
                 'Payment completed (wallet)'
@@ -542,9 +628,9 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           if (bookingStatusChange) {
             try {
               await logBookingStatusChange(
-                bookingStatusChange.bookingId,
-                bookingStatusChange.from,
-                bookingStatusChange.to,
+                (bookingStatusChange as BookingStatusChange).bookingId,
+                (bookingStatusChange as BookingStatusChange).from,
+                (bookingStatusChange as BookingStatusChange).to as string,
                 'system',
                 'system',
                 'Wallet covered booking total (fees may remain on payment row)'
@@ -750,9 +836,9 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
         // Log booking status change (if any)
         if (bookingStatusChange) {
           await logBookingStatusChange(
-            bookingStatusChange.bookingId,
-            bookingStatusChange.from,
-            bookingStatusChange.to,
+            (bookingStatusChange as BookingStatusChange).bookingId,
+            (bookingStatusChange as BookingStatusChange).from,
+            (bookingStatusChange as BookingStatusChange).to as string,
             'system',
             'system',
             'Payment captured'

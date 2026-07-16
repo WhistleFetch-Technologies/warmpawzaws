@@ -55,7 +55,11 @@ export function createCustomerNavigation(router: CoordinatorRouter) {
       router.push(path);
     },
 
-    goToBookings() {
+    goToBookings(opts?: { replace?: boolean }) {
+      if (opts?.replace) {
+        router.replace(CUSTOMER_ROUTES.bookings.path);
+        return;
+      }
       router.push(CUSTOMER_ROUTES.bookings.path);
     },
 

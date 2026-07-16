@@ -401,7 +401,7 @@ export function ProductDetailPage({
               <span className="text-3xl font-bold text-[#FF8C42]">₹{price.toLocaleString()}</span>
               {originalPrice && originalPrice > price && (
                 <>
-                  <span className="text-lg text-gray-400 line-through">₹{originalPrice.toLocaleString()}</span>
+                  <span className="text-lg text-gray-400 cw-price-strike">₹{originalPrice.toLocaleString()}</span>
                   <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200">
                     Save ₹{(originalPrice - price).toLocaleString()}
                   </Badge>

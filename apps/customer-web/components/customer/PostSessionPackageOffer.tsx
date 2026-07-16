@@ -289,7 +289,7 @@ export function PostSessionPackageOffer({
                         <span className="text-xl font-bold text-gray-900">
                           {formatPrice(pkg.price)}
                         </span>
-                        <span className="text-sm text-gray-500 line-through">
+                        <span className="text-sm text-gray-500 cw-price-strike">
                           {formatPrice(pkg.regularPrice)}
                         </span>
                         {pkg.savingsPercent > 0 && (

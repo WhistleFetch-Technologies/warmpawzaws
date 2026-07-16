@@ -15,6 +15,7 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { dispatchNotification } from '../utils/notification-dispatch';
@@ -542,8 +543,8 @@ export function registerDeliveryOtpEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
-    const result = await getStatusHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await getStatusHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -559,8 +560,8 @@ export function registerDeliveryOtpEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
-    const result = await verifyOtpHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await verifyOtpHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -575,8 +576,8 @@ export function registerDeliveryOtpEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
-    const result = await generateOtpHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await generateOtpHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -592,8 +593,8 @@ export function registerDeliveryOtpEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
-    const result = await updateStatusHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await updateStatusHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -609,8 +610,8 @@ export function registerDeliveryOtpEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
-    const result = await updateLocationHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await updateLocationHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

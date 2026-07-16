@@ -226,7 +226,7 @@ export function registerVendorCommissionAnalyticsEndpoints(app: Hono) {
         event: {
           pathParameters: c.req.param(),
           queryStringParameters: {},
-        } as HandlerContext['event'],
+        } as unknown as HandlerContext['event'],
       } as HandlerContext);
       return c.json(JSON.parse(response.body), response.statusCode as 200 | 400 | 500);
     } catch (error: unknown) {

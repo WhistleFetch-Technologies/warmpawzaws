@@ -156,7 +156,7 @@ export async function upsertVendorMealOrderForCanonicalDelivery(
   const logisticsType =
     String(sub.logistics_type || sub.logisticsType || 'warmpawz').trim() || 'warmpawz';
 
-  const scheduleJson = asScheduleJson(sub.delivery_schedule_json);
+  const scheduleJson = asScheduleJson(sub.delivery_schedule_json) as Record<string, unknown>;
   const monthlyDeliveryFrequency = String(
     scheduleJson.monthlyDeliveryFrequency || scheduleJson.monthly_delivery_frequency || '',
   ).toUpperCase();

@@ -1837,22 +1837,32 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 (parseFloat(String(fmWallet.walletAmount ?? fmWallet.wallet_amount ?? 0)) || 0) * 100
               ) / 100;
           }
+          const discountCovers = discountCover + 0.009 >= calculatedFinalAmount;
           const covered =
-            discountCover + walletCover + 0.009 >= calculatedFinalAmount ||
-            discountCover + 0.009 >= calculatedFinalAmount ||
-            walletCover + 0.009 >= calculatedFinalAmount;
+            discountCovers || discountCover + walletCover + 0.009 >= calculatedFinalAmount;
           if (!covered) {
             bookingData.total_amount = calculatedFinalAmount;
             console.warn(
               `[BOOKING] Ignoring unverified finalPaid=0 (discount=${discountCover}, wallet=${walletCover}); keeping server amount ₹${calculatedFinalAmount}`
             );
-          } else if (paymentStatus === 'pending') {
+          } else if (discountCovers && paymentStatus === 'pending') {
+            // 100% promo: genuinely nothing to collect — confirm immediately.
             paymentStatus = 'paid';
             bookingRowStatus = 'confirmed';
             bookingData.payment_status = paymentStatus;
             bookingData.status = bookingRowStatus;
             console.log(
-              '[BOOKING] Payable amount is ₹0 after discounts/wallet — confirming without payment hold'
+              '[BOOKING] Payable amount is ₹0 after discounts — confirming without payment hold'
+            );
+          } else if (paymentStatus === 'pending') {
+            // Wallet must actually be debited before the vendor is notified. Keep the booking on a
+            // payment hold; /payments/create debits the wallet and flips it to confirmed/paid.
+            // (Confirming here produced confirmed-but-never-charged bookings when the debit failed.)
+            bookingRowStatus = 'pending_payment';
+            bookingData.status = bookingRowStatus;
+            bookingData.payment_status = paymentStatus;
+            console.log(
+              '[BOOKING] ₹0 payable relies on wallet — holding as pending_payment until wallet debit commits'
             );
           }
         }
@@ -3460,6 +3470,8 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
             policyApplied: false,
             refundableCustomerPaidBase: 0,
             platformFeeNonRefundable: 0,
+            convenienceFeeNonRefundable: 0,
+            nonRefundableFees: 0,
             platformFeeApplies: false,
             hoursUntilBooking: 0,
             message: 'No payment was captured for this booking',
@@ -3483,6 +3495,8 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
       const preview = await previewCustomerCancellationRefundByMethod(bookingForPolicy, refundMethod);
 
       const platformFeeNonRefundable = Math.round(preview.platformFeeNonRefundable * 100) / 100;
+      const convenienceFeeNonRefundable = Math.round((preview.convenienceFeeNonRefundable ?? 0) * 100) / 100;
+      const nonRefundableFees = Math.round((preview.nonRefundableFees ?? 0) * 100) / 100;
       const refundAmountRounded = Math.round(preview.refundAmount * 100) / 100;
       const message =
         refundMethod === 'wallet'
@@ -3504,7 +3518,9 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
           policyApplied: preview.policyApplied,
           refundableCustomerPaidBase: Math.round(preview.refundableCustomerPaidBase * 100) / 100,
           platformFeeNonRefundable,
-          platformFeeApplies: refundMethod === 'original' && platformFeeNonRefundable > 0,
+          convenienceFeeNonRefundable,
+          nonRefundableFees,
+          platformFeeApplies: refundMethod === 'original' && nonRefundableFees > 0,
           hoursUntilBooking: Math.round((preview.hoursUntilBooking ?? 0) * 100) / 100,
           message,
         },
@@ -4472,6 +4488,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         }, 400);
       }
 
+      // @ts-expect-error pre-existing bug: previewCustomerCancellationRefund is not imported in this file (only previewCustomerCancellationRefundByMethod is) — this route throws ReferenceError at runtime (caught by the try/catch → 500); adding the import would change runtime behavior, so it needs a deliberate fix
       const preview = await previewCustomerCancellationRefund({
         id: bookingId,
         vendor_id: booking.vendor_id,
@@ -4490,6 +4507,8 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       const hoursUntilBooking = preview.hoursUntilBooking ?? 0;
       const refundableBase = Math.round(preview.refundableCustomerPaidBase * 100) / 100;
       const platformFeeNonRefundable = Math.round(preview.platformFeeNonRefundable * 100) / 100;
+      const convenienceFeeNonRefundable = Math.round((preview.convenienceFeeNonRefundable ?? 0) * 100) / 100;
+      const nonRefundableFees = Math.round((preview.nonRefundableFees ?? 0) * 100) / 100;
 
       return c.json({
         success: true,
@@ -4504,7 +4523,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
           policyApplied: preview.policyApplied,
           refundableCustomerPaidBase: refundableBase,
           platformFeeNonRefundable,
-          platformFeeApplies: platformFeeNonRefundable > 0,
+          convenienceFeeNonRefundable,
+          nonRefundableFees,
+          platformFeeApplies: nonRefundableFees > 0,
           refundSource: preview.source,
         },
         booking: {

@@ -9,6 +9,15 @@ export interface GeocodeResult {
   formattedAddress?: string;
 }
 
+/** Minimal shape of the Google Geocoding API response (type-only). */
+interface GoogleGeocodeResponse {
+  status?: string;
+  results?: Array<{
+    geometry?: { location?: { lat?: string; lng?: string } };
+    formatted_address?: string;
+  }>;
+}
+
 /**
  * Resolve the Google Maps API key for server-side geocoding. Order:
  *   1. `GOOGLE_MAPS_API_KEY` env var (local dev / explicit override).
@@ -137,7 +146,7 @@ export async function geocodeIndiaPincode(pincode: string): Promise<GeocodeResul
     clearTimeout(timeoutId);
 
     if (!response.ok) return null;
-    const data = await response.json();
+    const data = (await response.json()) as GoogleGeocodeResponse;
     if (data.status !== 'OK' || !data.results?.[0]) return null;
 
     const loc = data.results[0].geometry?.location;
@@ -176,7 +185,7 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult | n
     clearTimeout(timeoutId);
 
     if (!response.ok) return null;
-    const data = await response.json();
+    const data = (await response.json()) as GoogleGeocodeResponse;
     if (data.status !== 'OK' || !data.results?.[0]) return null;
 
     const result = data.results[0];

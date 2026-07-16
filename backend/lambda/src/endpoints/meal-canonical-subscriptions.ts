@@ -4,6 +4,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   createCanonicalSubscription,
   findSubscriptionByClientRequestKey,
@@ -170,7 +171,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
           code: err.code,
           expectedPurchaseType: err.expected,
         },
-        status,
+        status as ContentfulStatusCode,
       );
     }
   });
@@ -310,7 +311,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
     } catch (e: unknown) {
       const err = e as { message?: string; statusCode?: number };
       const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
-      return c.json({ success: false, error: err.message || 'Confirm failed' }, status);
+      return c.json({ success: false, error: err.message || 'Confirm failed' }, status as ContentfulStatusCode);
     }
   });
 
@@ -320,7 +321,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
   app.post('/meal/subscriptions/:id/pause', async (c) => {
     try {
       const id = c.req.param('id');
-      const body = await parseJsonBody<Record<string, unknown>>(c).catch(() => ({}));
+      const body = await parseJsonBody<Record<string, unknown>>(c).catch((): Record<string, unknown> => ({}));
       const customerId = String(body.customerId || c.req.query('customerId') || '').trim();
       if (!customerId) {
         return c.json({ success: false, error: 'customerId is required' }, 400);
@@ -334,7 +335,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
     } catch (e: unknown) {
       const err = e as { message?: string; statusCode?: number };
       const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
-      return c.json({ success: false, error: err.message || 'Pause failed' }, status);
+      return c.json({ success: false, error: err.message || 'Pause failed' }, status as ContentfulStatusCode);
     }
   });
 
@@ -344,7 +345,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
   app.post('/meal/subscriptions/:id/resume', async (c) => {
     try {
       const id = c.req.param('id');
-      const body = await parseJsonBody<Record<string, unknown>>(c).catch(() => ({}));
+      const body = await parseJsonBody<Record<string, unknown>>(c).catch((): Record<string, unknown> => ({}));
       const customerId = String(body.customerId || c.req.query('customerId') || '').trim();
       if (!customerId) {
         return c.json({ success: false, error: 'customerId is required' }, 400);
@@ -358,7 +359,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
     } catch (e: unknown) {
       const err = e as { message?: string; statusCode?: number };
       const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
-      return c.json({ success: false, error: err.message || 'Resume failed' }, status);
+      return c.json({ success: false, error: err.message || 'Resume failed' }, status as ContentfulStatusCode);
     }
   });
 
@@ -383,7 +384,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
     } catch (e: unknown) {
       const err = e as { message?: string; statusCode?: number };
       const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
-      return c.json({ success: false, error: err.message || 'Skip failed' }, status);
+      return c.json({ success: false, error: err.message || 'Skip failed' }, status as ContentfulStatusCode);
     }
   });
 
@@ -405,7 +406,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
     } catch (e: unknown) {
       const err = e as { message?: string; statusCode?: number };
       const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
-      return c.json({ success: false, error: err.message || 'Reschedule failed' }, status);
+      return c.json({ success: false, error: err.message || 'Reschedule failed' }, status as ContentfulStatusCode);
     }
   });
 
@@ -418,7 +419,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
       return c.json({ success: false, error: 'Unauthorized' }, 401);
     }
     try {
-      const body = await parseJsonBody<Record<string, unknown>>(c).catch(() => ({}));
+      const body = await parseJsonBody<Record<string, unknown>>(c).catch((): Record<string, unknown> => ({}));
       const horizonDays =
         body.horizonDays != null ? Math.min(120, Math.max(7, Number(body.horizonDays))) : undefined;
       const subscriptionId =

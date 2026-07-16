@@ -402,7 +402,7 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(verifyPayload),
       });
-      const verifyData = verifyRes.ok ? await verifyRes.json().catch(() => ({})) : { valid: false };
+      const verifyData = (verifyRes.ok ? await verifyRes.json().catch(() => ({})) : { valid: false }) as { valid?: boolean; error?: string; message?: string };
 
       if (verifyData.valid !== true) {
         await update('vendor_bank_accounts', { id: accountId }, {

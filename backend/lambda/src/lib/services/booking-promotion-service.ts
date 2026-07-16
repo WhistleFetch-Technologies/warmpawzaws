@@ -254,6 +254,9 @@ async function resolveBookingPromotionsInternal(
     legacy: () =>
       resolveBookingPromotionsLegacy(resolvedParams, priorVendorBookingCount, shared),
     mapResolverToLegacy: mapResolverResultToBookingPromotion,
+    // Auto-discovery: a clean empty result IS the answer ("no promotions apply").
+    // Only coupon-code requests must keep the legacy fallback for empty results.
+    acceptEmptyResult: !resolvedParams.couponCode,
   });
 
   const runtimePolicy = loadRuntimePolicy(DiscountDomain.SERVICE);
@@ -667,6 +670,8 @@ export async function listApplicableBookingPromotions(
     legacy: () =>
       listApplicableBookingPromotionsLegacy(resolvedParams, priorVendorBookingCount),
     mapResolverToLegacy: mapResolverResultToApplicableOffers,
+    // Listing auto promotions: empty is a valid v2 answer (no active promotions).
+    acceptEmptyResult: true,
   });
 
   return value;

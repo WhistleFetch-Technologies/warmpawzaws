@@ -15,6 +15,7 @@
  */
 
 import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Hono } from 'hono';
 import { query, insert, update, select } from '../database/rds-connection';
 import { resolvePostgresCustomerIdFromAuthHeaders } from './customer/customerEndpoint/customer-password';
@@ -1864,7 +1865,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
       if (idempotencyKey && !hasRazorpayProof) {
         const existing = await checkIdempotencyKey(idempotencyKey);
         if (existing.exists) {
-          return c.json(existing.response, existing.httpStatus || 200);
+          return c.json(existing.response, (existing.httpStatus || 200) as ContentfulStatusCode);
         }
       }
 

@@ -5,6 +5,7 @@
 
 import { query, withTransaction } from '../database/rds-connection';
 import { logAuditEntry, logBookingStatusChange } from './audit-log';
+import { parseJsonMetaFromNotes } from './booking-notes-meta';
 
 export const PAYMENT_HOLD_TTL_SECONDS = 300;
 
@@ -92,11 +93,13 @@ export async function expirePaymentHolds(options?: {
         if (locked.rows.length === 0) return;
         if (String(locked.rows[0].status) !== 'pending_payment') return;
 
+        // payments_payment_status_check allows only pending/processing/completed/failed/refunded/
+        // partially_refunded — 'expired' violated it and rolled back every expiry attempt.
         await client.query(
           `UPDATE payments
            SET payment_status = CASE
              WHEN LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed') THEN payment_status
-             ELSE 'expired'
+             ELSE 'failed'
            END,
            updated_at = NOW()
            WHERE booking_id = $1::uuid`,
@@ -161,6 +164,24 @@ export interface PaymentResumeContext {
   /** Service subtotal before tax/fees — use as payment page baseAmount on resume. */
   basePrice: number;
   discountAmount: number;
+  /** Locked create-time breakdown for resume UI (from wp_financial_meta when present). */
+  financialSnapshot: {
+    servicePrice: number;
+    vendorDiscount: number;
+    platformDiscount: number;
+    couponDiscount: number;
+    couponCode?: string;
+    subtotalAfterDiscounts: number;
+    cgst: number;
+    sgst: number;
+    igst: number;
+    totalTax: number;
+    platformFee: number;
+    convenienceFee: number;
+    deliveryFee: number;
+    walletAmount: number;
+    finalPaid: number;
+  } | null;
   selectedServices?: Record<string, unknown>[];
   currency: string;
   paymentHoldExpiresAt: string | null;
@@ -249,6 +270,75 @@ export async function buildBookingPaymentResumeContext(
   const discountAmount = Number(b.discount_amount || 0);
   const selectedServices = parseBookingSelectedServices(b.selected_services);
 
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const finMeta = parseJsonMetaFromNotes(b.notes, 'wp_financial_meta');
+  const couponCodeRaw = b.coupon_code ? String(b.coupon_code).trim() : '';
+  let financialSnapshot: PaymentResumeContext['financialSnapshot'] = null;
+  if (finMeta) {
+    const servicePrice = round2(parseFloat(String(finMeta.servicePrice ?? finMeta.service_price ?? basePrice)) || 0);
+    const vendorDiscount = round2(parseFloat(String(finMeta.vendorDiscount ?? finMeta.vendor_discount ?? 0)) || 0);
+    const platformDiscount = round2(
+      parseFloat(String(finMeta.platformDiscount ?? finMeta.platform_discount ?? 0)) || 0
+    );
+    const couponDiscount = round2(parseFloat(String(finMeta.couponDiscount ?? finMeta.coupon_discount ?? 0)) || 0);
+    const totalTax = round2(parseFloat(String(finMeta.totalTax ?? finMeta.total_tax ?? 0)) || 0);
+    const platformFee = round2(parseFloat(String(finMeta.platformFee ?? finMeta.platform_fee ?? 0)) || 0);
+    const convenienceFee = round2(
+      parseFloat(String(finMeta.convenienceFee ?? finMeta.convenience_fee ?? 0)) || 0
+    );
+    const deliveryFee = round2(parseFloat(String(finMeta.deliveryFee ?? finMeta.delivery_fee ?? 0)) || 0);
+    const walletAmount = round2(parseFloat(String(finMeta.walletAmount ?? finMeta.wallet_amount ?? 0)) || 0);
+    const finalPaid = round2(
+      parseFloat(String(finMeta.finalPaid ?? finMeta.final_paid ?? payableAmount)) || payableAmount
+    );
+    const subtotalAfterDiscounts = round2(
+      parseFloat(
+        String(
+          finMeta.subtotalAfterDiscounts ??
+            finMeta.subtotal_after_discounts ??
+            Math.max(0, servicePrice - vendorDiscount - platformDiscount - couponDiscount)
+        )
+      ) || 0
+    );
+    financialSnapshot = {
+      servicePrice: servicePrice > 0 ? servicePrice : basePrice > 0 ? round2(basePrice) : payableAmount,
+      vendorDiscount,
+      platformDiscount,
+      couponDiscount,
+      ...(couponCodeRaw ? { couponCode: couponCodeRaw } : {}),
+      subtotalAfterDiscounts,
+      cgst: round2(parseFloat(String(finMeta.cgst ?? 0)) || 0),
+      sgst: round2(parseFloat(String(finMeta.sgst ?? 0)) || 0),
+      igst: round2(parseFloat(String(finMeta.igst ?? 0)) || 0),
+      totalTax,
+      platformFee,
+      convenienceFee,
+      deliveryFee,
+      walletAmount,
+      finalPaid: finalPaid > 0 ? finalPaid : payableAmount,
+    };
+  } else if (payableAmount > 0) {
+    // Minimal locked snapshot so resume UI can still freeze total without re-quoting.
+    const svc = basePrice > 0 ? round2(basePrice) : payableAmount;
+    financialSnapshot = {
+      servicePrice: svc,
+      vendorDiscount: discountAmount > 0 && !couponCodeRaw ? round2(discountAmount) : 0,
+      platformDiscount: 0,
+      couponDiscount: discountAmount > 0 && couponCodeRaw ? round2(discountAmount) : 0,
+      ...(couponCodeRaw ? { couponCode: couponCodeRaw } : {}),
+      subtotalAfterDiscounts: Math.max(0, round2(svc - discountAmount)),
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
+      totalTax: 0,
+      platformFee: 0,
+      convenienceFee: 0,
+      deliveryFee: 0,
+      walletAmount: 0,
+      finalPaid: payableAmount,
+    };
+  }
+
   return {
     entityType: 'booking',
     entityId: bookingId,
@@ -267,6 +357,7 @@ export async function buildBookingPaymentResumeContext(
     payableAmount,
     basePrice: basePrice > 0 ? Math.round(basePrice * 100) / 100 : payableAmount,
     discountAmount: Math.round(discountAmount * 100) / 100,
+    financialSnapshot,
     selectedServices,
     currency: String(pay?.currency || 'INR'),
     paymentHoldExpiresAt: expiresAt,

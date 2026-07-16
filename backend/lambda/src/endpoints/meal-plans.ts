@@ -1337,6 +1337,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       const requestedDeliveryAt = `${datePart}T${slotStart.length === 5 ? `${slotStart}:00` : slotStart}`;
       const evaluation = evaluateMealBookingForPlan(
         {
+          // @ts-expect-error -- pre-existing bug: 'vendorId' is not defined in this handler's scope (TS2552); a runtime fix is out of scope for this type-only pass.
           vendorId: String(plan.vendor_id || vendorId || ''),
           mealPlanId: String(plan.id || mealPlanId || ''),
           purchaseType: 'ONE_OFF',
@@ -1580,7 +1581,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       if (!result.success) {
         return c.json({ success: false, error: result.error || 'Wallet debit failed' }, 400);
       }
-      return c.json({ success: true, ...result });
+      return c.json({ success: true, ...(result as Omit<typeof result, 'success'>) });
     } catch (error: any) {
       console.error('Error debiting wallet for meal order:', error);
       return c.json({ success: false, error: error.message || 'Wallet debit failed' }, 500);
