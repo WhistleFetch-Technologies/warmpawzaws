@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import * as customer_addresses_addressid_getRepo from '../repos/customer_addresses_addressid_get.repo';
 import { Hono } from 'hono';
 import { findCustomerByPhone } from '../../../../utils/customer-phone-lookup';
+import { coordsFromRow } from '../repos/module-helpers.repo';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../../utils/entity-extractor';
 import { isValidUUID } from '../../../../types/entities';
 

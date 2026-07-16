@@ -27,7 +27,7 @@ export async function executecustomerCustomeridBookingsFollowupeligibleGet(c: Co
       const rules = await getDiscoveryRules('all', 'booking');
       const followUpDays = rules.follow_up_days ?? 7;
 
-      const eligibleBookings = await customer_customerid_bookings_followupeligible_getRepo.dbCustomerCustomeridBookingsFollowupeligibleGet0(text, interval, v, br_svc, s, b)
+      const eligibleBookings = await customer_customerid_bookings_followupeligible_getRepo.dbCustomerCustomeridBookingsFollowupeligibleGet0(customerId, followUpDays)
 
       // Enrich with prescription and review status
       const enrichedBookings = await Promise.all(

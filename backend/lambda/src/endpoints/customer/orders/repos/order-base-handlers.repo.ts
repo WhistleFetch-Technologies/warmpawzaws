@@ -1,57 +1,61 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbOrderBaseHandlers0(customerId) {
-  return await query(
-            'SELECT phone FROM customers WHERE id = $1',
-            [customerId]
-          );
+/** Dev/prod products.images JSONB — image_url column does not exist on RDS. */
+const SQL_PRODUCT_IMAGE_SELECT = `CASE
+  WHEN p.images IS NOT NULL
+   AND jsonb_typeof(p.images) = 'array'
+   AND jsonb_array_length(p.images) > 0
+  THEN p.images->>0
+  ELSE NULL
+END AS product_image`;
+
+export async function dbOrderBaseHandlers0(customerId: string) {
+  return await query('SELECT phone FROM customers WHERE id = $1', [customerId]);
 }
 
-export async function dbOrderBaseHandlers1(customerPhone) {
-  return await query(
-            'SELECT id FROM customers WHERE phone = $1',
-            [customerPhone]
-          );
+export async function dbOrderBaseHandlers1(customerPhone: string) {
+  return await query('SELECT id FROM customers WHERE phone = $1', [customerPhone]);
 }
 
-export async function dbOrderBaseHandlers2(newCustomerId, customerName, customerPhone) {
+export async function dbOrderBaseHandlers2(newCustomerId: string, customerName: string, customerPhone: string) {
   return await insert('customers', {
-              id: newCustomerId,
-              name: customerName,
-              full_name: customerName,
-              phone: customerPhone,
-              is_active: true,
-              status: 'new',
-            });
+    id: newCustomerId,
+    name: customerName,
+    full_name: customerName,
+    phone: customerPhone,
+    is_active: true,
+    status: 'new',
+  });
 }
 
-export async function dbOrderBaseHandlers3(orderRow) {
+export async function dbOrderBaseHandlers3(orderRow: Record<string, unknown>) {
   return await insert('orders', orderRow);
 }
 
-export async function dbOrderBaseHandlers4(orderId, line) {
+export async function dbOrderBaseHandlers4(orderId: string, line: Record<string, unknown>) {
   return await insert('order_items', {
-            order_id: orderId,
-            product_id: line.product_id,
-            product_sku_id: line.product_sku_id ?? null,
-            name: line.product_name,
-            quantity: line.quantity,
-            unit_price: line.unit_price,
-            total_price: line.total_price,
-            variant_info: line.variant_info ?? null,
-          });
+    order_id: orderId,
+    product_id: line.product_id,
+    product_sku_id: line.product_sku_id ?? null,
+    name: line.product_name,
+    quantity: line.quantity,
+    unit_price: line.unit_price,
+    total_price: line.total_price,
+    variant_info: line.variant_info ?? null,
+  });
 }
 
-export async function dbOrderBaseHandlers5(ordersQuery, params) {
+export async function dbOrderBaseHandlers5(ordersQuery: string, params: unknown[]) {
   return await query(ordersQuery, params);
 }
 
-export async function dbOrderBaseHandlers6(orderIds, itemsQuery) {
+export async function dbOrderBaseHandlers6(itemsQuery: string, orderIds: string[]) {
   return await query(itemsQuery, [orderIds]);
 }
 
-export async function dbOrderBaseHandlers7(customerId) {
-  return await query(`
+export async function dbOrderBaseHandlers7(customerId: string) {
+  return await query(
+    `
         SELECT 
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE order_status = 'pending_payment') as pending_payment,
@@ -64,11 +68,14 @@ export async function dbOrderBaseHandlers7(customerId) {
           SUM(total_amount) FILTER (WHERE order_status != 'cancelled') as total_spent
         FROM orders
         WHERE customer_id = $1
-      `, [customerId]);
+      `,
+    [customerId]
+  );
 }
 
-export async function dbOrderBaseHandlers8(orderId, customerId, v, c, o) {
-  return await query(`
+export async function dbOrderBaseHandlers8(orderId: string, customerId: string) {
+  return await query(
+    `
         SELECT 
           o.*,
           v.business_name as vendor_name,
@@ -82,11 +89,14 @@ export async function dbOrderBaseHandlers8(orderId, customerId, v, c, o) {
         LEFT JOIN vendors v ON o.vendor_id = v.id
         LEFT JOIN customers c ON o.customer_id = c.id
         WHERE o.id = $1 AND o.customer_id = $2
-      `, [orderId, customerId]);
+      `,
+    [orderId, customerId]
+  );
 }
 
-export async function dbOrderBaseHandlers9(orderId, SQL_PRODUCT_IMAGE_SELECT, s, p, oi) {
-  return await query(`
+export async function dbOrderBaseHandlers9(orderId: string) {
+  return await query(
+    `
         SELECT 
           oi.*,
           s.name as service_name,
@@ -99,27 +109,36 @@ export async function dbOrderBaseHandlers9(orderId, SQL_PRODUCT_IMAGE_SELECT, s,
         LEFT JOIN products p ON oi.product_id = p.id
         WHERE oi.order_id = $1
         ORDER BY oi.created_at ASC
-      `, [orderId]);
+      `,
+    [orderId]
+  );
 }
 
-export async function dbOrderBaseHandlers10(orderId) {
-  return await query(`
+export async function dbOrderBaseHandlers10(orderId: string) {
+  return await query(
+    `
         SELECT * FROM order_status_history
         WHERE order_id = $1
         ORDER BY created_at ASC
-      `, [orderId]);
+      `,
+    [orderId]
+  );
 }
 
-export async function dbOrderBaseHandlers11(orderId) {
-  return await query(`
+export async function dbOrderBaseHandlers11(orderId: string) {
+  return await query(
+    `
         SELECT * FROM shipments
         WHERE order_id = $1
         ORDER BY created_at DESC
-      `, [orderId]);
+      `,
+    [orderId]
+  );
 }
 
-export async function dbOrderBaseHandlers12(orderId, customerId, v, c, o) {
-  return await query(`
+export async function dbOrderBaseHandlers12(orderId: string, customerId: string) {
+  return await query(
+    `
         SELECT 
           o.*,
           v.business_name as vendor_name,
@@ -135,11 +154,14 @@ export async function dbOrderBaseHandlers12(orderId, customerId, v, c, o) {
         LEFT JOIN vendors v ON o.vendor_id = v.id
         LEFT JOIN customers c ON o.customer_id = c.id
         WHERE o.id = $1 AND o.customer_id = $2
-      `, [orderId, customerId]);
+      `,
+    [orderId, customerId]
+  );
 }
 
-export async function dbOrderBaseHandlers13(orderId, s, p, oi) {
-  return await query(`
+export async function dbOrderBaseHandlers13(orderId: string) {
+  return await query(
+    `
         SELECT 
           oi.*,
           s.name as service_name,
@@ -151,80 +173,95 @@ export async function dbOrderBaseHandlers13(orderId, s, p, oi) {
         LEFT JOIN products p ON oi.product_id = p.id
         WHERE oi.order_id = $1
         ORDER BY oi.created_at ASC
-      `, [orderId]);
+      `,
+    [orderId]
+  );
 }
 
-export async function dbOrderBaseHandlers14(orderId, customerId, order_status, customer_id, vendor_id, delivered_at) {
+export async function dbOrderBaseHandlers14(orderId: string, customerId: string) {
   return await query(
-        'SELECT id, order_status, customer_id, vendor_id, delivered_at, shipping_address FROM orders WHERE id = $1 AND customer_id = $2',
-        [orderId, customerId]
-      );
+    'SELECT id, order_status, customer_id, vendor_id, delivered_at, shipping_address FROM orders WHERE id = $1 AND customer_id = $2',
+    [orderId, customerId]
+  );
 }
 
-export async function dbOrderBaseHandlers15(orderId, p, oi) {
+export async function dbOrderBaseHandlers15(orderId: string) {
   return await query(
-        `SELECT oi.*, p.name as product_name FROM order_items oi
-         LEFT JOIN products p ON oi.product_id = p.id
-         WHERE oi.order_id = $1`,
-        [orderId]
-      );
+    `SELECT oi.*, p.name as product_name FROM order_items oi
+     LEFT JOIN products p ON oi.product_id = p.id
+     WHERE oi.order_id = $1`,
+    [orderId]
+  );
 }
 
-export async function dbOrderBaseHandlers16(orderId, order, returnNumber, primaryReason, totalRefundAmount, now) {
+export async function dbOrderBaseHandlers16(
+  orderId: string,
+  order: Record<string, unknown>,
+  returnNumber: string,
+  primaryReason: string,
+  totalRefundAmount: number,
+  now: string
+) {
   return await insert('return_requests', {
-        order_id: orderId,
-        customer_id: order.customer_id,
-        vendor_id: order.vendor_id,
-        return_number: returnNumber,
-        status: 'pending',
-        reason: primaryReason,
-        comments: null,
-        photos: JSON.stringify([]),
-        total_refund_amount: totalRefundAmount,
-        pickup_address: order.shipping_address ?? null,
-        preferred_pickup_date: null,
-        bank_account_details: null,
-        created_at: now,
-        updated_at: now,
-      });
+    order_id: orderId,
+    customer_id: order.customer_id,
+    vendor_id: order.vendor_id,
+    return_number: returnNumber,
+    status: 'pending',
+    reason: primaryReason,
+    comments: null,
+    photos: JSON.stringify([]),
+    total_refund_amount: totalRefundAmount,
+    pickup_address: order.shipping_address ?? null,
+    preferred_pickup_date: null,
+    bank_account_details: null,
+    created_at: now,
+    updated_at: now,
+  });
 }
 
-export async function dbOrderBaseHandlers17(returnRequest, item, orderItem, qty, primaryReason, now) {
+export async function dbOrderBaseHandlers17(
+  returnRequest: { id: string },
+  item: { orderItemId: string },
+  orderItem: Record<string, unknown>,
+  qty: number,
+  primaryReason: string,
+  now: string
+) {
   return await insert('return_items', {
-          return_request_id: returnRequest.id,
-          order_item_id: item.orderItemId,
-          product_id: orderItem.product_id,
-          quantity: qty,
-          reason: primaryReason,
-          comments: null,
-          refund_amount: parseFloat(String(orderItem.unit_price ?? '0')) * qty,
-          status: 'pending',
-          created_at: now,
-        });
+    return_request_id: returnRequest.id,
+    order_item_id: item.orderItemId,
+    product_id: orderItem.product_id,
+    quantity: qty,
+    reason: primaryReason,
+    comments: null,
+    refund_amount: parseFloat(String(orderItem.unit_price ?? '0')) * qty,
+    status: 'pending',
+    created_at: now,
+  });
 }
 
-export async function dbOrderBaseHandlers18(orderId, now) {
+export async function dbOrderBaseHandlers18(orderId: string, now: string) {
   return await update('orders', { id: orderId }, {
-        has_return_request: true,
-        return_status: 'pending',
-        updated_at: now,
-      });
+    has_return_request: true,
+    return_status: 'pending',
+    updated_at: now,
+  });
 }
 
-export async function dbOrderBaseHandlers19(orderId, primaryReason, now) {
+export async function dbOrderBaseHandlers19(orderId: string, primaryReason: string, now: string) {
   return await insert('order_status_history', {
-        order_id: orderId,
-        status: 'return_requested',
-        notes: primaryReason,
-        changed_by_type: 'customer',
-        created_at: now,
-      });
+    order_id: orderId,
+    status: 'return_requested',
+    notes: primaryReason,
+    changed_by_type: 'customer',
+    created_at: now,
+  });
 }
 
-export async function dbOrderBaseHandlers20(orderId, customerId, uuid) {
+export async function dbOrderBaseHandlers20(orderId: string, customerId: string) {
   return await query(
-        `SELECT id FROM orders WHERE id = $1::uuid AND customer_id = $2::uuid LIMIT 1`,
-        [orderId, customerId]
-      );
+    `SELECT id FROM orders WHERE id = $1::uuid AND customer_id = $2::uuid LIMIT 1`,
+    [orderId, customerId]
+  );
 }
-

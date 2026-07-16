@@ -1,8 +1,8 @@
-import { query, select, insert, update } from '../../../../database/rds-connection';
+import { query, select } from '../../../../database/rds-connection';
 
-export async function dbAppointmentBaseHandlers0(customerId, b, vs, v, p) {
+export async function dbAppointmentBaseHandlers0(customerId: string) {
   return await query(
-        `
+    `
         SELECT 
           b.id,
           b.id AS booking_id,
@@ -28,13 +28,13 @@ export async function dbAppointmentBaseHandlers0(customerId, b, vs, v, p) {
         WHERE b.customer_id = $1
         ORDER BY b.booking_date DESC, b.booking_time DESC
       `,
-        [customerId]
-      );
+    [customerId]
+  );
 }
 
-export async function dbAppointmentBaseHandlers1(appointmentId, customerId, b, vs, v, p) {
+export async function dbAppointmentBaseHandlers1(appointmentId: string, customerId: string) {
   return await query(
-        `
+    `
         SELECT 
           b.id,
           b.id AS booking_id,
@@ -66,58 +66,64 @@ export async function dbAppointmentBaseHandlers1(appointmentId, customerId, b, v
         LEFT JOIN pets p ON b.pet_id = p.id
         WHERE b.id = $1 AND b.customer_id = $2
       `,
-        [appointmentId, customerId]
-      );
+    [appointmentId, customerId]
+  );
 }
 
-export async function dbAppointmentBaseHandlers2(bookingId) {
+export async function dbAppointmentBaseHandlers2(bookingId: string) {
   return await query(
-        `
+    `
         SELECT * FROM prescriptions
         WHERE booking_id = $1
         ORDER BY created_at DESC
       `,
-        [bookingId]
-      );
+    [bookingId]
+  );
 }
 
-export async function dbAppointmentBaseHandlers3(bookingId) {
+export async function dbAppointmentBaseHandlers3(bookingId: string) {
   return await query(
-        `
+    `
         SELECT * FROM medical_records
         WHERE booking_id = $1
         ORDER BY created_at DESC
       `,
-        [bookingId]
-      );
+    [bookingId]
+  );
 }
 
-export async function dbAppointmentBaseHandlers4(bookingId) {
+export async function dbAppointmentBaseHandlers4(bookingId: string) {
   return await query(
-        `
+    `
         SELECT * FROM appointment_history
         WHERE appointment_id = $1
         ORDER BY created_at DESC
       `,
-        [bookingId]
-      );
+    [bookingId]
+  );
 }
 
-export async function dbAppointmentBaseHandlers5(appointmentId, customerId, b) {
+export async function dbAppointmentBaseHandlers5(appointmentId: string, customerId: string) {
   return await query(
-        `
+    `
         SELECT b.id, b.customer_id, b.status AS booking_status,
                b.booking_date, b.booking_time
         FROM bookings b
         WHERE b.id = $1 AND b.customer_id = $2
       `,
-        [appointmentId, customerId]
-      );
+    [appointmentId, customerId]
+  );
 }
 
-export async function dbAppointmentBaseHandlers6(appointment_date, appointment_time, appointmentId, customerId, date, time) {
+export async function dbAppointmentBaseHandlers6(
+  appointment_date: string,
+  appointment_time: string,
+  reason: string,
+  appointmentId: string,
+  customerId: string
+) {
   return await query(
-        `
+    `
         UPDATE bookings
         SET 
           booking_date = $1::date,
@@ -127,19 +133,26 @@ export async function dbAppointmentBaseHandlers6(appointment_date, appointment_t
         WHERE id = $4 AND customer_id = $5
         RETURNING *
       `,
-        [
-          appointment_date,
-          appointment_time,
-          reason || 'No reason provided',
-          appointmentId,
-          customerId,
-        ]
-      );
+    [
+      appointment_date,
+      appointment_time,
+      reason || 'No reason provided',
+      appointmentId,
+      customerId,
+    ]
+  );
 }
 
-export async function dbAppointmentBaseHandlers7(appointmentResult, action, previous_date, previous_time, new_date, new_time, reason, $2, $3, $4, $5, $6, appointment_date, appointment_time) {
+export async function dbAppointmentBaseHandlers7(
+  appointmentId: string,
+  previousDate: string,
+  previousTime: string,
+  newDate: string,
+  newTime: string,
+  reason: string
+) {
   return await query(
-        `
+    `
         INSERT INTO appointment_history (
           appointment_id,
           action,
@@ -151,33 +164,33 @@ export async function dbAppointmentBaseHandlers7(appointmentResult, action, prev
           created_at
         ) VALUES ($1, 'rescheduled', $2, $3, $4, $5, $6, NOW())
       `,
-        [
-          appointmentId,
-          appointmentResult.rows[0].booking_date,
-          appointmentResult.rows[0].booking_time,
-          appointment_date,
-          appointment_time,
-          reason,
-        ]
-      );
+    [
+      appointmentId,
+      previousDate,
+      previousTime,
+      newDate,
+      newTime,
+      reason,
+    ]
+  );
 }
 
-export async function dbAppointmentBaseHandlers8(appointmentId, customerId, b) {
+export async function dbAppointmentBaseHandlers8(appointmentId: string, customerId: string) {
   return await query(
-        `
+    `
         SELECT b.*, b.status AS booking_status, b.id AS booking_id,
                b.booking_date, b.booking_time, b.vendor_id, b.service_id, b.service_type,
                b.payment_status, b.total_amount, b.customer_id
         FROM bookings b
         WHERE b.id = $1 AND b.customer_id = $2
       `,
-        [appointmentId, customerId]
-      );
+    [appointmentId, customerId]
+  );
 }
 
-export async function dbAppointmentBaseHandlers9(bookingId) {
+export async function dbAppointmentBaseHandlers9(reason: string, bookingId: string) {
   return await query(
-        `
+    `
         UPDATE bookings
         SET 
           status = 'cancelled',
@@ -189,24 +202,24 @@ export async function dbAppointmentBaseHandlers9(bookingId) {
         WHERE id = $2
         RETURNING *
       `,
-        [reason || 'No reason provided', bookingId]
-      );
+    [reason || 'No reason provided', bookingId]
+  );
 }
 
-export async function dbAppointmentBaseHandlers10(bookingId, uuid) {
+export async function dbAppointmentBaseHandlers10(bookingId: string) {
   return await query(
-              `SELECT id FROM payments
-               WHERE booking_id = $1::uuid
-                 AND payment_status IN ('completed', 'partially_refunded')
-               ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END
-               LIMIT 1`,
-              [bookingId]
-            );
+    `SELECT id FROM payments
+     WHERE booking_id = $1::uuid
+       AND payment_status IN ('completed', 'partially_refunded')
+     ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END
+     LIMIT 1`,
+    [bookingId]
+  );
 }
 
-export async function dbAppointmentBaseHandlers11(appointmentId, reason, action, $2) {
+export async function dbAppointmentBaseHandlers11(appointmentId: string, reason: string) {
   return await query(
-        `
+    `
         INSERT INTO appointment_history (
           appointment_id,
           action,
@@ -214,7 +227,6 @@ export async function dbAppointmentBaseHandlers11(appointmentId, reason, action,
           created_at
         ) VALUES ($1, 'cancelled', $2, NOW())
       `,
-        [appointmentId, reason]
-      );
+    [appointmentId, reason]
+  );
 }
-

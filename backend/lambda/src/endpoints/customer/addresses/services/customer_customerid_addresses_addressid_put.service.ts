@@ -2,6 +2,14 @@ import type { Context } from 'hono';
 import * as customer_customerid_addresses_addressid_putRepo from '../repos/customer_customerid_addresses_addressid_put.repo';
 import { Hono } from 'hono';
 import { findCustomerByPhone } from '../../../../utils/customer-phone-lookup';
+import {
+  mapAddressRow,
+  hasCustomerAddressLatLngColumns,
+  normalizeCoordinates,
+  geocodeAddress,
+  resolveLatLngForRow,
+  ensureCoordinatesJson,
+} from '../repos/module-helpers.repo';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../../utils/entity-extractor';
 import { isValidUUID } from '../../../../types/entities';
 
@@ -37,7 +45,7 @@ export async function executecustomerCustomeridAddressesAddressidPut(c: Context)
 
       // If coordinates are missing, geocode the address
       if (!finalCoordinates) {
-        const existingRows = await customer_customerid_addresses_addressid_putRepo.dbCustomerCustomeridAddressesAddressidPut3(address_line2, city, state, pincode).catch(() => ({ rows: [] }));
+        const existingRows = await customer_customerid_addresses_addressid_putRepo.dbCustomerCustomeridAddressesAddressidPut3(addressId, customer).catch(() => ({ rows: [] }));
         const existing = existingRows.rows?.[0] || {};
         const addressLine1 = updates.addressLine1 || updates.address_line1 || existing.address_line1;
         const city = updates.city || existing.city;

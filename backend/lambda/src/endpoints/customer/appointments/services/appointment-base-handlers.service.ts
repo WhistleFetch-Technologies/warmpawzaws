@@ -23,8 +23,7 @@ import {
 import { hasCustomerPaidCapture } from '../../../../lib/services/refundable-base';
 import { computeHoursUntilBookingStart } from '../../../../lib/utils/booking-start-wall-time';
 import { creditCustomerWalletForBookingRefund } from '../../../../utils/credit-customer-wallet';
-
-/** Module helpers (move-only). */
+import * as appointment_base_handlersRepo from '../repos/appointment-base-handlers.repo';
 
 // ============================================================================
 // GET /customer/appointments - List all appointments for customer
@@ -46,7 +45,7 @@ export class GetCustomerAppointmentsHandler extends BaseHandler {
 
       // Bookings are the source of truth (RDS has no legacy `appointments` table in many envs).
       // `bookings.service_id` references `vendor_services.id`; vendors use `business_name`, not `name`.
-      const appointments = await appointment_base_handlersRepo.dbAppointmentBaseHandlers0(b, vs, v, p).catch((err) => {
+      const appointments = await appointment_base_handlersRepo.dbAppointmentBaseHandlers0(customerId).catch((err) => {
         console.warn('[appointments] list query failed:', err);
         return { rows: [] as Record<string, unknown>[] };
       });
@@ -95,7 +94,7 @@ export class GetAppointmentDetailsHandler extends BaseHandler {
       }
 
       // Treat :id as booking id (same id returned by the list endpoint above).
-      const appointment = await appointment_base_handlersRepo.dbAppointmentBaseHandlers1(b, vs, v, p).catch((err) => {
+      const appointment = await appointment_base_handlersRepo.dbAppointmentBaseHandlers1(appointmentId, customerId).catch((err) => {
         console.warn('[appointments] detail main query failed:', (err as Error)?.message || err);
         return { rows: [] as Record<string, unknown>[] };
       });
@@ -166,7 +165,7 @@ export class RescheduleAppointmentHandler extends BaseHandler {
         return this.error('Customer ID is required', 401);
       }
 
-      const appointmentResult = await appointment_base_handlersRepo.dbAppointmentBaseHandlers5(b).catch((err) => {
+      const appointmentResult = await appointment_base_handlersRepo.dbAppointmentBaseHandlers5(appointmentId, customerId).catch((err) => {
         console.warn('[appointments] reschedule lookup failed:', err);
         return { rows: [] as Record<string, unknown>[] };
       });
@@ -180,7 +179,13 @@ export class RescheduleAppointmentHandler extends BaseHandler {
         return this.error('Appointment cannot be rescheduled in current status', 400);
       }
 
-      const updated = await appointment_base_handlersRepo.dbAppointmentBaseHandlers6(date, time, appointment_time, appointmentId, customerId).catch((err) => {
+      const updated = await appointment_base_handlersRepo.dbAppointmentBaseHandlers6(
+        appointment_date,
+        appointment_time,
+        reason || 'No reason provided',
+        appointmentId,
+        customerId
+      ).catch((err) => {
         console.warn('[appointments] reschedule update failed:', err);
         return { rows: [] as Record<string, unknown>[] };
       });
@@ -189,7 +194,14 @@ export class RescheduleAppointmentHandler extends BaseHandler {
         return this.error('Appointment not found', 404);
       }
 
-      await appointment_base_handlersRepo.dbAppointmentBaseHandlers7(appointmentResult, action, previous_date, previous_time, new_date, new_time, reason, $2, $3, $4, $5, $6, appointment_date, appointment_time).catch((histErr) => console.warn('[appointments] appointment_history insert skipped:', histErr));
+      await appointment_base_handlersRepo.dbAppointmentBaseHandlers7(
+        appointmentId,
+        appointmentResult.rows[0].booking_date,
+        appointmentResult.rows[0].booking_time,
+        appointment_date,
+        appointment_time,
+        reason || 'No reason provided'
+      ).catch((histErr) => console.warn('[appointments] appointment_history insert skipped:', histErr));
 
       const row = updated.rows[0];
       return this.success({
@@ -230,7 +242,7 @@ export class CancelAppointmentHandler extends BaseHandler {
         return this.error('Customer ID is required', 401);
       }
 
-      const appointment = await appointment_base_handlersRepo.dbAppointmentBaseHandlers8(b).catch((err) => {
+      const appointment = await appointment_base_handlersRepo.dbAppointmentBaseHandlers8(appointmentId, customerId).catch((err) => {
         console.warn('[appointments] cancel lookup failed:', err);
         return { rows: [] as Record<string, unknown>[] };
       });
@@ -258,7 +270,7 @@ export class CancelAppointmentHandler extends BaseHandler {
         return this.error('Cannot cancel past appointments', 400);
       }
 
-      const updated = await appointment_base_handlersRepo.dbAppointmentBaseHandlers9(bookingId).catch((err) => {
+      const updated = await appointment_base_handlersRepo.dbAppointmentBaseHandlers9(reason || 'No reason provided', bookingId).catch((err) => {
         console.warn('[appointments] cancel update failed:', err);
         return { rows: [] as Record<string, unknown>[] };
       });
@@ -298,7 +310,7 @@ export class CancelAppointmentHandler extends BaseHandler {
           const refundAmount = Math.round(preview.refundAmount * 100) / 100;
           const refundPercentage = preview.refundPercentage;
           if (refundAmount > 0) {
-            const payments = await appointment_base_handlersRepo.dbAppointmentBaseHandlers10(uuid).catch(() => ({ rows: [] }));
+            const payments = await appointment_base_handlersRepo.dbAppointmentBaseHandlers10(bookingId).catch(() => ({ rows: [] }));
             const paymentId = (payments as any).rows?.[0]?.id;
             if (refundMethod === 'wallet') {
               try {
@@ -367,7 +379,7 @@ export class CancelAppointmentHandler extends BaseHandler {
         }
       }
 
-      await appointment_base_handlersRepo.dbAppointmentBaseHandlers11(action, reason, $2).catch((histErr) => console.warn('[appointments] appointment_history insert skipped:', histErr));
+      await appointment_base_handlersRepo.dbAppointmentBaseHandlers11(appointmentId, reason || 'No reason provided').catch((histErr) => console.warn('[appointments] appointment_history insert skipped:', histErr));
 
       const cancelledRow = updated.rows[0];
       return this.success({

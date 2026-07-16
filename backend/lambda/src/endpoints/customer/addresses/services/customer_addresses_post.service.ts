@@ -2,6 +2,14 @@ import type { Context } from 'hono';
 import * as customer_addresses_postRepo from '../repos/customer_addresses_post.repo';
 import { Hono } from 'hono';
 import { findCustomerByPhone } from '../../../../utils/customer-phone-lookup';
+import {
+  mapAddressRow,
+  hasCustomerAddressLatLngColumns,
+  normalizeCoordinates,
+  geocodeAddress,
+  resolveLatLngForRow,
+  ensureCoordinatesJson,
+} from '../repos/module-helpers.repo';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../../utils/entity-extractor';
 import { isValidUUID } from '../../../../types/entities';
 

@@ -4,7 +4,7 @@ import {
   createEmptyLambdaContext,
   mergeAllQueryFromHono,
 } from '../../shared/hono-lambda-bridge.utils';
-import { runAppointmentHandler, NOT_FOUND_FALLBACK, LIST_FALLBACK } from '../repos/appointment-runtime.repo';
+import { runAppointmentHandler, NOT_FOUND_FALLBACK, LIST_FALLBACK, attachParsedJsonBody } from '../repos/appointment-runtime.repo';
 import {
   getAppointmentsHandler,
   getDetailsHandler,

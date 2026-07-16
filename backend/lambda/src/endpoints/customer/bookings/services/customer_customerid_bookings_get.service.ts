@@ -20,6 +20,7 @@ import {
   SQL_PACKAGE_PURCHASE_JOIN,
   SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../../utils/customer-booking-package-fields';
+import { SQL_BOOKING_SERVICE_LATERAL } from '../repos/module-helpers.repo';
 
 export async function executecustomerCustomeridBookingsGet(c: Context) {
     try {
@@ -61,7 +62,7 @@ export async function executecustomerCustomeridBookingsGet(c: Context) {
         ${SQL_BOOKING_SERVICE_LATERAL}
         ${SQL_PACKAGE_PURCHASE_JOIN}
         LEFT JOIN services s ON s.id = b.service_id
-        WHERE b.customer_id = executecustomerCustomeridBookingsGet
+        WHERE b.customer_id = $1
           AND COALESCE(b.is_package_session, false) = false
       `;
 

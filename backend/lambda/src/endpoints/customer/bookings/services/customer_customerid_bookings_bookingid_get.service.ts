@@ -20,12 +20,13 @@ import {
   SQL_PACKAGE_PURCHASE_JOIN,
   SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../../utils/customer-booking-package-fields';
+import { loadCustomerPaymentFeeFields } from '../repos/module-helpers.repo';
 
 export async function executecustomerCustomeridBookingsBookingidGet(c: Context) {
     try {
       const { customerId, bookingId } = c.req.param();
 
-      const bookingQuery = await customer_customerid_bookings_bookingid_getRepo.dbCustomerCustomeridBookingsBookingidGet0(text, SQL_PACKAGE_PURCHASE_SELECT, v, br_svc, s, b, st, p, name, species, breed, age_years, weight_kg)
+      const bookingQuery = await customer_customerid_bookings_bookingid_getRepo.dbCustomerCustomeridBookingsBookingidGet0(bookingId, customerId)
 
       if (bookingQuery.rows.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);

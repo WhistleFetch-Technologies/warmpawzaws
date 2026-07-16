@@ -1,44 +1,30 @@
 /**
- * ============================================================================
- * CUSTOMER APPOINTMENTS ENDPOINTS
- * ============================================================================
- * 
- * Handles customer appointment management:
- * - List appointments
- * - Get appointment details
- * - Reschedule appointments
- * - Cancel appointments
- * 
- * Date: 2026-01-07
- * ============================================================================
+ * Appointment route runtime helpers (move-only from customer-appointments monolith).
  */
 
-import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { BaseHandler, HandlerContext, HandlerResponse } from '../../../../handler/base-handler';
-import { query } from '../../../../database/rds-connection';
-import {
-  previewCustomerCancellationRefundByMethod,
-  normalizeCustomerCancellationRefundMethod,
-} from '../../../../lib/services/cancellation-policy-service';
-import { hasCustomerPaidCapture } from '../../../../lib/services/refundable-base';
-import { computeHoursUntilBookingStart } from '../../../../lib/utils/booking-start-wall-time';
-import { creditCustomerWalletForBookingRefund } from '../../../../utils/credit-customer-wallet';
-
-/** Module helpers (move-only). */
-
-// ============================================================================
-// GET /customer/appointments - List all appointments for customer
-// ============================================================================
 
 export const LIST_FALLBACK = {
   appointments: [] as unknown[],
   count: 0,
   message: 'No booking',
 };
+
 export const NOT_FOUND_FALLBACK = { error: 'Appointment not found' };
 
 const LIST_EMPTY_OK = { appointments: [] as unknown[], count: 0, message: 'No booking' };
+
+/** POST bodies: Hono req.json() → API Gateway event.body (move-only from monolith). */
+export async function attachParsedJsonBody(c: Context, event: Record<string, unknown>): Promise<void> {
+  const method = c.req.method;
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
+  try {
+    const j = await c.req.json();
+    event.body = JSON.stringify(j != null && typeof j === 'object' && !Array.isArray(j) ? j : {});
+  } catch {
+    event.body = typeof event.body === 'string' && event.body.length > 0 ? event.body : '{}';
+  }
+}
 
 export async function runAppointmentHandler(
   c: { json: (b: object, s?: number) => Response },
@@ -51,7 +37,6 @@ export async function runAppointmentHandler(
     const result = await exec();
     const raw = result?.body;
 
-    // Legacy/stale handlers may return 5xx (e.g. SQL against missing `appointments` table). My Bookings must stay 200.
     if (options?.coerceListErrorsToEmpty && result.statusCode >= 400) {
       console.warn(
         '[appointments] list coerced from error status:',
