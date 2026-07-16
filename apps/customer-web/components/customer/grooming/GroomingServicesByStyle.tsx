@@ -236,6 +236,7 @@ export function GroomingServicesByStyle({
         // ✅ FIX: Enhance provider data with specialisation and amenities
         byStyleProviders = byStyleProviders.map((p: any) => ({
           ...p,
+          services: Array.isArray(p.services) ? p.services : [],
           specialisation: p.specialisation || p.vendorSpecialisation || p.vendor?.specialisation || p.specialization,
           amenities: Array.isArray(p.amenities) ? p.amenities : 
                     (p.vendorAmenities ? (Array.isArray(p.vendorAmenities) ? p.vendorAmenities : [p.vendorAmenities]) : 

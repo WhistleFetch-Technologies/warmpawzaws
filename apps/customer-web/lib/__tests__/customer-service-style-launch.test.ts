@@ -24,6 +24,33 @@ const catalog: ServiceLaunchCatalogEntry[] = [
       at_home: { effectiveStatus: 'hidden', inheritsParent: false },
     },
   },
+  {
+    serviceId: 'nutritionist',
+    effectiveStatus: 'launched',
+    supportedStyles: ['tele', 'at_home'],
+    effectiveStyles: {
+      tele: { effectiveStatus: 'launched', inheritsParent: true },
+      at_home: { effectiveStatus: 'hidden', inheritsParent: false },
+    },
+  },
+  {
+    serviceId: 'training',
+    effectiveStatus: 'launched',
+    supportedStyles: ['at_center', 'at_home', 'tele'],
+    effectiveStyles: {
+      tele: { effectiveStatus: 'launched', inheritsParent: true },
+      at_center: { effectiveStatus: 'launched', inheritsParent: true },
+      at_home: { effectiveStatus: 'launched', inheritsParent: true },
+    },
+  },
+  {
+    serviceId: 'pet-sitter',
+    effectiveStatus: 'launched',
+    supportedStyles: ['at_home'],
+    effectiveStyles: {
+      at_home: { effectiveStatus: 'launched', inheritsParent: true },
+    },
+  },
 ];
 
 describe('resolveServiceStyleLaunchFromCatalog', () => {
@@ -43,6 +70,33 @@ describe('resolveServiceStyleLaunchFromCatalog', () => {
     const r = resolveServiceStyleLaunchFromCatalog(catalog, 'vet', 'tele');
     expect(r.status).toBe('launched');
     expect(r.inheritsParent).toBe(true);
+  });
+
+  it('maps category alias nutrition → nutritionist for launch lookup', () => {
+    const r = resolveServiceStyleLaunchFromCatalog(catalog, 'nutrition', 'tele');
+    expect(r.status).toBe('launched');
+    expect(shouldBlockServiceStyleNavigation(r.status)).toBe(false);
+  });
+
+  it('maps behaviourist/behaviorist → training for launch lookup', () => {
+    expect(resolveServiceStyleLaunchFromCatalog(catalog, 'behaviourist', 'tele').status).toBe(
+      'launched'
+    );
+    expect(resolveServiceStyleLaunchFromCatalog(catalog, 'behaviorist', 'tele').status).toBe(
+      'launched'
+    );
+  });
+
+  it('maps sitting → pet-sitter for launch lookup', () => {
+    const r = resolveServiceStyleLaunchFromCatalog(catalog, 'sitting', 'at_home');
+    expect(r.status).toBe('launched');
+  });
+
+  it('keeps canonical ids working (nutritionist, vet)', () => {
+    expect(resolveServiceStyleLaunchFromCatalog(catalog, 'nutritionist', 'tele').status).toBe(
+      'launched'
+    );
+    expect(resolveServiceStyleLaunchFromCatalog(catalog, 'vet', 'tele').status).toBe('launched');
   });
 });
 

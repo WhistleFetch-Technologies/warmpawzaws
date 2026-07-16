@@ -10,8 +10,13 @@ import {
 } from '@/lib/vendor-package-purchase-nav';
 
 export function minPriceForVendor(v: BoardingListVendor): number | null {
-  if (!v.planRows.length) return null;
-  return Math.min(...v.planRows.map((p) => p.price));
+  if (v.planRows.length > 0) {
+    return Math.min(...v.planRows.map((p) => p.price));
+  }
+  // Slim discover cards: use aggregated priceMin until expand fetches planRows
+  const raw = (v.raw || {}) as Record<string, unknown>;
+  const fromCard = Number(raw.priceMin ?? raw.price_min ?? raw.price ?? 0);
+  return Number.isFinite(fromCard) && fromCard > 0 ? fromCard : null;
 }
 
 export function priceForCard(v: BoardingListVendor, slug: BoardingServiceSlug): string {

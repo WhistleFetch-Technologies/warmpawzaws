@@ -66,7 +66,7 @@ describe('getVendorListingPhotoUrl', () => {
     );
     expect(resolveImageForContext).toHaveBeenCalledWith(
       'vendors/abc/gallery1.webp',
-      expect.objectContaining({ context: 'list', assetType: 'facility', vendorId: 'vendor-abc' }),
+      expect.objectContaining({ context: 'list', assetType: 'facility', vendorId: 'vendor-abc', migrate: false }),
     );
   });
 

@@ -22,7 +22,6 @@ import { getDiscoveryRules, getRuleNumberArray } from '../../../lib/rule-engine'
 import { prescriptionOCRService } from '../../../lib/services/prescription-ocr-service';
 import { websocketService } from '../../../lib/services/websocket-service';
 import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
-import type { NotificationEvent, NotificationEventType } from '../../../aws/constatns/interface';
 import { autoAssignDeliveryPartner } from '../../delivery-partner-automation';
 import { createPharmacyOrderRequestSchema, approveInvoiceRequestSchema } from '../../../zodContracts/orders.contract';
 import { uuidSchema } from '../../../middleware/validation-middleware';
@@ -140,19 +139,7 @@ async function getConvenienceFee(serviceType: string = 'pharmacy'): Promise<numb
 }
 
 export function registerPharmacyOrderEndpoints(app: Hono) {
-
-  // Ensure required columns exist (runtime migration fallback)
-  const ensureColumnsExist = async () => {
-    try {
-      await query(`ALTER TABLE pharmacy_orders ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(20)`);
-      await query(`ALTER TABLE pharmacy_orders ADD COLUMN IF NOT EXISTS prescription_url TEXT`);
-      await query(`ALTER TABLE pharmacy_broadcasts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
-      // Drop problematic trigger if it exists
-      await query(`DROP TRIGGER IF EXISTS trigger_update_pharmacy_broadcasts_updated_at ON pharmacy_broadcasts`);
-    } catch (e) { /* Columns may already exist */ }
-  };
-  ensureColumnsExist().catch(console.error);
-
+  // Schema managed via db/migrations/ (e.g. 608_add_pharmacy_orders_columns.sql). No runtime DDL on cold start.
   /**
    * POST /pharmacy/orders/create
    * Create a new pharmacy order and start broadcasting
@@ -876,7 +863,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
 
       await websocketService.sendOrderStatusUpdate(orderId, 'pharmacy', 'invoice_generated', {});
       await sendEventNotification({
-        eventType: 'pharmacy_order_invoice' as unknown as NotificationEventType,
+        eventType: 'pharmacy_order_invoice',
         recipientId: order.customer_id,
         recipientType: 'customer',
         relatedId: orderId,
@@ -2000,7 +1987,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
             title: 'Order Cancelled',
             body: 'Customer rejected the invoice and cancelled the order.',
             data: { orderId, reason: 'invoice_rejected' },
-          } as unknown as NotificationEvent);
+          });
         } catch (notifErr) {
           console.warn('[INVOICE] Failed to send cancellation notification:', notifErr);
         }
@@ -2029,7 +2016,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
           title: 'Invoice Approved! 🎉',
           body: 'Customer has approved the invoice. Awaiting payment.',
           data: { orderId },
-        } as unknown as NotificationEvent);
+        });
       } catch (notifErr) {
         console.warn('[INVOICE] Failed to send approval notification:', notifErr);
       }
@@ -2378,7 +2365,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
             full_name: address.name || 'Customer',
             created_at: new Date().toISOString(),
           });
-          customerId = newCustomer[0]?.id || (newCustomer as any).id;
+          customerId = newCustomer[0]?.id || newCustomer.id;
         } else {
           customerId = customers[0].id;
         }
@@ -2423,7 +2410,6 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
         sum + (item.quantity * item.unit_price), 0
       );
 
-      // @ts-expect-error -- pre-existing bug: 'logisticsType' is not defined in this handler's scope (TS2304); a runtime fix is out of scope for this type-only pass.
       const estimatedDeliveryFee = await calculateDeliveryFee(5, orderSubtotal, logisticsType);
       const platformFee = await calculatePlatformFee(orderSubtotal, 'pharmacy');
       const convenienceFee = await getConvenienceFee('pharmacy');
@@ -2479,7 +2465,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
         updated_at: new Date().toISOString(),
       });
 
-      const orderId = orderResult[0]?.id || (orderResult as any).id;
+      const orderId = orderResult[0]?.id || orderResult.id;
 
       console.log(`[PHARMACY ORDER] Created order ${orderId} for customer ${customerId}`);
 

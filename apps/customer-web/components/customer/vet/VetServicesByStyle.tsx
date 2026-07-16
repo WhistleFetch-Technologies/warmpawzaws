@@ -159,7 +159,14 @@ export function VetServicesByStyle({
         }
         
         // Set providers from primary endpoint
-          setProviders(filterProvidersServicesForVetHub(providerData));
+          setProviders(
+            filterProvidersServicesForVetHub(
+              providerData.map((p: any) => ({
+                ...p,
+                services: Array.isArray(p.services) ? p.services : [],
+              }))
+            )
+          );
           console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
       } else {
         console.warn(`⚠️ [Vet] Primary endpoint returned success=false or no providers`);
