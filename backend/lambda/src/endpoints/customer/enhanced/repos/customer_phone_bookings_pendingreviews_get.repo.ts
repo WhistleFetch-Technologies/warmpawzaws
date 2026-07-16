@@ -4,7 +4,10 @@ export async function dbCustomerPhoneBookingsPendingreviewsGet0(phone) {
   return await select('customers', { phone: phone.replace(/\D/g, '') });
 }
 
-export async function dbCustomerPhoneBookingsPendingreviewsGet1(reviewEligibleDays, text, interval, b, v, s, sv, p, customer) {
+export async function dbCustomerPhoneBookingsPendingreviewsGet1(
+  customer: { id: string },
+  reviewEligibleDays: number
+) {
   return await query(
         `SELECT b.id, b.booking_date, b.completed_at,
                 COALESCE(v.business_name, s.name) as vendor_name,

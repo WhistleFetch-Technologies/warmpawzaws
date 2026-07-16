@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerId } from '../repos/module-helpers.repo';
 import * as customer_customerid_searchhistory_getRepo from '../repos/customer_customerid_searchhistory_get.repo';
 import { Hono } from 'hono';
 import {

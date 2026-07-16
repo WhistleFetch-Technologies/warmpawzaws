@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerPhoneActivewalksGet0(customerId, numeric, wls, p, v, wr, b) {
+export async function dbCustomerPhoneActivewalksGet0(customerId: string) {
   return await query(
           `
           SELECT 
@@ -22,7 +22,7 @@ export async function dbCustomerPhoneActivewalksGet0(customerId, numeric, wls, p
         );
 }
 
-export async function dbCustomerPhoneActivewalksGet1(customerId, ps, p, s, b) {
+export async function dbCustomerPhoneActivewalksGet1(customerId: string) {
   return await query(
           `
           SELECT 
@@ -46,7 +46,7 @@ export async function dbCustomerPhoneActivewalksGet1(customerId, ps, p, s, b) {
         );
 }
 
-export async function dbCustomerPhoneActivewalksGet2(customerId, numeric, text, b, g, p, v) {
+export async function dbCustomerPhoneActivewalksGet2(customerId: string) {
   return await query(
           `
           SELECT 

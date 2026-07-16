@@ -4,7 +4,7 @@ export async function dbCustomerPhoneOrdersPharmacyActiveGet0(normalizedPhone) {
   return await select('customers', { phone: normalizedPhone });
 }
 
-export async function dbCustomerPhoneOrdersPharmacyActiveGet1(po, v, customer) {
+export async function dbCustomerPhoneOrdersPharmacyActiveGet1(customer: { id: string }) {
   return await query(
           `SELECT 
             po.id,

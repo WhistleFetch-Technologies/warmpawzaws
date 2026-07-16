@@ -39,7 +39,7 @@ export async function executecustomerOrdersOrderidPharmacystatusGet(c: Context) 
       const orderId = c.req.param('orderId');
 
       // Get pharmacy order details + delivery_tracking (OTP, partner) for tracking step
-      const { rows: orders } = await customer_orders_orderid_pharmacystatus_getRepo.dbCustomerOrdersOrderidPharmacystatusGet0(v, dt, po)
+      const { rows: orders } = await customer_orders_orderid_pharmacystatus_getRepo.dbCustomerOrdersOrderidPharmacystatusGet0(orderId)
 
       if (orders.length === 0) {
         // Try to find in regular orders table

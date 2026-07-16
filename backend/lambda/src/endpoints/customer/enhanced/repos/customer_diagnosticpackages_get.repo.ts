@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerDiagnosticpackagesGet0(dt, v) {
+export async function dbCustomerDiagnosticpackagesGet0() {
   return await query(`
         SELECT 
           dt.id,

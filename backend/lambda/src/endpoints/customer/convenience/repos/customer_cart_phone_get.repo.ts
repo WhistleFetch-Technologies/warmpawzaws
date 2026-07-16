@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerCartPhoneGet0(customerId, ci, p, v) {
+export async function dbCustomerCartPhoneGet0(customerId: string) {
   return await query(
         `SELECT ci.id,
                 ci.customer_id,

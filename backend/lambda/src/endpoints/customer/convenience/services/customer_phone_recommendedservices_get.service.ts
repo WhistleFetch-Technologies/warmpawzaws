@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_phone_recommendedservices_getRepo from '../repos/customer_phone_recommendedservices_get.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -40,7 +41,7 @@ export async function executecustomerPhoneRecommendedservicesGet(c: Context) {
       }
 
       // Get customer's recent booking categories (bookings.service_id -> services.id)
-      const recentBookings = await customer_phone_recommendedservices_getRepo.dbCustomerPhoneRecommendedservicesGet0(s, b).catch(() => ({ rows: [] }));
+      const recentBookings = await customer_phone_recommendedservices_getRepo.dbCustomerPhoneRecommendedservicesGet0(customerId).catch(() => ({ rows: [] }));
 
       const usedCategories = new Set((recentBookings.rows || []).map((r: any) => (r.category || '').toLowerCase()).filter(Boolean));
 

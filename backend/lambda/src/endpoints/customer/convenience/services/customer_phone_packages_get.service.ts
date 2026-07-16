@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone, seedPackagesForCustomer } from '../repos/module-helpers.repo';
 import * as customer_phone_packages_getRepo from '../repos/customer_phone_packages_get.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -39,7 +40,7 @@ export async function executecustomerPhonePackagesGet(c: Context) {
         return c.json({ packages: [], success: true });
       }
 
-      await seedFinitePackagesMissingSessionsForScope({ query } as SqlClient, { customerId });
+      await seedPackagesForCustomer(customerId);
 
       let packageQuery = `
         SELECT 
@@ -50,7 +51,7 @@ export async function executecustomerPhonePackagesGet(c: Context) {
           ${sqlPackagePurchaseComputedStatus('pp')} as computed_status
         FROM package_purchases pp
         LEFT JOIN vendors v ON pp.vendor_id = v.id
-        WHERE pp.customer_id = executecustomerPhonePackagesGet
+        WHERE pp.customer_id = $1
         AND pp.status NOT IN ('cancelled')
         AND (
           pp.expires_at IS NULL
@@ -86,7 +87,7 @@ export async function executecustomerPhonePackagesGet(c: Context) {
         } else {
           // Try vendor_services (catalog package): package_id may be vendor_services.id
           try {
-            const vsRows = await customer_phone_packages_getRepo.dbCustomerPhonePackagesGet1(pkg, service_name)
+            const vsRows = await customer_phone_packages_getRepo.dbCustomerPhonePackagesGet1(pkg)
             if (vsRows.rows?.length > 0) {
               const meta = vsRows.rows[0].metadata;
               const parsed = typeof meta === 'string' ? (meta ? JSON.parse(meta) : {}) : (meta || {});
@@ -100,7 +101,7 @@ export async function executecustomerPhonePackagesGet(c: Context) {
           // Fallback: service_packages + package_services (legacy)
           if (includedServices.length === 0) {
             try {
-              const psRows = await customer_phone_packages_getRepo.dbCustomerPhonePackagesGet2(ps, s, pkg)
+              const psRows = await customer_phone_packages_getRepo.dbCustomerPhonePackagesGet2(pkg)
               if (psRows.rows?.length > 0) {
                 includedServices = psRows.rows.map((r: any) => ({ id: r.service_id, name: r.service_name || 'Service' }));
               }

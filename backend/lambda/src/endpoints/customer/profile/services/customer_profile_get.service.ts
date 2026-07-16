@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerId, normalizePhone, resolveCustomerPhotoForDisplay } from '../repos/module-helpers.repo';
 import * as customer_profile_getRepo from '../repos/customer_profile_get.repo';
 import { Hono } from 'hono';
 import {
@@ -32,7 +33,7 @@ export async function executecustomerProfileGet(c: Context) {
         if (customers.length === 0) return c.json({ error: 'Customer not found' }, 404);
 
         // Get addresses for this customer
-        const addressesResult = await customer_profile_getRepo.dbCustomerProfileGet1(phone, city, state, pincode, landmark, coordinates, floor)
+        const addressesResult = await customer_profile_getRepo.dbCustomerProfileGet1(customers)
 
         customers[0].addresses = addressesResult.rows;
       } catch (error: any) {

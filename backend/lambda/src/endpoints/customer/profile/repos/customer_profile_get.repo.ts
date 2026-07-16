@@ -4,7 +4,7 @@ export async function dbCustomerProfileGet0(customerId) {
   return await select('customers', { id: customerId });
 }
 
-export async function dbCustomerProfileGet1(customers, phone, city, state, pincode, landmark, coordinates, floor) {
+export async function dbCustomerProfileGet1(customers: { id: string }[]) {
   return await query(
           `SELECT 
       id,

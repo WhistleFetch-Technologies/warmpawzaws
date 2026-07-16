@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_phone_latestbookingbyvendor_getRepo from '../repos/customer_phone_latestbookingbyvendor_get.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -40,7 +41,7 @@ export async function executecustomerPhoneLatestbookingbyvendorGet(c: Context) {
       if (!customerId) {
         return c.json({ booking: null, success: true });
       }
-      const result = await customer_phone_latestbookingbyvendor_getRepo.dbCustomerPhoneLatestbookingbyvendorGet0(b, v)
+      const result = await customer_phone_latestbookingbyvendor_getRepo.dbCustomerPhoneLatestbookingbyvendorGet0(customerId, vendorId)
       const row = result.rows?.[0];
       if (!row) {
         return c.json({ success: true, booking: null });

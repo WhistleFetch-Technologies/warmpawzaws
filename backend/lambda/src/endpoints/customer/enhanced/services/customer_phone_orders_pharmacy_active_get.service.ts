@@ -61,7 +61,7 @@ export async function executecustomerPhoneOrdersPharmacyActiveGet(c: Context) {
       // Get active pharmacy orders with error handling
       let ordersResult: any;
       try {
-        ordersResult = await customer_phone_orders_pharmacy_active_getRepo.dbCustomerPhoneOrdersPharmacyActiveGet1(po, v, customer)
+        ordersResult = await customer_phone_orders_pharmacy_active_getRepo.dbCustomerPhoneOrdersPharmacyActiveGet1(customer)
       } catch (error: any) {
         console.warn('Error fetching active pharmacy orders (returning empty):', error.message);
         // Return empty array if query fails (table might not exist or schema issue)

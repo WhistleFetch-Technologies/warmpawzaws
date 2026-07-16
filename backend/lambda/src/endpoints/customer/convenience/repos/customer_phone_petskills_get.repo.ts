@@ -6,7 +6,7 @@ export async function dbCustomerPhonePetskillsGet0(customerId) {
       `, [customerId]);
 }
 
-export async function dbCustomerPhonePetskillsGet1(petIds, ts, p, psp) {
+export async function dbCustomerPhonePetskillsGet1(petIds: string[]) {
   return await query(`
         SELECT 
           psp.*,

@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_bookings_getRepo from '../repos/customer_bookings_get.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -66,7 +67,7 @@ export async function executecustomerBookingsGet(c: Context) {
         LEFT JOIN vendors v ON b.vendor_id = v.id
         ${SQL_PACKAGE_PURCHASE_JOIN}
         LEFT JOIN services s ON b.service_id = s.id
-        WHERE b.customer_id = executecustomerBookingsGet
+        WHERE b.customer_id = $1
           AND COALESCE(b.is_package_session, false) = false
       `;
 
@@ -74,13 +75,13 @@ export async function executecustomerBookingsGet(c: Context) {
       let paramIndex = 2;
 
       if (petId) {
-        bookingQuery += ` AND b.pet_id = ${paramIndex}`;
+        bookingQuery += ` AND b.pet_id = $${paramIndex}`;
         params.push(petId);
         paramIndex++;
       }
 
       if (serviceType) {
-        bookingQuery += ` AND (s.category ILIKE ${paramIndex} OR s.category = ${paramIndex + 1})`;
+        bookingQuery += ` AND (s.category ILIKE $${paramIndex} OR s.category = $${paramIndex + 1})`;
         params.push(`%${String(serviceType)}%`, String(serviceType));
         paramIndex += 2;
       }
@@ -89,11 +90,11 @@ export async function executecustomerBookingsGet(c: Context) {
         // Handle multiple statuses (comma-separated or array)
         const statuses = status.split(',').map((s: string) => s.trim()).filter(Boolean);
         if (statuses.length === 1) {
-          bookingQuery += ` AND b.status = ${paramIndex}`;
+          bookingQuery += ` AND b.status = $${paramIndex}`;
           params.push(statuses[0]);
           paramIndex++;
         } else if (statuses.length > 1) {
-          bookingQuery += ` AND b.status = ANY(${paramIndex})`;
+          bookingQuery += ` AND b.status = ANY($${paramIndex})`;
           params.push(statuses);
           paramIndex++;
         }

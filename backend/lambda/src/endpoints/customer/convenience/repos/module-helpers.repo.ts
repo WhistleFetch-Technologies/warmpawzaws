@@ -277,3 +277,6 @@ export function mapPaymentMethodRowForCustomerWeb(m: Record<string, unknown>) {
   };
 }
 
+export async function seedPackagesForCustomer(customerId: string): Promise<void> {
+  await seedFinitePackagesMissingSessionsForScope({ query } as SqlClient, { customerId });
+}

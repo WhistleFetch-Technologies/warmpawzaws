@@ -52,15 +52,7 @@ export async function executecustomerPhoneOnboardingCompletePost(c: Context) {
       await customer_phone_onboarding_complete_postRepo.dbCustomerPhoneOnboardingCompletePost1(customer)
 
       // Update preferences with completion timestamp
-      await customer_phone_onboarding_complete_postRepo.dbCustomerPhoneOnboardingCompletePost2(customer).catch(() => {
-        // Create preferences record if it doesn't exist
-        return query(
-          `INSERT INTO customer_preferences (customer_id, journey_type, onboarding_completed_at)
-           VALUES (executecustomerPhoneOnboardingCompletePost, $2, NOW())
-           ON CONFLICT (customer_id) DO UPDATE SET onboarding_completed_at = NOW()`,
-          [customer.id, journeyType]
-        );
-      });
+      await customer_phone_onboarding_complete_postRepo.dbCustomerPhoneOnboardingCompletePost2(journeyType, customer).catch(() => undefined);
 
       return c.json({
         success: true,

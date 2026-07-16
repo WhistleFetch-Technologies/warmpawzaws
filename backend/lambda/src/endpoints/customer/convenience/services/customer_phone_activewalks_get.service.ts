@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_phone_activewalks_getRepo from '../repos/customer_phone_activewalks_get.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -82,7 +83,7 @@ export async function executecustomerPhoneActivewalksGet(c: Context) {
 
       // 1) Legacy walker_live_sessions + walk_routes (walker-gps.ts)
       try {
-        const walkerLive = await customer_phone_activewalks_getRepo.dbCustomerPhoneActivewalksGet0(numeric, wls, p, v, wr, b)
+        const walkerLive = await customer_phone_activewalks_getRepo.dbCustomerPhoneActivewalksGet0(customerId)
 
         for (const walk of (walkerLive as any).rows || []) {
           const waypoints = walk.waypoints;
@@ -105,7 +106,7 @@ export async function executecustomerPhoneActivewalksGet(c: Context) {
 
       // 2) Package sessions in progress (schema varies by migration — failure must not drop other sources)
       try {
-        const pkgWalks = await customer_phone_activewalks_getRepo.dbCustomerPhoneActivewalksGet1(ps, p, s, b)
+        const pkgWalks = await customer_phone_activewalks_getRepo.dbCustomerPhoneActivewalksGet1(customerId)
 
         for (const walk of (pkgWalks as any).rows || []) {
           upsert(walk.booking_id, {
@@ -123,7 +124,7 @@ export async function executecustomerPhoneActivewalksGet(c: Context) {
 
       // 3) Vendor web walk flow: gps_tracking_sessions + HomeServiceTrackingManager (no walker_live row)
       try {
-        const gpsWalks = await customer_phone_activewalks_getRepo.dbCustomerPhoneActivewalksGet2(numeric, text, b, g, p, v)
+        const gpsWalks = await customer_phone_activewalks_getRepo.dbCustomerPhoneActivewalksGet2(customerId)
 
         for (const walk of (gpsWalks as any).rows || []) {
           upsert(walk.booking_id, {

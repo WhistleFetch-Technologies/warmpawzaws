@@ -37,7 +37,7 @@ import { getMealRefundReviewCustomerMetadata } from '../../../../utils/meal-refu
 export async function executecustomerDiagnosticpackagesGet(c: Context) {
     try {
       // Get popular diagnostic packages
-      const { rows: packages } = await customer_diagnosticpackages_getRepo.dbCustomerDiagnosticpackagesGet0(dt, v)
+      const { rows: packages } = await customer_diagnosticpackages_getRepo.dbCustomerDiagnosticpackagesGet0()
 
       // Format as health packages
       const formattedPackages = packages.map((p: any) => ({

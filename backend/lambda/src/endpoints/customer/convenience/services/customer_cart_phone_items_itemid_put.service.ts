@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_cart_phone_items_itemid_putRepo from '../repos/customer_cart_phone_items_itemid_put.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -40,7 +41,7 @@ export async function executecustomerCartPhoneItemsItemidPut(c: Context) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      await customer_cart_phone_items_itemid_putRepo.dbCustomerCartPhoneItemsItemidPut0(itemId)
+      await customer_cart_phone_items_itemid_putRepo.dbCustomerCartPhoneItemsItemidPut0(quantity, itemId, customerId)
 
       return c.json({ success: true, message: 'Cart item updated' });
     } catch (error: any) {

@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone, firstProductImageUrl } from '../repos/module-helpers.repo';
 import * as customer_cart_phone_getRepo from '../repos/customer_cart_phone_get.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -39,7 +40,7 @@ export async function executecustomerCartPhoneGet(c: Context) {
       }
 
       // products table uses price + images (JSONB); sale_price/base_price/image_url are not guaranteed
-      const cartResult = await customer_cart_phone_getRepo.dbCustomerCartPhoneGet0(ci, p, v)
+      const cartResult = await customer_cart_phone_getRepo.dbCustomerCartPhoneGet0(customerId)
 
       let totalPrice = 0;
       const rows = cartResult.rows || [];

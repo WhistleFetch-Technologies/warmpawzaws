@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_bookings_active_getRepo from '../repos/customer_bookings_active_get.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -58,13 +59,13 @@ export async function executecustomerBookingsActiveGet(c: Context) {
         FROM bookings b
         LEFT JOIN vendors v ON b.vendor_id = v.id
         LEFT JOIN services s ON b.service_id = s.id
-        WHERE b.customer_id = executecustomerBookingsActiveGet
+        WHERE b.customer_id = $1
           AND b.status IN ('confirmed', 'in_progress', 'scheduled', 'pending')
         ORDER BY b.booking_date DESC, b.booking_time DESC
         LIMIT 50
       `;
 
-      const bookings = await customer_bookings_active_getRepo.dbCustomerBookingsActiveGet0(bookingQuery)
+      const bookings = await customer_bookings_active_getRepo.dbCustomerBookingsActiveGet0(customerId, bookingQuery)
 
       return c.json({
         success: true,

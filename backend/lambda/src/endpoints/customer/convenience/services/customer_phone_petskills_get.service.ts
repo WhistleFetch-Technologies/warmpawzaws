@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_phone_petskills_getRepo from '../repos/customer_phone_petskills_get.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -48,7 +49,7 @@ export async function executecustomerPhonePetskillsGet(c: Context) {
       const petIds = pets.rows.map((p: any) => p.id);
 
       // Get skill progress for all pets
-      const skillsResult = await customer_phone_petskills_getRepo.dbCustomerPhonePetskillsGet1(ts, p, psp)
+      const skillsResult = await customer_phone_petskills_getRepo.dbCustomerPhonePetskillsGet1(petIds)
 
       const skills = skillsResult.rows.map((skill: any) => {
         // Use proficiency_score (0-100) and current_level from schema

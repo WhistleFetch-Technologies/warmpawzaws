@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_wallet_transactions_getRepo from '../repos/customer_wallet_transactions_get.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -47,19 +48,19 @@ export async function executecustomerWalletTransactionsGet(c: Context) {
 
       let transactionQuery = `
         SELECT * FROM wallet_transactions
-        WHERE customer_id = executecustomerWalletTransactionsGet
+        WHERE customer_id = $1
       `;
 
       const params: any[] = [customerId];
       let paramIndex = 2;
 
       if (type && type !== 'all') {
-        transactionQuery += ` AND transaction_type = ${paramIndex}`;
+        transactionQuery += ` AND transaction_type = $${paramIndex}`;
         params.push(type);
         paramIndex++;
       }
 
-      transactionQuery += ` ORDER BY created_at DESC LIMIT ${paramIndex} OFFSET ${paramIndex + 1}`;
+      transactionQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const transactions = await customer_wallet_transactions_getRepo.dbCustomerWalletTransactionsGet0(transactionQuery, params)

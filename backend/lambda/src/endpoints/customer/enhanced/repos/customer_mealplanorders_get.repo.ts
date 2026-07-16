@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerMealplanordersGet0(customerId, mp, v, p, mo) {
+export async function dbCustomerMealplanordersGet0(customerId: string) {
   return await query(
           `SELECT mo.*,
                   COALESCE(NULLIF(TRIM(mp.name), ''), NULLIF(TRIM(mp.plan_name), '')) AS meal_plan_name,
@@ -19,13 +19,13 @@ export async function dbCustomerMealplanordersGet0(customerId, mp, v, p, mo) {
         );
 }
 
-export async function dbCustomerMealplanordersGet1(information_schema) {
+export async function dbCustomerMealplanordersGet1() {
   return await query(
           `SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'order_type' LIMIT 1`
         )
 }
 
-export async function dbCustomerMealplanordersGet2(customerId, o, v, mp, mpo, p) {
+export async function dbCustomerMealplanordersGet2(customerId: string) {
   return await query(
             `SELECT o.id, o.order_number, o.order_status as status, o.total_amount, o.shipping_address as delivery_address,
                     o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot, o.created_at,

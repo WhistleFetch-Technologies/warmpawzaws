@@ -161,6 +161,11 @@ export class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
+      const existingCustomers = await enhanced_base_handlersRepo.dbEnhancedBaseHandlers0(customerId);
+      if (existingCustomers.length === 0) {
+        return this.error('Customer not found', 404, 'NOT_FOUND', undefined, requestId);
+      }
+
       const profileData = validationResult.data;
       const addrStr =
         profileData.address !== undefined && profileData.address !== null

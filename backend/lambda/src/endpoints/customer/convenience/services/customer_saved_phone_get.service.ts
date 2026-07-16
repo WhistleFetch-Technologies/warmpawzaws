@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_saved_phone_getRepo from '../repos/customer_saved_phone_get.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -38,7 +39,7 @@ export async function executecustomerSavedPhoneGet(c: Context) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      const savedResult = await customer_saved_phone_getRepo.dbCustomerSavedPhoneGet0(w, p)
+      const savedResult = await customer_saved_phone_getRepo.dbCustomerSavedPhoneGet0(customerId)
 
       const savedItems = (savedResult.rows || []).map((row: any) => ({
         itemId: row.id,

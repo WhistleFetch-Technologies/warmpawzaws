@@ -48,7 +48,7 @@ export async function executecustomerPhoneBookingsPendingreviewsGet(c: Context) 
       const rules = await getDiscoveryRules('all', 'reviews');
       const reviewEligibleDays = rules.review_eligible_days ?? 7;
 
-      const bookingsResult = await customer_phone_bookings_pendingreviews_getRepo.dbCustomerPhoneBookingsPendingreviewsGet1(text, interval, b, v, s, sv, p, customer)
+      const bookingsResult = await customer_phone_bookings_pendingreviews_getRepo.dbCustomerPhoneBookingsPendingreviewsGet1(customer, reviewEligibleDays)
 
       const bookings = (bookingsResult as any).rows.map((b: any) => ({
         id: b.id,

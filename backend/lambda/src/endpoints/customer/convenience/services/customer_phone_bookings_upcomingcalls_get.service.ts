@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromPhone } from '../repos/module-helpers.repo';
 import * as customer_phone_bookings_upcomingcalls_getRepo from '../repos/customer_phone_bookings_upcomingcalls_get.repo';
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
@@ -55,7 +56,7 @@ export async function executecustomerPhoneBookingsUpcomingcallsGet(c: Context) {
 
       let bookingsResult: any;
       try {
-        bookingsResult = await customer_phone_bookings_upcomingcalls_getRepo.dbCustomerPhoneBookingsUpcomingcallsGet0(customerId, time, b, v, s, sv, p)
+        bookingsResult = await customer_phone_bookings_upcomingcalls_getRepo.dbCustomerPhoneBookingsUpcomingcallsGet0(customerId, minutes, statusFilter, timeFilter)
       } catch (error: any) {
         console.warn('Error fetching upcoming calls (returning empty):', error.message);
         return c.json({ success: true, bookings: [] });

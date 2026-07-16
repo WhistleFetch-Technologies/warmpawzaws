@@ -47,7 +47,7 @@ export async function executecustomerPhoneBookingsActivetrackingGet(c: Context) 
       const customer = customers[0];
 
       // Get bookings with active GPS tracking (status: confirmed, in_progress, on_the_way)
-      const bookingsResult = await customer_phone_bookings_activetracking_getRepo.dbCustomerPhoneBookingsActivetrackingGet1(b, v, s, sv, p, gps, customer)
+      const bookingsResult = await customer_phone_bookings_activetracking_getRepo.dbCustomerPhoneBookingsActivetrackingGet1(customer)
 
       const bookings = (bookingsResult as any).rows.map((b: any) => ({
         id: b.id,

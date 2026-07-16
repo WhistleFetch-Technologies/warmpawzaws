@@ -4,7 +4,7 @@ export async function dbCustomerPhoneBookingsActivetrackingGet0(phone) {
   return await select('customers', { phone: phone.replace(/\D/g, '') });
 }
 
-export async function dbCustomerPhoneBookingsActivetrackingGet1(b, v, s, sv, p, gps, customer) {
+export async function dbCustomerPhoneBookingsActivetrackingGet1(customer: { id: string }) {
   return await query(
         `SELECT b.id, b.booking_date, b.scheduled_at,
                 b.status, b.service_style,

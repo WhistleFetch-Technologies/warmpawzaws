@@ -1,8 +1,13 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbCustomerPhoneBookingsUpcomingcallsGet0(customerId, time, statusFilter, timeFilter, b, v, s, sv, p) {
+export async function dbCustomerPhoneBookingsUpcomingcallsGet0(
+  customerId: string,
+  minutes: number,
+  statusFilter: string,
+  timeFilter: string
+) {
   return await query(
-          `SELECT b.id, b.booking_date, b.booking_time, b.status,
+    `SELECT b.id, b.booking_date, b.booking_time, b.status,
                   (b.booking_date + b.booking_time::time) as scheduled_at,
                   COALESCE(v.business_name, s.name) as vendor_name,
                   COALESCE(v.profile_photo, s.photo) as vendor_photo,
@@ -20,7 +25,6 @@ export async function dbCustomerPhoneBookingsUpcomingcallsGet0(customerId, time,
              ${timeFilter}
            ORDER BY (b.booking_date + b.booking_time::time) ASC
            LIMIT 10`,
-          [customerId, String(minutes)]
-        );
+    [customerId, String(minutes)]
+  );
 }
-

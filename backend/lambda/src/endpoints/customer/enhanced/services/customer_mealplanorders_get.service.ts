@@ -65,7 +65,7 @@ export async function executecustomerMealplanordersGet(c: Context) {
       // 1. From meal_orders (MealOrderCheckout flow)
       let mealResult: { rows?: unknown[] };
       try {
-        mealResult = await customer_mealplanorders_getRepo.dbCustomerMealplanordersGet0(mp, v, p, mo)
+        mealResult = await customer_mealplanorders_getRepo.dbCustomerMealplanordersGet0(customerId)
       } catch (queryErr: unknown) {
         console.error(
           '[meal-plan-orders] meal_orders query failed:',
@@ -126,9 +126,9 @@ export async function executecustomerMealplanordersGet(c: Context) {
 
       // 2. From orders table (MealPlanBookingFlow /nutrition/delivery-orders)
       try {
-        const hasOrderType = await customer_mealplanorders_getRepo.dbCustomerMealplanordersGet1(information_schema).then((r: any) => (r?.rows?.length || 0) > 0);
+        const hasOrderType = await customer_mealplanorders_getRepo.dbCustomerMealplanordersGet1().then((r: any) => (r?.rows?.length || 0) > 0);
         if (hasOrderType) {
-          const ordResult = await customer_mealplanorders_getRepo.dbCustomerMealplanordersGet2(o, v, mp, mpo, p).catch(() => ({ rows: [] }));
+          const ordResult = await customer_mealplanorders_getRepo.dbCustomerMealplanordersGet2(customerId).catch(() => ({ rows: [] }));
 
           for (const o of (ordResult as any).rows || []) {
             allOrders.push({

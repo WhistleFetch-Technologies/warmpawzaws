@@ -57,7 +57,7 @@ export async function executecustomerPhoneSubscriptionsActiveGet(c: Context) {
         FROM customer_subscriptions s
         LEFT JOIN vendor_services vs ON s.service_id = vs.id
         LEFT JOIN vendors v ON s.vendor_id = v.id
-        WHERE s.customer_id = executecustomerPhoneSubscriptionsActiveGet
+        WHERE s.customer_id = $1
           AND s.status = 'active'
           AND (s.expires_at IS NULL OR s.expires_at > NOW())
           ${serviceId ? 'AND (s.service_id = $2 OR s.service_id IS NULL)' : ''}
