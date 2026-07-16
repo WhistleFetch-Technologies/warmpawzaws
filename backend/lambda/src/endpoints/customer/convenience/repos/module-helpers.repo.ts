@@ -225,7 +225,7 @@ export function clientPaymentTypeFromRow(m: Record<string, unknown>): 'card' | '
 
 /** Body → stored payment_type (must match what we can read back). */
 export function normalizeIncomingPaymentType(body: Record<string, any>): 'card' | 'upi' | 'netbanking' {
-  const req = String(body.type ?? '')
+  const req = String(body.type ?? body.method ?? '')
     .trim()
     .toLowerCase()
     .replace(/\s+/g, '_');

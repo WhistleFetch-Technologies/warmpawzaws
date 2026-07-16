@@ -26,7 +26,15 @@ export async function executecustomerCustomeridPreferencesPut(c: Context) {
 
       const existingPreferences = (customers[0].preferences as any) || {};
 
-      const updated = await customer_customerid_preferences_putRepo.dbCustomerCustomeridPreferencesPut1(customerId)
+      const mergedPreferences = {
+        ...existingPreferences,
+        ...newPreferences,
+      };
+
+      const updated = await customer_customerid_preferences_putRepo.dbCustomerCustomeridPreferencesPut1(
+        customerId,
+        mergedPreferences
+      );
 
       return c.json({
         success: true,

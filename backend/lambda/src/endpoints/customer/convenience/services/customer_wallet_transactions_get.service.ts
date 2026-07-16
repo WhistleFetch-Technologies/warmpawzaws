@@ -46,24 +46,14 @@ export async function executecustomerWalletTransactionsGet(c: Context) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      let transactionQuery = `
-        SELECT * FROM wallet_transactions
-        WHERE customer_id = $1
-      `;
+      const { sql, params } = await customer_wallet_transactions_getRepo.buildWalletTransactionsQuery(
+        customerId,
+        type,
+        limit,
+        offset
+      );
 
-      const params: any[] = [customerId];
-      let paramIndex = 2;
-
-      if (type && type !== 'all') {
-        transactionQuery += ` AND transaction_type = $${paramIndex}`;
-        params.push(type);
-        paramIndex++;
-      }
-
-      transactionQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit, offset);
-
-      const transactions = await customer_wallet_transactions_getRepo.dbCustomerWalletTransactionsGet0(transactionQuery, params)
+      const transactions = await customer_wallet_transactions_getRepo.dbCustomerWalletTransactionsGet0(sql, params);
 
       return c.json({
         success: true,

@@ -38,13 +38,10 @@ export async function executecustomerPhonePreferencesGet(c: Context) {
     try {
       const phone = c.req.param('phone');
 
-      // Get customer by phone
-      const customers = await customer_phone_preferences_getRepo.dbCustomerPhonePreferencesGet0(phone)
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
-
-      const customer = customers[0];
 
       // Try to get preferences from dedicated table first
       const preferencesResult = await customer_phone_preferences_getRepo.dbCustomerPhonePreferencesGet1(customer).catch(() => ({ rows: [] }));

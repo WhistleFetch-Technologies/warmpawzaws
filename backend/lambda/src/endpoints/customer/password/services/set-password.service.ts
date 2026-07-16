@@ -36,7 +36,7 @@ export async function executehandleCustomerSetPassword(c: Context) {
     );
   }
 
-  const chk = await set_passwordRepo.dbSetPassword0(uuid)
+  const chk = await set_passwordRepo.dbSetPassword0(customerId);
   if (!(chk as any).rows?.[0]) {
     return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Customer not found' } }, 404);
   }
@@ -44,7 +44,7 @@ export async function executehandleCustomerSetPassword(c: Context) {
   const hash = await hashCustomerPasswordBcrypt(password);
   await updateCustomerPasswordHashWithAuthVersionBump(hash, customerId);
 
-  const phoneRow = await set_passwordRepo.dbSetPassword1(uuid)
+  const phoneRow = await set_passwordRepo.dbSetPassword1(customerId);
   const customerPhone = String((phoneRow as any).rows?.[0]?.phone || '');
   let freshToken: Record<string, unknown> | null = null;
   try {

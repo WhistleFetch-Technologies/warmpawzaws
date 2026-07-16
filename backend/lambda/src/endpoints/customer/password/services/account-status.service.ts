@@ -13,7 +13,7 @@ export async function executehandleCustomerAccountStatus(c: Context) {
     );
   }
 
-  const rows = await account_statusRepo.dbAccountStatus0(uuid, username, phone, password_hash, profile_completed, onboarding_status)
+  const rows = await account_statusRepo.dbAccountStatus0(customerId);
   const row = (rows as any).rows?.[0];
   if (!row) {
     return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Customer not found' } }, 404);

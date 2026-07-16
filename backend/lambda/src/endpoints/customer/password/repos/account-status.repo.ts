@@ -1,6 +1,6 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
 
-export async function dbAccountStatus0(customerId, uuid, username, phone, password_hash, profile_completed, onboarding_status) {
+export async function dbAccountStatus0(customerId: string) {
   return await query(
     `SELECT id, username, phone, password_hash, profile_completed, onboarding_status, password_set_at
      FROM customers WHERE id = $1::uuid LIMIT 1`,

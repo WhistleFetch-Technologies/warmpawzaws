@@ -92,6 +92,7 @@ function customerBody(fx, fields = {}) {
 const PARAM_MAP = {
   customerId: 'customerId',
   customerid: 'customerId',
+  identifier: 'customerPhone',
   phone: 'customerPhone',
   bookingId: 'bookingId',
   bookingid: 'bookingId',
@@ -222,7 +223,7 @@ function bodyFor(route, fx) {
     };
   }
 
-  if (/searchhistory/i.test(p) && m === 'POST') {
+  if (/search[-_]?history/i.test(p) && m === 'POST') {
     return { searchQuery: 'vet grooming', query: 'vet grooming' };
   }
   if (/preferences/i.test(p) && m === 'PUT') {

@@ -15,17 +15,7 @@ export async function dbCustomerPaymentmethodsPost2(customer) {
         )
 }
 
-export async function dbCustomerPaymentmethodsPost3(customer, type, razorpayToken, last4, brand, upiId, bankName, isDefault) {
-  return await insert('customer_payment_methods', {
-        customer_id: customer.id,
-        payment_type: type,
-        razorpay_token: razorpayToken,
-        card_last4: last4,
-        card_brand: brand,
-        upi_id: upiId,
-        bank_name: bankName,
-        is_default: isDefault || false,
-        is_active: true,
-      });
+export async function dbCustomerPaymentmethodsPost3(insertRow: Record<string, unknown>) {
+  return await insert('customer_payment_methods', insertRow);
 }
 

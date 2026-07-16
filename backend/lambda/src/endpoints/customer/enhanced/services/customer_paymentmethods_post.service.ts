@@ -43,6 +43,11 @@ export async function executecustomerPaymentmethodsPost(c: Context) {
         return c.json({ error: 'phone or customerId is required' }, 400);
       }
 
+      const paymentType = String(type ?? body.method ?? '').trim().toLowerCase();
+      if (!paymentType || !['card', 'upi', 'netbanking'].includes(paymentType)) {
+        return c.json({ error: 'Valid payment type (card, upi, netbanking) is required' }, 400);
+      }
+
       let customer: any = null;
       if (customerId) {
         const customers = await customer_paymentmethods_postRepo.dbCustomerPaymentmethodsPost0(customerId)
@@ -62,7 +67,21 @@ export async function executecustomerPaymentmethodsPost(c: Context) {
       }
 
       // Insert new payment method
-      const inserted = await customer_paymentmethods_postRepo.dbCustomerPaymentmethodsPost3(customer, type, razorpayToken, last4, brand, upiId, bankName, isDefault)
+      const insertRow: Record<string, unknown> = {
+        customer_id: customer.id,
+        payment_type: paymentType,
+        is_default: isDefault || false,
+        is_active: true,
+      };
+      if (razorpayToken != null && String(razorpayToken).trim() !== '') {
+        insertRow.razorpay_token = razorpayToken;
+      }
+      if (last4 != null && String(last4).trim() !== '') insertRow.card_last4 = last4;
+      if (brand != null && String(brand).trim() !== '') insertRow.card_brand = brand;
+      if (upiId != null && String(upiId).trim() !== '') insertRow.upi_id = upiId;
+      if (bankName != null && String(bankName).trim() !== '') insertRow.bank_name = bankName;
+
+      const inserted = await customer_paymentmethods_postRepo.dbCustomerPaymentmethodsPost3(insertRow);
 
       return c.json({
         success: true,

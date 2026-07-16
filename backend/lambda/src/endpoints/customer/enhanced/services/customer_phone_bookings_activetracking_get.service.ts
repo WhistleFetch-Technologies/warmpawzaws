@@ -38,16 +38,12 @@ export async function executecustomerPhoneBookingsActivetrackingGet(c: Context) 
     try {
       const phone = c.req.param('phone');
 
-      // Get customer by phone
-      const customers = await customer_phone_bookings_activetracking_getRepo.dbCustomerPhoneBookingsActivetrackingGet0(phone)
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ success: true, bookings: [] });
       }
 
-      const customer = customers[0];
-
-      // Get bookings with active GPS tracking (status: confirmed, in_progress, on_the_way)
-      const bookingsResult = await customer_phone_bookings_activetracking_getRepo.dbCustomerPhoneBookingsActivetrackingGet1(customer)
+      const bookingsResult = await customer_phone_bookings_activetracking_getRepo.dbCustomerPhoneBookingsActivetrackingGet1(customer.id)
 
       const bookings = (bookingsResult as any).rows.map((b: any) => ({
         id: b.id,

@@ -38,17 +38,18 @@ export async function executecustomerPhoneBookingsPendingreviewsGet(c: Context) 
     try {
       const phone = c.req.param('phone');
       
-      // Get customer by phone
-      const customers = await customer_phone_bookings_pendingreviews_getRepo.dbCustomerPhoneBookingsPendingreviewsGet0(phone)
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ success: true, bookings: [] });
       }
 
-      const customer = customers[0];
       const rules = await getDiscoveryRules('all', 'reviews');
       const reviewEligibleDays = rules.review_eligible_days ?? 7;
 
-      const bookingsResult = await customer_phone_bookings_pendingreviews_getRepo.dbCustomerPhoneBookingsPendingreviewsGet1(customer, reviewEligibleDays)
+      const bookingsResult = await customer_phone_bookings_pendingreviews_getRepo.dbCustomerPhoneBookingsPendingreviewsGet1(
+        customer.id,
+        reviewEligibleDays
+      );
 
       const bookings = (bookingsResult as any).rows.map((b: any) => ({
         id: b.id,

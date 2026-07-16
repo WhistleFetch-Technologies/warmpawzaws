@@ -27,7 +27,12 @@ export async function executecustomerCustomeridSearchhistoryDelete(c: Context) {
       const customers = await customer_customerid_searchhistory_deleteRepo.dbCustomerCustomeridSearchhistoryDelete0(customer)
       const preferences = customers[0]?.preferences as any || {};
 
-      await customer_customerid_searchhistory_deleteRepo.dbCustomerCustomeridSearchhistoryDelete1(customer)
+      const clearedPreferences = { ...preferences, searchHistory: [] };
+
+      await customer_customerid_searchhistory_deleteRepo.dbCustomerCustomeridSearchhistoryDelete1(
+        customer,
+        clearedPreferences
+      );
 
       return c.json({ success: true, message: 'Search history cleared' });
     } catch (error: any) {

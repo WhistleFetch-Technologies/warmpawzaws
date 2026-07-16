@@ -40,7 +40,10 @@ export async function executecustomerCustomeridSearchhistoryPost(c: Context) {
         ...searchHistory.filter((h: any) => h.query !== searchQuery)
       ].slice(0, 20);
 
-      await customer_customerid_searchhistory_postRepo.dbCustomerCustomeridSearchhistoryPost1(customer)
+      await customer_customerid_searchhistory_postRepo.dbCustomerCustomeridSearchhistoryPost1(
+        customer,
+        { ...preferences, searchHistory }
+      );
 
       return c.json({ success: true, history: searchHistory });
     } catch (error: any) {

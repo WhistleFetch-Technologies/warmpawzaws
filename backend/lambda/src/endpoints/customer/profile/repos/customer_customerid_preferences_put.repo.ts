@@ -4,14 +4,14 @@ export async function dbCustomerCustomeridPreferencesPut0(customerId) {
   return await select('customers', { id: customerId });
 }
 
-export async function dbCustomerCustomeridPreferencesPut1(customerId) {
+export async function dbCustomerCustomeridPreferencesPut1(
+  customerId: string,
+  mergedPreferences: Record<string, unknown>
+) {
   return await update('customers',
         { id: customerId },
         {
-          preferences: {
-            ...existingPreferences,
-            ...newPreferences,
-          },
+          preferences: mergedPreferences,
         }
       );
 }
