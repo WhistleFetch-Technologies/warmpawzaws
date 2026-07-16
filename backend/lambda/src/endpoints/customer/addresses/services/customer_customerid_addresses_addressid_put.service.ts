@@ -9,6 +9,7 @@ import {
   geocodeAddress,
   resolveLatLngForRow,
   ensureCoordinatesJson,
+  normalizeAddressType,
 } from '../repos/module-helpers.repo';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../../utils/entity-extractor';
 import { isValidUUID } from '../../../../types/entities';
@@ -78,7 +79,10 @@ export async function executecustomerCustomeridAddressesAddressidPut(c: Context)
       );
 
       const updatePayload: Record<string, any> = {
-        address_type: updates.label || updates.address_type,
+        address_type:
+          updates.label != null || updates.address_type != null
+            ? normalizeAddressType(updates.label || updates.address_type)
+            : undefined,
         full_name: updates.name || updates.full_name,
         phone: updates.phone,
         address_line1: updates.addressLine1 || updates.address_line1,

@@ -20,10 +20,16 @@ import { registerCustomerPhonePackagesGetRoute } from './routes/customer_phone_p
 import { registerCustomerPhoneLatestbookingbyvendorGetRoute } from './routes/customer_phone_latestbookingbyvendor_get.route';
 import { registerCustomerPhoneActivewalksGetRoute } from './routes/customer_phone_activewalks_get.route';
 import { registerCustomerPhonePetskillsGetRoute } from './routes/customer_phone_petskills_get.route';
+import { registerCustomerPhoneBookingsActivetrackingGetRoute } from '../enhanced/routes/customer_phone_bookings_activetracking_get.route';
+import { registerCustomerPhoneBookingsPendingreviewsGetRoute } from '../enhanced/routes/customer_phone_bookings_pendingreviews_get.route';
 
 export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
   registerCustomerBookingsActiveGetRoute(app);
   registerCustomerPhoneBookingsUpcomingcallsGetRoute(app);
+  // Static phone booking segments before bookings/:bookingId (registered later) —
+  // otherwise "active-tracking" / "pending-reviews" are parsed as UUIDs.
+  registerCustomerPhoneBookingsActivetrackingGetRoute(app);
+  registerCustomerPhoneBookingsPendingreviewsGetRoute(app);
   registerCustomerBookingsGetRoute(app);
   registerCustomerCartPhoneGetRoute(app);
   registerCustomerCartPhoneItemsItemidPutRoute(app);

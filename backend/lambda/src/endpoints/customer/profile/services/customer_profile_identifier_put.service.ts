@@ -102,7 +102,7 @@ export async function executecustomerProfileIdentifierPut(c: Context) {
       }
 
       // Update profile completion status
-      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../../../utils/customer-state');
+      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../../../../utils/customer-state');
 
       const completionUpdates: any = {};
       if (profileData.firstName || profileData.lastName || profileData.email) {

@@ -143,7 +143,7 @@ export async function executecustomerPetsPost(c: Context) {
 
       // Update customer onboarding status to COMPLETED since pets are now saved
       try {
-        const { updateCustomerOnboardingStatus } = await import('../utils/customer-state');
+        const { updateCustomerOnboardingStatus } = await import('../../../../utils/customer-state');
         await updateCustomerOnboardingStatus(customer.id, 'COMPLETED', 'completed');
         
         // Also update profile_completed flag

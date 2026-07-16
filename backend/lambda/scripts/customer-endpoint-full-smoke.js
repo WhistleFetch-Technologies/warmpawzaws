@@ -244,15 +244,16 @@ function bodyFor(route, fx) {
       pincode: '560001',
       latitude: 12.97,
       longitude: 77.59,
-      label: 'Home',
+      label: 'home',
     };
     if (/:customerId\/addresses/.test(p)) return addr;
     return customerBody(fx, addr);
   }
   if (/addresses/i.test(p) && (m === 'PUT' || m === 'PATCH')) {
     return {
-      label: 'Home',
+      label: 'home',
       addressLine1: '123 Test Street',
+      houseNo: '12A',
       city: 'Bengaluru',
       state: 'KA',
       pincode: '560001',

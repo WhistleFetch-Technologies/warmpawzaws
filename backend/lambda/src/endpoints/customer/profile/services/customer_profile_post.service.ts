@@ -164,7 +164,7 @@ export async function executecustomerProfilePost(c: Context) {
         // Customer doesn't exist - create it (for UAT mode or when OTP verification didn't create customer)
         try {
           // Create customer identity first (same pattern as OTP verification)
-          const { createOrUpdateCustomerIdentity } = await import('../../../utils/customer-state');
+          const { createOrUpdateCustomerIdentity } = await import('../../../../utils/customer-state');
           const identityId = await createOrUpdateCustomerIdentity(cleanPhone, undefined);
 
           // Create customer record with all required fields (matching OTP verification pattern)
@@ -218,7 +218,7 @@ export async function executecustomerProfilePost(c: Context) {
         updateData.profile_photo_url = profileData.photo;
       }
 
-      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../../../utils/customer-state');
+      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../../../../utils/customer-state');
 
       const completionUpdates: any = {};
       if (profileData.firstName || profileData.lastName || profileData.email) {

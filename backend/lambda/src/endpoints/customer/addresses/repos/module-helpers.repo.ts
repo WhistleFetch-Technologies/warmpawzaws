@@ -183,6 +183,15 @@ export function coordsFromRow(addr: any): { latitude?: number; longitude?: numbe
   return { latitude, longitude };
 }
 
+/** DB check constraint: address_type IN ('home','work','other'). */
+export function normalizeAddressType(label?: string | null): 'home' | 'work' | 'other' {
+  const raw = String(label ?? 'home').trim().toLowerCase();
+  if (raw === 'home' || raw === 'work' || raw === 'other') return raw;
+  if (raw.includes('home') || raw === 'house' || raw === 'residence') return 'home';
+  if (raw.includes('work') || raw === 'office' || raw === 'business') return 'work';
+  return 'other';
+}
+
 export function mapAddressRow(addr: any) {
   const { latitude, longitude } = coordsFromRow(addr);
   return {

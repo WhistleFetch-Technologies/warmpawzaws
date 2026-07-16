@@ -9,6 +9,7 @@ import {
   geocodeAddress,
   resolveLatLngForRow,
   ensureCoordinatesJson,
+  normalizeAddressType,
 } from '../repos/module-helpers.repo';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../../utils/entity-extractor';
 import { isValidUUID } from '../../../../types/entities';
@@ -151,7 +152,7 @@ export async function executecustomerAddressesPost(c: Context) {
       try {
         const insertPayload: Record<string, unknown> = {
           customer_id: customer.id,
-          address_type: addressData.label || 'home',
+          address_type: normalizeAddressType(addressData.label),
           full_name: addressData.name,
           phone: addressData.phone,
           address_line1: addressData.addressLine1,
@@ -177,7 +178,7 @@ export async function executecustomerAddressesPost(c: Context) {
         console.error('Error inserting address:', insertError);
         console.error('Address data:', JSON.stringify({
           customer_id: customer.id,
-          address_type: addressData.label || 'home',
+          address_type: normalizeAddressType(addressData.label),
           full_name: addressData.name,
           phone: addressData.phone,
           address_line1: addressData.addressLine1,
