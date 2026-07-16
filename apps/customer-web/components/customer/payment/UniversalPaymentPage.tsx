@@ -192,6 +192,27 @@ interface UniversalPaymentPageProps {
   lockedPayableAmount?: number;
   /** Existing Razorpay order from payment-resume API (optional). */
   resumeRazorpayOrderId?: string;
+  /**
+   * Locked create-time price breakdown for payment-resume.
+   * When present, skip live tax/fee/promo/coupon re-quotes and render this snapshot.
+   */
+  resumeFinancialSnapshot?: {
+    servicePrice: number;
+    vendorDiscount: number;
+    platformDiscount: number;
+    couponDiscount: number;
+    couponCode?: string;
+    subtotalAfterDiscounts: number;
+    cgst: number;
+    sgst: number;
+    igst: number;
+    totalTax: number;
+    platformFee: number;
+    convenienceFee: number;
+    deliveryFee: number;
+    walletAmount: number;
+    finalPaid: number;
+  } | null;
   /** Lab diagnostics: pay-first payload from DiagnosticsBookingFlow; booking is created only after payment. */
   prepaidBookingPayload?: Record<string, unknown>;
   initialPromotionId?: string;
@@ -430,6 +451,7 @@ export function UniversalPaymentPage({
   flowType,
   lockedPayableAmount,
   resumeRazorpayOrderId,
+  resumeFinancialSnapshot,
   prepaidBookingPayload,
   initialPromotionId,
   initialPromotionIntent,
@@ -441,6 +463,8 @@ export function UniversalPaymentPage({
   onPaymentAbandoned,
 }: UniversalPaymentPageProps) {
   const appShell = layoutVariant === 'appShell';
+  const isPaymentResume = flowType === 'payment-resume';
+  const lockedSnapshot = isPaymentResume ? resumeFinancialSnapshot ?? null : null;
 
   // State
   const [loading, setLoading] = useState(true);
@@ -458,10 +482,18 @@ export function UniversalPaymentPage({
   const [resolvedServiceId, setResolvedServiceId] = useState<string | undefined>(serviceId);
   const [serviceIdResolving, setServiceIdResolving] = useState(false);
 
-  // Coupon state
-  const [appliedCoupon, setAppliedCoupon] = useState<CouponResult | null>(
-    initialAppliedCoupon ?? null
-  );
+  // Coupon state — resume freezes create-time coupon; do not re-apply live.
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponResult | null>(() => {
+    if (lockedSnapshot?.couponCode && (lockedSnapshot.couponDiscount || 0) > 0) {
+      return {
+        code: lockedSnapshot.couponCode,
+        discountAmount: lockedSnapshot.couponDiscount,
+        discountType: 'fixed',
+        discountValue: lockedSnapshot.couponDiscount,
+      } as CouponResult;
+    }
+    return initialAppliedCoupon ?? null;
+  });
 
   // Promotions & Offers
   const [promotions, setPromotions] = useState<PromotionOffer[]>([]);
@@ -475,6 +507,21 @@ export function UniversalPaymentPage({
   const [refundPolicySummary, setRefundPolicySummary] = useState<string | null>(null);
 
   const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdown>(() => {
+    if (lockedSnapshot) {
+      // `servicePrice` is the create-time list/taxable base (before discounts).
+      const subtotal = lockedSnapshot.servicePrice || baseAmount;
+      const totalTax = lockedSnapshot.totalTax || 0;
+      return {
+        subtotal,
+        cgst: lockedSnapshot.cgst || 0,
+        sgst: lockedSnapshot.sgst || 0,
+        igst: lockedSnapshot.igst || 0,
+        totalTax,
+        total: Math.round((subtotal + totalTax) * 100) / 100,
+        taxRate: 18,
+        isInterState: (lockedSnapshot.igst || 0) > 0 && (lockedSnapshot.cgst || 0) <= 0,
+      };
+    }
     const meal = type === 'meal_subscription' || type === 'meal_one_time';
     return {
       subtotal: meal ? 0 : baseAmount,
@@ -490,12 +537,26 @@ export function UniversalPaymentPage({
   /** Meal payable uses `/tax/calculate` grand total + platform/convenience (delivery is inside GST lines). */
   const [mealTaxReady, setMealTaxReady] = useState(false);
 
-  const [platformFees, setPlatformFees] = useState<PlatformFees>({
-    platformFee: 0,
-    convenienceFee: 0,
-    deliveryFee: 0,
-    packagingFee: 0,
-    total: 0,
+  const [platformFees, setPlatformFees] = useState<PlatformFees>(() => {
+    if (lockedSnapshot) {
+      const platformFee = lockedSnapshot.platformFee || 0;
+      const convenienceFee = lockedSnapshot.convenienceFee || 0;
+      const deliveryFee = lockedSnapshot.deliveryFee || 0;
+      return {
+        platformFee,
+        convenienceFee,
+        deliveryFee,
+        packagingFee: 0,
+        total: Math.round((platformFee + convenienceFee + deliveryFee) * 100) / 100,
+      };
+    }
+    return {
+      platformFee: 0,
+      convenienceFee: 0,
+      deliveryFee: 0,
+      packagingFee: 0,
+      total: 0,
+    };
   });
   const [showPolicyModal, setShowPolicyModal] = useState(false);
   const [policyAccepted, setPolicyAccepted] = useState(false);
@@ -852,6 +913,8 @@ export function UniversalPaymentPage({
 
   /** Re-quote promos after tax subtotal is known (must match financialMeta.servicePrice at booking create). */
   useEffect(() => {
+    // Resume: payable + breakdown already locked at booking create — do not re-quote.
+    if (isPaymentResume) return;
     if (type !== 'booking' || !vendorId || baseAmount <= 0) return;
     loadPromotions();
   }, [
@@ -867,6 +930,7 @@ export function UniversalPaymentPage({
     selectedServices,
     initialPromotionIntent?.serviceCategory,
     appliedCoupon?.code,
+    isPaymentResume,
   ]);
 
   useEffect(() => {
@@ -879,9 +943,12 @@ export function UniversalPaymentPage({
       loadPaymentAndRefundPolicies();
       return;
     }
-    calculateTax();
+    // Resume: keep create-time tax/fee snapshot; still allow Razorpay bank offers + policies.
+    if (!isPaymentResume) {
+      calculateTax();
+      loadPlatformFees();
+    }
     loadRazorpayOffers();
-    loadPlatformFees();
     loadPaymentAndRefundPolicies();
   }, [
     bookingId,
@@ -897,6 +964,7 @@ export function UniversalPaymentPage({
     quantity,
     productId,
     customerAddrStateForTax,
+    isPaymentResume,
     calculateTax,
     runMealCheckoutTaxAndFees,
     mealPlanFoodTaxableInr,
@@ -1633,6 +1701,7 @@ export function UniversalPaymentPage({
 
   // Booking: re-quote via unified resolver when amount changes with active coupon
   useEffect(() => {
+    if (isPaymentResume) return;
     if (type !== 'booking' || !appliedCoupon?.code || !vendorId) return;
     let cancelled = false;
     void refreshBookingDiscountQuote(appliedCoupon.code).then((quote) => {
@@ -1654,6 +1723,7 @@ export function UniversalPaymentPage({
     vendorId,
     refreshBookingDiscountQuote,
     syncBookingFromQuote,
+    isPaymentResume,
   ]);
 
   // promotionDiscount / couponDiscount / bookingDiscountTotal defined above (best-offer-only)
@@ -1681,15 +1751,32 @@ export function UniversalPaymentPage({
   // Calculate final amounts
   const razorpayOfferDiscount = selectedRazorpayOffer?.discountValue || 0;
 
+  const resumeVendorDiscount = lockedSnapshot?.vendorDiscount ?? 0;
+  const resumePlatformDiscount = lockedSnapshot?.platformDiscount ?? 0;
+  const resumeCouponDiscount = lockedSnapshot?.couponDiscount ?? 0;
+  const effectiveCouponDiscount = lockedSnapshot ? resumeCouponDiscount : couponDiscount;
+
   // Best-offer-only for bookings: at most one of promotionDiscount | couponDiscount is non-zero.
-  const subtotalAfterDiscounts = Math.max(
-    0,
-    taxBreakdown.subtotal - promotionDiscount - couponDiscount
-  );
+  // Resume: use create-time subtotalAfterDiscounts so lines match the locked payable.
+  const subtotalAfterDiscounts = lockedSnapshot
+    ? Math.max(
+        0,
+        lockedSnapshot.subtotalAfterDiscounts > 0
+          ? lockedSnapshot.subtotalAfterDiscounts
+          : taxBreakdown.subtotal - resumeVendorDiscount - resumePlatformDiscount - resumeCouponDiscount
+      )
+    : Math.max(0, taxBreakdown.subtotal - promotionDiscount - couponDiscount);
 
   // Recalculate tax on discounted amount if needed (or keep original tax - business logic)
   const finalTax = taxBreakdown.totalTax; // Or recalculate on discounted amount
-  const totalAfterDiscounts = subtotalAfterDiscounts + finalTax + platformFees.total;
+  const totalAfterDiscounts = lockedSnapshot
+    ? Math.max(
+        0,
+        (lockedPayableAmount != null && lockedPayableAmount > 0
+          ? lockedPayableAmount
+          : lockedSnapshot.finalPaid) + (lockedSnapshot.walletAmount || 0)
+      )
+    : subtotalAfterDiscounts + finalTax + platformFees.total;
 
   const isMealPay = type === 'meal_subscription' || type === 'meal_one_time';
   /** After `/tax/calculate`: grand total for food+delivery+GST lines only — add platform & convenience once (not `platformFees.total`, which includes delivery). */
@@ -1699,7 +1786,7 @@ export function UniversalPaymentPage({
       : Number(baseAmount)
     : NaN;
   const walletCapBase = isMealPay
-    ? Math.max(0, resolvedMealPayTotal - couponDiscount - razorpayOfferDiscount)
+    ? Math.max(0, resolvedMealPayTotal - effectiveCouponDiscount - razorpayOfferDiscount)
     : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount);
   const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
 
@@ -1707,15 +1794,17 @@ export function UniversalPaymentPage({
   const computedFinalAmount = subscriptionCovered
     ? 0
     : isMealPay
-      ? Math.max(0, resolvedMealPayTotal - couponDiscount - razorpayOfferDiscount - walletAmount)
+      ? Math.max(0, resolvedMealPayTotal - effectiveCouponDiscount - razorpayOfferDiscount - walletAmount)
       : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
-  const checkoutVendorDiscount =
-    type === 'booking' && bookingDiscountDerived
+  const checkoutVendorDiscount = lockedSnapshot
+    ? resumeVendorDiscount
+    : type === 'booking' && bookingDiscountDerived
       ? bookingDiscountDerived.vendorDiscountLine
       : promotionDiscount;
-  const checkoutPlatformDiscount =
-    type === 'booking' && bookingDiscountDerived
+  const checkoutPlatformDiscount = lockedSnapshot
+    ? resumePlatformDiscount
+    : type === 'booking' && bookingDiscountDerived
       ? bookingDiscountDerived.platformDiscountLine
       : 0;
 
@@ -1736,8 +1825,8 @@ export function UniversalPaymentPage({
         vendorDiscount: checkoutVendorDiscount,
         vendorDiscountLabel: 'Discount',
         platformDiscount: checkoutPlatformDiscount,
-        couponDiscount,
-        couponCode: appliedCoupon?.code,
+        couponDiscount: effectiveCouponDiscount,
+        couponCode: lockedSnapshot?.couponCode ?? appliedCoupon?.code,
         taxBreakdown,
         platformFees,
         collapseAutoPromotions: type === 'booking',
@@ -1746,6 +1835,7 @@ export function UniversalPaymentPage({
           ? { title: selectedRazorpayOffer.title, amount: razorpayOfferDiscount }
           : undefined,
         walletAmount,
+        subtotalAfterDiscounts: lockedSnapshot ? subtotalAfterDiscounts : undefined,
         finalAmount,
       }),
     [
@@ -1754,21 +1844,24 @@ export function UniversalPaymentPage({
       checkoutVendorDiscount,
       checkoutPlatformDiscount,
       appliedPromotion?.title,
-      couponDiscount,
+      effectiveCouponDiscount,
       appliedCoupon?.code,
+      lockedSnapshot?.couponCode,
       platformFees,
       type,
       selectedRazorpayOffer,
       razorpayOfferDiscount,
       walletAmount,
       finalAmount,
+      subtotalAfterDiscounts,
+      lockedSnapshot,
     ]
   );
 
   const checkoutSavingsTotal = checkoutTotalSavings({
     vendorDiscount: checkoutVendorDiscount,
     platformDiscount: checkoutPlatformDiscount,
-    couponDiscount,
+    couponDiscount: effectiveCouponDiscount,
     walletAmount,
     razorpayOfferAmount: razorpayOfferDiscount,
   });
@@ -3624,8 +3717,8 @@ export function UniversalPaymentPage({
           </div>
         )}
 
-        {/* Promotions & Spotlight Offers — bookings auto-apply (read-only) */}
-        {type !== 'meal_subscription' && type !== 'meal_one_time' && promotions.length > 0 && !couponWinsBestOffer && (
+        {/* Promotions & Spotlight Offers — bookings auto-apply (read-only). Hidden on resume (locked). */}
+        {!isPaymentResume && type !== 'meal_subscription' && type !== 'meal_one_time' && promotions.length > 0 && !couponWinsBestOffer && (
           <div className={paymentSecondaryCardClass}>
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
@@ -3687,7 +3780,7 @@ export function UniversalPaymentPage({
           </div>
         )}
 
-        {type === 'booking' && couponWinsBestOffer && discountQuote && (
+        {!isPaymentResume && type === 'booking' && couponWinsBestOffer && discountQuote && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             {discountQuote.displayMessages.find((m) => m.type === 'info')?.message ??
               (() => {
@@ -3700,38 +3793,52 @@ export function UniversalPaymentPage({
           </div>
         )}
 
-        {/* Coupon — shared CheckoutCouponPanel (booking, meals, orders) */}
-        <CheckoutCouponPanel
-          kind={couponCheckoutKind}
-          vendorId={vendorId}
-          customerId={customerId}
-          serviceCategory={category}
-          serviceIds={
-            type === 'booking'
-              ? (selectedServices || [])
-                  .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
-                  .filter(Boolean)
-              : serviceId
-                ? [String(serviceId)]
+        {/* Coupon — locked on payment-resume (create-time amount already includes discount). */}
+        {!isPaymentResume ? (
+          <CheckoutCouponPanel
+            kind={couponCheckoutKind}
+            vendorId={vendorId}
+            customerId={customerId}
+            serviceCategory={category}
+            serviceIds={
+              type === 'booking'
+                ? (selectedServices || [])
+                    .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+                    .filter(Boolean)
+                : serviceId
+                  ? [String(serviceId)]
+                  : undefined
+            }
+            serviceStyle={serviceStyle}
+            bookingBaseAmount={
+              type === 'booking'
+                ? taxBreakdown.subtotal > 0
+                  ? taxBreakdown.subtotal
+                  : baseAmount
                 : undefined
-          }
-          serviceStyle={serviceStyle}
-          bookingBaseAmount={
-            type === 'booking'
-              ? taxBreakdown.subtotal > 0
-                ? taxBreakdown.subtotal
-                : baseAmount
-              : undefined
-          }
-          orderAmount={couponValidationBase}
-          appliedCoupon={appliedCoupon}
-          onApplyCoupon={handleApplyCheckoutCoupon}
-          onBookingQuote={type === 'booking' ? handleBookingQuoteFromPanel : undefined}
-          onRemoveCoupon={removeCoupon}
-          className={paymentSecondaryCardClass}
-          alwaysShow={type === 'booking'}
-        />
-        {type === 'booking' && discountQuote?.displayMessages?.length ? (
+            }
+            orderAmount={couponValidationBase}
+            appliedCoupon={appliedCoupon}
+            onApplyCoupon={handleApplyCheckoutCoupon}
+            onBookingQuote={type === 'booking' ? handleBookingQuoteFromPanel : undefined}
+            onRemoveCoupon={removeCoupon}
+            className={paymentSecondaryCardClass}
+            alwaysShow={type === 'booking'}
+          />
+        ) : lockedSnapshot?.couponCode ? (
+          <div className={`${paymentSecondaryCardClass} text-sm text-gray-700`}>
+            Coupon <span className="font-medium">{lockedSnapshot.couponCode}</span> applied at booking
+            {(lockedSnapshot.couponDiscount || 0) > 0
+              ? ` (−₹${lockedSnapshot.couponDiscount.toFixed(0)})`
+              : ''}
+            . Price is locked for this payment window.
+          </div>
+        ) : (
+          <div className={`${paymentSecondaryCardClass} text-xs text-gray-500`}>
+            Price breakdown is locked from when you reserved this slot.
+          </div>
+        )}
+        {!isPaymentResume && type === 'booking' && discountQuote?.displayMessages?.length ? (
           <div className={`space-y-1 text-xs ${paymentSecondaryCardClass} p-3`}>
             {discountQuote.displayMessages
               .filter((m) => m.type === 'warning' || m.type === 'error')
