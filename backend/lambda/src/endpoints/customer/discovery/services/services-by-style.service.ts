@@ -34,6 +34,11 @@ import {
 import { acceptableAvailabilityStylesForSlot, normalizeAvailabilityServiceStyle } from '../../../../utils/availability-service-styles';
 import { vendorGalleryDrivesListingPhoto, getVendorListingPhotoUrl } from '../../../../utils/vendor-listing-photo';
 import {
+  DISCOVERY_LIST_DEFAULT_MAX,
+  enrichDiscoveryListVendor,
+  enrichDiscoveryListVendorsConcurrent,
+} from '../../../../utils/discovery-list-enrich';
+import {
   addDaysToYmd,
   dayOfWeekFromYmd,
   DEFAULT_MIN_NOTICE_MINUTES,
@@ -99,6 +104,13 @@ export async function executeservicesByStyle(c: Context) {
         c.req.query('specializationId') ||
         ''
       ).trim();
+      /** by-style feeds booking UIs that read provider.services — hydrate by default. Slim only when opted out. */
+      const slimByStyle =
+        c.req.query('slim') === 'true' || c.req.query('cardsOnly') === 'true';
+      const fullEnrichByStyle =
+        !slimByStyle ||
+        c.req.query('fullEnrich') === 'true' ||
+        c.req.query('full') === 'true';
       // Accept lat/lon and latitude/longitude aliases (different parts of the
       // app use different spellings — keep them all working).
       let latitude = c.req.query('latitude') || c.req.query('lat');
@@ -129,7 +141,16 @@ export async function executeservicesByStyle(c: Context) {
       );
 
       //get the max results, default radius, radius, max distance, min rating, sort by from the rules
-      const maxResults = Math.min(100, Math.max(1, rules.discovery_max_results ?? 50));
+      const limitFromQueryByStyle = parseInt(String(c.req.query('limit') || ''), 10);
+      const maxResults = Math.min(
+        DISCOVERY_LIST_DEFAULT_MAX,
+        Math.max(
+          1,
+          Number.isFinite(limitFromQueryByStyle) && limitFromQueryByStyle > 0
+            ? limitFromQueryByStyle
+            : (rules.discovery_max_results ?? DISCOVERY_LIST_DEFAULT_MAX)
+        )
+      );
       const radius = discoveryCustomerRadiusKm({
         rules,
         serviceStyleNorm: serviceStyleNormByStyle,
@@ -501,115 +522,28 @@ export async function executeservicesByStyle(c: Context) {
       };
 
       let vendorSpecBundleForByStyle = new Map<string, { raw: string[]; displayLabels: string[] }>();
+      let vendorStatsByStyle = new Map<string, { serviceCount: number; priceMin?: number; priceMax?: number }>();
 
-      /**
-       * Turn a raw vendor row into a fully enriched provider object.
-       * Returns null when the vendor has zero matching published services.
-       * (No role_config gate: cross-persona add-ons e.g. vet + dog walk at_home — see discover-services.)
-       */
+      /** Fast-list enrich (shared with discover-services). Null when zero matching services. */
       const enrichVendor = async (vendor: any) => {
-        const services = await fetchServices(vendor.vendor_id, vendor.role_name);
-
-        if (services.length === 0) return null;
-
-        // Parse role config for UI (icon/image/category/customer_service)
-        let roleCfg: any = {};
-        try {
-          roleCfg = typeof vendor.role_config === 'string'
-            ? (vendor.role_config ? JSON.parse(vendor.role_config) : {})
-            : (vendor.role_config || {});
-        } catch { roleCfg = {}; }
-        const roleIcon = roleCfg?.icon || null;
-        const roleImage = roleCfg?.iconUrl || roleCfg?.image || null;
-        const roleCategory = roleCfg?.category || roleCfg?.customer_service || null;
-        const customerService = roleCfg?.customer_service || null;
-
-        const distResult = await distResolverByStyle.resolve({
-          id: vendor.vendor_id,
-          latitude: vendor.latitude,
-          longitude: vendor.longitude,
-          pincode: vendor.pincode,
-          address: vendor.address,
-          city: vendor.city,
-          state: vendor.state,
-        });
-        let nextAvailable: any = null;
-        try {
-          nextAvailable = await getNextAvailableSlot(
-            vendor.vendor_id, vendor.phone || '', acceptableStyles
-          );
-        } catch { /* non-fatal */ }
-
-        if (!nextAvailable) {
-          nextAvailable = { date: '', time: '', display: 'Tap to view availability' };
-        }
-
-        const prices = services.map((s: any) => s.price).filter((p: number) => p > 0);
-        const priceMin = prices.length > 0 ? Math.min(...prices) : undefined;
-        const priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
-
-        // Photos from vendor metadata (facility_photos / photos)
-        let photos: string[] = [];
-        try {
-          const meta = typeof vendor.metadata === 'string'
-            ? JSON.parse(vendor.metadata || '{}')
-            : vendor.metadata;
-          const raw = meta?.facility_photos || meta?.photos || [];
-          const rawPhotos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
-          const regeneratedPhotos = await Promise.all(
-            rawPhotos.map(async (photoUrl: string) => {
-              const regenerated = await regeneratePresignedUrl(photoUrl);
-              return regenerated;
-            })
-          );
-          photos = regeneratedPhotos.filter((url): url is string => url !== null && url !== undefined);
-        } catch { /* non-fatal */ }
-
-        const photoUrl = await getVendorListingPhotoUrl(vendor);
-
+        const stats = vendorStatsByStyle.get(String(vendor.vendor_id));
+        const services = fullEnrichByStyle
+          ? await fetchServices(vendor.vendor_id, vendor.role_name)
+          : [];
         const specBundle = vendorSpecBundleForByStyle.get(vendor.vendor_id);
-        const specializations = specBundle?.displayLabels?.length ? specBundle.displayLabels : [];
-        const specialization =
-          specializations.length > 0 ? specializations.join(' · ') : null;
-
-        return {
-          id: vendor.vendor_id,
-          vendorId: vendor.vendor_id,
-          providerId: vendor.vendor_id,
-          providerType: 'vendor' as const,
-          name: vendor.business_name || vendor.owner_name,
-          phone: vendor.phone,
-          address: vendor.address,
-          city: vendor.city,
-          roleId: vendor.role_id || null,
-          role: vendor.role_display_name || vendor.role_name,
-          roleName: vendor.role_name || vendor.role_display_name || '',
-          roleDisplayName: vendor.role_display_name || '',
-          roleIcon,
-          roleImage,
-          roleCategory,
-          customerService,
-          vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
-          photo: photoUrl,
-          photoUrl: photoUrl,
-          rating: parseFloat(vendor.avg_rating || '0'),
-          reviewCount: parseInt(vendor.review_count || '0', 10),
-          distance: distResult?.km ?? null,
-          distanceKm: distResult?.km ?? null,
-          distanceText: distResult?.distanceText ?? null,
-          nextAvailable,
-          serviceStyles: acceptableStyles,
-          isVerified: true,
-          isOnline: vendorRowIsOnline(vendor.is_online),
-          is_online: vendor.is_online,
-          photos: photos.length > 0 ? photos : undefined,
-          priceMin: priceMin && priceMin > 0 ? priceMin : undefined,
-          priceMax: priceMax && priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
-          bestForProblem: problemTitle || undefined,
-          specializations,
-          specialization,
+        return enrichDiscoveryListVendor({
+          vendor,
+          stats: fullEnrichByStyle ? null : stats || { serviceCount: 0 },
           services,
-        };
+          acceptableStyles,
+          distResolver: distResolverByStyle,
+          getNextAvailableSlot,
+          defaultAvailabilityDisplay: 'Tap to view availability',
+          problemTitle: problemTitle || undefined,
+          specializations: specBundle?.displayLabels?.length ? specBundle.displayLabels : [],
+          fullServices: fullEnrichByStyle,
+          includeAvailability: false,
+        });
       };
 
       // ────────────────────────────────────────────────────────
@@ -700,27 +634,44 @@ export async function executeservicesByStyle(c: Context) {
           service_distance_km: row.service_distance_km,
         });
       }
-      console.log('providers_______________________________>', acceptableStyles, catTextExact, catTextLike, catUUIDs, vendorRows.rows);
-
-
-      // 6. ENRICH ALL VENDORS
-      //    Run enrichVendor() on every row; it returns null for
-      //    vendors that should be excluded, so we filter those.
-
-      const seen = new Set<string>();
-      const providers: any[] = [];
-
-      for (const row of vendorRows.rows) {
-        if (seen.has(row.vendor_id)) continue;
-        const provider = await enrichVendor(row);
-        if (provider) {
-          seen.add(row.vendor_id);
-          providers.push(provider);
-        }
+      const byStyleVendorIds = (vendorRows.rows || []).map((r: any) => String(r.vendor_id));
+      if (!fullEnrichByStyle && byStyleVendorIds.length > 0) {
+        const vetExcludeExtra = isVetCategoryDiscoveryByStyle
+          ? sqlVetHubExcludeNonVetServices('vs')
+          : undefined;
+        vendorStatsByStyle = await services_by_styleRepo.dbFetchDiscoveryListStatsForVendors(
+          byStyleVendorIds,
+          {
+            acceptableStyles,
+            isAtCenter,
+            catTextExact,
+            catTextLike,
+            catUUIDs,
+            extraAndSql: vetExcludeExtra,
+          }
+        );
       }
+      console.log(
+        '[by-style] vendorRows',
+        vendorRows.rows?.length,
+        acceptableStyles,
+        catTextExact,
+        catTextLike,
+        catUUIDs
+      );
+
+      // 6. ENRICH ALL VENDORS (bounded concurrency)
+      const providers = await enrichDiscoveryListVendorsConcurrent(
+        vendorRows.rows || [],
+        enrichVendor
+      );
+
+      // #region agent log
+      fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',runId:'parity-port',hypothesisId:'E',location:'services-by-style.service.ts:enrich',message:'by-style develop enrich parity',data:{fullEnrichByStyle,slimByStyle,maxResults,vendorRowCount:(vendorRows.rows||[]).length,providerCount:providers.length,firstServicesLen:Array.isArray((providers[0] as any)?.services)?((providers[0] as any).services as any[]).length:-1},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
 
       // 7. FILTER
-      let results = providers;
+      let results = providers as any[];
 
       if (minRatingVal != null && minRatingVal > 0) {
         results = results.filter((p) => p.rating >= minRatingVal);

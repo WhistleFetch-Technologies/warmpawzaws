@@ -1,4 +1,12 @@
 import { query, select, insert, update } from '../../../../database/rds-connection';
+import { fetchDiscoveryListStatsForVendors } from '../../../../utils/discovery-list-stats';
+
+export async function dbFetchDiscoveryListStatsForVendors(
+  vendorIds: string[],
+  opts: Parameters<typeof fetchDiscoveryListStatsForVendors>[2]
+) {
+  return fetchDiscoveryListStatsForVendors(query, vendorIds, opts);
+}
 
 export async function dbServicesByStyle0(strictFromText) {
   return await query(
