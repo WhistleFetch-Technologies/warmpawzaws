@@ -34,6 +34,10 @@ import {
 import { calculateFinalFees, mapCatalogCategoryToBusinessType } from '../utils/feeCalculator';
 import { writeBookingFinancialSnapshotIfMissing } from '../utils/booking-financial-snapshot';
 import { debitCustomerWalletForBookingInTransaction } from '../utils/wallet-operations';
+import {
+  computeWalletBookingSplit,
+  resolveLockedBookingGrossFromNotes,
+} from '../utils/booking-financial-gross';
 import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
 
 // Type-only helper (no runtime emit)
@@ -325,15 +329,36 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         convenienceFee = 0;
       }
 
-      const feesTotal = platformFee + convenienceFee + deliveryFee + packagingFee;
+      let feesTotal = platformFee + convenienceFee + deliveryFee + packagingFee;
 
-      // Total amount including fees (fees are added on top of tax-inclusive request amount)
-      const totalAmount = amount + gstAmount + feesTotal;
+      const lockedGross = resolveLockedBookingGrossFromNotes(booking.notes);
+      const walletIntent = useWallet ? Math.max(0, Number(walletAmount) || 0) : 0;
+      // Client sends amount=0 when wallet covers all cash; amount>0 is the Razorpay remainder after wallet.
+      const walletOnlyPayment = amount <= 0.009 && walletIntent > 0;
+      const useLockedGrossForWallet =
+        lockedGross != null && walletIntent > 0 && (useWallet || walletOnlyPayment);
+
+      let totalAmount: number;
+      if (useLockedGrossForWallet) {
+        totalAmount = lockedGross.grossTotal;
+        gstAmount = lockedGross.totalTax;
+        cgstAmount = lockedGross.cgst;
+        sgstAmount = lockedGross.sgst;
+        igstAmount = lockedGross.igst;
+        platformFee = lockedGross.platformFee;
+        convenienceFee = lockedGross.convenienceFee;
+        deliveryFee = lockedGross.deliveryFee;
+        feesTotal = platformFee + convenienceFee + deliveryFee + packagingFee;
+        console.log(
+          `[PAYMENT] Locked gross from financial meta: gross=₹${totalAmount}, walletIntent=₹${walletIntent}, source=${lockedGross.source}`
+        );
+      } else {
+        // Total amount including fees (fees are added on top of tax-inclusive request amount)
+        totalAmount = amount + gstAmount + feesTotal;
+      }
 
       // Clients send `amount` as the cash payable AFTER wallet, so a fully-wallet checkout
       // arrives as amount=0 + walletAmount>0 — the wallet slice IS the payable.
-      const walletIntent = useWallet ? Math.max(0, Number(walletAmount) || 0) : 0;
-      const walletOnlyPayment = totalAmount <= 0.009 && walletIntent > 0;
 
       // Nothing to charge at all (100% promo): payments.check_payment_amount_positive
       // forbids a ₹0 row, and there is no money movement to record anyway.
@@ -372,22 +397,39 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       try {
         payment = await withTransaction(async (client) => {
         let walletApplied = 0;
+        let roundedRemain = totalAmount;
+        let fullyWallet = false;
+
         if (useWallet && effectiveCustomerId) {
-          // Wallet-only: totalAmount is 0 (client already netted the wallet out), so cap by the
-          // wallet slice itself; otherwise cap by the payable total as before.
-          const walletCap = walletOnlyPayment
-            ? walletIntent
-            : walletAmount > 0
-              ? Math.min(Number(walletAmount), totalAmount)
-              : totalAmount;
           const wbalRes = await client.query(
             `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
             [effectiveCustomerId]
           );
           const bal = parseFloat(String(wbalRes.rows[0]?.b ?? '0')) || 0;
-          const targetDebit = walletOnlyPayment
-            ? Math.min(walletCap, bal)
-            : Math.min(walletCap, bal, totalAmount);
+
+          let targetDebit = 0;
+          if (useLockedGrossForWallet) {
+            const split = computeWalletBookingSplit({
+              grossTotal: totalAmount,
+              walletIntent,
+              walletBalance: bal,
+            });
+            targetDebit = split.walletApplied;
+            roundedRemain = split.cashRemainder;
+            fullyWallet = split.fullyWallet;
+          } else {
+            const walletCap = walletOnlyPayment
+              ? walletIntent
+              : walletAmount > 0
+                ? Math.min(Number(walletAmount), totalAmount)
+                : totalAmount;
+            targetDebit = walletOnlyPayment
+              ? Math.min(walletCap, bal)
+              : Math.min(walletCap, bal, totalAmount);
+            roundedRemain = Math.max(0, Math.round((totalAmount - targetDebit) * 100) / 100);
+            fullyWallet = targetDebit > 0 && roundedRemain < 0.01;
+          }
+
           if (targetDebit > 0) {
             const idem =
               idempotencyKey != null && String(idempotencyKey).trim() !== ''
@@ -400,6 +442,13 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
               idempotencyKey: idem,
             });
             walletApplied = d.debited;
+            if (useLockedGrossForWallet) {
+              roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
+              fullyWallet = walletApplied > 0 && roundedRemain < 0.01;
+            } else {
+              roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
+              fullyWallet = walletApplied > 0 && roundedRemain < 0.01;
+            }
           }
         }
 
@@ -411,16 +460,19 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           throw insufficientErr;
         }
 
-        const roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
-        const fullyWallet = walletApplied > 0 && roundedRemain < 0.01;
-
         const paymentData: any = {
           booking_id: bookingId, // ✅ bookingId is REQUIRED - booking should already exist
           customer_id: effectiveCustomerId,
           vendor_id: vendorId || booking.vendor_id,
           // check_payment_amount_positive forbids ₹0 rows — for wallet-only payments record the
-          // wallet-covered amount (honest accounting) instead of the ₹0 cash remainder.
-          amount: walletOnlyPayment ? walletApplied : amount,
+          // wallet-covered amount; for wallet+Razorpay split record the cash remainder for Razorpay.
+          amount: fullyWallet
+            ? walletApplied
+            : useLockedGrossForWallet
+              ? roundedRemain
+              : walletOnlyPayment
+                ? walletApplied
+                : amount,
           currency: 'INR',
           payment_method: fullyWallet ? 'wallet' : (paymentMethod || 'razorpay'),
           payment_status: fullyWallet ? 'completed' : 'pending',
@@ -444,7 +496,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         }
         
         // Add platform and convenience fees
-        if (feesTotal > 0) {
+        if (feesTotal > 0 || useLockedGrossForWallet) {
           if (platformFee > 0) paymentData.platform_fee = platformFee;
           if (convenienceFee > 0) paymentData.convenience_fee = convenienceFee;
           paymentData.total_amount = totalAmount;

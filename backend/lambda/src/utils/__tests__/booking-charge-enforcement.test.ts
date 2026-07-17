@@ -259,4 +259,48 @@ describe('resolveExpectedBookingCharge', () => {
     expect(result!.expectedCash).toBe(2124);
     expect(mockedCalculateTax).not.toHaveBeenCalled();
   });
+
+  test('uses legacy cash finalPaid + walletAmount as all-in gross', async () => {
+    stubQueries({ orphanRow: null, walletDebits: 370.2 });
+
+    const result = await resolveExpectedBookingCharge({
+      bookingId: BOOKING_ID,
+      booking: {
+        total_amount: '29.62',
+        base_price: '1999',
+        notes:
+          'wp_financial_meta:{"subtotalAfterDiscounts":0,"totalTax":359.82,"platformFee":40,"walletAmount":370.2,"finalPaid":29.62}',
+      },
+    });
+
+    expect(result!.source).toBe('financial_snapshot');
+    expect(result!.grossTotal).toBe(399.82);
+    expect(result!.expectedCash).toBe(29.62);
+    expect(mockedCalculateTax).not.toHaveBeenCalled();
+  });
+
+  test('reads wallet split pending payment row with total_amount gross and cash remainder', async () => {
+    stubQueries({
+      walletDebits: 370.2,
+      orphanRow: {
+        amount: '29.62',
+        total_amount: '399.82',
+        wallet_amount_used: '370.2',
+        gst_amount: '359.82',
+        cgst_amount: '179.91',
+        sgst_amount: '179.91',
+        igst_amount: '0',
+        gst_rule_id: null,
+      },
+    });
+
+    const result = await resolveExpectedBookingCharge({
+      bookingId: BOOKING_ID,
+      booking: { total_amount: '29.62' },
+    });
+
+    expect(result!.source).toBe('payments_row');
+    expect(result!.grossTotal).toBe(399.82);
+    expect(result!.expectedCash).toBe(29.62);
+  });
 });
