@@ -81,24 +81,11 @@ export function validatePromotionTargeting(
     });
   }
 
-  // Admin marketing: category → catalogue services is required (applies to all vendors with those services).
-  if (
-    audience === 'admin' &&
-    smartSurface === 'marketing' &&
-    (selected.categories?.length ?? 0) > 0 &&
-    (selected.services?.length ?? 0) === 0
-  ) {
-    issues.push({
-      field: 'target',
-      message:
-        'Select at least one catalogue service under the chosen category. The offer applies for every vendor who published that service.',
-      severity: 'error',
-    });
-  }
-
   for (const scope of scopes) {
     if (scope === 'entire_platform' || scope === 'all_products') continue;
-    // Marketing categories: services are validated above (must pick catalogue services).
+    // Admin marketing: catalogue services are OPTIONAL when a category is selected.
+    // A category alone is a valid target — the offer applies to that whole category
+    // for every vendor who published its services.
     if (
       audience === 'admin' &&
       smartSurface === 'marketing' &&

@@ -88,6 +88,9 @@ export function validateAdminPromotionTargeting(body: PromotionTargetingInput): 
 
   for (const scope of scopeList) {
     if (scope === 'entire_platform') continue;
+    // Catalogue services are OPTIONAL when a category is selected — a category
+    // alone is a valid target (offer applies to that whole category across vendors).
+    if (scope === 'services' && hasCategorySelection(selected)) continue;
     if ((selected[scope]?.length ?? 0) === 0 && scope !== 'vendors') {
       // vendors can be paired with inventory under other keys
       if (['services', 'packages', 'meal_plans', 'products', 'categories', 'styles'].includes(scope)) {
@@ -98,16 +101,6 @@ export function validateAdminPromotionTargeting(body: PromotionTargetingInput): 
 
   if (scopeList.includes('categories') && !hasCategorySelection(selected)) {
     return 'Select at least one category.';
-  }
-
-  // Category + services scope ⇒ catalogue services must be chosen (apply across vendors).
-  if (
-    hasCategorySelection(selected) &&
-    scopeList.includes('services') &&
-    (selected.services?.length ?? 0) === 0 &&
-    !hasApplicableServicesList(body)
-  ) {
-    return 'Select at least one catalogue service under the chosen category. The offer applies for every vendor who published that service.';
   }
 
   const hasVendor = (selected.vendors?.length ?? 0) > 0;

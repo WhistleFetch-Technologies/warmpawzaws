@@ -676,7 +676,7 @@ function SmartPromotionTargetSelector({
               : 'This promotion applies across the whole marketplace — no inventory selection needed.'
             : flow === 'categories'
               ? adminSurface === 'marketing'
-                ? '1) Select a category → 2) Select catalogue services. The offer applies for every vendor who published those services.'
+                ? '1) Select a category. 2) Optionally pick catalogue services to narrow the offer — leave empty to apply to the whole category across vendors.'
                 : 'Pick one or more product categories for this offer.'
               : undefined
         }
@@ -742,10 +742,11 @@ function SmartPromotionTargetSelector({
           {adminSurface === 'marketing' ? (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                2. Select catalogue services *
+                2. Select catalogue services (optional)
               </p>
               <p className="text-xs text-slate-500">
-                Applies to all vendors who published the selected services from the admin catalogue.
+                Optional — leave empty to apply the offer to the whole category. Pick services to
+                narrow it to vendors who published those catalogue services.
               </p>
               {selectedCategoryIds.length === 0 ? (
                 <TargetEmptyState message="Select a category first to load linked catalogue services." />
