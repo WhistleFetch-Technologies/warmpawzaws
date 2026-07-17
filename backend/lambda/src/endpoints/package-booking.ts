@@ -52,6 +52,7 @@ import {
   type VendorPackageComputation,
 } from '../utils/vendor-package-razorpay-flow';
 import { quotePackagePricing, resolvePackagePolicySnapshot } from '../utils/package-pricing';
+import { computeWalletBookingSplit } from '../utils/booking-financial-gross';
 import { createPackageBookingsAfterPayment } from '../utils/package-bookings';
 import { fireVendorAppointmentScheduledSms } from '../lib/vendor-appointment-sms';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
@@ -1800,20 +1801,36 @@ export function registerPackageBookingEndpoints(app: Hono) {
           ? policyVersionRaw.trim()
           : null;
       const grossTotal = roundMoney(pricing ? pricing.totalAmount : comp.priceNum);
+      const packageGst = roundMoney(pricing ? pricing.gstAmount : 0);
       let walletApplied = 0;
       const walletOperationKey =
         idempotencyKey || `pkg_wallet_${customerId}_${String(vendorServiceId)}_${Date.now()}`;
       if (comp.priceNum > 0 && !hasRazorpayProof && useWallet) {
         const walletTarget = requestedWalletAmount > 0 ? requestedWalletAmount : grossTotal;
+        // GST must be collected via Razorpay — wallet eligible is gross − GST.
+        const split = computeWalletBookingSplit({
+          grossTotal,
+          walletIntent: walletTarget,
+          walletBalance: walletTarget,
+          gstAmount: packageGst,
+        });
         walletApplied = await debitWalletForPackagePurchase(
           customerId,
-          Math.min(walletTarget, grossTotal),
+          split.walletApplied,
           walletOperationKey
         );
       } else if (comp.priceNum > 0 && hasRazorpayProof && useWallet) {
-        walletApplied = Math.min(requestedWalletAmount, grossTotal);
+        const split = computeWalletBookingSplit({
+          grossTotal,
+          walletIntent: requestedWalletAmount,
+          walletBalance: requestedWalletAmount,
+          gstAmount: packageGst,
+        });
+        walletApplied = split.walletApplied;
       }
       const payableAfterWallet = roundMoney(Math.max(0, grossTotal - walletApplied));
+      // Never finalize as wallet-only when GST remains — force Razorpay for GST.
+      const canWalletOnlyFinalize = payableAfterWallet <= 0.009 && packageGst < 0.01;
       const policyInputForFinalize = {
         cancellationPolicy: policy.cancellationPolicy,
         refundPolicy: policy.refundPolicy,
@@ -1870,7 +1887,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
       }
 
       if (comp.priceNum > 0 && !hasRazorpayProof) {
-        if (payableAfterWallet <= 0) {
+        if (canWalletOnlyFinalize) {
           const catalogPackageId = await insertVendorServiceCatalogPackage(comp);
           const walletPaymentRows = await insert('payments', {
             booking_id: null,

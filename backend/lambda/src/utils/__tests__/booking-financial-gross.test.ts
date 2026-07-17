@@ -39,9 +39,10 @@ describe('computeWalletBookingSplit', () => {
     expect(split.walletApplied).toBe(370.2);
     expect(split.cashRemainder).toBe(29.62);
     expect(split.fullyWallet).toBe(false);
+    expect(split.walletEligible).toBe(399.82);
   });
 
-  it('marks fully wallet when gross is covered', () => {
+  it('marks fully wallet when gross is covered and GST is zero', () => {
     const split = computeWalletBookingSplit({
       grossTotal: 500,
       walletIntent: 500,
@@ -50,5 +51,42 @@ describe('computeWalletBookingSplit', () => {
     expect(split.walletApplied).toBe(500);
     expect(split.cashRemainder).toBe(0);
     expect(split.fullyWallet).toBe(true);
+  });
+
+  it('excludes GST from wallet eligibility so Razorpay always collects GST', () => {
+    const split = computeWalletBookingSplit({
+      grossTotal: 1180,
+      walletIntent: 1180,
+      walletBalance: 2000,
+      gstAmount: 180,
+    });
+    expect(split.walletEligible).toBe(1000);
+    expect(split.walletApplied).toBe(1000);
+    expect(split.cashRemainder).toBe(180);
+    expect(split.fullyWallet).toBe(false);
+  });
+
+  it('never marks fullyWallet when GST remains even if intent covers gross', () => {
+    const split = computeWalletBookingSplit({
+      grossTotal: 236,
+      walletIntent: 236,
+      walletBalance: 236,
+      gstAmount: 36,
+    });
+    expect(split.walletApplied).toBe(200);
+    expect(split.cashRemainder).toBe(36);
+    expect(split.fullyWallet).toBe(false);
+  });
+
+  it('caps gstAmount so it cannot exceed gross', () => {
+    const split = computeWalletBookingSplit({
+      grossTotal: 100,
+      walletIntent: 100,
+      walletBalance: 100,
+      gstAmount: 999,
+    });
+    expect(split.walletEligible).toBe(0);
+    expect(split.walletApplied).toBe(0);
+    expect(split.cashRemainder).toBe(100);
   });
 });

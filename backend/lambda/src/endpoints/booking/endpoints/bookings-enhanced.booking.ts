@@ -69,6 +69,10 @@ import {
 } from '../../../utils/package-session-sync';
 import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-session-eligibility';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
+import {
+  computeWalletBookingSplit,
+  resolveLockedBookingGrossFromNotes,
+} from '../../../utils/booking-financial-gross';
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
 import { notifyBookingCreated, notifyBookingCancelled, notifyBookingRescheduled } from '../../../utils/booking-notifications';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
@@ -2066,14 +2070,23 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           }
 
           if (gross > 0) {
-            const cap = reqWalletAmt > 0 ? Math.min(reqWalletAmt, gross) : gross;
+            const lockedAtCreate = resolveLockedBookingGrossFromNotes(
+              (insertedBooking as { notes?: unknown }).notes ?? bookingData.notes
+            );
+            const gstAtCreate = lockedAtCreate?.totalTax ?? 0;
             try {
               const balRes = await client.query(
                 `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
                 [customerId]
               );
               const bal = parseFloat(String(balRes.rows[0]?.b ?? '0')) || 0;
-              const chunk = Math.round(Math.min(cap, bal, gross) * 100) / 100;
+              const split = computeWalletBookingSplit({
+                grossTotal: gross,
+                walletIntent: reqWalletAmt > 0 ? reqWalletAmt : gross,
+                walletBalance: bal,
+                gstAmount: gstAtCreate,
+              });
+              const chunk = split.walletApplied;
               let debitedActual = 0;
               if (chunk > 0) {
                 const d = await debitCustomerWalletForBookingInTransaction(client, {
@@ -2084,8 +2097,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 });
                 debitedActual = Math.round((d?.debited ?? chunk) * 100) / 100;
               }
-              // Tolerate tiny float drift so PAID + confirmed is set whenever wallet covers list total.
-              if (debitedActual + 0.02 >= gross) {
+              // Fully wallet only when GST is zero — GST must be collected via Razorpay.
+              if (split.fullyWallet && debitedActual + 0.02 >= gross) {
                 await client.query(
                   `UPDATE bookings SET payment_status = 'paid', status = 'confirmed', updated_at = NOW() WHERE id = $1::uuid`,
                   [insertedBooking.id]

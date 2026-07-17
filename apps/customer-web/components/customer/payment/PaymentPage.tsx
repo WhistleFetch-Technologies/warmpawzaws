@@ -366,8 +366,16 @@ export function PaymentPage({
 
   // Calculate final amounts
   const couponDiscount = appliedCoupon?.discountAmount || 0;
-  const walletAmount = useWallet && wallet ? Math.min(wallet.balance, taxBreakdown.total - couponDiscount) : 0;
-  const finalAmount = Math.max(0, taxBreakdown.total - couponDiscount - walletAmount);
+  const taxableAfterCoupon = Math.max(0, taxBreakdown.subtotal - couponDiscount);
+  // GST on discounted price (services); scale when coupon applied.
+  const taxRatio =
+    taxBreakdown.subtotal > 0.009 ? taxableAfterCoupon / taxBreakdown.subtotal : 1;
+  const payableTax = Math.round(taxBreakdown.totalTax * taxRatio * 100) / 100;
+  const payableTotal = Math.round((taxableAfterCoupon + payableTax) * 100) / 100;
+  // Wallet must not cover GST — GST collected via Razorpay.
+  const walletCapBase = Math.max(0, payableTotal - payableTax);
+  const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
+  const finalAmount = Math.max(0, payableTotal - walletAmount);
 
   const handlePayment = async () => {
     setProcessing(true);

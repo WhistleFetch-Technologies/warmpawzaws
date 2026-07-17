@@ -260,7 +260,7 @@ describe('resolveExpectedBookingCharge', () => {
     expect(mockedCalculateTax).not.toHaveBeenCalled();
   });
 
-  test('uses legacy cash finalPaid + walletAmount as all-in gross', async () => {
+  test('uses legacy cash finalPaid + walletAmount as all-in gross; cash floor keeps GST for Razorpay', async () => {
     stubQueries({ orphanRow: null, walletDebits: 370.2 });
 
     const result = await resolveExpectedBookingCharge({
@@ -275,8 +275,28 @@ describe('resolveExpectedBookingCharge', () => {
 
     expect(result!.source).toBe('financial_snapshot');
     expect(result!.grossTotal).toBe(399.82);
-    expect(result!.expectedCash).toBe(29.62);
+    // Wallet eligible = gross − GST = 40; Razorpay cash must cover GST (359.82).
+    expect(result!.expectedCash).toBe(359.82);
     expect(mockedCalculateTax).not.toHaveBeenCalled();
+  });
+
+  test('wallet + GST snapshot: wallet cannot cover GST portion', async () => {
+    stubQueries({ orphanRow: null, walletDebits: 1000 });
+
+    const result = await resolveExpectedBookingCharge({
+      bookingId: BOOKING_ID,
+      booking: {
+        total_amount: '1180',
+        base_price: '1000',
+        notes:
+          'wp_financial_meta:{"subtotalAfterDiscounts":1000,"totalTax":180,"platformFee":0,"convenienceFee":0,"deliveryFee":0,"walletAmount":1000,"finalPaid":1180}',
+      },
+    });
+
+    expect(result!.source).toBe('financial_snapshot');
+    expect(result!.grossTotal).toBe(1180);
+    expect(result!.expectedCash).toBe(180);
+    expect(result!.gst?.total).toBe(180);
   });
 
   test('reads wallet split pending payment row with total_amount gross and cash remainder', async () => {

@@ -92,22 +92,33 @@ export interface WalletBookingSplitResult {
   walletApplied: number;
   cashRemainder: number;
   fullyWallet: boolean;
+  /** Max wallet can cover (gross − GST). GST must be collected via Razorpay when wallet is used. */
+  walletEligible: number;
 }
 
-/** Compute wallet debit and Razorpay remainder against a locked gross total. */
+/**
+ * Compute wallet debit and Razorpay remainder against a locked gross total.
+ * When gstAmount > 0, wallet may only cover gross − GST; cash remainder is always ≥ GST.
+ */
 export function computeWalletBookingSplit(params: {
   grossTotal: number;
   walletIntent: number;
   walletBalance: number;
+  /** GST portion of gross — excluded from wallet eligibility (services / packages / meals). */
+  gstAmount?: number;
 }): WalletBookingSplitResult {
   const gross = round2(Math.max(0, params.grossTotal));
+  const gst = round2(Math.max(0, Math.min(params.gstAmount ?? 0, gross)));
+  const walletEligible = round2(Math.max(0, gross - gst));
   const intent = round2(Math.max(0, params.walletIntent));
   const balance = round2(Math.max(0, params.walletBalance));
-  const walletApplied = round2(Math.min(intent, balance, gross));
+  const walletApplied = round2(Math.min(intent, balance, walletEligible));
   const cashRemainder = round2(Math.max(0, gross - walletApplied));
   return {
     walletApplied,
     cashRemainder,
-    fullyWallet: walletApplied > 0 && cashRemainder < 0.01,
+    walletEligible,
+    // Fully wallet only when there is no GST left for Razorpay.
+    fullyWallet: walletApplied > 0 && cashRemainder < 0.01 && gst < 0.01,
   };
 }

@@ -22,6 +22,10 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/b
 import { query, select, insert, update, withTransaction } from '../../../database/rds-connection';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
 import {
+  computeWalletBookingSplit,
+  resolveLockedBookingGrossFromNotes,
+} from '../../../utils/booking-financial-gross';
+import {
   resolveExpectedBookingCharge,
   type ExpectedBookingCharge,
 } from '../../../utils/booking-charge-enforcement';
@@ -642,7 +646,20 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             }
             const gross =
               Math.round((parseFloat(String(booking.total_amount ?? booking.amount ?? 0)) || 0) * 100) / 100;
-            const cap = Math.min(walletAmountCreateOrder, gross);
+            const lockedGross = resolveLockedBookingGrossFromNotes(booking.notes);
+            const gstForWallet = lockedGross?.totalTax ?? 0;
+            const balRes = await client.query(
+              `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
+              [String(customerIdFinal)]
+            );
+            const bal = parseFloat(String(balRes.rows[0]?.b ?? '0')) || 0;
+            const split = computeWalletBookingSplit({
+              grossTotal: gross,
+              walletIntent: walletAmountCreateOrder,
+              walletBalance: bal,
+              gstAmount: gstForWallet,
+            });
+            const cap = split.walletApplied;
             if (cap <= 0.009) return;
             const idem = `rz-create-order-wallet-${String(bookingId)}`;
             const deb = await debitCustomerWalletForBookingInTransaction(client, {
@@ -681,7 +698,8 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             await client.query(`INSERT INTO payments (${cols.join(', ')}) VALUES (${ph})`, vals);
             const paidW = Math.round((deb.debited ?? 0) * 100) / 100;
             const razorpayRemainRupee = Math.round((Number(amount) || 0) * 100) / 100;
-            if (gross > 0 && paidW + 0.02 >= gross) {
+            // Fully paid via wallet only when GST is zero (GST must go via Razorpay).
+            if (gross > 0 && gstForWallet < 0.01 && paidW + 0.02 >= gross) {
               await client.query(
                 `UPDATE bookings SET payment_status = 'paid', status = CASE WHEN status = 'pending_payment' THEN 'confirmed' ELSE status END, updated_at = NOW() WHERE id = $1::uuid`,
                 [String(bookingId)]

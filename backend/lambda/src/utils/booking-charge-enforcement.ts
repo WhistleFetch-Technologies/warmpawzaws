@@ -22,7 +22,10 @@
  */
 
 import { query } from '../database/rds-connection';
-import { resolveLockedBookingGrossFromNotes } from './booking-financial-gross';
+import {
+  computeWalletBookingSplit,
+  resolveLockedBookingGrossFromNotes,
+} from './booking-financial-gross';
 
 export interface ExpectedBookingCharge {
   /** Cash still payable via Razorpay (gross − wallet − completed non-wallet payments), ₹. */
@@ -45,6 +48,29 @@ export interface ExpectedBookingCharge {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Wallet must not cover GST. Attribute wallet at most to (gross − GST) so Razorpay cash
+ * always includes the GST leg when wallet was used.
+ */
+function cashAfterWalletExcludingGst(params: {
+  grossTotal: number;
+  gstTotal: number;
+  walletPaid: number;
+  completedNonWalletPaid: number;
+}): number {
+  const { grossTotal, gstTotal, walletPaid, completedNonWalletPaid } = params;
+  if (walletPaid > 0.009 && gstTotal > 0.009) {
+    const split = computeWalletBookingSplit({
+      grossTotal,
+      walletIntent: walletPaid,
+      walletBalance: walletPaid,
+      gstAmount: gstTotal,
+    });
+    return Math.max(0, round2(grossTotal - split.walletApplied - completedNonWalletPaid));
+  }
+  return Math.max(0, round2(grossTotal - walletPaid - completedNonWalletPaid));
+}
 
 async function sumWalletDebitsForBooking(bookingId: string): Promise<number> {
   const colsRes = await query(
@@ -208,10 +234,12 @@ export async function resolveExpectedBookingCharge(params: {
       ? lockedGross.subtotalAfterDiscounts
       : round2(lockedGross.grossTotal - totalTax - feesTotal);
     return {
-      expectedCash: Math.max(
-        0,
-        round2(lockedGross.grossTotal - walletPaid - completedNonWalletPaid)
-      ),
+      expectedCash: cashAfterWalletExcludingGst({
+        grossTotal: lockedGross.grossTotal,
+        gstTotal: totalTax,
+        walletPaid,
+        completedNonWalletPaid,
+      }),
       grossTotal: lockedGross.grossTotal,
       baseAmount: servicePrice > 0 ? servicePrice : round2(lockedGross.grossTotal - totalTax - feesTotal),
       gst:
@@ -259,8 +287,13 @@ export async function resolveExpectedBookingCharge(params: {
   }
 
   // 3. Legacy: total_amount is bare service base (no snapshot) — recompute like /payments/create.
-  const baseAmount = listedBase > 0 ? listedBase : bookingTotal;
-  if (baseAmount <= 0) return null;
+  // Tax the post-discount taxable amount (services); e-comm is not handled here.
+  const listedBaseRaw = listedBase > 0 ? listedBase : bookingTotal;
+  const bookingDiscountAmt = round2(
+    parseFloat(String(booking.discount_amount ?? booking.discountAmount ?? '0')) || 0
+  );
+  const baseAmount = Math.max(0, round2(listedBaseRaw - bookingDiscountAmt));
+  if (baseAmount <= 0 && listedBaseRaw <= 0) return null;
 
   const serviceId = booking.service_id ? String(booking.service_id) : '';
   const serviceCategory = serviceId ? await resolveServiceCategory(serviceId).catch(() => null) : null;
@@ -273,6 +306,8 @@ export async function resolveExpectedBookingCharge(params: {
     ]).catch(() => ({ rows: [] as any[] }));
     roleId = vendors.rows?.[0]?.role_id ? String(vendors.rows[0].role_id) : undefined;
   }
+
+  const taxInputAmount = baseAmount > 0 ? baseAmount : listedBaseRaw;
 
   let gstTotal = 0;
   let cgst = 0;
@@ -287,7 +322,7 @@ export async function resolveExpectedBookingCharge(params: {
       vendorId: booking.vendor_id ? String(booking.vendor_id) : undefined,
       bookingId,
       vendorRoleId: roleId,
-      amount: baseAmount,
+      amount: taxInputAmount,
       quantity: 1,
       category: serviceCategory || undefined,
       serviceStyle: serviceStyle || undefined,
@@ -318,7 +353,7 @@ export async function resolveExpectedBookingCharge(params: {
   try {
     const { calculateFinalFees, mapCatalogCategoryToBusinessType } = await import('./feeCalculator');
     const calculated = await calculateFinalFees({
-      amount: baseAmount,
+      amount: taxInputAmount,
       type: 'booking',
       serviceStyle: String(serviceStyle || booking.service_type || ''),
       businessServiceType: mapCatalogCategoryToBusinessType(serviceCategory) || '',
@@ -335,15 +370,20 @@ export async function resolveExpectedBookingCharge(params: {
       '[BOOKING-CHARGE-ENFORCEMENT] Fee calculation failed, using default platform fee:',
       feeError?.message || feeError
     );
-    feesTotal = Math.min(Math.round((baseAmount * 2) / 100), 200);
+    feesTotal = Math.min(Math.round((taxInputAmount * 2) / 100), 200);
     fees = { platformFee: feesTotal, convenienceFee: 0, deliveryFee: 0, packagingFee: 0 };
   }
 
-  const grossTotal = round2(baseAmount + gstTotal + feesTotal);
+  const grossTotal = round2(taxInputAmount + gstTotal + feesTotal);
   return {
-    expectedCash: Math.max(0, round2(grossTotal - walletPaid - completedNonWalletPaid)),
+    expectedCash: cashAfterWalletExcludingGst({
+      grossTotal,
+      gstTotal,
+      walletPaid,
+      completedNonWalletPaid,
+    }),
     grossTotal,
-    baseAmount,
+    baseAmount: taxInputAmount,
     gst: gstTotal > 0 ? { total: gstTotal, cgst, sgst, igst, ruleId: gstRuleId } : null,
     fees,
     feesTotal,

@@ -252,37 +252,58 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       const vendorRow = booking.vendor_id ? await select('vendors', { id: booking.vendor_id }) : [];
       const roleId = vendorRow.length > 0 ? vendorRow[0]?.role_id : undefined;
 
+      // Prefer write-once financial meta; otherwise tax the post-discount taxable base (not Razorpay cash).
+      const lockedGrossEarly = resolveLockedBookingGrossFromNotes(booking.notes);
+      const bookingBase = parseFloat(String(booking.base_price ?? booking.basePrice ?? '')) || 0;
+      const bookingDiscount = parseFloat(String(booking.discount_amount ?? booking.discountAmount ?? '')) || 0;
+      const taxBaseFromBooking =
+        bookingBase > 0 ? Math.max(0, bookingBase - bookingDiscount) : 0;
+      const taxAmountInput =
+        lockedGrossEarly && lockedGrossEarly.subtotalAfterDiscounts > 0
+          ? lockedGrossEarly.subtotalAfterDiscounts
+          : taxBaseFromBooking > 0
+            ? taxBaseFromBooking
+            : amount;
+
       try {
-        const { resolveServiceBookingTaxItem } = await import('../utils/resolve-service-booking-tax-item');
-        const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
-        const { taxItem } = await resolveServiceBookingTaxItem({
-          serviceId: serviceId || undefined,
-          vendorId: booking.vendor_id || undefined,
-          bookingId: booking.id,
-          vendorRoleId: roleId,
-          amount,
-          quantity: 1,
-          category: serviceCategory || undefined,
-          serviceStyle: serviceStyle || undefined,
-          itemId: serviceId || booking.id,
-        });
-        if (!serviceCategory && taxItem.category) serviceCategory = taxItem.category;
+        if (lockedGrossEarly && lockedGrossEarly.totalTax > 0) {
+          taxBreakdown = null;
+          gstAmount = lockedGrossEarly.totalTax;
+          cgstAmount = lockedGrossEarly.cgst;
+          sgstAmount = lockedGrossEarly.sgst;
+          igstAmount = lockedGrossEarly.igst;
+        } else {
+          const { resolveServiceBookingTaxItem } = await import('../utils/resolve-service-booking-tax-item');
+          const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
+          const { taxItem } = await resolveServiceBookingTaxItem({
+            serviceId: serviceId || undefined,
+            vendorId: booking.vendor_id || undefined,
+            bookingId: booking.id,
+            vendorRoleId: roleId,
+            amount: taxAmountInput,
+            quantity: 1,
+            category: serviceCategory || undefined,
+            serviceStyle: serviceStyle || undefined,
+            itemId: serviceId || booking.id,
+          });
+          if (!serviceCategory && taxItem.category) serviceCategory = taxItem.category;
 
-        const taxResult = await taxCalculationService.calculateTax({
-          items: [taxItem],
-          customerLocation,
-          vendorLocation,
-          vendorId: booking.vendor_id || undefined,
-          serviceType: serviceCategory || undefined,
-          category: serviceCategory || undefined,
-        });
+          const taxResult = await taxCalculationService.calculateTax({
+            items: [taxItem],
+            customerLocation,
+            vendorLocation,
+            vendorId: booking.vendor_id || undefined,
+            serviceType: serviceCategory || undefined,
+            category: serviceCategory || undefined,
+          });
 
-        taxBreakdown = taxResult;
-        gstAmount = taxResult.totalTax;
-        cgstAmount = taxResult.totalCGST;
-        sgstAmount = taxResult.totalSGST;
-        igstAmount = taxResult.totalIGST;
-        gstRuleId = taxResult.items[0]?.taxRuleId || null;
+          taxBreakdown = taxResult;
+          gstAmount = taxResult.totalTax;
+          cgstAmount = taxResult.totalCGST;
+          sgstAmount = taxResult.totalSGST;
+          igstAmount = taxResult.totalIGST;
+          gstRuleId = taxResult.items[0]?.taxRuleId || null;
+        }
       } catch (taxError) {
         console.error('Error calculating tax, using amount as base:', taxError);
         // Fallback: if tax calculation fails, use the amount as base (tax already included or will be calculated later)
@@ -331,31 +352,34 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
 
       let feesTotal = platformFee + convenienceFee + deliveryFee + packagingFee;
 
-      const lockedGross = resolveLockedBookingGrossFromNotes(booking.notes);
+      const lockedGross = lockedGrossEarly ?? resolveLockedBookingGrossFromNotes(booking.notes);
       const walletIntent = useWallet ? Math.max(0, Number(walletAmount) || 0) : 0;
       // Client sends amount=0 when wallet covers all cash; amount>0 is the Razorpay remainder after wallet.
       const walletOnlyPayment = amount <= 0.009 && walletIntent > 0;
-      const useLockedGrossForWallet =
-        lockedGross != null && walletIntent > 0 && (useWallet || walletOnlyPayment);
+      // Prefer locked all-in snapshot whenever present (wallet or not) so GST/fees match create-time.
+      const useLockedGross =
+        lockedGross != null && lockedGross.grossTotal > 0;
 
       let totalAmount: number;
-      if (useLockedGrossForWallet) {
-        totalAmount = lockedGross.grossTotal;
-        gstAmount = lockedGross.totalTax;
-        cgstAmount = lockedGross.cgst;
-        sgstAmount = lockedGross.sgst;
-        igstAmount = lockedGross.igst;
-        platformFee = lockedGross.platformFee;
-        convenienceFee = lockedGross.convenienceFee;
-        deliveryFee = lockedGross.deliveryFee;
+      if (useLockedGross) {
+        totalAmount = lockedGross!.grossTotal;
+        gstAmount = lockedGross!.totalTax;
+        cgstAmount = lockedGross!.cgst;
+        sgstAmount = lockedGross!.sgst;
+        igstAmount = lockedGross!.igst;
+        platformFee = lockedGross!.platformFee;
+        convenienceFee = lockedGross!.convenienceFee;
+        deliveryFee = lockedGross!.deliveryFee;
         feesTotal = platformFee + convenienceFee + deliveryFee + packagingFee;
         console.log(
-          `[PAYMENT] Locked gross from financial meta: gross=₹${totalAmount}, walletIntent=₹${walletIntent}, source=${lockedGross.source}`
+          `[PAYMENT] Locked gross from financial meta: gross=₹${totalAmount}, walletIntent=₹${walletIntent}, source=${lockedGross!.source}`
         );
       } else {
         // Total amount including fees (fees are added on top of tax-inclusive request amount)
         totalAmount = amount + gstAmount + feesTotal;
       }
+
+      const useLockedGrossForWallet = useLockedGross && walletIntent > 0;
 
       // Clients send `amount` as the cash payable AFTER wallet, so a fully-wallet checkout
       // arrives as amount=0 + walletAmount>0 — the wallet slice IS the payable.
@@ -407,28 +431,22 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           );
           const bal = parseFloat(String(wbalRes.rows[0]?.b ?? '0')) || 0;
 
-          let targetDebit = 0;
-          if (useLockedGrossForWallet) {
-            const split = computeWalletBookingSplit({
-              grossTotal: totalAmount,
-              walletIntent,
-              walletBalance: bal,
-            });
-            targetDebit = split.walletApplied;
-            roundedRemain = split.cashRemainder;
-            fullyWallet = split.fullyWallet;
-          } else {
-            const walletCap = walletOnlyPayment
+          // GST must be collected via Razorpay when wallet is used — never from wallet.
+          const split = computeWalletBookingSplit({
+            grossTotal: totalAmount,
+            walletIntent: useLockedGrossForWallet
               ? walletIntent
-              : walletAmount > 0
-                ? Math.min(Number(walletAmount), totalAmount)
-                : totalAmount;
-            targetDebit = walletOnlyPayment
-              ? Math.min(walletCap, bal)
-              : Math.min(walletCap, bal, totalAmount);
-            roundedRemain = Math.max(0, Math.round((totalAmount - targetDebit) * 100) / 100);
-            fullyWallet = targetDebit > 0 && roundedRemain < 0.01;
-          }
+              : walletOnlyPayment
+                ? walletIntent
+                : walletAmount > 0
+                  ? Math.min(Number(walletAmount), totalAmount)
+                  : totalAmount,
+            walletBalance: bal,
+            gstAmount,
+          });
+          const targetDebit = split.walletApplied;
+          roundedRemain = split.cashRemainder;
+          fullyWallet = split.fullyWallet;
 
           if (targetDebit > 0) {
             const idem =
@@ -442,22 +460,22 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
               idempotencyKey: idem,
             });
             walletApplied = d.debited;
-            if (useLockedGrossForWallet) {
-              roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
-              fullyWallet = walletApplied > 0 && roundedRemain < 0.01;
-            } else {
-              roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
-              fullyWallet = walletApplied > 0 && roundedRemain < 0.01;
-            }
+            roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
+            fullyWallet =
+              walletApplied > 0 && roundedRemain < 0.01 && gstAmount < 0.01;
           }
         }
 
-        if (walletOnlyPayment && walletApplied < walletIntent - 0.009) {
+        // Wallet-only is only valid when there is no GST left for Razorpay.
+        if (walletOnlyPayment && gstAmount < 0.01 && walletApplied < walletIntent - 0.009) {
           const insufficientErr: Error & { step?: string } = new Error(
             'Wallet balance is insufficient to cover this booking'
           );
           insufficientErr.step = 'wallet_debit';
           throw insufficientErr;
+        }
+        if (walletOnlyPayment && gstAmount > 0.009) {
+          fullyWallet = false;
         }
 
         const paymentData: any = {
@@ -496,7 +514,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         }
         
         // Add platform and convenience fees
-        if (feesTotal > 0 || useLockedGrossForWallet) {
+        if (feesTotal > 0 || useLockedGross) {
           if (platformFee > 0) paymentData.platform_fee = platformFee;
           if (convenienceFee > 0) paymentData.convenience_fee = convenienceFee;
           paymentData.total_amount = totalAmount;

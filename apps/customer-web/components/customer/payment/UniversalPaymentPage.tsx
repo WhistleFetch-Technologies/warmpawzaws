@@ -536,6 +536,16 @@ export function UniversalPaymentPage({
   });
   /** Meal payable uses `/tax/calculate` grand total + platform/convenience (delivery is inside GST lines). */
   const [mealTaxReady, setMealTaxReady] = useState(false);
+  /**
+   * GST recomputed on post-discount taxable (bookings only). Null = use taxBreakdown (no discount / resume).
+   * E-comm (`order`) keeps GST on original price — never set this for orders.
+   */
+  const [payableGst, setPayableGst] = useState<{
+    cgst: number;
+    sgst: number;
+    igst: number;
+    totalTax: number;
+  } | null>(null);
 
   const [platformFees, setPlatformFees] = useState<PlatformFees>(() => {
     if (lockedSnapshot) {
@@ -607,10 +617,13 @@ export function UniversalPaymentPage({
             pincode: String((selectedAddress || address)?.pincode || '').trim(),
           };
 
-    const foodAmt =
+    const foodAmtRaw =
       type === 'meal_one_time' && mealOneTimeDraft
         ? Number(mealOneTimeDraft.foodSubtotalInr)
         : Number(mealPlanFoodTaxableInr ?? 0);
+    // GST on discounted food price when a meal coupon is applied.
+    const mealCouponAmt = Math.max(0, Number(appliedCoupon?.discountAmount) || 0);
+    const foodAmt = Math.max(0, foodAmtRaw - mealCouponAmt);
     let catId =
       type === 'meal_one_time' && mealOneTimeDraft
         ? String(mealOneTimeDraft.mealPlanGstCatalogCategoryId || '').trim()
@@ -805,6 +818,7 @@ export function UniversalPaymentPage({
     customerPhone,
     selectedAddress,
     address,
+    appliedCoupon?.discountAmount,
   ]);
 
   const calculateTax = useCallback(async () => {
@@ -1726,6 +1740,125 @@ export function UniversalPaymentPage({
     isPaymentResume,
   ]);
 
+  // GST on discounted taxable for bookings (aligns with /customer/pricing/quote). E-comm unchanged.
+  useEffect(() => {
+    if (isPaymentResume || lockedSnapshot) {
+      setPayableGst(null);
+      return;
+    }
+    if (type !== 'booking') {
+      setPayableGst(null);
+      return;
+    }
+    const listSub = taxBreakdown.subtotal;
+    const afterDisc = Math.max(0, listSub - promotionDiscount - couponDiscount);
+    if (!(listSub > 0.009)) {
+      setPayableGst(null);
+      return;
+    }
+    if (Math.abs(afterDisc - listSub) < 0.01) {
+      setPayableGst(null);
+      return;
+    }
+
+    let cancelled = false;
+    const taxServiceId = resolvedServiceId || selectedServices?.[0]?.id || serviceId;
+    const addr = selectedAddress || address;
+    const hasAddrHint =
+      addr &&
+      (String(addr.state || '').trim() ||
+        String(addr.city || '').trim() ||
+        String(addr.pincode || '').trim());
+    const customerLocation = hasAddrHint
+      ? {
+          state: String(addr!.state || '').trim() || undefined,
+          city: addr!.city ? String(addr.city).trim() : undefined,
+          pincode: addr!.pincode ? String(addr.pincode).trim() : undefined,
+        }
+      : undefined;
+
+    (async () => {
+      try {
+        const taxRes = await apiClient.post<any>('/tax/calculate', {
+          items: [
+            {
+              id: taxServiceId || bookingId || 'item',
+              type: 'service',
+              serviceId: taxServiceId,
+              bookingId,
+              amount: afterDisc,
+              quantity: 1,
+              category: category || undefined,
+              serviceStyle,
+              amountTaxInclusive: false,
+            },
+          ],
+          vendorId,
+          customerId,
+          customerPhone,
+          customerLocation,
+          bookingId,
+        });
+        if (cancelled) return;
+        if (taxCalculateResponseHasPayload(taxRes)) {
+          const cgst = taxRes.totalCGST || 0;
+          const sgst = taxRes.totalSGST || 0;
+          const igst = taxRes.totalIGST || 0;
+          const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
+          setPayableGst({
+            cgst: Math.round(cgst * 100) / 100,
+            sgst: Math.round(sgst * 100) / 100,
+            igst: Math.round(igst * 100) / 100,
+            totalTax: Math.round(totalTax * 100) / 100,
+          });
+          return;
+        }
+        const ratio = afterDisc / listSub;
+        setPayableGst({
+          cgst: Math.round(taxBreakdown.cgst * ratio * 100) / 100,
+          sgst: Math.round(taxBreakdown.sgst * ratio * 100) / 100,
+          igst: Math.round(taxBreakdown.igst * ratio * 100) / 100,
+          totalTax: Math.round(taxBreakdown.totalTax * ratio * 100) / 100,
+        });
+      } catch {
+        if (cancelled) return;
+        const ratio = afterDisc / listSub;
+        setPayableGst({
+          cgst: Math.round(taxBreakdown.cgst * ratio * 100) / 100,
+          sgst: Math.round(taxBreakdown.sgst * ratio * 100) / 100,
+          igst: Math.round(taxBreakdown.igst * ratio * 100) / 100,
+          totalTax: Math.round(taxBreakdown.totalTax * ratio * 100) / 100,
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    type,
+    isPaymentResume,
+    lockedSnapshot,
+    taxBreakdown.subtotal,
+    taxBreakdown.cgst,
+    taxBreakdown.sgst,
+    taxBreakdown.igst,
+    taxBreakdown.totalTax,
+    promotionDiscount,
+    couponDiscount,
+    resolvedServiceId,
+    selectedServices,
+    serviceId,
+    bookingId,
+    category,
+    serviceStyle,
+    vendorId,
+    customerId,
+    customerPhone,
+    selectedAddress,
+    address,
+  ]);
+
   // promotionDiscount / couponDiscount / bookingDiscountTotal defined above (best-offer-only)
 
   const applyPromotion = (promotion: PromotionOffer) => {
@@ -1767,8 +1900,15 @@ export function UniversalPaymentPage({
       )
     : Math.max(0, taxBreakdown.subtotal - promotionDiscount - couponDiscount);
 
-  // Recalculate tax on discounted amount if needed (or keep original tax - business logic)
-  const finalTax = taxBreakdown.totalTax; // Or recalculate on discounted amount
+  // GST on discounted taxable for bookings; resume/locked and e-comm keep list tax.
+  const finalTax =
+    type === 'booking' && payableGst != null ? payableGst.totalTax : taxBreakdown.totalTax;
+  const finalCgst =
+    type === 'booking' && payableGst != null ? payableGst.cgst : taxBreakdown.cgst;
+  const finalSgst =
+    type === 'booking' && payableGst != null ? payableGst.sgst : taxBreakdown.sgst;
+  const finalIgst =
+    type === 'booking' && payableGst != null ? payableGst.igst : taxBreakdown.igst;
   const totalAfterDiscounts = lockedSnapshot
     ? Math.max(
         0,
@@ -1785,16 +1925,21 @@ export function UniversalPaymentPage({
       ? Math.round((taxBreakdown.total + platformFees.platformFee + platformFees.convenienceFee) * 100) / 100
       : Number(baseAmount)
     : NaN;
-  const walletCapBase = isMealPay
-    ? Math.max(0, resolvedMealPayTotal - effectiveCouponDiscount - razorpayOfferDiscount)
-    : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount);
+  // Wallet must not cover GST for services/meals — GST is collected via Razorpay. E-comm unchanged.
+  // Meals: coupon already reduced food taxable before GST — do not subtract coupon again.
+  const walletCapBase =
+    type === 'order'
+      ? Math.max(0, totalAfterDiscounts - razorpayOfferDiscount)
+      : isMealPay
+        ? Math.max(0, resolvedMealPayTotal - finalTax - razorpayOfferDiscount)
+        : Math.max(0, totalAfterDiscounts - finalTax - razorpayOfferDiscount);
   const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
 
   // If subscription covers this booking, final amount is 0
   const computedFinalAmount = subscriptionCovered
     ? 0
     : isMealPay
-      ? Math.max(0, resolvedMealPayTotal - effectiveCouponDiscount - razorpayOfferDiscount - walletAmount)
+      ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount - walletAmount)
       : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
   const checkoutVendorDiscount = lockedSnapshot
@@ -1825,9 +1970,15 @@ export function UniversalPaymentPage({
         vendorDiscount: checkoutVendorDiscount,
         vendorDiscountLabel: 'Discount',
         platformDiscount: checkoutPlatformDiscount,
-        couponDiscount: effectiveCouponDiscount,
-        couponCode: lockedSnapshot?.couponCode ?? appliedCoupon?.code,
-        taxBreakdown,
+        couponDiscount: isMealPay ? 0 : effectiveCouponDiscount,
+        couponCode: isMealPay ? undefined : lockedSnapshot?.couponCode ?? appliedCoupon?.code,
+        taxBreakdown: {
+          ...taxBreakdown,
+          cgst: finalCgst,
+          sgst: finalSgst,
+          igst: finalIgst,
+          totalTax: finalTax,
+        },
         platformFees,
         collapseAutoPromotions: type === 'booking',
         includeDeliveryFee: type !== 'meal_subscription' && type !== 'meal_one_time',
@@ -1841,6 +1992,10 @@ export function UniversalPaymentPage({
     [
       priceIncludesTax,
       taxBreakdown,
+      finalCgst,
+      finalSgst,
+      finalIgst,
+      finalTax,
       checkoutVendorDiscount,
       checkoutPlatformDiscount,
       appliedPromotion?.title,
@@ -1849,6 +2004,7 @@ export function UniversalPaymentPage({
       lockedSnapshot?.couponCode,
       platformFees,
       type,
+      isMealPay,
       selectedRazorpayOffer,
       razorpayOfferDiscount,
       walletAmount,
@@ -2500,10 +2656,10 @@ export function UniversalPaymentPage({
                   platformDiscount: checkoutPlatformDiscount,
                   couponDiscount,
                   subtotalAfterDiscounts,
-                  cgst: taxBreakdown.cgst,
-                  sgst: taxBreakdown.sgst,
-                  igst: taxBreakdown.igst,
-                  totalTax: taxBreakdown.totalTax,
+                  cgst: finalCgst,
+                  sgst: finalSgst,
+                  igst: finalIgst,
+                  totalTax: finalTax,
                   platformFee: platformFees.platformFee,
                   convenienceFee: platformFees.convenienceFee,
                   deliveryFee: platformFees.deliveryFee,
@@ -3713,10 +3869,17 @@ export function UniversalPaymentPage({
               </div>
             </button>
             {useWallet && (
-              <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
-                <CheckCircle2 className="w-4 h-4" />
-                ₹{walletAmount.toFixed(2)} will be deducted from wallet
-              </p>
+              <>
+                <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
+                  <CheckCircle2 className="w-4 h-4" />
+                  ₹{walletAmount.toFixed(2)} will be deducted from wallet
+                </p>
+                {type !== 'order' && finalTax > 0.009 && (
+                  <p className="text-xs text-amber-800 mt-1">
+                    GST (₹{finalTax.toFixed(2)}) is paid via Razorpay and is not covered by wallet.
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}
