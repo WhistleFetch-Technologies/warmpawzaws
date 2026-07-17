@@ -7,8 +7,10 @@ import type { CandidateProvider } from '../candidates/providers/types';
 import type { PriorityMode } from '../policy/priority-mode';
 import type { ValidationResult } from '../policy/validation-result';
 import type { PriorityResult } from '../priority/priority-types';
-import type { StackAudit, StackMode } from '../stack/types';
-import type { SettlementAudit, SettlementMode } from '../settlement/types';
+import type { StackAudit } from '../stack/types';
+import type { StackMode } from '../stack/stack-mode';
+import type { SettlementAudit } from '../settlement/types';
+import type { SettlementMode } from '../settlement/settlement-mode';
 
 export interface SettlementDiagnostics {
   settlementMode: SettlementMode;

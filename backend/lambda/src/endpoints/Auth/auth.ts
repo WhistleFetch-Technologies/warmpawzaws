@@ -17,16 +17,16 @@
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
-import { query, select, insert, update } from '../database/rds-connection';
-import { BaseHandler, HandlerContext, HandlerResponse, createHandler } from '../handler/base-handler';
+import { query, select, insert, update } from '../../database/rds-connection';
+import { BaseHandler, HandlerContext, HandlerResponse, createHandler } from '../../handler/base-handler';
 import { 
   getOrCreateCognitoUser, 
   authenticateCognitoUser,
   verifyCognitoToken,
   CognitoTokens 
-} from '../utils/cognito-client';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
-import { isValidUUID } from '../types/entities';
+} from '../../utils/cognito-client';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../utils/entity-extractor';
+import { isValidUUID } from '../../types/entities';
 import { createHash, randomBytes } from 'crypto';
 
 // ============================================================================

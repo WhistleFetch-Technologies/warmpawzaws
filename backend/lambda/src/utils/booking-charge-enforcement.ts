@@ -6,10 +6,14 @@
  * charge the bare service price — see prod booking 6b49e9bd (₹1,800 captured, no GST).
  *
  * This resolves the authoritative payable for a booking:
- *   1. Preferred: the pending "orphan" payments row created by /payments/create
- *      (its amount already includes server-computed GST + fees).
- *   2. Fallback: recompute base + GST + fees with the same pipeline
- *      (resolveServiceBookingTaxItem → taxCalculationService → calculateFinalFees).
+ *   1. Preferred: a pending payments row (orphan from /payments/create, or any
+ *      unpaid pending row) — amount already includes GST + fees (and discounts).
+ *   2. Next: write-once `wp_financial_meta.finalPaid` on the booking (all-in snapshot
+ *      at create / resume) — never re-add tax/fees on top of it.
+ *   3. Next: `bookings.total_amount` when it is already all-in (has financial meta,
+ *      or base_price is lower than total) — treat as locked gross.
+ *   4. Last resort (legacy bare base): recompute base + GST + fees with the same
+ *      pipeline (resolveServiceBookingTaxItem → taxCalculationService → calculateFinalFees).
  * Wallet debits and completed non-wallet payments for the booking are subtracted
  * to get the cash still payable via Razorpay.
  *
@@ -18,6 +22,7 @@
  */
 
 import { query } from '../database/rds-connection';
+import { parseJsonMetaFromNotes } from './booking-notes-meta';
 
 export interface ExpectedBookingCharge {
   /** Cash still payable via Razorpay (gross − wallet − completed non-wallet payments), ₹. */
@@ -26,10 +31,17 @@ export interface ExpectedBookingCharge {
   grossTotal: number;
   baseAmount: number;
   gst: { total: number; cgst: number; sgst: number; igst: number; ruleId: string | null } | null;
+  /** Fee components when this path computed them; null when unknown (payments_row source). */
+  fees: {
+    platformFee: number;
+    convenienceFee: number;
+    deliveryFee: number;
+    packagingFee: number;
+  } | null;
   feesTotal: number;
   walletPaid: number;
   completedNonWalletPaid: number;
-  source: 'payments_row' | 'computed';
+  source: 'payments_row' | 'financial_snapshot' | 'booking_total' | 'computed';
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -109,22 +121,7 @@ export async function resolveExpectedBookingCharge(params: {
     sumCompletedNonWalletPayments(bookingId).catch(() => 0),
   ]);
 
-  // 1. Pending row from /payments/create — amount is the server-computed gross total.
-  const orphan = await query(
-    `SELECT amount::text AS amount,
-            gst_amount::text AS gst_amount,
-            cgst_amount::text AS cgst_amount,
-            sgst_amount::text AS sgst_amount,
-            igst_amount::text AS igst_amount,
-            gst_rule_id
-     FROM payments
-     WHERE booking_id = $1::uuid AND payment_status = 'pending' AND razorpay_order_id IS NULL
-     ORDER BY created_at DESC LIMIT 1`,
-    [bookingId]
-  ).catch(() => ({ rows: [] as any[] }));
-
-  if (orphan.rows?.length > 0) {
-    const row = orphan.rows[0];
+  const fromPaymentRow = (row: Record<string, unknown>): ExpectedBookingCharge | null => {
     const grossTotal = round2(parseFloat(String(row.amount ?? '0')) || 0);
     if (grossTotal <= 0) return null;
     const gstTotal = round2(parseFloat(String(row.gst_amount ?? '0')) || 0);
@@ -142,15 +139,109 @@ export async function resolveExpectedBookingCharge(params: {
               ruleId: row.gst_rule_id ? String(row.gst_rule_id) : null,
             }
           : null,
+      fees: null,
       feesTotal: 0,
       walletPaid,
       completedNonWalletPaid,
       source: 'payments_row',
     };
+  };
+
+  // 1a. Pending orphan from /payments/create — amount is the server-computed gross total.
+  const orphan = await query(
+    `SELECT amount::text AS amount,
+            gst_amount::text AS gst_amount,
+            cgst_amount::text AS cgst_amount,
+            sgst_amount::text AS sgst_amount,
+            igst_amount::text AS igst_amount,
+            gst_rule_id
+     FROM payments
+     WHERE booking_id = $1::uuid AND payment_status = 'pending' AND razorpay_order_id IS NULL
+     ORDER BY created_at DESC LIMIT 1`,
+    [bookingId]
+  ).catch(() => ({ rows: [] as any[] }));
+
+  if (orphan.rows?.length > 0) {
+    const fromOrphan = fromPaymentRow(orphan.rows[0]);
+    if (fromOrphan) return fromOrphan;
   }
 
-  // 2. No server-priced row (client skipped /payments/create) — recompute like /payments/create.
-  const baseAmount = round2(parseFloat(String(booking.total_amount ?? booking.amount ?? '0')) || 0);
+  // 1b. Any other unpaid pending payment row (e.g. prior create-order already attached an order id).
+  const pendingPay = await query(
+    `SELECT amount::text AS amount,
+            gst_amount::text AS gst_amount,
+            cgst_amount::text AS cgst_amount,
+            sgst_amount::text AS sgst_amount,
+            igst_amount::text AS igst_amount,
+            gst_rule_id
+     FROM payments
+     WHERE booking_id = $1::uuid
+       AND LOWER(COALESCE(payment_status, '')) NOT IN ('paid', 'completed', 'refunded', 'failed')
+     ORDER BY created_at DESC LIMIT 1`,
+    [bookingId]
+  ).catch(() => ({ rows: [] as any[] }));
+
+  if (pendingPay.rows?.length > 0) {
+    const fromPending = fromPaymentRow(pendingPay.rows[0]);
+    if (fromPending) return fromPending;
+  }
+
+  // 2. Locked all-in snapshot from booking create (wp_financial_meta) — never re-tax this.
+  const finMeta = parseJsonMetaFromNotes(booking.notes, 'wp_financial_meta');
+  const snapshotFinal = finMeta
+    ? round2(parseFloat(String(finMeta.finalPaid ?? finMeta.final_paid ?? '0')) || 0)
+    : 0;
+  if (snapshotFinal > 0) {
+    const totalTax = round2(parseFloat(String(finMeta!.totalTax ?? finMeta!.total_tax ?? '0')) || 0);
+    const cgst = round2(parseFloat(String(finMeta!.cgst ?? '0')) || 0);
+    const sgst = round2(parseFloat(String(finMeta!.sgst ?? '0')) || 0);
+    const igst = round2(parseFloat(String(finMeta!.igst ?? '0')) || 0);
+    const platformFee = round2(parseFloat(String(finMeta!.platformFee ?? finMeta!.platform_fee ?? '0')) || 0);
+    const convenienceFee = round2(
+      parseFloat(String(finMeta!.convenienceFee ?? finMeta!.convenience_fee ?? '0')) || 0
+    );
+    const deliveryFee = round2(parseFloat(String(finMeta!.deliveryFee ?? finMeta!.delivery_fee ?? '0')) || 0);
+    const servicePrice = round2(
+      parseFloat(String(finMeta!.servicePrice ?? finMeta!.service_price ?? '0')) || 0
+    );
+    const feesTotal = round2(platformFee + convenienceFee + deliveryFee);
+    return {
+      expectedCash: Math.max(0, round2(snapshotFinal - walletPaid - completedNonWalletPaid)),
+      grossTotal: snapshotFinal,
+      baseAmount: servicePrice > 0 ? servicePrice : round2(snapshotFinal - totalTax - feesTotal),
+      gst:
+        totalTax > 0
+          ? { total: totalTax, cgst, sgst, igst, ruleId: null }
+          : null,
+      fees: feesTotal > 0 ? { platformFee, convenienceFee, deliveryFee, packagingFee: 0 } : null,
+      feesTotal,
+      walletPaid,
+      completedNonWalletPaid,
+      source: 'financial_snapshot',
+    };
+  }
+
+  const bookingTotal = round2(parseFloat(String(booking.total_amount ?? booking.amount ?? '0')) || 0);
+  const listedBase = round2(parseFloat(String(booking.base_price ?? booking.basePrice ?? '0')) || 0);
+  // Modern create stores all-in finalPaid in total_amount (often > bare base_price). Re-adding
+  // GST/fees on that number double-charges — treat total_amount as locked gross instead.
+  const totalLooksAllIn = bookingTotal > 0 && listedBase > 0 && bookingTotal - listedBase > 1;
+  if (totalLooksAllIn) {
+    return {
+      expectedCash: Math.max(0, round2(bookingTotal - walletPaid - completedNonWalletPaid)),
+      grossTotal: bookingTotal,
+      baseAmount: listedBase,
+      gst: null,
+      fees: null,
+      feesTotal: 0,
+      walletPaid,
+      completedNonWalletPaid,
+      source: 'booking_total',
+    };
+  }
+
+  // 3. Legacy: total_amount is bare service base (no snapshot) — recompute like /payments/create.
+  const baseAmount = listedBase > 0 ? listedBase : bookingTotal;
   if (baseAmount <= 0) return null;
 
   const serviceId = booking.service_id ? String(booking.service_id) : '';
@@ -205,23 +296,29 @@ export async function resolveExpectedBookingCharge(params: {
 
   // Same fee rules and fallback as /payments/create so both paths agree on the payable.
   let feesTotal = 0;
+  let fees: ExpectedBookingCharge['fees'] = null;
   try {
     const { calculateFinalFees, mapCatalogCategoryToBusinessType } = await import('./feeCalculator');
-    const fees = await calculateFinalFees({
+    const calculated = await calculateFinalFees({
       amount: baseAmount,
       type: 'booking',
       serviceStyle: String(serviceStyle || booking.service_type || ''),
       businessServiceType: mapCatalogCategoryToBusinessType(serviceCategory) || '',
     });
-    feesTotal = round2(
-      (fees.platformFee || 0) + (fees.convenienceFee || 0) + (fees.deliveryFee || 0) + (fees.packagingFee || 0)
-    );
+    fees = {
+      platformFee: round2(calculated.platformFee || 0),
+      convenienceFee: round2(calculated.convenienceFee || 0),
+      deliveryFee: round2(calculated.deliveryFee || 0),
+      packagingFee: round2(calculated.packagingFee || 0),
+    };
+    feesTotal = round2(fees.platformFee + fees.convenienceFee + fees.deliveryFee + fees.packagingFee);
   } catch (feeError: any) {
     console.warn(
       '[BOOKING-CHARGE-ENFORCEMENT] Fee calculation failed, using default platform fee:',
       feeError?.message || feeError
     );
     feesTotal = Math.min(Math.round((baseAmount * 2) / 100), 200);
+    fees = { platformFee: feesTotal, convenienceFee: 0, deliveryFee: 0, packagingFee: 0 };
   }
 
   const grossTotal = round2(baseAmount + gstTotal + feesTotal);
@@ -230,6 +327,7 @@ export async function resolveExpectedBookingCharge(params: {
     grossTotal,
     baseAmount,
     gst: gstTotal > 0 ? { total: gstTotal, cgst, sgst, igst, ruleId: gstRuleId } : null,
+    fees,
     feesTotal,
     walletPaid,
     completedNonWalletPaid,

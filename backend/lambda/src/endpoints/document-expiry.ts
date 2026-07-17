@@ -15,6 +15,7 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 
@@ -367,7 +368,7 @@ export function registerDocumentExpiryEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
-    const result = await getVendorDocsHandler.execute(event, context);
+    const result = await getVendorDocsHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -384,7 +385,7 @@ export function registerDocumentExpiryEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
-    const result = await updateDocHandler.execute(event, context);
+    const result = await updateDocHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -400,7 +401,7 @@ export function registerDocumentExpiryEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
-    const result = await checkExpiryJobHandler.execute(event, context);
+    const result = await checkExpiryJobHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -416,7 +417,7 @@ export function registerDocumentExpiryEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
-    const result = await adminGetExpiringHandler.execute(event, context);
+    const result = await adminGetExpiringHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

@@ -676,6 +676,7 @@ export function MyBookings({
         basePrice: basePrice > 0 ? basePrice : undefined,
         lockedPayableAmount: payable,
         razorpayOrderId: r.razorpayOrderId,
+        financialSnapshot: r.financialSnapshot ?? null,
         selectedServices: Array.isArray(r.selectedServices) ? r.selectedServices : undefined,
         flowType: 'payment-resume',
         returnScreen: 'my-bookings',

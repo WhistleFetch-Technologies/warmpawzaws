@@ -19,7 +19,7 @@
 
 import { ScheduledEvent, Context, APIGatewayProxyResult } from 'aws-lambda';
 import { query, update, insert, select } from '../database/rds-connection';
-import { websocketService } from '../lib/services/websocket-service';
+import { websocketService, type WebSocketMessage } from '../lib/services/websocket-service';
 import { sendPharmacyBroadcast } from '../aws/aws-sns-notification-service';
 import { dispatchNotification } from '../utils/notification-dispatch';
 
@@ -247,7 +247,7 @@ async function expandBroadcastRadius(order: any): Promise<ExpansionResult> {
       order.customer_id,
       'customer',
       {
-        type: 'broadcast_radius_expanded',
+        type: 'broadcast_radius_expanded' as unknown as WebSocketMessage['type'],
         data: {
           orderId: order.id,
           previousRadius: currentRadius,
@@ -450,7 +450,7 @@ async function expireOrder(orderId: string, reason: string): Promise<void> {
         order.customer_id,
         'customer',
         {
-          type: 'order_expired',
+          type: 'order_expired' as unknown as WebSocketMessage['type'],
           data: {
             orderId,
             reason,

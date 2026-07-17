@@ -21,8 +21,18 @@ import { formatVendorProductSellingDisplay } from '@/lib/product-ecommerce-prici
 import { formatPriceWithSymbol } from '@/lib/format-utils';
 import { useVendorProductList } from '@/hooks/useVendorProductList';
 import type { VendorProductServerStatus } from '@/lib/vendor-product-list-query';
+import {
+  MAX_BULK_PRODUCT_DELETE,
+  getSelectableProductIds,
+  isAllSelectableSelected,
+  toggleProductSelection,
+} from '@/lib/vendor-product-bulk-selection';
 
 const DEFAULT_PRODUCT_EMOJI = '\u{1F4E6}';
+
+const DELETE_CONFIRM_BODY =
+  'Products with past orders will be archived (hidden from your shop and customers) but kept for order records.\n' +
+  'Products with no orders will be permanently deleted.';
 
 /** Persist stable S3 object URLs; list/detail APIs return presigned URLs for display. */
 function stripAwsPresignFromProductImageUrl(url: string): string {
@@ -98,7 +108,10 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const selectAllRef = useRef<HTMLInputElement | null>(null);
 
   const trimmedSearch = searchQuery.trim();
   const deferredSearch = useDeferredValue(trimmedSearch);
@@ -127,6 +140,10 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     loadCategories();
   }, [sellerId]);
 
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [deferredSearch, selectedCategory, selectedStatus]);
+
   const loadCategories = async () => {
     try {
       const data = await apiClient.get<{ categories?: any[] }>('/ecommerce/categories');
@@ -140,6 +157,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   const handleRefresh = async () => {
     try {
       setRefreshing(true);
+      setSelectedIds(new Set());
       await Promise.all([refresh(), loadCategories()]);
     } finally {
       setRefreshing(false);
@@ -184,9 +202,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     }
 
     const confirmed = window.confirm(
-      'Remove this product from your catalog?\n\n' +
-        'â€¢ Products with past orders will be archived (hidden from your shop and customers) but kept for order records.\n' +
-        'â€¢ Products with no orders will be permanently deleted.',
+      'Remove this product from your catalog?\n\n' + DELETE_CONFIRM_BODY,
     );
     if (!confirmed) return;
 
@@ -224,6 +240,89 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
       return name.includes(deferredSearchLower) || desc.includes(deferredSearchLower);
     });
   }, [products, deferredSearchLower, selectedStatus]);
+
+  const selectableIds = useMemo(
+    () => getSelectableProductIds(filteredProducts, isRemovedFromCatalog),
+    [filteredProducts],
+  );
+
+  const selectedCount = selectedIds.size;
+  const allSelectableSelected = isAllSelectableSelected(selectableIds, selectedIds);
+  const someSelectableSelected = selectableIds.some((id) => selectedIds.has(id));
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someSelectableSelected && !allSelectableSelected;
+    }
+  }, [someSelectableSelected, allSelectableSelected]);
+
+  const toggleProductSelect = (productId: string) => {
+    setSelectedIds((prev) => toggleProductSelection(prev, productId));
+  };
+
+  const toggleSelectAll = () => {
+    if (allSelectableSelected) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(selectableIds));
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkDelete = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+
+    if (ids.length > MAX_BULK_PRODUCT_DELETE) {
+      toast.error(`Select at most ${MAX_BULK_PRODUCT_DELETE} products at a time.`);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remove ${ids.length} selected product${ids.length === 1 ? '' : 's'} from your catalog?\n\n${DELETE_CONFIRM_BODY}`,
+    );
+    if (!confirmed) return;
+
+    try {
+      setBulkDeleting(true);
+      const res = await apiClient.post<{
+        message?: string;
+        deleted?: number;
+        deactivated?: number;
+        failed?: number;
+      }>(`/vendor/${sellerId}/products/bulk/delete`, { productIds: ids });
+
+      const deleted = res?.deleted ?? 0;
+      const deactivated = res?.deactivated ?? 0;
+      const failed = res?.failed ?? 0;
+      const succeeded = deleted + deactivated;
+
+      if (failed > 0 && succeeded === 0) {
+        toast.error(res?.message || 'Failed to remove selected products.');
+      } else if (failed > 0) {
+        toast.warning(res?.message || `Removed ${succeeded} products. ${failed} failed.`, {
+          duration: 6000,
+        });
+      } else if (deactivated > 0) {
+        toast.success(
+          res?.message ||
+            `Removed ${succeeded} product${succeeded === 1 ? '' : 's'} (${deactivated} archived for order history).`,
+          { duration: 6000 },
+        );
+      } else {
+        toast.success(res?.message || `Deleted ${deleted} product${deleted === 1 ? '' : 's'} successfully.`);
+      }
+
+      setSelectedIds(new Set());
+      await refresh();
+    } catch (error) {
+      console.error('Error bulk deleting products:', error);
+      toast.error('Failed to remove selected products. Please try again.');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   const clientStatusFilterActive = usesClientOnlyStatusFilter(selectedStatus);
   const catalogFooterLabel = useMemo(() => {
@@ -311,7 +410,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-lg shadow-slate-100/50">
+      <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-lg shadow-slate-100/50 space-y-4">
         <div className="flex flex-col lg:flex-row gap-4">
           {/* Search */}
           <div className="flex-1 relative">
@@ -369,6 +468,45 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
             </button>
           </div>
         </div>
+
+        {selectableIds.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-slate-100">
+            <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer select-none">
+              <input
+                ref={selectAllRef}
+                type="checkbox"
+                checked={allSelectableSelected}
+                onChange={toggleSelectAll}
+                className="h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500/30"
+              />
+              Select all loaded ({selectableIds.length})
+            </label>
+            {selectedCount > 0 && (
+              <>
+                <span className="text-sm text-slate-500">
+                  {selectedCount} selected
+                </span>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  disabled={bulkDeleting}
+                  className="text-sm font-medium text-slate-600 hover:text-slate-900 disabled:opacity-60"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {bulkDeleting ? 'Removing…' : 'Delete selected'}
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Products */}
@@ -412,6 +550,9 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
               onEdit={() => openProductEdit(product)}
               onDelete={() => handleDeleteProduct(product.id)}
               getStatusBadge={getStatusBadge}
+              selectable={!isRemovedFromCatalog(product)}
+              selected={selectedIds.has(product.id)}
+              onToggleSelect={() => toggleProductSelect(product.id)}
             />
           ))}
         </div>
@@ -420,6 +561,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
+                <th className="w-12 p-4" aria-label="Select" />
                 <th className="text-left p-4 font-semibold text-slate-600 text-sm">Product</th>
                 <th className="text-left p-4 font-semibold text-slate-600 text-sm">SKU</th>
                 <th className="text-left p-4 font-semibold text-slate-600 text-sm">Category</th>
@@ -435,6 +577,17 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
                 const displayStatus = getVendorDisplayStatus(product);
                 return (
                 <tr key={product.id} className={`hover:bg-slate-50 transition-colors ${removed ? 'opacity-75' : ''}`}>
+                  <td className="p-4">
+                    {!removed ? (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(product.id)}
+                        onChange={() => toggleProductSelect(product.id)}
+                        aria-label={`Select ${product.name}`}
+                        className="h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500/30"
+                      />
+                    ) : null}
+                  </td>
                   <td className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center text-2xl">
@@ -560,14 +713,47 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   );
 }
 
-function ProductCard({ product, categories, onEdit, onDelete, getStatusBadge }: any) {
+function ProductCard({
+  product,
+  categories,
+  onEdit,
+  onDelete,
+  getStatusBadge,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
+}: {
+  product: Product;
+  categories: any[];
+  onEdit: () => void;
+  onDelete: () => void;
+  getStatusBadge: (status: string) => React.ReactNode;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
+}) {
   const removed = isRemovedFromCatalog(product);
   const displayStatus = getVendorDisplayStatus(product);
   const pricing = formatVendorProductSellingDisplay(product.price, product.original_price);
 
   return (
-    <div className={`bg-white rounded-2xl border overflow-hidden hover:shadow-xl transition-all duration-300 group ${removed ? 'border-slate-200 opacity-75' : 'border-slate-100'}`}>
+    <div className={`bg-white rounded-2xl border overflow-hidden hover:shadow-xl transition-all duration-300 group ${removed ? 'border-slate-200 opacity-75' : 'border-slate-100'} ${selected ? 'ring-2 ring-orange-500/40' : ''}`}>
       <div className="aspect-square bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center text-7xl relative">
+        {selectable && onToggleSelect && (
+          <div className="absolute top-3 left-3 z-10">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={(e) => {
+                e.stopPropagation();
+                onToggleSelect();
+              }}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Select ${product.name}`}
+              className="h-5 w-5 rounded border-slate-300 bg-white text-orange-600 focus:ring-orange-500/30 shadow-sm"
+            />
+          </div>
+        )}
         {product.images?.[0] ? (
           <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
         ) : (

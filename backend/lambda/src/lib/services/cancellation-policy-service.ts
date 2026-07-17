@@ -219,16 +219,22 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
   source: RefundSource;
   policyApplied: boolean;
   meta?: { tierId?: string; tierName?: string };
-  /** Amount tier % / fees were applied to (net paid minus non-refundable platform fees; coupon net when no payments). */
+  /** Amount tier % / fees were applied to (net paid minus non-refundable platform/convenience fees; coupon net when no payments). */
   refundableCustomerPaidBase: number;
   /** Sum of platform_fee on completed payments; not part of refundable base. */
   platformFeeNonRefundable: number;
+  /** Sum of convenience_fee on completed payments; not part of refundable base. */
+  convenienceFeeNonRefundable: number;
+  /** platformFeeNonRefundable + convenienceFeeNonRefundable. */
+  nonRefundableFees: number;
   /** Hours from now until scheduled start (for display / calculate-refund). */
   hoursUntilBooking?: number;
 }> {
   const paidBreakdown = await getRefundableCustomerPaidBreakdown(booking.id, booking);
   const refundableBase = paidBreakdown.refundableBase;
   const platformFeeNonRefundable = paidBreakdown.platformFeeNonRefundable;
+  const convenienceFeeNonRefundable = paidBreakdown.convenienceFeeNonRefundable;
+  const nonRefundableFees = paidBreakdown.nonRefundableFees;
   const total = refundableBase;
   // Hours until start: vendor-local wall clock first (vendor_timezone + date + time), same as DB trigger.
   // Avoid naive `new Date(YYYY-MM-DDTHH:mm)` on Lambda UTC — that mis-reads IST slots as UTC and can pick the wrong refund tier.
@@ -249,6 +255,8 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
       meta: { tierId: tier.tierId, tierName: tier.tierName },
       refundableCustomerPaidBase: refundableBase,
       platformFeeNonRefundable,
+      convenienceFeeNonRefundable,
+      nonRefundableFees,
       hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
     };
   }
@@ -291,6 +299,8 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
       policyApplied: true,
       refundableCustomerPaidBase: refundableBase,
       platformFeeNonRefundable,
+      convenienceFeeNonRefundable,
+      nonRefundableFees,
       hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
     };
   }
@@ -306,17 +316,20 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
     policyApplied: false,
     refundableCustomerPaidBase: refundableBase,
     platformFeeNonRefundable,
+    convenienceFeeNonRefundable,
+    nonRefundableFees,
     hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
   };
 }
 
 /**
  * Wallet refunds on customer cancel: 100% of what the customer paid (no cancellation policy).
+ * Adds back the non-refundable fees (platform + convenience) so wallet credit stays at 100%.
  */
 export async function previewWalletFullCancellationRefund(booking: BookingForPolicy) {
   const paidBreakdown = await getRefundableCustomerPaidBreakdown(booking.id, booking);
   const fullAmount = Math.round(
-    (paidBreakdown.refundableBase + paidBreakdown.platformFeeNonRefundable) * 100
+    (paidBreakdown.refundableBase + paidBreakdown.nonRefundableFees) * 100
   ) / 100;
   const hoursRaw = computeHoursUntilBookingStart(booking);
   const hoursUntilBooking = Number.isFinite(hoursRaw) ? hoursRaw : 0;
@@ -329,6 +342,8 @@ export async function previewWalletFullCancellationRefund(booking: BookingForPol
     policyApplied: false,
     refundableCustomerPaidBase: fullAmount,
     platformFeeNonRefundable: 0,
+    convenienceFeeNonRefundable: 0,
+    nonRefundableFees: 0,
     hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
   };
 }
@@ -366,10 +381,14 @@ export async function previewProviderCancellationRefund(
   meta?: { tierId?: string; tierName?: string };
   refundableCustomerPaidBase: number;
   platformFeeNonRefundable: number;
+  convenienceFeeNonRefundable: number;
+  nonRefundableFees: number;
 }> {
   const paidBreakdown = await getRefundableCustomerPaidBreakdown(booking.id, booking);
   const refundableBase = paidBreakdown.refundableBase;
   const platformFeeNonRefundable = paidBreakdown.platformFeeNonRefundable;
+  const convenienceFeeNonRefundable = paidBreakdown.convenienceFeeNonRefundable;
+  const nonRefundableFees = paidBreakdown.nonRefundableFees;
   const total = refundableBase;
   const reasonNorm =
     vendorCancellationReason && String(vendorCancellationReason).trim()
@@ -392,6 +411,8 @@ export async function previewProviderCancellationRefund(
       meta: { tierId: tier.tierId, tierName: tier.tierName },
       refundableCustomerPaidBase: refundableBase,
       platformFeeNonRefundable,
+      convenienceFeeNonRefundable,
+      nonRefundableFees,
     };
   }
 
@@ -405,5 +426,7 @@ export async function previewProviderCancellationRefund(
     policyApplied: false,
     refundableCustomerPaidBase: refundableBase,
     platformFeeNonRefundable,
+    convenienceFeeNonRefundable,
+    nonRefundableFees,
   };
 }

@@ -15,6 +15,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { sendSMS } from '../../utils/sms-service';
 import { query, select, insert, update } from '../../database/rds-connection';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../../handler/base-handler-enhanced';
@@ -1625,7 +1626,7 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
       c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
     const body = await c.req.json().catch(() => ({}));
     const out = await handleCustomerForgotPasswordReset({ body, requestId });
-    return c.json(out.body as any, out.status);
+    return c.json(out.body as any, out.status as ContentfulStatusCode);
   });
 
   app.post('/auth/vendor/forgot-password/request', async (c) => {
@@ -1667,7 +1668,7 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
       c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
     const body = await c.req.json().catch(() => ({}));
     const out = await handleVendorForgotPasswordReset({ body, requestId });
-    return c.json(out.body as any, out.status);
+    return c.json(out.body as any, out.status as ContentfulStatusCode);
   });
 
   app.post('/auth/login', async (c) => {
@@ -1778,7 +1779,7 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
     const refreshToken =
       typeof (body as any)?.refreshToken === 'string' ? (body as any).refreshToken : '';
     const out = await executeAuthRefresh(refreshToken);
-    return c.json(out.body as Parameters<typeof c.json>[0], out.status);
+    return c.json(out.body as any, out.status as ContentfulStatusCode);
   });
 
   app.post('/auth/send-otp', async (c) => {

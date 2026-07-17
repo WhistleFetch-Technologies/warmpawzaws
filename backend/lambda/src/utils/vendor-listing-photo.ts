@@ -38,7 +38,7 @@ async function listingPhotoDisplayUrl(
       ownerId: vendorId,
       vendorId,
       context: 'list',
-      migrate: true,
+      migrate: false,
     });
     if (resolved?.displayUrl) return resolved.displayUrl;
   }

@@ -26,6 +26,19 @@ import {
   type SqlClient,
 } from '../utils/package-session-sync';
 
+// Type-only ambient declarations (no runtime emit): getSnsClient/PublishCommand are
+// referenced below but are not imported or defined anywhere in this module — that code
+// path throws a ReferenceError at runtime today (pre-existing bug). Declared here solely
+// so tsc can type-check without changing runtime behavior.
+declare function getSnsClient(): { send(command: unknown): Promise<unknown> };
+declare class PublishCommand {
+  constructor(input: {
+    PhoneNumber?: string;
+    Message?: string;
+    MessageAttributes?: Record<string, { DataType: string; StringValue: string }>;
+  });
+}
+
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
 }

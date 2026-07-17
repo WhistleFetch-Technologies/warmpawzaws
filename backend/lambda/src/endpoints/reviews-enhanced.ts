@@ -15,6 +15,7 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
@@ -520,7 +521,7 @@ export function registerReviewsEnhancedEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
-    const result = await createHandler.execute(event, context);
+    const result = await createHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -537,7 +538,7 @@ export function registerReviewsEnhancedEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
-    const result = await skipHandler.execute(event, context);
+    const result = await skipHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -553,7 +554,7 @@ export function registerReviewsEnhancedEndpoints(app: Hono) {
       requestContext: { requestId: randomUUID() },
     };
     const context = { requestId: randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
-    const result = await getVendorReviewsHandler.execute(event, context);
+    const result = await getVendorReviewsHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -570,7 +571,7 @@ export function registerReviewsEnhancedEndpoints(app: Hono) {
         requestContext: { requestId: randomUUID() },
       };
       const context = { requestId: randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
-      const result = await getPendingHandler.execute(event, context);
+      const result = await getPendingHandler.execute(event as unknown as APIGatewayProxyEvent, context as unknown as Context);
       // Graceful degradation: return 200 with empty on 4xx/5xx so customer home loads
       if (result.statusCode >= 400) {
         return c.json({ success: true, reviews: [], pending: [] }, 200);

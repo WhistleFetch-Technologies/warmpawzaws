@@ -139,19 +139,7 @@ async function getConvenienceFee(serviceType: string = 'pharmacy'): Promise<numb
 }
 
 export function registerPharmacyOrderEndpoints(app: Hono) {
-
-  // Ensure required columns exist (runtime migration fallback)
-  const ensureColumnsExist = async () => {
-    try {
-      await query(`ALTER TABLE pharmacy_orders ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(20)`);
-      await query(`ALTER TABLE pharmacy_orders ADD COLUMN IF NOT EXISTS prescription_url TEXT`);
-      await query(`ALTER TABLE pharmacy_broadcasts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
-      // Drop problematic trigger if it exists
-      await query(`DROP TRIGGER IF EXISTS trigger_update_pharmacy_broadcasts_updated_at ON pharmacy_broadcasts`);
-    } catch (e) { /* Columns may already exist */ }
-  };
-  ensureColumnsExist().catch(console.error);
-
+  // Schema managed via db/migrations/ (e.g. 608_add_pharmacy_orders_columns.sql). No runtime DDL on cold start.
   /**
    * POST /pharmacy/orders/create
    * Create a new pharmacy order and start broadcasting

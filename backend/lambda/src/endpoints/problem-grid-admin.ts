@@ -15,7 +15,9 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
+// @ts-expect-error -- 'remove' is not exported by rds-connection (pre-existing bug); this module is not registered anywhere, so the import is kept untouched to avoid any runtime/bundle change.
 import { query, select, insert, update, remove } from '../database/rds-connection';
 
 // ============================================================================
@@ -393,8 +395,8 @@ export function registerProblemGridAdminEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' };
-    const result = await listCategoriesHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await listCategoriesHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -409,8 +411,8 @@ export function registerProblemGridAdminEndpoints(app: Hono) {
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' };
-    const result = await listItemsHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await listItemsHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -426,8 +428,8 @@ export function registerProblemGridAdminEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' };
-    const result = await createItemHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await createItemHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -443,8 +445,8 @@ export function registerProblemGridAdminEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' };
-    const result = await updateItemHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await updateItemHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -459,8 +461,8 @@ export function registerProblemGridAdminEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' };
-    const result = await deleteItemHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await deleteItemHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -476,8 +478,8 @@ export function registerProblemGridAdminEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' };
-    const result = await toggleStatusHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await toggleStatusHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -493,8 +495,8 @@ export function registerProblemGridAdminEndpoints(app: Hono) {
       queryStringParameters: {},
       requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' };
-    const result = await reorderHandler.execute(event, context);
+    const context = { requestId: randomUUID(), functionName: 'problem-grid-admin', functionVersion: '$LATEST' } as unknown as Context;
+    const result = await reorderHandler.execute(event as unknown as APIGatewayProxyEvent, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

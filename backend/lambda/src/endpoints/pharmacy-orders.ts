@@ -22,6 +22,7 @@ import { getDiscoveryRules, getRuleNumberArray } from '../lib/rule-engine';
 import { prescriptionOCRService } from '../lib/services/prescription-ocr-service';
 import { websocketService } from '../lib/services/websocket-service';
 import { sendEventNotification } from '../aws/aws-sns-notification-service';
+import type { NotificationEvent, NotificationEventType } from '../aws/constatns/interface';
 import { autoAssignDeliveryPartner } from '../endpoints/delivery-partner-automation';
 import { computePolicyDeliveryFeeForOrder } from '../utils/customer-delivery-fee-quote';
 
@@ -867,7 +868,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
 
       await websocketService.sendOrderStatusUpdate(orderId, 'pharmacy', 'invoice_generated', {});
       await sendEventNotification({
-        eventType: 'pharmacy_order_invoice',
+        eventType: 'pharmacy_order_invoice' as unknown as NotificationEventType,
         recipientId: order.customer_id,
         recipientType: 'customer',
         relatedId: orderId,
@@ -1921,7 +1922,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
             title: 'Order Cancelled',
             body: 'Customer rejected the invoice and cancelled the order.',
             data: { orderId, reason: 'invoice_rejected' },
-          });
+          } as unknown as NotificationEvent);
         } catch (notifErr) {
           console.warn('[INVOICE] Failed to send cancellation notification:', notifErr);
         }
@@ -1950,7 +1951,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
           title: 'Invoice Approved! 🎉',
           body: 'Customer has approved the invoice. Awaiting payment.',
           data: { orderId },
-        });
+        } as unknown as NotificationEvent);
       } catch (notifErr) {
         console.warn('[INVOICE] Failed to send approval notification:', notifErr);
       }
@@ -2214,7 +2215,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
             full_name: address.name || 'Customer',
             created_at: new Date().toISOString(),
           });
-          customerId = newCustomer[0]?.id || newCustomer.id;
+          customerId = newCustomer[0]?.id || (newCustomer as any).id;
         } else {
           customerId = customers[0].id;
         }
@@ -2314,7 +2315,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
         updated_at: new Date().toISOString(),
       });
 
-      const orderId = orderResult[0]?.id || orderResult.id;
+      const orderId = orderResult[0]?.id || (orderResult as any).id;
 
       console.log(`[PHARMACY ORDER] Created order ${orderId} for customer ${customerId}`);
 

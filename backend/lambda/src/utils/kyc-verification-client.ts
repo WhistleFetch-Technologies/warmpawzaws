@@ -59,10 +59,13 @@ async function getSandboxAccessToken(config: KYCConfig): Promise<string> {
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       console.error('[SANDBOX-AUTH] Authentication failed:', error);
-      throw new Error(`Sandbox authentication failed: ${error?.message || response.statusText}`);
+      throw new Error(`Sandbox authentication failed: ${(error as { message?: string })?.message || response.statusText}`);
     }
 
-    const result = await response.json();
+    const result = (await response.json()) as {
+      data?: { access_token?: string };
+      access_token?: string;
+    };
     const accessToken = result.data?.access_token || result.access_token;
     
     if (!accessToken) {
@@ -236,7 +239,7 @@ export async function getKYCConfig(): Promise<KYCConfig> {
         console.log('[KYC-CONFIG] Loaded from platform_settings');
         return {
           ...config,
-          baseUrl: config.baseUrl || PROVIDER_BASE_URLS[config.provider] || PROVIDER_BASE_URLS.sandbox,
+          baseUrl: config.baseUrl || PROVIDER_BASE_URLS[config.provider as KYCProvider] || PROVIDER_BASE_URLS.sandbox,
           enabled: config.enabled !== false,
         };
       }
@@ -253,7 +256,7 @@ export async function getKYCConfig(): Promise<KYCConfig> {
         console.log('[KYC-CONFIG] Loaded from platform_integrations');
         return {
           ...config,
-          baseUrl: config.baseUrl || PROVIDER_BASE_URLS[config.provider] || PROVIDER_BASE_URLS.sandbox,
+          baseUrl: config.baseUrl || PROVIDER_BASE_URLS[config.provider as KYCProvider] || PROVIDER_BASE_URLS.sandbox,
           enabled: integrations[0].is_enabled !== false,
         };
       }

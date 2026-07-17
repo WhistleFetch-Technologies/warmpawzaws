@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PriceDisplay } from './PriceDisplay';
 import { SavingsBadge } from './SavingsBadge';
-import { fetchBookingDiscountQuote } from '@/lib/service-booking-pricing';
+import { fetchBookingDiscountQuoteBatched } from '@/lib/service-booking-pricing';
 import { roundMoney } from '@/lib/pricing/format';
 import { totalSavingsFromQuote } from '@/lib/pricing/unified-resolver-response';
 
@@ -68,14 +68,13 @@ export function ServiceListingPrice({
     if (!vendorId || basePrice <= 0) return;
     let cancelled = false;
     setLoading(true);
-    fetchBookingDiscountQuote({
+    fetchBookingDiscountQuoteBatched({
       vendorId,
       serviceIds: serviceId ? [serviceId] : [],
       amount: basePrice,
       customerId,
       serviceStyle: effectiveServiceStyle,
       serviceCategory,
-      displayPromotionsOnly: true,
     })
       .then((quote) => {
         if (cancelled || !quote) return;
@@ -134,7 +133,7 @@ export function ServiceListingPrice({
   const hasPromo = savings > 0;
 
   return (
-    <div className={className}>
+    <div className={`flex max-w-[11rem] flex-col items-end text-right ${className}`}>
       <PriceDisplay
         originalPrice={originalPrice}
         currentPrice={currentPrice}
@@ -142,9 +141,10 @@ export function ServiceListingPrice({
         loading={loading && !hasPromo}
         showDiscountPercent={hasPromo}
         discountPercent={promoBadgePercent}
+        align="end"
       />
       {hasPromo && (
-        <div className="mt-1 flex flex-wrap items-center gap-1">
+        <div className="mt-1 flex max-w-full flex-wrap items-center justify-end gap-1">
           <SavingsBadge variant="save_amount" amount={savings} />
           {hasAppliedPromo || local.savings > 0 ? (
             <SavingsBadge variant="auto_applied" />

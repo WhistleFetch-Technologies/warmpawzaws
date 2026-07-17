@@ -103,20 +103,21 @@ export function CouponSection({
   const checkoutKind =
     orderType === 'order' ? 'product_order' : orderType === 'meal' ? 'meal' : 'service_booking';
 
-  // Fetch available promotions for the vendor
+  // Fetch available platform (+ vendor) coded offers when expanded.
+  // Platform coupons do not require vendorId; typing still works without expand.
   useEffect(() => {
-    if (vendorId && expanded) {
+    if (expanded) {
       void fetchAvailablePromotions();
     }
   }, [vendorId, expanded, orderAmount, customerId, checkoutKind, serviceCategory]);
 
   const fetchAvailablePromotions = async () => {
-    if (!vendorId) return;
-    
     setLoadingPromotions(true);
     try {
       const [vendorRes, platformRes] = await Promise.all([
-        apiClient.get<any>(`/vendors/${vendorId}/active-promotions?type=${orderType === 'booking' ? 'service' : 'product'}`),
+        vendorId
+          ? apiClient.get<any>(`/vendors/${vendorId}/active-promotions?type=${orderType === 'booking' ? 'service' : 'product'}`)
+          : Promise.resolve({ promotions: [] }),
         orderType === 'order'
           ? apiClient.get<any>(
               '/promotions/active?includeCoupons=true&includeCodedPromotions=true&discount_domain=ECOMMERCE'
@@ -189,12 +190,10 @@ export function CouponSection({
         })
       );
 
-      // Gallery: only show coupons that probe as eligible (hide greyed cross-category / inapplicable).
-      const eligiblePromotions = coded.filter(
-        (promo: Promotion) => eligibility[promo.id]?.eligible === true
-      );
+      // Show all coded coupons that match service targeting. Typing already works without
+      // this list; hiding failed probes made valid codes invisible in the gallery.
       setPromoEligibility(eligibility);
-      setAvailablePromotions(eligiblePromotions);
+      setAvailablePromotions(coded);
     } catch (error) {
       console.error('Error fetching promotions:', error);
     } finally {
@@ -451,12 +450,18 @@ export function CouponSection({
                           
                           <button
                             onClick={() => applyPromotion(promo)}
-                            disabled={loading}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-orange-500 text-white hover:bg-orange-600"
+                            disabled={loading || eligibility?.eligible === false}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                              eligibility?.eligible === false
+                                ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                                : 'bg-orange-500 text-white hover:bg-orange-600'
+                            }`}
                           >
-                            {eligibility?.discountAmount
-                              ? `Apply (−₹${formatAmount(eligibility.discountAmount)})`
-                              : 'Apply'}
+                            {eligibility?.eligible === false
+                              ? eligibility.reason || 'Unavailable'
+                              : eligibility?.discountAmount
+                                ? `Apply (−₹${formatAmount(eligibility.discountAmount)})`
+                                : 'Apply'}
                           </button>
                         </div>
                       </div>
@@ -465,11 +470,12 @@ export function CouponSection({
                 })}
               </div>
             </div>
-          ) : vendorId ? (
+          ) : (
             <div className="text-center py-4">
-              <p className="text-sm text-slate-500">No promotions available</p>
+              <p className="text-sm text-slate-500">No coupons available right now</p>
+              <p className="text-xs text-slate-400 mt-1">You can still enter a code above</p>
             </div>
-          ) : null}
+          )}
         </div>
       )}
     </div>

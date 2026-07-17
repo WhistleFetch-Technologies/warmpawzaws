@@ -308,6 +308,7 @@ export function UniversalServicesByStyle({
             if (!p.photo && p.photoUrl) {
               p.photo = p.photoUrl;
             }
+            p.services = Array.isArray(p.services) ? p.services : [];
             p.nextAvailableSlot = resolveNextAvailableLabel(p);
             return p;
           });
@@ -1577,36 +1578,55 @@ export function UniversalServicesByStyle({
                         key={service.id}
                         className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
                       >
-                        {/* Price + CTA on the right only; left = name, desc, duration/category (same grid as ClinicListView) */}
-                        <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_6.25rem] items-start gap-2">
-                          <div className="min-w-0 pr-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h5 className="line-clamp-2 break-words font-medium leading-5 text-gray-900">
-                                {service.name}
-                              </h5>
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
-                                  <span className="shrink-0 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
-                                    Package
-                                  </span>
-                                )}
-                                {(service as any).inActivePackage && (
-                                  <span className="shrink-0 rounded-full border border-orange-200 bg-orange-100 px-2 py-0.5 text-xs font-semibold text-[#FF8C42]">
-                                    In your package
-                                  </span>
-                                )}
+                        {/* Row 1: name (left) | price (right). Row 2: meta | Book Now — matches ClinicListView */}
+                        <div className="space-y-3">
+                          <div className="flex min-w-0 items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h5 className="line-clamp-2 break-words font-medium leading-5 text-gray-900">
+                                  {service.name}
+                                </h5>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
+                                    <span className="shrink-0 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                                      Package
+                                    </span>
+                                  )}
+                                  {(service as any).inActivePackage && (
+                                    <span className="shrink-0 rounded-full border border-orange-200 bg-orange-100 px-2 py-0.5 text-xs font-semibold text-[#FF8C42]">
+                                      In your package
+                                    </span>
+                                  )}
+                                </div>
                               </div>
+                              {service.description?.trim() ? (
+                                <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                                  <ServiceDescriptionInline
+                                    description={service.description!}
+                                    title={service.name}
+                                    className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
+                                  />
+                                </div>
+                              ) : null}
                             </div>
-                            {service.description?.trim() ? (
-                              <div className="mt-1" onClick={(e) => e.stopPropagation()}>
-                                <ServiceDescriptionInline
-                                  description={service.description!}
-                                  title={service.name}
-                                  className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
-                                />
-                              </div>
-                            ) : null}
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <div className="shrink-0 text-right">
+                              <ServicePricingDisplay
+                                basePrice={service.originalPrice || service.price}
+                                vendorDiscount={service.vendorDiscount}
+                                usePromoQuote
+                                vendorId={String(provider.vendorId || vendorId || '')}
+                                serviceId={String(service.id || service.serviceId || '')}
+                                customerId={phone}
+                                serviceStyle={serviceStyle}
+                                serviceCategory={finalCategory}
+                              />
+                              <p className="mt-0.5 max-w-[9rem] text-[11px] leading-4 text-gray-500">
+                                {INDICATIVE_PRICING_NOTE}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
                               <Badge variant="outline" className="shrink-0 text-xs">
                                 <Clock className="mr-1 h-3 w-3" />
                                 {(service.duration ?? 0)} mins
@@ -1617,25 +1637,9 @@ export function UniversalServicesByStyle({
                                 </Badge>
                               )}
                             </div>
-                          </div>
-                          <div className="text-right">
-                            <ServicePricingDisplay
-                              basePrice={service.originalPrice || service.price}
-                              vendorDiscount={service.vendorDiscount}
-                              usePromoQuote
-                              vendorId={String(provider.vendorId || vendorId || '')}
-                              serviceId={String(service.id || service.serviceId || '')}
-                              customerId={phone}
-                              serviceStyle={serviceStyle}
-                              serviceCategory={finalCategory}
-                              className="mb-1"
-                            />
-                            <p className="mb-2 text-[11px] leading-4 text-gray-500 break-words">
-                              {INDICATIVE_PRICING_NOTE}
-                            </p>
                             <Button
                               size="sm"
-                              className="h-8 w-full bg-[#FF8C42] px-2 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
+                              className="h-8 shrink-0 rounded-full bg-[#FF8C42] px-5 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleSelectService(provider, service);

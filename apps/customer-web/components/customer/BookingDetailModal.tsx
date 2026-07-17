@@ -760,6 +760,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         basePrice: basePrice > 0 ? basePrice : undefined,
         lockedPayableAmount: payable,
         razorpayOrderId: r.razorpayOrderId,
+        financialSnapshot: r.financialSnapshot ?? null,
         selectedServices: Array.isArray(r.selectedServices) ? r.selectedServices : undefined,
         flowType: 'payment-resume',
         returnScreen: 'my-bookings',
@@ -1131,16 +1132,23 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
 
             {/* Payment breakdown — financial truth from stored booking + payment fields */}
             {bookingFinancial && bookingFinancial.servicePrice > 0 && (
-              <BookingPricingSummary
-                financial={bookingFinancial}
-                title="Price breakdown"
-                showSavingsBanner={
-                  booking.paymentStatus === 'paid' ||
-                  booking.payment_status === 'paid' ||
-                  booking.paymentStatus === 'completed' ||
-                  booking.payment_status === 'completed'
-                }
-              />
+              <div className="space-y-2">
+                <BookingPricingSummary
+                  financial={bookingFinancial}
+                  title="Price breakdown"
+                  showSavingsBanner={
+                    booking.paymentStatus === 'paid' ||
+                    booking.payment_status === 'paid' ||
+                    booking.paymentStatus === 'completed' ||
+                    booking.payment_status === 'completed'
+                  }
+                />
+                {bookingStatusNormalized === 'cancelled' && !bookingFinancial.isPaid && (
+                  <p className="text-xs text-gray-500 px-1">
+                    No amount was charged for this booking
+                  </p>
+                )}
+              </div>
             )}
 
             {booking.paymentSources?.length > 0 &&

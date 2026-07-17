@@ -21,7 +21,9 @@ import { isValidUUID } from '../types/entities';
 import {
   listApplicableBookingPromotions,
   resolveBookingDiscountQuote,
+  resolveBookingDiscountQuoteBatch,
 } from '../lib/services/booking-promotion-service';
+import type { UnifiedResolverResponse } from '../discount-engine/resolver/unified-resolver-response';
 import { resolveBookingServiceCategory } from '../lib/services/resolve-booking-service-category';
 import { validateCouponInternal as validatePlatformCouponInternal } from '../lib/services/platform-coupon-service';
 import {
@@ -39,6 +41,7 @@ import {
   mergeAdminPromotionUpdateBody,
   normalizePromotionDiscountType as normalizeAdminPromotionDiscountType,
   parseDateInput as parseAdminDateInput,
+  sanitizePromotionsTablePayload,
 } from '../utils/promotion-admin-persistence';
 import { isPromotionLiveInIst } from '../utils/promotion-date-bounds';
 import { promotionCategoriesMatch } from '../utils/platform-promotion-matching';
@@ -55,6 +58,36 @@ import {
   type CommercialDiscountDomain,
 } from '../utils/commercial-discount-domain';
 import { countActiveEcommerceAdminPromotions } from '../utils/count-active-ecommerce-promotions';
+
+/** calculate-booking HTTP payload — unified quote plus legacy field aliases for existing customer-web callers. */
+function buildCalculateBookingHttpPayload(quote: UnifiedResolverResponse) {
+  return {
+    ...quote,
+    originalAmount: quote.savings.originalAmount,
+    vendorDiscountAmount: quote.savings.vendorDiscountAmount,
+    platformDiscountAmount: quote.savings.platformDiscountAmount,
+    totalSavings: quote.savings.totalSavings,
+    finalAmount: quote.savings.finalAmount,
+    applied: quote.appliedOffers.map((o) => ({
+      id: o.id,
+      source: o.source === 'vendor' ? 'vendor' : 'platform',
+      name: o.name,
+      discountAmount: o.discountAmount,
+      promotionType: o.source === 'coupon' ? 'coupon' : o.offerType,
+    })),
+    bestPromotion: quote.winningPromotion
+      ? {
+          id: quote.winningPromotion.id,
+          source: quote.winningPromotion.source === 'vendor' ? 'vendor' : 'platform',
+          name: quote.winningPromotion.name,
+          calculatedDiscount: quote.winningPromotion.discountAmount,
+        }
+      : null,
+    policyApplicationStrategy: quote.currentPolicy.applicationStrategy,
+    winningStrategy: quote.currentPolicy.winningStrategy ?? null,
+    policyFingerprint: quote.currentPolicy.policyFingerprint,
+  };
+}
 
 async function persistPromotionInsert(promotionData: Record<string, unknown>) {
   if (isEcommerceAdminPromotionDomain(promotionData)) {
@@ -74,12 +107,19 @@ async function persistPromotionInsert(promotionData: Record<string, unknown>) {
     }
   }
 
-  const payload = { ...promotionData };
+  const payload = sanitizePromotionsTablePayload({ ...promotionData });
   for (;;) {
     try {
       return await insert('promotions', payload);
     } catch (insertError: unknown) {
       const msg = String((insertError as { message?: string })?.message || '');
+      if (msg.includes('column "min_order_value"') && payload.min_order_value !== undefined) {
+        if (payload.min_order_amount === undefined) {
+          payload.min_order_amount = payload.min_order_value;
+        }
+        delete payload.min_order_value;
+        continue;
+      }
       if (msg.includes('column "code"') && payload.code) {
         console.warn('[Promotions] Code column does not exist, retrying without code');
         delete payload.code;
@@ -215,13 +255,20 @@ async function persistPromotionUpdate(id: string, updateData: Record<string, unk
     return;
   }
 
-  const payload = { ...updateData };
+  const payload = sanitizePromotionsTablePayload({ ...updateData });
   for (;;) {
     try {
       await update('promotions', { id }, payload);
       return;
     } catch (updateError: unknown) {
       const msg = String((updateError as { message?: string })?.message || '');
+      if (msg.includes('column "min_order_value"') && payload.min_order_value !== undefined) {
+        if (payload.min_order_amount === undefined) {
+          payload.min_order_amount = payload.min_order_value;
+        }
+        delete payload.min_order_value;
+        continue;
+      }
       if (msg.includes('column "discount_domain"') && payload.discount_domain !== undefined) {
         console.warn('[Promotions] discount_domain column missing on update, persisting in metadata');
         const baseMeta =
@@ -782,7 +829,10 @@ export function registerPromotionEndpoints(app: Hono) {
       const promotionRows = promotions.rows ?? [];
 
       let ecommerceAdminRows: Record<string, unknown>[] = [];
-      if (serviceType === 'all' || serviceType === 'product' || serviceType === 'shop') {
+      const includeEcommerceAdmin =
+        commercialDomain !== 'SERVICE' &&
+        (serviceType === 'all' || serviceType === 'product' || serviceType === 'shop');
+      if (includeEcommerceAdmin) {
         try {
           const campaigns = await query(
             `SELECT * FROM ecommerce_admin_promotions
@@ -1174,36 +1224,104 @@ export function registerPromotionEndpoints(app: Hono) {
             : undefined,
       });
 
-      return c.json({
-        ...quote,
-        // Legacy field aliases for existing customer-web callers
-        originalAmount: quote.savings.originalAmount,
-        vendorDiscountAmount: quote.savings.vendorDiscountAmount,
-        platformDiscountAmount: quote.savings.platformDiscountAmount,
-        totalSavings: quote.savings.totalSavings,
-        finalAmount: quote.savings.finalAmount,
-        applied: quote.appliedOffers.map((o) => ({
-          id: o.id,
-          source: o.source === 'vendor' ? 'vendor' : 'platform',
-          name: o.name,
-          discountAmount: o.discountAmount,
-          promotionType: o.source === 'coupon' ? 'coupon' : o.offerType,
-        })),
-        bestPromotion: quote.winningPromotion
-          ? {
-              id: quote.winningPromotion.id,
-              source: quote.winningPromotion.source === 'vendor' ? 'vendor' : 'platform',
-              name: quote.winningPromotion.name,
-              calculatedDiscount: quote.winningPromotion.discountAmount,
-            }
-          : null,
-        policyApplicationStrategy: quote.currentPolicy.applicationStrategy,
-        winningStrategy: quote.currentPolicy.winningStrategy ?? null,
-        policyFingerprint: quote.currentPolicy.policyFingerprint,
-      });
+      return c.json(buildCalculateBookingHttpPayload(quote));
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error('Error calculating booking promotions:', msg);
+      return c.json({ success: false, error: msg }, 500);
+    }
+  });
+
+  /**
+   * POST /promotions/calculate-booking-batch
+   * Batched display-only quotes for service listing surfaces (one vendor, many services).
+   * Body: { vendorId, customerId?, serviceCategory?, items: [{ key, serviceId | serviceIds, amount, serviceStyle?, serviceCategory? }] }
+   * Each quote in the response matches the single calculate-booking payload shape.
+   */
+  app.post('/promotions/calculate-booking-batch', async (c) => {
+    try {
+      const body = await c.req.json();
+      const vendorId = String(body.vendorId || body.vendor_id || '').trim();
+      const customerId = body.customerId || body.customer_id;
+      const batchCategory = body.serviceCategory || body.service_category || body.category;
+      const rawItems = Array.isArray(body.items) ? body.items : [];
+
+      if (!vendorId || rawItems.length === 0) {
+        return c.json({ success: false, error: 'vendorId and items are required' }, 400);
+      }
+      if (rawItems.length > 200) {
+        return c.json({ success: false, error: 'items limit is 200 per request' }, 400);
+      }
+
+      type BatchHttpItem = {
+        key: string;
+        serviceIds: string[];
+        amount: number;
+        serviceStyle?: string;
+        explicitCategory?: string;
+      };
+      const items: BatchHttpItem[] = rawItems
+        .map((raw: Record<string, unknown>, index: number): BatchHttpItem => {
+          const serviceIdsRaw = raw.serviceIds ?? raw.service_ids;
+          const serviceIds = Array.isArray(serviceIdsRaw)
+            ? serviceIdsRaw.map((x: unknown) => String(x)).filter(Boolean)
+            : raw.serviceId || raw.service_id
+              ? [String(raw.serviceId || raw.service_id)]
+              : [];
+          return {
+            key: String(raw.key ?? index),
+            serviceIds,
+            amount: parseFloat(String(raw.amount ?? 0)) || 0,
+            serviceStyle:
+              raw.serviceStyle ?? raw.service_style
+                ? String(raw.serviceStyle ?? raw.service_style)
+                : undefined,
+            explicitCategory:
+              raw.serviceCategory ?? raw.service_category
+                ? String(raw.serviceCategory ?? raw.service_category)
+                : batchCategory
+                  ? String(batchCategory)
+                  : undefined,
+          };
+        })
+        .filter((item: BatchHttpItem) => item.amount > 0);
+
+      if (items.length === 0) {
+        return c.json({ success: true, quotes: [] });
+      }
+
+      // Same category resolution as the single endpoint — resolved once per batch
+      // since all items belong to one vendor listing surface.
+      const resolvedCategory = await resolveBookingServiceCategory({
+        vendorId,
+        serviceId: items[0].serviceIds[0],
+        explicitCategory: items[0].explicitCategory ?? null,
+      });
+
+      const results = await resolveBookingDiscountQuoteBatch({
+        vendorId,
+        customerId: customerId ? String(customerId) : undefined,
+        items: items.map((item) => ({
+          key: item.key,
+          serviceIds: item.serviceIds,
+          amount: item.amount,
+          serviceStyle: item.serviceStyle,
+          serviceCategory: item.explicitCategory ?? resolvedCategory ?? undefined,
+        })),
+      });
+
+      return c.json({
+        success: true,
+        quotes: results.map((r) => ({
+          key: r.key,
+          ...(r.quote
+            ? buildCalculateBookingHttpPayload(r.quote)
+            : { success: false, error: r.error ?? 'quote_failed' }),
+        })),
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('Error calculating booking promotions batch:', msg);
       return c.json({ success: false, error: msg }, 500);
     }
   });
@@ -1909,8 +2027,9 @@ export function registerPromotionEndpoints(app: Hono) {
         return c.json({ error: targetingError }, 400);
       }
 
-      const promotionData: any = {
-        ...body,
+      // Do NOT spread raw body — wizard sends min_order_value / camelCase aliases that are
+      // not columns on `promotions` (canonical: min_order_amount).
+      const promotionData: Record<string, unknown> = {
         ...record,
         created_at: new Date().toISOString(),
       };
@@ -2060,10 +2179,13 @@ export function registerPromotionEndpoints(app: Hono) {
       discount_value: finalDiscountValue,
       min_order_amount: Number(finalMinOrder) > 0 ? finalMinOrder : null,
       max_discount_amount: Number(finalMaxDiscount) > 0 ? finalMaxDiscount : null,
-      start_date: finalValidFrom ? new Date(finalValidFrom) : new Date(),
+      // coupons.start_date / end_date are DATE — store calendar YYYY-MM-DD (not Date/ISO).
+      start_date: finalValidFrom
+        ? String(finalValidFrom).slice(0, 10)
+        : new Date().toISOString().split('T')[0],
       end_date: finalValidUntil
-        ? new Date(String(finalValidUntil))
-        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        ? String(finalValidUntil).slice(0, 10)
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       max_uses: Number(finalUsageLimit) > 0 ? finalUsageLimit : null,
       is_active: finalIsActive,
       applicable_to: targeting.applicable_to,
@@ -2294,11 +2416,12 @@ export function registerPromotionEndpoints(app: Hono) {
         updateData.max_discount_amount = body.max_discount !== undefined ? body.max_discount : body.maxDiscountAmount;
       }
       if (body.valid_from !== undefined || body.validFrom !== undefined) {
-        updateData.start_date = new Date(body.valid_from || body.validFrom);
+        const from = body.valid_from || body.validFrom;
+        updateData.start_date = from ? String(from).slice(0, 10) : undefined;
       }
       if (body.valid_until !== undefined || body.validUntil !== undefined) {
         const expiryDate = body.valid_until || body.validUntil;
-        updateData.end_date = expiryDate ? new Date(expiryDate) : null;
+        updateData.end_date = expiryDate ? String(expiryDate).slice(0, 10) : null;
       }
       if (body.usage_limit !== undefined || body.usageLimit !== undefined) {
         const limit = body.usage_limit !== undefined ? body.usage_limit : body.usageLimit;
@@ -2399,10 +2522,10 @@ export function registerPromotionEndpoints(app: Hono) {
           discount_type: finalDiscountType,
           discount_value: finalDiscountValue,
           min_order_amount: finalMinOrder > 0 ? finalMinOrder : null,
-          start_date: new Date(finalValidFrom),
+          start_date: String(finalValidFrom).slice(0, 10),
           end_date: finalValidUntil
-            ? new Date(finalValidUntil)
-            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            ? String(finalValidUntil).slice(0, 10)
+            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
           max_uses: finalUsageLimit > 0 ? finalUsageLimit : null,
           is_active: finalIsActive,
         };

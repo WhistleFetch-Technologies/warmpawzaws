@@ -264,10 +264,27 @@ class GetVendorTypesHandler extends BaseHandler {
   }
 }
 
+/** Canonical delivery styles — no DB table; matches admin promotion catalog defaults. */
+const CANONICAL_SERVICE_STYLES = [
+  { id: 'at_home', value: 'at_home', label: 'At home', name: 'At home' },
+  { id: 'at_center', value: 'at_center', label: 'At center', name: 'At center' },
+  { id: 'tele', value: 'tele', label: 'Tele consult', name: 'Tele consult' },
+];
+
 class GetServiceStylesHandler extends BaseHandler {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const serviceStyles = await select('service_styles', {});
-    return this.success({ serviceStyles });
+  async handle(_context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      const serviceStyles = await select('service_styles', {});
+      if (Array.isArray(serviceStyles) && serviceStyles.length > 0) {
+        return this.success({ serviceStyles });
+      }
+    } catch (err: unknown) {
+      const msg = String((err as { message?: string })?.message ?? err);
+      if (!msg.includes('service_styles') && !msg.includes('does not exist')) {
+        console.warn('[admin/catalog/service-styles] unexpected error, using canonical fallback', msg);
+      }
+    }
+    return this.success({ serviceStyles: CANONICAL_SERVICE_STYLES });
   }
 }
 
@@ -1263,7 +1280,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   });
 
   app.get('/admin/rbac/users', async (c) => {
-    const callerId = c.get('userId') as string | undefined;
+    const callerId = (c.get as unknown as (key: string) => string | undefined)('userId');
     if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
       return c.json({ success: false, error: 'RBAC management permission required' }, 403);
     }
@@ -1276,7 +1293,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/rbac/users/create', async (c) => {
     try {
-      const callerId = c.get('userId') as string | undefined;
+      const callerId = (c.get as unknown as (key: string) => string | undefined)('userId');
       if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
         return c.json({ success: false, error: 'RBAC management permission required' }, 403);
       }
@@ -1319,7 +1336,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.put('/admin/rbac/users/:userId/role', async (c) => {
     try {
-      const callerId = c.get('userId') as string | undefined;
+      const callerId = (c.get as unknown as (key: string) => string | undefined)('userId');
       if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
         return c.json({ success: false, error: 'RBAC management permission required' }, 403);
       }
@@ -1363,7 +1380,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.delete('/admin/rbac/users/:userId', async (c) => {
     try {
-      const callerId = c.get('userId') as string | undefined;
+      const callerId = (c.get as unknown as (key: string) => string | undefined)('userId');
       const emailHint = rbacCallerEmailHint(c);
       if (!(await canManageRbacAdmin(callerId, emailHint))) {
         return c.json({ success: false, error: 'RBAC management permission required' }, 403);

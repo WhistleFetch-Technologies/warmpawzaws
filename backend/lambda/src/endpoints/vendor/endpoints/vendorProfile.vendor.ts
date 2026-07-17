@@ -15,6 +15,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { randomUUID } from 'crypto';
 import { select, update, insert, query } from '../../../database/rds-connection';
 import { getSnsClient } from '../../../utils/sns-client';
@@ -910,7 +911,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       if (error instanceof ImageProcessingError) {
-        return c.json({ error: error.message }, error.statusCode);
+        return c.json({ error: error.message }, error.statusCode as ContentfulStatusCode);
       }
       console.error('❌ [PROFILE-PHOTO] Error uploading photo:', error);
       return c.json({ error: error.message || 'Failed to upload photo' }, 500);
@@ -2352,7 +2353,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       if (error instanceof ImageProcessingError) {
-        return c.json({ error: error.message }, error.statusCode);
+        return c.json({ error: error.message }, error.statusCode as ContentfulStatusCode);
       }
       console.error('[VENDOR-LOGO] Error:', error);
       return c.json({ error: error.message || 'Failed to upload logo' }, 500);

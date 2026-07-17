@@ -81,7 +81,7 @@ export async function autoAssignDeliveryPartner(
     };
   });
 
-  scoredPartners.sort((a, b) => b.score - a.score);
+  scoredPartners.sort((a: any, b: any) => b.score - a.score);
   const selectedPartner = scoredPartners[0];
 
   // Create delivery assignment
@@ -203,7 +203,7 @@ export function registerDeliveryPartnerAutomationEndpoints(app: Hono) {
       });
 
       // Sort by score (highest first)
-      scoredPartners.sort((a, b) => b.score - a.score);
+      scoredPartners.sort((a: any, b: any) => b.score - a.score);
 
       // Select best partner
       const selectedPartner = scoredPartners[0];

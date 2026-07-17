@@ -15,6 +15,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { randomUUID } from 'crypto';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { query, select, insert, update } from '../database/rds-connection';
@@ -822,7 +823,7 @@ export function registerAuthEndpoints(app: Hono) {
     const { executeAuthRefresh } = await import('../lib/services/auth/auth-token-refresh');
     const refreshToken = typeof (body as any)?.refreshToken === 'string' ? (body as any).refreshToken : '';
     const out = await executeAuthRefresh(refreshToken);
-    return c.json(out.body, out.status);
+    return c.json(out.body, out.status as ContentfulStatusCode);
   });
 }
 

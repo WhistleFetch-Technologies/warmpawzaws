@@ -85,7 +85,9 @@ export function calculateFees(params: {
   const platformFee = Math.min(platformFeeCalculated, platformFeeMaxCap);
   
   // Get service style specific fees
-  const styleConfig = serviceStyle && config.serviceStyleFees?.[serviceStyle];
+  const styleConfig = (serviceStyle && config.serviceStyleFees?.[serviceStyle]) as
+    | { convenienceFee?: number; packagingFee?: number }
+    | undefined;
   
   // Calculate convenience fee
   let convenienceFee = config.convenienceFee || 10;

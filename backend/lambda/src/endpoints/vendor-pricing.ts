@@ -155,7 +155,7 @@ export function registerVendorPricingEndpoints(app: Hono) {
   app.post("/vendor/services/pricing/bulk", async (c) => {
     try {
       const bulkData: BulkPricingData = await c.req.json();
-      const { vendorId, updates } = bulkData;
+      const { vendorId, updates } = bulkData as BulkPricingData & { vendorId?: string };
       
       if (!vendorId || !Array.isArray(updates)) {
         return c.json({ error: 'vendorId and updates array are required' }, 400);

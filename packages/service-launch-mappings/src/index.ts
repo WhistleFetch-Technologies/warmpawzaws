@@ -132,13 +132,22 @@ export const CATALOG_SLUG_TO_LAUNCH_SERVICE_ID: Readonly<Record<string, string>>
   speciality: 'specialty',
   daycare: 'daycare',
   behavioral: 'training',
+  behavioural: 'training',
   behaviorist: 'training',
+  behaviourist: 'training',
   pet_behaviorist: 'training',
+  'pet-behaviorist': 'training',
+  pet_behaviourist: 'training',
+  'pet-behaviourist': 'training',
   pet_trainer: 'training',
+  'pet-trainer': 'training',
   trainer: 'training',
   sitting: 'pet-sitter',
   'pet-sitter': 'pet-sitter',
   sitter: 'pet-sitter',
+  nutritionist: 'nutritionist',
+  pet_nutritionist: 'nutritionist',
+  'pet-nutritionist': 'nutritionist',
 };
 
 /** Launch ids whose catalog rows should expand customer Search hub slug aliases (multi-launch chips). */

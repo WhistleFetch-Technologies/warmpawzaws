@@ -1,4 +1,5 @@
 import {
+  areSpecializationRowsValidForCatalogSlug,
   expandSpecCategorySlugs,
   expandSpecCategorySlugsForDbQuery,
   filterSpecializationMasterRowsForVendorCategory,
@@ -58,5 +59,48 @@ describe('vendor-spec-category-slugs', () => {
       'groomer_solo',
       'groomer',
     ]);
+  });
+
+  it('accepts pet-sitter custom-service specs stored under boarding category_id', () => {
+    const rows = [
+      {
+        specialization_id: 'overnight_sitting',
+        category_id: 'boarding',
+        applicable_roles: ['sitter', 'pet_sitter'],
+      },
+      {
+        specialization_id: 'drop_in',
+        category_id: 'boarding',
+        applicable_roles: ['sitter'],
+      },
+    ];
+    expect(
+      areSpecializationRowsValidForCatalogSlug(rows, 'pet-sitter', [
+        'overnight_sitting',
+        'drop_in',
+      ])
+    ).toBe(true);
+  });
+
+  it('rejects boarding-only specs when catalogue category is pet sitting', () => {
+    const rows = [
+      {
+        specialization_id: 'daycare',
+        category_id: 'boarding',
+        applicable_roles: ['boarding', 'pet_boarder'],
+      },
+    ];
+    expect(areSpecializationRowsValidForCatalogSlug(rows, 'pet-sitter', ['daycare'])).toBe(false);
+  });
+
+  it('rejects specs whose category_id is outside the expanded catalogue family', () => {
+    const rows = [
+      {
+        specialization_id: 'bath_brush',
+        category_id: 'grooming',
+        applicable_roles: ['groomer'],
+      },
+    ];
+    expect(areSpecializationRowsValidForCatalogSlug(rows, 'pet-sitter', ['bath_brush'])).toBe(false);
   });
 });

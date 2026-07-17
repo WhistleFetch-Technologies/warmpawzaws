@@ -130,6 +130,43 @@ export class CouponMaxUsesRule implements DiscountRule {
   }
 }
 
+function isUuidToken(value: string): boolean {
+  return /^[0-9a-f-]{36}$/i.test(value);
+}
+
+export class CouponServiceTargetRule implements DiscountRule {
+  readonly ruleName = 'CouponServiceTargetRule';
+  readonly group = 'domain';
+  applies(ctx: RuleContext): boolean {
+    return ctx.domain === 'coupon';
+  }
+  evaluate(ctx: RuleContext): RuleResult {
+    const applicable = (ctx.applicableServices || [])
+      .map((x) => String(x).trim())
+      .filter(Boolean);
+    if (applicable.length === 0) return pass(this.ruleName);
+
+    const serviceIds = (ctx.serviceIds || []).map((x) => String(x).trim()).filter(Boolean);
+    const configuredIds = applicable.filter(isUuidToken);
+    if (serviceIds.length > 0 && configuredIds.length > 0) {
+      if (!serviceIds.some((sid) => configuredIds.includes(sid))) {
+        return fail(this.ruleName, 'Coupon not applicable for selected service');
+      }
+    }
+
+    const category = String(ctx.serviceCategory || '').trim().toLowerCase();
+    const categoryTokens = applicable.filter((x) => !x.startsWith('style:') && !isUuidToken(x));
+    if (category && category !== 'all' && categoryTokens.length > 0) {
+      const matches = categoryTokens.some((token) => promotionCategoriesMatch(category, token));
+      if (!matches) {
+        return fail(this.ruleName, 'Coupon not applicable for this category');
+      }
+    }
+
+    return pass(this.ruleName);
+  }
+}
+
 export class AudienceRule implements DiscountRule {
   readonly ruleName = 'AudienceRule';
   readonly group = 'customer';
@@ -458,7 +495,9 @@ export class PlatformInlineCategoryRule implements DiscountRule {
   }
   evaluate(ctx: RuleContext): RuleResult {
     const category = String(ctx.serviceCategory || '').trim().toLowerCase();
-    const configured = (ctx.applicableServices || []).filter((x) => !x.startsWith('style:'));
+    const configured = (ctx.applicableServices || []).filter(
+      (x) => !x.startsWith('style:') && !isUuidToken(String(x))
+    );
     if (category && category !== 'all' && configured.length > 0) {
       const matches = configured.some((token) =>
         promotionCategoriesMatch(category, token)
@@ -499,9 +538,7 @@ export class PlatformInlineServiceRule implements DiscountRule {
   }
   evaluate(ctx: RuleContext): RuleResult {
     const serviceIds = (ctx.serviceIds || []).map((x) => String(x).trim()).filter(Boolean);
-    const configuredIds = (ctx.applicableServices || []).filter((x) =>
-      /^[0-9a-f-]{36}$/i.test(String(x))
-    );
+    const configuredIds = (ctx.applicableServices || []).filter((x) => isUuidToken(String(x)));
     if (serviceIds.length > 0 && configuredIds.length > 0) {
       if (!serviceIds.some((sid) => configuredIds.includes(sid))) {
         return fail(this.ruleName, 'Promotion not applicable for selected service');

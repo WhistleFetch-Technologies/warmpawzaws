@@ -3545,6 +3545,29 @@ export function CustomerHomeWrapper({
         resumeRazorpayOrderId={
           typeof bookingData.razorpayOrderId === 'string' ? bookingData.razorpayOrderId : undefined
         }
+        resumeFinancialSnapshot={
+          isPaymentResume &&
+          bookingData.financialSnapshot &&
+          typeof bookingData.financialSnapshot === 'object'
+            ? (bookingData.financialSnapshot as {
+                servicePrice: number;
+                vendorDiscount: number;
+                platformDiscount: number;
+                couponDiscount: number;
+                couponCode?: string;
+                subtotalAfterDiscounts: number;
+                cgst: number;
+                sgst: number;
+                igst: number;
+                totalTax: number;
+                platformFee: number;
+                convenienceFee: number;
+                deliveryFee: number;
+                walletAmount: number;
+                finalPaid: number;
+              })
+            : undefined
+        }
         onBack={() => {
           if (shouldBannerReturnHome(bookingData as Record<string, unknown>, vetServiceData)) {
             bannerReturnHomeRef.current = false;

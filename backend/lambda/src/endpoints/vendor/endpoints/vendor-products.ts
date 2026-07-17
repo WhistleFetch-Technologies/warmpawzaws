@@ -82,6 +82,7 @@ import {
   getVariantSuggestionsForCategory,
 } from '@warmpawz/shared-types';
 import { PRODUCT_STATUS } from '../../../utils/product-status-constants';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 /** Cached information_schema snapshot so we avoid hitting metadata column when it is not migrated yet */
 const PRODUCTS_COLUMN_CACHE: { until: number; cols: Set<string> | null } = { until: 0, cols: null };
@@ -746,7 +747,7 @@ class CreateVendorProductHandler extends BaseHandler {
       );
 
       // Approval: always persist explicit status when column exists; vendors cannot self-publish to active.
-      let vendorLifecycleStatus = normalizeApprovalStatus(body.status);
+      let vendorLifecycleStatus: string = normalizeApprovalStatus(body.status);
       if (vendorLifecycleStatus === 'active') {
         vendorLifecycleStatus = 'pending';
       }
@@ -1391,6 +1392,70 @@ class PatchVendorProductSkuStockHandler extends BaseHandler {
 // DELETE /vendor/:vendorId/products/:productId - Delete product
 // ============================================================================
 
+const MAX_BULK_PRODUCT_DELETE_IDS = 100;
+
+type VendorProductDeleteAction = 'deleted' | 'deactivated';
+
+interface VendorProductDeleteResult {
+  action: VendorProductDeleteAction;
+  deactivated: boolean;
+  message: string;
+}
+
+class VendorProductDeleteError extends Error {
+  statusCode: number;
+
+  constructor(message: string, statusCode = 500) {
+    super(message);
+    this.name = 'VendorProductDeleteError';
+    this.statusCode = statusCode;
+  }
+}
+
+async function deleteVendorProductForVendor(
+  resolvedVendorId: string,
+  productId: string,
+): Promise<VendorProductDeleteResult> {
+  const existingProducts = await select('products', { id: productId, vendor_id: resolvedVendorId });
+  if (existingProducts.length === 0) {
+    throw new VendorProductDeleteError('Product not found or access denied', 404);
+  }
+
+  const orders = await query(
+    'SELECT COUNT(*) as count FROM order_items WHERE product_id = $1',
+    [productId],
+  );
+
+  const orderCount = parseInt(orders.rows[0]?.count || '0', 10);
+  if (orderCount > 0) {
+    const cols = await getProductsColumnSet();
+    const deactivatePayload: Record<string, unknown> = { is_active: false };
+    if (cols.has('status')) {
+      deactivatePayload.status = 'inactive';
+    }
+    await update('products', { id: productId }, deactivatePayload);
+    return {
+      action: 'deactivated',
+      deactivated: true,
+      message:
+        'Product removed from your catalog. It has past orders, so it was archived for order history and is no longer visible to customers.',
+    };
+  }
+
+  const existingSkus = await loadProductSkus(productId);
+  const productRow = existingProducts[0] as Record<string, unknown>;
+  const imageUrls = collectAllProductImageUrls(productRow, existingSkus);
+  await deleteAllManagedProductImages(imageUrls, resolvedVendorId);
+
+  await deleteRows('products', { id: productId, vendor_id: resolvedVendorId });
+
+  return {
+    action: 'deleted',
+    deactivated: false,
+    message: 'Product deleted successfully.',
+  };
+}
+
 class DeleteVendorProductHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
@@ -1401,7 +1466,50 @@ class DeleteVendorProductHandler extends BaseHandler {
         return this.error('Vendor ID and Product ID are required', 400);
       }
 
-      // ✅ FIX: Resolve vendor ID (handles vendor_identity auto-create)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor || !vendor.id) {
+        console.error(`[VendorProducts] Vendor not found for ID: ${vendorId}`);
+        return this.error('Vendor not found', 404);
+      }
+
+      const result = await deleteVendorProductForVendor(vendor.id, productId);
+      return this.success(result);
+    } catch (error: unknown) {
+      if (error instanceof VendorProductDeleteError) {
+        return this.error(error.message, error.statusCode);
+      }
+      const msg = error instanceof Error ? error.message : 'Failed to delete product';
+      console.error('Error deleting product:', error);
+      return this.error(msg, 500);
+    }
+  }
+}
+
+class BulkDeleteVendorProductsHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      const vendorId = context.event.pathParameters?.vendorId;
+      if (!vendorId) {
+        return this.error('Vendor ID is required', 400);
+      }
+
+      const body = this.parseBody(context) as { productIds?: unknown };
+      const rawIds = body?.productIds;
+      if (!Array.isArray(rawIds) || rawIds.length === 0) {
+        return this.error('productIds must be a non-empty array', 400);
+      }
+      if (rawIds.length > MAX_BULK_PRODUCT_DELETE_IDS) {
+        return this.error(`Cannot delete more than ${MAX_BULK_PRODUCT_DELETE_IDS} products at once`, 400);
+      }
+
+      const productIds: string[] = [];
+      for (const id of rawIds) {
+        if (typeof id !== 'string' || !isValidUUID(id)) {
+          return this.error('Each productId must be a valid UUID string', 400);
+        }
+        productIds.push(id);
+      }
+
       const vendor = await resolveVendorById(vendorId);
       if (!vendor || !vendor.id) {
         console.error(`[VendorProducts] Vendor not found for ID: ${vendorId}`);
@@ -1409,51 +1517,52 @@ class DeleteVendorProductHandler extends BaseHandler {
       }
       const resolvedVendorId = vendor.id;
 
-      // Verify product belongs to vendor
-      const existingProducts = await select('products', { id: productId, vendor_id: resolvedVendorId });
-      if (existingProducts.length === 0) {
-        return this.error('Product not found or access denied', 404);
-      }
+      let deleted = 0;
+      let deactivated = 0;
+      let failed = 0;
+      const errors: Array<{ productId: string; error: string }> = [];
 
-      // Check if product has orders
-      const orders = await query(
-        'SELECT COUNT(*) as count FROM order_items WHERE product_id = $1',
-        [productId]
-      );
-
-      const orderCount = parseInt(orders.rows[0]?.count || '0', 10);
-      if (orderCount > 0) {
-        // Soft delete: hide from catalog but keep row for order history
-        const cols = await getProductsColumnSet();
-        const deactivatePayload: Record<string, unknown> = { is_active: false };
-        if (cols.has('status')) {
-          deactivatePayload.status = 'inactive';
+      for (const productId of productIds) {
+        try {
+          const result = await deleteVendorProductForVendor(resolvedVendorId, productId);
+          if (result.action === 'deactivated') {
+            deactivated += 1;
+          } else {
+            deleted += 1;
+          }
+        } catch (error: unknown) {
+          failed += 1;
+          const msg =
+            error instanceof VendorProductDeleteError
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : 'Failed to delete product';
+          errors.push({ productId, error: msg });
+          console.error(`[VendorProducts] Bulk delete failed for ${productId}:`, error);
         }
-        await update('products', { id: productId }, deactivatePayload);
-        return this.success({
-          action: 'deactivated',
-          deactivated: true,
-          message:
-            'Product removed from your catalog. It has past orders, so it was archived for order history and is no longer visible to customers.',
-        });
       }
 
-      const existingSkus = await loadProductSkus(productId);
-      const productRow = existingProducts[0] as Record<string, unknown>;
-      const imageUrls = collectAllProductImageUrls(productRow, existingSkus);
-      await deleteAllManagedProductImages(imageUrls, resolvedVendorId);
-
-      // Hard delete if no orders
-      await deleteRows('products', { id: productId, vendor_id: resolvedVendorId });
+      const succeeded = deleted + deactivated;
+      const parts: string[] = [];
+      if (deleted > 0) parts.push(`${deleted} deleted`);
+      if (deactivated > 0) parts.push(`${deactivated} archived`);
+      const summary =
+        succeeded === 0
+          ? `No products removed. ${failed} failed.`
+          : `Removed ${succeeded} product${succeeded === 1 ? '' : 's'}${parts.length ? ` (${parts.join(', ')})` : ''}.${failed > 0 ? ` ${failed} failed.` : ''}`;
 
       return this.success({
-        action: 'deleted',
-        deactivated: false,
-        message: 'Product deleted successfully.',
+        deleted,
+        deactivated,
+        failed,
+        errors,
+        message: summary,
       });
-    } catch (error: any) {
-      console.error('Error deleting product:', error);
-      return this.error(error.message || 'Failed to delete product', 500);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to bulk delete products';
+      console.error('Error bulk deleting products:', error);
+      return this.error(msg, 500);
     }
   }
 }
@@ -1469,6 +1578,7 @@ export function registerVendorProductsEndpoints(app: Hono) {
   const updateProductHandler = new UpdateVendorProductHandler();
   const patchSkuStockHandler = new PatchVendorProductSkuStockHandler();
   const deleteProductHandler = new DeleteVendorProductHandler();
+  const bulkDeleteProductsHandler = new BulkDeleteVendorProductsHandler();
 
   app.get('/vendor/:vendorId/ecommerce/commission-model', async (c) => {
     try {
@@ -1538,6 +1648,22 @@ export function registerVendorProductsEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error creating product:', error);
       return c.json({ error: error.message || 'Failed to create product' }, 500);
+    }
+  });
+
+  app.post('/vendor/:vendorId/products/bulk/delete', async (c) => {
+    try {
+      const body = await c.req.json();
+      const response = await bulkDeleteProductsHandler.handle({
+        event: {
+          pathParameters: c.req.param(),
+          body: JSON.stringify(body),
+        } as any,
+      } as HandlerContext);
+      return c.json(JSON.parse(response.body), response.statusCode as 200 | 400 | 404 | 500);
+    } catch (error: any) {
+      console.error('Error bulk deleting products:', error);
+      return c.json({ error: error.message || 'Failed to bulk delete products' }, 500);
     }
   });
 
@@ -1712,7 +1838,7 @@ export function registerVendorProductsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       if (error instanceof ImageProcessingError) {
-        return c.json({ error: error.message }, error.statusCode);
+        return c.json({ error: error.message }, error.statusCode as ContentfulStatusCode);
       }
       console.error('Error uploading product image:', error);
       return c.json({ error: error.message || 'Failed to upload image' }, 500);

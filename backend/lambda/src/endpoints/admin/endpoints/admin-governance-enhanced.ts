@@ -15,6 +15,7 @@
  */
 
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, insert, update, deleteRows } from '../../../database/rds-connection';
@@ -921,7 +922,7 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       if (error instanceof ImageProcessingError) {
-        return c.json({ error: error.message }, error.statusCode);
+        return c.json({ error: error.message }, error.statusCode as ContentfulStatusCode);
       }
       console.error('Error uploading banner image:', error);
       return c.json({ error: error.message || 'Failed to upload banner image' }, 500);
@@ -963,7 +964,7 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
     try {
       const search = c.req.query('search') || undefined;
       const limit = c.req.query('limit') || undefined;
-      const products = await listShopBannerDestinationProducts({ search, limit });
+      const products = await listShopBannerDestinationProducts({ search, limit: limit as unknown as number | undefined });
       return c.json({ success: true, products, total: products.length });
     } catch (error: any) {
       console.error('Error loading shop banner destination options:', error);

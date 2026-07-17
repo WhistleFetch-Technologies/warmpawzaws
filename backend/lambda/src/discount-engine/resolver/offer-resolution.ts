@@ -10,7 +10,7 @@ import {
   normalizeApplicationStrategy,
   type DiscountApplicationStrategy,
 } from '../config/business-rules-types';
-import type { RuntimePolicy } from '../policy/runtime-policy';
+import type { RuntimePolicyFingerprint } from '../policy/runtime-policy-fingerprint';
 import type { DiscountContext } from '../models/discount-context';
 import { benefitOutcomesToEligible } from './priority-pipeline';
 import type { CandidateBenefitOutcome } from './types';
@@ -29,7 +29,7 @@ export interface OfferResolutionResult {
 function prioritizeUnifiedPool(
   eligibleBenefits: EligibleBenefit[],
   context: DiscountContext,
-  runtimePolicy: RuntimePolicy,
+  runtimePolicy: RuntimePolicyFingerprint,
   maxSelected: number
 ): PriorityResult {
   const started = performance.now();
@@ -79,7 +79,7 @@ function prioritizeUnifiedPool(
 function runAutoPhase(
   eligibleBenefits: EligibleBenefit[],
   context: DiscountContext,
-  runtimePolicy: RuntimePolicy
+  runtimePolicy: RuntimePolicyFingerprint
 ): PriorityResult {
   const engine = getPriorityEngine();
   return engine.prioritize({
@@ -96,7 +96,7 @@ function runAutoPhase(
 function runCouponPhase(
   eligibleBenefits: EligibleBenefit[],
   context: DiscountContext,
-  runtimePolicy: RuntimePolicy,
+  runtimePolicy: RuntimePolicyFingerprint,
   runningAmount: number
 ): PriorityResult {
   const engine = getPriorityEngine();
@@ -115,7 +115,7 @@ function runCouponPhase(
 export function resolveOffers(
   context: DiscountContext,
   benefitResults: CandidateBenefitOutcome[],
-  runtimePolicy: RuntimePolicy
+  runtimePolicy: RuntimePolicyFingerprint
 ): OfferResolutionResult {
   const rules = ensureBusinessRules({
     priority: runtimePolicy.priority,
