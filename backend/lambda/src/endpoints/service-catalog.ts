@@ -1047,9 +1047,18 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         console.log(`[Admin Service Catalog] Filtering by service style: ${serviceStyle}`);
       }
 
-      // ✅ NEW: Filter by category ID if provided
+      // Filter by category slug (or resolve UUID → slug via service_categories).
+      // service_catalog.category_id is TEXT — never cast the param to uuid (breaks slug filters).
       if (categoryId) {
-        catalogQuery += ` AND (category_id = $${paramIndex}::uuid OR category_id::text = $${paramIndex})`;
+        catalogQuery += ` AND (
+          category_id::text = $${paramIndex}
+          OR category_id::text IN (
+            SELECT sc.category_id::text
+            FROM service_categories sc
+            WHERE sc.id::text = $${paramIndex}
+               OR sc.category_id::text = $${paramIndex}
+          )
+        )`;
         params.push(categoryId);
         paramIndex++;
         console.log(`[Admin Service Catalog] Filtering by category ID: ${categoryId}`);

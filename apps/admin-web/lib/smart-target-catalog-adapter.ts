@@ -127,14 +127,14 @@ export function createAdminSmartTargetAdapter(
       const allRows: TargetOption[] = [];
       const seen = new Set<string>();
 
+      // Do not swallow API errors — PromotionTargetSelector shows a retry state on reject.
+      // Silently returning [] made SQL/filter failures look like "no services in catalogue".
       await Promise.all(
         ids.map(async (categoryId) => {
-          const res = await apiClient
-            .get<{
-              services?: Record<string, unknown>[];
-              data?: Record<string, unknown>[];
-            }>(`/admin/service-catalog?categoryId=${encodeURIComponent(categoryId)}&groupBy=none`)
-            .catch(() => ({ services: [], data: [] }));
+          const res = await apiClient.get<{
+            services?: Record<string, unknown>[];
+            data?: Record<string, unknown>[];
+          }>(`/admin/service-catalog?categoryId=${encodeURIComponent(categoryId)}&groupBy=none`);
           const raw = res.services ?? res.data ?? [];
           for (const row of Array.isArray(raw) ? raw : []) {
             const option = mapCatalogServiceRow(row);
