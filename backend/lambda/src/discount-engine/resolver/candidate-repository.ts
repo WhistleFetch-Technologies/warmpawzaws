@@ -3,6 +3,7 @@ import { DiscountOwner } from '../enums/discount-owner';
 import { DiscountSource } from '../enums/discount-source';
 import { DiscountTrigger } from '../enums/discount-trigger';
 import { getCandidateNormalizer } from '../candidates/candidate-normalizer';
+import { enrichCouponCandidatesWithUsage } from '../candidates/enrich-coupon-usage';
 import {
   CouponCandidateProvider,
   PlatformPromotionCandidateProvider,
@@ -134,7 +135,10 @@ export class DefaultCandidateRepository implements CandidateRepository {
     }
 
     return {
-      candidates: filterCandidates(normalized, context),
+      candidates: await enrichCouponCandidatesWithUsage(
+        filterCandidates(normalized, context),
+        context
+      ),
       providerBreakdown,
     };
   }

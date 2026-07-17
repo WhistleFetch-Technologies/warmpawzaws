@@ -4,6 +4,9 @@
 import { query, select } from '../../database/rds-connection';
 import { computeCouponDiscountAmount } from '../../discount-engine/benefits/adapters/coupon-benefit.adapter';
 import { couponValidateToDiscountContext } from '../../discount-engine/adapters/context-mappers';
+import {
+  countCustomerCouponUsages,
+} from '../../discount-engine/adapters/coupon-usage-counts';
 import { DiscountDomain } from '../../discount-engine/enums/discount-domain';
 import { shadowCouponEligibility } from '../../discount-engine/rules/adapters/shadow-adapters';
 import {
@@ -12,6 +15,8 @@ import {
 } from '../../discount-engine/resolver/production-bridge';
 import { mapResolverResultToCouponValidation } from '../../discount-engine/resolver/resolver-result-mappers';
 import { couponRowMatchesService } from '../../utils/coupon-targeting';
+
+export { countCustomerCouponUsages } from '../../discount-engine/adapters/coupon-usage-counts';
 
 export type CouponValidationResult = {
   success: boolean;
@@ -68,60 +73,6 @@ export function resolveCouponMaxUsesPerUser(coupon: Record<string, unknown>): nu
     }
   }
   return null;
-}
-
-export async function countCustomerCouponUsages(
-  couponId: string,
-  customerId: string,
-  options?: { couponCode?: string; excludeBookingId?: string }
-): Promise<number> {
-  const code = options?.couponCode?.trim().toUpperCase() || null;
-  const excludeBookingId = options?.excludeBookingId?.trim() || null;
-
-  // Union of (a) committed coupon_usages and (b) active bookings that already claimed the code
-  // but may not have a usage row yet (wallet/Razorpay in flight). Prevents double-redeem races.
-  if (code) {
-    const res = await query(
-      `SELECT COUNT(*)::int AS count FROM (
-         SELECT cu.booking_id::text AS bid
-         FROM coupon_usages cu
-         WHERE cu.coupon_id = $1::uuid
-           AND cu.customer_id = $2::uuid
-           AND cu.booking_id IS NOT NULL
-           AND ($3::uuid IS NULL OR cu.booking_id <> $3::uuid)
-         UNION
-         SELECT b.id::text AS bid
-         FROM bookings b
-         WHERE b.customer_id = $2::uuid
-           AND UPPER(TRIM(COALESCE(b.coupon_code, ''))) = $4
-           AND COALESCE(b.discount_amount, 0) > 0
-           AND LOWER(COALESCE(b.status, '')) NOT IN (
-             'cancelled', 'canceled', 'expired', 'failed', 'rejected'
-           )
-           AND ($3::uuid IS NULL OR b.id <> $3::uuid)
-       ) claimed`,
-      [couponId, customerId, excludeBookingId, code]
-    ).catch(() => ({ rows: [{ count: 0 }] }));
-
-    const claimed = parseInt(String(res.rows?.[0]?.count ?? 0), 10) || 0;
-
-    // Usages without booking_id (orders / legacy) still count toward the per-customer cap.
-    const orphanRes = await query(
-      `SELECT COUNT(*)::int AS count FROM coupon_usages
-       WHERE coupon_id = $1::uuid AND customer_id = $2::uuid AND booking_id IS NULL`,
-      [couponId, customerId]
-    ).catch(() => ({ rows: [{ count: 0 }] }));
-    const orphans = parseInt(String(orphanRes.rows?.[0]?.count ?? 0), 10) || 0;
-    return claimed + orphans;
-  }
-
-  const res = await query(
-    `SELECT COUNT(*)::int AS count FROM coupon_usages
-     WHERE coupon_id = $1::uuid AND customer_id = $2::uuid
-       AND ($3::uuid IS NULL OR booking_id IS NULL OR booking_id <> $3::uuid)`,
-    [couponId, customerId, excludeBookingId]
-  ).catch(() => ({ rows: [{ count: 0 }] }));
-  return parseInt(String(res.rows?.[0]?.count ?? 0), 10) || 0;
 }
 
 async function rejectIfCustomerLimitReached(

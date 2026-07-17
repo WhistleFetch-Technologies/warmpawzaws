@@ -90,6 +90,10 @@ export function resolveBookingParamsToDiscountContext(
     metadata?: Record<string, unknown>;
   }
 ): DiscountContext {
+  const couponCode = options?.couponCode?.trim() || undefined;
+  const trigger =
+    options?.trigger ??
+    (couponCode ? DiscountTrigger.CODE : DiscountTrigger.AUTO);
   const ctx = bookingCalculateRequestToDiscountContext(
     {
       vendorId: params.vendorId,
@@ -100,7 +104,7 @@ export function resolveBookingParamsToDiscountContext(
       serviceStyle: params.serviceStyle,
       bookingId: options?.bookingId,
     },
-    { trigger: options?.trigger, couponCode: options?.couponCode }
+    { trigger, couponCode }
   );
   return {
     ...ctx,
