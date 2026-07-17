@@ -202,6 +202,20 @@ export async function countPriorVendorBookings(
   }
 }
 
+/** True when a promotion_usages row already exists for this promotion+booking (idempotency). */
+async function promotionUsageExistsForBooking(
+  promotionId: string,
+  bookingId: string
+): Promise<boolean> {
+  const existing = await query(
+    `SELECT 1 AS ok FROM promotion_usages
+     WHERE promotion_id = $1::uuid AND booking_id = $2::uuid
+     LIMIT 1`,
+    [promotionId, bookingId]
+  ).catch(() => ({ rows: [] as { ok?: number }[] }));
+  return (existing.rows?.length ?? 0) > 0;
+}
+
 export async function recordServicePromotionUsage(params: {
   promotionId: string;
   bookingId: string;
@@ -210,6 +224,7 @@ export async function recordServicePromotionUsage(params: {
   originalAmount: number;
 }): Promise<void> {
   const { promotionId, bookingId, customerId, discountAmount, originalAmount } = params;
+  if (await promotionUsageExistsForBooking(promotionId, bookingId)) return;
 
   await query(
     `UPDATE vendor_service_promotions
@@ -246,6 +261,7 @@ export async function recordPlatformPromotionUsage(params: {
   originalAmount: number;
 }): Promise<void> {
   const { promotionId, bookingId, customerId, discountAmount, originalAmount } = params;
+  if (await promotionUsageExistsForBooking(promotionId, bookingId)) return;
 
   await query(
     `UPDATE promotions

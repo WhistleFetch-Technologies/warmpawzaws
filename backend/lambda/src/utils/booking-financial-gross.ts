@@ -75,16 +75,26 @@ export function resolveLockedBookingGrossFromNotes(notes: unknown): LockedBookin
   const finalPaid = num(finMeta, 'finalPaid', 'final_paid');
 
   const servicePrice = num(finMeta, 'servicePrice', 'service_price');
-  const vendorDiscount = num(finMeta, 'vendorDiscount', 'vendor_discount');
+  let vendorDiscount = num(finMeta, 'vendorDiscount', 'vendor_discount');
   let platformDiscount = num(finMeta, 'platformDiscount', 'platform_discount');
   const couponDiscount = num(finMeta, 'couponDiscount', 'coupon_discount');
-  // Legacy create could persist the same coupon in both platformDiscount and couponDiscount.
+  // Legacy create could persist the same coupon in both platformDiscount and couponDiscount
+  // (settlement attach copied funding cost into the discount bucket). Vendor-funded coupons
+  // duplicated into vendorDiscount the same way.
   if (
     couponDiscount > 0 &&
     platformDiscount > 0 &&
     Math.abs(couponDiscount - platformDiscount) < 0.011
   ) {
     platformDiscount = 0;
+  }
+  if (
+    couponDiscount > 0 &&
+    vendorDiscount > 0 &&
+    platformDiscount <= 0 &&
+    Math.abs(couponDiscount - vendorDiscount) < 0.011
+  ) {
+    vendorDiscount = 0;
   }
   // Settlement enrichment historically dropped subtotalAfterDiscounts; rebuild from list − discounts.
   const derivedSubtotal =

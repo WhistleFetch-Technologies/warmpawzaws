@@ -196,6 +196,24 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
   );
   let couponDiscount = roundMoney(finMeta ? num(finMeta.couponDiscount) : 0);
 
+  // Settlement enrichment historically copied the coupon amount into platformDiscount
+  // (funding cost), so legacy metas carry the same discount twice. Show it once.
+  if (
+    couponDiscount > 0 &&
+    platformDiscount > 0 &&
+    Math.abs(couponDiscount - platformDiscount) < 0.011
+  ) {
+    platformDiscount = 0;
+  }
+  if (
+    couponDiscount > 0 &&
+    vendorDiscount > 0 &&
+    Math.abs(couponDiscount - vendorDiscount) < 0.011 &&
+    platformDiscount <= 0
+  ) {
+    vendorDiscount = 0;
+  }
+
   if (vendorDiscount <= 0 && platformDiscount <= 0 && discountFromRow > 0) {
     if (couponCodeStr) {
       couponDiscount = discountFromRow;

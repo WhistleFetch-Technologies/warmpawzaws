@@ -10,6 +10,10 @@ export function attachSettlementSnapshotToFinancialMeta(
   financialMeta: Record<string, unknown>,
   snapshot: SettlementSnapshot
 ): Record<string, unknown> {
+  // Never overwrite vendorDiscount/platformDiscount display buckets with funding costs:
+  // a platform-funded coupon would duplicate into platformDiscount AND couponDiscount,
+  // making customer-facing breakdowns show the discount twice. Funding lives in
+  // platformCost/vendorCost/fundingSummary below.
   return {
     ...financialMeta,
     [SETTLEMENT_SNAPSHOT_META_KEY]: snapshot,
@@ -17,8 +21,6 @@ export function attachSettlementSnapshotToFinancialMeta(
     winningOffer: snapshot.winningOffer,
     offerType: snapshot.winningOffer?.offerType ?? null,
     fundingType: snapshot.winningOffer?.fundingType ?? null,
-    vendorDiscount: snapshot.vendorCost,
-    platformDiscount: snapshot.platformCost,
     commissionBase: snapshot.commissionBase,
     commissionRate: snapshot.commissionRate,
     commissionAmount: snapshot.commissionAmount,

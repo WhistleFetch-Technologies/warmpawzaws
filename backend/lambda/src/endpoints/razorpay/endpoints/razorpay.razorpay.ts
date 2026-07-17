@@ -633,6 +633,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         walletAmountCreateOrder > 0.009 &&
         customerIdFinal
       ) {
+        let walletFullyPaidBooking = false;
         try {
           await withTransaction(async (client) => {
             const orphan = await client.query(
@@ -711,6 +712,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
                 `UPDATE bookings SET payment_status = 'paid', status = CASE WHEN status = 'pending_payment' THEN 'confirmed' ELSE status END, updated_at = NOW() WHERE id = $1::uuid`,
                 [String(bookingId)]
               );
+              walletFullyPaidBooking = true;
             }
             if (razorpayRemainRupee < 0.01 && gross > 0 && paidW + 0.02 >= gross) {
               await client.query(
@@ -720,6 +722,21 @@ class CreateRazorpayOrderHandler extends BaseHandler {
               );
             }
           });
+
+          // Wallet fully covered the booking — Razorpay verify will never run, so record
+          // promo/coupon usage now (idempotent for coupons via coupon_usages booking check).
+          if (walletFullyPaidBooking) {
+            Promise.resolve()
+              .then(async () => {
+                const { recordBookingPromotionUsageFromBooking } = await import(
+                  '../../../lib/services/booking-promotion-service'
+                );
+                await recordBookingPromotionUsageFromBooking(String(bookingId));
+              })
+              .catch((err) => {
+                console.warn('[RAZORPAY-CREATE-ORDER] wallet-only promotion usage record failed:', err);
+              });
+          }
         } catch (e: any) {
           console.error('[RAZORPAY-CREATE-ORDER] wallet slice + orphan payment failed:', e?.message || e);
           return this.error(

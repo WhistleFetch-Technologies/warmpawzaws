@@ -654,6 +654,17 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
               console.error('[PAYMENT-CREATE] Failed to notify booking after wallet payment:', notifyErr);
             }
           }
+
+          // Wallet-only payments never reach Razorpay verify, so record promo/coupon
+          // usage here (idempotent for coupons via coupon_usages booking check).
+          try {
+            const { recordBookingPromotionUsageFromBooking } = await import(
+              '../lib/services/booking-promotion-service'
+            );
+            await recordBookingPromotionUsageFromBooking(String(payment.booking_id));
+          } catch (usageErr) {
+            console.warn('[PAYMENT-CREATE] wallet-only promotion usage record failed:', usageErr);
+          }
         } catch (error) {
           console.error('[PAYMENT-CREATE] Wallet full-payment booking update failed:', error);
         }
