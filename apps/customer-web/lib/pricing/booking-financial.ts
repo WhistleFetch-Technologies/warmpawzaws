@@ -362,3 +362,58 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
     lines,
   };
 }
+
+export type BookingListAmountInput = {
+  notes?: unknown;
+  specialInstructions?: unknown;
+  total_amount?: unknown;
+  totalAmount?: unknown;
+  paidAmount?: unknown;
+  price?: unknown;
+  paymentSources?: Array<{ method?: string; amount?: number }>;
+};
+
+/**
+ * All-in amount for bookings list cards: service after discounts + GST + fees
+ * (wallet + Razorpay combined). Prefer write-once wp_financial_meta; never show
+ * post-discount service-only as if it were the payable.
+ */
+export function resolveBookingListAllInAmount(raw: BookingListAmountInput): number {
+  const notes = raw.notes ?? raw.specialInstructions;
+  const finMeta = parseFinancialMetaFromNotes(notes);
+  if (finMeta) {
+    const subtotal = num(finMeta.subtotalAfterDiscounts ?? finMeta.subtotal_after_discounts);
+    const totalTax = num(finMeta.totalTax ?? finMeta.total_tax);
+    const platformFee = num(finMeta.platformFee ?? finMeta.platform_fee);
+    const convenienceFee = num(finMeta.convenienceFee ?? finMeta.convenience_fee);
+    const deliveryFee = num(finMeta.deliveryFee ?? finMeta.delivery_fee);
+    const fromComponents = roundMoney(
+      subtotal + totalTax + platformFee + convenienceFee + deliveryFee
+    );
+    if (fromComponents > 0.009) return fromComponents;
+
+    const finalPaid = num(finMeta.finalPaid ?? finMeta.final_paid);
+    const walletAmount = num(finMeta.walletAmount ?? finMeta.wallet_amount);
+    // Legacy cash-as-finalPaid snapshots store gross as finalPaid + wallet.
+    if (walletAmount > 0.009 && finalPaid >= 0) {
+      return roundMoney(finalPaid + walletAmount);
+    }
+    if (finalPaid > 0.009) return finalPaid;
+  }
+
+  const sources = Array.isArray(raw.paymentSources) ? raw.paymentSources : [];
+  const sourcesSum = roundMoney(
+    sources.reduce((sum, s) => sum + (Number(s.amount) || 0), 0)
+  );
+  if (sourcesSum > 0.009) return sourcesSum;
+
+  const cash = num(raw.paidAmount ?? raw.total_amount ?? raw.totalAmount ?? raw.price);
+  const walletPaid = roundMoney(
+    sources
+      .filter((s) => String(s.method || '').toLowerCase() === 'wallet')
+      .reduce((sum, s) => sum + (Number(s.amount) || 0), 0)
+  );
+  // Full wallet: list total_amount may be 0 cash remainder.
+  if (walletPaid > 0.009 && cash <= 0.009) return walletPaid;
+  return cash;
+}

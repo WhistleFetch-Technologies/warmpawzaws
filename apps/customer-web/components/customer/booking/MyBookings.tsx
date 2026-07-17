@@ -19,6 +19,7 @@ import {
 } from '@/lib/booking-display-utils';
 import { PriceDisplay } from '@/components/customer/pricing/PriceDisplay';
 import { SavingsBadge } from '@/components/customer/pricing/SavingsBadge';
+import { PromotionOfferBadge } from '@/components/customer/pricing/PromotionOfferBadge';
 import { MarketplaceStatus } from '@/components/customer/marketplace/MarketplaceStatus';
 import { mapBookingStatusTone } from '@/lib/marketplace/map-status';
 import {
@@ -32,6 +33,8 @@ import {
   bookingSourcesHasGatewayPayment,
 } from '@/lib/payment-display-utils';
 import type { PaymentSource } from '@/lib/payment-display-utils';
+import { resolveBookingListAllInAmount } from '@/lib/pricing/booking-financial';
+import { computeDiscountPercent } from '@/lib/pricing/format';
 import {
   isBookingAwaitingPayment,
   isPaymentHoldActive,
@@ -1244,8 +1247,14 @@ export function MyBookings({
                 <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between gap-2">
                   <div>
                     {(() => {
-                      // total_amount is cash/gateway payable. Full wallet → 0 cash, NOT a promo.
-                      const paid = booking.paidAmount ?? booking.price;
+                      // All-in = post-discount service + GST + fees (wallet + Razorpay).
+                      // Do not show service-after-promo alone — that hides platform fee / GST.
+                      const allIn = resolveBookingListAllInAmount({
+                        specialInstructions: booking.specialInstructions,
+                        paidAmount: booking.paidAmount,
+                        price: booking.price,
+                        paymentSources: booking.paymentSources,
+                      });
                       const discount =
                         booking.discountAmount != null && booking.discountAmount > 0
                           ? booking.discountAmount
@@ -1253,24 +1262,60 @@ export function MyBookings({
                       const walletPaid = (booking.paymentSources ?? [])
                         .filter((s) => s.method === 'wallet')
                         .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+                      const cash = booking.paidAmount ?? booking.price;
                       const base =
                         booking.basePrice != null && booking.basePrice > 0
                           ? booking.basePrice
-                          : Math.round((paid + discount + walletPaid) * 100) / 100;
-                      const hasPromoSavings = discount > 0.009;
+                          : Math.round((cash + discount + walletPaid) * 100) / 100;
+                      const hasPromoSavings = discount > 0.009 && base > 0.009;
+                      const statedPromoPct = hasPromoSavings
+                        ? computeDiscountPercent(base, Math.max(0, base - discount)) ?? 0
+                        : 0;
+
                       if (hasPromoSavings) {
-                        const afterPromo = Math.max(
-                          0,
-                          Math.round((base - discount) * 100) / 100
-                        );
+                        // When all-in still sits under list price (e.g. 100% off + fee),
+                        // PriceDisplay can strike base → all-in. When fees push all-in above
+                        // base (e.g. 10% off + GST), keep strike + stated % separately.
+                        if (allIn < base - 0.009) {
+                          return (
+                            <div className="space-y-1">
+                              <PriceDisplay
+                                originalPrice={base}
+                                currentPrice={allIn}
+                                discountPercent={statedPromoPct || undefined}
+                                size="sm"
+                                showSavings
+                              />
+                              <div className="flex flex-wrap gap-1">
+                                <SavingsBadge variant="save_amount" amount={discount} />
+                                {booking.couponCode ? (
+                                  <SavingsBadge
+                                    variant="coupon_applied"
+                                    label={`Coupon: ${booking.couponCode}`}
+                                  />
+                                ) : (
+                                  <SavingsBadge variant="auto_applied" />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
                         return (
                           <div className="space-y-1">
-                            <PriceDisplay
-                              originalPrice={base}
-                              currentPrice={afterPromo}
-                              size="sm"
-                              showSavings
-                            />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs text-slate-400 cw-price-strike">
+                                {formatPriceWithSymbol(base)}
+                              </span>
+                              <span className="text-sm font-semibold text-[#FF8C42]">
+                                {formatPriceWithSymbol(allIn)}
+                              </span>
+                              {statedPromoPct > 0 && (
+                                <PromotionOfferBadge variant="percent" value={statedPromoPct} />
+                              )}
+                            </div>
+                            <p className="text-[10px] text-emerald-600">
+                              You save {formatPriceWithSymbol(discount)}
+                            </p>
                             <div className="flex flex-wrap gap-1">
                               <SavingsBadge variant="save_amount" amount={discount} />
                               {booking.couponCode ? (
@@ -1285,16 +1330,10 @@ export function MyBookings({
                           </div>
                         );
                       }
-                      // Wallet-settled (or plain paid): show service value, not fake 100% OFF.
-                      const settled =
-                        walletPaid > 0.009 && paid <= 0.009
-                          ? base > 0
-                            ? base
-                            : walletPaid
-                          : paid;
+
                       return (
                         <span className="text-base font-bold text-gray-900">
-                          {formatPriceWithSymbol(settled)}
+                          {formatPriceWithSymbol(allIn)}
                         </span>
                       );
                     })()}

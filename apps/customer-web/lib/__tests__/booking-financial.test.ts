@@ -1,4 +1,4 @@
-import { extractBookingFinancial } from '../pricing/booking-financial';
+import { extractBookingFinancial, resolveBookingListAllInAmount } from '../pricing/booking-financial';
 import type { PriceBreakdownLine } from '../pricing/types';
 
 const sumNonFinal = (lines: PriceBreakdownLine[]) =>
@@ -162,5 +162,48 @@ describe('extractBookingFinancial promo/coupon regression', () => {
     expect(coupon!.amount).toBe(-100);
     expect(fin.couponDiscount).toBe(100);
     expect(fin.finalPaid).toBe(900);
+  });
+});
+
+describe('resolveBookingListAllInAmount', () => {
+  it('uses financial meta components (post-discount + GST + fees)', () => {
+    const allIn = resolveBookingListAllInAmount({
+      specialInstructions:
+        'wp_financial_meta:{"servicePrice":1999,"vendorDiscount":1999,"subtotalAfterDiscounts":0,"totalTax":0,"platformFee":40,"convenienceFee":0,"deliveryFee":0,"walletAmount":40,"finalPaid":40}',
+      paidAmount: 0,
+      price: 0,
+    });
+    expect(allIn).toBe(40);
+  });
+
+  it('uses component gross for 10% off + GST + platform fee', () => {
+    const allIn = resolveBookingListAllInAmount({
+      notes:
+        'wp_financial_meta:{"servicePrice":1000,"vendorDiscount":100,"subtotalAfterDiscounts":900,"totalTax":162,"platformFee":40,"convenienceFee":0,"deliveryFee":0,"walletAmount":0,"finalPaid":1102}',
+      paidAmount: 1102,
+      price: 1102,
+    });
+    expect(allIn).toBe(1102);
+  });
+
+  it('sums payment sources when meta is missing', () => {
+    const allIn = resolveBookingListAllInAmount({
+      paidAmount: 180,
+      price: 180,
+      paymentSources: [
+        { method: 'wallet', amount: 1000 },
+        { method: 'razorpay', amount: 180 },
+      ],
+    });
+    expect(allIn).toBe(1180);
+  });
+
+  it('uses wallet when cash total is zero', () => {
+    const allIn = resolveBookingListAllInAmount({
+      paidAmount: 0,
+      price: 0,
+      paymentSources: [{ method: 'wallet', amount: 500 }],
+    });
+    expect(allIn).toBe(500);
   });
 });
