@@ -247,6 +247,8 @@ export class CandidateNormalizer {
       rules: {
         minOrderValue:
           row.min_order_amount != null ? parseNum(row.min_order_amount) : null,
+        applicableServices: parseServicesList(row.applicable_services),
+        serviceCategory: parseOptionalString(row.service_category),
       },
       benefits: {
         type: 'coupon',

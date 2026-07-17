@@ -7,6 +7,7 @@ import {
   CategoryRule,
   ComboRule,
   CouponMaxUsesRule,
+  CouponServiceTargetRule,
   DateRangeIstRule,
   DateRangeUtcRule,
   FirstBookingRule,
@@ -301,6 +302,26 @@ describe('Discount Engine Phase 3 — Rule Engine', () => {
           applicableServices: ['00000000-0000-4000-8000-000000000001'],
         }).passed
       ).toBe(false);
+    });
+
+    it('PlatformInlineCategoryRule ignores UUID service targets', () => {
+      const result = new PlatformInlineCategoryRule().evaluate({
+        domain: 'platform_inline',
+        serviceCategory: 'grooming',
+        serviceIds: ['00000000-0000-4000-8000-000000000099'],
+        applicableServices: ['00000000-0000-4000-8000-000000000099'],
+      });
+      expect(result.passed).toBe(true);
+    });
+
+    it('CouponServiceTargetRule rejects typed coupons for the wrong service', () => {
+      const result = new CouponServiceTargetRule().evaluate({
+        domain: 'coupon',
+        serviceCategory: 'grooming',
+        serviceIds: ['00000000-0000-4000-8000-000000000099'],
+        applicableServices: ['00000000-0000-4000-8000-000000000001'],
+      });
+      expect(result.passed).toBe(false);
     });
 
     it('PlatformMatchRule mirrors booking platform context matching', () => {
