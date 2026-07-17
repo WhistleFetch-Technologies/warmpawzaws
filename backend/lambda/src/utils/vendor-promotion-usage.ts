@@ -24,12 +24,71 @@ export async function recordEcommercePlatformCouponUsage(params: {
     /* coupon_usages may be missing in some envs */
   }
 
+  await incrementCouponUsageCount(couponId);
+}
+
+/** Bump coupon redemption counters — prod schema uses `uses_count`; some envs also have `usage_count`. */
+export async function incrementCouponUsageCount(couponId: string): Promise<void> {
+  if (!couponId) return;
+  const updated = await query(
+    `UPDATE coupons
+     SET uses_count = COALESCE(uses_count, 0) + 1,
+         updated_at = NOW()
+     WHERE id = $1::uuid
+     RETURNING id`,
+    [couponId]
+  ).catch(() => ({ rows: [] as { id?: string }[] }));
+
+  if ((updated.rows?.length ?? 0) > 0) return;
+
   await query(
     `UPDATE coupons
-     SET usage_count = COALESCE(usage_count, 0) + 1, updated_at = NOW()
+     SET usage_count = COALESCE(usage_count, 0) + 1,
+         updated_at = NOW()
      WHERE id = $1::uuid`,
     [couponId]
   ).catch(() => undefined);
+}
+
+/** Service booking coupon redemption (Admin Coupons tab usage). */
+export async function recordPlatformCouponUsage(params: {
+  couponId: string;
+  bookingId: string;
+  customerId?: string | null;
+  discountAmount: number;
+}): Promise<void> {
+  const { couponId, bookingId, customerId, discountAmount } = params;
+  if (!couponId || !bookingId) return;
+
+  const existing = await query(
+    `SELECT 1 AS ok FROM coupon_usages
+     WHERE coupon_id = $1::uuid AND booking_id = $2::uuid
+     LIMIT 1`,
+    [couponId, bookingId]
+  ).catch(() => ({ rows: [] as { ok?: number }[] }));
+  if ((existing.rows?.length ?? 0) > 0) return;
+
+  try {
+    await insert('coupon_usages', {
+      coupon_id: couponId,
+      customer_id: customerId || null,
+      booking_id: bookingId,
+      order_id: null,
+      discount_amount: discountAmount,
+      used_at: new Date().toISOString(),
+    });
+  } catch {
+    // Duplicate or missing table — do not bump the counter twice.
+    const again = await query(
+      `SELECT 1 AS ok FROM coupon_usages
+       WHERE coupon_id = $1::uuid AND booking_id = $2::uuid
+       LIMIT 1`,
+      [couponId, bookingId]
+    ).catch(() => ({ rows: [] as { ok?: number }[] }));
+    if ((again.rows?.length ?? 0) > 0) return;
+    /* coupon_usages may be missing — still try counter bump below */
+  }
+  await incrementCouponUsageCount(couponId);
 }
 
 export async function recordVendorPromotionUsage(params: {

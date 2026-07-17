@@ -4,6 +4,7 @@
  */
 import { insert, query } from '../../database/rds-connection';
 import {
+  incrementCouponUsageCount,
   recordPlatformPromotionUsage,
   recordServicePromotionUsage,
   recordVendorPromotionUsage,
@@ -84,11 +85,7 @@ export class LegacyUsageTracker implements UsageTracker {
         discount_amount: params.discountAmount,
         used_at: new Date().toISOString(),
       });
-      await query(
-        `UPDATE coupons SET usage_count = COALESCE(usage_count, 0) + 1, updated_at = NOW()
-         WHERE id = $1::uuid`,
-        [params.discountId]
-      ).catch(() => undefined);
+      await incrementCouponUsageCount(params.discountId);
     } catch {
       /* coupon_usages may be missing in some envs */
     }

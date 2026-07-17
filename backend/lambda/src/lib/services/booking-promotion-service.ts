@@ -795,6 +795,7 @@ export async function recordBookingPromotionUsageFromBooking(bookingId: string):
     let platformPromotionId: string | null = null;
     let vendorDiscount = 0;
     let platformDiscount = 0;
+    let promotionType: string | null = null;
 
     const notes = String(booking.notes || '');
     const meta = parseJsonMetaFromNotes(notes, 'wp_promo_meta');
@@ -803,6 +804,7 @@ export async function recordBookingPromotionUsageFromBooking(bookingId: string):
       platformPromotionId = meta.platformPromotionId ? String(meta.platformPromotionId) : null;
       vendorDiscount = parseFloat(String(meta.vendorDiscount ?? 0)) || 0;
       platformDiscount = parseFloat(String(meta.platformDiscount ?? 0)) || 0;
+      promotionType = meta.promotionType ? String(meta.promotionType) : null;
     }
 
     if (!vendorPromotionId && !platformPromotionId) {
@@ -842,6 +844,39 @@ export async function recordBookingPromotionUsageFromBooking(bookingId: string):
 
     const originalAmount =
       parseFloat(String(booking.base_price ?? booking.total_amount ?? 0)) || 0;
+    const couponCode = booking.coupon_code ? String(booking.coupon_code).trim() : '';
+    const isCouponOffer =
+      promotionType === 'coupon' ||
+      Boolean(couponCode) ||
+      String(meta?.promotionSource ?? '').toLowerCase() === 'coupon';
+
+    // Coupons live in `coupons` (uses_count). Do not treat coupon ids as platform promotions.
+    if (isCouponOffer && discountTotal > 0) {
+      const { recordPlatformCouponUsage } = await import('../../utils/vendor-promotion-usage');
+      let couponId = platformPromotionId || vendorPromotionId;
+      if (!couponId && couponCode) {
+        const { validateCouponForAmount } = await import('./platform-coupon-service');
+        const validation = await validateCouponForAmount(
+          couponCode,
+          originalAmount,
+          DiscountDomain.SERVICE
+        );
+        if (validation.valid && validation.couponId) {
+          couponId = validation.couponId;
+        }
+      }
+      if (couponId) {
+        await recordPlatformCouponUsage({
+          couponId,
+          bookingId,
+          customerId: booking.customer_id ? String(booking.customer_id) : null,
+          discountAmount:
+            platformDiscount || vendorDiscount || discountTotal,
+        });
+      }
+      return;
+    }
+
     const { recordServicePromotionUsage, recordPlatformPromotionUsage } = await import(
       '../../utils/vendor-promotion-usage'
     );
@@ -864,38 +899,6 @@ export async function recordBookingPromotionUsageFromBooking(bookingId: string):
         discountAmount: platformDiscount,
         originalAmount,
       });
-    }
-
-    const couponCode = booking.coupon_code ? String(booking.coupon_code).trim() : '';
-    if (couponCode && !vendorPromotionId && !platformPromotionId && discountTotal > 0) {
-      const { validateCouponForAmount } = await import('./platform-coupon-service');
-      const { commitResolverUsageEntries } = await import(
-        '../../discount-engine/adapters/legacy-usage-tracker'
-      );
-      const validation = await validateCouponForAmount(
-        couponCode,
-        originalAmount,
-        DiscountDomain.SERVICE
-      );
-      if (validation.valid && validation.couponId && validation.discountAmount) {
-        await commitResolverUsageEntries({
-          entries: [
-            {
-              candidateId: validation.couponId,
-              source: 'PLATFORM_COUPON',
-              owner: 'PLATFORM',
-              domain: 'SERVICE',
-              discountAmount: validation.discountAmount,
-              prepared: true,
-              metadata: { trigger: 'CODE', promotionType: 'coupon' },
-            },
-          ],
-          customerId: booking.customer_id ? String(booking.customer_id) : '',
-          referenceId: bookingId,
-          referenceType: 'booking',
-          originalAmount,
-        });
-      }
     }
   } catch (err) {
     console.warn('[recordBookingPromotionUsageFromBooking] failed:', err);
