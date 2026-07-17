@@ -329,7 +329,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         convenienceFee = 0;
       }
 
-      const feesTotal = platformFee + convenienceFee + deliveryFee + packagingFee;
+      let feesTotal = platformFee + convenienceFee + deliveryFee + packagingFee;
 
       const lockedGross = resolveLockedBookingGrossFromNotes(booking.notes);
       const walletIntent = useWallet ? Math.max(0, Number(walletAmount) || 0) : 0;
