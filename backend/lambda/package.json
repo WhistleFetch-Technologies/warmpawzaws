@@ -8,6 +8,7 @@
     "build:mappings": "npm install --include=dev --prefix ../../packages/service-launch-mappings --no-audit --no-fund && npm run build --prefix ../../packages/service-launch-mappings",
     "build": "npm run build:contracts && npm run build:mappings && npm run clean && npm run build:bundle && npm run package",
     "build:ts": "tsc --noEmit",
+    "validate:customer-layers": "node scripts/validate-customer-layers.js",
     "build:skip-ts": "npm run clean && npm run build:bundle && npm run package",
     "build:bundle": "node esbuild.config.js",
     "build:legacy": "npm run clean && tsc && npm run package",
