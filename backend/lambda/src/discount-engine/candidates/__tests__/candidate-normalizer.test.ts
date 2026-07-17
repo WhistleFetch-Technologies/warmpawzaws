@@ -79,6 +79,8 @@ const couponRow: Record<string, unknown> = {
   start_date: '2020-01-01',
   end_date: '2099-12-31',
   is_active: true,
+  service_category: 'grooming',
+  applicable_services: ['svc-1'],
 };
 
 describe('Discount Engine Phase 3.5 — DiscountCandidate', () => {
@@ -129,6 +131,8 @@ describe('Discount Engine Phase 3.5 — DiscountCandidate', () => {
       expect(c.trigger).toBe(DiscountTrigger.CODE);
       expect(c.benefits.discountType).toBe('fixed');
       expect(c.usage?.limit).toBe(100);
+      expect(c.rules.serviceCategory).toBe('grooming');
+      expect(c.rules.applicableServices).toEqual(['svc-1']);
     });
 
     it('normalizes all product promotion structural types', () => {
