@@ -38,12 +38,18 @@ export function normalizePromotionRow(row: Record<string, unknown>): NormalizedP
     discountValue: Number(row.discount_value ?? row.discountValue ?? 0),
     maxDiscount: row.max_discount != null ? Number(row.max_discount) : row.maxDiscount != null ? Number(row.maxDiscount) : undefined,
     minAmount: Number(row.min_order_value ?? row.min_booking_value ?? row.minOrderValue ?? 0) || undefined,
-    usageLimit: row.usage_limit != null ? Number(row.usage_limit) : row.usageLimit != null ? Number(row.usageLimit) : undefined,
-    usageCount: Number(row.used_count ?? row.usage_count ?? row.usageCount ?? 0),
-    usageLimitPerUser:
-      row.usage_limit_per_user != null
-        ? Number(row.usage_limit_per_user)
-        : undefined,
+    usageLimit:
+      row.max_uses != null
+        ? Number(row.max_uses)
+        : row.usage_limit != null
+          ? Number(row.usage_limit)
+          : row.usageLimit != null
+            ? Number(row.usageLimit)
+            : undefined,
+    usageCount: Number(
+      row.uses_count ?? row.used_count ?? row.usage_count ?? row.usageCount ?? 0
+    ),
+    usageLimitPerUser: resolveUsageLimitPerUser(row),
     startDate: pickDate(row.start_date, row.valid_from, row.validFrom),
     endDate: pickDate(row.end_date, row.valid_until, row.validUntil),
     isActive: Boolean(row.is_active ?? row.active ?? true),
@@ -56,6 +62,39 @@ export function normalizePromotionRow(row: Record<string, unknown>): NormalizedP
   };
 }
 
+function resolveUsageLimitPerUser(row: Record<string, unknown>): number | undefined {
+  const direct =
+    row.max_uses_per_user ??
+    row.maxUsesPerUser ??
+    row.usage_limit_per_user ??
+    row.usageLimitPerUser;
+  if (direct != null && direct !== '') {
+    const n = Number(direct);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const meta = row.metadata;
+  const metaObj =
+    meta && typeof meta === 'object'
+      ? (meta as Record<string, unknown>)
+      : typeof meta === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(meta) as Record<string, unknown>;
+            } catch {
+              return null;
+            }
+          })()
+        : null;
+  if (metaObj) {
+    const fromMeta = metaObj.maxUsesPerUser ?? metaObj.max_uses_per_user ?? metaObj.usageLimitPerUser;
+    if (fromMeta != null && fromMeta !== '') {
+      const n = Number(fromMeta);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
+  return undefined;
+}
+
 export function normalizeCouponRow(row: Record<string, unknown>): NormalizedCouponItem {
   return {
     id: String(row.id ?? ''),
@@ -63,11 +102,19 @@ export function normalizeCouponRow(row: Record<string, unknown>): NormalizedCoup
     discountType: (row.discount_type as 'percentage' | 'fixed') || (row.type as 'percentage' | 'fixed') || 'percentage',
     discountValue: Number(row.discount_value ?? row.value ?? 0),
     maxDiscount: row.max_discount != null ? Number(row.max_discount) : row.maxDiscountAmount != null ? Number(row.maxDiscountAmount) : undefined,
-    minAmount: Number(row.min_order_value ?? row.minOrderAmount ?? 0) || undefined,
-    usageLimit: row.usage_limit != null ? Number(row.usage_limit) : row.usageLimit != null ? Number(row.usageLimit) : undefined,
-    usageCount: Number(row.used_count ?? row.usageCount ?? 0),
-    startDate: pickDate(row.valid_from, row.validFrom),
-    endDate: pickDate(row.valid_until, row.validUntil),
+    minAmount: Number(row.min_order_amount ?? row.min_order_value ?? row.minOrderAmount ?? 0) || undefined,
+    usageLimit:
+      row.max_uses != null
+        ? Number(row.max_uses)
+        : row.usage_limit != null
+          ? Number(row.usage_limit)
+          : row.usageLimit != null
+            ? Number(row.usageLimit)
+            : undefined,
+    usageCount: Number(row.uses_count ?? row.used_count ?? row.usageCount ?? 0),
+    usageLimitPerUser: resolveUsageLimitPerUser(row),
+    startDate: pickDate(row.start_date, row.valid_from, row.validFrom),
+    endDate: pickDate(row.end_date, row.valid_until, row.validUntil),
     isActive: Boolean(row.is_active ?? row.isActive ?? true),
     raw: row,
     createdAt: row.created_at ? String(row.created_at) : undefined,
@@ -96,6 +143,7 @@ export function promotionItemToCoupon(item: NormalizedPromotionItem): Normalized
     minAmount: item.minAmount,
     usageLimit: item.usageLimit,
     usageCount: item.usageCount,
+    usageLimitPerUser: item.usageLimitPerUser,
     startDate: item.startDate,
     endDate: item.endDate,
     isActive: item.isActive,
@@ -133,6 +181,7 @@ export function couponToWizardForm(c: NormalizedCouponItem, catalog?: PromotionT
     minAmount: c.minAmount,
     usageLimit: c.usageLimit,
     usageCount: c.usageCount,
+    usageLimitPerUser: c.usageLimitPerUser,
     startDate: c.startDate,
     endDate: c.endDate,
     isActive: c.isActive,

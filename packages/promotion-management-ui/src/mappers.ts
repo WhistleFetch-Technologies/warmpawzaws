@@ -114,6 +114,8 @@ export function wizardToAdminCouponPayload(
     validFrom: form.startDate,
     validUntil: form.endDate,
     usageLimit: form.usageLimit ?? 0,
+    usageLimitPerUser: form.usageLimitPerUser,
+    usage_limit_per_user: form.usageLimitPerUser,
     isActive: form.uiStatus !== 'draft' && form.uiStatus !== 'paused',
     applicable_to: applicableTo(form, discountDomain),
     applicable_services: applicableServices,

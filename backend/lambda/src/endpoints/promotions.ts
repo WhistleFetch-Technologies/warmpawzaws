@@ -2277,16 +2277,32 @@ export function registerPromotionEndpoints(app: Hono) {
       }
 
       // Map database fields to frontend format
-      const mappedCoupons = rows.map((coupon: any) => ({
-        ...coupon,
-        type: coupon.discount_type || coupon.type,
-        value: coupon.discount_value || coupon.value,
-        usageLimit: coupon.max_uses || coupon.usage_limit || coupon.usageLimit,
-        usageCount: coupon.uses_count || coupon.current_uses || coupon.usage_count || 0,
-        validUntil: coupon.end_date || coupon.expires_at || coupon.valid_until || coupon.validUntil,
-        validFrom: coupon.start_date || coupon.starts_at || coupon.valid_from || coupon.validFrom,
-        createdAt: coupon.created_at || coupon.createdAt,
-      }));
+      const mappedCoupons = rows.map((coupon: any) => {
+        const meta =
+          coupon.metadata && typeof coupon.metadata === 'object' ? coupon.metadata : {};
+        const usageLimitPerUserRaw =
+          coupon.max_uses_per_user ??
+          coupon.usage_limit_per_user ??
+          meta.maxUsesPerUser ??
+          meta.usageLimitPerUser;
+        const usageLimitPerUser =
+          usageLimitPerUserRaw != null && Number(usageLimitPerUserRaw) > 0
+            ? Number(usageLimitPerUserRaw)
+            : null;
+        return {
+          ...coupon,
+          type: coupon.discount_type || coupon.type,
+          value: coupon.discount_value || coupon.value,
+          usageLimit: coupon.max_uses || coupon.usage_limit || coupon.usageLimit,
+          usage_limit_per_user: usageLimitPerUser,
+          usageLimitPerUser,
+          max_uses_per_user: usageLimitPerUser ?? coupon.max_uses_per_user,
+          usageCount: coupon.uses_count || coupon.current_uses || coupon.usage_count || 0,
+          validUntil: coupon.end_date || coupon.expires_at || coupon.valid_until || coupon.validUntil,
+          validFrom: coupon.start_date || coupon.starts_at || coupon.valid_from || coupon.validFrom,
+          createdAt: coupon.created_at || coupon.createdAt,
+        };
+      });
 
       return c.json({
         success: true,
@@ -2343,12 +2359,24 @@ export function registerPromotionEndpoints(app: Hono) {
           coupon = await insert('coupons', fallback);
         } else if (msg.includes('does not exist') || msg.includes('column')) {
           const fallback = { ...couponData };
+          const baseMeta =
+            fallback.metadata && typeof fallback.metadata === 'object'
+              ? { ...(fallback.metadata as Record<string, unknown>) }
+              : {};
+          if (fallback.max_uses_per_user != null) {
+            baseMeta.maxUsesPerUser = fallback.max_uses_per_user;
+            baseMeta.usageLimitPerUser = fallback.max_uses_per_user;
+          }
+          if (fallback.discount_domain != null) {
+            baseMeta.discount_domain = fallback.discount_domain;
+          }
+          fallback.metadata = Object.keys(baseMeta).length > 0 ? baseMeta : undefined;
           delete fallback.applicable_to;
           delete fallback.service_category;
           delete fallback.applicable_services;
           delete fallback.discount_domain;
           delete fallback.max_uses_per_user;
-          delete fallback.metadata;
+          if (fallback.metadata === undefined) delete fallback.metadata;
           delete fallback.description;
           coupon = await insert('coupons', fallback);
         } else {
@@ -2410,12 +2438,24 @@ export function registerPromotionEndpoints(app: Hono) {
           coupon = await insert('coupons', fallback);
         } else if (msg.includes('does not exist') || msg.includes('column')) {
           const fallback = { ...couponData };
+          const baseMeta =
+            fallback.metadata && typeof fallback.metadata === 'object'
+              ? { ...(fallback.metadata as Record<string, unknown>) }
+              : {};
+          if (fallback.max_uses_per_user != null) {
+            baseMeta.maxUsesPerUser = fallback.max_uses_per_user;
+            baseMeta.usageLimitPerUser = fallback.max_uses_per_user;
+          }
+          if (fallback.discount_domain != null) {
+            baseMeta.discount_domain = fallback.discount_domain;
+          }
+          fallback.metadata = Object.keys(baseMeta).length > 0 ? baseMeta : undefined;
           delete fallback.applicable_to;
           delete fallback.service_category;
           delete fallback.applicable_services;
           delete fallback.discount_domain;
           delete fallback.max_uses_per_user;
-          delete fallback.metadata;
+          if (fallback.metadata === undefined) delete fallback.metadata;
           delete fallback.description;
           coupon = await insert('coupons', fallback);
         } else {
@@ -2470,6 +2510,17 @@ export function registerPromotionEndpoints(app: Hono) {
         const limit = body.usage_limit !== undefined ? body.usage_limit : body.usageLimit;
         updateData.max_uses = limit > 0 ? limit : null;
       }
+      const hasPerUserLimit =
+        body.usage_limit_per_user !== undefined || body.usageLimitPerUser !== undefined;
+      let perUserLimit: number | null | undefined;
+      if (hasPerUserLimit) {
+        const raw =
+          body.usage_limit_per_user !== undefined
+            ? body.usage_limit_per_user
+            : body.usageLimitPerUser;
+        perUserLimit = raw != null && Number(raw) > 0 ? Number(raw) : null;
+        updateData.max_uses_per_user = perUserLimit;
+      }
       if (body.is_active !== undefined || body.isActive !== undefined) {
         updateData.is_active = body.is_active !== undefined ? body.is_active : body.isActive;
       }
@@ -2490,8 +2541,45 @@ export function registerPromotionEndpoints(app: Hono) {
         updateData.applicable_services = targeting.applicable_services;
         updateData.metadata = targeting.metadata;
       }
+      if (hasPerUserLimit) {
+        const baseMeta =
+          updateData.metadata && typeof updateData.metadata === 'object'
+            ? { ...(updateData.metadata as Record<string, unknown>) }
+            : targeting.metadata && typeof targeting.metadata === 'object'
+              ? { ...(targeting.metadata as Record<string, unknown>) }
+              : {};
+        if (perUserLimit != null) {
+          baseMeta.maxUsesPerUser = perUserLimit;
+          baseMeta.usageLimitPerUser = perUserLimit;
+        } else {
+          delete baseMeta.maxUsesPerUser;
+          delete baseMeta.usageLimitPerUser;
+          delete baseMeta.max_uses_per_user;
+        }
+        updateData.metadata = baseMeta;
+      }
 
-      await update('coupons', { id }, updateData);
+      try {
+        await update('coupons', { id }, updateData);
+      } catch (updateErr: unknown) {
+        const msg = String((updateErr as Error)?.message ?? updateErr);
+        if (msg.includes('column "max_uses_per_user"') && updateData.max_uses_per_user !== undefined) {
+          const fallback = { ...updateData };
+          const baseMeta =
+            fallback.metadata && typeof fallback.metadata === 'object'
+              ? { ...(fallback.metadata as Record<string, unknown>) }
+              : {};
+          if (fallback.max_uses_per_user != null) {
+            baseMeta.maxUsesPerUser = fallback.max_uses_per_user;
+            baseMeta.usageLimitPerUser = fallback.max_uses_per_user;
+          }
+          fallback.metadata = baseMeta;
+          delete fallback.max_uses_per_user;
+          await update('coupons', { id }, fallback);
+        } else {
+          throw updateErr;
+        }
+      }
 
       // Use explicit UUID casting to avoid "uuid = text" errors
       const updated = await query(

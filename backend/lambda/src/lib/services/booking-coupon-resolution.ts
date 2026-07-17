@@ -28,6 +28,7 @@ export async function resolveBookingCouponDiscount(params: {
   serviceCategory?: string;
   couponCode: string;
   amount: number;
+  excludeBookingId?: string;
 }): Promise<BookingCouponDiscountResult | null> {
   const code = params.couponCode.trim().toUpperCase();
   if (!code || params.amount <= 0) return null;
@@ -117,6 +118,8 @@ export async function resolveBookingCouponDiscount(params: {
   const platformCoupon = await validateCouponForAmount(code, params.amount, DiscountDomain.SERVICE, {
     serviceCategory: params.serviceCategory,
     customerId: params.customerId,
+    couponCode: code,
+    excludeBookingId: params.excludeBookingId,
   });
   if (platformCoupon.valid && platformCoupon.discountAmount && platformCoupon.discountAmount > 0) {
     return {

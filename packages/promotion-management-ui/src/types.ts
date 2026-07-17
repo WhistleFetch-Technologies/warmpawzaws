@@ -181,6 +181,7 @@ export type NormalizedCouponItem = {
   minAmount?: number;
   usageLimit?: number;
   usageCount?: number;
+  usageLimitPerUser?: number;
   startDate: string;
   endDate: string;
   isActive: boolean;
