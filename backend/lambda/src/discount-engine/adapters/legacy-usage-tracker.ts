@@ -2,9 +2,11 @@
  * @deprecated Legacy usage recorders — wrapped by V2 UsageTracker during Phase 8B migration.
  * Do not remove until Phase 8C cleanup.
  */
-import { insert, query } from '../../database/rds-connection';
+import { query } from '../../database/rds-connection';
 import {
   incrementCouponUsageCount,
+  insertCouponUsageRow,
+  recordPlatformCouponUsage,
   recordPlatformPromotionUsage,
   recordServicePromotionUsage,
   recordVendorPromotionUsage,
@@ -76,31 +78,39 @@ export class LegacyUsageTracker implements UsageTracker {
   }
 
   private async recordCouponUsage(params: RecordDiscountUsageParams): Promise<void> {
-    try {
-      await insert('coupon_usages', {
-        coupon_id: params.discountId,
-        customer_id: params.customerId,
-        booking_id: params.referenceType === 'booking' ? params.referenceId : null,
-        order_id: params.referenceType === 'order' ? params.referenceId : null,
-        discount_amount: params.discountAmount,
-        used_at: new Date().toISOString(),
+    // Prefer the dedicated booking helper (idempotent + uses_count) when we have a booking id.
+    if (params.referenceType === 'booking') {
+      await recordPlatformCouponUsage({
+        couponId: params.discountId,
+        bookingId: params.referenceId,
+        customerId: params.customerId,
+        discountAmount: params.discountAmount,
       });
+      return;
+    }
+
+    const inserted = await insertCouponUsageRow({
+      couponId: params.discountId,
+      customerId: params.customerId,
+      bookingId: null,
+      orderId: params.referenceType === 'order' ? params.referenceId : null,
+      discountAmount: params.discountAmount,
+    });
+    if (inserted) {
       await incrementCouponUsageCount(params.discountId);
-    } catch {
-      /* coupon_usages may be missing in some envs */
     }
   }
 
   async countPriorUsage(params: CountDiscountUsageParams): Promise<number> {
     try {
-      if (params.domain === DiscountDomain.ECOMMERCE) {
-        const res = await query(
-          `SELECT COUNT(*)::int AS c FROM promotion_usages
-           WHERE promotion_id = $1::uuid AND customer_id = $2::uuid`,
-          [params.discountId, params.customerId]
-        );
-        return res.rows[0]?.c ?? 0;
-      }
+      const couponRes = await query(
+        `SELECT COUNT(*)::int AS c FROM coupon_usages
+         WHERE coupon_id = $1::uuid AND customer_id = $2::uuid`,
+        [params.discountId, params.customerId]
+      ).catch(() => ({ rows: [{ c: 0 }] }));
+      const couponCount = Number(couponRes.rows?.[0]?.c ?? 0) || 0;
+      if (couponCount > 0) return couponCount;
+
       const res = await query(
         `SELECT COUNT(*)::int AS c FROM promotion_usages
          WHERE promotion_id = $1::uuid AND customer_id = $2::uuid`,

@@ -850,9 +850,9 @@ export async function recordBookingPromotionUsageFromBooking(bookingId: string):
       Boolean(couponCode) ||
       String(meta?.promotionSource ?? '').toLowerCase() === 'coupon';
 
-    // Coupons live in `coupons` (uses_count). Do not treat coupon ids as platform promotions.
+    // Coupons: commit through V2 UsageTracker (PLATFORM_COUPON) → coupon_usages + uses_count.
+    // Never write coupon ids into promotion_usages (that polluted Admin Analytics).
     if (isCouponOffer && discountTotal > 0) {
-      const { recordPlatformCouponUsage } = await import('../../utils/vendor-promotion-usage');
       let couponId = platformPromotionId || vendorPromotionId;
       if (!couponId && couponCode) {
         const { validateCouponForAmount } = await import('./platform-coupon-service');
@@ -866,12 +866,25 @@ export async function recordBookingPromotionUsageFromBooking(bookingId: string):
         }
       }
       if (couponId) {
-        await recordPlatformCouponUsage({
-          couponId,
-          bookingId,
-          customerId: booking.customer_id ? String(booking.customer_id) : null,
-          discountAmount:
-            platformDiscount || vendorDiscount || discountTotal,
+        const { commitResolverUsageEntries } = await import(
+          '../../discount-engine/adapters/legacy-usage-tracker'
+        );
+        await commitResolverUsageEntries({
+          entries: [
+            {
+              candidateId: couponId,
+              source: 'PLATFORM_COUPON',
+              owner: 'PLATFORM',
+              domain: 'SERVICE',
+              discountAmount: platformDiscount || vendorDiscount || discountTotal,
+              prepared: true,
+              metadata: { trigger: 'CODE', promotionType: 'coupon' },
+            },
+          ],
+          customerId: booking.customer_id ? String(booking.customer_id) : '',
+          referenceId: bookingId,
+          referenceType: 'booking',
+          originalAmount,
         });
       }
       return;

@@ -13,6 +13,7 @@ import {
   isFinanceFundingAwareSettlementAuthoritative,
 } from './finance-settlement-mode';
 import { attachSettlementSnapshotToFinancialMeta } from './persist-settlement-snapshot';
+import { isSettlementAuthoritative } from '../../discount-engine/settlement/settlement-mode';
 
 export type BuildSettlementSnapshotParams = FinancialMetaDiscountInput & {
   vendorId: string;
@@ -68,8 +69,12 @@ export async function buildSettlementSnapshotWithShadowLog(
 }
 
 export function shouldPersistFundingAwareSnapshot(): boolean {
+  // Persist whenever finance funding-aware is enabled, OR when V2 settlement is already
+  // AUTHORITATIVE (prod historically omitted FINANCE_FUNDING_AWARE_SETTLEMENT).
   return (
-    isFinanceFundingAwareSettlementAuthoritative() || isFinanceFundingAwareSettlementShadow()
+    isFinanceFundingAwareSettlementAuthoritative() ||
+    isFinanceFundingAwareSettlementShadow() ||
+    isSettlementAuthoritative()
   );
 }
 

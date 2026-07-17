@@ -16,7 +16,7 @@ const FUNCTION_NAME = process.env.LAMBDA_FUNCTION_NAME || 'warmpawz-prod-api-han
 const REGION = process.env.AWS_REGION || 'ap-south-1';
 const DRY_RUN = process.argv.includes('--dry-run');
 
-/** Matches infra/envs/prod/main.tf Commercial Engine V2 block (prod ON). */
+/** Matches infra/envs/prod/main.tf Commercial Engine V2 + finance settlement block (prod ON). */
 const TERRAFORM_PROD_DISCOUNT_FLAGS = {
   DISCOUNT_ENGINE_V2_RESOLVER_MODE: 'AUTHORITATIVE',
   DISCOUNT_ENGINE_V2_PRIORITY_MODE: 'AUTHORITATIVE',
@@ -24,6 +24,8 @@ const TERRAFORM_PROD_DISCOUNT_FLAGS = {
   DISCOUNT_ENGINE_V2_SETTLEMENT_MODE: 'AUTHORITATIVE',
   DISCOUNT_ENGINE_V2_ANALYTICS_MODE: 'AUTHORITATIVE',
   DISCOUNT_ENGINE_V2_CAMPAIGN_MODE: 'AUTHORITATIVE',
+  // Vendor settlement: platform-funded → base − commission; vendor-funded → discounted − commission.
+  FINANCE_FUNDING_AWARE_SETTLEMENT: 'AUTHORITATIVE',
   COMMERCIAL_AI_COPILOT_ENABLED: 'false',
   UAT_MODE: 'false',
 };

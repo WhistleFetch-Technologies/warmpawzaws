@@ -41,8 +41,18 @@ export async function resolveSettlementSnapshotForBooking(
   const financial = parseBookingFinancialMeta(booking) ?? {};
   const policy = await resolveVendorCommissionPolicy(vendorId);
 
+  // Platform-funded offers must commission on list/service price, not customer paid / post-discount total.
+  const servicePriceFromMeta =
+    parseFloat(String(financial.servicePrice ?? financial.vendorBasePrice ?? 0)) || 0;
+  const vendorBase =
+    servicePriceFromMeta > 0
+      ? servicePriceFromMeta
+      : vendorBasePrice > 0
+        ? vendorBasePrice
+        : parseFloat(String(booking.base_price ?? booking.basePrice ?? 0)) || 0;
+
   const winningOffer = resolveWinningOfferFromFinancialMeta({
-    vendorBasePrice,
+    vendorBasePrice: vendorBase,
     vendorDiscount: parseFloat(String(financial.vendorDiscount ?? 0)) || 0,
     platformDiscount: parseFloat(String(financial.platformDiscount ?? 0)) || 0,
     couponDiscount: parseFloat(String(financial.couponDiscount ?? 0)) || 0,
@@ -61,7 +71,7 @@ export async function resolveSettlementSnapshotForBooking(
   });
 
   return computeFundingAwareSettlement({
-    vendorBasePrice,
+    vendorBasePrice: vendorBase,
     winningOffer,
     commissionRate: policy.commissionRate,
     commissionPolicy: policy,

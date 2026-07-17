@@ -275,11 +275,19 @@ export async function ensureVendorEarningsForCompletedBooking(
       options?.realizedAt ?? pickBookingRealizedAtIso(merged) ?? new Date().toISOString();
 
     if (isFinanceFundingAwareSettlementEnabled()) {
+      const financialForBase = parseBookingFinancialMeta(merged) ?? {};
+      const servicePriceBase =
+        parseFloat(String(financialForBase.servicePrice ?? financialForBase.vendorBasePrice ?? 0)) ||
+        0;
+      const fundingAwareBase =
+        servicePriceBase > 0
+          ? servicePriceBase
+          : parseFloat(String(merged.base_price ?? merged.basePrice ?? totalAmount)) || totalAmount;
       const faResult = await createFundingAwareVendorEarnings(
         merged,
         bookingId,
         earningsVendorId,
-        totalAmount,
+        fundingAwareBase,
         realizedAt,
         logPrefix
       );
@@ -629,11 +637,22 @@ export async function realignPendingVendorEarningsForBooking(
   const earningsVendorId = String(ve.vendor_id ?? '');
   let snapshot = resolveUsableSettlementSnapshot(booking);
 
-  if (!snapshot && isFinanceFundingAwareSettlementEnabled()) {
+  // Rebuild from financial meta when checkout never persisted settlementSnapshot
+  // (common when FINANCE_FUNDING_AWARE_SETTLEMENT was LEGACY).
+  if (!snapshot && earningsVendorId) {
     const financial = parseBookingFinancialMeta(booking) ?? {};
     const vendorBase =
-      parseFloat(String(financial.servicePrice ?? booking.base_price ?? 0)) || 0;
-    if (vendorBase > 0 && earningsVendorId) {
+      parseFloat(String(financial.servicePrice ?? financial.vendorBasePrice ?? booking.base_price ?? 0)) ||
+      0;
+    const hasFundingMeta =
+      vendorBase > 0 &&
+      (parseFloat(String(financial.couponDiscount ?? 0)) > 0 ||
+        parseFloat(String(financial.platformDiscount ?? 0)) > 0 ||
+        parseFloat(String(financial.vendorDiscount ?? 0)) > 0 ||
+        financial.couponFundingType != null ||
+        financial.settlementSnapshot != null ||
+        financial.winningOffer != null);
+    if (hasFundingMeta) {
       snapshot = await buildFundingAwareSettlementSnapshot({
         vendorId: earningsVendorId,
         vendorBasePrice: vendorBase,
@@ -648,6 +667,10 @@ export async function realignPendingVendorEarningsForBooking(
           : undefined,
         couponFundingType:
           financial.couponFundingType === 'VENDOR' ? 'VENDOR' : 'PLATFORM',
+        winningOffer:
+          financial.winningOffer && typeof financial.winningOffer === 'object'
+            ? (financial.winningOffer as SettlementSnapshot['winningOffer'])
+            : undefined,
       });
     }
   }

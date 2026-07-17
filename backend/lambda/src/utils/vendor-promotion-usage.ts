@@ -3,6 +3,45 @@
  */
 import { insert, query } from '../database/rds-connection';
 
+async function couponUsagesColumnSet(): Promise<Set<string>> {
+  const r = await query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'coupon_usages'`
+  ).catch(() => ({ rows: [] as { column_name: string }[] }));
+  return new Set((r.rows || []).map((x: { column_name: string }) => x.column_name));
+}
+
+/**
+ * Insert a coupon_usages row using only columns that exist on this RDS schema.
+ * Prod historically has no discount_amount — Analytics reads these event rows.
+ */
+export async function insertCouponUsageRow(params: {
+  couponId: string;
+  customerId?: string | null;
+  bookingId?: string | null;
+  orderId?: string | null;
+  discountAmount?: number;
+}): Promise<boolean> {
+  const cols = await couponUsagesColumnSet();
+  if (!cols.has('coupon_id')) return false;
+
+  const row: Record<string, unknown> = { coupon_id: params.couponId };
+  if (cols.has('customer_id')) row.customer_id = params.customerId || null;
+  if (cols.has('booking_id')) row.booking_id = params.bookingId || null;
+  if (cols.has('order_id')) row.order_id = params.orderId || null;
+  if (cols.has('discount_amount') && params.discountAmount != null) {
+    row.discount_amount = params.discountAmount;
+  }
+  if (cols.has('used_at')) row.used_at = new Date().toISOString();
+
+  try {
+    await insert('coupon_usages', row);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Persist platform `coupons` table redemption on ecommerce order (analytics Coupons tab). */
 export async function recordEcommercePlatformCouponUsage(params: {
   couponId: string;
@@ -11,19 +50,13 @@ export async function recordEcommercePlatformCouponUsage(params: {
   discountAmount: number;
 }): Promise<void> {
   const { couponId, orderId, customerId, discountAmount } = params;
-  try {
-    await insert('coupon_usages', {
-      coupon_id: couponId,
-      customer_id: customerId || null,
-      booking_id: null,
-      order_id: orderId,
-      discount_amount: discountAmount,
-      used_at: new Date().toISOString(),
-    });
-  } catch {
-    /* coupon_usages may be missing in some envs */
-  }
-
+  await insertCouponUsageRow({
+    couponId,
+    customerId,
+    orderId,
+    bookingId: null,
+    discountAmount,
+  });
   await incrementCouponUsageCount(couponId);
 }
 
@@ -50,7 +83,7 @@ export async function incrementCouponUsageCount(couponId: string): Promise<void>
   ).catch(() => undefined);
 }
 
-/** Service booking coupon redemption (Admin Coupons tab usage). */
+/** Service booking coupon redemption (Admin Coupons tab + V2 Analytics). */
 export async function recordPlatformCouponUsage(params: {
   couponId: string;
   bookingId: string;
@@ -68,17 +101,14 @@ export async function recordPlatformCouponUsage(params: {
   ).catch(() => ({ rows: [] as { ok?: number }[] }));
   if ((existing.rows?.length ?? 0) > 0) return;
 
-  try {
-    await insert('coupon_usages', {
-      coupon_id: couponId,
-      customer_id: customerId || null,
-      booking_id: bookingId,
-      order_id: null,
-      discount_amount: discountAmount,
-      used_at: new Date().toISOString(),
-    });
-  } catch {
-    // Duplicate or missing table — do not bump the counter twice.
+  const inserted = await insertCouponUsageRow({
+    couponId,
+    customerId,
+    bookingId,
+    orderId: null,
+    discountAmount,
+  });
+  if (!inserted) {
     const again = await query(
       `SELECT 1 AS ok FROM coupon_usages
        WHERE coupon_id = $1::uuid AND booking_id = $2::uuid
@@ -86,7 +116,6 @@ export async function recordPlatformCouponUsage(params: {
       [couponId, bookingId]
     ).catch(() => ({ rows: [] as { ok?: number }[] }));
     if ((again.rows?.length ?? 0) > 0) return;
-    /* coupon_usages may be missing — still try counter bump below */
   }
   await incrementCouponUsageCount(couponId);
 }

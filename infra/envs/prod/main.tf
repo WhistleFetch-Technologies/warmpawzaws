@@ -270,6 +270,7 @@ module "lambda" {
     } : {},
     # Commercial Engine V2 — prod ON (AUTHORITATIVE). Flip via Terraform; keep Lambda in sync via
     # scripts/apply-prod-discount-engine-env.js after deploys that don't run Terraform apply.
+    # FINANCE_FUNDING_AWARE_SETTLEMENT gates vendor_earnings accrual (platform vs vendor funding).
     {
       DISCOUNT_ENGINE_V2_RESOLVER_MODE    = "AUTHORITATIVE"
       DISCOUNT_ENGINE_V2_PRIORITY_MODE    = "AUTHORITATIVE"
@@ -277,6 +278,7 @@ module "lambda" {
       DISCOUNT_ENGINE_V2_SETTLEMENT_MODE  = "AUTHORITATIVE"
       DISCOUNT_ENGINE_V2_ANALYTICS_MODE   = "AUTHORITATIVE"
       DISCOUNT_ENGINE_V2_CAMPAIGN_MODE    = "AUTHORITATIVE"
+      FINANCE_FUNDING_AWARE_SETTLEMENT    = "AUTHORITATIVE"
       COMMERCIAL_AI_COPILOT_ENABLED       = "false"
     }
   )
