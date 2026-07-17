@@ -23,13 +23,31 @@ describe('resolveBookingFinancialDiscountBuckets', () => {
 });
 
 describe('resolveLockedBookingGrossFromNotes', () => {
-  it('prefers component sum for all-in gross', () => {
+  it('rebuilds all-in from servicePrice when settlement meta dropped subtotalAfterDiscounts', () => {
+    const notes =
+      'wp_financial_meta:{"servicePrice":10,"vendorDiscount":0,"platformDiscount":1,"couponDiscount":1,"totalTax":1.62,"platformFee":0,"walletAmount":9,"finalPaid":10.62}';
+    const locked = resolveLockedBookingGrossFromNotes(notes);
+    expect(locked).not.toBeNull();
+    expect(locked!.subtotalAfterDiscounts).toBe(9);
+    expect(locked!.grossTotal).toBe(10.62);
+    expect(locked!.source).toBe('components');
+    const split = computeWalletBookingSplit({
+      grossTotal: locked!.grossTotal,
+      walletIntent: locked!.walletAmount,
+      walletBalance: 370.2,
+      gstAmount: locked!.totalTax,
+    });
+    expect(split.walletApplied).toBe(9);
+    expect(split.cashRemainder).toBe(1.62);
+  });
+
+  it('uses finalPaid + walletAmount when tax/fees alone are present with cash finalPaid', () => {
     const notes =
       'wp_financial_meta:{"subtotalAfterDiscounts":0,"totalTax":359.82,"platformFee":40,"convenienceFee":0,"deliveryFee":0,"walletAmount":370.2,"finalPaid":29.62}';
     const locked = resolveLockedBookingGrossFromNotes(notes);
     expect(locked).not.toBeNull();
     expect(locked!.grossTotal).toBe(399.82);
-    expect(locked!.source).toBe('components');
+    expect(locked!.source).toBe('finalPaid_plus_wallet');
   });
 
   it('uses finalPaid + walletAmount for legacy cash-as-finalPaid meta', () => {
@@ -44,6 +62,14 @@ describe('resolveLockedBookingGrossFromNotes', () => {
     const notes = 'wp_financial_meta:{"finalPaid":2124,"totalTax":324}';
     const locked = resolveLockedBookingGrossFromNotes(notes);
     expect(locked!.grossTotal).toBe(2124);
+    expect(locked!.source).toBe('finalPaid_only');
+  });
+
+  it('treats modern all-in finalPaid as gross when wallet is a portion of it', () => {
+    const notes =
+      'wp_financial_meta:{"walletAmount":9,"finalPaid":10.62,"totalTax":1.62}';
+    const locked = resolveLockedBookingGrossFromNotes(notes);
+    expect(locked!.grossTotal).toBe(10.62);
     expect(locked!.source).toBe('finalPaid_only');
   });
 });

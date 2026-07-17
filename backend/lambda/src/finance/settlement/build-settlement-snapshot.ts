@@ -83,6 +83,17 @@ export type EnrichFinancialMetaParams = {
   platformPromotionId?: string;
   couponFundingType?: 'VENDOR' | 'PLATFORM';
   policyFingerprint?: string;
+  /** Pricing / payment fields that must survive settlement snapshot attach. */
+  subtotalAfterDiscounts?: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  totalTax?: number;
+  platformFee?: number;
+  convenienceFee?: number;
+  deliveryFee?: number;
+  walletAmount?: number;
+  finalPaid?: number;
 };
 
 /** Attach settlement snapshot to financial meta object before persisting wp_financial_meta. */
@@ -117,6 +128,11 @@ export async function enrichFinancialMetaWithSettlement(
     legacyRate
   );
 
+  const derivedSubtotal =
+    params.subtotalAfterDiscounts != null && params.subtotalAfterDiscounts > 0
+      ? params.subtotalAfterDiscounts
+      : Math.max(0, legacyCommissionBase);
+
   return attachSettlementSnapshotToFinancialMeta(
     {
       servicePrice: params.servicePrice,
@@ -126,6 +142,16 @@ export async function enrichFinancialMetaWithSettlement(
       vendorPromotionId: params.vendorPromotionId,
       platformPromotionId: params.platformPromotionId,
       couponFundingType: params.couponFundingType,
+      subtotalAfterDiscounts: derivedSubtotal,
+      cgst: params.cgst,
+      sgst: params.sgst,
+      igst: params.igst,
+      totalTax: params.totalTax,
+      platformFee: params.platformFee,
+      convenienceFee: params.convenienceFee,
+      deliveryFee: params.deliveryFee,
+      walletAmount: params.walletAmount,
+      finalPaid: params.finalPaid,
     },
     snapshot
   );

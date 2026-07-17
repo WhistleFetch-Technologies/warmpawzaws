@@ -1779,6 +1779,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               ? 'VENDOR'
               : 'PLATFORM';
           const settlementVendorId = String(bookingData.vendor_id ?? body.vendorId ?? body.vendor_id ?? '');
+          const clientSubtotalAfterDiscounts =
+            parseFloat(String(fm.subtotalAfterDiscounts ?? fm.subtotal_after_discounts ?? 0)) || 0;
+          const derivedSubtotalAfterDiscounts =
+            clientSubtotalAfterDiscounts > 0
+              ? clientSubtotalAfterDiscounts
+              : Math.max(0, servicePriceForMeta - vendorDisc - platformDisc - couponDisc);
           let enrichedMeta = settlementVendorId
             ? await enrichFinancialMetaWithSettlement({
                 vendorId: settlementVendorId,
@@ -1789,14 +1795,23 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 vendorPromotionId: resolvedBookingPromotions?.vendorPromotionId,
                 platformPromotionId: resolvedBookingPromotions?.platformPromotionId,
                 couponFundingType,
+                subtotalAfterDiscounts: derivedSubtotalAfterDiscounts,
+                cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
+                sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
+                igst: parseFloat(String(fm.igst ?? 0)) || 0,
+                totalTax: parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0,
+                platformFee: parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0,
+                convenienceFee: parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0,
+                deliveryFee: parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0,
+                walletAmount: parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0,
+                finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
               })
             : {
                 servicePrice: servicePriceForMeta,
                 vendorDiscount: vendorDisc,
                 platformDiscount: platformDisc,
                 couponDiscount: couponDisc,
-                subtotalAfterDiscounts:
-                  parseFloat(String(fm.subtotalAfterDiscounts ?? fm.subtotal_after_discounts ?? 0)) || undefined,
+                subtotalAfterDiscounts: derivedSubtotalAfterDiscounts || undefined,
                 cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
                 sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
                 igst: parseFloat(String(fm.igst ?? 0)) || 0,
@@ -1809,8 +1824,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               };
           if (!settlementVendorId) {
             Object.assign(enrichedMeta, {
-              subtotalAfterDiscounts:
-                parseFloat(String(fm.subtotalAfterDiscounts ?? fm.subtotal_after_discounts ?? 0)) || undefined,
+              subtotalAfterDiscounts: derivedSubtotalAfterDiscounts || undefined,
               cgst: parseFloat(String(fm.cgst ?? 0)) || 0,
               sgst: parseFloat(String(fm.sgst ?? 0)) || 0,
               igst: parseFloat(String(fm.igst ?? 0)) || 0,
@@ -1822,15 +1836,20 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               finalPaid: Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount,
             });
           } else {
+            enrichedMeta.subtotalAfterDiscounts =
+              parseFloat(String(enrichedMeta.subtotalAfterDiscounts ?? 0)) ||
+              derivedSubtotalAfterDiscounts;
             enrichedMeta.finalPaid = Number.isFinite(finalPaid) ? finalPaid : calculatedFinalAmount;
             enrichedMeta.cgst = parseFloat(String(fm.cgst ?? 0)) || 0;
             enrichedMeta.sgst = parseFloat(String(fm.sgst ?? 0)) || 0;
             enrichedMeta.igst = parseFloat(String(fm.igst ?? 0)) || 0;
             enrichedMeta.totalTax = parseFloat(String(fm.totalTax ?? fm.total_tax ?? 0)) || 0;
             enrichedMeta.platformFee = parseFloat(String(fm.platformFee ?? fm.platform_fee ?? 0)) || 0;
-            enrichedMeta.convenienceFee = parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0;
+            enrichedMeta.convenienceFee =
+              parseFloat(String(fm.convenienceFee ?? fm.convenience_fee ?? 0)) || 0;
             enrichedMeta.deliveryFee = parseFloat(String(fm.deliveryFee ?? fm.delivery_fee ?? 0)) || 0;
-            enrichedMeta.walletAmount = parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0;
+            enrichedMeta.walletAmount =
+              parseFloat(String(fm.walletAmount ?? fm.wallet_amount ?? 0)) || 0;
           }
           if (resolvedBookingPromotions?.settlement) {
             enrichedMeta = appendSettlementPreviewToFinancialMeta(

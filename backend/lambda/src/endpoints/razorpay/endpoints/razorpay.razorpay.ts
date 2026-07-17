@@ -644,10 +644,17 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             if (orphan.rows.length > 0) {
               return;
             }
-            const gross =
-              Math.round((parseFloat(String(booking.total_amount ?? booking.amount ?? 0)) || 0) * 100) / 100;
             const lockedGross = resolveLockedBookingGrossFromNotes(booking.notes);
+            const grossFromBooking =
+              Math.round((parseFloat(String(booking.total_amount ?? booking.amount ?? 0)) || 0) * 100) / 100;
+            // Prefer locked all-in snapshot — booking.total_amount may already be cash-only/GST.
+            const gross =
+              lockedGross && lockedGross.grossTotal > 0
+                ? lockedGross.grossTotal
+                : grossFromBooking;
             const gstForWallet = lockedGross?.totalTax ?? 0;
+            const walletIntentFromMeta =
+              lockedGross && lockedGross.walletAmount > 0.009 ? lockedGross.walletAmount : 0;
             const balRes = await client.query(
               `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
               [String(customerIdFinal)]
@@ -655,7 +662,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             const bal = parseFloat(String(balRes.rows[0]?.b ?? '0')) || 0;
             const split = computeWalletBookingSplit({
               grossTotal: gross,
-              walletIntent: walletAmountCreateOrder,
+              walletIntent: Math.max(walletAmountCreateOrder, walletIntentFromMeta),
               walletBalance: bal,
               gstAmount: gstForWallet,
             });
@@ -1369,12 +1376,103 @@ class VerifyPaymentHandler extends BaseHandler {
 
         // ✅ Update booking status to confirmed and payment_status to paid
         const { rows: bookingRows } = await client.query(
-          `SELECT status, payment_status FROM bookings WHERE id = $1 FOR UPDATE`,
+          `SELECT * FROM bookings WHERE id = $1 FOR UPDATE`,
           [bookingId]
         );
-        const previousStatus = bookingRows[0]?.status || null;
-        const previousPaymentStatus = bookingRows[0]?.payment_status || null;
+        const bookingRow = bookingRows[0] || {};
+        const previousStatus = bookingRow?.status || null;
+        const previousPaymentStatus = bookingRow?.payment_status || null;
         const shouldNotify = previousPaymentStatus !== 'paid' || previousStatus === 'pending_payment';
+
+        // Split-pay gate: if financial meta reserved a wallet slice, debit it before marking paid.
+        // Razorpay amount alone (often GST) must not complete the booking without the wallet leg.
+        const lockedAtVerify = resolveLockedBookingGrossFromNotes(bookingRow.notes);
+        const intendedWallet = Math.round((lockedAtVerify?.walletAmount ?? 0) * 100) / 100;
+        let walletDebitedAtVerify = 0;
+        if (intendedWallet > 0.009 && bookingRow.customer_id) {
+          const grossAtVerify =
+            lockedAtVerify && lockedAtVerify.grossTotal > 0
+              ? lockedAtVerify.grossTotal
+              : Math.round((parseFloat(String(bookingRow.total_amount ?? 0)) || 0) * 100) / 100;
+          const gstAtVerify = lockedAtVerify?.totalTax ?? 0;
+          let alreadyDebited = 0;
+          try {
+            const existingDebits = await client.query(
+              `SELECT COALESCE(SUM(amount), 0)::text AS total
+               FROM wallet_transactions
+               WHERE transaction_type = 'debit'
+                 AND (
+                   (reference_type = 'booking_payment' AND reference_id::text = $1)
+                   OR description ILIKE $2
+                 )`,
+              [String(bookingId), `%${String(bookingId)}%`]
+            );
+            alreadyDebited =
+              Math.round((parseFloat(String(existingDebits.rows[0]?.total ?? '0')) || 0) * 100) / 100;
+          } catch (existingDebitErr: any) {
+            console.warn(
+              '[PAYMENT-VERIFY] existing wallet debit lookup skipped:',
+              existingDebitErr?.message
+            );
+          }
+          const balRes = await client.query(
+            `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
+            [String(bookingRow.customer_id)]
+          );
+          const bal = parseFloat(String(balRes.rows[0]?.b ?? '0')) || 0;
+          const split = computeWalletBookingSplit({
+            grossTotal: grossAtVerify > 0 ? grossAtVerify : intendedWallet + gstAtVerify,
+            walletIntent: intendedWallet,
+            walletBalance: bal + alreadyDebited,
+            gstAmount: gstAtVerify,
+          });
+          const needDebit = Math.max(
+            0,
+            Math.round((split.walletApplied - alreadyDebited) * 100) / 100
+          );
+          if (needDebit > 0.009) {
+            const deb = await debitCustomerWalletForBookingInTransaction(client, {
+              customerId: String(bookingRow.customer_id),
+              bookingId: String(bookingId),
+              amount: needDebit,
+              idempotencyKey: `rz-verify-wallet-${String(bookingId)}`,
+            });
+            walletDebitedAtVerify = Math.round((deb?.debited ?? needDebit) * 100) / 100;
+            if (walletDebitedAtVerify > 0.009) {
+              try {
+                await client.query(
+                  `UPDATE payments
+                   SET wallet_amount_used = GREATEST(COALESCE(wallet_amount_used, 0), $1::numeric),
+                       updated_at = NOW()
+                   WHERE razorpay_order_id = $2`,
+                  [alreadyDebited + walletDebitedAtVerify, razorpay_order_id]
+                );
+              } catch (walletColErr: any) {
+                console.warn(
+                  '[PAYMENT-VERIFY] wallet_amount_used update skipped:',
+                  walletColErr?.message
+                );
+              }
+            }
+          } else {
+            walletDebitedAtVerify = alreadyDebited;
+          }
+        }
+
+        const cashPaid = Math.round((parseFloat(String(payment.amount ?? 0)) || 0) * 100) / 100;
+        const lockedAllIn =
+          lockedAtVerify && lockedAtVerify.grossTotal > 0
+            ? Math.round(lockedAtVerify.grossTotal * 100) / 100
+            : 0;
+        const currentBookingTotal =
+          Math.round((parseFloat(String(bookingRow.total_amount ?? 0)) || 0) * 100) / 100;
+        // Never collapse all-in total_amount down to the Razorpay cash/GST leg.
+        const nextTotalAmount = Math.max(
+          currentBookingTotal,
+          lockedAllIn,
+          cashPaid + walletDebitedAtVerify,
+          cashPaid
+        );
 
         await client.query(
           `UPDATE bookings SET 
@@ -1383,7 +1481,7 @@ class VerifyPaymentHandler extends BaseHandler {
             total_amount = COALESCE($2::numeric, total_amount),
             updated_at = NOW()
           WHERE id = $1`,
-          [bookingId, payment.amount ?? null]
+          [bookingId, nextTotalAmount > 0 ? nextTotalAmount : null]
         );
 
         if (previousStatus !== 'confirmed') {
