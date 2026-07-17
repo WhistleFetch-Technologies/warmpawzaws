@@ -1493,7 +1493,7 @@ class BulkDeleteVendorProductsHandler extends BaseHandler {
         return this.error('Vendor ID is required', 400);
       }
 
-      const body = this.parseBody(context) as { productIds?: unknown };
+      const body = this.parseBody(context.event) as { productIds?: unknown };
       const rawIds = body?.productIds;
       if (!Array.isArray(rawIds) || rawIds.length === 0) {
         return this.error('productIds must be a non-empty array', 400);
