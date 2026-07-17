@@ -15,7 +15,16 @@ export function parseCouponApplicableServices(raw: unknown): string[] {
   return [];
 }
 
-/** Whether a platform coupon row applies to a customer service bucket (vet, grooming, …). */
+function isUuidToken(value: string): boolean {
+  return /^[0-9a-f-]{36}$/i.test(value);
+}
+
+/**
+ * Whether a platform coupon row applies to a customer service bucket (vet, grooming, …).
+ * Service-UUID tokens in applicable_services are not category slugs — the active-list
+ * endpoint has no selected service IDs, so UUID-only targeting passes the bucket filter
+ * and eligibility / apply enforce the concrete service match.
+ */
 export function couponRowMatchesService(
   row: Record<string, unknown>,
   serviceBucket: string | undefined
@@ -33,8 +42,18 @@ export function couponRowMatchesService(
 
   if (applicable.length === 0 && (!category || category === 'all')) return true;
 
-  if (applicable.some((token) => promotionCategoriesMatch(bucket, token))) return true;
+  const categoryTokens = applicable.filter(
+    (token) => !token.startsWith('style:') && !isUuidToken(token)
+  );
+  const hasServiceIdTargets = applicable.some(isUuidToken);
+
+  if (categoryTokens.some((token) => promotionCategoriesMatch(bucket, token))) return true;
   if (category && category !== 'all' && promotionCategoriesMatch(bucket, category)) return true;
+
+  // UUID-only (or style+UUID) targeting: cannot resolve category from IDs here.
+  if (categoryTokens.length === 0 && hasServiceIdTargets) {
+    return !category || category === 'all';
+  }
 
   return false;
 }
