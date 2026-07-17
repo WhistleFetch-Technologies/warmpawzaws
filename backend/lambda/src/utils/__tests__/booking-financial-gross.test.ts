@@ -1,7 +1,26 @@
 import {
   computeWalletBookingSplit,
+  resolveBookingFinancialDiscountBuckets,
   resolveLockedBookingGrossFromNotes,
 } from '../booking-financial-gross';
+
+describe('resolveBookingFinancialDiscountBuckets', () => {
+  it('persists a platform coupon once when the legacy resolver shape also reports a platform discount', () => {
+    expect(
+      resolveBookingFinancialDiscountBuckets({
+        winningPromotionType: 'coupon',
+        resolvedTotalSavings: 1,
+        resolvedPlatformDiscount: 1,
+        clientPlatformDiscount: 0,
+        clientCouponDiscount: 1,
+      })
+    ).toEqual({
+      vendorDiscount: 0,
+      platformDiscount: 0,
+      couponDiscount: 1,
+    });
+  });
+});
 
 describe('resolveLockedBookingGrossFromNotes', () => {
   it('prefers component sum for all-in gross', () => {

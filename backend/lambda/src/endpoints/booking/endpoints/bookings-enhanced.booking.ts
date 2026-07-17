@@ -71,6 +71,7 @@ import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-sessio
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
 import {
   computeWalletBookingSplit,
+  resolveBookingFinancialDiscountBuckets,
   resolveLockedBookingGrossFromNotes,
 } from '../../../utils/booking-financial-gross';
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
@@ -1703,6 +1704,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         const winningApplied = resolvedBookingPromotions?.applied?.[0];
+        const winningFunding = resolvedBookingPromotions?.settlement?.appliedFunding?.find(
+          (entry) => !winningApplied || entry.discountId === winningApplied.id
+        );
+        const winningFundingType =
+          String(winningFunding?.funding ?? winningApplied?.source ?? '').toUpperCase() ===
+          'VENDOR'
+            ? 'VENDOR'
+            : winningApplied
+              ? 'PLATFORM'
+              : undefined;
         const promoNotesPayload = resolvedBookingPromotions &&
           resolvedBookingPromotions.totalSavings > 0
           ? {
@@ -1712,12 +1723,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               platformDiscount: resolvedBookingPromotions.platformDiscountAmount,
               promotionType: winningApplied?.promotionType ?? winningApplied?.source,
               promotionSource: winningApplied?.source,
-              fundingType:
-                resolvedBookingPromotions.platformDiscountAmount > 0
-                  ? 'PLATFORM'
-                  : resolvedBookingPromotions.vendorDiscountAmount > 0
-                    ? 'VENDOR'
-                    : undefined,
+              fundingType: winningFundingType,
               policyFingerprint: resolvedBookingPromotions.settlement?.policyFingerprint,
             }
           : null;
@@ -1746,15 +1752,32 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             bookingData.base_price = Math.round(servicePrice * 100) / 100;
           }
           const servicePriceForMeta = Number.isFinite(servicePrice) ? servicePrice : calculatedBasePrice;
-          const vendorDisc =
-            parseFloat(String(fm.vendorDiscount ?? fm.vendor_discount ?? 0)) ||
-            resolvedBookingPromotions?.vendorDiscountAmount ||
-            0;
-          const platformDisc =
-            parseFloat(String(fm.platformDiscount ?? fm.platform_discount ?? 0)) ||
-            resolvedBookingPromotions?.platformDiscountAmount ||
-            0;
-          const couponDisc = parseFloat(String(fm.couponDiscount ?? fm.coupon_discount ?? 0)) || 0;
+          const couponOffer = resolvedBookingPromotions?.applied.find(
+            (offer) => offer.promotionType === 'coupon'
+          );
+          // A coupon is the winning offer itself, not a second platform/vendor promotion.
+          // Persist it in exactly one discount bucket using the server-resolved amount.
+          const {
+            vendorDiscount: vendorDisc,
+            platformDiscount: platformDisc,
+            couponDiscount: couponDisc,
+          } = resolveBookingFinancialDiscountBuckets({
+            winningPromotionType: couponOffer?.promotionType,
+            resolvedTotalSavings: resolvedBookingPromotions?.totalSavings,
+            resolvedVendorDiscount: resolvedBookingPromotions?.vendorDiscountAmount,
+            resolvedPlatformDiscount: resolvedBookingPromotions?.platformDiscountAmount,
+            clientVendorDiscount: fm.vendorDiscount ?? fm.vendor_discount,
+            clientPlatformDiscount: fm.platformDiscount ?? fm.platform_discount,
+            clientCouponDiscount: fm.couponDiscount ?? fm.coupon_discount,
+          });
+          const couponFunding = resolvedBookingPromotions?.settlement?.appliedFunding?.find(
+            (entry) => !couponOffer || entry.discountId === couponOffer.id
+          );
+          const couponFundingType: 'VENDOR' | 'PLATFORM' =
+            String(couponFunding?.funding ?? couponOffer?.source ?? 'PLATFORM').toUpperCase() ===
+            'VENDOR'
+              ? 'VENDOR'
+              : 'PLATFORM';
           const settlementVendorId = String(bookingData.vendor_id ?? body.vendorId ?? body.vendor_id ?? '');
           let enrichedMeta = settlementVendorId
             ? await enrichFinancialMetaWithSettlement({
@@ -1765,7 +1788,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                 couponDiscount: couponDisc,
                 vendorPromotionId: resolvedBookingPromotions?.vendorPromotionId,
                 platformPromotionId: resolvedBookingPromotions?.platformPromotionId,
-                couponFundingType: 'PLATFORM',
+                couponFundingType,
               })
             : {
                 servicePrice: servicePriceForMeta,

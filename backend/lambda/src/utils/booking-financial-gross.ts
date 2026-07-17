@@ -2,6 +2,33 @@ import { parseJsonMetaFromNotes } from './booking-notes-meta';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+export function resolveBookingFinancialDiscountBuckets(params: {
+  winningPromotionType?: string;
+  resolvedTotalSavings?: number;
+  resolvedVendorDiscount?: number;
+  resolvedPlatformDiscount?: number;
+  clientVendorDiscount?: unknown;
+  clientPlatformDiscount?: unknown;
+  clientCouponDiscount?: unknown;
+}): { vendorDiscount: number; platformDiscount: number; couponDiscount: number } {
+  if (params.winningPromotionType === 'coupon') {
+    return {
+      vendorDiscount: 0,
+      platformDiscount: 0,
+      couponDiscount: round2(Math.max(0, params.resolvedTotalSavings ?? 0)),
+    };
+  }
+  const money = (client: unknown, resolved = 0) => {
+    const clientAmount = parseFloat(String(client ?? 0));
+    return round2(Math.max(0, clientAmount || resolved || 0));
+  };
+  return {
+    vendorDiscount: money(params.clientVendorDiscount, params.resolvedVendorDiscount),
+    platformDiscount: money(params.clientPlatformDiscount, params.resolvedPlatformDiscount),
+    couponDiscount: money(params.clientCouponDiscount),
+  };
+}
+
 export interface LockedBookingGross {
   grossTotal: number;
   subtotalAfterDiscounts: number;

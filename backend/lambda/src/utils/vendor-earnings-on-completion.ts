@@ -46,6 +46,8 @@ import { loadBookingServiceSnapshot } from './booking-service-snapshot';
 
 import { resolveVendorVisibleBookingAmount } from './entity-extractor';
 
+import type { SettlementSnapshot } from '../finance/settlement/types';
+
 
 
 function pickBookingRealizedAtIso(booking: Record<string, unknown>): string | undefined {
@@ -80,6 +82,30 @@ export function resolveBookingGrossForVendorEarnings(booking: Record<string, unk
 
   return 0;
 
+}
+
+export function resolveUsableSettlementSnapshot(
+  booking: Record<string, unknown>
+): SettlementSnapshot | null {
+  const snapshot = extractSettlementSnapshotFromBooking(booking);
+  if (!snapshot) return null;
+
+  const commissionBase = Number(snapshot.commissionBase);
+  const commissionRate = Number(snapshot.commissionRate);
+  const commissionAmount = Number(snapshot.commissionAmount);
+  const vendorSettlement = Number(snapshot.vendorSettlement);
+  const values = [commissionBase, commissionRate, commissionAmount, vendorSettlement];
+
+  if (
+    values.some((value) => !Number.isFinite(value) || value < 0) ||
+    commissionBase <= 0 ||
+    commissionRate > 100 ||
+    vendorSettlement <= 0 ||
+    Math.abs(commissionAmount + vendorSettlement - commissionBase) > 0.02
+  ) {
+    return null;
+  }
+  return snapshot;
 }
 
 /**
@@ -275,14 +301,28 @@ export async function ensureVendorEarningsForCompletedBooking(
       }
     }
 
-    const commissionRate = await getVendorCommissionRate(earningsVendorId);
+    const persistedSnapshot = resolveUsableSettlementSnapshot(merged);
+    let commissionRate: number;
+    let commissionAmount: number;
+    let vendorAmount: number;
 
-    const settlementPreviewLegacy = extractSettlementPreviewFromBooking(booking);
-    totalAmount = applySettlementPreviewToCommissionableGross(totalAmount, settlementPreviewLegacy);
-
-    const commissionAmount = Math.round((totalAmount * commissionRate) / 100 * 100) / 100;
-
-    const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
+    if (persistedSnapshot) {
+      // The checkout snapshot is authoritative for who funded the winning offer.
+      // Platform-funded discounts preserve commissionBase; vendor-funded discounts reduce it.
+      totalAmount = persistedSnapshot.commissionBase;
+      commissionRate = persistedSnapshot.commissionRate;
+      commissionAmount = persistedSnapshot.commissionAmount;
+      vendorAmount = persistedSnapshot.vendorSettlement;
+    } else {
+      commissionRate = await getVendorCommissionRate(earningsVendorId);
+      const settlementPreviewLegacy = extractSettlementPreviewFromBooking(merged);
+      totalAmount = applySettlementPreviewToCommissionableGross(
+        totalAmount,
+        settlementPreviewLegacy
+      );
+      commissionAmount = Math.round((totalAmount * commissionRate) / 100 * 100) / 100;
+      vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
+    }
 
 
 
@@ -587,7 +627,7 @@ export async function realignPendingVendorEarningsForBooking(
   if (!ve || String(ve.status ?? '') !== 'pending') return false;
 
   const earningsVendorId = String(ve.vendor_id ?? '');
-  let snapshot = extractSettlementSnapshotFromBooking(booking);
+  let snapshot = resolveUsableSettlementSnapshot(booking);
 
   if (!snapshot && isFinanceFundingAwareSettlementEnabled()) {
     const financial = parseBookingFinancialMeta(booking) ?? {};
@@ -612,7 +652,7 @@ export async function realignPendingVendorEarningsForBooking(
     }
   }
 
-  if (snapshot && isFinanceFundingAwareSettlementEnabled()) {
+  if (snapshot) {
     const prevVendorAmount = Number(ve.amount ?? 0);
     const vendorAmount = snapshot.vendorSettlement;
     const delta = Math.round((vendorAmount - prevVendorAmount) * 100) / 100;
