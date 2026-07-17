@@ -7,7 +7,7 @@ alwaysApply: true
 
 This rule is the **authoritative guide** for Cursor agents helping team members work on personal feature branches. Follow it unless the user explicitly overrides a specific step.
 
-**Related rules:** `branch-health.mdc` (personal dev branch + feature branches), `deployment.mdc` (deploy scripts), `git-cli.mdc` (git CLI), `customer-navigation.mdc` (customer-web nav stack).
+**Related rules:** `branch-health.mdc` (personal dev branch + feature branches), `deployment.mdc` (deploy scripts), `git-cli.mdc` (git CLI), `customer-navigation.mdc` (customer-web nav stack), `endpoint-4-layer-parity.mdc` (customer API 4-layer split).
 
 ---
 
@@ -46,6 +46,17 @@ When assisting on **apps/customer-web** (fixes, features, new services, refactor
 Legacy files may still contain raw `router.push` — do not mass-migrate unless asked. Apply stack to **code you add or change**.
 
 **Related rule:** `customer-navigation.mdc` (auto-loads on `apps/customer-web/**` edits).
+
+### 1c. Customer API 4-layer endpoints — mandatory for AI agents
+
+When assisting on **backend customer HTTP routes** (`backend/lambda/src/endpoints/customer/**`, shims, registration, or customer smoke/validator scripts):
+
+1. **Read first:** `.cursor/rules/endpoint-4-layer-parity.mdc` (alwaysApply gate + layer map).
+2. **Dirty-tree gate:** if uncommitted changes touch those paths, STOP, report files, and ask before parity migration or bundling into unrelated work.
+3. **Edit the correct layer only** (route → handler → service → repo). Shims under `customerEndpoint/` stay thin re-exports. Do not extend `_legacy/`.
+4. After edits: `cd backend/lambda && npm run validate:customer-layers` must pass.
+
+**Related rule:** `endpoint-4-layer-parity.mdc`.
 
 ---
 

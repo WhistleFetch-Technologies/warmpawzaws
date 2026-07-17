@@ -1,0 +1,121 @@
+---
+description: Customer API 4-layer endpoint parity — dirty-tree gate, layer contracts, migration recipe
+alwaysApply: true
+---
+
+# Customer Endpoint 4-Layer Rulebook
+
+Agents MUST follow this for any customer API work. Structural move-only by default; behavior changes need an explicit separate user request.
+
+**Related:** `team-development-bible.mdc`, validator `backend/lambda/scripts/validate-customer-layers.js`, registration in `backend/lambda/src/handler/index.ts`.
+
+---
+
+## §0 — Mandatory session gate (before other work)
+
+1. Run `git status` and `git diff --name-only` (staged + unstaged).
+2. Treat as **customer-affecting** if any path matches:
+   - `backend/lambda/src/endpoints/customer/**`
+   - shims under `customerEndpoint/**`
+   - customer registration imports in `backend/lambda/src/handler/index.ts`
+   - customer smoke/bootstrap/validator scripts under `backend/lambda/scripts/*customer*`
+3. If customer-affecting dirty files exist:
+   - **STOP.** Do not continue merge/feature/deploy as if clean.
+   - Report which files and whether they look like monolith edits vs wrong-layer edits vs legitimate layer edits.
+   - **Ask permission** to run a **parity migration** into the 4-layer architecture.
+4. Only after explicit user approval: migrate → `npm run validate:customer-layers` → then proceed.
+5. If dirty files are already correct layered edits, still summarize and ask before bundling them into commits/merges the user did not request.
+
+If clean / no customer impact: learn the split map below before editing customer API code.
+
+---
+
+## §1 — Learn the split (required before editing)
+
+**Root:** `backend/lambda/src/endpoints/customer/`
+
+| Module | Responsibility |
+|--------|----------------|
+| `profile/` | Profile CRUD, prefs, search-history, password-status/set-password registration coordination |
+| `password/` | Change/set password, account status services used by profile routes |
+| `bookings/` | Booking history / detail / follow-up-eligible |
+| `addresses/` | Customer addresses |
+| `orders/` | Customer orders |
+| `appointments/` | Appointments |
+| `convenience/` | Phone convenience: cart, wallet, payments-by-phone, active bookings, etc. |
+| `enhanced/` | Enhanced phone flows registered later (preferences phone, onboarding, order tracking, …) |
+| `discovery/` | Discover-services, by-style, vendors search, facility, pricing quote, … |
+| `content/` | Banners, articles, announcements, featured, pages |
+| `specialized/` | Adoption, breeder, relocation, holiday, pet-matching |
+| `delivery-fee/` | Delivery fee policy + calculate |
+| `shared/` | Shared customer helpers used across modules |
+| `constants/` | Shared constants |
+| `customerEndpoint/*.ts` | **Thin shims only** — re-export from modules; never put logic here |
+| `_legacy/` | Legacy monolith archive — do not extend for new work |
+| `index.ts` | Module register exports |
+
+**Layer boundary:**
+
+```
+routes/*.route.ts → handlers/*.handler.ts → services/*.service.ts → repos/*.repo.ts → RDS
+```
+
+**Registration order is behavior.** Real order lives in `backend/lambda/src/handler/index.ts` (imports still go through shims). Constraints: static segments before `:customerId` / `:bookingId`; intentional early registration of `active-tracking` / `pending-reviews` / `follow-up-eligible`; phone preferences must not shadow UUID preferences.
+
+---
+
+## §2 — Layer contracts (LOC / imports / exports)
+
+Enforced by `validate-customer-layers.js` plus these export rules:
+
+| Layer | May import | Must not | LOC / shape | Export |
+|-------|------------|----------|-------------|--------|
+| **Route** | One handler from `../handlers/` | DB, inline `async (c)=>`, validation | Register path+method only | `register…Route(app)` |
+| **Handler** | Matching service | DB, business logic | Thin delegate (~≤12 non-import lines); `return executeX(c)` | `…Handler(c)` |
+| **Service** | Repos, utils, libs | Direct `query/select/insert/update` or `rds-connection` | Owns validation, status codes, response shape, control flow | `execute…(c)` (or established password naming) |
+| **Repo** | `rds-connection`, SQL helpers | Hono handlers / `BaseHandler` / HTTP status decisions | SQL + DB helpers only | `db…` / named query helpers |
+| **Shim** (`customerEndpoint/`) | Module `index` / register export | Any logic | 1–4 lines | Re-export only |
+
+**Behavior lock:** same path/method, status codes, JSON shape, SQL semantics, and route precedence unless the user explicitly approves a behavior change in a **separate** task. No drive-by payload optimization in the same change as a feature fix.
+
+---
+
+## §3 — How to change an existing endpoint
+
+1. Identify module from path (route manifest / module `index.ts` / handler registration).
+2. Edit the correct layer only (SQL → repo; status/body → service; path/order → route + global order review).
+3. Do not revive monolith files under `customerEndpoint/` or `_legacy/`.
+4. After edits: `cd backend/lambda && npm run validate:customer-layers` (must print `Layer compliance OK`).
+5. For non-trivial behavior: prefer documented smoke/bootstrap (`customer-endpoint-full-smoke.js`); classify failures (harness / fixture / schema / true regression) — only true regressions block.
+
+---
+
+## §4 — Parity migration recipe
+
+When the user approves migration of dirty or develop-side customer changes:
+
+1. Diff the offending change against the layered file that owns that route.
+2. Port **behavior** into `services/` + `repos/` (and route order if needed); keep shims thin.
+3. Never accept a merge that replaces a shim with a multi-thousand-line monolith.
+4. Run `validate:customer-layers`.
+5. Shared SQL/utils → `backend/lambda/src/utils/` (or repos); services must not import `rds-connection` directly.
+6. Report: files touched, routes affected, validator result; then continue only as user requested.
+
+---
+
+## §5 — Commands
+
+```bash
+cd backend/lambda
+npm run validate:customer-layers
+node scripts/generate-customer-route-manifest.js   # optional; do not commit generated JSON
+# smoke (dev): bootstrap with SMOKE_REQUIRE_RDS=1 then customer-endpoint-full-smoke.js
+```
+
+Deploy via `scripts/deploy-*.sh` per `deployment.mdc`. Commit/push only when asked.
+
+---
+
+## §6 — Soft-pass / parity classification
+
+Buckets: harness, fixture, schema/env, true split regression. Soft-pass must not hide 500s from split regressions. Prod/develop identical errors = not a layer defect.
