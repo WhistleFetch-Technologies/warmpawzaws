@@ -28,6 +28,10 @@ export interface RuleContext {
   usageCount?: number;
   maxUses?: number | null;
   couponUsageCount?: number;
+  /** Per-customer coupon limit (max_uses_per_user). */
+  maxUsesPerUser?: number | null;
+  /** How many times this customer already redeemed the coupon. */
+  customerCouponUsageCount?: number;
 
   targetAudience?: string;
   minOrderValue?: number | null;

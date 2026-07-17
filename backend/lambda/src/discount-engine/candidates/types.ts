@@ -46,6 +46,10 @@ export interface DiscountCandidateBenefits {
 export interface DiscountCandidateUsage {
   limit?: number | null;
   count?: number;
+  /** Per-customer cap (max_uses_per_user). */
+  perUserLimit?: number | null;
+  /** Prior redemptions by this customer. */
+  perUserCount?: number;
 }
 
 /**

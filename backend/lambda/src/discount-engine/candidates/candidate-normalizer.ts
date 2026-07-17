@@ -266,6 +266,23 @@ export class CandidateNormalizer {
       usage: {
         limit: row.max_uses != null ? parseIntSafe(row.max_uses) : null,
         count: 0,
+        perUserLimit: (() => {
+          const col = row.max_uses_per_user;
+          if (col != null) {
+            const n = parseIntSafe(col);
+            return n > 0 ? n : null;
+          }
+          const meta = row.metadata;
+          if (meta && typeof meta === 'object') {
+            const m = meta as Record<string, unknown>;
+            const raw = m.maxUsesPerUser ?? m.max_uses_per_user ?? m.usageLimitPerUser;
+            if (raw != null) {
+              const n = parseIntSafe(raw);
+              return n > 0 ? n : null;
+            }
+          }
+          return null;
+        })(),
       },
       funding: DiscountFunding.PLATFORM,
       createdBy: parseOptionalString(row.created_by),

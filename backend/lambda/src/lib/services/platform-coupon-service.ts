@@ -31,7 +31,79 @@ export type CouponValidationResult = {
 
 export type CouponValidationOptions = {
   serviceCategory?: string;
+  /** Required to enforce max_uses_per_user / metadata.maxUsesPerUser */
+  customerId?: string;
 };
+
+/** Resolve per-customer limit from column or metadata (Admin "Usage per customer"). */
+export function resolveCouponMaxUsesPerUser(coupon: Record<string, unknown>): number | null {
+  const col = coupon.max_uses_per_user ?? coupon.maxUsesPerUser;
+  if (col != null && col !== '') {
+    const n = parseInt(String(col), 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const meta = coupon.metadata;
+  if (meta && typeof meta === 'object') {
+    const m = meta as Record<string, unknown>;
+    const fromMeta = m.maxUsesPerUser ?? m.max_uses_per_user ?? m.usageLimitPerUser;
+    if (fromMeta != null && fromMeta !== '') {
+      const n = parseInt(String(fromMeta), 10);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
+  if (typeof meta === 'string') {
+    try {
+      const parsed = JSON.parse(meta) as Record<string, unknown>;
+      const fromMeta = parsed.maxUsesPerUser ?? parsed.max_uses_per_user ?? parsed.usageLimitPerUser;
+      if (fromMeta != null && fromMeta !== '') {
+        const n = parseInt(String(fromMeta), 10);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+export async function countCustomerCouponUsages(
+  couponId: string,
+  customerId: string
+): Promise<number> {
+  const res = await query(
+    `SELECT COUNT(*)::int AS count FROM coupon_usages
+     WHERE coupon_id = $1::uuid AND customer_id = $2::uuid`,
+    [couponId, customerId]
+  ).catch(() => ({ rows: [{ count: 0 }] }));
+  return parseInt(String(res.rows?.[0]?.count ?? 0), 10) || 0;
+}
+
+async function rejectIfCustomerLimitReached(
+  coupon: Record<string, unknown>,
+  amount: number,
+  options?: CouponValidationOptions
+): Promise<CouponValidationResult | null> {
+  const limit = resolveCouponMaxUsesPerUser(coupon);
+  const customerId = options?.customerId?.trim();
+  if (!limit || !customerId) return null;
+
+  const customerUses = await countCustomerCouponUsages(String(coupon.id), customerId);
+  if (customerUses >= limit) {
+    shadowCouponEligibility(
+      coupon,
+      amount,
+      customerUses,
+      false,
+      'You have already used this coupon the maximum number of times'
+    );
+    return {
+      success: false,
+      valid: false,
+      error: 'You have already used this coupon the maximum number of times',
+    };
+  }
+  return null;
+}
 
 /**
  * @deprecated Inline validation path — retained for OFF/fallback; V2 authoritative via resolveWithProductionMode.
@@ -98,6 +170,13 @@ async function validateCouponLegacy(
       }
     }
 
+    const perCustomerReject = await rejectIfCustomerLimitReached(
+      coupon as Record<string, unknown>,
+      amount,
+      options
+    );
+    if (perCustomerReject) return perCustomerReject;
+
     shadowCouponEligibility(coupon, amount, usageCount, true);
 
     let legacyDiscountAmount = 0;
@@ -125,7 +204,11 @@ async function validateCouponLegacy(
       domain === DiscountDomain.SERVICE
         ? 'validateCouponInternal-service'
         : 'validateCouponInternal-ecommerce',
-      couponValidateToDiscountContext(coupon, amount, { domain, usageCount })
+      couponValidateToDiscountContext(coupon, amount, {
+        domain,
+        usageCount,
+        customerId: options?.customerId,
+      })
     );
 
     return {
@@ -190,7 +273,29 @@ export async function validateCouponForAmount(
     usageCount = parseInt(usageCountResult.rows[0]?.count || '0', 10);
   }
 
-  const context = couponValidateToDiscountContext(coupon, amount, { domain, usageCount });
+  // Enforce per-customer limit before V2 resolve (same gate for AUTHORITATIVE + legacy).
+  const perCustomerReject = await rejectIfCustomerLimitReached(
+    coupon as Record<string, unknown>,
+    amount,
+    options
+  );
+  if (perCustomerReject) return perCustomerReject;
+
+  let customerUsageCount = 0;
+  if (options?.customerId?.trim()) {
+    customerUsageCount = await countCustomerCouponUsages(
+      String(coupon.id),
+      options.customerId.trim()
+    );
+  }
+
+  const context = couponValidateToDiscountContext(coupon, amount, {
+    domain,
+    usageCount,
+    customerId: options?.customerId,
+    customerUsageCount,
+    maxUsesPerUser: resolveCouponMaxUsesPerUser(coupon as Record<string, unknown>),
+  });
 
   const { value } = await resolveWithProductionMode({
     label: `validateCoupon-${domain}`,

@@ -116,6 +116,7 @@ export async function resolveBookingCouponDiscount(params: {
 
   const platformCoupon = await validateCouponForAmount(code, params.amount, DiscountDomain.SERVICE, {
     serviceCategory: params.serviceCategory,
+    customerId: params.customerId,
   });
   if (platformCoupon.valid && platformCoupon.discountAmount && platformCoupon.discountAmount > 0) {
     return {

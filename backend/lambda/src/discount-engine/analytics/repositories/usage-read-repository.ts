@@ -157,7 +157,7 @@ export class RdsUsageReadRepository implements UsageReadRepository {
     const couponParams: unknown[] = [];
     let couponSql = `
       SELECT cu.*, c.code, c.max_uses, c.is_active, c.end_date, c.discount_type, c.discount_value,
-             c.max_discount_amount, c.max_discount,
+             c.max_discount_amount,
              b.total_amount AS booking_total
       FROM coupon_usages cu
       LEFT JOIN coupons c ON c.id = cu.coupon_id
@@ -185,8 +185,14 @@ export class RdsUsageReadRepository implements UsageReadRepository {
     couponSql += ' ORDER BY cu.used_at DESC LIMIT 10000';
 
     const [promoRes, couponRes, activeCount, ecommerceCouponRows] = await Promise.all([
-      query(promoSql, params).catch(() => ({ rows: [] })),
-      query(couponSql, couponParams).catch(() => ({ rows: [] })),
+      query(promoSql, params).catch((err) => {
+        console.warn('[analytics] promotion_usages load failed:', (err as Error)?.message);
+        return { rows: [] };
+      }),
+      query(couponSql, couponParams).catch((err) => {
+        console.warn('[analytics] coupon_usages load failed:', (err as Error)?.message);
+        return { rows: [] };
+      }),
       countActivePromotions(filters.domain),
       filters.domain === 'PRODUCT' ? loadEcommerceCouponUsages(filters) : Promise.resolve([]),
     ]);

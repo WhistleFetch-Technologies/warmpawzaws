@@ -50,6 +50,8 @@ export function discountContextToRuleRuntime(context: DiscountContext): Candidat
   const priorOrder = context.metadata?.[METADATA_PRIOR_VENDOR_ORDER_COUNT];
   const priorBooking = context.metadata?.[METADATA_PRIOR_VENDOR_BOOKING_COUNT];
   const couponUsage = context.metadata?.[METADATA_COUPON_USAGE_COUNT];
+  const customerCouponUsage = context.metadata?.customerCouponUsageCount;
+  const maxUsesPerUserMeta = context.metadata?.maxUsesPerUser;
   const evalMode = context.metadata?.[METADATA_EVALUATION_MODE];
   const items = context.items?.length ? contextItemsToCartLines(context.items) : undefined;
 
@@ -69,6 +71,16 @@ export function discountContextToRuleRuntime(context: DiscountContext): Candidat
     manualCode: context.trigger === DiscountTrigger.CODE ? context.couponCode : undefined,
     couponUsageCount:
       typeof couponUsage === 'number' && Number.isFinite(couponUsage) ? couponUsage : undefined,
+    maxUsesPerUser:
+      typeof maxUsesPerUserMeta === 'number' && Number.isFinite(maxUsesPerUserMeta)
+        ? maxUsesPerUserMeta
+        : maxUsesPerUserMeta == null
+          ? null
+          : parseInt(String(maxUsesPerUserMeta), 10) || null,
+    customerCouponUsageCount:
+      typeof customerCouponUsage === 'number' && Number.isFinite(customerCouponUsage)
+        ? customerCouponUsage
+        : undefined,
     evaluationMode:
       evalMode === 'base' || evalMode === 'full'
         ? evalMode

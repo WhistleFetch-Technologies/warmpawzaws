@@ -208,16 +208,25 @@ export function servicePromotionEvaluateToDiscountContext(
 export function couponValidateToDiscountContext(
   coupon: Record<string, unknown>,
   amount: number,
-  options?: { domain?: DiscountDomain; usageCount?: number }
+  options?: {
+    domain?: DiscountDomain;
+    usageCount?: number;
+    customerId?: string;
+    customerUsageCount?: number;
+    maxUsesPerUser?: number | null;
+  }
 ): DiscountContext {
   return {
     domain: options?.domain ?? DiscountDomain.ECOMMERCE,
     trigger: DiscountTrigger.CODE,
     owner: DiscountOwner.PLATFORM,
     amount,
+    customerId: options?.customerId,
     couponCode: String(coupon.code ?? ''),
     metadata: {
       [METADATA_COUPON_USAGE_COUNT]: options?.usageCount,
+      customerCouponUsageCount: options?.customerUsageCount,
+      maxUsesPerUser: options?.maxUsesPerUser ?? null,
       [METADATA_PRELOADED_ROWS]: [coupon],
     },
   };

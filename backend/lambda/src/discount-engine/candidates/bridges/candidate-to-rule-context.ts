@@ -21,6 +21,8 @@ export interface CandidateRuleRuntimeContext {
   items?: CartLineItem[];
   manualCode?: string;
   couponUsageCount?: number;
+  maxUsesPerUser?: number | null;
+  customerCouponUsageCount?: number;
   evaluationMode?: 'base' | 'full';
   /** Platform composite match — original row + runtime params */
   platformMatchParams?: {
@@ -75,6 +77,10 @@ export function candidateToRuleContext(
     usageCount: candidate.usage?.count ?? 0,
     maxUses: candidate.usage?.limit,
     couponUsageCount: runtime.couponUsageCount ?? candidate.usage?.count ?? 0,
+    maxUsesPerUser:
+      runtime.maxUsesPerUser ?? candidate.usage?.perUserLimit ?? null,
+    customerCouponUsageCount:
+      runtime.customerCouponUsageCount ?? candidate.usage?.perUserCount ?? 0,
     targetAudience: candidate.rules.targetAudience,
     minOrderValue: candidate.rules.minOrderValue,
     minBookingValue: candidate.rules.minBookingValue,

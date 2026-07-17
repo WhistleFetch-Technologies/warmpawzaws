@@ -2163,6 +2163,16 @@ export function registerPromotionEndpoints(app: Hono) {
         : body.usageLimit !== undefined
           ? body.usageLimit
           : 0;
+    const finalUsagePerUserRaw =
+      body.usage_limit_per_user !== undefined
+        ? body.usage_limit_per_user
+        : body.usageLimitPerUser !== undefined
+          ? body.usageLimitPerUser
+          : null;
+    const finalUsagePerUser =
+      finalUsagePerUserRaw != null && Number(finalUsagePerUserRaw) > 0
+        ? Number(finalUsagePerUserRaw)
+        : null;
     const finalIsActive =
       body.is_active !== undefined
         ? body.is_active
@@ -2170,6 +2180,13 @@ export function registerPromotionEndpoints(app: Hono) {
           ? body.isActive
           : true;
     const targeting = buildCouponTargetingFromAdminBody(body);
+    if (finalUsagePerUser != null) {
+      targeting.metadata = {
+        ...targeting.metadata,
+        maxUsesPerUser: finalUsagePerUser,
+        usageLimitPerUser: finalUsagePerUser,
+      };
+    }
 
     const couponData: Record<string, unknown> = {
       code: finalCode,
@@ -2187,6 +2204,7 @@ export function registerPromotionEndpoints(app: Hono) {
         ? String(finalValidUntil).slice(0, 10)
         : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       max_uses: Number(finalUsageLimit) > 0 ? finalUsageLimit : null,
+      max_uses_per_user: finalUsagePerUser,
       is_active: finalIsActive,
       applicable_to: targeting.applicable_to,
       service_category: targeting.service_category,
@@ -2198,6 +2216,7 @@ export function registerPromotionEndpoints(app: Hono) {
     if (couponData.min_order_amount === null) delete couponData.min_order_amount;
     if (couponData.max_discount_amount === null) delete couponData.max_discount_amount;
     if (couponData.max_uses === null) delete couponData.max_uses;
+    if (couponData.max_uses_per_user == null) delete couponData.max_uses_per_user;
     if (couponData.description === null) delete couponData.description;
     if (couponData.service_category === null) delete couponData.service_category;
     if (couponData.applicable_services === null) delete couponData.applicable_services;
@@ -2301,7 +2320,18 @@ export function registerPromotionEndpoints(app: Hono) {
         coupon = await insert('coupons', couponData);
       } catch (insertErr: unknown) {
         const msg = String((insertErr as Error)?.message ?? insertErr);
-        if (msg.includes('column "discount_domain"') && couponData.discount_domain !== undefined) {
+        if (msg.includes('column "max_uses_per_user"') && couponData.max_uses_per_user !== undefined) {
+          const fallback = { ...couponData };
+          const baseMeta =
+            fallback.metadata && typeof fallback.metadata === 'object'
+              ? { ...(fallback.metadata as Record<string, unknown>) }
+              : {};
+          baseMeta.maxUsesPerUser = fallback.max_uses_per_user;
+          baseMeta.usageLimitPerUser = fallback.max_uses_per_user;
+          fallback.metadata = baseMeta;
+          delete fallback.max_uses_per_user;
+          coupon = await insert('coupons', fallback);
+        } else if (msg.includes('column "discount_domain"') && couponData.discount_domain !== undefined) {
           const fallback = { ...couponData };
           const baseMeta =
             fallback.metadata && typeof fallback.metadata === 'object'
@@ -2317,6 +2347,7 @@ export function registerPromotionEndpoints(app: Hono) {
           delete fallback.service_category;
           delete fallback.applicable_services;
           delete fallback.discount_domain;
+          delete fallback.max_uses_per_user;
           delete fallback.metadata;
           delete fallback.description;
           coupon = await insert('coupons', fallback);
@@ -2356,7 +2387,18 @@ export function registerPromotionEndpoints(app: Hono) {
         coupon = await insert('coupons', couponData);
       } catch (insertErr: unknown) {
         const msg = String((insertErr as Error)?.message ?? insertErr);
-        if (msg.includes('column "discount_domain"') && couponData.discount_domain !== undefined) {
+        if (msg.includes('column "max_uses_per_user"') && couponData.max_uses_per_user !== undefined) {
+          const fallback = { ...couponData };
+          const baseMeta =
+            fallback.metadata && typeof fallback.metadata === 'object'
+              ? { ...(fallback.metadata as Record<string, unknown>) }
+              : {};
+          baseMeta.maxUsesPerUser = fallback.max_uses_per_user;
+          baseMeta.usageLimitPerUser = fallback.max_uses_per_user;
+          fallback.metadata = baseMeta;
+          delete fallback.max_uses_per_user;
+          coupon = await insert('coupons', fallback);
+        } else if (msg.includes('column "discount_domain"') && couponData.discount_domain !== undefined) {
           const fallback = { ...couponData };
           const baseMeta =
             fallback.metadata && typeof fallback.metadata === 'object'
@@ -2372,6 +2414,7 @@ export function registerPromotionEndpoints(app: Hono) {
           delete fallback.service_category;
           delete fallback.applicable_services;
           delete fallback.discount_domain;
+          delete fallback.max_uses_per_user;
           delete fallback.metadata;
           delete fallback.description;
           coupon = await insert('coupons', fallback);

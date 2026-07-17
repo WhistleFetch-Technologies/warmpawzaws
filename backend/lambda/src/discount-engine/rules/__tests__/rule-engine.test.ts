@@ -7,6 +7,7 @@ import {
   CategoryRule,
   ComboRule,
   CouponMaxUsesRule,
+  CouponMaxUsesPerUserRule,
   CouponServiceTargetRule,
   DateRangeIstRule,
   DateRangeUtcRule,
@@ -119,6 +120,26 @@ describe('Discount Engine Phase 3 — Rule Engine', () => {
         couponUsageCount: 3,
       });
       expect(result.passed).toBe(false);
+    });
+
+    it('CouponMaxUsesPerUserRule rejects when customer already used limit', () => {
+      const result = new CouponMaxUsesPerUserRule().evaluate({
+        domain: 'coupon',
+        customerId: 'cust-1',
+        maxUsesPerUser: 1,
+        customerCouponUsageCount: 1,
+      });
+      expect(result.passed).toBe(false);
+    });
+
+    it('CouponMaxUsesPerUserRule allows when under limit', () => {
+      const result = new CouponMaxUsesPerUserRule().evaluate({
+        domain: 'coupon',
+        customerId: 'cust-1',
+        maxUsesPerUser: 1,
+        customerCouponUsageCount: 0,
+      });
+      expect(result.passed).toBe(true);
     });
 
     it('PublishedRule rejects unpublished platform promo', () => {

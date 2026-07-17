@@ -130,6 +130,28 @@ export class CouponMaxUsesRule implements DiscountRule {
   }
 }
 
+/** Per-customer redemption limit (Admin "Usage per customer"). */
+export class CouponMaxUsesPerUserRule implements DiscountRule {
+  readonly ruleName = 'CouponMaxUsesPerUserRule';
+  readonly group = 'promotion';
+  applies(ctx: RuleContext): boolean {
+    return ctx.domain === 'coupon';
+  }
+  evaluate(ctx: RuleContext): RuleResult {
+    const limit = ctx.maxUsesPerUser;
+    if (limit == null || limit <= 0) return pass(this.ruleName);
+    // Without a customer identity we cannot enforce — booking paths always pass customerId.
+    if (!ctx.customerId) return pass(this.ruleName);
+    if ((ctx.customerCouponUsageCount ?? 0) >= limit) {
+      return fail(
+        this.ruleName,
+        'You have already used this coupon the maximum number of times'
+      );
+    }
+    return pass(this.ruleName);
+  }
+}
+
 function isUuidToken(value: string): boolean {
   return /^[0-9a-f-]{36}$/i.test(value);
 }
