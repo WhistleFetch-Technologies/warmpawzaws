@@ -1,0 +1,142 @@
+import type { Context } from 'hono';
+import * as diagnostics_vendor_by_phoneRepo from '../repos/diagnostics-vendor-by-phone.repo';
+import type { Hono } from 'hono';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../../utils/entity-extractor';
+import { isValidUUID } from '../../../../types/entities';
+import { getDiscoveryRules, type DiscoveryRuleSet } from '../../../../lib/rule-engine';
+import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from '../../../vendor/endpoints/vendorProfile.vendor';
+import { taxCalculationService } from '../../../../lib/services/tax-calculation-service';
+import { discountCalculationService } from '../../../../lib/services/discount-calculation-service';
+import { CATEGORY_ROLES } from '../../constants';
+import { extractS3KeyFromUrl, regeneratePresignedUrl } from '../../../constants/helper';
+import { getCustomerCoordinates, resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
+import { seedFinitePackagesMissingSessionsForScope, type SqlClient } from '../../../../utils/package-session-sync';
+import { sqlPackagePurchaseActiveForListing } from '../../../../utils/package-session-eligibility';
+import { DistanceResolver, haversineKm, formatDistanceKm } from '../../../../lib/utils/vendor-customer-distance';
+import {
+  appendVetDiscoveryCategoryAliasKeys,
+  buildDiscoveryVendorExistsSql,
+  sqlVendorAvailabilityOrNotConfigured,
+  sqlVendorDiscoverableStatus,
+  sqlVendorOnlineForCustomerDiscovery,
+  sqlVendorServiceDiscoverable,
+  sqlVendorServicesHubCategoryFilter,
+  vendorServicesHubCategoryBindParams,
+  sqlVetHubExcludeNonVetServices,
+  sqlVetHubPlaceholderCategoryOr,
+  VET_HUB_PLACEHOLDER_CATEGORY_ROLES_SQL,
+  isVetHubCategoryRequest,
+  TRAINING_HUB_ROLE_SQL_IN_LIST,
+  BEHAVIOR_HUB_ROLE_SQL_IN_LIST,
+  catTextRequestsBehaviorHub,
+  sqlTrainingCategoryAliasOrVs,
+} from '../../../../lib/discovery-vendor-query';
+import { acceptableAvailabilityStylesForSlot, normalizeAvailabilityServiceStyle } from '../../../../utils/availability-service-styles';
+import { vendorGalleryDrivesListingPhoto, getVendorListingPhotoUrl } from '../../../../utils/vendor-listing-photo';
+import {
+  addDaysToYmd,
+  dayOfWeekFromYmd,
+  DEFAULT_MIN_NOTICE_MINUTES,
+  formatNextAvailableDisplay,
+  isSlotPastInIst,
+  ymdInIst,
+} from '../../../../utils/ist-scheduling';
+import {
+  filterSearchResultsByDiscoveryRules,
+  hubSlugToDiscoveryContext,
+  loadVendorRadiusMetaByIds,
+  type HubDiscoveryContext,
+} from '../../../../lib/search-discovery-parity';
+import {
+  uploadDisplayImage,
+  ImageProcessingError,
+  FACILITY_MAX_PHOTOS,
+  mapWithConcurrency,
+  resolveImageForContext,
+} from '../../../../services/image';
+
+export async function executediagnosticsVendorByPhone(c: Context) {
+
+    try {
+      const phone = c.req.query('phone');
+      if (!phone) {
+        return c.json({ error: 'Phone parameter required' }, 400);
+      }
+
+      // Find vendor
+      const vendorResult = await diagnostics_vendor_by_phoneRepo.dbDiagnosticsVendorByPhone0(phone)
+
+      if (vendorResult.rows.length === 0) {
+        return c.json({
+          found: false,
+          message: 'Vendor not found',
+          search_phone: phone
+        });
+      }
+
+      const vendor = vendorResult.rows[0];
+
+      // Check services
+      const servicesResult = await diagnostics_vendor_by_phoneRepo.dbDiagnosticsVendorByPhone1(vendor)
+
+      // Check tele services specifically
+      const teleServices = servicesResult.rows.filter(s =>
+        (s.service_style === 'tele' || s.service_style === 'online') &&
+        s.is_enabled === true &&
+        (s.publish_status === 'published' || s.publish_status === 'auto_published' || s.publish_status === 'draft' || s.publish_status === null)
+      );
+
+      // Eligibility checks
+      const eligibility = {
+        statusApproved: vendor.status === 'approved' || vendor.status === 'active',
+        isActive: vendor.is_active === true,
+        hasRole: vendor.role_id !== null,
+        hasServices: servicesResult.rows.length > 0,
+        hasTeleServices: teleServices.length > 0,
+        roleMatches: false // Will check below
+      };
+
+      // Check role matching for vet
+      const targetRoles = ['veterinarian', 'vet', 'vet_clinic', 'vet_solo', 'Veterinarian (Solo)', 'Vet Solo', 'Veterinary Clinic'];
+      eligibility.roleMatches = targetRoles.some(role =>
+        vendor.role_name?.toLowerCase() === role.toLowerCase() ||
+        vendor.role_display_name?.toLowerCase() === role.toLowerCase()
+      );
+
+      // If vendor is pending but has all other requirements, offer to approve
+      const canApprove = !eligibility.statusApproved &&
+        eligibility.isActive &&
+        eligibility.hasRole &&
+        eligibility.hasServices &&
+        eligibility.hasTeleServices &&
+        eligibility.roleMatches;
+
+      return c.json({
+        found: true,
+        vendor: {
+          id: vendor.id,
+          business_name: vendor.business_name,
+          owner_name: vendor.owner_name,
+          phone: vendor.phone,
+          status: vendor.status,
+          is_active: vendor.is_active,
+          vendor_type: vendor.vendor_type,
+          role_name: vendor.role_name,
+          role_display_name: vendor.role_display_name
+        },
+        services: {
+          total: servicesResult.rows.length,
+          all: servicesResult.rows,
+          tele: teleServices
+        },
+        eligibility,
+        willAppear: Object.values(eligibility).every(v => v === true),
+        target_roles: targetRoles,
+        canApprove,
+        fix: canApprove ? 'Update vendor status from "pending" to "approved" to make it appear in results' : null
+      });
+    } catch (error: any) {
+      console.error('[Diagnostics] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+}

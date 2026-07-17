@@ -1,0 +1,37 @@
+import type { Context } from 'hono';
+import * as vendor_vendorid_adoption_pets_getRepo from '../repos/vendor_vendorid_adoption_pets_get.repo';
+
+export async function executevendorVendoridAdoptionPetsGet(c: Context) {
+    try {
+      const { vendorId } = c.req.param();
+      const status = c.req.query('status');
+
+      let petsQuery = `
+        SELECT p.*
+        FROM pets p
+        WHERE p.vendor_id = $1 AND p.is_for_adoption = true
+      `;
+
+      const params: any[] = [vendorId];
+      let paramIndex = 2;
+
+      if (status) {
+        petsQuery += ` AND p.adoption_status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+
+      petsQuery += ` ORDER BY p.created_at DESC`;
+
+      const pets = await vendor_vendorid_adoption_pets_getRepo.dbVendorVendoridAdoptionPetsGet0(petsQuery, params).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        pets: pets.rows,
+        total: pets.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching adoption pets:', error);
+      return c.json({ success: true, pets: [], total: 0 });
+    }
+}

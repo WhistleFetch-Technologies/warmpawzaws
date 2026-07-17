@@ -13,7 +13,33 @@ import { test, expect } from '@playwright/test';
  * - Payment endpoints
  */
 
-const API_BASE = process.env.API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+const API_BASE =
+  process.env.PLAYWRIGHT_API_BASE ||
+  process.env.API_URL ||
+  'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+
+const LOCAL_CUSTOMER_MANIFEST_GETS = [
+  '/customer/discovery/meta',
+  '/customer/discovery/count?category=vet&serviceStyle=at_center',
+  '/customer/discover-services?category=vet&serviceStyle=at_center&limit=5',
+  '/customer/services/by-style?style=at_center&category=vet',
+  '/customer/delivery-fee-policy',
+  '/customer/banners',
+  '/customer/articles?limit=3',
+  '/customer/announcements',
+  '/customer/vendors/search?q=vet&limit=5',
+  '/customer/featured-vendors',
+  '/customer/featured-packages',
+  '/customer/content-pages/about',
+  '/customer/relocation/services',
+  '/customer/password-status',
+  '/customer/wallet',
+  '/customer/payment-methods',
+  '/customer/bookings/active',
+  '/customer/orders',
+  '/customer/appointments',
+  '/customer/pets',
+];
 
 test.describe('API - Health Check', () => {
   test('should return healthy status', async ({ request }) => {
@@ -90,6 +116,19 @@ test.describe('API - Customer Endpoints', () => {
     // Problem grid endpoint may vary
     expect([200, 404]).toContain(response.status());
   });
+});
+
+test.describe('API - Customer manifest GETs (local parity)', () => {
+  test.skip(!process.env.PLAYWRIGHT_API_BASE, 'Set PLAYWRIGHT_API_BASE=http://localhost:3000 for local manifest run');
+
+  for (const routePath of LOCAL_CUSTOMER_MANIFEST_GETS) {
+    test(`GET ${routePath} returns 200 with JSON body`, async ({ request }) => {
+      const response = await request.get(`${API_BASE}${routePath}`);
+      expect(response.status()).toBe(200);
+      const data = await response.json();
+      expect(data).not.toBeNull();
+    });
+  }
 });
 
 test.describe('API - Admin Endpoints', () => {
