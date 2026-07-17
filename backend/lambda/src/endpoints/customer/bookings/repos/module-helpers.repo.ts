@@ -80,10 +80,6 @@ export async function loadCustomerPaymentFeeFields(
     if (walletAmountUsed > 0) out.wallet_amount_used = walletAmountUsed;
     if (rowStatus) out.payment_row_status = rowStatus;
 
-    // #region agent log
-    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',runId:'parity-port',hypothesisId:'D',location:'bookings/repos/module-helpers.repo.ts:loadCustomerPaymentFeeFields',message:'payment fee fields after develop parity port',data:{bookingIdLen:String(bookingId||'').length,keys:Object.keys(out),rowCompleted,hasWallet:walletAmountUsed>0},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-
     if (!hasMeaningfulCustomerPaidBreakdown(breakdown)) return out;
 
     return {

@@ -601,10 +601,6 @@ export async function executediscoverServices(c: Context) {
         enrichVendor
       );
 
-      // #region agent log
-      fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',runId:'parity-port',hypothesisId:'A',location:'discover-services.service.ts:enrich',message:'discover-services develop enrich parity',data:{fullEnrichDiscover,maxResults,vendorRowCount:(vendorRows.rows||[]).length,providerCount:providers.length,firstHasServiceCount:!!(providers[0]&&(providers[0] as any).serviceCount!=null),firstServicesLen:Array.isArray((providers[0] as any)?.services)?((providers[0] as any).services as any[]).length:-1},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-
       // 7) Post-filters
       let results = providers as any[];
       if (minRatingVal != null && minRatingVal > 0) {
