@@ -2477,6 +2477,10 @@ export function UniversalPaymentPage({
           type === 'booking'
             ? Math.round(finalAmount * 100) / 100
             : Math.round(taxBreakdown.total * 100) / 100;
+        const bookingAllInPayable =
+          type === 'booking'
+            ? Math.round((totalAfterDiscounts - razorpayOfferDiscount) * 100) / 100
+            : bookingPayAmount;
 
         const bookingPayload: Record<string, unknown> = {
           customerId: resolvedCustomerId, // âœ… Required UUID (resolved above)
@@ -2504,7 +2508,7 @@ export function UniversalPaymentPage({
                   convenienceFee: platformFees.convenienceFee,
                   deliveryFee: platformFees.deliveryFee,
                   walletAmount,
-                  finalPaid: bookingPayAmount,
+                  finalPaid: bookingAllInPayable,
                 },
               }
             : {}),
