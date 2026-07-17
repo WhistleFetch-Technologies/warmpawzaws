@@ -17,6 +17,10 @@ export async function countCouponUsagesTotal(couponId: string): Promise<number> 
  * Count how many times this customer has already claimed the coupon.
  * Includes committed coupon_usages plus in-flight non-cancelled bookings that
  * already applied the code (wallet/Razorpay race protection).
+ *
+ * Booking-by-code claims are scoped to bookings created at/after this coupon
+ * row's created_at so a recreated code (same text, new coupon id) is not
+ * blocked by historical redemptions of a deleted/previous coupon.
  */
 export async function countCustomerCouponUsages(
   couponId: string,
@@ -38,9 +42,11 @@ export async function countCustomerCouponUsages(
          UNION
          SELECT b.id::text AS bid
          FROM bookings b
+         INNER JOIN coupons c ON c.id = $1::uuid
          WHERE b.customer_id = $2::uuid
            AND UPPER(TRIM(COALESCE(b.coupon_code, ''))) = $4
            AND COALESCE(b.discount_amount, 0) > 0
+           AND b.created_at >= c.created_at
            AND LOWER(COALESCE(b.status, '')) NOT IN (
              'cancelled', 'canceled', 'expired', 'failed', 'rejected'
            )
