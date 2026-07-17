@@ -22,7 +22,7 @@
  */
 
 import { query } from '../database/rds-connection';
-import { parseJsonMetaFromNotes } from './booking-notes-meta';
+import { resolveLockedBookingGrossFromNotes } from './booking-financial-gross';
 
 export interface ExpectedBookingCharge {
   /** Cash still payable via Razorpay (gross − wallet − completed non-wallet payments), ₹. */
@@ -122,11 +122,18 @@ export async function resolveExpectedBookingCharge(params: {
   ]);
 
   const fromPaymentRow = (row: Record<string, unknown>): ExpectedBookingCharge | null => {
-    const grossTotal = round2(parseFloat(String(row.amount ?? '0')) || 0);
+    const totalAmountCol = round2(parseFloat(String(row.total_amount ?? '0')) || 0);
+    const amountCol = round2(parseFloat(String(row.amount ?? '0')) || 0);
+    const walletOnRow = round2(parseFloat(String(row.wallet_amount_used ?? '0')) || 0);
+    const grossTotal = totalAmountCol > 0 ? totalAmountCol : amountCol;
     if (grossTotal <= 0) return null;
     const gstTotal = round2(parseFloat(String(row.gst_amount ?? '0')) || 0);
+    const expectedCash =
+      totalAmountCol > 0 && walletOnRow > 0 && amountCol >= 0 && totalAmountCol >= amountCol
+        ? Math.max(0, round2(amountCol - completedNonWalletPaid))
+        : Math.max(0, round2(grossTotal - walletPaid - completedNonWalletPaid));
     return {
-      expectedCash: Math.max(0, round2(grossTotal - walletPaid - completedNonWalletPaid)),
+      expectedCash,
       grossTotal,
       baseAmount: round2(grossTotal - gstTotal),
       gst:
@@ -150,6 +157,8 @@ export async function resolveExpectedBookingCharge(params: {
   // 1a. Pending orphan from /payments/create — amount is the server-computed gross total.
   const orphan = await query(
     `SELECT amount::text AS amount,
+            total_amount::text AS total_amount,
+            wallet_amount_used::text AS wallet_amount_used,
             gst_amount::text AS gst_amount,
             cgst_amount::text AS cgst_amount,
             sgst_amount::text AS sgst_amount,
@@ -169,6 +178,8 @@ export async function resolveExpectedBookingCharge(params: {
   // 1b. Any other unpaid pending payment row (e.g. prior create-order already attached an order id).
   const pendingPay = await query(
     `SELECT amount::text AS amount,
+            total_amount::text AS total_amount,
+            wallet_amount_used::text AS wallet_amount_used,
             gst_amount::text AS gst_amount,
             cgst_amount::text AS cgst_amount,
             sgst_amount::text AS sgst_amount,
@@ -187,33 +198,40 @@ export async function resolveExpectedBookingCharge(params: {
   }
 
   // 2. Locked all-in snapshot from booking create (wp_financial_meta) — never re-tax this.
-  const finMeta = parseJsonMetaFromNotes(booking.notes, 'wp_financial_meta');
-  const snapshotFinal = finMeta
-    ? round2(parseFloat(String(finMeta.finalPaid ?? finMeta.final_paid ?? '0')) || 0)
-    : 0;
-  if (snapshotFinal > 0) {
-    const totalTax = round2(parseFloat(String(finMeta!.totalTax ?? finMeta!.total_tax ?? '0')) || 0);
-    const cgst = round2(parseFloat(String(finMeta!.cgst ?? '0')) || 0);
-    const sgst = round2(parseFloat(String(finMeta!.sgst ?? '0')) || 0);
-    const igst = round2(parseFloat(String(finMeta!.igst ?? '0')) || 0);
-    const platformFee = round2(parseFloat(String(finMeta!.platformFee ?? finMeta!.platform_fee ?? '0')) || 0);
-    const convenienceFee = round2(
-      parseFloat(String(finMeta!.convenienceFee ?? finMeta!.convenience_fee ?? '0')) || 0
+  const lockedGross = resolveLockedBookingGrossFromNotes(booking.notes);
+  if (lockedGross && lockedGross.grossTotal > 0) {
+    const totalTax = lockedGross.totalTax;
+    const feesTotal = round2(
+      lockedGross.platformFee + lockedGross.convenienceFee + lockedGross.deliveryFee
     );
-    const deliveryFee = round2(parseFloat(String(finMeta!.deliveryFee ?? finMeta!.delivery_fee ?? '0')) || 0);
-    const servicePrice = round2(
-      parseFloat(String(finMeta!.servicePrice ?? finMeta!.service_price ?? '0')) || 0
-    );
-    const feesTotal = round2(platformFee + convenienceFee + deliveryFee);
+    const servicePrice = lockedGross.subtotalAfterDiscounts > 0
+      ? lockedGross.subtotalAfterDiscounts
+      : round2(lockedGross.grossTotal - totalTax - feesTotal);
     return {
-      expectedCash: Math.max(0, round2(snapshotFinal - walletPaid - completedNonWalletPaid)),
-      grossTotal: snapshotFinal,
-      baseAmount: servicePrice > 0 ? servicePrice : round2(snapshotFinal - totalTax - feesTotal),
+      expectedCash: Math.max(
+        0,
+        round2(lockedGross.grossTotal - walletPaid - completedNonWalletPaid)
+      ),
+      grossTotal: lockedGross.grossTotal,
+      baseAmount: servicePrice > 0 ? servicePrice : round2(lockedGross.grossTotal - totalTax - feesTotal),
       gst:
         totalTax > 0
-          ? { total: totalTax, cgst, sgst, igst, ruleId: null }
+          ? {
+              total: totalTax,
+              cgst: lockedGross.cgst,
+              sgst: lockedGross.sgst,
+              igst: lockedGross.igst,
+              ruleId: null,
+            }
           : null,
-      fees: feesTotal > 0 ? { platformFee, convenienceFee, deliveryFee, packagingFee: 0 } : null,
+      fees: feesTotal > 0
+        ? {
+            platformFee: lockedGross.platformFee,
+            convenienceFee: lockedGross.convenienceFee,
+            deliveryFee: lockedGross.deliveryFee,
+            packagingFee: 0,
+          }
+        : null,
       feesTotal,
       walletPaid,
       completedNonWalletPaid,
