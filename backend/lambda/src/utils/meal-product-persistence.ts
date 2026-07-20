@@ -135,11 +135,14 @@ export function buildMealPlanRowFromProduct(
     plan_name: parsed.name,
     description: parsed.description,
     price_per_meal: parsed.price,
-    price: parsed.price,
     duration_days: parsed.shelfLifeDays,
     dietary_requirements: JSON.stringify(dietaryPayload),
     is_active: true,
   };
+  // Prod (and many envs) only have price_per_meal — never send legacy `price` unless the column exists.
+  if (mpCols.has('price')) {
+    row.price = parsed.price;
+  }
 
   if (mealsPerDay != null && mpCols.has('meals_per_day')) {
     row.meals_per_day = mealsPerDay;

@@ -1,5 +1,5 @@
 /**
- * Meal product purchase / subscription metadata (JSON in dietary_requirements / products.metadata).
+ * Meal product purchase / subscription metadata (JSON in dietary_requirements).
  * Normalizes legacy deliveryType ↔ purchaseType for filters, pricing, and checkout.
  */
 

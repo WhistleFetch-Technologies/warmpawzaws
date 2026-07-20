@@ -114,7 +114,7 @@ export type MealProductDietaryInput = {
   packWeightGrams: number;
 };
 
-/** Builds persisted JSON for meal_plans.dietary_requirements / products.metadata. */
+/** Builds persisted JSON for meal_plans.dietary_requirements. */
 export function mealProductParsedToDietaryJson(
   parsed: MealProductDietaryInput,
   opts: { mealImageUrl?: string },

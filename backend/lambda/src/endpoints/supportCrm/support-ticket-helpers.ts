@@ -225,15 +225,12 @@ export async function buildMealOrderSnapshot(mealOrderId: string): Promise<MealO
               dt.status AS delivery_status,
               COALESCE(
                 NULLIF(TRIM(mp.name), ''),
-                NULLIF(TRIM(mp.plan_name), ''),
-                NULLIF(TRIM(prod.name), '')
+                NULLIF(TRIM(mp.plan_name), '')
               ) AS plan_title,
               v.business_name AS vendor_name,
               v.phone AS vendor_phone
        FROM meal_orders mo
        LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
-       LEFT JOIN products prod ON prod.id = mo.meal_plan_id
-         AND prod.category IN ('meal_plan', 'nutrition', 'food')
        LEFT JOIN delivery_tracking dt ON dt.meal_order_id = mo.id
        LEFT JOIN vendors v ON mo.vendor_id = v.id
        WHERE mo.id = $1::uuid

@@ -52,10 +52,7 @@ import {
   notifyVendorMealSubscriptionActive,
 } from '../utils/meal-delivery-notifications';
 import {
-  dedupeMealPlanCatalogRows,
-  ensureMealPlanMirrorForProductCheckout,
-  normalizeProductRowToMealPlanShape,
-  resolveMealPlanOrProductById,
+  resolveMealPlanById,
 } from '../utils/meal-plan-resolve';
 import {
   applyWalletDebitToPendingMealOrder,
@@ -519,49 +516,8 @@ export function registerMealPlanEndpoints(app: Hono) {
       const result = await query(queryText, params);
       const fromMealPlans = result.rows || [];
 
-      let productRows: any[] = [];
-      try {
-        let productsResult: any;
-        try {
-          productsResult = await query(
-            `SELECT * FROM products 
-             WHERE vendor_id = $1 AND (category = 'meal_plan' OR category = 'nutrition' OR category = 'food')
-             ORDER BY created_at DESC`,
-            [vendorId],
-          );
-        } catch (colErr: any) {
-          if (colErr?.message?.includes('category') || colErr?.message?.includes('does not exist')) {
-            productsResult = await query(`SELECT * FROM products WHERE vendor_id = $1 ORDER BY created_at DESC`, [
-              vendorId,
-            ]);
-            if (productsResult?.rows?.length) {
-              productsResult.rows = productsResult.rows.filter((p: any) =>
-                ['meal_plan', 'nutrition', 'food'].includes(String(p.category || '').toLowerCase()),
-              );
-            }
-          } else {
-            throw colErr;
-          }
-        }
-        productRows = productsResult?.rows || [];
-      } catch (err: any) {
-        console.warn('[meal-plans/vendor] products query failed:', err?.message);
-      }
-
-      const fromProducts: Record<string, unknown>[] = [];
-      for (const p of productRows) {
-        if (activeOnly && p.is_active === false) continue;
-        const shaped = normalizeProductRowToMealPlanShape(p as Record<string, unknown>);
-        if (shaped) fromProducts.push(shaped);
-      }
-
-      const merged = dedupeMealPlanCatalogRows(
-        fromMealPlans as Record<string, unknown>[],
-        fromProducts,
-      );
-
       let mealPlans = await Promise.all(
-        merged.map(async (mp: any) => {
+        fromMealPlans.map(async (mp: any) => {
           const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(
             mp as Record<string, unknown>,
           );
@@ -794,7 +750,7 @@ export function registerMealPlanEndpoints(app: Hono) {
     try {
       const { planId } = c.req.param();
 
-      const mpRow = await resolveMealPlanOrProductById(planId);
+      const mpRow = await resolveMealPlanById(planId);
       if (!mpRow) {
         return c.json({ error: 'Meal plan not found' }, 404);
       }
@@ -867,7 +823,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         parseOptionalBoolean(c.req.query('rain')) ??
         (policy.runtimeSignals?.rainActive ?? false);
 
-      const planRow = await resolveMealPlanOrProductById(planId);
+      const planRow = await resolveMealPlanById(planId);
       if (!planRow) {
         return c.json({ error: 'Meal plan not found' }, 404);
       }
@@ -1253,18 +1209,12 @@ export function registerMealPlanEndpoints(app: Hono) {
         );
       }
 
-      const resolvedPlan = await resolveMealPlanOrProductById(String(mealPlanId));
+      const resolvedPlan = await resolveMealPlanById(String(mealPlanId));
       if (!resolvedPlan) {
         return c.json({ error: 'Meal plan not found' }, 404);
       }
-      await ensureMealPlanMirrorForProductCheckout(resolvedPlan);
 
-      const plans = await select('meal_plans', { id: mealPlanId });
-      if (plans.length === 0) {
-        return c.json({ error: 'Meal plan not found' }, 404);
-      }
-
-      const plan = plans[0];
+      const plan = resolvedPlan;
 
       const kitchenGate = await assertVendorAcceptingMealOrders(String(plan.vendor_id || ''));
       if (!kitchenGate.allowed) {
