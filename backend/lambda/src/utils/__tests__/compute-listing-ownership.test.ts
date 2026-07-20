@@ -5,13 +5,6 @@ import {
   normalizeListingOwnershipScope,
   lineMatchesListingOwnershipScope,
 } from '../compute-listing-ownership';
-import { query } from '../../database/rds-connection';
-
-jest.mock('../../database/rds-connection', () => ({
-  query: jest.fn(),
-}));
-
-const mockQuery = query as jest.MockedFunction<typeof query>;
 
 describe('normalizeListingOwnershipScope', () => {
   it('normalizes aliases and defaults to all', () => {
@@ -54,29 +47,31 @@ describe('parseListingOwnershipInput', () => {
 });
 
 describe('validateAndApplyVendorDeclaredOwnership', () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  it('no-ops for category commission model when ownership omitted', async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ commission_model: 'category' }],
-    } as any);
-
+  it('throws when ownership is omitted', async () => {
     const payload: Record<string, unknown> = {};
-    await validateAndApplyVendorDeclaredOwnership(
-      'vendor-1',
-      payload,
-      new Set(['listing_ownership', 'listing_ownership_source']),
-      null
-    );
-
+    await expect(
+      validateAndApplyVendorDeclaredOwnership(
+        'vendor-1',
+        payload,
+        new Set(['listing_ownership', 'listing_ownership_source']),
+        null
+      )
+    ).rejects.toBeInstanceOf(ListingOwnershipRequiredError);
     expect(payload.listing_ownership).toBeUndefined();
   });
 
-  it('persists ownership for category commission model when provided (promo targeting)', async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ commission_model: 'category' }],
-    } as any);
+  it('throws when ownership is invalid', async () => {
+    await expect(
+      validateAndApplyVendorDeclaredOwnership(
+        'vendor-1',
+        {},
+        new Set(['listing_ownership']),
+        ''
+      )
+    ).rejects.toBeInstanceOf(ListingOwnershipRequiredError);
+  });
 
+  it('persists ownership when provided (independent of commission model)', async () => {
     const payload: Record<string, unknown> = {};
     await validateAndApplyVendorDeclaredOwnership(
       'vendor-1',
@@ -89,11 +84,7 @@ describe('validateAndApplyVendorDeclaredOwnership', () => {
     expect(payload.listing_ownership_source).toBe('manual');
   });
 
-  it('sets manual ownership for ownership model vendor', async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ commission_model: 'ownership' }],
-    } as any);
-
+  it('sets manual ownership for Own brand alias', async () => {
     const payload: Record<string, unknown> = {};
     await validateAndApplyVendorDeclaredOwnership(
       'vendor-1',
@@ -106,18 +97,9 @@ describe('validateAndApplyVendorDeclaredOwnership', () => {
     expect(payload.listing_ownership_source).toBe('manual');
   });
 
-  it('throws when ownership model vendor omits ownership', async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ commission_model: 'ownership' }],
-    } as any);
-
-    await expect(
-      validateAndApplyVendorDeclaredOwnership(
-        'vendor-1',
-        {},
-        new Set(['listing_ownership']),
-        ''
-      )
-    ).rejects.toBeInstanceOf(ListingOwnershipRequiredError);
+  it('no-ops when listing_ownership column is absent', async () => {
+    const payload: Record<string, unknown> = {};
+    await validateAndApplyVendorDeclaredOwnership('vendor-1', payload, new Set(), null);
+    expect(payload.listing_ownership).toBeUndefined();
   });
 });

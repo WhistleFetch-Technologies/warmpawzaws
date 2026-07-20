@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle, X, Loader2 } from 'lucide-react';
 import { apiClient as vendorApiClient } from '@/lib/api-client';
 import { downloadBlob } from '@/lib/download-file';
@@ -142,29 +142,8 @@ export function BulkProductUpload({
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [hintCategory, setHintCategory] = useState('Pet Food');
-  const [commissionModel, setCommissionModel] = useState<'category' | 'ownership' | null>(null);
 
   const bulkVariantHints = getBulkVariantHintsForCategory('', hintCategory);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const vendorId = resolveVendorId();
-    if (!vendorId) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const data = await vendorApiClient.get<{ commissionModel?: 'category' | 'ownership' | null }>(
-          `/vendor/${vendorId}/ecommerce/commission-model`
-        );
-        if (!cancelled) setCommissionModel(data.commissionModel ?? null);
-      } catch {
-        if (!cancelled) setCommissionModel(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, vendorIdOverride]);
 
   async function blobLooksLikeXlsx(blob: Blob): Promise<boolean> {
     if (!blob || blob.size < 64) return false;
@@ -489,13 +468,11 @@ export function BulkProductUpload({
                 </ul>
               </div>
 
-              {commissionModel === 'ownership' && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900">
-                  <strong>Listing Ownership*</strong> column is required for your seller account. Use{' '}
-                  <em>Own brand</em> or <em>Third party</em> on each product row (column AB in the
-                  Excel template).
-                </div>
-              )}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900">
+                <strong>Listing Ownership*</strong> column is required. Use{' '}
+                <em>Own brand</em> or <em>Third party</em> on each product row (column AB in the
+                Excel template).
+              </div>
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <h4 className="font-semibold text-amber-800 mb-2">Required fields (marked <span className="font-mono">*</span> in the template)</h4>
