@@ -134,12 +134,39 @@ export function buildPromotionPersistenceFromAdminBody(
     : promotionStartDateToIso(new Date().toISOString().split('T')[0]);
   const endDate = endDateInput ? promotionEndDateToIso(toHelperInput(endDateInput)) : null;
 
-  const applicableServices = buildApplicableServicesFromBody(body);
-  const selectedTargets =
-    body.selected_targets && typeof body.selected_targets === 'object'
-      ? body.selected_targets
+  const incomingMetadata =
+    body.metadata && typeof body.metadata === 'object'
+      ? (body.metadata as Record<string, unknown>)
       : {};
-  const targetScopes = parseServicesList(body.target_scopes);
+  const baseMetadata = existingMetadata ?? {};
+
+  // Prefer wizard top-level targeting; if this function is re-entered on an
+  // intermediate persistence record, fall back to metadata so we do not wipe
+  // applicable_products / listing_ownership_scope (ecommerce admin create bug).
+  const selectedTargetsFromBody =
+    body.selected_targets && typeof body.selected_targets === 'object'
+      ? (body.selected_targets as Record<string, unknown>)
+      : body.selectedTargets && typeof body.selectedTargets === 'object'
+        ? (body.selectedTargets as Record<string, unknown>)
+        : null;
+  const selectedTargetsFromMeta =
+    incomingMetadata.selectedTargets && typeof incomingMetadata.selectedTargets === 'object'
+      ? (incomingMetadata.selectedTargets as Record<string, unknown>)
+      : baseMetadata.selectedTargets && typeof baseMetadata.selectedTargets === 'object'
+        ? (baseMetadata.selectedTargets as Record<string, unknown>)
+        : {};
+  const selectedTargets = (selectedTargetsFromBody ?? selectedTargetsFromMeta) as Record<
+    string,
+    string[]
+  >;
+
+  const applicableServices = buildApplicableServicesFromBody({
+    ...body,
+    selected_targets: selectedTargets,
+  });
+  const targetScopes = parseServicesList(
+    body.target_scopes ?? body.targetScopes ?? incomingMetadata.targetScopes ?? baseMetadata.targetScopes
+  );
 
   const styleTokens = applicableServices
     .filter((x) => x.startsWith('style:'))
@@ -153,12 +180,6 @@ export function buildPromotionPersistenceFromAdminBody(
   const serviceStyle =
     normalizeStyleToken(body.service_style ?? body.serviceStyle ?? styleTokens[0] ?? '') || null;
 
-  const incomingMetadata =
-    body.metadata && typeof body.metadata === 'object'
-      ? (body.metadata as Record<string, unknown>)
-      : {};
-  const baseMetadata = existingMetadata ?? {};
-
   const isActive =
     body.is_active !== undefined
       ? body.is_active !== false
@@ -170,12 +191,17 @@ export function buildPromotionPersistenceFromAdminBody(
     body.published === undefined ? isActive : body.published === true;
 
   const applicableProducts = parseServicesList(
-    body.applicable_products ?? (selectedTargets as any).products
+    body.applicable_products ??
+      selectedTargets.products ??
+      incomingMetadata.applicableProducts ??
+      baseMetadata.applicableProducts
   );
   const listingOwnershipScope = normalizeListingOwnershipScope(
     body.listing_ownership_scope ??
       body.listingOwnershipScope ??
-      (selectedTargets as any).listing_ownership_scope
+      (selectedTargets as { listing_ownership_scope?: unknown }).listing_ownership_scope ??
+      incomingMetadata.listingOwnershipScope ??
+      baseMetadata.listingOwnershipScope
   );
 
   const discountDomain = resolvePersistedDiscountDomain(body, 'SERVICE');
@@ -329,11 +355,59 @@ export function sanitizePromotionsTablePayload(
   return payload;
 }
 
+/**
+ * When POST builds an intermediate persistence record then re-enters this mapper,
+ * wizard fields live only under `metadata`. Lift them so ecommerce rows keep
+ * product targets + listing_ownership_scope.
+ */
+export function coerceAdminBodyForEcommercePersistence(
+  body: Record<string, unknown>
+): Record<string, unknown> {
+  const meta =
+    body.metadata && typeof body.metadata === 'object'
+      ? (body.metadata as Record<string, unknown>)
+      : {};
+  const metaTargets =
+    meta.selectedTargets && typeof meta.selectedTargets === 'object'
+      ? (meta.selectedTargets as Record<string, unknown>)
+      : {};
+
+  const hasTopLevelTargets =
+    body.selected_targets != null ||
+    body.selectedTargets != null ||
+    body.applicable_products != null ||
+    body.listing_ownership_scope != null ||
+    body.listingOwnershipScope != null;
+
+  if (hasTopLevelTargets) {
+    return {
+      ...body,
+      discount_domain: body.discount_domain ?? meta.discount_domain ?? 'ECOMMERCE',
+    };
+  }
+
+  return {
+    ...body,
+    selected_targets: metaTargets,
+    applicable_products:
+      body.applicable_products ?? meta.applicableProducts ?? metaTargets.products,
+    applicable_category_ids:
+      body.applicable_category_ids ?? metaTargets.categories,
+    listing_ownership_scope:
+      body.listing_ownership_scope ??
+      body.listingOwnershipScope ??
+      meta.listingOwnershipScope,
+    target_scopes: body.target_scopes ?? body.targetScopes ?? meta.targetScopes,
+    discount_domain: body.discount_domain ?? meta.discount_domain ?? 'ECOMMERCE',
+  };
+}
+
 /** Map admin wizard body → `ecommerce_admin_promotions` row (canonical shop promos). */
 export function buildEcommerceAdminPromotionRecord(
   body: Record<string, unknown>,
 ): Record<string, unknown> {
-  const base = buildPromotionPersistenceFromAdminBody(body);
+  const wizardBody = coerceAdminBodyForEcommercePersistence(body);
+  const base = buildPromotionPersistenceFromAdminBody(wizardBody);
   const meta =
     base.metadata && typeof base.metadata === 'object'
       ? (base.metadata as Record<string, unknown>)
@@ -344,22 +418,22 @@ export function buildEcommerceAdminPromotionRecord(
       : {};
 
   const applicableProducts = parseServicesList(
-    body.applicable_products ?? meta.applicableProducts ?? selectedTargets.products,
+    wizardBody.applicable_products ?? meta.applicableProducts ?? selectedTargets.products,
   );
   const applicableCategories = parseServicesList(
-    body.applicable_category_ids ??
-      body.applicable_categories ??
+    wizardBody.applicable_category_ids ??
+      wizardBody.applicable_categories ??
       selectedTargets.categories,
   );
 
-  const codeRaw = body.code != null ? String(body.code).trim() : '';
+  const codeRaw = wizardBody.code != null ? String(wizardBody.code).trim() : '';
   const targetAudience = String(
-    body.target_audience ?? body.targetAudience ?? 'all',
+    wizardBody.target_audience ?? wizardBody.targetAudience ?? 'all',
   ).trim();
 
   const listingOwnershipScope = normalizeListingOwnershipScope(
-    body.listing_ownership_scope ??
-      body.listingOwnershipScope ??
+    wizardBody.listing_ownership_scope ??
+      wizardBody.listingOwnershipScope ??
       meta.listingOwnershipScope
   );
 

@@ -89,9 +89,21 @@ function buildCalculateBookingHttpPayload(quote: UnifiedResolverResponse) {
   };
 }
 
-async function persistPromotionInsert(promotionData: Record<string, unknown>) {
-  if (isEcommerceAdminPromotionDomain(promotionData)) {
-    const ecommerceRecord = buildEcommerceAdminPromotionRecord(promotionData);
+async function persistPromotionInsert(
+  promotionData: Record<string, unknown>,
+  rawWizardBody?: Record<string, unknown>
+) {
+  if (
+    isEcommerceAdminPromotionDomain(promotionData) ||
+    (rawWizardBody != null && isEcommerceAdminPromotionDomain(rawWizardBody))
+  ) {
+    // Prefer the original wizard body — intermediate persistence records only
+    // keep targeting under metadata, and a naive rebuild used to wipe it to
+    // listing_ownership_scope=all + empty applicable_products.
+    const ecommerceRecord = buildEcommerceAdminPromotionRecord({
+      ...(rawWizardBody ?? promotionData),
+      discount_domain: 'ECOMMERCE',
+    });
     try {
       return await insert('ecommerce_admin_promotions', ecommerceRecord);
     } catch (insertError: unknown) {
@@ -2040,7 +2052,7 @@ export function registerPromotionEndpoints(app: Hono) {
       }
 
       let promotion;
-      promotion = await persistPromotionInsert(promotionData);
+      promotion = await persistPromotionInsert(promotionData, body as Record<string, unknown>);
 
       return c.json({
         success: true,
