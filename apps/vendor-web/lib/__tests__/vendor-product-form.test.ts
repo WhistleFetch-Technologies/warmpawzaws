@@ -30,7 +30,7 @@ const baseForm: ProductFormState = {
   status: 'pending',
   basePrice: '450',
   brand: '',
-  listingOwnership: '',
+  listingOwnership: 'third_party',
   keyFeatures: '',
   weightKg: '',
   lengthCm: '',
@@ -105,6 +105,17 @@ describe('vendor-product-form', () => {
     const filled: VariantRow = { ...row, price: '450' };
     expect(effectiveVariantMrp(filled)).toBe(450);
     expect(effectiveVariantPrice(filled)).toBe(450);
+  });
+
+  it('validateProductForm rejects missing listing ownership', () => {
+    const err = validateProductForm({
+      form: { ...baseForm, listingOwnership: '' },
+      mode: 'simple',
+      variants: [],
+      simpleSku: { price: '450', stock: '10', images: ['a'], barcode: '' },
+      variantAxes: presetVariantAxes('size'),
+    });
+    expect(err).toMatch(/Listing ownership is required/);
   });
 
   it('validateProductForm rejects duplicate variants', () => {

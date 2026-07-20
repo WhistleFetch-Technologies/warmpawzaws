@@ -687,7 +687,6 @@ export type ValidateProductFormInput = {
   variantAxes: VariantAxisConfig[];
   deliveryRegions?: string[];
   customSpecs?: SpecKvRow[];
-  requiresListingOwnership?: boolean;
 };
 
 export function validateProductForm(input: ValidateProductFormInput): string | null {
@@ -696,7 +695,7 @@ export function validateProductForm(input: ValidateProductFormInput): string | n
   if (!form.name?.trim()) return 'Product name is required';
   if (!form.category_id) return 'Category is required';
 
-  if (input.requiresListingOwnership && !form.listingOwnership) {
+  if (!form.listingOwnership) {
     return 'Listing ownership is required — select Own brand or Third party';
   }
 
