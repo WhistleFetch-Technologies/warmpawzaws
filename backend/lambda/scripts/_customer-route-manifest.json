@@ -1,0 +1,2411 @@
+{
+  "generatedAt": "2026-07-16T08:17:56.873Z",
+  "totalRoutes": 158,
+  "modules": [
+    "addresses",
+    "appointments",
+    "bookings",
+    "content",
+    "convenience",
+    "delivery-fee",
+    "discovery",
+    "enhanced",
+    "orders",
+    "password",
+    "profile",
+    "specialized"
+  ],
+  "routes": [
+    {
+      "id": "GET /admin/delivery-fee-policy",
+      "module": "delivery-fee",
+      "method": "GET",
+      "path": "/admin/delivery-fee-policy",
+      "routeFile": "src/endpoints/customer/delivery-fee/routes/get-admin-delivery-fee-policy.route.ts",
+      "handlerFn": "getAdminDeliveryFeePolicyHandler",
+      "handlerFile": "src/endpoints/customer/delivery-fee/handlers/get-admin-delivery-fee-policy.handler.ts",
+      "serviceFile": "src/endpoints/customer/delivery-fee/services/get-admin-delivery-fee-policy.service.ts",
+      "repoFile": "src/endpoints/customer/delivery-fee/repos/get-admin-delivery-fee-policy.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "PUT /admin/delivery-fee-policy",
+      "module": "delivery-fee",
+      "method": "PUT",
+      "path": "/admin/delivery-fee-policy",
+      "routeFile": "src/endpoints/customer/delivery-fee/routes/put-admin-delivery-fee-policy.route.ts",
+      "handlerFn": "putAdminDeliveryFeePolicyHandler",
+      "handlerFile": "src/endpoints/customer/delivery-fee/handlers/put-admin-delivery-fee-policy.handler.ts",
+      "serviceFile": "src/endpoints/customer/delivery-fee/services/put-admin-delivery-fee-policy.service.ts",
+      "repoFile": "src/endpoints/customer/delivery-fee/repos/put-admin-delivery-fee-policy.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /adoption/pets",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/adoption/pets",
+      "routeFile": "src/endpoints/customer/specialized/routes/adoption_pets_get.route.ts",
+      "handlerFn": "adoptionPetsGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/adoption_pets_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/adoption_pets_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/adoption_pets_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /adoption/pets/:petId",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/adoption/pets/:petId",
+      "routeFile": "src/endpoints/customer/specialized/routes/adoption_pets_petid_get.route.ts",
+      "handlerFn": "adoptionPetsPetidGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/adoption_pets_petid_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/adoption_pets_petid_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/adoption_pets_petid_get.repo.ts",
+      "pathParams": [
+        "petId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /adoption/questionnaire",
+      "module": "specialized",
+      "method": "POST",
+      "path": "/adoption/questionnaire",
+      "routeFile": "src/endpoints/customer/specialized/routes/adoption_questionnaire_post.route.ts",
+      "handlerFn": "adoptionQuestionnairePostHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/adoption_questionnaire_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/adoption_questionnaire_post.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/adoption_questionnaire_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /adoption/request",
+      "module": "specialized",
+      "method": "POST",
+      "path": "/adoption/request",
+      "routeFile": "src/endpoints/customer/specialized/routes/adoption_request_post.route.ts",
+      "handlerFn": "adoptionRequestPostHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/adoption_request_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/adoption_request_post.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/adoption_request_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /appointment/:appointmentId",
+      "module": "appointments",
+      "method": "GET",
+      "path": "/appointment/:appointmentId",
+      "routeFile": "src/endpoints/customer/appointments/routes/appointment_appointmentid_get.route.ts",
+      "handlerFn": "appointmentAppointmentidGetHandler",
+      "handlerFile": "src/endpoints/customer/appointments/handlers/appointment_appointmentid_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/appointments/services/appointment_appointmentid_get.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "appointmentId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /appointment/:appointmentId/cancel",
+      "module": "appointments",
+      "method": "POST",
+      "path": "/appointment/:appointmentId/cancel",
+      "routeFile": "src/endpoints/customer/appointments/routes/appointment_appointmentid_cancel_post.route.ts",
+      "handlerFn": "appointmentAppointmentidCancelPostHandler",
+      "handlerFile": "src/endpoints/customer/appointments/handlers/appointment_appointmentid_cancel_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/appointments/services/appointment_appointmentid_cancel_post.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "appointmentId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /appointment/:appointmentId/reschedule",
+      "module": "appointments",
+      "method": "POST",
+      "path": "/appointment/:appointmentId/reschedule",
+      "routeFile": "src/endpoints/customer/appointments/routes/appointment_appointmentid_reschedule_post.route.ts",
+      "handlerFn": "appointmentAppointmentidReschedulePostHandler",
+      "handlerFile": "src/endpoints/customer/appointments/handlers/appointment_appointmentid_reschedule_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/appointments/services/appointment_appointmentid_reschedule_post.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "appointmentId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /appointment/customer/:customerId",
+      "module": "appointments",
+      "method": "GET",
+      "path": "/appointment/customer/:customerId",
+      "routeFile": "src/endpoints/customer/appointments/routes/appointment_customer_customerid_get.route.ts",
+      "handlerFn": "appointmentCustomerCustomeridGetHandler",
+      "handlerFile": "src/endpoints/customer/appointments/handlers/appointment_customer_customerid_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/appointments/services/appointment_customer_customerid_get.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /breeder/inquiry",
+      "module": "specialized",
+      "method": "POST",
+      "path": "/breeder/inquiry",
+      "routeFile": "src/endpoints/customer/specialized/routes/breeder_inquiry_post.route.ts",
+      "handlerFn": "breederInquiryPostHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/breeder_inquiry_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/breeder_inquiry_post.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/breeder_inquiry_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /breeder/puppies",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/breeder/puppies",
+      "routeFile": "src/endpoints/customer/specialized/routes/breeder_puppies_get.route.ts",
+      "handlerFn": "breederPuppiesGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/breeder_puppies_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/breeder_puppies_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/breeder_puppies_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /breeder/reserve",
+      "module": "specialized",
+      "method": "POST",
+      "path": "/breeder/reserve",
+      "routeFile": "src/endpoints/customer/specialized/routes/breeder_reserve_post.route.ts",
+      "handlerFn": "breederReservePostHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/breeder_reserve_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/breeder_reserve_post.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/breeder_reserve_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "DELETE /customer/:customerId",
+      "module": "enhanced",
+      "method": "DELETE",
+      "path": "/customer/:customerId",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_customerid_delete.route.ts",
+      "handlerFn": "customerCustomeridDeleteHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_customerid_delete.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_customerid_delete.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:customerId",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/:customerId",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_customerid_get.route.ts",
+      "handlerFn": "customerCustomeridGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_customerid_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_customerid_get.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "PUT /customer/:customerId",
+      "module": "enhanced",
+      "method": "PUT",
+      "path": "/customer/:customerId",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_customerid_put.route.ts",
+      "handlerFn": "customerCustomeridPutHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_customerid_put.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_customerid_put.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:customerId/addresses",
+      "module": "addresses",
+      "method": "GET",
+      "path": "/customer/:customerId/addresses",
+      "routeFile": "src/endpoints/customer/addresses/routes/customer_customerid_addresses_get.route.ts",
+      "handlerFn": "customerCustomeridAddressesGetHandler",
+      "handlerFile": "src/endpoints/customer/addresses/handlers/customer_customerid_addresses_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/addresses/services/customer_customerid_addresses_get.service.ts",
+      "repoFile": "src/endpoints/customer/addresses/repos/customer_customerid_addresses_get.repo.ts",
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/:customerId/addresses",
+      "module": "addresses",
+      "method": "POST",
+      "path": "/customer/:customerId/addresses",
+      "routeFile": "src/endpoints/customer/addresses/routes/customer_customerid_addresses_post.route.ts",
+      "handlerFn": "customerCustomeridAddressesPostHandler",
+      "handlerFile": "src/endpoints/customer/addresses/handlers/customer_customerid_addresses_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/addresses/services/customer_customerid_addresses_post.service.ts",
+      "repoFile": "src/endpoints/customer/addresses/repos/customer_customerid_addresses_post.repo.ts",
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "DELETE /customer/:customerId/addresses/:addressId",
+      "module": "addresses",
+      "method": "DELETE",
+      "path": "/customer/:customerId/addresses/:addressId",
+      "routeFile": "src/endpoints/customer/addresses/routes/customer_customerid_addresses_addressid_delete.route.ts",
+      "handlerFn": "customerCustomeridAddressesAddressidDeleteHandler",
+      "handlerFile": "src/endpoints/customer/addresses/handlers/customer_customerid_addresses_addressid_delete.handler.ts",
+      "serviceFile": "src/endpoints/customer/addresses/services/customer_customerid_addresses_addressid_delete.service.ts",
+      "repoFile": "src/endpoints/customer/addresses/repos/customer_customerid_addresses_addressid_delete.repo.ts",
+      "pathParams": [
+        "customerId",
+        "addressId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "PUT /customer/:customerId/addresses/:addressId",
+      "module": "addresses",
+      "method": "PUT",
+      "path": "/customer/:customerId/addresses/:addressId",
+      "routeFile": "src/endpoints/customer/addresses/routes/customer_customerid_addresses_addressid_put.route.ts",
+      "handlerFn": "customerCustomeridAddressesAddressidPutHandler",
+      "handlerFile": "src/endpoints/customer/addresses/handlers/customer_customerid_addresses_addressid_put.handler.ts",
+      "serviceFile": "src/endpoints/customer/addresses/services/customer_customerid_addresses_addressid_put.service.ts",
+      "repoFile": "src/endpoints/customer/addresses/repos/customer_customerid_addresses_addressid_put.repo.ts",
+      "pathParams": [
+        "customerId",
+        "addressId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:customerId/bookings",
+      "module": "bookings",
+      "method": "GET",
+      "path": "/customer/:customerId/bookings",
+      "routeFile": "src/endpoints/customer/bookings/routes/customer_customerid_bookings_get.route.ts",
+      "handlerFn": "customerCustomeridBookingsGetHandler",
+      "handlerFile": "src/endpoints/customer/bookings/handlers/customer_customerid_bookings_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/bookings/services/customer_customerid_bookings_get.service.ts",
+      "repoFile": "src/endpoints/customer/bookings/repos/customer_customerid_bookings_get.repo.ts",
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:customerId/bookings/:bookingId",
+      "module": "bookings",
+      "method": "GET",
+      "path": "/customer/:customerId/bookings/:bookingId",
+      "routeFile": "src/endpoints/customer/bookings/routes/customer_customerid_bookings_bookingid_get.route.ts",
+      "handlerFn": "customerCustomeridBookingsBookingidGetHandler",
+      "handlerFile": "src/endpoints/customer/bookings/handlers/customer_customerid_bookings_bookingid_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/bookings/services/customer_customerid_bookings_bookingid_get.service.ts",
+      "repoFile": "src/endpoints/customer/bookings/repos/customer_customerid_bookings_bookingid_get.repo.ts",
+      "pathParams": [
+        "customerId",
+        "bookingId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:customerId/bookings/follow-up-eligible",
+      "module": "bookings",
+      "method": "GET",
+      "path": "/customer/:customerId/bookings/follow-up-eligible",
+      "routeFile": "src/endpoints/customer/bookings/routes/customer_customerid_bookings_followupeligible_get.route.ts",
+      "handlerFn": "customerCustomeridBookingsFollowupeligibleGetHandler",
+      "handlerFile": "src/endpoints/customer/bookings/handlers/customer_customerid_bookings_followupeligible_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/bookings/services/customer_customerid_bookings_followupeligible_get.service.ts",
+      "repoFile": "src/endpoints/customer/bookings/repos/customer_customerid_bookings_followupeligible_get.repo.ts",
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:customerId/pets",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/:customerId/pets",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_customerid_pets_get.route.ts",
+      "handlerFn": "customerCustomeridPetsGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_customerid_pets_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_customerid_pets_get.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/:customerId/pets",
+      "module": "enhanced",
+      "method": "POST",
+      "path": "/customer/:customerId/pets",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_customerid_pets_post.route.ts",
+      "handlerFn": "customerCustomeridPetsPostHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_customerid_pets_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_customerid_pets_post.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:customerId/preferences",
+      "module": "profile",
+      "method": "GET",
+      "path": "/customer/:customerId/preferences",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_customerid_preferences_get.route.ts",
+      "handlerFn": "customerCustomeridPreferencesGetHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_customerid_preferences_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_customerid_preferences_get.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_customerid_preferences_get.repo.ts",
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "PUT /customer/:customerId/preferences",
+      "module": "profile",
+      "method": "PUT",
+      "path": "/customer/:customerId/preferences",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_customerid_preferences_put.route.ts",
+      "handlerFn": "customerCustomeridPreferencesPutHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_customerid_preferences_put.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_customerid_preferences_put.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_customerid_preferences_put.repo.ts",
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "DELETE /customer/:customerId/search-history",
+      "module": "profile",
+      "method": "DELETE",
+      "path": "/customer/:customerId/search-history",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_customerid_searchhistory_delete.route.ts",
+      "handlerFn": "customerCustomeridSearchhistoryDeleteHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_customerid_searchhistory_delete.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_customerid_searchhistory_delete.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_customerid_searchhistory_delete.repo.ts",
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:customerId/search-history",
+      "module": "profile",
+      "method": "GET",
+      "path": "/customer/:customerId/search-history",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_customerid_searchhistory_get.route.ts",
+      "handlerFn": "customerCustomeridSearchhistoryGetHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_customerid_searchhistory_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_customerid_searchhistory_get.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_customerid_searchhistory_get.repo.ts",
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/:customerId/search-history",
+      "module": "profile",
+      "method": "POST",
+      "path": "/customer/:customerId/search-history",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_customerid_searchhistory_post.route.ts",
+      "handlerFn": "customerCustomeridSearchhistoryPostHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_customerid_searchhistory_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_customerid_searchhistory_post.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_customerid_searchhistory_post.repo.ts",
+      "pathParams": [
+        "customerId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/active-walks",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/:phone/active-walks",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_phone_activewalks_get.route.ts",
+      "handlerFn": "customerPhoneActivewalksGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_phone_activewalks_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_phone_activewalks_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_phone_activewalks_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/bookings/active-tracking",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/:phone/bookings/active-tracking",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_phone_bookings_activetracking_get.route.ts",
+      "handlerFn": "customerPhoneBookingsActivetrackingGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_phone_bookings_activetracking_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_phone_bookings_activetracking_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_phone_bookings_activetracking_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/bookings/pending-reviews",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/:phone/bookings/pending-reviews",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_phone_bookings_pendingreviews_get.route.ts",
+      "handlerFn": "customerPhoneBookingsPendingreviewsGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_phone_bookings_pendingreviews_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_phone_bookings_pendingreviews_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_phone_bookings_pendingreviews_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/bookings/upcoming-calls",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/:phone/bookings/upcoming-calls",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_phone_bookings_upcomingcalls_get.route.ts",
+      "handlerFn": "customerPhoneBookingsUpcomingcallsGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_phone_bookings_upcomingcalls_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_phone_bookings_upcomingcalls_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_phone_bookings_upcomingcalls_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/latest-booking-by-vendor",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/:phone/latest-booking-by-vendor",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_phone_latestbookingbyvendor_get.route.ts",
+      "handlerFn": "customerPhoneLatestbookingbyvendorGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_phone_latestbookingbyvendor_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_phone_latestbookingbyvendor_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_phone_latestbookingbyvendor_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/:phone/onboarding/complete",
+      "module": "enhanced",
+      "method": "POST",
+      "path": "/customer/:phone/onboarding/complete",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_phone_onboarding_complete_post.route.ts",
+      "handlerFn": "customerPhoneOnboardingCompletePostHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_phone_onboarding_complete_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_phone_onboarding_complete_post.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_phone_onboarding_complete_post.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/orders/meals/active",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/:phone/orders/meals/active",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_phone_orders_meals_active_get.route.ts",
+      "handlerFn": "customerPhoneOrdersMealsActiveGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_phone_orders_meals_active_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_phone_orders_meals_active_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_phone_orders_meals_active_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/orders/meals/rider-active",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/:phone/orders/meals/rider-active",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_phone_orders_meals_rideractive_get.route.ts",
+      "handlerFn": "customerPhoneOrdersMealsRideractiveGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_phone_orders_meals_rideractive_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_phone_orders_meals_rideractive_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_phone_orders_meals_rideractive_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/orders/pharmacy/active",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/:phone/orders/pharmacy/active",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_phone_orders_pharmacy_active_get.route.ts",
+      "handlerFn": "customerPhoneOrdersPharmacyActiveGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_phone_orders_pharmacy_active_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_phone_orders_pharmacy_active_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_phone_orders_pharmacy_active_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/packages",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/:phone/packages",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_phone_packages_get.route.ts",
+      "handlerFn": "customerPhonePackagesGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_phone_packages_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_phone_packages_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_phone_packages_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/pet-skills",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/:phone/pet-skills",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_phone_petskills_get.route.ts",
+      "handlerFn": "customerPhonePetskillsGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_phone_petskills_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_phone_petskills_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_phone_petskills_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/preferences",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/:phone/preferences",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_phone_preferences_get.route.ts",
+      "handlerFn": "customerPhonePreferencesGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_phone_preferences_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_phone_preferences_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_phone_preferences_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/:phone/preferences",
+      "module": "enhanced",
+      "method": "POST",
+      "path": "/customer/:phone/preferences",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_phone_preferences_post.route.ts",
+      "handlerFn": "customerPhonePreferencesPostHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_phone_preferences_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_phone_preferences_post.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_phone_preferences_post.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/recommended-services",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/:phone/recommended-services",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_phone_recommendedservices_get.route.ts",
+      "handlerFn": "customerPhoneRecommendedservicesGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_phone_recommendedservices_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_phone_recommendedservices_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_phone_recommendedservices_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/:phone/reviews/:bookingId/skip",
+      "module": "enhanced",
+      "method": "POST",
+      "path": "/customer/:phone/reviews/:bookingId/skip",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_phone_reviews_bookingid_skip_post.route.ts",
+      "handlerFn": "customerPhoneReviewsBookingidSkipPostHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_phone_reviews_bookingid_skip_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_phone_reviews_bookingid_skip_post.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_phone_reviews_bookingid_skip_post.repo.ts",
+      "pathParams": [
+        "phone",
+        "bookingId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/:phone/subscriptions/active",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/:phone/subscriptions/active",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_phone_subscriptions_active_get.route.ts",
+      "handlerFn": "customerPhoneSubscriptionsActiveGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_phone_subscriptions_active_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_phone_subscriptions_active_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_phone_subscriptions_active_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/account/password",
+      "module": "profile",
+      "method": "POST",
+      "path": "/customer/account/password",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_account_password_post.route.ts",
+      "handlerFn": "handleCustomerSetPassword",
+      "handlerFile": null,
+      "serviceFile": null,
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/account/status",
+      "module": "profile",
+      "method": "GET",
+      "path": "/customer/account/status",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_account_status_get.route.ts",
+      "handlerFn": "handleCustomerAccountStatus",
+      "handlerFile": null,
+      "serviceFile": null,
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/addresses",
+      "module": "addresses",
+      "method": "GET",
+      "path": "/customer/addresses",
+      "routeFile": "src/endpoints/customer/addresses/routes/customer_addresses_get.route.ts",
+      "handlerFn": "customerAddressesGetHandler",
+      "handlerFile": "src/endpoints/customer/addresses/handlers/customer_addresses_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/addresses/services/customer_addresses_get.service.ts",
+      "repoFile": "src/endpoints/customer/addresses/repos/customer_addresses_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/addresses",
+      "module": "addresses",
+      "method": "POST",
+      "path": "/customer/addresses",
+      "routeFile": "src/endpoints/customer/addresses/routes/customer_addresses_post.route.ts",
+      "handlerFn": "customerAddressesPostHandler",
+      "handlerFile": "src/endpoints/customer/addresses/handlers/customer_addresses_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/addresses/services/customer_addresses_post.service.ts",
+      "repoFile": "src/endpoints/customer/addresses/repos/customer_addresses_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/addresses/:addressId",
+      "module": "addresses",
+      "method": "GET",
+      "path": "/customer/addresses/:addressId",
+      "routeFile": "src/endpoints/customer/addresses/routes/customer_addresses_addressid_get.route.ts",
+      "handlerFn": "customerAddressesAddressidGetHandler",
+      "handlerFile": "src/endpoints/customer/addresses/handlers/customer_addresses_addressid_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/addresses/services/customer_addresses_addressid_get.service.ts",
+      "repoFile": "src/endpoints/customer/addresses/repos/customer_addresses_addressid_get.repo.ts",
+      "pathParams": [
+        "addressId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/adoption-stats",
+      "module": "content",
+      "method": "GET",
+      "path": "/customer/adoption-stats",
+      "routeFile": "src/endpoints/customer/content/routes/customer_adoptionstats_get.route.ts",
+      "handlerFn": "customerAdoptionstatsGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/customer_adoptionstats_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/customer_adoptionstats_get.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/announcements",
+      "module": "content",
+      "method": "GET",
+      "path": "/customer/announcements",
+      "routeFile": "src/endpoints/customer/content/routes/customer_announcements_get.route.ts",
+      "handlerFn": "customerAnnouncementsGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/customer_announcements_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/customer_announcements_get.service.ts",
+      "repoFile": "src/endpoints/customer/content/repos/customer_announcements_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/appointments",
+      "module": "appointments",
+      "method": "GET",
+      "path": "/customer/appointments",
+      "routeFile": "src/endpoints/customer/appointments/routes/customer_appointments_get.route.ts",
+      "handlerFn": "customerAppointmentsGetHandler",
+      "handlerFile": "src/endpoints/customer/appointments/handlers/customer_appointments_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/appointments/services/customer_appointments_get.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/appointments/:id",
+      "module": "appointments",
+      "method": "GET",
+      "path": "/customer/appointments/:id",
+      "routeFile": "src/endpoints/customer/appointments/routes/customer_appointments_id_get.route.ts",
+      "handlerFn": "customerAppointmentsIdGetHandler",
+      "handlerFile": "src/endpoints/customer/appointments/handlers/customer_appointments_id_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/appointments/services/customer_appointments_id_get.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "id"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/appointments/:id/cancel",
+      "module": "appointments",
+      "method": "POST",
+      "path": "/customer/appointments/:id/cancel",
+      "routeFile": "src/endpoints/customer/appointments/routes/customer_appointments_id_cancel_post.route.ts",
+      "handlerFn": "customerAppointmentsIdCancelPostHandler",
+      "handlerFile": "src/endpoints/customer/appointments/handlers/customer_appointments_id_cancel_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/appointments/services/customer_appointments_id_cancel_post.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "id"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/appointments/:id/reschedule",
+      "module": "appointments",
+      "method": "POST",
+      "path": "/customer/appointments/:id/reschedule",
+      "routeFile": "src/endpoints/customer/appointments/routes/customer_appointments_id_reschedule_post.route.ts",
+      "handlerFn": "customerAppointmentsIdReschedulePostHandler",
+      "handlerFile": "src/endpoints/customer/appointments/handlers/customer_appointments_id_reschedule_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/appointments/services/customer_appointments_id_reschedule_post.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "id"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/articles",
+      "module": "content",
+      "method": "GET",
+      "path": "/customer/articles",
+      "routeFile": "src/endpoints/customer/content/routes/customer_articles_get.route.ts",
+      "handlerFn": "customerArticlesGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/customer_articles_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/customer_articles_get.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/articles/:slug",
+      "module": "content",
+      "method": "GET",
+      "path": "/customer/articles/:slug",
+      "routeFile": "src/endpoints/customer/content/routes/customer_articles_slug_get.route.ts",
+      "handlerFn": "customerArticlesSlugGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/customer_articles_slug_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/customer_articles_slug_get.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "slug"
+      ],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/autocomplete",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/autocomplete",
+      "routeFile": "src/endpoints/customer/discovery/routes/autocomplete.route.ts",
+      "handlerFn": "autocompleteHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/autocomplete.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/autocomplete.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/autocomplete.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/banners",
+      "module": "content",
+      "method": "GET",
+      "path": "/customer/banners",
+      "routeFile": "src/endpoints/customer/content/routes/customer_banners_get.route.ts",
+      "handlerFn": "customerBannersGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/customer_banners_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/customer_banners_get.service.ts",
+      "repoFile": "src/endpoints/customer/content/repos/customer_banners_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/banners/resolve-cta",
+      "module": "content",
+      "method": "GET",
+      "path": "/customer/banners/resolve-cta",
+      "routeFile": "src/endpoints/customer/content/routes/customer_banners_resolvecta_get.route.ts",
+      "handlerFn": "customerBannersResolvectaGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/customer_banners_resolvecta_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/customer_banners_resolvecta_get.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/bookings",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/bookings",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_bookings_get.route.ts",
+      "handlerFn": "customerBookingsGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_bookings_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_bookings_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_bookings_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/bookings/:bookingId",
+      "module": "bookings",
+      "method": "GET",
+      "path": "/customer/bookings/:bookingId",
+      "routeFile": "src/endpoints/customer/bookings/routes/customer_bookings_bookingid_get.route.ts",
+      "handlerFn": "customerBookingsBookingidGetHandler",
+      "handlerFile": "src/endpoints/customer/bookings/handlers/customer_bookings_bookingid_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/bookings/services/customer_bookings_bookingid_get.service.ts",
+      "repoFile": "src/endpoints/customer/bookings/repos/customer_bookings_bookingid_get.repo.ts",
+      "pathParams": [
+        "bookingId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/bookings/active",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/bookings/active",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_bookings_active_get.route.ts",
+      "handlerFn": "customerBookingsActiveGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_bookings_active_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_bookings_active_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_bookings_active_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/by-phone",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/by-phone",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_byphone_get.route.ts",
+      "handlerFn": "customerByphoneGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_byphone_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_byphone_get.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/by-phone",
+      "module": "profile",
+      "method": "GET",
+      "path": "/customer/by-phone",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_byphone_get.route.ts",
+      "handlerFn": "customerByphoneGetHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_byphone_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_byphone_get.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_byphone_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/cart/:phone",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/cart/:phone",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_cart_phone_get.route.ts",
+      "handlerFn": "customerCartPhoneGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_cart_phone_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_cart_phone_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_cart_phone_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "DELETE /customer/cart/:phone/items/:itemId",
+      "module": "convenience",
+      "method": "DELETE",
+      "path": "/customer/cart/:phone/items/:itemId",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_cart_phone_items_itemid_delete.route.ts",
+      "handlerFn": "customerCartPhoneItemsItemidDeleteHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_cart_phone_items_itemid_delete.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_cart_phone_items_itemid_delete.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_cart_phone_items_itemid_delete.repo.ts",
+      "pathParams": [
+        "phone",
+        "itemId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "PUT /customer/cart/:phone/items/:itemId",
+      "module": "convenience",
+      "method": "PUT",
+      "path": "/customer/cart/:phone/items/:itemId",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_cart_phone_items_itemid_put.route.ts",
+      "handlerFn": "customerCartPhoneItemsItemidPutHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_cart_phone_items_itemid_put.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_cart_phone_items_itemid_put.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_cart_phone_items_itemid_put.repo.ts",
+      "pathParams": [
+        "phone",
+        "itemId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/change-password",
+      "module": "password",
+      "method": "POST",
+      "path": "/customer/change-password",
+      "routeFile": "src/endpoints/customer/password/routes/change-password.route.ts",
+      "handlerFn": "changePasswordHandler",
+      "handlerFile": "src/endpoints/customer/password/handlers/change-password.handler.ts",
+      "serviceFile": "src/endpoints/customer/password/services/change-password.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/clinic/:vendorId/services",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/clinic/:vendorId/services",
+      "routeFile": "src/endpoints/customer/discovery/routes/clinic-vendor-services.route.ts",
+      "handlerFn": "clinicVendorServicesHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/clinic-vendor-services.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/clinic-vendor-services.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/clinic-vendor-services.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/content/pages",
+      "module": "content",
+      "method": "GET",
+      "path": "/customer/content/pages",
+      "routeFile": "src/endpoints/customer/content/routes/customer_content_pages_get.route.ts",
+      "handlerFn": "customerContentPagesGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/customer_content_pages_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/customer_content_pages_get.service.ts",
+      "repoFile": "src/endpoints/customer/content/repos/customer_content_pages_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/content/pages/:slug",
+      "module": "content",
+      "method": "GET",
+      "path": "/customer/content/pages/:slug",
+      "routeFile": "src/endpoints/customer/content/routes/customer_content_pages_slug_get.route.ts",
+      "handlerFn": "customerContentPagesSlugGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/customer_content_pages_slug_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/customer_content_pages_slug_get.service.ts",
+      "repoFile": "src/endpoints/customer/content/repos/customer_content_pages_slug_get.repo.ts",
+      "pathParams": [
+        "slug"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/debug/at-center-vendors",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/debug/at-center-vendors",
+      "routeFile": "src/endpoints/customer/discovery/routes/debug-at-center-vendors.route.ts",
+      "handlerFn": "debugAtCenterVendorsHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/debug-at-center-vendors.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/debug-at-center-vendors.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/debug-at-center-vendors.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/debug/training-vendors",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/debug/training-vendors",
+      "routeFile": "src/endpoints/customer/discovery/routes/debug-training-vendors.route.ts",
+      "handlerFn": "debugTrainingVendorsHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/debug-training-vendors.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/debug-training-vendors.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/debug-training-vendors.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/delivery-fee-policy",
+      "module": "delivery-fee",
+      "method": "GET",
+      "path": "/customer/delivery-fee-policy",
+      "routeFile": "src/endpoints/customer/delivery-fee/routes/get-delivery-fee-policy.route.ts",
+      "handlerFn": "getDeliveryFeePolicyHandler",
+      "handlerFile": "src/endpoints/customer/delivery-fee/handlers/get-delivery-fee-policy.handler.ts",
+      "serviceFile": "src/endpoints/customer/delivery-fee/services/get-delivery-fee-policy.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/delivery-fee/calculate",
+      "module": "delivery-fee",
+      "method": "POST",
+      "path": "/customer/delivery-fee/calculate",
+      "routeFile": "src/endpoints/customer/delivery-fee/routes/calculate-delivery-fee.route.ts",
+      "handlerFn": "calculateDeliveryFeeHandler",
+      "handlerFile": "src/endpoints/customer/delivery-fee/handlers/calculate-delivery-fee.handler.ts",
+      "serviceFile": "src/endpoints/customer/delivery-fee/services/calculate-delivery-fee.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/diagnostic-packages",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/diagnostic-packages",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_diagnosticpackages_get.route.ts",
+      "handlerFn": "customerDiagnosticpackagesGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_diagnosticpackages_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_diagnosticpackages_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_diagnosticpackages_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/diagnostics/approve-vendor",
+      "module": "discovery",
+      "method": "POST",
+      "path": "/customer/diagnostics/approve-vendor",
+      "routeFile": "src/endpoints/customer/discovery/routes/diagnostics-approve-vendor.route.ts",
+      "handlerFn": "diagnosticsApproveVendorHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/diagnostics-approve-vendor.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/diagnostics-approve-vendor.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/diagnostics-approve-vendor.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/diagnostics/vendor-by-phone",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/diagnostics/vendor-by-phone",
+      "routeFile": "src/endpoints/customer/discovery/routes/diagnostics-vendor-by-phone.route.ts",
+      "handlerFn": "diagnosticsVendorByPhoneHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/diagnostics-vendor-by-phone.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/diagnostics-vendor-by-phone.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/diagnostics-vendor-by-phone.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/discover-services",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/discover-services",
+      "routeFile": "src/endpoints/customer/discovery/routes/discover-services.route.ts",
+      "handlerFn": "discoverServicesHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/discover-services.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/discover-services.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/discover-services.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/discovery/count",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/discovery/count",
+      "routeFile": "src/endpoints/customer/discovery/routes/discovery-count.route.ts",
+      "handlerFn": "discoveryCountHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/discovery-count.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/discovery-count.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/discovery/meta",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/discovery/meta",
+      "routeFile": "src/endpoints/customer/discovery/routes/discovery-meta.route.ts",
+      "handlerFn": "discoveryMetaHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/discovery-meta.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/discovery-meta.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/discovery-meta.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/facility/:vendorId",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/facility/:vendorId",
+      "routeFile": "src/endpoints/customer/discovery/routes/customer-facility.route.ts",
+      "handlerFn": "customerFacilityHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/customer-facility.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/customer-facility.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/customer-facility.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/featured-packages",
+      "module": "content",
+      "method": "GET",
+      "path": "/customer/featured-packages",
+      "routeFile": "src/endpoints/customer/content/routes/customer_featuredpackages_get.route.ts",
+      "handlerFn": "customerFeaturedpackagesGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/customer_featuredpackages_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/customer_featuredpackages_get.service.ts",
+      "repoFile": "src/endpoints/customer/content/repos/customer_featuredpackages_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/featured-vendors",
+      "module": "content",
+      "method": "GET",
+      "path": "/customer/featured-vendors",
+      "routeFile": "src/endpoints/customer/content/routes/customer_featuredvendors_get.route.ts",
+      "handlerFn": "customerFeaturedvendorsGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/customer_featuredvendors_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/customer_featuredvendors_get.service.ts",
+      "repoFile": "src/endpoints/customer/content/repos/customer_featuredvendors_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/holiday-packages",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/customer/holiday-packages",
+      "routeFile": "src/endpoints/customer/specialized/routes/customer_holidaypackages_get.route.ts",
+      "handlerFn": "customerHolidaypackagesGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/customer_holidaypackages_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/customer_holidaypackages_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/customer_holidaypackages_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/meal-plan-orders",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/meal-plan-orders",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_mealplanorders_get.route.ts",
+      "handlerFn": "customerMealplanordersGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_mealplanorders_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_mealplanorders_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_mealplanorders_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/notifications/:phone",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/notifications/:phone",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_notifications_phone_get.route.ts",
+      "handlerFn": "customerNotificationsPhoneGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_notifications_phone_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_notifications_phone_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_notifications_phone_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "PUT /customer/notifications/:phone",
+      "module": "convenience",
+      "method": "PUT",
+      "path": "/customer/notifications/:phone",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_notifications_phone_put.route.ts",
+      "handlerFn": "customerNotificationsPhonePutHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_notifications_phone_put.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_notifications_phone_put.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/orders",
+      "module": "orders",
+      "method": "GET",
+      "path": "/customer/orders",
+      "routeFile": "src/endpoints/customer/orders/routes/customer_orders_get.route.ts",
+      "handlerFn": "customerOrdersGetHandler",
+      "handlerFile": "src/endpoints/customer/orders/handlers/customer_orders_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/orders/services/customer_orders_get.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/orders",
+      "module": "orders",
+      "method": "POST",
+      "path": "/customer/orders",
+      "routeFile": "src/endpoints/customer/orders/routes/customer_orders_post.route.ts",
+      "handlerFn": "customerOrdersPostHandler",
+      "handlerFile": "src/endpoints/customer/orders/handlers/customer_orders_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/orders/services/customer_orders_post.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/orders/:id",
+      "module": "orders",
+      "method": "GET",
+      "path": "/customer/orders/:id",
+      "routeFile": "src/endpoints/customer/orders/routes/customer_orders_id_get.route.ts",
+      "handlerFn": "customerOrdersIdGetHandler",
+      "handlerFile": "src/endpoints/customer/orders/handlers/customer_orders_id_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/orders/services/customer_orders_id_get.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "id"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/orders/:id/invoice",
+      "module": "orders",
+      "method": "GET",
+      "path": "/customer/orders/:id/invoice",
+      "routeFile": "src/endpoints/customer/orders/routes/customer_orders_id_invoice_get.route.ts",
+      "handlerFn": "customerOrdersIdInvoiceGetHandler",
+      "handlerFile": "src/endpoints/customer/orders/handlers/customer_orders_id_invoice_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/orders/services/customer_orders_id_invoice_get.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "id"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/orders/:id/payment-resume",
+      "module": "orders",
+      "method": "GET",
+      "path": "/customer/orders/:id/payment-resume",
+      "routeFile": "src/endpoints/customer/orders/routes/customer_orders_id_paymentresume_get.route.ts",
+      "handlerFn": "customerOrdersIdPaymentresumeGetHandler",
+      "handlerFile": "src/endpoints/customer/orders/handlers/customer_orders_id_paymentresume_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/orders/services/customer_orders_id_paymentresume_get.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "id"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/orders/:id/return",
+      "module": "orders",
+      "method": "POST",
+      "path": "/customer/orders/:id/return",
+      "routeFile": "src/endpoints/customer/orders/routes/customer_orders_id_return_post.route.ts",
+      "handlerFn": "customerOrdersIdReturnPostHandler",
+      "handlerFile": "src/endpoints/customer/orders/handlers/customer_orders_id_return_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/orders/services/customer_orders_id_return_post.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "id"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/orders/:orderId/pharmacy-status",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/orders/:orderId/pharmacy-status",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_orders_orderid_pharmacystatus_get.route.ts",
+      "handlerFn": "customerOrdersOrderidPharmacystatusGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_orders_orderid_pharmacystatus_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_orders_orderid_pharmacystatus_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_orders_orderid_pharmacystatus_get.repo.ts",
+      "pathParams": [
+        "orderId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/password-status",
+      "module": "password",
+      "method": "GET",
+      "path": "/customer/password-status",
+      "routeFile": "src/endpoints/customer/password/routes/password-status.route.ts",
+      "handlerFn": "handleCustomerAccountStatus",
+      "handlerFile": null,
+      "serviceFile": null,
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/payment-methods",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/payment-methods",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_paymentmethods_get.route.ts",
+      "handlerFn": "customerPaymentmethodsGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_paymentmethods_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_paymentmethods_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_paymentmethods_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/payment-methods",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/payment-methods",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_paymentmethods_get.route.ts",
+      "handlerFn": "customerPaymentmethodsGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_paymentmethods_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_paymentmethods_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_paymentmethods_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/payment-methods",
+      "module": "enhanced",
+      "method": "POST",
+      "path": "/customer/payment-methods",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_paymentmethods_post.route.ts",
+      "handlerFn": "customerPaymentmethodsPostHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_paymentmethods_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_paymentmethods_post.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_paymentmethods_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "DELETE /customer/payment-methods/:methodId",
+      "module": "enhanced",
+      "method": "DELETE",
+      "path": "/customer/payment-methods/:methodId",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_paymentmethods_methodid_delete.route.ts",
+      "handlerFn": "customerPaymentmethodsMethodidDeleteHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_paymentmethods_methodid_delete.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_paymentmethods_methodid_delete.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_paymentmethods_methodid_delete.repo.ts",
+      "pathParams": [
+        "methodId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/payments/:phone",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/payments/:phone",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_payments_phone_get.route.ts",
+      "handlerFn": "customerPaymentsPhoneGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_payments_phone_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_payments_phone_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_payments_phone_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/payments/:phone",
+      "module": "convenience",
+      "method": "POST",
+      "path": "/customer/payments/:phone",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_payments_phone_post.route.ts",
+      "handlerFn": "customerPaymentsPhonePostHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_payments_phone_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_payments_phone_post.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_payments_phone_post.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "DELETE /customer/payments/:phone/:paymentId",
+      "module": "convenience",
+      "method": "DELETE",
+      "path": "/customer/payments/:phone/:paymentId",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_payments_phone_paymentid_delete.route.ts",
+      "handlerFn": "customerPaymentsPhonePaymentidDeleteHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_payments_phone_paymentid_delete.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_payments_phone_paymentid_delete.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_payments_phone_paymentid_delete.repo.ts",
+      "pathParams": [
+        "phone",
+        "paymentId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/pet-matching",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/customer/pet-matching",
+      "routeFile": "src/endpoints/customer/specialized/routes/customer_petmatching_get.route.ts",
+      "handlerFn": "customerPetmatchingGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/customer_petmatching_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/customer_petmatching_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/customer_petmatching_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/pet-matching/request",
+      "module": "specialized",
+      "method": "POST",
+      "path": "/customer/pet-matching/request",
+      "routeFile": "src/endpoints/customer/specialized/routes/customer_petmatching_request_post.route.ts",
+      "handlerFn": "customerPetmatchingRequestPostHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/customer_petmatching_request_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/customer_petmatching_request_post.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/customer_petmatching_request_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/pet-matching/requests",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/customer/pet-matching/requests",
+      "routeFile": "src/endpoints/customer/specialized/routes/customer_petmatching_requests_get.route.ts",
+      "handlerFn": "customerPetmatchingRequestsGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/customer_petmatching_requests_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/customer_petmatching_requests_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/customer_petmatching_requests_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "PUT /customer/pet-matching/requests/:requestId",
+      "module": "specialized",
+      "method": "PUT",
+      "path": "/customer/pet-matching/requests/:requestId",
+      "routeFile": "src/endpoints/customer/specialized/routes/customer_petmatching_requests_requestid_put.route.ts",
+      "handlerFn": "customerPetmatchingRequestsRequestidPutHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/customer_petmatching_requests_requestid_put.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/customer_petmatching_requests_requestid_put.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/customer_petmatching_requests_requestid_put.repo.ts",
+      "pathParams": [
+        "requestId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/pets",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/pets",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_pets_get.route.ts",
+      "handlerFn": "customerPetsGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_pets_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_pets_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_pets_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/pets",
+      "module": "enhanced",
+      "method": "POST",
+      "path": "/customer/pets",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_pets_post.route.ts",
+      "handlerFn": "customerPetsPostHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_pets_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_pets_post.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_pets_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/pets/:phone",
+      "module": "enhanced",
+      "method": "GET",
+      "path": "/customer/pets/:phone",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_pets_phone_get.route.ts",
+      "handlerFn": "customerPetsPhoneGetHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_pets_phone_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_pets_phone_get.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_pets_phone_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/pricing/quote",
+      "module": "discovery",
+      "method": "POST",
+      "path": "/customer/pricing/quote",
+      "routeFile": "src/endpoints/customer/discovery/routes/pricing-quote.route.ts",
+      "handlerFn": "pricingQuoteHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/pricing-quote.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/pricing-quote.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/pricing-quote.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/profile",
+      "module": "profile",
+      "method": "GET",
+      "path": "/customer/profile",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_profile_get.route.ts",
+      "handlerFn": "customerProfileGetHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_profile_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_profile_get.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_profile_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/profile",
+      "module": "profile",
+      "method": "POST",
+      "path": "/customer/profile",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_profile_post.route.ts",
+      "handlerFn": "customerProfilePostHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_profile_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_profile_post.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_profile_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/profile/:identifier",
+      "module": "profile",
+      "method": "GET",
+      "path": "/customer/profile/:identifier",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_profile_identifier_get.route.ts",
+      "handlerFn": "customerProfileIdentifierGetHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_profile_identifier_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_profile_identifier_get.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_profile_identifier_get.repo.ts",
+      "pathParams": [
+        "identifier"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "PUT /customer/profile/:identifier",
+      "module": "profile",
+      "method": "PUT",
+      "path": "/customer/profile/:identifier",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_profile_identifier_put.route.ts",
+      "handlerFn": "customerProfileIdentifierPutHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_profile_identifier_put.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_profile_identifier_put.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_profile_identifier_put.repo.ts",
+      "pathParams": [
+        "identifier"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/profile/password-status",
+      "module": "profile",
+      "method": "GET",
+      "path": "/customer/profile/password-status",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_profile_passwordstatus_get.route.ts",
+      "handlerFn": "handleCustomerAccountStatus",
+      "handlerFile": null,
+      "serviceFile": null,
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/profile/set-password",
+      "module": "profile",
+      "method": "POST",
+      "path": "/customer/profile/set-password",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_profile_setpassword_post.route.ts",
+      "handlerFn": "handleCustomerSetPassword",
+      "handlerFile": null,
+      "serviceFile": null,
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/profile/unified/:identifier",
+      "module": "profile",
+      "method": "GET",
+      "path": "/customer/profile/unified/:identifier",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_profile_unified_identifier_get.route.ts",
+      "handlerFn": "customerProfileUnifiedIdentifierGetHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_profile_unified_identifier_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_profile_unified_identifier_get.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_profile_unified_identifier_get.repo.ts",
+      "pathParams": [
+        "identifier"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/questionnaire/planning",
+      "module": "enhanced",
+      "method": "POST",
+      "path": "/customer/questionnaire/planning",
+      "routeFile": "src/endpoints/customer/enhanced/routes/customer_questionnaire_planning_post.route.ts",
+      "handlerFn": "customerQuestionnairePlanningPostHandler",
+      "handlerFile": "src/endpoints/customer/enhanced/handlers/customer_questionnaire_planning_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/enhanced/services/customer_questionnaire_planning_post.service.ts",
+      "repoFile": "src/endpoints/customer/enhanced/repos/customer_questionnaire_planning_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/radar/providers",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/radar/providers",
+      "routeFile": "src/endpoints/customer/discovery/routes/radar-providers.route.ts",
+      "handlerFn": "radarProvidersHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/radar-providers.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/radar-providers.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/radar-providers.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/saved/:phone",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/saved/:phone",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_saved_phone_get.route.ts",
+      "handlerFn": "customerSavedPhoneGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_saved_phone_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_saved_phone_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_saved_phone_get.repo.ts",
+      "pathParams": [
+        "phone"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "DELETE /customer/saved/:phone/items/:itemId",
+      "module": "convenience",
+      "method": "DELETE",
+      "path": "/customer/saved/:phone/items/:itemId",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_saved_phone_items_itemid_delete.route.ts",
+      "handlerFn": "customerSavedPhoneItemsItemidDeleteHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_saved_phone_items_itemid_delete.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_saved_phone_items_itemid_delete.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_saved_phone_items_itemid_delete.repo.ts",
+      "pathParams": [
+        "phone",
+        "itemId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/search-suggestions",
+      "module": "profile",
+      "method": "GET",
+      "path": "/customer/search-suggestions",
+      "routeFile": "src/endpoints/customer/profile/routes/customer_searchsuggestions_get.route.ts",
+      "handlerFn": "customerSearchsuggestionsGetHandler",
+      "handlerFile": "src/endpoints/customer/profile/handlers/customer_searchsuggestions_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/profile/services/customer_searchsuggestions_get.service.ts",
+      "repoFile": "src/endpoints/customer/profile/repos/customer_searchsuggestions_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/services",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/services",
+      "routeFile": "src/endpoints/customer/discovery/routes/customer-services.route.ts",
+      "handlerFn": "customerServicesHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/customer-services.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/customer-services.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/customer-services.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/services/by-style",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/services/by-style",
+      "routeFile": "src/endpoints/customer/discovery/routes/services-by-style.route.ts",
+      "handlerFn": "servicesByStyleHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/services-by-style.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/services-by-style.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/services-by-style.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/services/platform",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/services/platform",
+      "routeFile": "src/endpoints/customer/discovery/routes/customer-services-platform.route.ts",
+      "handlerFn": "customerServicesPlatformHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/customer-services-platform.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/customer-services-platform.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/customer-services-platform.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /customer/set-password",
+      "module": "password",
+      "method": "POST",
+      "path": "/customer/set-password",
+      "routeFile": "src/endpoints/customer/password/routes/set-password.route.ts",
+      "handlerFn": "handleCustomerSetPassword",
+      "handlerFile": "src/endpoints/customer/password/handlers/set-password.handler.ts",
+      "serviceFile": "src/endpoints/customer/password/services/set-password.service.ts",
+      "repoFile": "src/endpoints/customer/password/repos/set-password.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/vendor/:vendorId",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/vendor/:vendorId",
+      "routeFile": "src/endpoints/customer/discovery/routes/customer-vendor-profile.route.ts",
+      "handlerFn": "customerVendorProfileHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/customer-vendor-profile.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/customer-vendor-profile.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": true
+    },
+    {
+      "id": "GET /customer/vendor/:vendorId/available-slots",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/vendor/:vendorId/available-slots",
+      "routeFile": "src/endpoints/customer/discovery/routes/vendor-available-slots.route.ts",
+      "handlerFn": "vendorAvailableSlotsHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/vendor-available-slots.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/vendor-available-slots.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/vendor-available-slots.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": true
+    },
+    {
+      "id": "GET /customer/vendor/:vendorId/services",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/vendor/:vendorId/services",
+      "routeFile": "src/endpoints/customer/discovery/routes/vendor-services.route.ts",
+      "handlerFn": "vendorServicesHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/vendor-services.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/vendor-services.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/vendor-services.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": true
+    },
+    {
+      "id": "GET /customer/vendors/discover-by-problem",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/vendors/discover-by-problem",
+      "routeFile": "src/endpoints/customer/discovery/routes/discover-by-problem.route.ts",
+      "handlerFn": "discoverByProblemHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/discover-by-problem.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/discover-by-problem.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/discover-by-problem.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/vendors/search",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/customer/vendors/search",
+      "routeFile": "src/endpoints/customer/discovery/routes/vendors-search.route.ts",
+      "handlerFn": "vendorsSearchHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/vendors-search.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/vendors-search.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/vendors-search.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/wallet",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/wallet",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_wallet_get.route.ts",
+      "handlerFn": "customerWalletGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_wallet_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_wallet_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_wallet_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /customer/wallet/transactions",
+      "module": "convenience",
+      "method": "GET",
+      "path": "/customer/wallet/transactions",
+      "routeFile": "src/endpoints/customer/convenience/routes/customer_wallet_transactions_get.route.ts",
+      "handlerFn": "customerWalletTransactionsGetHandler",
+      "handlerFile": "src/endpoints/customer/convenience/handlers/customer_wallet_transactions_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/convenience/services/customer_wallet_transactions_get.service.ts",
+      "repoFile": "src/endpoints/customer/convenience/repos/customer_wallet_transactions_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": true,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /holidays/build-package",
+      "module": "specialized",
+      "method": "POST",
+      "path": "/holidays/build-package",
+      "routeFile": "src/endpoints/customer/specialized/routes/holidays_buildpackage_post.route.ts",
+      "handlerFn": "holidaysBuildpackagePostHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/holidays_buildpackage_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/holidays_buildpackage_post.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/holidays_buildpackage_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /marketing/announcements",
+      "module": "content",
+      "method": "GET",
+      "path": "/marketing/announcements",
+      "routeFile": "src/endpoints/customer/content/routes/marketing_announcements_get.route.ts",
+      "handlerFn": "marketingAnnouncementsGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/marketing_announcements_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/marketing_announcements_get.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /marketing/articles",
+      "module": "content",
+      "method": "GET",
+      "path": "/marketing/articles",
+      "routeFile": "src/endpoints/customer/content/routes/marketing_articles_get.route.ts",
+      "handlerFn": "marketingArticlesGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/marketing_articles_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/marketing_articles_get.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /marketing/banners",
+      "module": "content",
+      "method": "GET",
+      "path": "/marketing/banners",
+      "routeFile": "src/endpoints/customer/content/routes/marketing_banners_get.route.ts",
+      "handlerFn": "marketingBannersGetHandler",
+      "handlerFile": "src/endpoints/customer/content/handlers/marketing_banners_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/content/services/marketing_banners_get.service.ts",
+      "repoFile": null,
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /public/vendor/:vendorId/profile",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/public/vendor/:vendorId/profile",
+      "routeFile": "src/endpoints/customer/discovery/routes/public-vendor-profile.route.ts",
+      "handlerFn": "publicVendorProfileHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/public-vendor-profile.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/public-vendor-profile.service.ts",
+      "repoFile": null,
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": true
+    },
+    {
+      "id": "POST /relocation/book",
+      "module": "specialized",
+      "method": "POST",
+      "path": "/relocation/book",
+      "routeFile": "src/endpoints/customer/specialized/routes/relocation_book_post.route.ts",
+      "handlerFn": "relocationBookPostHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/relocation_book_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/relocation_book_post.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/relocation_book_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "POST /relocation/quote",
+      "module": "specialized",
+      "method": "POST",
+      "path": "/relocation/quote",
+      "routeFile": "src/endpoints/customer/specialized/routes/relocation_quote_post.route.ts",
+      "handlerFn": "relocationQuotePostHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/relocation_quote_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/relocation_quote_post.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/relocation_quote_post.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /relocation/services",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/relocation/services",
+      "routeFile": "src/endpoints/customer/specialized/routes/relocation_services_get.route.ts",
+      "handlerFn": "relocationServicesGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/relocation_services_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/relocation_services_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/relocation_services_get.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    },
+    {
+      "id": "GET /vendor/:vendorId/adoption-applications",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/vendor/:vendorId/adoption-applications",
+      "routeFile": "src/endpoints/customer/specialized/routes/vendor_vendorid_adoptionapplications_get.route.ts",
+      "handlerFn": "vendorVendoridAdoptionapplicationsGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/vendor_vendorid_adoptionapplications_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/vendor_vendorid_adoptionapplications_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/vendor_vendorid_adoptionapplications_get.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": true
+    },
+    {
+      "id": "PUT /vendor/:vendorId/adoption-applications/:applicationId",
+      "module": "specialized",
+      "method": "PUT",
+      "path": "/vendor/:vendorId/adoption-applications/:applicationId",
+      "routeFile": "src/endpoints/customer/specialized/routes/vendor_vendorid_adoptionapplications_applicationid_put.route.ts",
+      "handlerFn": "vendorVendoridAdoptionapplicationsApplicationidPutHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/vendor_vendorid_adoptionapplications_applicationid_put.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/vendor_vendorid_adoptionapplications_applicationid_put.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/vendor_vendorid_adoptionapplications_applicationid_put.repo.ts",
+      "pathParams": [
+        "vendorId",
+        "applicationId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": true
+    },
+    {
+      "id": "GET /vendor/:vendorId/adoption/pets",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/vendor/:vendorId/adoption/pets",
+      "routeFile": "src/endpoints/customer/specialized/routes/vendor_vendorid_adoption_pets_get.route.ts",
+      "handlerFn": "vendorVendoridAdoptionPetsGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/vendor_vendorid_adoption_pets_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/vendor_vendorid_adoption_pets_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/vendor_vendorid_adoption_pets_get.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": true
+    },
+    {
+      "id": "POST /vendor/:vendorId/adoption/pets",
+      "module": "specialized",
+      "method": "POST",
+      "path": "/vendor/:vendorId/adoption/pets",
+      "routeFile": "src/endpoints/customer/specialized/routes/vendor_vendorid_adoption_pets_post.route.ts",
+      "handlerFn": "vendorVendoridAdoptionPetsPostHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/vendor_vendorid_adoption_pets_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/vendor_vendorid_adoption_pets_post.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/vendor_vendorid_adoption_pets_post.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": true
+    },
+    {
+      "id": "PUT /vendor/:vendorId/adoption/pets/:petId",
+      "module": "specialized",
+      "method": "PUT",
+      "path": "/vendor/:vendorId/adoption/pets/:petId",
+      "routeFile": "src/endpoints/customer/specialized/routes/vendor_vendorid_adoption_pets_petid_put.route.ts",
+      "handlerFn": "vendorVendoridAdoptionPetsPetidPutHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/vendor_vendorid_adoption_pets_petid_put.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/vendor_vendorid_adoption_pets_petid_put.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/vendor_vendorid_adoption_pets_petid_put.repo.ts",
+      "pathParams": [
+        "vendorId",
+        "petId"
+      ],
+      "needsAuth": true,
+      "isVendorPath": true
+    },
+    {
+      "id": "GET /vendor/:vendorId/facility",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/vendor/:vendorId/facility",
+      "routeFile": "src/endpoints/customer/discovery/routes/vendor-facility-get.route.ts",
+      "handlerFn": "vendorFacilityGetHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/vendor-facility-get.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/vendor-facility-get.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/vendor-facility-get.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": true
+    },
+    {
+      "id": "GET /vendor/:vendorId/holiday-custom-requests",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/vendor/:vendorId/holiday-custom-requests",
+      "routeFile": "src/endpoints/customer/specialized/routes/vendor_vendorid_holidaycustomrequests_get.route.ts",
+      "handlerFn": "vendorVendoridHolidaycustomrequestsGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/vendor_vendorid_holidaycustomrequests_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/vendor_vendorid_holidaycustomrequests_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/vendor_vendorid_holidaycustomrequests_get.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": true
+    },
+    {
+      "id": "GET /vendor/:vendorId/mating-requests",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/vendor/:vendorId/mating-requests",
+      "routeFile": "src/endpoints/customer/specialized/routes/vendor_vendorid_matingrequests_get.route.ts",
+      "handlerFn": "vendorVendoridMatingrequestsGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/vendor_vendorid_matingrequests_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/vendor_vendorid_matingrequests_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/vendor_vendorid_matingrequests_get.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": true
+    },
+    {
+      "id": "GET /vendor/:vendorId/relocation-quotes",
+      "module": "specialized",
+      "method": "GET",
+      "path": "/vendor/:vendorId/relocation-quotes",
+      "routeFile": "src/endpoints/customer/specialized/routes/vendor_vendorid_relocationquotes_get.route.ts",
+      "handlerFn": "vendorVendoridRelocationquotesGetHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/vendor_vendorid_relocationquotes_get.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/vendor_vendorid_relocationquotes_get.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/vendor_vendorid_relocationquotes_get.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": true
+    },
+    {
+      "id": "POST /vendor/:vendorId/relocation-quotes/:quoteId/respond",
+      "module": "specialized",
+      "method": "POST",
+      "path": "/vendor/:vendorId/relocation-quotes/:quoteId/respond",
+      "routeFile": "src/endpoints/customer/specialized/routes/vendor_vendorid_relocationquotes_quoteid_respond_post.route.ts",
+      "handlerFn": "vendorVendoridRelocationquotesQuoteidRespondPostHandler",
+      "handlerFile": "src/endpoints/customer/specialized/handlers/vendor_vendorid_relocationquotes_quoteid_respond_post.handler.ts",
+      "serviceFile": "src/endpoints/customer/specialized/services/vendor_vendorid_relocationquotes_quoteid_respond_post.service.ts",
+      "repoFile": "src/endpoints/customer/specialized/repos/vendor_vendorid_relocationquotes_quoteid_respond_post.repo.ts",
+      "pathParams": [
+        "vendorId",
+        "quoteId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": true
+    },
+    {
+      "id": "PUT /vendor/facility/:vendorId",
+      "module": "discovery",
+      "method": "PUT",
+      "path": "/vendor/facility/:vendorId",
+      "routeFile": "src/endpoints/customer/discovery/routes/vendor-facility-put.route.ts",
+      "handlerFn": "vendorFacilityPutHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/vendor-facility-put.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/vendor-facility-put.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/vendor-facility-put.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": true
+    },
+    {
+      "id": "POST /vendor/facility/:vendorId/upload-photos",
+      "module": "discovery",
+      "method": "POST",
+      "path": "/vendor/facility/:vendorId/upload-photos",
+      "routeFile": "src/endpoints/customer/discovery/routes/vendor-facility-upload.route.ts",
+      "handlerFn": "vendorFacilityUploadHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/vendor-facility-upload.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/vendor-facility-upload.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/vendor-facility-upload.repo.ts",
+      "pathParams": [
+        "vendorId"
+      ],
+      "needsAuth": false,
+      "isVendorPath": true
+    },
+    {
+      "id": "GET /vendors",
+      "module": "discovery",
+      "method": "GET",
+      "path": "/vendors",
+      "routeFile": "src/endpoints/customer/discovery/routes/vendors-list.route.ts",
+      "handlerFn": "vendorsListHandler",
+      "handlerFile": "src/endpoints/customer/discovery/handlers/vendors-list.handler.ts",
+      "serviceFile": "src/endpoints/customer/discovery/services/vendors-list.service.ts",
+      "repoFile": "src/endpoints/customer/discovery/repos/vendors-list.repo.ts",
+      "pathParams": [],
+      "needsAuth": false,
+      "isVendorPath": false
+    }
+  ]
+}
