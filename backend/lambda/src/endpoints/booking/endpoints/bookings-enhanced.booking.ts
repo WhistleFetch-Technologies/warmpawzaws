@@ -1779,12 +1779,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               ? 'VENDOR'
               : 'PLATFORM';
           const settlementVendorId = String(bookingData.vendor_id ?? body.vendorId ?? body.vendor_id ?? '');
-          const clientSubtotalAfterDiscounts =
-            parseFloat(String(fm.subtotalAfterDiscounts ?? fm.subtotal_after_discounts ?? 0)) || 0;
-          const derivedSubtotalAfterDiscounts =
-            clientSubtotalAfterDiscounts > 0
-              ? clientSubtotalAfterDiscounts
-              : Math.max(0, servicePriceForMeta - vendorDisc - platformDisc - couponDisc);
+          // Always derive from service price − resolved discount buckets; never trust a positive
+          // client subtotalAfterDiscounts that can disagree with couponDiscount (charge enforcement).
+          const derivedSubtotalAfterDiscounts = Math.max(
+            0,
+            Math.round((servicePriceForMeta - vendorDisc - platformDisc - couponDisc) * 100) / 100
+          );
           let enrichedMeta = settlementVendorId
             ? await enrichFinancialMetaWithSettlement({
                 vendorId: settlementVendorId,

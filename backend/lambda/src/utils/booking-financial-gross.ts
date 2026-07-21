@@ -96,12 +96,18 @@ export function resolveLockedBookingGrossFromNotes(notes: unknown): LockedBookin
   ) {
     vendorDiscount = 0;
   }
-  // Settlement enrichment historically dropped subtotalAfterDiscounts; rebuild from list − discounts.
+  // Rebuild taxable subtotal from list price − discounts when servicePrice is known.
+  // Do not trust a positive client subtotalAfterDiscounts that disagrees with discounts
+  // (prod COLLABCODE: subtotal 1999 + coupon 1999 + finalPaid 40 → Razorpay 2039).
+  const rebuiltSubtotal =
+    servicePrice > 0
+      ? round2(Math.max(0, servicePrice - vendorDiscount - platformDiscount - couponDiscount))
+      : 0;
   const derivedSubtotal =
-    subtotalAfterDiscounts > 0
-      ? subtotalAfterDiscounts
-      : servicePrice > 0
-        ? round2(Math.max(0, servicePrice - vendorDiscount - platformDiscount - couponDiscount))
+    servicePrice > 0
+      ? rebuiltSubtotal
+      : subtotalAfterDiscounts > 0
+        ? subtotalAfterDiscounts
         : 0;
   const componentGross = round2(
     derivedSubtotal + totalTax + platformFee + convenienceFee + deliveryFee
@@ -120,14 +126,14 @@ export function resolveLockedBookingGrossFromNotes(notes: unknown): LockedBookin
     finalPaid,
   };
 
-  // Require a real service subtotal — do not treat tax/fees-only as a complete all-in gross
-  // just because walletAmount is present (that falsely zeroed walletEligible / skipped debit).
+  // Components must agree with finalPaid (within ₹0.02). Never treat componentGross >> finalPaid
+  // as valid — that raised discounted payables to full list + fees at Razorpay create-order.
+  const componentsAgreeWithFinalPaid =
+    finalPaid <= 0 || Math.abs(componentGross - finalPaid) < 0.02;
   const componentsLookComplete =
-    derivedSubtotal > 0 &&
     componentGross > 0 &&
-    (finalPaid <= 0 ||
-      componentGross + 0.01 >= finalPaid ||
-      Math.abs(componentGross - finalPaid) < 0.02);
+    componentsAgreeWithFinalPaid &&
+    (derivedSubtotal > 0 || (derivedSubtotal <= 0 && totalTax + platformFee + convenienceFee + deliveryFee > 0));
 
   if (componentsLookComplete) {
     return { ...base, grossTotal: componentGross, source: 'components' };
