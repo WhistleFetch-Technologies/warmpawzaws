@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { VET_PROBLEMS } from './ProblemGridSection';
-import { useProblemGridByRole } from './useProblemGridByRole';
+import { useProblemGridByRole, type ProblemGridItem } from './useProblemGridByRole';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { VetProblemGrid } from './vet/VetProblemGrid';
 import { VetServiceCardBackground } from './vet/VetServiceCardBackground';
@@ -17,6 +17,8 @@ import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from './shared/StandardizedFooter';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
+import { DiscoveryVendorFeedSentinel } from './shared/DiscoveryVendorFeedSentinel';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
@@ -106,9 +108,13 @@ function VetHeaderBackground() {
 }
 
 export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
-  const vetProblems = useProblemGridByRole('vet');
+  const { problems: bootstrapProblems } = useCategoryBootstrap({ category: 'vet', roleId: 'vet' });
+  const legacyProblems = useProblemGridByRole('vet');
   const {
     loading: vendorsLoading,
+    loadingMore: vendorsLoadingMore,
+    hasMore: vendorsHasMore,
+    loadMore: loadMoreVendors,
     vendors,
     relaxedFilter,
     selectedVendorId,
@@ -305,10 +311,18 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     });
   }, [allowedServiceStyles, vetClinicBadgeText, styleLaunchByCard]);
 
-  const problemGridItems = useMemo(
-    () => (vetProblems.length > 0 ? vetProblems : VET_PROBLEMS),
-    [vetProblems],
-  );
+  const problemGridItems = useMemo(() => {
+    if (bootstrapProblems.length > 0) {
+      const mapped: ProblemGridItem[] = bootstrapProblems.map((p) => ({
+        id: p.id,
+        name: p.title,
+        icon: <Stethoscope className="w-6 h-6 text-orange-600" />,
+      }));
+      const viewAll = legacyProblems.find((x) => x.id === 'view_all');
+      return viewAll ? [...mapped, viewAll] : mapped;
+    }
+    return legacyProblems.length > 0 ? legacyProblems : VET_PROBLEMS;
+  }, [bootstrapProblems, legacyProblems]);
 
   // ✅ FIX: Validate pet context before allowing navigation
   const handleNavigate = (screen: string, navData?: any) => {
@@ -718,6 +732,12 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 <p className="text-gray-400 text-xs mt-1">Check back soon!</p>
               </Card>
             )}
+            <DiscoveryVendorFeedSentinel
+              hasMore={vendorsHasMore}
+              loading={vendorsLoading}
+              loadingMore={vendorsLoadingMore}
+              onLoadMore={() => void loadMoreVendors()}
+            />
           </div>
         </div>
 

@@ -29,8 +29,10 @@ import { toast } from 'sonner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { DiscoveryVendorFeedSentinel } from './shared/DiscoveryVendorFeedSentinel';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
 import { HUB_DISCOVERY_GROOMING } from '@/lib/service-hub-discovery-config';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import {
@@ -129,8 +131,30 @@ function firstGroomingServiceUuid(services: any[]): string | undefined {
 }
 
 export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: GroomingServiceRouterProps) {
+  const { problems: bootstrapProblems } = useCategoryBootstrap({
+    category: 'grooming',
+    roleId: 'groomer',
+  });
+  const groomingNeedCards = useMemo(() => {
+    if (bootstrapProblems.length === 0) return GROOMING_NEED_CARDS;
+    return bootstrapProblems.map((p, i) => {
+      const fallback = GROOMING_NEED_CARDS[i % GROOMING_NEED_CARDS.length];
+      return {
+        id: p.id,
+        name: p.title,
+        image: fallback.image,
+        Icon: fallback.Icon,
+        iconColor: fallback.iconColor,
+        iconBg: fallback.iconBg,
+      };
+    });
+  }, [bootstrapProblems]);
+
   const {
     loading: vendorsLoading,
+    loadingMore: vendorsLoadingMore,
+    hasMore: vendorsHasMore,
+    loadMore: loadMoreVendors,
     vendors,
     relaxedFilter,
     selectedVendorId,
@@ -454,7 +478,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           <div>
             <h2 className="mb-3 text-lg font-bold text-slate-900">What does your pet need?</h2>
             <div className="grid grid-cols-4 gap-2.5 sm:gap-3">
-              {GROOMING_NEED_CARDS.map((need) => (
+              {groomingNeedCards.map((need) => (
                 <button
                   key={need.id}
                   type="button"
@@ -622,6 +646,12 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   );
                 })
               )}
+              <DiscoveryVendorFeedSentinel
+                hasMore={vendorsHasMore}
+                loading={vendorsLoading}
+                loadingMore={vendorsLoadingMore}
+                onLoadMore={() => void loadMoreVendors()}
+              />
             </div>
           </div>
         </div>

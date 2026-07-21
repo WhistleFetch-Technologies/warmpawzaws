@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, type MouseEvent } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react';
 import {
   Star,
   MapPin,
@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { discoveryVendorList, discoveryNextCursor } from '@/lib/discovery-list';
 import { apiClient } from '@/lib/api-client';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
@@ -39,6 +40,7 @@ import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
+import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
 
 interface ClinicListViewProps {
   phone: string;
@@ -240,6 +242,9 @@ export function ClinicListView({
   vetStyleProfileReturnScreen = 'vet-clinic-list',
 }: ClinicListViewProps) {
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const listCursorRef = useRef<string | null>(null);
   const [clinics, setClinics] = useState<ClinicProvider[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'rating' | 'distance' | 'price'>('all');
@@ -376,9 +381,15 @@ export function ClinicListView({
     return Array.from(vendorMap.values());
   };
 
-  const loadClinics = async () => {
+  const loadClinics = async (append = false) => {
     try {
-      setLoading(true);
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+        listCursorRef.current = null;
+        setHasMore(false);
+      }
       const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
       let locationParams = '';
       if (latitude != null && longitude != null) {
@@ -387,21 +398,48 @@ export function ClinicListView({
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
 
       let mapped: ClinicProvider[] = [];
-      const loadByStyle = async (roleId: string) => {
+      const loadByStyle = async (roleId: string, withCursor = false) => {
         const specParam = specialization
           ? `&specialization=${encodeURIComponent(specialization)}`
           : '';
+        const cursorParam =
+          withCursor && listCursorRef.current
+            ? `&cursor=${encodeURIComponent(listCursorRef.current)}`
+            : '';
         const response = (await apiClient.get(
-          `/customer/services/by-style?style=at_center&category=vet&roleId=${encodeURIComponent(roleId)}${locationParams}${phoneParam}${specParam}`
+          `/customer/services/by-style?style=at_center&category=vet&roleId=${encodeURIComponent(roleId)}&limit=3${cursorParam}${locationParams}${phoneParam}${specParam}`
         )) as any;
-        if (!response.success) return [];
-        const providerData = response.providers || response.vendors || [];
-        return providerData.map((p: any) => mapByStyleProvider(p)).filter(Boolean) as ClinicProvider[];
+        if (!response.success) return { rows: [] as ClinicProvider[], cursor: null as string | null };
+        const providerData = discoveryVendorList(response);
+        const rows = providerData.map((p: any) => mapByStyleProvider(p)).filter(Boolean) as ClinicProvider[];
+        return { rows, cursor: discoveryNextCursor(response) };
       };
+
+      if (append) {
+        const { rows, cursor } = await loadByStyle('veterinarian', true);
+        mapped = rows;
+        listCursorRef.current = cursor;
+        setHasMore(!!cursor);
+        if (mapped.length > 0) {
+          setClinics((prev) =>
+            applyVetHubDiscoveryToProviders<ClinicProvider, ClinicServiceRow>([...prev, ...mapped], {
+              keepProvidersPendingServiceFetch: true,
+            })
+          );
+        }
+        return;
+      }
+
       try {
-        mapped = await loadByStyle('veterinarian');
+        const primary = await loadByStyle('veterinarian');
+        mapped = primary.rows;
+        listCursorRef.current = primary.cursor;
+        setHasMore(!!primary.cursor);
         if (mapped.length === 0) {
-          mapped = await loadByStyle('vet_clinic');
+          const fallback = await loadByStyle('vet_clinic');
+          mapped = fallback.rows;
+          listCursorRef.current = fallback.cursor;
+          setHasMore(!!fallback.cursor);
         }
       } catch (e) {
         console.warn('[CLINIC-LIST] by-style failed', e);
@@ -456,8 +494,14 @@ export function ClinicListView({
       setClinics([]);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
+
+  const loadMoreClinics = useCallback(() => {
+    if (!hasMore || loadingMore || loading) return;
+    void loadClinics(true);
+  }, [hasMore, loadingMore, loading]);
 
   const toggleClinic = (clinicId: string) => {
     setSelectedClinicId((prev) => (prev === clinicId ? null : clinicId));
@@ -919,6 +963,12 @@ export function ClinicListView({
                 </Card>
               );
             })}
+            <DiscoveryVendorFeedSentinel
+              hasMore={hasMore}
+              loading={loading}
+              loadingMore={loadingMore}
+              onLoadMore={loadMoreClinics}
+            />
           </div>
         )}
       </div>

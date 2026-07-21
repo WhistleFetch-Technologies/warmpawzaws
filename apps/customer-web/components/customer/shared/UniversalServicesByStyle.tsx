@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, type MouseEvent } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp, GraduationCap, Scissors } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,8 @@ import {
   serviceTypeCategoryFromRoleId,
 } from '@/lib/vendor-package-purchase-nav';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { discoveryVendorList, discoveryNextCursor } from '@/lib/discovery-list';
+import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
 import {
   getAverageRatingLabel,
   hasRatings,
@@ -223,6 +225,9 @@ export function UniversalServicesByStyle({
   const finalCategory = category || config.category;
   const RoleIcon = config.icon;
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const listCursorRef = useRef<string | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   
@@ -253,15 +258,24 @@ export function UniversalServicesByStyle({
     }
   }, [launchGate.ready, launchGate.blocked, serviceStyle, vendorId, specialization, phone]);
 
-  const loadServicesByStyle = async () => {
+  const loadServicesByStyle = async (append = false) => {
+    if (append && !listCursorRef.current) return;
     const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
     let locationParams = '';
     if (latitude != null && longitude != null) {
       locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
     }
+    const cursorParam = append && listCursorRef.current
+      ? `&cursor=${encodeURIComponent(listCursorRef.current)}`
+      : '';
+    const pageLimit = 3;
 
     try {
-      setLoading(true);
+      if (!append) {
+        listCursorRef.current = null;
+      }
+      if (append) setLoadingMore(true);
+      else setLoading(true);
       
       // ✅ CRITICAL FIX: Different endpoints for different service styles
       // Rule 1: at_center (clinic) uses /customer/services/by-style (returns clinic profiles with services)
@@ -275,18 +289,57 @@ export function UniversalServicesByStyle({
         const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
         
         const response = await apiClient.get(
-          `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`
+          `/customer/services/by-style?style=${serviceStyle}&category=${category}&limit=${pageLimit}${cursorParam}${locationParams}${specializationParam}${phoneParam}`
         ) as any;
 
         if (response.success) {
-          // API returns 'providers' or 'vendors' array with services already included
-          let providerData = response.providers || response.vendors || [];
-          
+          let providerData: Provider[] = discoveryVendorList(response).map((row) => {
+            const p = row as Record<string, unknown>;
+            const providerId = String(p.id ?? p.vendorId ?? p.providerId ?? '');
+            const servicesRaw = Array.isArray(p.services) ? p.services : [];
+            const services = servicesRaw.map((s: Record<string, unknown>) => ({
+              id: String(s.id ?? s.service_id ?? ''),
+              serviceId: String(s.serviceId ?? s.id ?? s.service_id ?? ''),
+              name: String(s.name ?? s.serviceName ?? s.service_name ?? config.roleName),
+              price: Number(s.price ?? s.custom_price ?? 0),
+              originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
+              vendorDiscount: Number(s.vendor_discount ?? s.discount ?? 0) || undefined,
+              duration: Number(s.duration ?? s.custom_duration ?? s.duration_minutes ?? 30),
+              description: s.description as string | undefined,
+              category: (s.category ?? s.categoryName ?? s.category_name) as string | undefined,
+              inActivePackage: Boolean(s.inActivePackage),
+            }));
+            const reviewCount = Number(p.reviewCount ?? p.review_count ?? 0) || 0;
+            const rawRating = p.rating != null ? Number(p.rating) : NaN;
+            return {
+              providerId,
+              providerType: 'vendor' as const,
+              vendorId: String(p.vendorId ?? p.id ?? providerId),
+              name: String(p.businessName ?? p.name ?? config.roleName),
+              phone: p.phone as string | undefined,
+              photo: (p.photo ?? p.photoUrl) as string | undefined,
+              address: (p.address ?? p.location) as string | undefined,
+              city: p.city as string | undefined,
+              role: p.role as string | undefined,
+              experienceYears: p.experienceYears != null ? Number(p.experienceYears) : undefined,
+              qualifications: p.qualifications as string | undefined,
+              rating: reviewCount > 0 && Number.isFinite(rawRating) && rawRating > 0 ? rawRating : 0,
+              reviewCount,
+              distance: (p.distance ?? p.distanceKm ?? null) as number | null | undefined,
+              isVerified: Boolean(p.isVerified),
+              isIndividualProvider: Boolean(p.isIndividualProvider),
+              nextAvailableSlot: resolveNextAvailableLabel(p),
+              specialization: (p.specialization ?? p.specialisation) as string | undefined,
+              amenities: Array.isArray(p.amenities) ? (p.amenities as string[]) : undefined,
+              services,
+            };
+          });
+
           // Filter to specific vendor if vendorId is provided (vendor profile mode)
           if (vendorId) {
             const want = String(vendorId).trim();
-            providerData = providerData.filter((p: any) =>
-              rowMatchesEmbedVendorId(p as Record<string, unknown>, want)
+            providerData = providerData.filter((p) =>
+              rowMatchesEmbedVendorId(p as unknown as Record<string, unknown>, want)
             );
             if (providerData.length === 0) {
               const fb = await fetchEmbeddedVendorAsProvider({
@@ -297,21 +350,10 @@ export function UniversalServicesByStyle({
                 roleName: config.roleName,
               });
               if (fb) {
-                providerData = [fb as any];
+                providerData = [fb];
               }
             }
           }
-
-          // ✅ FIX: Normalize nextAvailableSlot to always be a string
-          // Handle all possible field names: nextAvailable (API), nextAvailableSlot, nextAvailability
-          providerData = providerData.map((p: any) => {
-            if (!p.photo && p.photoUrl) {
-              p.photo = p.photoUrl;
-            }
-            p.services = Array.isArray(p.services) ? p.services : [];
-            p.nextAvailableSlot = resolveNextAvailableLabel(p);
-            return p;
-          });
 
           providerData = filterHubDiscoveryRowsByRadius(providerData, {
             serviceStyle: 'at_center',
@@ -319,11 +361,16 @@ export function UniversalServicesByStyle({
             longitude,
           });
           
-          setProviders(providerData);
+          setProviders((prev) => (append ? [...prev, ...providerData] : providerData));
+          listCursorRef.current = discoveryNextCursor(response);
+          setHasMore(!!listCursorRef.current && !vendorId);
           console.log(`✅ [${config.roleName}] Loaded ${providerData.length} clinic${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
         } else {
           console.warn(`⚠️ [${config.roleName}] API returned success=false`);
-          setProviders([]);
+          if (!append) {
+            setProviders([]);
+            setHasMore(false);
+          }
         }
       } else {
         // ✅ HOME/TELE FLOWS: Use discover-services endpoint (solo vendors and staff only)
@@ -333,147 +380,75 @@ export function UniversalServicesByStyle({
           ? `&specialization=${encodeURIComponent(specialization)}`
           : '';
         const discoverResponse = await apiClient.get(
-          `/customer/discover-services?category=${finalCategory}&serviceStyle=${serviceStyle}${locationParams}${phoneParam}${specParam}`
+          `/customer/discover-services?category=${finalCategory}&serviceStyle=${serviceStyle}&limit=${pageLimit}${cursorParam}${locationParams}${phoneParam}${specParam}`
         ) as any;
         
-        // The endpoint returns providers array (solo vendors and staff)
-        const providersData = discoverResponse.providers || discoverResponse.vendors || [];
-        
-        // For each provider, fetch their services
-        const providersWithServices = await Promise.all(
-          providersData.map(async (provider: any) => {
-            const providerId = provider.id || provider.vendorId || provider.providerId;
-            const isStaff = provider.isStaffMember || provider.providerType === 'staff';
-            
-            // Fetch services for this provider
-            let services: any[] = [];
-            try {
-              const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-              if (isStaff) {
-                // For staff, services are linked via vendor_services of their vendor
-                const vendorId = provider.vendorId || providerId;
-                const servicesResponse = await apiClient.get(
-                  `/customer/vendor/${vendorId}/services?serviceStyle=${serviceStyle}&category=${finalCategory}${phoneParam}`
-                ) as any;
-                
-                // ✅ FIX: Handle response format correctly - API returns { success: true, services: [...] }
-                // API returns { services, packages }; merge + dedupe so vendor custom packages appear (business + solo).
-                let servicesArray = mergeCustomerVendorServicesPayload(servicesResponse);
-                if (servicesArray.length === 0 && Array.isArray(servicesResponse)) servicesArray = servicesResponse;
+        const providersData = discoveryVendorList(discoverResponse);
 
-                services = servicesArray.map((s: any) => ({
+        const cardProviders: Provider[] = providersData.map((provider: any) => {
+          const providerId = provider.id || provider.vendorId || provider.providerId;
+          const isStaff = provider.isStaffMember || provider.providerType === 'staff';
+          const embedded = Array.isArray(provider.services) ? provider.services : [];
+          const services =
+            embedded.length > 0
+              ? embedded.map((s: any) => ({
                   id: s.id || s.service_id,
-                  serviceId: s.id || s.service_id,
-                  name: s.name || s.service_name || `${config.roleName} Service`,
-                  price: Number(s.price || s.custom_price || 499),
+                  serviceId: s.serviceId || s.id || s.service_id,
+                  name: s.name || s.serviceName || s.service_name || `${config.roleName} Service`,
+                  price: Number(s.price || s.custom_price || provider.priceMin || 499),
                   originalPrice: Number(s.price || s.custom_price || 499),
                   vendorDiscount: s.vendor_discount || s.discount || 0,
                   duration: Number(s.duration || s.custom_duration || s.duration_minutes || 30),
                   description: s.description || s.custom_description,
-                  category: s.category_name || s.category,
+                  category: s.category || s.categoryName || s.category_name,
                   isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
                   inActivePackage: !!s.inActivePackage,
-                }));
-              } else {
-                // Prefer services already on discover-services payload (same filters as listing). Secondary fetch
-                // uses GET /customer/vendor/:id/services — if category rules drift, listing could succeed but this
-                // returned 0 rows and the provider disappeared from "main" at-home.
-                if (Array.isArray(provider.services) && provider.services.length > 0) {
-                  services = provider.services.map((s: any) => ({
-                    id: s.id || s.service_id,
-                    serviceId: s.serviceId || s.id || s.service_id,
-                    name: s.name || s.serviceName || s.service_name || `${config.roleName} Service`,
-                    price: Number(s.price || s.custom_price || 499),
-                    originalPrice: Number(s.price || s.custom_price || 499),
-                    vendorDiscount: s.vendor_discount || s.discount || 0,
-                    duration: Number(s.duration || s.custom_duration || s.duration_minutes || 30),
-                    description: s.description || s.custom_description,
-                    category: s.category || s.categoryName || s.category_name,
-                    isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
-                    inActivePackage: !!s.inActivePackage,
-                  }));
-                } else {
-                const servicesResponse = await apiClient.get(
-                  `/customer/vendor/${providerId}/services?serviceStyle=${serviceStyle}&category=${finalCategory}${phoneParam}`
-                ) as any;
+                }))
+              : provider.priceMin != null
+                ? [
+                    {
+                      id: `${providerId}-from`,
+                      serviceId: `${providerId}-from`,
+                      name: `${config.roleName} services`,
+                      price: Number(provider.priceMin),
+                      duration: 30,
+                    },
+                  ]
+                : [];
 
-                let servicesArray = mergeCustomerVendorServicesPayload(servicesResponse);
-                if (servicesArray.length === 0 && Array.isArray(servicesResponse)) servicesArray = servicesResponse;
+          return {
+            providerId: String(providerId),
+            providerType: isStaff ? 'staff' : 'vendor',
+            vendorId: provider.vendorId || (isStaff ? undefined : String(providerId)),
+            staffId: isStaff ? String(providerId) : undefined,
+            name: provider.businessName || provider.name || config.roleName,
+            phone: provider.phone,
+            photo: provider.photo || provider.photoUrl,
+            address: provider.address || provider.location,
+            city: provider.city,
+            role: provider.role,
+            experienceYears: provider.experienceYears,
+            qualifications: provider.qualifications,
+            rating: (() => {
+              const rc = Number(provider.reviewCount ?? provider.review_count ?? 0) || 0;
+              const raw = provider.rating != null ? Number(provider.rating) : NaN;
+              return rc > 0 && Number.isFinite(raw) && raw > 0 ? raw : 0;
+            })(),
+            reviewCount: Number(provider.reviewCount ?? provider.review_count ?? 0) || 0,
+            distance: provider.distance ?? provider.distanceKm ?? null,
+            isVerified: provider.isVerified,
+            isOnline: provider.isOnline ?? provider.is_online,
+            isIndividualProvider: provider.isIndividualProvider || !provider.vendorId,
+            nextAvailableSlot: resolveNextAvailableLabel(provider),
+            specialization: provider.specialization || provider.specialisation,
+            services,
+          };
+        });
 
-                services = servicesArray.map((s: any) => ({
-                  id: s.id || s.service_id,
-                  serviceId: s.id || s.service_id,
-                  name: s.name || s.service_name || `${config.roleName} Service`,
-                  price: Number(s.price || s.custom_price || 499),
-                  originalPrice: Number(s.price || s.custom_price || 499),
-                  vendorDiscount: s.vendor_discount || s.discount || 0,
-                  duration: Number(s.duration || s.custom_duration || s.duration_minutes || 30),
-                  description: s.description || s.custom_description,
-                  category: s.category_name || s.category,
-                  isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
-                  inActivePackage: !!s.inActivePackage,
-                }));
-                }
-              }
-            } catch (serviceError) {
-              console.warn(`⚠️ [${config.roleName}] Could not fetch services for provider ${providerId}:`, serviceError);
-              console.warn(`⚠️ [${config.roleName}] Provider details:`, { providerId, isStaff, vendorId: provider.vendorId });
-              // ✅ FIX: Return null to filter out providers with no services
-              return null;
-            }
-            
-            // ✅ FIX: If no services found, filter out this provider
-            if (!services || services.length === 0) {
-              console.warn(`⚠️ [${config.roleName}] No services found for provider ${providerId}`);
-              return null;
-            }
-            
-            console.log(`✅ [${config.roleName}] Fetched ${services.length} service(s) for provider ${providerId}`);
-            
-            return {
-              providerId: providerId,
-              providerType: isStaff ? 'staff' : 'vendor',
-              vendorId: provider.vendorId || (isStaff ? null : providerId),
-              staffId: isStaff ? providerId : undefined,
-              name: provider.businessName || provider.name || config.roleName,
-              phone: provider.phone,
-              photo: provider.photo || provider.photoUrl, // ✅ Support both photo and photoUrl
-              address: provider.address || provider.location,
-              city: provider.city,
-              role: provider.role,
-              experienceYears: provider.experienceYears,
-              qualifications: provider.qualifications,
-              rating: (() => {
-                const rc =
-                  Number(provider.reviewCount ?? provider.review_count ?? 0) || 0;
-                const raw =
-                  provider.rating != null ? Number(provider.rating) : NaN;
-                return rc > 0 && Number.isFinite(raw) && raw > 0 ? raw : 0;
-              })(),
-              reviewCount: Number(provider.reviewCount ?? provider.review_count ?? 0) || 0,
-              distance: provider.distance || null,
-              isVerified: provider.isVerified,
-              isOnline: provider.isOnline ?? provider.is_online,
-              isIndividualProvider: provider.isIndividualProvider || !provider.vendorId,
-              nextAvailableSlot: resolveNextAvailableLabel(provider),
-              specialization: provider.specialization || provider.specialisation,
-              services: services
-            };
-          })
-        );
-        
-        // ✅ FIX: Filter out null providers first (from catch blocks), then filter by services
-        const filteredProviders = providersWithServices
-          .filter(p => p !== null && p !== undefined) // Remove null/undefined providers
-          .filter(p => p && p.services && Array.isArray(p.services) && p.services.length > 0); // Only keep providers with services
-        
-        console.log(`✅ [${config.roleName}] Filtered providers: ${filteredProviders.length} out of ${providersWithServices.length} (removed ${providersWithServices.length - filteredProviders.length} with no services)`);
-        
-        // Filter to specific vendor if vendorId is provided (vendor profile mode)
-        let finalProviders = filteredProviders;
+        let finalProviders = cardProviders;
         if (vendorId) {
           const want = String(vendorId).trim();
-          finalProviders = filteredProviders.filter((p) => {
+          finalProviders = cardProviders.filter((p) => {
             const keys = [p.providerId, p.vendorId, p.staffId].filter(Boolean).map((x) => String(x));
             return keys.includes(want);
           });
@@ -498,16 +473,26 @@ export function UniversalServicesByStyle({
           sittingRelaxed: finalCategory === 'sitting',
         });
 
-        setProviders(finalProviders);
+        setProviders((prev) => (append ? [...prev, ...finalProviders] : finalProviders));
+        listCursorRef.current = discoveryNextCursor(discoverResponse);
+        setHasMore(!!listCursorRef.current && !vendorId);
         console.log(`✅ [${config.roleName}] Loaded ${finalProviders.length} solo/staff provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
       }
     } catch (error) {
       console.error(`❌ [${config.roleName}] Error loading services by style:`, error);
-      setProviders([]);
+      if (!append) setProviders([]);
+      setHasMore(false);
+      listCursorRef.current = null;
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
+
+  const loadMoreProviders = useCallback(() => {
+    if (!hasMore || loadingMore || loading) return;
+    void loadServicesByStyle(true);
+  }, [hasMore, loadingMore, loading]);
 
   // Load vendor and facility details for profile view
   const loadVendorProfile = async () => {
@@ -1687,6 +1672,12 @@ export function UniversalServicesByStyle({
               </Card>
             );
             })}
+            <DiscoveryVendorFeedSentinel
+              hasMore={hasMore}
+              loading={loading}
+              loadingMore={loadingMore}
+              onLoadMore={loadMoreProviders}
+            />
           </div>
         )}
       </div>

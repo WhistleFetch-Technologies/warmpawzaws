@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, type MouseEvent } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,10 @@ import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
+import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
+import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
+import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -106,76 +110,127 @@ export function VetServicesByStyle({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
+  const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
   const launchGate = useServiceStyleLaunchGate(phone, category, serviceStyle);
 
-  // Check if we're in profile view mode (vendorId provided and single provider)
-  const isProfileView = vendorId && providers.length === 1;
-  const profileProvider = isProfileView ? providers[0] : null;
+  const feedEnabled = launchGate.ready && !launchGate.blocked;
+  const {
+    rows: feedRows,
+    loading: feedLoading,
+    loadingMore,
+    hasMore,
+    loadMore,
+  } = useByStyleDiscoveryFeed({
+    phone,
+    serviceStyle,
+    category,
+    specialization,
+    enabled: feedEnabled,
+  });
+
+  const mapRowToProvider = useCallback((row: Record<string, unknown>): Provider => {
+    const base = mapDiscoveryRowBaseFields(row);
+    const services = (Array.isArray(base.services) ? base.services : []).map((s: any) => ({
+      id: String(s.id ?? s.serviceId ?? s.service_id ?? ''),
+      serviceId: String(s.serviceId ?? s.id ?? s.service_id ?? ''),
+      name: String(s.name ?? s.serviceName ?? 'Service'),
+      price: Number(s.price ?? 0),
+      originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
+      vendorDiscount: s.vendorDiscount != null ? Number(s.vendorDiscount) : undefined,
+      duration: Number(s.duration ?? 30),
+      description: s.description as string | undefined,
+      category: s.category as string | undefined,
+      isPackage: Boolean(s.isPackage),
+    }));
+    return {
+      providerId: base.providerId,
+      providerType: 'vendor',
+      vendorId: base.vendorId,
+      name: base.name,
+      phone: base.phone,
+      photo: base.photo,
+      address: base.address,
+      city: base.city,
+      role: base.role,
+      experienceYears: base.experienceYears,
+      qualifications: base.qualifications,
+      rating: String(base.rating),
+      reviewCount: base.reviewCount,
+      distance: base.distance != null ? Number(base.distance) : null,
+      isVerified: base.isVerified,
+      isIndividualProvider: base.isIndividualProvider,
+      services,
+    };
+  }, []);
 
   useEffect(() => {
-    if (!launchGate.ready || launchGate.blocked) {
+    if (!feedEnabled) {
       if (launchGate.ready && launchGate.blocked) setLoading(false);
       return;
     }
-    loadServicesByStyle();
+    let mapped = feedRows.map(mapRowToProvider);
     if (vendorId) {
-      loadVendorProfile();
+      const want = String(vendorId);
+      mapped = mapped.filter(
+        (p) => p.providerId === want || p.vendorId === want
+      );
     }
-  }, [launchGate.ready, launchGate.blocked, serviceStyle, vendorId, specialization]);
+    setProviders(filterProvidersServicesForVetHub(mapped));
+    setLoading(feedLoading);
+  }, [feedEnabled, feedRows, feedLoading, vendorId, mapRowToProvider, launchGate.ready, launchGate.blocked]);
 
-  const loadServicesByStyle = async () => {
-    // Get customer location from localStorage for distance-based sorting
-    let locationParams = '';
-    try {
-      const customerLat = localStorage.getItem('customer_latitude');
-      const customerLng = localStorage.getItem('customer_longitude');
-      if (customerLat && customerLng) {
-        locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
-      }
-    } catch (e) {
-      console.log('Could not get customer location');
-    }
-    
-    try {
-      setLoading(true);
-      
-      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-      const specializationParam = specialization
-        ? `&specialization=${encodeURIComponent(specialization)}`
-        : '';
-      const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`
-      ) as any;
+  useEffect(() => {
+    if (!feedEnabled || !vendorId) return;
+    loadVendorProfile();
+  }, [feedEnabled, vendorId, serviceStyle]);
 
-      if (response.success) {
-        // New API returns 'providers' array, fallback to 'vendors' for backward compatibility
-        let providerData = response.providers || response.vendors || [];
-        
-        // Filter to specific vendor if vendorId is provided (vendor profile mode)
-        if (vendorId) {
-          providerData = providerData.filter((p: any) => 
-            (p.providerId || p.vendorId || p.id) === vendorId
-          );
-        }
-        
-        // Set providers from primary endpoint
-          setProviders(
-            filterProvidersServicesForVetHub(
-              providerData.map((p: any) => ({
-                ...p,
-                services: Array.isArray(p.services) ? p.services : [],
-              }))
-            )
-          );
-          console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
-      } else {
-        console.warn(`⚠️ [Vet] Primary endpoint returned success=false or no providers`);
-        setProviders([]);
+  const fetchProviderServices = useCallback(
+    async (providerId: string) => {
+      const p = providers.find((x) => x.providerId === providerId);
+      if (!p || p.services.length > 0) return;
+      const vid = p.vendorId || p.providerId;
+      setFetchingServicesFor(providerId);
+      try {
+        const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+        const res = await apiClient.get(
+          `/customer/vendor/${vid}/services?serviceStyle=${encodeURIComponent(serviceStyle)}&category=${encodeURIComponent(category)}&limit=5${phoneParam}`
+        );
+        const rows = mergeCustomerVendorServicesPayload(
+          res as { services?: unknown[]; packages?: unknown[] }
+        );
+        const services = rows.map((s: any) => ({
+          id: String(s.id ?? s.service_id ?? ''),
+          serviceId: String(s.id ?? s.service_id ?? ''),
+          name: String(s.name ?? s.service_name ?? 'Service'),
+          price: Number(s.price ?? 0),
+          duration: Number(s.duration ?? 30),
+          description: s.description as string | undefined,
+          category: s.category as string | undefined,
+        }));
+        setProviders((prev) =>
+          filterProvidersServicesForVetHub(
+            prev.map((v) => (v.providerId === providerId ? { ...v, services } : v))
+          )
+        );
+      } catch (e) {
+        console.warn('[VetServicesByStyle] vendor services fetch failed', e);
+      } finally {
+        setFetchingServicesFor(null);
       }
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [providers, phone, serviceStyle, category]
+  );
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    const p = providers.find((x) => x.providerId === selectedProvider);
+    if (!p || p.services.length > 0) return;
+    if (fetchingServicesFor === selectedProvider) return;
+    void fetchProviderServices(selectedProvider);
+  }, [selectedProvider, providers, fetchingServicesFor, fetchProviderServices]);
+
+  const isProfileView = vendorId && providers.length === 1;
+  const profileProvider = isProfileView ? providers[0] : null;
 
   // Load vendor and facility details for profile view
   const loadVendorProfile = async () => {
@@ -1301,6 +1356,12 @@ export function VetServicesByStyle({
               </Card>
             );
             })}
+            <DiscoveryVendorFeedSentinel
+              hasMore={hasMore && !vendorId}
+              loading={loading}
+              loadingMore={loadingMore}
+              onLoadMore={() => void loadMore()}
+            />
           </div>
         )}
       </div>

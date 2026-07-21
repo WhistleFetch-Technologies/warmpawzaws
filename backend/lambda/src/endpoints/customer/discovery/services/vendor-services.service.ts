@@ -55,13 +55,10 @@ import {
   resolveImageForContext,
 } from '../../../../services/image';
 import {
-  acceptableStylesForService,
-  columnExists,
-  parseVendorServiceMetadataForCustomer,
-  resolveCustomerIdFromPhone,
-  vendorRowIsOnline,
-  vendorServicePackagePresentationForCustomer,
-} from '../repos/legacy-helpers.repo';
+  paginateServiceCardPage,
+  resolveServiceListPage,
+} from '../../../../utils/discovery-list-pagination';
+import { toServiceCardDTOList } from '../../../../utils/discovery-service-card-dto';
 
 export async function executevendorServices(c: Context) {
 
@@ -413,6 +410,24 @@ export async function executevendorServices(c: Context) {
 
       const packages = combined.filter((s: any) => s.isPackage);
       const services = combined;
+
+      const servicePage = resolveServiceListPage(c.req.query('limit'), c.req.query('cursor'));
+      if (servicePage.cardMode) {
+        const slice = combined.slice(servicePage.offset, servicePage.offset + servicePage.limit);
+        const fetchedExtra = slice.length > servicePage.pageSize;
+        const { page, nextCursor } = paginateServiceCardPage(
+          slice,
+          servicePage.pageSize,
+          servicePage.offset,
+          fetchedExtra
+        );
+        return c.json({
+          success: true,
+          services: toServiceCardDTOList(page as Record<string, unknown>[]),
+          nextCursor,
+          count: page.length,
+        });
+      }
 
       return c.json({
         success: true,
