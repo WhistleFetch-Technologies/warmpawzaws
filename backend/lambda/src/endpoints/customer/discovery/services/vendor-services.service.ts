@@ -59,6 +59,13 @@ import {
   resolveServiceListPage,
 } from '../../../../utils/discovery-list-pagination';
 import { toServiceCardDTOList } from '../../../../utils/discovery-service-card-dto';
+import {
+  acceptableStylesForService,
+  columnExists,
+  parseVendorServiceMetadataForCustomer,
+  vendorRowIsOnline,
+  vendorServicePackagePresentationForCustomer,
+} from '../repos/legacy-helpers.repo';
 
 export async function executevendorServices(c: Context) {
 
