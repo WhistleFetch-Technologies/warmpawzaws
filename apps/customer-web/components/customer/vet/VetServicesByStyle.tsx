@@ -15,7 +15,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
-import { filterServicesForVetHub, filterProvidersServicesForVetHub, resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
+import { filterServicesForVetHub, resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
 import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
@@ -181,6 +181,9 @@ export function VetServicesByStyle({
         services: filterServicesForVetHub(Array.isArray(p.services) ? p.services : []),
       }))
     );
+    // #region agent log
+    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'B',location:'VetServicesByStyle.tsx:feedMap',message:'mapped providers after slim DTO',data:{feedRows:feedRows.length,mapped:mapped.length,vendorId:vendorId??null,serviceStyle},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     setLoading(feedLoading);
   }, [feedEnabled, feedRows, feedLoading, vendorId, mapRowToProvider, launchGate.ready, launchGate.blocked]);
 
@@ -213,10 +216,18 @@ export function VetServicesByStyle({
           category: s.category as string | undefined,
         }));
         setProviders((prev) =>
-          filterProvidersServicesForVetHub(
-            prev.map((v) => (v.providerId === providerId ? { ...v, services } : v))
+          prev.map((v) =>
+            v.providerId === providerId
+              ? {
+                  ...v,
+                  services: filterServicesForVetHub(services),
+                }
+              : v
           )
         );
+        // #region agent log
+        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'C',location:'VetServicesByStyle.tsx:lazyServices',message:'lazy vendor services loaded',data:{providerId,serviceCount:services.length},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
       } catch (e) {
         console.warn('[VetServicesByStyle] vendor services fetch failed', e);
       } finally {

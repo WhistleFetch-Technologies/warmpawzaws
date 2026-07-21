@@ -10,6 +10,7 @@ import { discountCalculationService } from '../../../../lib/services/discount-ca
 import { CATEGORY_ROLES } from '../../constants';
 import { extractS3KeyFromUrl, regeneratePresignedUrl } from '../../../constants/helper';
 import { getCustomerCoordinates, resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
+import { query } from '../../../../database/rds-connection';
 import { seedFinitePackagesMissingSessionsForScope, type SqlClient } from '../../../../utils/package-session-sync';
 import { sqlPackagePurchaseActiveForListing } from '../../../../utils/package-session-eligibility';
 import { DistanceResolver, haversineKm, formatDistanceKm } from '../../../../lib/utils/vendor-customer-distance';
@@ -92,7 +93,11 @@ export async function executevendorServices(c: Context) {
       }
       const resolvedVendorId = vendor.id;
 
-      // Included vendor_service ids (and legacy service_ids) from customer's active packages (for "In your package" label)
+      // #region agent log
+      console.log(JSON.stringify({ sessionId: '2643f5', hypothesisId: 'A', location: 'vendor-services.service.ts:entry', message: 'vendor-services request', data: { vendorId: resolvedVendorId, category, serviceStyle, hasPhone: !!customerPhone } }));
+      // #endregion
+
+      // Included vendor_service ids
       const includedVendorServiceIds = new Set<string>();
       const includedLegacyServiceIds = new Set<string>();
       const vendorServiceIdToPackagePurchaseId = new Map<string, string>();
@@ -104,7 +109,7 @@ export async function executevendorServices(c: Context) {
               customerId,
               vendorId: resolvedVendorId,
             });
-            const purchases = await vendor_servicesRepo.dbVendorServices0(package_id)
+            const purchases = await vendor_servicesRepo.dbVendorServices0(customerId, resolvedVendorId);
             for (const pp of purchases.rows || []) {
               const snapshot = pp.package_snapshot && (typeof pp.package_snapshot === 'string' ? JSON.parse(pp.package_snapshot) : pp.package_snapshot);
               const inc = snapshot?.includedServices;
@@ -117,7 +122,7 @@ export async function executevendorServices(c: Context) {
                   }
                 });
               } else {
-                const vsRow = await vendor_servicesRepo.dbVendorServices1(pp)
+                const vsRow = await vendor_servicesRepo.dbVendorServices1(resolvedVendorId, pp);
                 if (vsRow.rows?.length > 0) {
                   const meta = vsRow.rows[0].metadata;
                   const parsed = typeof meta === 'string' ? (meta ? JSON.parse(meta) : {}) : (meta || {});
@@ -419,6 +424,9 @@ export async function executevendorServices(c: Context) {
       const services = combined;
 
       const servicePage = resolveServiceListPage(c.req.query('limit'), c.req.query('cursor'));
+      // #region agent log
+      console.log(JSON.stringify({ sessionId: '2643f5', hypothesisId: 'C', location: 'vendor-services.service.ts:response', message: 'vendor-services result', data: { vendorId: resolvedVendorId, serviceCount: combined.length, cardMode: servicePage.cardMode } }));
+      // #endregion
       if (servicePage.cardMode) {
         const slice = combined.slice(servicePage.offset, servicePage.offset + servicePage.limit);
         const fetchedExtra = slice.length > servicePage.pageSize;

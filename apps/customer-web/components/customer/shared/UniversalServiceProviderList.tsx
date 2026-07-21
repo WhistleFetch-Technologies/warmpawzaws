@@ -78,6 +78,7 @@ interface Provider {
   priceMin?: number;
   priceMax?: number;
   hasPackages?: boolean;
+  needsServiceFetch?: boolean;
   /** Resolved display labels from vendor profile (GET /customer/services/by-style). */
   specializations?: string[];
 }
@@ -645,17 +646,24 @@ export function UniversalServiceProviderList({
   const processFeedRows = useCallback(() => {
     const cleanedProviders = feedRows.map((p) => {
       const base = mapDiscoveryRowBaseFields(p);
+      const services = (Array.isArray(base.services) ? base.services : []) as Service[];
       return {
         ...base,
         providerType: 'vendor' as const,
-        services: (Array.isArray(base.services) ? base.services : []) as Service[],
+        services,
+        needsServiceFetch: services.length === 0,
       } as Provider;
     });
 
     let finalProviders = cleanedProviders;
     if (isVetHubDiscoveryConfig({ discoverCategory: category, servicesApiCategory: category })) {
-      finalProviders = applyVetHubDiscoveryToProviders(cleanedProviders);
+      finalProviders = applyVetHubDiscoveryToProviders(cleanedProviders, {
+        keepProvidersPendingServiceFetch: true,
+      });
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'B',location:'UniversalServiceProviderList.tsx:processFeedRows',message:'vet hub provider count',data:{feedRows:feedRows.length,final:finalProviders.length,category,serviceStyle},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     setProviders(finalProviders);
   }, [feedRows, category]);
 
