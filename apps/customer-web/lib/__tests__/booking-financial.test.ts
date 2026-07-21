@@ -1,4 +1,8 @@
-import { extractBookingFinancial, resolveBookingListAllInAmount } from '../pricing/booking-financial';
+import {
+  buildBookingCardPriceView,
+  extractBookingFinancial,
+  resolveBookingListAllInAmount,
+} from '../pricing/booking-financial';
 import type { PriceBreakdownLine } from '../pricing/types';
 
 const sumNonFinal = (lines: PriceBreakdownLine[]) =>
@@ -215,5 +219,45 @@ describe('resolveBookingListAllInAmount', () => {
       price: 40,
     });
     expect(allIn).toBe(40);
+  });
+});
+
+describe('buildBookingCardPriceView', () => {
+  const collabMeta =
+    'wp_financial_meta:{"servicePrice":1999,"vendorDiscount":0,"platformDiscount":0,"couponDiscount":1999,"subtotalAfterDiscounts":1999,"totalTax":0,"platformFee":40,"convenienceFee":0,"deliveryFee":0,"walletAmount":0,"finalPaid":40}';
+
+  it('shows 100% service discount with platform fee separate (COLLABCODE)', () => {
+    const fin = extractBookingFinancial({
+      notes: collabMeta,
+      coupon_code: 'COLLABCODE',
+      payment_status: 'paid',
+      paidAmount: 40,
+    });
+    const view = buildBookingCardPriceView(fin, 40);
+
+    expect(view.servicePrice).toBe(1999);
+    expect(view.serviceAfterDiscount).toBe(0);
+    expect(view.serviceDiscountPercent).toBe(100);
+    expect(view.platformFee).toBe(40);
+    expect(view.totalTax).toBe(0);
+    expect(view.totalPayable).toBe(40);
+    expect(view.serviceSavings).toBe(1999);
+  });
+
+  it('includes GST on discounted service for partial coupon (80% off)', () => {
+    const fin = extractBookingFinancial({
+      notes:
+        'wp_financial_meta:{"servicePrice":1000,"couponDiscount":800,"subtotalAfterDiscounts":200,"totalTax":36,"platformFee":40,"convenienceFee":0,"deliveryFee":0,"finalPaid":276}',
+      coupon_code: 'SAVE80',
+      payment_status: 'paid',
+      paidAmount: 276,
+    });
+    const view = buildBookingCardPriceView(fin, 276);
+
+    expect(view.serviceAfterDiscount).toBe(200);
+    expect(view.serviceDiscountPercent).toBe(80);
+    expect(view.totalTax).toBe(36);
+    expect(view.platformFee).toBe(40);
+    expect(view.totalPayable).toBe(276);
   });
 });

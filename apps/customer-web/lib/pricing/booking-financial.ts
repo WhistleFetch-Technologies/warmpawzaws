@@ -266,10 +266,18 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
 
   const promoTotal =
     effectiveVendorDiscount + effectivePlatformDiscount + effectiveCouponDiscount;
-  const subtotalAfterDiscounts =
-    finMeta && finMeta.subtotalAfterDiscounts != null
-      ? num(finMeta.subtotalAfterDiscounts)
-      : Math.max(0, roundMoney(servicePrice - promoTotal));
+  const computedSubtotal = Math.max(0, roundMoney(servicePrice - promoTotal));
+  let subtotalAfterDiscounts = computedSubtotal;
+  if (finMeta) {
+    const fromMeta = rebuildSubtotalFromFinancialMeta(finMeta);
+    if (fromMeta > 0.009 || promoTotal <= 0.009) {
+      subtotalAfterDiscounts = fromMeta;
+    } else if (Math.abs(fromMeta - computedSubtotal) > 0.02) {
+      subtotalAfterDiscounts = computedSubtotal;
+    } else {
+      subtotalAfterDiscounts = fromMeta;
+    }
+  }
 
   const feeFields = finMeta
     ? {
@@ -378,6 +386,71 @@ export function extractBookingFinancial(raw: Record<string, unknown>): BookingFi
     promotionNames,
     couponCode: couponCodeStr,
     lines,
+  };
+}
+
+export type BookingCardPriceView = {
+  servicePrice: number;
+  serviceAfterDiscount: number;
+  serviceDiscountPercent?: number;
+  platformFee: number;
+  convenienceFee: number;
+  deliveryFee: number;
+  totalTax: number;
+  totalPayable: number;
+  serviceSavings: number;
+  hasServiceDiscount: boolean;
+};
+
+/** Service-only discount % and fee/GST lines for My Bookings cards (excludes fees from %). */
+export function buildBookingCardPriceView(
+  fin: BookingFinancialSnapshot,
+  allIn?: number
+): BookingCardPriceView {
+  const servicePrice = fin.servicePrice;
+  const computedAfter = Math.max(0, roundMoney(servicePrice - fin.totalSavings));
+  const serviceAfterDiscount =
+    fin.subtotalAfterDiscounts >= 0 &&
+    fin.totalSavings > 0.009 &&
+    Math.abs(fin.subtotalAfterDiscounts - computedAfter) <= 0.02
+      ? fin.subtotalAfterDiscounts
+      : computedAfter;
+  const hasServiceDiscount = fin.totalSavings > 0.009 && servicePrice > 0.009;
+  const serviceDiscountPercent =
+    hasServiceDiscount && serviceAfterDiscount < servicePrice - 0.009
+      ? Math.round(((servicePrice - serviceAfterDiscount) / servicePrice) * 100)
+      : undefined;
+
+  const totalPayable =
+    allIn != null && allIn > 0.009
+      ? allIn
+      : fin.finalPaid > 0.009
+        ? fin.finalPaid
+        : Math.max(
+            0,
+            roundMoney(
+              serviceAfterDiscount +
+                fin.totalTax +
+                fin.platformFee +
+                fin.convenienceFee +
+                fin.deliveryFee
+            )
+          );
+
+  return {
+    servicePrice,
+    serviceAfterDiscount,
+    serviceDiscountPercent:
+      serviceDiscountPercent != null && serviceDiscountPercent > 0
+        ? serviceDiscountPercent
+        : undefined,
+    platformFee: fin.platformFee,
+    convenienceFee: fin.convenienceFee,
+    deliveryFee: fin.deliveryFee,
+    totalTax: fin.totalTax,
+    totalPayable,
+    serviceSavings: fin.totalSavings,
+    hasServiceDiscount,
   };
 }
 
