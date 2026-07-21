@@ -235,9 +235,13 @@ export function resolveNextAvailableLabel(
     nextAvailable?: unknown;
     nextAvailableSlot?: unknown;
     nextAvailability?: unknown;
+    availabilityText?: unknown;
   },
   options?: SlotGuardOptions
 ): string | undefined {
+  if (typeof source.availabilityText === 'string' && source.availabilityText.trim()) {
+    return source.availabilityText.trim();
+  }
   for (const raw of [source.nextAvailable, source.nextAvailableSlot, source.nextAvailability]) {
     const label = nextAvailableSlotLabel(raw, options);
     if (label) return label;

@@ -5,6 +5,7 @@ import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords'
 import { Star, MapPin, Building2, Home, ChevronRight, Search, Loader2, Shield, SlidersHorizontal, X, Video, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { discoveryVendorList } from '@/lib/discovery-list';
 import { apiClient } from '@/lib/api-client';
 import { getWebCustomerVendorStyleListingNavTarget } from '@/lib/customer-vendor-profile-navigation';
 import {
@@ -135,7 +136,7 @@ export function VendorListingByStyle({
         )) as any;
 
         if (response.success) {
-          let providerData = response.providers || response.vendors || [];
+          let providerData = discoveryVendorList(response);
 
           const vendorMap = new Map<string, Vendor>();
 

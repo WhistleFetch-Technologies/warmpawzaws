@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Search, Filter, Star, MapPin, Clock, ChevronRight,
   Video, Home, Building2, Shield, Award, GraduationCap, X, Sliders,
@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
-import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { toast } from 'sonner';
 import { SponsoredProviderCard, TopProvidersSection } from './SponsoredProviderCard';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
@@ -24,6 +23,9 @@ import {
   applyVetHubDiscoveryToProviders,
   isVetHubDiscoveryConfig,
 } from '@/lib/filter-hub-services';
+import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
+import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
+import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
 
 // ============================================================================
 // TYPES
@@ -76,6 +78,7 @@ interface Provider {
   priceMin?: number;
   priceMax?: number;
   hasPackages?: boolean;
+  needsServiceFetch?: boolean;
   /** Resolved display labels from vendor profile (GET /customer/services/by-style). */
   specializations?: string[];
 }
@@ -623,6 +626,61 @@ export function UniversalServiceProviderList({
     sortBy: 'rating',
   });
 
+  const {
+    rows: feedRows,
+    loading: feedLoading,
+    loadingMore,
+    hasMore,
+    loadMore,
+    reload: reloadProviders,
+    error: feedError,
+  } = useByStyleDiscoveryFeed({
+    phone,
+    serviceStyle,
+    category,
+    roleId,
+    specialization: specializationFilter,
+    problemTitle,
+  });
+
+  const processFeedRows = useCallback(() => {
+    const cleanedProviders = feedRows.map((p) => {
+      const base = mapDiscoveryRowBaseFields(p);
+      const services = (Array.isArray(base.services) ? base.services : []) as Service[];
+      return {
+        ...base,
+        providerType: 'vendor' as const,
+        services,
+        needsServiceFetch: services.length === 0,
+      } as Provider;
+    });
+
+    let finalProviders = cleanedProviders;
+    if (isVetHubDiscoveryConfig({ discoverCategory: category, servicesApiCategory: category })) {
+      finalProviders = applyVetHubDiscoveryToProviders(cleanedProviders, {
+        keepProvidersPendingServiceFetch: true,
+      });
+    }
+    // #region agent log
+    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'B',location:'UniversalServiceProviderList.tsx:processFeedRows',message:'vet hub provider count',data:{feedRows:feedRows.length,final:finalProviders.length,category,serviceStyle},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    setProviders(finalProviders);
+  }, [feedRows, category]);
+
+  useEffect(() => {
+    processFeedRows();
+  }, [processFeedRows]);
+
+  useEffect(() => {
+    setLoading(feedLoading);
+    if (feedError) {
+      setError(feedError);
+      toast.error('Failed to load service providers');
+    } else {
+      setError(null);
+    }
+  }, [feedLoading, feedError]);
+
   // Extract unique specializations from providers (by-style returns `specializations[]` + joined `specialization`)
   const specializations = [
     ...new Set(
@@ -633,11 +691,10 @@ export function UniversalServiceProviderList({
     ),
   ];
 
-  // Load providers on mount
+  // Load sponsored providers on mount
   useEffect(() => {
-    loadProviders();
     loadSponsoredProviders();
-  }, [category, roleId, serviceStyle, specializationFilter, problemTitle, phone]);
+  }, [category, serviceStyle]);
 
   // Load sponsored providers (ads)
   const loadSponsoredProviders = async () => {
@@ -649,79 +706,6 @@ export function UniversalServiceProviderList({
     } catch (error) {
       // Silent fail - sponsored ads are not critical
       console.debug('Error loading sponsored providers:', error);
-    }
-  };
-
-  const loadProviders = async () => {
-    try {
-      setLoading(true);
-
-      const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
-      let locationParams = '';
-      if (latitude != null && longitude != null) {
-        locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
-      }
-
-      // Build specialization filter param
-      const specializationParam = specializationFilter
-        ? `&specialization=${encodeURIComponent(specializationFilter)}`
-        : '';
-      const problemTitleParam = problemTitle
-        ? `&problemTitle=${encodeURIComponent(problemTitle)}`
-        : '';
-
-      // Fetch providers for this service style and category
-      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-      const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}&roleId=${roleId}${locationParams}${specializationParam}${problemTitleParam}${phoneParam}`
-      ) as any;
-
-      if (response.success) {
-        let providerData = response.providers || response.vendors || [];
-
-        // ✅ FIX: Backend now correctly returns business/clinic vendors with at_home services
-        // No need to filter them out - clinics can offer at_home services (e.g., vaccinations at home)
-
-        // Clean provider names to remove trailing IDs and map nextAvailable to nextAvailableSlot
-        const cleanedProviders = providerData.map((p: any) => ({
-          ...p,
-          isOnline: p.isOnline ?? p.is_online,
-          name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Provider'),
-          vendorName: p.vendorName ? cleanProviderName(p.vendorName) : undefined,
-          businessName: p.businessName ? cleanProviderName(p.businessName) : undefined,
-          providerId: p.providerId || p.vendorId || p.id,
-          vendorId: p.vendorId || p.id,
-          // Normalize role fields for UI badges/subtitles
-          role: p.role || p.roleDisplayName || p.roleName,
-          roleDisplayName: p.roleDisplayName || p.roleName || p.role,
-          roleName: p.roleName || p.role,
-          roleId: p.roleId || p.role_id || null,
-          roleIcon: p.roleIcon || null,
-          roleImage: p.roleImage || null,
-          // ✅ FIX: Map nextAvailable object to nextAvailableSlot string for display
-          nextAvailableSlot: resolveNextAvailableLabel(p),
-        }));
-
-        let finalProviders = cleanedProviders;
-        if (isVetHubDiscoveryConfig({ discoverCategory: category, servicesApiCategory: category })) {
-          finalProviders = applyVetHubDiscoveryToProviders(cleanedProviders);
-        }
-
-        // Set providers from primary endpoint
-        setProviders(finalProviders);
-        console.log(`✅ Loaded ${finalProviders.length} providers for ${category}/${serviceStyle}`);
-      } else {
-        console.warn(`⚠️ Primary endpoint returned success=false or no providers for ${category}/${serviceStyle}`);
-        setProviders([]);
-      }
-    } catch (error: any) {
-      console.error('Error loading providers:', error);
-      const errorMessage = error?.message || error?.response?.data?.error || 'Failed to load service providers. Please try again.';
-      setError(errorMessage);
-      toast.error('Failed to load service providers');
-      setProviders([]);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -952,7 +936,7 @@ export function UniversalServiceProviderList({
                 <Button
                   onClick={() => {
                     setError(null);
-                    loadProviders();
+                    reloadProviders();
                   }}
                   className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
                 >
@@ -1070,6 +1054,12 @@ export function UniversalServiceProviderList({
                   onClick={() => onSelectProvider(provider)}
                 />
               ))}
+              <DiscoveryVendorFeedSentinel
+                hasMore={hasMore}
+                loading={loading}
+                loadingMore={loadingMore}
+                onLoadMore={() => void loadMore()}
+              />
             </div>
           )}
         </div>

@@ -15,143 +15,152 @@ import {
   filterVetHubProviderRows,
   isVetHubDiscoveryConfig,
 } from '@/lib/filter-hub-services';
+import { useDiscoveryVendorFeed } from '@/hooks/useDiscoveryVendorFeed';
 
-function extractRows(data: any): any[] {
-  if (!data) return [];
-  if (Array.isArray(data)) return data;
-  if (data?.vendors && Array.isArray(data.vendors)) return data.vendors;
-  if (data?.providers && Array.isArray(data.providers)) return data.providers;
-  if (data?.services && Array.isArray(data.services)) return data.services;
-  if (data?.results && Array.isArray(data.results)) return data.results;
-  if (data?.data && Array.isArray(data.data)) return data.data;
-  return [];
+function rowsToHubVendors(
+  rows: Record<string, unknown>[],
+  config: HubVendorDiscoveryConfig,
+  latitude?: string,
+  longitude?: string
+): { list: BoardingListVendor[]; relaxed: boolean } {
+  const filtered = filterHubDiscoveryRowsByRadius(rows, {
+    serviceStyle: config.serviceStyle,
+    latitude,
+    longitude,
+    sittingRelaxed: config.discoverCategory === 'sitting',
+  });
+  const vetFiltered = isVetHubDiscoveryConfig(config)
+    ? filterVetHubProviderRows(filtered)
+    : filtered;
+  const { list, relaxedFilter: relaxed } = buildBoardingVendorListFromRows(vetFiltered, 'all');
+  const finalList = isVetHubDiscoveryConfig(config)
+    ? list
+        .map((v) => ({ ...v, planRows: filterPlanRowsForVetHub(v.planRows) }))
+        .filter((v) => {
+          if (v.planRows.length > 0) return true;
+          const raw = (v.raw || {}) as Record<string, unknown>;
+          const serviceCount = Number(raw.serviceCount ?? raw.service_count ?? 0);
+          return v.needsServiceFetch && Number.isFinite(serviceCount) && serviceCount > 0;
+        })
+    : list;
+  return { list: finalList, relaxed };
 }
 
 /**
- * Shared hub discovery: same vendor rows + plan expansion as Pet Boarding,
- * for grooming, training, vet, and pet sitting hubs.
+ * Shared hub discovery with cursor-paginated vendor feed.
  */
 export function useHubVendorDiscovery(
   phone: string,
   config: HubVendorDiscoveryConfig,
-  customLoadRows?: () => Promise<any[]>
+  customLoadRows?: () => Promise<Record<string, unknown>[]>
 ) {
   const customLoadRef = useRef(customLoadRows);
   customLoadRef.current = customLoadRows;
 
-  const [loading, setLoading] = useState(true);
   const [vendors, setVendors] = useState<BoardingListVendor[]>([]);
   const [relaxedFilter, setRelaxedFilter] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [fetchingPlansFor, setFetchingPlansFor] = useState<string | null>(null);
+  const coordsRef = useRef<{ latitude?: string; longitude?: string }>({});
+
+  const buildUrl = useCallback(
+    ({ limit, cursor }: { limit: number; cursor?: string }) => {
+      const { latitude, longitude } = coordsRef.current;
+      const locationParams =
+        latitude && longitude
+          ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
+          : '';
+      const phoneKey = config.phoneQueryParam === 'phone' ? 'phone' : 'customerPhone';
+      const phoneParam = phone ? `&${phoneKey}=${encodeURIComponent(phone)}` : '';
+      const specParam = config.specialization
+        ? `&specialization=${encodeURIComponent(config.specialization)}`
+        : '';
+      const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+      let endpoint = `/customer/discover-services?category=${encodeURIComponent(config.discoverCategory)}&serviceStyle=${config.serviceStyle}&limit=${limit}${cursorParam}${locationParams}${phoneParam}${specParam}`;
+      if (config.discoverRoleId) {
+        endpoint += `&roleId=${encodeURIComponent(config.discoverRoleId)}`;
+      }
+      return endpoint;
+    },
+    [config, phone]
+  );
+
+  const {
+    vendors: feedVendors,
+    loading: feedLoading,
+    loadingMore: feedLoadingMore,
+    hasMore: feedHasMore,
+    reload: feedReload,
+    loadMore: feedLoadMore,
+  } = useDiscoveryVendorFeed({
+    buildUrl,
+    pageSize: 3,
+    enabled: !customLoadRows,
+  });
+
+  const processFeedRows = useCallback(
+    (rows: Record<string, unknown>[]) => {
+      const { latitude, longitude } = coordsRef.current;
+      const { list, relaxed } = rowsToHubVendors(rows, config, latitude, longitude);
+      setRelaxedFilter(relaxed);
+      setVendors(list);
+    },
+    [config]
+  );
 
   const loadVendors = useCallback(async () => {
+    if (customLoadRef.current) {
+      try {
+        setLoading(true);
+        const coords = await resolveCustomerDiscoveryCoords(phone);
+        coordsRef.current = coords;
+        const rows = await customLoadRef.current();
+        processFeedRows(rows);
+      } catch (e) {
+        console.error('[useHubVendorDiscovery]', e);
+        setVendors([]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     try {
       setLoading(true);
-      let rows: any[] = [];
-      let latitude: string | undefined;
-      let longitude: string | undefined;
-
-      if (customLoadRef.current) {
-        rows = await customLoadRef.current();
-        const coords = await resolveCustomerDiscoveryCoords(phone);
-        latitude = coords.latitude;
-        longitude = coords.longitude;
-      } else {
-        const coords = await resolveCustomerDiscoveryCoords(phone);
-        latitude = coords.latitude;
-        longitude = coords.longitude;
-        const locationParams =
-          latitude && longitude
-            ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
-            : '';
-
-        const phoneKey = config.phoneQueryParam === 'phone' ? 'phone' : 'customerPhone';
-        const phoneParam = phone ? `&${phoneKey}=${encodeURIComponent(phone)}` : '';
-        const specParam = config.specialization
-          ? `&specialization=${encodeURIComponent(config.specialization)}`
-          : '';
-
-        let endpoint = `/customer/discover-services?category=${encodeURIComponent(config.discoverCategory)}&serviceStyle=${config.serviceStyle}${locationParams}${phoneParam}${specParam}`;
-        if (config.discoverRoleId) {
-          endpoint += `&roleId=${encodeURIComponent(config.discoverRoleId)}`;
-        }
-
-        try {
-          const data = await apiClient.get<any>(endpoint);
-          rows = extractRows(data);
-        } catch (e) {
-          console.warn('[useHubVendorDiscovery] discover-services failed:', e);
-        }
-
-        if (rows.length === 0 && config.fallbackByStyle) {
-          try {
-            let altUrl = `/customer/services/by-style?style=${encodeURIComponent(config.fallbackByStyle.style)}&category=${encodeURIComponent(config.fallbackByStyle.category)}${locationParams}${phoneParam}${specParam}`;
-            if (config.fallbackByStyle.roleId) {
-              altUrl += `&roleId=${encodeURIComponent(config.fallbackByStyle.roleId)}`;
-            }
-            const altRes = await apiClient.get<any>(altUrl);
-            const alt = altRes?.vendors ?? altRes?.providers ?? altRes;
-            if (Array.isArray(alt)) rows = alt;
-            else if (alt?.services && Array.isArray(alt.services)) rows = alt.services;
-          } catch (e) {
-            console.warn('[useHubVendorDiscovery] by-style fallback failed:', e);
-          }
-        }
-
-        if (rows.length === 0 && config.fallbackVendorSearch) {
-          try {
-            const lim = config.fallbackVendorSearch.limit ?? 50;
-            const styleParam = `&serviceStyle=${encodeURIComponent(config.serviceStyle)}`;
-            const vs = await apiClient.get<any>(
-              `/customer/vendors/search?roleId=${encodeURIComponent(config.fallbackVendorSearch.roleId)}&limit=${lim}${styleParam}${locationParams}${phoneParam}`
-            );
-            if (Array.isArray(vs)) rows = vs;
-            else if (vs?.vendors && Array.isArray(vs.vendors)) rows = vs.vendors;
-            else if (vs?.results && Array.isArray(vs.results)) rows = vs.results;
-          } catch (e) {
-            console.warn('[useHubVendorDiscovery] vendors/search failed:', e);
-          }
-        }
-      }
-
-      rows = filterHubDiscoveryRowsByRadius(rows, {
-        serviceStyle: config.serviceStyle,
-        latitude,
-        longitude,
-        sittingRelaxed: config.discoverCategory === 'sitting',
-      });
-
-      if (isVetHubDiscoveryConfig(config)) {
-        rows = filterVetHubProviderRows(rows);
-      }
-
-      const { list, relaxedFilter: relaxed } = buildBoardingVendorListFromRows(rows, 'all');
-      // Slim discover-services cards omit services[] (serviceCount/priceMin only). Keep those
-      // vendors so expand can fetch plans — do not require planRows up front.
-      const finalList = isVetHubDiscoveryConfig(config)
-        ? list
-            .map((v) => ({ ...v, planRows: filterPlanRowsForVetHub(v.planRows) }))
-            .filter((v) => {
-              if (v.planRows.length > 0) return true;
-              const raw = (v.raw || {}) as Record<string, unknown>;
-              const serviceCount = Number(raw.serviceCount ?? raw.service_count ?? 0);
-              return v.needsServiceFetch && Number.isFinite(serviceCount) && serviceCount > 0;
-            })
-        : list;
-      setRelaxedFilter(relaxed);
-      setVendors(finalList);
+      const coords = await resolveCustomerDiscoveryCoords(phone);
+      coordsRef.current = coords;
+      await feedReload();
     } catch (e) {
       console.error('[useHubVendorDiscovery]', e);
       setVendors([]);
     } finally {
       setLoading(false);
     }
-  }, [phone, config]);
+  }, [phone, feedReload, processFeedRows]);
+
+  useEffect(() => {
+    if (!customLoadRows) {
+      processFeedRows(feedVendors);
+    }
+  }, [customLoadRows, feedVendors, processFeedRows]);
 
   useEffect(() => {
     loadVendors();
-  }, [loadVendors]);
+  }, [
+    config.discoverCategory,
+    config.serviceStyle,
+    config.discoverRoleId,
+    config.specialization,
+    phone,
+    customLoadRows,
+    loadVendors,
+  ]);
+
+  const loadMore = useCallback(async () => {
+    if (customLoadRef.current) return;
+    await feedLoadMore();
+  }, [feedLoadMore]);
 
   const fetchVendorPlans = useCallback(
     async (vendorId: string) => {
@@ -195,7 +204,10 @@ export function useHubVendorDiscovery(
   }, []);
 
   return {
-    loading,
+    loading: customLoadRows ? loading : loading || feedLoading,
+    loadingMore: feedLoadingMore,
+    hasMore: customLoadRows ? false : feedHasMore,
+    loadMore,
     vendors,
     relaxedFilter,
     selectedVendorId,

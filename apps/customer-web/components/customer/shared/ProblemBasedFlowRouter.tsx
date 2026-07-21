@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { discoveryVendorList } from '@/lib/discovery-list';
 import { toast } from 'sonner';
 
 import { UniversalServiceProviderList } from './UniversalServiceProviderList';
@@ -454,10 +455,10 @@ export function ProblemBasedFlowRouter({
             // Check if there are providers for this style + specialization
             const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
             const response = await apiClient.get(
-              `/customer/services/by-style?style=${style.style}&category=${category}&roleId=${roleId}&specialization=${encodeURIComponent(problemId)}${locationParams}${phoneParam}`
+              `/customer/services/by-style?style=${style.style}&category=${category}&roleId=${roleId}&specialization=${encodeURIComponent(problemId)}&limit=3${locationParams}${phoneParam}`
             ) as any;
 
-            let providers = response.providers || response.vendors || [];
+            const providers = discoveryVendorList(response);
             
             const isAvailable = providers.length > 0;
             const first = providers[0];

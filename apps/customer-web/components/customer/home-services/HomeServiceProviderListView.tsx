@@ -28,6 +28,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { discoveryVendorList } from '@/lib/discovery-list';
 import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
@@ -197,10 +198,10 @@ export function HomeServiceProviderListView({
       // Primary: /customer/discover-services (solo providers only, at_home, enriched data)
       try {
         const discoverData = await apiClient.get<{ success: boolean; vendors?: any[]; providers?: any[] }>(
-          `/customer/discover-services?category=${category}&serviceStyle=at_home&roleId=${config.roleId || category}${locationParams}`
+          `/customer/discover-services?category=${category}&serviceStyle=at_home&roleId=${config.roleId || category}&limit=3${locationParams}`
         );
 
-        const list = discoverData.providers ?? discoverData.vendors ?? [];
+        const list = discoveryVendorList(discoverData);
         if (discoverData.success && list.length > 0) {
           const enrichedProviders: Provider[] = list.map((p: any) => {
             const canonicalId = pickCustomerVendorAccountId(p as Record<string, unknown>) || String(p.vendorId || p.id || '');

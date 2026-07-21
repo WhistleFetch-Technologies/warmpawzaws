@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { ArrowLeft, Star, MapPin, Video, Home, Building2, ChevronRight, Search, Loader2, Shield, SlidersHorizontal, X, TrendingUp, IndianRupee } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { discoveryVendorList, discoveryNextCursor } from '@/lib/discovery-list';
 import { apiClient } from '@/lib/api-client';
 import { getWebCustomerVendorStyleListingNavTarget } from '@/lib/customer-vendor-profile-navigation';
 import {
@@ -16,6 +17,7 @@ import { toast } from 'sonner';
 import { formatDistanceDisplay, pickProviderDistanceKm } from '@/lib/distance-display';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
+import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
@@ -67,6 +69,9 @@ export function VendorListingByStyle({
   onNavigate 
 }: VendorListingByStyleProps) {
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const listCursorRef = useRef<string | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [sortBy, setSortBy] = useState<SortType>('relevance');
   const [searchQuery, setSearchQuery] = useState('');
@@ -117,15 +122,29 @@ export function VendorListingByStyle({
   }, [phone]);
 
   const loadVendors = useCallback(
-    async (searchFilter?: string) => {
+    async (searchFilter?: string, append = false) => {
+      if (searchFilter) {
+        append = false;
+      }
       try {
-        setLoading(true);
+        if (append) {
+          setLoadingMore(true);
+        } else {
+          setLoading(true);
+          listCursorRef.current = null;
+          setHasMore(false);
+        }
 
         const params = new URLSearchParams({
           style: serviceStyle,
           category: category,
           sortBy: sortBy,
+          limit: '3',
         });
+
+        if (append && listCursorRef.current) {
+          params.set('cursor', listCursorRef.current);
+        }
 
         if (customerLocation) {
           params.set('latitude', customerLocation.lat.toString());
@@ -148,7 +167,9 @@ export function VendorListingByStyle({
         )) as any;
 
         if (response.success) {
-          let providerData = response.providers || response.vendors || [];
+          let providerData = discoveryVendorList(response);
+          listCursorRef.current = discoveryNextCursor(response);
+          setHasMore(!!listCursorRef.current && !searchFilter);
 
           const vendorMap = new Map<string, Vendor>();
 
@@ -204,21 +225,27 @@ export function VendorListingByStyle({
             );
           }
 
-          setVendors(vendorsList);
+          setVendors((prev) => (append ? [...prev, ...vendorsList] : vendorsList));
           console.log(`✅ [VendorListing] Loaded ${vendorsList.length} vendors for ${serviceStyle}`);
         } else {
           console.warn(`⚠️ [VendorListing] Primary endpoint returned success=false or no vendors`);
-          setVendors([]);
+          if (!append) setVendors([]);
         }
       } catch (error) {
         console.error('❌ [VendorListing] Error:', error);
-        setVendors([]);
+        if (!append) setVendors([]);
       } finally {
         setLoading(false);
+        setLoadingMore(false);
       }
     },
     [customerLocation, phone, serviceStyle, distanceRange, minRating, sortBy, category]
   );
+
+  const loadMoreVendors = useCallback(() => {
+    if (!hasMore || loadingMore || loading || searchQuery.trim()) return;
+    void loadVendors(undefined, true);
+  }, [hasMore, loadingMore, loading, searchQuery, loadVendors]);
 
   useEffect(() => {
     if (!styleLaunchReady) return;
@@ -683,6 +710,12 @@ export function VendorListingByStyle({
                 </div>
               </Card>
             ))}
+            <DiscoveryVendorFeedSentinel
+              hasMore={hasMore && !searchQuery.trim()}
+              loading={loading}
+              loadingMore={loadingMore}
+              onLoadMore={loadMoreVendors}
+            />
           </div>
         )}
       </div>

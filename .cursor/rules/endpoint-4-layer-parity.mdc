@@ -9,6 +9,8 @@ Agents MUST follow this for any customer API work. Structural move-only by defau
 
 **Related:** `team-development-bible.mdc`, validator `backend/lambda/scripts/validate-customer-layers.js`, registration in `backend/lambda/src/handler/index.ts`.
 
+**Discovery perf (`feature/abhi-discovery-perf`):** approved behavior change — lean list DTOs, pagination, by-style cards-only default. Still 4-layer; ≤200 LOC per file touched; no N+1 on list; no `providers`+`vendors` twin. Booking/slots out of scope.
+
 ---
 
 ## §0 — Mandatory session gate (before other work)

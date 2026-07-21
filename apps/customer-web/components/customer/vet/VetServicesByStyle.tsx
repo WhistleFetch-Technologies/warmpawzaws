@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, type MouseEvent } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
-import { filterProvidersServicesForVetHub, resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
+import { filterServicesForVetHub, resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
 import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
@@ -29,6 +29,15 @@ import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
+import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
+import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
+import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
+import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
+import {
+  buildVendorServicesPageUrl,
+  vendorServicesNextCursor,
+  vendorServicesRowsFromResponse,
+} from '@/lib/vendor-services-page';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -78,6 +87,10 @@ interface Provider {
     category?: string;
     isPackage?: boolean;
   }[];
+  /** First page of vendor services loaded (card mode). */
+  servicesHydrated?: boolean;
+  servicesNextCursor?: string | null;
+  servicesLoadingMore?: boolean;
 }
 
 export function VetServicesByStyle({ 
@@ -106,76 +119,187 @@ export function VetServicesByStyle({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
+  const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
   const launchGate = useServiceStyleLaunchGate(phone, category, serviceStyle);
 
-  // Check if we're in profile view mode (vendorId provided and single provider)
-  const isProfileView = vendorId && providers.length === 1;
-  const profileProvider = isProfileView ? providers[0] : null;
+  const feedEnabled = launchGate.ready && !launchGate.blocked;
+  const {
+    rows: feedRows,
+    loading: feedLoading,
+    loadingMore,
+    hasMore,
+    loadMore,
+  } = useByStyleDiscoveryFeed({
+    phone,
+    serviceStyle,
+    category,
+    specialization,
+    enabled: feedEnabled,
+  });
+
+  const mapRowToProvider = useCallback((row: Record<string, unknown>): Provider => {
+    const base = mapDiscoveryRowBaseFields(row);
+    const services = (Array.isArray(base.services) ? base.services : []).map((s: any) => ({
+      id: String(s.id ?? s.serviceId ?? s.service_id ?? ''),
+      serviceId: String(s.serviceId ?? s.id ?? s.service_id ?? ''),
+      name: String(s.name ?? s.serviceName ?? 'Service'),
+      price: Number(s.price ?? 0),
+      originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
+      vendorDiscount: s.vendorDiscount != null ? Number(s.vendorDiscount) : undefined,
+      duration: Number(s.duration ?? 30),
+      description: s.description as string | undefined,
+      category: s.category as string | undefined,
+      isPackage: Boolean(s.isPackage),
+    }));
+    return {
+      providerId: base.providerId,
+      providerType: 'vendor',
+      vendorId: base.vendorId,
+      name: base.name,
+      phone: base.phone,
+      photo: base.photo,
+      address: base.address,
+      city: base.city,
+      role: base.role,
+      experienceYears: base.experienceYears,
+      qualifications: base.qualifications,
+      rating: String(base.rating),
+      reviewCount: base.reviewCount,
+      distance: base.distance != null ? Number(base.distance) : null,
+      isVerified: base.isVerified,
+      isIndividualProvider: base.isIndividualProvider,
+      services,
+    };
+  }, []);
 
   useEffect(() => {
-    if (!launchGate.ready || launchGate.blocked) {
+    if (!feedEnabled) {
       if (launchGate.ready && launchGate.blocked) setLoading(false);
       return;
     }
-    loadServicesByStyle();
+    let mapped = feedRows.map(mapRowToProvider);
     if (vendorId) {
-      loadVendorProfile();
+      const want = String(vendorId);
+      mapped = mapped.filter(
+        (p) => p.providerId === want || p.vendorId === want
+      );
     }
-  }, [launchGate.ready, launchGate.blocked, serviceStyle, vendorId, specialization]);
+    setProviders(
+      mapped.map((p) => ({
+        ...p,
+        services: filterServicesForVetHub(Array.isArray(p.services) ? p.services : []),
+      }))
+    );
+    // #region agent log
+    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'B',location:'VetServicesByStyle.tsx:feedMap',message:'mapped providers after slim DTO',data:{feedRows:feedRows.length,mapped:mapped.length,vendorId:vendorId??null,serviceStyle},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    setLoading(feedLoading);
+  }, [feedEnabled, feedRows, feedLoading, vendorId, mapRowToProvider, launchGate.ready, launchGate.blocked]);
 
-  const loadServicesByStyle = async () => {
-    // Get customer location from localStorage for distance-based sorting
-    let locationParams = '';
-    try {
-      const customerLat = localStorage.getItem('customer_latitude');
-      const customerLng = localStorage.getItem('customer_longitude');
-      if (customerLat && customerLng) {
-        locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
+  useEffect(() => {
+    if (!feedEnabled || !vendorId) return;
+    loadVendorProfile();
+  }, [feedEnabled, vendorId, serviceStyle]);
+
+  const fetchProviderServices = useCallback(
+    async (providerId: string, append = false) => {
+      const p = providers.find((x) => x.providerId === providerId);
+      if (!p) return;
+      if (append) {
+        if (!p.servicesNextCursor || p.servicesLoadingMore) return;
+      } else if (p.servicesHydrated) {
+        return;
       }
-    } catch (e) {
-      console.log('Could not get customer location');
-    }
-    
-    try {
-      setLoading(true);
-      
-      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-      const specializationParam = specialization
-        ? `&specialization=${encodeURIComponent(specialization)}`
-        : '';
-      const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`
-      ) as any;
-
-      if (response.success) {
-        // New API returns 'providers' array, fallback to 'vendors' for backward compatibility
-        let providerData = response.providers || response.vendors || [];
-        
-        // Filter to specific vendor if vendorId is provided (vendor profile mode)
-        if (vendorId) {
-          providerData = providerData.filter((p: any) => 
-            (p.providerId || p.vendorId || p.id) === vendorId
-          );
-        }
-        
-        // Set providers from primary endpoint
-          setProviders(
-            filterProvidersServicesForVetHub(
-              providerData.map((p: any) => ({
-                ...p,
-                services: Array.isArray(p.services) ? p.services : [],
-              }))
-            )
-          );
-          console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
+      const vid = p.vendorId || p.providerId;
+      if (append) {
+        setProviders((prev) =>
+          prev.map((v) =>
+            v.providerId === providerId ? { ...v, servicesLoadingMore: true } : v
+          )
+        );
       } else {
-        console.warn(`⚠️ [Vet] Primary endpoint returned success=false or no providers`);
-        setProviders([]);
+        setFetchingServicesFor(providerId);
       }
-    } finally {
-      setLoading(false);
-    }
-  };
+      try {
+        const url = buildVendorServicesPageUrl({
+          vendorId: vid,
+          serviceStyle,
+          category,
+          customerPhone: phone || undefined,
+          cursor: append ? p.servicesNextCursor : undefined,
+        });
+        const res = await apiClient.get(url);
+        const rows = vendorServicesRowsFromResponse(
+          res as { services?: unknown[]; packages?: unknown[] }
+        );
+        const services = mapVendorServicesForVetHub(rows);
+        const nextCursor = vendorServicesNextCursor(res);
+        setProviders((prev) =>
+          prev.map((v) => {
+            if (v.providerId !== providerId) return v;
+            const seen = new Set(
+              append ? v.services.map((s) => s.id || s.serviceId) : []
+            );
+            const merged = append ? [...v.services] : [];
+            for (const s of services) {
+              const key = s.id || s.serviceId;
+              if (key && seen.has(key)) continue;
+              if (key) seen.add(key);
+              merged.push(s);
+            }
+            return {
+              ...v,
+              services: merged,
+              servicesHydrated: true,
+              servicesNextCursor: nextCursor,
+              servicesLoadingMore: false,
+            };
+          })
+        );
+        // #region agent log
+        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'C',location:'VetServicesByStyle.tsx:lazyServices',message:'lazy vendor services loaded',data:{providerId,append,serviceCount:services.length,nextCursor:!!nextCursor},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+      } catch (e) {
+        console.warn('[VetServicesByStyle] vendor services fetch failed', e);
+        setProviders((prev) =>
+          prev.map((v) =>
+            v.providerId === providerId
+              ? { ...v, servicesHydrated: true, servicesLoadingMore: false }
+              : v
+          )
+        );
+      } finally {
+        setFetchingServicesFor(null);
+      }
+    },
+    [providers, phone, serviceStyle, category]
+  );
+
+  const loadMoreProviderServices = useCallback(
+    (providerId: string) => {
+      void fetchProviderServices(providerId, true);
+    },
+    [fetchProviderServices]
+  );
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    const p = providers.find((x) => x.providerId === selectedProvider);
+    if (!p || p.servicesHydrated) return;
+    if (fetchingServicesFor === selectedProvider) return;
+    void fetchProviderServices(selectedProvider);
+  }, [selectedProvider, providers, fetchingServicesFor, fetchProviderServices]);
+
+  useEffect(() => {
+    if (!vendorId || providers.length !== 1) return;
+    const p = providers[0];
+    if (p.servicesHydrated) return;
+    if (fetchingServicesFor === p.providerId) return;
+    void fetchProviderServices(p.providerId);
+  }, [vendorId, providers, fetchingServicesFor, fetchProviderServices]);
+
+  const isProfileView = vendorId && providers.length === 1;
+  const profileProvider = isProfileView ? providers[0] : null;
 
   // Load vendor and facility details for profile view
   const loadVendorProfile = async () => {
@@ -676,7 +800,9 @@ export function VetServicesByStyle({
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                {tab === 'services' ? `Services (${profileProvider.services.length})` : tab}
+                {tab === 'services'
+                  ? `Services (${profileProvider.services.length}${profileProvider.servicesNextCursor ? '+' : ''})`
+                  : tab}
                 {activeTab === tab && (
                   <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#FF8C42]" />
                 )}
@@ -871,6 +997,17 @@ export function VetServicesByStyle({
                         </div>
                       );
                     })}
+                    <DiscoveryVendorFeedSentinel
+                      hasMore={!!profileProvider.servicesNextCursor}
+                      loading={fetchingServicesFor === profileProvider.providerId}
+                      loadingMore={!!profileProvider.servicesLoadingMore}
+                      onLoadMore={() => loadMoreProviderServices(profileProvider.providerId)}
+                    />
+                  </div>
+                ) : fetchingServicesFor === profileProvider.providerId ? (
+                  <div className="text-center py-16">
+                    <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42] mx-auto mb-3" />
+                    <p className="text-gray-600">Loading services…</p>
                   </div>
                 ) : (
                   <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
@@ -1188,8 +1325,13 @@ export function VetServicesByStyle({
                     )}
                     
                     <h4 className="text-sm font-medium text-gray-600 mb-2">
-                      Available Services ({provider.services.length})
+                      Available Services ({provider.services.length}{provider.servicesNextCursor ? '+' : ''})
                     </h4>
+                    {fetchingServicesFor === provider.providerId && provider.services.length === 0 ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="h-8 w-8 animate-spin text-[#FF8C42]" />
+                      </div>
+                    ) : null}
                     {provider.services.map((service) => (
                       <div
                         key={service.id}
@@ -1261,14 +1403,20 @@ export function VetServicesByStyle({
                         </div>
                       </div>
                     ))}
+                    <DiscoveryVendorFeedSentinel
+                      hasMore={!!provider.servicesNextCursor}
+                      loading={fetchingServicesFor === provider.providerId}
+                      loadingMore={!!provider.servicesLoadingMore}
+                      onLoadMore={() => loadMoreProviderServices(provider.providerId)}
+                    />
                   </div>
                 )}
 
                 {/* Quick Book - when not expanded */}
-                {!expanded && provider.services.length > 0 && (
+                {!expanded && (provider.services.length > 0 || provider.servicesHydrated) && (
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      {provider.services.length} service{provider.services.length !== 1 ? 's' : ''} available
+                      {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service{provider.services.length !== 1 ? 's' : ''} available
                       {provider.services[0] && (
                         <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(
                           Math.min(...provider.services.map(s => {
@@ -1301,6 +1449,12 @@ export function VetServicesByStyle({
               </Card>
             );
             })}
+            <DiscoveryVendorFeedSentinel
+              hasMore={hasMore && !vendorId}
+              loading={loading}
+              loadingMore={loadingMore}
+              onLoadMore={() => void loadMore()}
+            />
           </div>
         )}
       </div>
