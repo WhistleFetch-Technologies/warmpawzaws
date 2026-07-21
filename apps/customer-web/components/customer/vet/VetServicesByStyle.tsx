@@ -32,7 +32,12 @@ import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
-import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
+import {
+  buildVendorServicesPageUrl,
+  vendorServicesNextCursor,
+  vendorServicesRowsFromResponse,
+} from '@/lib/vendor-services-page';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -82,6 +87,10 @@ interface Provider {
     category?: string;
     isPackage?: boolean;
   }[];
+  /** First page of vendor services loaded (card mode). */
+  servicesHydrated?: boolean;
+  servicesNextCursor?: string | null;
+  servicesLoadingMore?: boolean;
 }
 
 export function VetServicesByStyle({ 
@@ -193,43 +202,72 @@ export function VetServicesByStyle({
   }, [feedEnabled, vendorId, serviceStyle]);
 
   const fetchProviderServices = useCallback(
-    async (providerId: string) => {
+    async (providerId: string, append = false) => {
       const p = providers.find((x) => x.providerId === providerId);
-      if (!p || p.services.length > 0) return;
+      if (!p) return;
+      if (append) {
+        if (!p.servicesNextCursor || p.servicesLoadingMore) return;
+      } else if (p.servicesHydrated) {
+        return;
+      }
       const vid = p.vendorId || p.providerId;
-      setFetchingServicesFor(providerId);
-      try {
-        const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-        const res = await apiClient.get(
-          `/customer/vendor/${vid}/services?serviceStyle=${encodeURIComponent(serviceStyle)}&category=${encodeURIComponent(category)}&limit=5${phoneParam}`
-        );
-        const rows = mergeCustomerVendorServicesPayload(
-          res as { services?: unknown[]; packages?: unknown[] }
-        );
-        const services = rows.map((s: any) => ({
-          id: String(s.id ?? s.service_id ?? ''),
-          serviceId: String(s.id ?? s.service_id ?? ''),
-          name: String(s.name ?? s.service_name ?? 'Service'),
-          price: Number(s.price ?? 0),
-          duration: Number(s.duration ?? 30),
-          description: s.description as string | undefined,
-          category: s.category as string | undefined,
-        }));
+      if (append) {
         setProviders((prev) =>
           prev.map((v) =>
-            v.providerId === providerId
-              ? {
-                  ...v,
-                  services: filterServicesForVetHub(services),
-                }
-              : v
+            v.providerId === providerId ? { ...v, servicesLoadingMore: true } : v
           )
         );
+      } else {
+        setFetchingServicesFor(providerId);
+      }
+      try {
+        const url = buildVendorServicesPageUrl({
+          vendorId: vid,
+          serviceStyle,
+          category,
+          customerPhone: phone || undefined,
+          cursor: append ? p.servicesNextCursor : undefined,
+        });
+        const res = await apiClient.get(url);
+        const rows = vendorServicesRowsFromResponse(
+          res as { services?: unknown[]; packages?: unknown[] }
+        );
+        const services = mapVendorServicesForVetHub(rows);
+        const nextCursor = vendorServicesNextCursor(res);
+        setProviders((prev) =>
+          prev.map((v) => {
+            if (v.providerId !== providerId) return v;
+            const seen = new Set(
+              append ? v.services.map((s) => s.id || s.serviceId) : []
+            );
+            const merged = append ? [...v.services] : [];
+            for (const s of services) {
+              const key = s.id || s.serviceId;
+              if (key && seen.has(key)) continue;
+              if (key) seen.add(key);
+              merged.push(s);
+            }
+            return {
+              ...v,
+              services: merged,
+              servicesHydrated: true,
+              servicesNextCursor: nextCursor,
+              servicesLoadingMore: false,
+            };
+          })
+        );
         // #region agent log
-        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'C',location:'VetServicesByStyle.tsx:lazyServices',message:'lazy vendor services loaded',data:{providerId,serviceCount:services.length},timestamp:Date.now()})}).catch(()=>{});
+        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'C',location:'VetServicesByStyle.tsx:lazyServices',message:'lazy vendor services loaded',data:{providerId,append,serviceCount:services.length,nextCursor:!!nextCursor},timestamp:Date.now()})}).catch(()=>{});
         // #endregion
       } catch (e) {
         console.warn('[VetServicesByStyle] vendor services fetch failed', e);
+        setProviders((prev) =>
+          prev.map((v) =>
+            v.providerId === providerId
+              ? { ...v, servicesHydrated: true, servicesLoadingMore: false }
+              : v
+          )
+        );
       } finally {
         setFetchingServicesFor(null);
       }
@@ -237,13 +275,28 @@ export function VetServicesByStyle({
     [providers, phone, serviceStyle, category]
   );
 
+  const loadMoreProviderServices = useCallback(
+    (providerId: string) => {
+      void fetchProviderServices(providerId, true);
+    },
+    [fetchProviderServices]
+  );
+
   useEffect(() => {
     if (!selectedProvider) return;
     const p = providers.find((x) => x.providerId === selectedProvider);
-    if (!p || p.services.length > 0) return;
+    if (!p || p.servicesHydrated) return;
     if (fetchingServicesFor === selectedProvider) return;
     void fetchProviderServices(selectedProvider);
   }, [selectedProvider, providers, fetchingServicesFor, fetchProviderServices]);
+
+  useEffect(() => {
+    if (!vendorId || providers.length !== 1) return;
+    const p = providers[0];
+    if (p.servicesHydrated) return;
+    if (fetchingServicesFor === p.providerId) return;
+    void fetchProviderServices(p.providerId);
+  }, [vendorId, providers, fetchingServicesFor, fetchProviderServices]);
 
   const isProfileView = vendorId && providers.length === 1;
   const profileProvider = isProfileView ? providers[0] : null;
@@ -747,7 +800,9 @@ export function VetServicesByStyle({
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                {tab === 'services' ? `Services (${profileProvider.services.length})` : tab}
+                {tab === 'services'
+                  ? `Services (${profileProvider.services.length}${profileProvider.servicesNextCursor ? '+' : ''})`
+                  : tab}
                 {activeTab === tab && (
                   <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#FF8C42]" />
                 )}
@@ -942,6 +997,17 @@ export function VetServicesByStyle({
                         </div>
                       );
                     })}
+                    <DiscoveryVendorFeedSentinel
+                      hasMore={!!profileProvider.servicesNextCursor}
+                      loading={fetchingServicesFor === profileProvider.providerId}
+                      loadingMore={!!profileProvider.servicesLoadingMore}
+                      onLoadMore={() => loadMoreProviderServices(profileProvider.providerId)}
+                    />
+                  </div>
+                ) : fetchingServicesFor === profileProvider.providerId ? (
+                  <div className="text-center py-16">
+                    <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42] mx-auto mb-3" />
+                    <p className="text-gray-600">Loading services…</p>
                   </div>
                 ) : (
                   <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
@@ -1259,8 +1325,13 @@ export function VetServicesByStyle({
                     )}
                     
                     <h4 className="text-sm font-medium text-gray-600 mb-2">
-                      Available Services ({provider.services.length})
+                      Available Services ({provider.services.length}{provider.servicesNextCursor ? '+' : ''})
                     </h4>
+                    {fetchingServicesFor === provider.providerId && provider.services.length === 0 ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="h-8 w-8 animate-spin text-[#FF8C42]" />
+                      </div>
+                    ) : null}
                     {provider.services.map((service) => (
                       <div
                         key={service.id}
@@ -1332,14 +1403,20 @@ export function VetServicesByStyle({
                         </div>
                       </div>
                     ))}
+                    <DiscoveryVendorFeedSentinel
+                      hasMore={!!provider.servicesNextCursor}
+                      loading={fetchingServicesFor === provider.providerId}
+                      loadingMore={!!provider.servicesLoadingMore}
+                      onLoadMore={() => loadMoreProviderServices(provider.providerId)}
+                    />
                   </div>
                 )}
 
                 {/* Quick Book - when not expanded */}
-                {!expanded && provider.services.length > 0 && (
+                {!expanded && (provider.services.length > 0 || provider.servicesHydrated) && (
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      {provider.services.length} service{provider.services.length !== 1 ? 's' : ''} available
+                      {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service{provider.services.length !== 1 ? 's' : ''} available
                       {provider.services[0] && (
                         <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(
                           Math.min(...provider.services.map(s => {
