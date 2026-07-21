@@ -391,32 +391,71 @@ export type BookingListAmountInput = {
   paymentSources?: Array<{ method?: string; amount?: number }>;
 };
 
+function rebuildSubtotalFromFinancialMeta(finMeta: Record<string, unknown>): number {
+  const servicePrice = num(finMeta.servicePrice ?? finMeta.service_price);
+  let vendorDiscount = num(finMeta.vendorDiscount ?? finMeta.vendor_discount);
+  let platformDiscount = num(finMeta.platformDiscount ?? finMeta.platform_discount);
+  const couponDiscount = num(finMeta.couponDiscount ?? finMeta.coupon_discount);
+  if (
+    couponDiscount > 0 &&
+    platformDiscount > 0 &&
+    Math.abs(couponDiscount - platformDiscount) < 0.011
+  ) {
+    platformDiscount = 0;
+  }
+  if (
+    couponDiscount > 0 &&
+    vendorDiscount > 0 &&
+    platformDiscount <= 0 &&
+    Math.abs(couponDiscount - vendorDiscount) < 0.011
+  ) {
+    vendorDiscount = 0;
+  }
+  if (servicePrice > 0) {
+    return roundMoney(
+      Math.max(0, servicePrice - vendorDiscount - platformDiscount - couponDiscount)
+    );
+  }
+  return num(finMeta.subtotalAfterDiscounts ?? finMeta.subtotal_after_discounts);
+}
+
 /**
  * All-in amount for bookings list cards: service after discounts + GST + fees
- * (wallet + Razorpay combined). Prefer write-once wp_financial_meta; never show
- * post-discount service-only as if it were the payable.
+ * (wallet + Razorpay combined). Prefer write-once wp_financial_meta.finalPaid;
+ * never show post-discount service-only as if it were the payable.
  */
 export function resolveBookingListAllInAmount(raw: BookingListAmountInput): number {
   const notes = raw.notes ?? raw.specialInstructions;
   const finMeta = parseFinancialMetaFromNotes(notes);
   if (finMeta) {
-    const subtotal = num(finMeta.subtotalAfterDiscounts ?? finMeta.subtotal_after_discounts);
+    const subtotal = rebuildSubtotalFromFinancialMeta(finMeta);
     const totalTax = num(finMeta.totalTax ?? finMeta.total_tax);
     const platformFee = num(finMeta.platformFee ?? finMeta.platform_fee);
     const convenienceFee = num(finMeta.convenienceFee ?? finMeta.convenience_fee);
     const deliveryFee = num(finMeta.deliveryFee ?? finMeta.delivery_fee);
+    const finalPaid = num(finMeta.finalPaid ?? finMeta.final_paid);
+    const walletAmount = num(finMeta.walletAmount ?? finMeta.wallet_amount);
     const fromComponents = roundMoney(
       subtotal + totalTax + platformFee + convenienceFee + deliveryFee
     );
-    if (fromComponents > 0.009) return fromComponents;
 
-    const finalPaid = num(finMeta.finalPaid ?? finMeta.final_paid);
-    const walletAmount = num(finMeta.walletAmount ?? finMeta.wallet_amount);
+    const componentsAgreeWithFinalPaid =
+      finalPaid <= 0 || Math.abs(fromComponents - finalPaid) < 0.02;
+    if (fromComponents > 0.009 && componentsAgreeWithFinalPaid) {
+      return fromComponents;
+    }
+
     // Legacy cash-as-finalPaid snapshots store gross as finalPaid + wallet.
     if (walletAmount > 0.009 && finalPaid >= 0) {
+      const looksAllIn =
+        finalPaid + 0.01 >= walletAmount + totalTax ||
+        (subtotal > 0 && finalPaid + 0.01 >= fromComponents) ||
+        (totalTax > 0 && Math.abs(finalPaid - totalTax) > 0.05 && finalPaid > walletAmount);
+      if (looksAllIn) return finalPaid;
       return roundMoney(finalPaid + walletAmount);
     }
     if (finalPaid > 0.009) return finalPaid;
+    if (fromComponents > 0.009) return fromComponents;
   }
 
   const sources = Array.isArray(raw.paymentSources) ? raw.paymentSources : [];

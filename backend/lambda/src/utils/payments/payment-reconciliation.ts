@@ -17,6 +17,7 @@
  */
 
 import { query } from '../../database/rds-connection';
+import { SQL_RECONFIRM_PAID_AFTER_HOLD_CANCEL } from '../customer-booking-visibility';
 
 /**
  * Reconcile pending bookings against both local payment records AND Razorpay API.
@@ -58,7 +59,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
         query(
           `UPDATE bookings SET
              payment_status = 'paid',
-             status = CASE WHEN status IN ('pending', 'pending_payment') THEN 'confirmed' ELSE status END,
+             status = ${SQL_RECONFIRM_PAID_AFTER_HOLD_CANCEL},
              updated_at = NOW()
            WHERE id = $1 AND payment_status != 'paid'`,
           [bookingId]
@@ -69,7 +70,12 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
       for (const row of bookingRows) {
         if (paidBookingIds.has(row.id)) {
           row.payment_status = 'paid';
-          if (row.status === 'pending' || row.status === 'pending_payment') {
+          if (
+            row.status === 'pending' ||
+            row.status === 'pending_payment' ||
+            (row.status === 'cancelled' &&
+              String(row.cancellation_reason || '') === 'payment_window_expired')
+          ) {
             row.status = 'confirmed';
           }
         }
@@ -77,6 +83,29 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
     }
   } catch (err: any) {
     console.error('[RECONCILE-T1] Error:', err);
+  }
+
+  // ── Tier 1a: Paid on booking row but hold-expiry left status cancelled ─────
+  const paidButCancelled = bookingRows.filter(
+    (b: any) =>
+      String(b.payment_status || '').toLowerCase() === 'paid' &&
+      String(b.status || '') === 'cancelled' &&
+      String(b.cancellation_reason || '') === 'payment_window_expired'
+  );
+  for (const row of paidButCancelled) {
+    console.log(`[RECONCILE-T1a] Re-confirming paid booking ${row.id} after hold-expiry cancel`);
+    query(
+      `UPDATE bookings SET
+         status = 'confirmed',
+         cancellation_reason = NULL,
+         cancelled_at = NULL,
+         updated_at = NOW()
+       WHERE id = $1::uuid
+         AND payment_status = 'paid'
+         AND status = 'cancelled'`,
+      [row.id]
+    ).catch((e: any) => console.error(`[RECONCILE-T1a] Update failed for ${row.id}:`, e));
+    row.status = 'confirmed';
   }
 
   // ── Tier 1b: Wallet ledger debits cover booking total but booking row never flipped to paid ──
@@ -126,14 +155,19 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
           query(
             `UPDATE bookings SET
                payment_status = 'paid',
-               status = CASE WHEN status IN ('pending_payment', 'pending') THEN 'confirmed' ELSE status END,
+               status = ${SQL_RECONFIRM_PAID_AFTER_HOLD_CANCEL},
                updated_at = NOW()
              WHERE id = $1::uuid
                AND payment_status IS DISTINCT FROM 'paid'`,
             [row.id]
           ).catch((e: any) => console.error(`[RECONCILE-T1b] Update failed for ${row.id}:`, e));
           row.payment_status = 'paid';
-          if (row.status === 'pending_payment' || row.status === 'pending') {
+          if (
+            row.status === 'pending_payment' ||
+            row.status === 'pending' ||
+            (row.status === 'cancelled' &&
+              String(row.cancellation_reason || '') === 'payment_window_expired')
+          ) {
             row.status = 'confirmed';
           }
         }
@@ -160,7 +194,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
        FROM payments
        WHERE booking_id = ANY($1)
          AND razorpay_order_id IS NOT NULL
-         AND payment_status = 'pending'
+         AND LOWER(COALESCE(payment_status, '')) IN ('pending', 'failed')
        ORDER BY created_at DESC`,
       [stillPendingIds]
     );
@@ -231,7 +265,17 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
           query(
             `UPDATE bookings SET
                payment_status = 'paid',
-               status = CASE WHEN status IN ('pending', 'pending_payment') THEN 'confirmed' ELSE status END,
+               status = ${SQL_RECONFIRM_PAID_AFTER_HOLD_CANCEL},
+               cancellation_reason = CASE
+                 WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired'
+                 THEN NULL
+                 ELSE cancellation_reason
+               END,
+               cancelled_at = CASE
+                 WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired'
+                 THEN NULL
+                 ELSE cancelled_at
+               END,
                updated_at = NOW()
              WHERE id = $1 AND payment_status != 'paid'`,
             [payment.booking_id]
@@ -243,8 +287,14 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
           for (const row of bookingRows) {
             if (row.id === payment.booking_id) {
               row.payment_status = 'paid';
-              if (row.status === 'pending' || row.status === 'pending_payment') {
+              if (
+                row.status === 'pending' ||
+                row.status === 'pending_payment' ||
+                (row.status === 'cancelled' &&
+                  String(row.cancellation_reason || '') === 'payment_window_expired')
+              ) {
                 row.status = 'confirmed';
+                row.cancellation_reason = null;
               }
             }
           }

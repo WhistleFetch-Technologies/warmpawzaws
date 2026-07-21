@@ -33,7 +33,7 @@ import {
   bookingSourcesHasGatewayPayment,
 } from '@/lib/payment-display-utils';
 import type { PaymentSource } from '@/lib/payment-display-utils';
-import { resolveBookingListAllInAmount } from '@/lib/pricing/booking-financial';
+import { extractBookingFinancial, resolveBookingListAllInAmount } from '@/lib/pricing/booking-financial';
 import { computeDiscountPercent } from '@/lib/pricing/format';
 import {
   isBookingAwaitingPayment,
@@ -1247,45 +1247,63 @@ export function MyBookings({
                 <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between gap-2">
                   <div>
                     {(() => {
-                      // All-in = post-discount service + GST + fees (wallet + Razorpay).
-                      // Do not show service-after-promo alone — that hides platform fee / GST.
-                      const allIn = resolveBookingListAllInAmount({
-                        specialInstructions: booking.specialInstructions,
-                        paidAmount: booking.paidAmount,
-                        price: booking.price,
+                      const fin = extractBookingFinancial({
+                        notes: booking.specialInstructions,
+                        base_price: booking.basePrice,
+                        total_amount: booking.paidAmount ?? booking.price,
+                        discount_amount: booking.discountAmount,
+                        coupon_code: booking.couponCode,
+                        payment_status: booking.paymentStatus,
                         paymentSources: booking.paymentSources,
                       });
+                      const allIn =
+                        fin.finalPaid > 0.009
+                          ? fin.finalPaid
+                          : resolveBookingListAllInAmount({
+                              specialInstructions: booking.specialInstructions,
+                              paidAmount: booking.paidAmount,
+                              price: booking.price,
+                              paymentSources: booking.paymentSources,
+                            });
                       const discount =
-                        booking.discountAmount != null && booking.discountAmount > 0
-                          ? booking.discountAmount
-                          : 0;
-                      const walletPaid = (booking.paymentSources ?? [])
-                        .filter((s) => s.method === 'wallet')
-                        .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
-                      const cash = booking.paidAmount ?? booking.price;
+                        fin.totalSavings > 0.009
+                          ? fin.totalSavings
+                          : booking.discountAmount != null && booking.discountAmount > 0
+                            ? booking.discountAmount
+                            : 0;
                       const base =
-                        booking.basePrice != null && booking.basePrice > 0
-                          ? booking.basePrice
-                          : Math.round((cash + discount + walletPaid) * 100) / 100;
+                        fin.servicePrice > 0.009
+                          ? fin.servicePrice
+                          : booking.basePrice != null && booking.basePrice > 0
+                            ? booking.basePrice
+                            : Math.round((allIn + discount) * 100) / 100;
                       const hasPromoSavings = discount > 0.009 && base > 0.009;
                       const statedPromoPct = hasPromoSavings
                         ? computeDiscountPercent(base, Math.max(0, base - discount)) ?? 0
                         : 0;
+                      const platformFeeLine =
+                        fin.platformFee > 0.009 && allIn < base - 0.009
+                          ? fin.platformFee
+                          : 0;
 
                       if (hasPromoSavings) {
-                        // When all-in still sits under list price (e.g. 100% off + fee),
-                        // PriceDisplay can strike base → all-in. When fees push all-in above
-                        // base (e.g. 10% off + GST), keep strike + stated % separately.
                         if (allIn < base - 0.009) {
                           return (
                             <div className="space-y-1">
                               <PriceDisplay
                                 originalPrice={base}
                                 currentPrice={allIn}
-                                discountPercent={statedPromoPct || undefined}
+                                discountPercent={
+                                  statedPromoPct >= 99 ? undefined : statedPromoPct || undefined
+                                }
                                 size="sm"
                                 showSavings
                               />
+                              {platformFeeLine > 0.009 && (
+                                <p className="text-[10px] text-slate-500">
+                                  Includes platform fee {formatPriceWithSymbol(platformFeeLine)}
+                                </p>
+                              )}
                               <div className="flex flex-wrap gap-1">
                                 <SavingsBadge variant="save_amount" amount={discount} />
                                 {booking.couponCode ? (

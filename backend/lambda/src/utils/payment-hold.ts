@@ -60,6 +60,7 @@ export async function expirePaymentHolds(options?: {
     `SELECT b.id, b.status, b.vendor_id, b.customer_id
      FROM bookings b
      WHERE b.status = 'pending_payment'
+       AND COALESCE(b.payment_status, '') NOT IN ('paid', 'completed')
        AND (
          (b.payment_hold_expires_at IS NOT NULL AND b.payment_hold_expires_at <= NOW())
          OR (

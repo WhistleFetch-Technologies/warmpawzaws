@@ -3346,8 +3346,13 @@ export function UniversalPaymentPage({
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
               }, undefined, 30000);
-              console.log(`âœ… [RAZORPAY] Payment verified on attempt ${attempt}:`, verifyRes);
-              break; // success â€“ exit retry loop
+            console.log(`✅ [RAZORPAY] Payment verified on attempt ${attempt}:`, verifyRes);
+            if (verifyRes?.success === false) {
+              throw new Error(
+                verifyRes?.error || verifyRes?.message || 'Payment verification failed'
+              );
+            }
+            break; // success – exit retry loop
             } catch (verifyErr: any) {
               console.error(`âŒ [RAZORPAY] verify-payment attempt ${attempt}/${MAX_VERIFY_RETRIES} failed:`, verifyErr?.message);
               if (attempt === MAX_VERIFY_RETRIES) {
@@ -3482,9 +3487,32 @@ export function UniversalPaymentPage({
               verifyRes?.data?.payment_method
           ));
         } catch (err: any) {
-          console.error('âŒ [PAYMENT] Verification failed:', err);
-          const errorMessage = err?.response?.data?.error || err?.message || 'Payment verification failed';
-          toast.error(`${errorMessage}. Please contact support with order ID: ${response.razorpay_order_id}`);
+          console.error('❌ [PAYMENT] Verification failed:', err);
+          const errText =
+            err?.response?.data?.error ||
+            err?.responseData?.error ||
+            err?.message ||
+            'Payment verification failed';
+          const paymentSafe =
+            typeof errText === 'string' &&
+            errText.toLowerCase().includes('payment is safe');
+          if (paymentSafe && currentBookingId) {
+            try {
+              const poll = await apiClient.get<any>(`/customer/bookings/${currentBookingId}`);
+              const row = poll?.booking ?? poll?.data ?? poll;
+              const ps = String(row?.payment_status ?? row?.paymentStatus ?? '').toLowerCase();
+              const st = String(row?.status ?? '').toLowerCase();
+              if (ps === 'paid' || st === 'confirmed') {
+                toast.success('Payment received — your booking is confirmed.');
+                setProcessing(false);
+                onSuccess(currentBookingId, currentOrderId, undefined, getPaymentSuccessMeta());
+                return;
+              }
+            } catch (pollErr) {
+              console.warn('[PAYMENT] post-verify booking poll failed:', pollErr);
+            }
+          }
+          toast.error(`${errText}. Please contact support with order ID: ${response.razorpay_order_id}`);
           setProcessing(false);
         }
       };

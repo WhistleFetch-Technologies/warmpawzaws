@@ -206,4 +206,14 @@ describe('resolveBookingListAllInAmount', () => {
     });
     expect(allIn).toBe(500);
   });
+
+  it('uses finalPaid when subtotalAfterDiscounts is stale (COLLABCODE prod regression)', () => {
+    const allIn = resolveBookingListAllInAmount({
+      specialInstructions:
+        'wp_financial_meta:{"servicePrice":1999,"vendorDiscount":0,"platformDiscount":0,"couponDiscount":1999,"subtotalAfterDiscounts":1999,"totalTax":0,"platformFee":40,"convenienceFee":0,"deliveryFee":0,"walletAmount":0,"finalPaid":40}',
+      paidAmount: 40,
+      price: 40,
+    });
+    expect(allIn).toBe(40);
+  });
 });

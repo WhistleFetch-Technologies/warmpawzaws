@@ -69,6 +69,7 @@ export async function executecustomerBookingsGet(c: Context) {
         LEFT JOIN services s ON b.service_id = s.id
         WHERE b.customer_id = $1
           AND COALESCE(b.is_package_session, false) = false
+          AND COALESCE(b.notes, '') NOT LIKE '%wp_customer_hidden%'
       `;
 
       const params: any[] = [customerId];

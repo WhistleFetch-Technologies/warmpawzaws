@@ -1494,7 +1494,19 @@ class VerifyPaymentHandler extends BaseHandler {
         await client.query(
           `UPDATE bookings SET 
             payment_status = 'paid',
-            status = 'confirmed',
+            status = CASE
+              WHEN status IN ('pending', 'pending_payment') THEN 'confirmed'
+              WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN 'confirmed'
+              ELSE status
+            END,
+            cancellation_reason = CASE
+              WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN NULL
+              ELSE cancellation_reason
+            END,
+            cancelled_at = CASE
+              WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN NULL
+              ELSE cancelled_at
+            END,
             total_amount = COALESCE($2::numeric, total_amount),
             updated_at = NOW()
           WHERE id = $1`,
@@ -1785,7 +1797,19 @@ class VerifyPaymentHandler extends BaseHandler {
             await query(
               `UPDATE bookings SET 
                 payment_status = 'paid',
-                status = CASE WHEN status IN ('pending', 'pending_payment') THEN 'confirmed' ELSE status END,
+                status = CASE
+                  WHEN status IN ('pending', 'pending_payment') THEN 'confirmed'
+                  WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN 'confirmed'
+                  ELSE status
+                END,
+                cancellation_reason = CASE
+                  WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN NULL
+                  ELSE cancellation_reason
+                END,
+                cancelled_at = CASE
+                  WHEN status = 'cancelled' AND COALESCE(cancellation_reason, '') = 'payment_window_expired' THEN NULL
+                  ELSE cancelled_at
+                END,
                 updated_at = NOW()
               WHERE id = $1 AND payment_status != 'paid'`,
               [paymentRows[0].booking_id]
