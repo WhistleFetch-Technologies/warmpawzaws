@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp, GraduationCap, Scissors } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -42,6 +42,7 @@ import {
   vendorServicesNextCursor,
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
+import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
 import {
   getAverageRatingLabel,
   hasRatings,
@@ -157,6 +158,8 @@ export function UniversalServicesByStyle({
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
   const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
+  const providersRef = useRef(providers);
+  providersRef.current = providers;
   const launchGate = useServiceStyleLaunchGate(phone, finalCategory, serviceStyle);
 
   const feedEnabled = launchGate.ready && !launchGate.blocked;
@@ -223,7 +226,7 @@ export function UniversalServicesByStyle({
           p.providerId === want || p.vendorId === want || p.staffId === want
       );
     }
-    setProviders(mapped);
+    setProviders((prev) => mergeDiscoveryProvidersPreservingServices(prev, mapped));
     setLoading(feedLoading);
   }, [
     feedEnabled,
@@ -284,7 +287,7 @@ export function UniversalServicesByStyle({
 
   const fetchProviderServices = useCallback(
     async (providerId: string, append = false) => {
-      const p = providers.find((x) => x.providerId === providerId);
+      const p = providersRef.current.find((x) => x.providerId === providerId);
       if (!p) return;
       if (append) {
         if (!p.servicesNextCursor || p.servicesLoadingMore) return;
@@ -350,7 +353,7 @@ export function UniversalServicesByStyle({
         setFetchingServicesFor(null);
       }
     },
-    [providers, phone, serviceStyle, finalCategory, config.roleName]
+    [phone, serviceStyle, finalCategory, config.roleName]
   );
 
   const loadMoreProviderServices = useCallback(
@@ -1563,6 +1566,7 @@ export function UniversalServicesByStyle({
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedProvider(provider.providerId);
+                        void fetchProviderServices(provider.providerId);
                       }}
                     >
                       View Services

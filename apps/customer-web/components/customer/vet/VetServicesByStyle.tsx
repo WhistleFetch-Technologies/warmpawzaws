@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,7 @@ import {
   vendorServicesNextCursor,
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
+import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -123,6 +124,8 @@ export function VetServicesByStyle({
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
   const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
+  const providersRef = useRef(providers);
+  providersRef.current = providers;
   const launchGate = useServiceStyleLaunchGate(phone, category, serviceStyle);
 
   const feedEnabled = launchGate.ready && !launchGate.blocked;
@@ -176,10 +179,14 @@ export function VetServicesByStyle({
         (p) => p.providerId === want || p.vendorId === want
       );
     }
-    setProviders(mapped);
-    // #region agent log
-    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'B',location:'VetServicesByStyle.tsx:feedMap',message:'mapped providers after slim DTO',data:{feedRows:feedRows.length,mapped:mapped.length,vendorId:vendorId??null,serviceStyle},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
+    setProviders((prev) => {
+      const merged = mergeDiscoveryProvidersPreservingServices(prev, mapped);
+      const preserved = merged.filter((p) => p.servicesHydrated).length;
+      // #region agent log
+      fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'A',location:'VetServicesByStyle.tsx:feedMap',message:'feed remap preserving lazy services',data:{feedRows:feedRows.length,mapped:mapped.length,preservedHydrated:preserved,vendorId:vendorId??null,serviceStyle},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return merged;
+    });
     setLoading(feedLoading);
   }, [feedEnabled, feedRows, feedLoading, vendorId, mapRowToProvider, launchGate.ready, launchGate.blocked]);
 
@@ -199,8 +206,13 @@ export function VetServicesByStyle({
 
   const fetchProviderServices = useCallback(
     async (providerId: string, append = false) => {
-      const p = providers.find((x) => x.providerId === providerId);
-      if (!p) return;
+      const p = providersRef.current.find((x) => x.providerId === providerId);
+      if (!p) {
+        // #region agent log
+        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'B',location:'VetServicesByStyle.tsx:lazyServices',message:'fetch skipped provider not found',data:{providerId,serviceStyle},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        return;
+      }
       if (append) {
         if (!p.servicesNextCursor || p.servicesLoadingMore) return;
       } else if (p.servicesHydrated) {
@@ -224,6 +236,9 @@ export function VetServicesByStyle({
           customerPhone: phone || undefined,
           cursor: append ? p.servicesNextCursor : undefined,
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'C',location:'VetServicesByStyle.tsx:lazyServices',message:'fetching vendor services page',data:{providerId,vid,append,serviceStyle,url},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         const res = await apiClient.get(url);
         const rows = vendorServicesRowsFromResponse(
           res as { services?: unknown[]; packages?: unknown[] }
@@ -253,9 +268,12 @@ export function VetServicesByStyle({
           })
         );
         // #region agent log
-        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'C',location:'VetServicesByStyle.tsx:lazyServices',message:'lazy vendor services loaded',data:{providerId,append,serviceCount:services.length,nextCursor:!!nextCursor},timestamp:Date.now()})}).catch(()=>{});
+        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'C',location:'VetServicesByStyle.tsx:lazyServices',message:'lazy vendor services loaded',data:{providerId,append,serviceCount:services.length,rawRows:rows.length,nextCursor:!!nextCursor},timestamp:Date.now()})}).catch(()=>{});
         // #endregion
       } catch (e) {
+        // #region agent log
+        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'D',location:'VetServicesByStyle.tsx:lazyServices',message:'vendor services fetch failed',data:{providerId,serviceStyle,error:String(e)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         console.warn('[VetServicesByStyle] vendor services fetch failed', e);
         setProviders((prev) =>
           prev.map((v) =>
@@ -268,7 +286,7 @@ export function VetServicesByStyle({
         setFetchingServicesFor(null);
       }
     },
-    [providers, phone, serviceStyle, category]
+    [phone, serviceStyle, category]
   );
 
   const loadMoreProviderServices = useCallback(
@@ -1455,6 +1473,7 @@ export function VetServicesByStyle({
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedProvider(provider.providerId);
+                        void fetchProviderServices(provider.providerId);
                       }}
                     >
                       View Services
