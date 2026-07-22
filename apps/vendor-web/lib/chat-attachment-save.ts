@@ -2,6 +2,7 @@
 
 import { getApiBaseUrl } from '@/lib/api-client';
 import {
+  downloadFromApi,
   downloadFromUrl,
   filenameFromUrl,
   getDownloadMessage,
@@ -40,20 +41,37 @@ export async function saveOrShareChatAttachment(
   fileName: string;
   saveResult: DownloadSaveResult;
 }> {
-  const url = resolveChatAttachmentUrl(options);
-  const fallbackName = options.fileName?.trim() || filenameFromUrl(url, 'document');
+  const fallbackName =
+    options.fileName?.trim() ||
+    filenameFromUrl(options.fileUrl || options.fileId || '', 'document');
   const title = options.title?.trim() || fallbackName;
-
-  const { fileName, saveResult } = await downloadFromUrl({
-    url,
+  const common = {
     fileName: fallbackName,
     title,
     shareText: 'Save to Files, Drive, or another app.',
     shareDialogTitle: 'Save or share file',
     previewHtmlInBrowser: false,
-  });
+  };
 
-  return { fileName, saveResult };
+  const fileId = options.fileId?.trim();
+  if (fileId) {
+    const { fileName, saveResult } = await downloadFromApi({
+      path: `/chat/file/${encodeURIComponent(fileId)}`,
+      ...common,
+    });
+    return { fileName, saveResult };
+  }
+
+  const fileUrl = options.fileUrl?.trim();
+  if (fileUrl) {
+    const { fileName, saveResult } = await downloadFromUrl({
+      url: fileUrl,
+      ...common,
+    });
+    return { fileName, saveResult };
+  }
+
+  throw new Error('No file available');
 }
 
 export function getChatAttachmentSaveMessage(

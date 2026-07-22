@@ -1232,17 +1232,13 @@ export function registerChatEndpoints(app: Hono) {
 
   /**
    * GET /chat/file/*
-   * Get presigned URL for chat file download
+   * Stream chat file through API (avoids S3 CORS on browser fetch after presigned redirect).
    * Supports both single-segment fileIds and multi-segment S3 keys (e.g., chat/bookingId/filename.pdf)
-   * Uses wildcard route to handle fileIds with slashes
    */
   app.get("/chat/file/*", async (c) => {
     try {
-      // Extract file key from full path (handles both single and multi-segment fileIds)
       const fullPath = c.req.path;
       let fileId = fullPath.replace('/chat/file/', '');
-      
-      // Decode URL-encoded fileId (handles %2F for slashes)
       fileId = decodeURIComponent(fileId);
 
       if (!fileId) {
@@ -1250,24 +1246,34 @@ export function registerChatEndpoints(app: Hono) {
       }
 
       const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
-      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-      
       const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-      // Use consistent S3_UPLOADS_BUCKET env var (set by CDK lambda-stack)
       const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || process.env.CHAT_FILES_BUCKET || 'warmpawz-dev-uploads';
 
-      const signedUrl = await getSignedUrl(
-        s3Client,
+      const object = await s3Client.send(
         new GetObjectCommand({
           Bucket: BUCKET_NAME,
           Key: fileId,
-        }),
-        { expiresIn: 3600 } // 1 hour
+        })
       );
 
-      // Redirect to presigned URL
-      return c.redirect(signedUrl);
+      if (!object.Body) {
+        return c.json({ error: 'File not found' }, 404);
+      }
+
+      const fileName = fileId.split('/').pop() || 'download';
+      const contentType = object.ContentType || 'application/octet-stream';
+      const bodyBytes = await object.Body.transformToByteArray();
+
+      return c.body(bodyBytes, 200, {
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${fileName.replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        'Cache-Control': 'private, max-age=3600',
+      });
     } catch (error: any) {
+      const status = error?.$metadata?.httpStatusCode;
+      if (error?.name === 'NoSuchKey' || status === 404) {
+        return c.json({ error: 'File not found' }, 404);
+      }
       console.error('Error getting file URL:', error);
       return c.json({ error: error.message }, 500);
     }

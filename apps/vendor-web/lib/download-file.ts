@@ -1,7 +1,7 @@
 'use client';
 
 import { Capacitor } from '@capacitor/core';
-import { getApiBaseUrl } from '@/lib/api-client';
+import { getApiBaseUrl, getVendorAuthHeadersForUpload } from '@/lib/api-client';
 import { saveGeneratedPdfBlob, shouldUseMobileSavePipeline, type SaveGeneratedPdfResult } from '@/lib/capacitor-pdf-save';
 
 export type DownloadSaveResult =
@@ -10,11 +10,7 @@ export type DownloadSaveResult =
   | 'web-downloaded';
 
 export function getAuthHeaders(): Record<string, string> {
-  const token =
-    typeof window !== 'undefined'
-      ? localStorage.getItem('authToken') || localStorage.getItem('cognitoIdToken')
-      : null;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return getVendorAuthHeadersForUpload();
 }
 
 export function getDownloadMessage(
