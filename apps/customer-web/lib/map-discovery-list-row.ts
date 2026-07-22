@@ -1,6 +1,7 @@
 /**
  * Map discovery list vendor rows (VendorCardDTO / legacy shapes) to UI provider fields.
  */
+import { normalizeProviderListPhoto } from './resolve-display-image-url';
 
 export type DiscoveryListRow = Record<string, unknown>;
 
@@ -37,7 +38,7 @@ export function mapDiscoveryRowBaseFields(row: DiscoveryListRow) {
     businessName: row.businessName
       ? cleanDiscoveryProviderName(String(row.businessName))
       : undefined,
-    photo: (row.photoUrl ?? row.photo ?? row.vendorPhoto) as string | undefined,
+    photo: normalizeProviderListPhoto(row),
     address: row.address as string | undefined,
     city: row.city as string | undefined,
     phone: row.phone as string | undefined,

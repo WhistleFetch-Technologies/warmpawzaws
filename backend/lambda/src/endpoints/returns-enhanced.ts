@@ -23,6 +23,10 @@ import {
   orderHasReturnableItems,
   ReturnItemsNotAllowedError,
 } from '../utils/category-return-eligibility';
+import {
+  initiateShopOrderRazorpayRefund,
+  type ShopRefundStatus,
+} from '../utils/payments/shop-order-refund';
 
 const RETURN_REASONS = [
   { id: 'damaged', label: 'Product damaged/defective' },
@@ -587,6 +591,7 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
       });
 
       // Reverse loyalty points if the return is approved and points were already awarded
+      let refundStatus: ShopRefundStatus | undefined;
       if (decision === 'approve') {
         await import('../utils/ecommerce-loyalty')
           .then(({ reverseLoyaltyAwardForOrder }) =>
@@ -598,6 +603,39 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
           .catch((e) =>
             console.warn('[RETURNS-ENHANCED] reverseLoyaltyAwardForOrder failed (non-fatal):', e?.message)
           );
+
+        if (refundMethod === 'original_payment' || refundMethod === 'original') {
+          const prefetch = await query(
+            `SELECT rr.id::text AS return_id, rr.total_refund_amount::text, rr.customer_id::text,
+                    rr.vendor_id::text, rr.order_id::text, p.id::text AS payment_id, p.razorpay_payment_id
+             FROM return_requests rr
+             JOIN orders o ON o.id = rr.order_id
+             LEFT JOIN LATERAL (
+               SELECT id, razorpay_payment_id
+               FROM payments
+               WHERE order_id = rr.order_id
+                 AND LOWER(COALESCE(payment_status, '')) IN ('completed', 'paid')
+               ORDER BY created_at DESC NULLS LAST
+               LIMIT 1
+             ) p ON TRUE
+             WHERE rr.id = $1::uuid AND rr.vendor_id = $2::uuid
+             LIMIT 1`,
+            [returnId, vendorId],
+          );
+          const row = prefetch.rows[0];
+          const refundAmount = parseFloat(String(row?.total_refund_amount ?? returnRequest.total_refund_amount)) || 0;
+          if (row?.payment_id && refundAmount > 0.009) {
+            const rz = await initiateShopOrderRazorpayRefund({
+              orderId: String(row.order_id),
+              amount: refundAmount,
+              reason: `Return approved: ${returnRequest.return_number || returnId}`,
+              returnRequestId: returnId,
+              customerId: String(row.customer_id),
+              vendorId: String(row.vendor_id),
+            });
+            refundStatus = rz.refundStatus;
+          }
+        }
       }
 
       return c.json({
@@ -606,6 +644,7 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
           ? 'Return approved. Pickup will be scheduled.'
           : 'Return request rejected.',
         status: updateData.status,
+        refundStatus,
       });
     } catch (error: any) {
       console.error('Error processing return decision:', error);
@@ -736,12 +775,28 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
     try {
       const returnId = c.req.param('returnId');
 
-      const returns = await select('return_requests', { id: returnId });
-      if (returns.length === 0) {
+      const prefetch = await query(
+        `SELECT rr.*, p.id::text AS payment_id, p.razorpay_payment_id, p.amount::text AS payment_amount
+         FROM return_requests rr
+         JOIN orders o ON o.id = rr.order_id
+         LEFT JOIN LATERAL (
+           SELECT id, razorpay_payment_id, amount
+           FROM payments
+           WHERE order_id = rr.order_id
+             AND LOWER(COALESCE(payment_status, '')) IN ('completed', 'paid')
+           ORDER BY created_at DESC NULLS LAST
+           LIMIT 1
+         ) p ON TRUE
+         WHERE rr.id = $1::uuid
+         LIMIT 1`,
+        [returnId],
+      );
+
+      if (prefetch.rows.length === 0) {
         return c.json({ success: false, error: 'Return request not found' }, 404);
       }
 
-      const returnRequest = returns[0];
+      const returnRequest = prefetch.rows[0];
       
       if (!['approved', 'received', 'quality_check'].includes(returnRequest.status)) {
         return c.json({ success: false, error: 'Return must be approved/received before processing refund' }, 400);
@@ -750,8 +805,9 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
       const refundAmount = parseFloat(returnRequest.total_refund_amount);
       const refundMethod = returnRequest.refund_method || 'wallet';
 
-      // Process refund based on method
-      let refundResult: any = { success: true };
+      let refundResult: { success: boolean; transactionId?: string; error?: string; refundStatus?: ShopRefundStatus } = {
+        success: true,
+      };
 
       if (refundMethod === 'wallet') {
         // Credit to customer wallet
@@ -791,10 +847,21 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
           console.error('Wallet refund error:', e);
           refundResult = { success: false, error: e.message };
         }
-      } else if (refundMethod === 'original_payment') {
-        // TODO: Integrate with Razorpay refund
-        refundResult.transactionId = `REF-${Date.now()}`;
-        refundResult.note = 'Razorpay refund initiated';
+      } else if (refundMethod === 'original_payment' || refundMethod === 'original') {
+        const rz = await initiateShopOrderRazorpayRefund({
+          orderId: String(returnRequest.order_id),
+          amount: refundAmount,
+          reason: `Return refund: ${returnRequest.return_number || returnId}`,
+          returnRequestId: returnId,
+          customerId: String(returnRequest.customer_id),
+          vendorId: returnRequest.vendor_id ? String(returnRequest.vendor_id) : undefined,
+        });
+        refundResult = {
+          success: rz.success,
+          transactionId: rz.razorpayRefundId || rz.refundId,
+          error: rz.error,
+          refundStatus: rz.refundStatus,
+        };
       }
 
       // Update return status
@@ -818,6 +885,7 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
           amount: refundAmount,
           method: refundMethod,
           transactionId: refundResult.transactionId,
+          refundStatus: refundResult.refundStatus,
         },
         message: refundResult.success 
           ? `Refund of ₹${refundAmount} processed successfully`

@@ -26,6 +26,7 @@ import { resolveVendorId } from '../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
+import { getVendorListingPhotoUrl } from '../utils/vendor-listing-photo';
 import {
   fetchVendorProgressRowsFromBookings,
   mergeTrainingProgressWithBookingDerived,
@@ -789,7 +790,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         : "COALESCE(category, '')";
 
       let vendorQuery = `
-        SELECT v.id, v.business_name, v.city, v.state, v.address, v.latitude, v.longitude, v.rating
+        SELECT v.id, v.business_name, v.city, v.state, v.address, v.latitude, v.longitude, v.rating,
+               v.profile_photo_url, v.metadata, v.vendor_type
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
@@ -839,7 +841,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const vendorsResult = await query(vendorQuery, vendorParams);
       const vendors = vendorsResult.rows || [];
 
-      const out: any[] = [];
+      const candidates: Array<{ v: any; tests: any[]; distanceKm: number | null }> = [];
       for (const v of vendors) {
         let testQuery = `
           SELECT id, test_name, price, duration_minutes,
@@ -880,20 +882,34 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               Math.sin(lat * Math.PI / 180) * Math.sin(Number(v.latitude) * Math.PI / 180)
             ))
           : null;
-        out.push({
-          id: v.id,
-          businessName: v.business_name,
-          city: v.city,
-          state: v.state,
-          address: v.address,
-          latitude: v.latitude,
-          longitude: v.longitude,
-          rating: v.rating,
-          distance: distanceKm != null ? Math.round(distanceKm * 10) / 10 : null,
-          homeCollectionAvailable: tests.some((t: any) => t.service_style === 'at_home'),
-          tests,
-        });
+        candidates.push({ v, tests, distanceKm });
       }
+
+      const out = await Promise.all(
+        candidates.map(async ({ v, tests, distanceKm }) => {
+          const photoUrl = await getVendorListingPhotoUrl({
+            id: v.id,
+            vendor_id: v.id,
+            vendor_type: v.vendor_type,
+            profile_photo_url: v.profile_photo_url,
+            metadata: v.metadata,
+          });
+          return {
+            id: v.id,
+            businessName: v.business_name,
+            city: v.city,
+            state: v.state,
+            address: v.address,
+            latitude: v.latitude,
+            longitude: v.longitude,
+            rating: v.rating,
+            distance: distanceKm != null ? Math.round(distanceKm * 10) / 10 : null,
+            homeCollectionAvailable: tests.some((t: any) => t.service_style === 'at_home'),
+            photoUrl,
+            tests,
+          };
+        }),
+      );
 
       return c.json({ success: true, vendors: out });
     } catch (error: any) {

@@ -10,6 +10,7 @@ import {
   MealKitchenStatusBanner,
 } from '@/components/customer/nutrition/MealKitchenStatusBanner';
 import { isMealKitchenClosed, mealKitchenClosedMessage } from '@/lib/meal-kitchen-availability';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 
 /** Vendor shape from discovery, meal search rows, or navigation snapshot */
 export type NutritionVendorCardModel = {
@@ -92,12 +93,7 @@ export function nutritionVendorFromDiscoveryRow(
     vendor_address:
       (row.vendor_address as string | undefined) ?? (row.address as string | undefined),
     city: (row.city as string | undefined) ?? (row.vendor_city as string | undefined),
-    photo:
-      (row.photo as string | undefined) ??
-      (row.profile_photo_url as string | undefined) ??
-      (row.imageUrl as string | undefined) ??
-      (row.logoUrl as string | undefined) ??
-      (row.vendor_photo as string | undefined),
+    photo: normalizeProviderListPhoto(row),
     profile_photo_url: row.profile_photo_url as string | undefined,
     nextAvailableSlot,
   };

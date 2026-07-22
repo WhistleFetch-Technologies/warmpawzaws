@@ -25,6 +25,10 @@ import {
   type ShopOrderLifecycleStatus,
 } from '../../../utils/shop-order-notifications';
 import { SQL_SHOP_ORDER_VENDOR_VISIBLE } from '../../../utils/shop-vendor-visibility';
+import {
+  cancelPaidShopOrder,
+  VENDOR_ALLOWED_STATUSES,
+} from '../../../utils/payments/shop-order-refund';
 
 function triggerOrderInvoiceOnDelivered(orderId: string, status: string, previousStatus: string) {
   if (status === 'delivered' && previousStatus !== 'delivered') {
@@ -615,6 +619,32 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         );
       }
 
+      if (status === 'cancelled') {
+        const cancelResult = await cancelPaidShopOrder({
+          orderId,
+          reason: cancellationReason,
+          cancelledBy: 'provider',
+          vendorId,
+          allowedStatuses: VENDOR_ALLOWED_STATUSES,
+        });
+        if (!cancelResult.success) {
+          const code = cancelResult.error === 'Order not found' ? 404 : 400;
+          return c.json({ error: cancelResult.error || 'Cancellation failed' }, code);
+        }
+        const statusNotes = resolveStatusUpdateNotes(body);
+        await insertVendorOrderStatusHistory(orderId, status, statusNotes);
+        return c.json({
+          success: true,
+          message: `Order status updated to ${status}`,
+          order_id: orderId,
+          status,
+          cancellation_reason: cancellationReason,
+          refundStatus: cancelResult.refundStatus,
+          stockRestored: cancelResult.stockRestored,
+          cancelledBy: cancelResult.cancelledBy,
+        });
+      }
+
       const statusNotes = resolveStatusUpdateNotes(body);
 
       // Build update query
@@ -629,14 +659,6 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         updates.push('delivered_at = NOW()');
         updates.push('delivery_status = $4');
         params.splice(3, 0, 'completed');
-      }
-
-      // Add cancelled timestamp
-      if (status === 'cancelled') {
-        updates.push('cancelled_at = NOW()');
-        updates.push(`cancellation_reason = $${paramIndex}`);
-        params.splice(paramIndex - 1, 0, cancellationReason);
-        paramIndex++;
       }
 
       const updateQuery = `UPDATE orders SET ${updates.join(', ')} WHERE id = $2 AND vendor_id = $3`;
@@ -661,7 +683,6 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         message: `Order status updated to ${status}`,
         order_id: orderId,
         status: status,
-        cancellation_reason: status === 'cancelled' ? cancellationReason : undefined,
       });
     } catch (error: any) {
       console.error('Error updating order status:', error);
@@ -749,6 +770,32 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         );
       }
 
+      if (status === 'cancelled') {
+        const cancelResult = await cancelPaidShopOrder({
+          orderId,
+          reason: cancellationReason,
+          cancelledBy: 'provider',
+          vendorId,
+          allowedStatuses: VENDOR_ALLOWED_STATUSES,
+        });
+        if (!cancelResult.success) {
+          const code = cancelResult.error === 'Order not found' ? 404 : 400;
+          return c.json({ error: cancelResult.error || 'Cancellation failed' }, code);
+        }
+        const statusNotes = resolveStatusUpdateNotes(body);
+        await insertVendorOrderStatusHistory(orderId, status, statusNotes);
+        return c.json({
+          success: true,
+          message: `Order status updated to ${status}`,
+          order_id: orderId,
+          status,
+          cancellation_reason: cancellationReason,
+          refundStatus: cancelResult.refundStatus,
+          stockRestored: cancelResult.stockRestored,
+          cancelledBy: cancelResult.cancelledBy,
+        });
+      }
+
       const statusNotes = resolveStatusUpdateNotes(body);
 
       // Build update
@@ -763,12 +810,6 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       if (status === 'delivered') {
         updateFields.delivered_at = new Date().toISOString();
         updateFields.delivery_status = 'completed';
-      }
-
-      // Add cancelled timestamp
-      if (status === 'cancelled') {
-        updateFields.cancelled_at = new Date().toISOString();
-        updateFields.cancellation_reason = cancellationReason;
       }
 
       // Build SET clause
@@ -800,7 +841,6 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         message: `Order status updated to ${status}`,
         order_id: orderId,
         status: status,
-        cancellation_reason: status === 'cancelled' ? cancellationReason : undefined,
       });
     } catch (error: any) {
       console.error('Error updating order:', error);

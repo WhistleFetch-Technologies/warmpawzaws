@@ -138,7 +138,11 @@ async function restoreSkuStockForOrder(orderId: string): Promise<void> {
 export async function discardUnpaidShopOrder(
   orderId: string,
   reason: string,
-  options?: { requestId?: string; paymentStatus?: 'expired' | 'failed' }
+  options?: {
+    requestId?: string;
+    paymentStatus?: 'expired' | 'failed';
+    cancelledBy?: 'pet_parent' | 'provider' | 'system';
+  }
 ): Promise<DiscardUnpaidShopOrderResult> {
   const paymentStatus = options?.paymentStatus ?? (reason === 'payment_window_expired' ? 'expired' : 'failed');
   const requestId = options?.requestId;
@@ -167,16 +171,18 @@ export async function discardUnpaidShopOrder(
     oldStatus = String(cur.order_status || 'pending');
     oldPaymentStatus = String(cur.payment_status || 'pending');
 
+    const cancelledBy = options?.cancelledBy ?? 'system';
     await client.query(
       `UPDATE orders
        SET order_status = 'cancelled',
            payment_status = $2,
            cancellation_reason = $3,
+           cancelled_by = $4,
            cancelled_at = COALESCE(cancelled_at, NOW()),
            payment_hold_expires_at = NULL,
            updated_at = NOW()
        WHERE id = $1::uuid`,
-      [orderId, paymentStatus, reason]
+      [orderId, paymentStatus, reason, cancelledBy]
     );
 
     await restoreWalletForDiscardedOrder(client, cur);

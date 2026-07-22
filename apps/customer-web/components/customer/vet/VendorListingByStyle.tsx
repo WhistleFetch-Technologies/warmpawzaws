@@ -18,6 +18,7 @@ import { formatDistanceDisplay, pickProviderDistanceKm } from '@/lib/distance-di
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
@@ -200,7 +201,7 @@ export function VendorListingByStyle({
                     : null,
                 city: item.city,
                 address: item.address,
-                photo: item.photo,
+                photo: normalizeProviderListPhoto(item),
                 isVerified: item.isVerified,
                 experienceYears: item.experienceYears,
                 qualifications: item.qualifications,
