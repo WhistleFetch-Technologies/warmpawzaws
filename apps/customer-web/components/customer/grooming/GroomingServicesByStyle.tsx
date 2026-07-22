@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react';
 import { ArrowLeft, Star, MapPin, Clock, Building2, Home, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Scissors, Sparkles, Check, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -42,6 +42,7 @@ import {
   vendorServicesNextCursor,
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
+import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -122,6 +123,8 @@ export function GroomingServicesByStyle({
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
   const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
+  const providersRef = useRef(providers);
+  providersRef.current = providers;
   const [promotions, setPromotions] = useState<any[]>([]);
   const launchGate = useServiceStyleLaunchGate(phone, category, serviceStyle);
 
@@ -184,7 +187,7 @@ export function GroomingServicesByStyle({
         (p) => p.providerId === want || p.vendorId === want
       );
     }
-    setProviders(mapped);
+    setProviders((prev) => mergeDiscoveryProvidersPreservingServices(prev, mapped));
     setLoading(feedLoading);
   }, [feedEnabled, feedRows, feedLoading, vendorId, mapRowToGroomingProvider, launchGate.ready, launchGate.blocked]);
 
@@ -204,7 +207,7 @@ export function GroomingServicesByStyle({
 
   const fetchProviderServices = useCallback(
     async (providerId: string, append = false) => {
-      const p = providers.find((x) => x.providerId === providerId);
+      const p = providersRef.current.find((x) => x.providerId === providerId);
       if (!p) return;
       if (append) {
         if (!p.servicesNextCursor || p.servicesLoadingMore) return;
@@ -289,7 +292,7 @@ export function GroomingServicesByStyle({
         setFetchingServicesFor(null);
       }
     },
-    [providers, phone, serviceStyle, category, promotions]
+    [phone, serviceStyle, category, promotions]
   );
 
   const loadMoreProviderServices = useCallback(
@@ -1601,6 +1604,7 @@ export function GroomingServicesByStyle({
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedProvider(provider.providerId);
+                        void fetchProviderServices(provider.providerId);
                       }}
                     >
                       View Services

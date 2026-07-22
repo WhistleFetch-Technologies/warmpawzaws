@@ -42,10 +42,11 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import {
   mapHomeServiceProfileServices,
-  mergeCustomerVendorServicesPayload,
   type HomeServiceProfileService,
 } from '@/lib/customer-vendor-services-merge';
-import { rowQualifiesForWalkingModal } from '@/lib/walker-vendor-offerings';
+import { homeServiceProfileVendorServicesQuery, filterHomeServiceProfileVendorRows } from '@/lib/home-service-profile-vendor-services';
+import { useProviderServicesLazyLoad } from '@/hooks/useProviderServicesLazyLoad';
+import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
 import {
   mergeCustomerFacilityPayload,
   mergeVendorPhotoFieldsForHero,
@@ -142,7 +143,6 @@ interface ProviderDetails {
   operatingHours: { [key: string]: { open: string; close: string } };
   coordinates: { lat: number; lng: number };
   gallery: string[];
-  services: HomeServiceProfileService[];
   reviews: Review[];
 }
 
@@ -196,13 +196,51 @@ export function HomeServiceProviderProfile({
   const tabsSectionRef = useRef<HTMLDivElement>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const rawServiceRowsRef = useRef<Map<string, Record<string, unknown>>>(new Map());
+  const vendorServicesQuery = homeServiceProfileVendorServicesQuery(serviceType);
+
+  const mapServiceRows = useCallback(
+    (rows: unknown[]): HomeServiceProfileService[] => {
+      const filtered = filterHomeServiceProfileVendorRows(serviceType, rows);
+      for (const row of filtered) {
+        if (!row || typeof row !== 'object') continue;
+        const s = row as Record<string, unknown>;
+        const id = String(s.id ?? s.vendorServiceId ?? s.serviceId ?? s.service_id ?? '').trim();
+        if (id) rawServiceRowsRef.current.set(id, s);
+      }
+      return mapHomeServiceProfileServices(filtered);
+    },
+    [serviceType]
+  );
+
+  const {
+    services: profileServices,
+    loading: servicesLoading,
+    loadingMore: servicesLoadingMore,
+    loadMore: loadMoreServices,
+    hasMore: hasMoreServices,
+  } = useProviderServicesLazyLoad<HomeServiceProfileService>({
+    vendorId,
+    serviceStyle: vendorServicesQuery.serviceStyle,
+    category: vendorServicesQuery.category,
+    phone,
+    mapRows: mapServiceRows,
+    enabled: Boolean(vendorId),
+  });
+
   useEffect(() => {
     loadProviderDetails();
   }, [vendorId]);
 
   useEffect(() => {
     setSelectedServiceId(null);
+    rawServiceRowsRef.current = new Map();
   }, [vendorId]);
+
+  useEffect(() => {
+    if (profileServices.length === 1) {
+      setSelectedServiceId(profileServices[0]!.id);
+    }
+  }, [profileServices]);
 
   const openWalkServicesAndBundles = useCallback(() => {
     onOpenWalkServicesAndBundles?.();
@@ -218,13 +256,6 @@ export function HomeServiceProviderProfile({
     },
     [serviceType, openWalkServicesAndBundles]
   );
-
-  useEffect(() => {
-    if (!provider) return;
-    if (provider.services.length === 1) {
-      setSelectedServiceId(provider.services[0]!.id);
-    }
-  }, [provider]);
 
   const loadProviderDetails = async () => {
     try {
@@ -296,38 +327,6 @@ export function HomeServiceProviderProfile({
       const lngRaw = merged.longitude ?? merged.lng;
       const lat = latRaw != null && latRaw !== '' ? Number(latRaw) : NaN;
       const lng = lngRaw != null && lngRaw !== '' ? Number(lngRaw) : NaN;
-
-      // Load services (prefer customer endpoint so only published + vendor price)
-      let rawServices: unknown[] = [];
-      try {
-        let servicesData: any;
-        try {
-          servicesData = await apiClient.get<{ success?: boolean; services?: any[] }>(`/customer/vendor/${vendorId}/services`);
-        } catch {
-          servicesData = await apiClient.get<{ services: any[] }>(`/vendor/${vendorId}/services`);
-        }
-        if (servicesData?.services && Array.isArray(servicesData.services)) {
-          rawServices = mergeCustomerVendorServicesPayload(servicesData);
-        } else if (Array.isArray(servicesData)) {
-          rawServices = servicesData;
-        }
-        console.log(`📦 [HOME-SERVICE-PROFILE] Found ${rawServices.length} raw services`);
-      } catch (e) {
-        console.log('No services found');
-      }
-      if (serviceType === 'walker') {
-        rawServices = rawServices.filter((row) =>
-          rowQualifiesForWalkingModal(row as Record<string, unknown>)
-        );
-      }
-      rawServiceRowsRef.current = new Map();
-      for (const row of rawServices) {
-        if (!row || typeof row !== 'object') continue;
-        const s = row as Record<string, unknown>;
-        const id = String(s.id ?? s.vendorServiceId ?? s.serviceId ?? s.service_id ?? '').trim();
-        if (id) rawServiceRowsRef.current.set(id, s);
-      }
-      const services = mapHomeServiceProfileServices(rawServices);
 
       // Load reviews
       let reviews: any[] = [];
@@ -411,7 +410,6 @@ export function HomeServiceProviderProfile({
         operatingHours: (merged.operatingHours || merged.operating_hours || merged.hours || {}) as ProviderDetails['operatingHours'],
         coordinates: !Number.isNaN(lat) && !Number.isNaN(lng) ? { lat, lng } : { lat: 0, lng: 0 },
         gallery,
-        services: services,
         reviews: reviews
       });
     } catch (error) {
@@ -467,22 +465,25 @@ export function HomeServiceProviderProfile({
       return;
     }
     setActiveTab('services');
-    if (provider.services.length === 1) {
-      setSelectedServiceId(provider.services[0]!.id);
+    if (profileServices.length === 1) {
+      setSelectedServiceId(profileServices[0]!.id);
     }
     requestAnimationFrame(() => {
       tabsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-  }, [provider, serviceType, openWalkServicesAndBundles]);
+  }, [provider, profileServices, serviceType, openWalkServicesAndBundles]);
 
   const continueBookingDisabled = useMemo(() => {
     if (!provider || activeTab !== 'services' || serviceType === 'walker') return false;
-    const n = provider.services.length;
+    if (servicesLoading) return true;
+    const n = profileServices.length;
     if (n === 0) return true;
     if (n <= 1) return false;
     return !selectedServiceId;
   }, [
     provider,
+    profileServices,
+    servicesLoading,
     activeTab,
     selectedServiceId,
     serviceType,
@@ -771,65 +772,80 @@ export function HomeServiceProviderProfile({
         {/* Services Tab */}
         {activeTab === 'services' && serviceType !== 'walker' && (
           <div className="space-y-3">
-            {provider.services.length > 1 ? (
+            {profileServices.length > 1 ? (
               <p className="rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-900">
                 Tap a service to select it, then use{' '}
                 <span className="font-medium text-gray-900">Continue to book</span> below.
               </p>
             ) : null}
-            {provider.services.length === 0 ? (
+            {servicesLoading ? (
+              <div className="flex justify-center py-8">
+                <div
+                  className="h-8 w-8 animate-spin rounded-full border-b-2"
+                  style={{ borderColor: config.primaryColor }}
+                />
+              </div>
+            ) : profileServices.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-gray-500">No services listed</p>
               </div>
             ) : (
-              provider.services.map((service) => (
-                <button
-                  key={service.id}
-                  type="button"
-                  aria-pressed={selectedServiceId === service.id}
-                  onClick={() => setSelectedServiceId(service.id)}
-                  className={`w-full rounded-xl border-2 bg-white p-4 text-left shadow-sm transition-colors hover:border-orange-300 ${
-                    selectedServiceId === service.id
-                      ? 'border-orange-600 bg-orange-50/50 ring-2 ring-orange-100'
-                      : 'border-gray-100'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <h4
-                        className={`font-medium ${
-                          selectedServiceId === service.id ? 'text-orange-900' : 'text-gray-800'
-                        }`}
-                      >
-                        {service.name}
-                      </h4>
-                      {service.description ? (
-                        <ServiceDescriptionInline
-                          description={service.description}
-                          title={service.name}
-                          expandInDialog={false}
-                          className="m-0 mt-1 text-sm leading-5 text-gray-500"
-                        />
-                      ) : null}
+              <>
+                {profileServices.map((service) => (
+                  <button
+                    key={service.id}
+                    type="button"
+                    aria-pressed={selectedServiceId === service.id}
+                    onClick={() => setSelectedServiceId(service.id)}
+                    className={`w-full rounded-xl border-2 bg-white p-4 text-left shadow-sm transition-colors hover:border-orange-300 ${
+                      selectedServiceId === service.id
+                        ? 'border-orange-600 bg-orange-50/50 ring-2 ring-orange-100'
+                        : 'border-gray-100'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <h4
+                          className={`font-medium ${
+                            selectedServiceId === service.id ? 'text-orange-900' : 'text-gray-800'
+                          }`}
+                        >
+                          {service.name}
+                        </h4>
+                        {service.description ? (
+                          <ServiceDescriptionInline
+                            description={service.description}
+                            title={service.name}
+                            expandInDialog={false}
+                            className="m-0 mt-1 text-sm leading-5 text-gray-500"
+                          />
+                        ) : null}
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span
+                          className={`text-lg font-bold tabular-nums ${
+                            selectedServiceId === service.id ? 'text-orange-700' : ''
+                          }`}
+                          style={
+                            selectedServiceId === service.id ? undefined : { color: config.primaryColor }
+                          }
+                        >
+                          ₹{service.price}
+                        </span>
+                        {service.duration > 0 ? (
+                          <p className="text-xs text-gray-500">{service.duration} min</p>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="shrink-0 text-right">
-                      <span
-                        className={`text-lg font-bold tabular-nums ${
-                          selectedServiceId === service.id ? 'text-orange-700' : ''
-                        }`}
-                        style={
-                          selectedServiceId === service.id ? undefined : { color: config.primaryColor }
-                        }
-                      >
-                        ₹{service.price}
-                      </span>
-                      {service.duration > 0 ? (
-                        <p className="text-xs text-gray-500">{service.duration} min</p>
-                      ) : null}
-                    </div>
-                  </div>
-                </button>
-              ))
+                  </button>
+                ))}
+                <DiscoveryVendorFeedSentinel
+                  hasMore={hasMoreServices}
+                  loading={servicesLoading}
+                  loadingMore={servicesLoadingMore}
+                  onLoadMore={loadMoreServices}
+                />
+              </>
             )}
           </div>
         )}
@@ -971,7 +987,15 @@ export function HomeServiceProviderProfile({
             >
               Book a walk or bundle
             </Button>
-          ) : provider.services.length === 0 ? (
+          ) : servicesLoading ? (
+            <Button
+              type="button"
+              disabled
+              className="h-12 min-h-12 w-full cursor-not-allowed rounded-full bg-gray-300 px-4 text-center text-base font-semibold text-white shadow-md"
+            >
+              Loading services…
+            </Button>
+          ) : profileServices.length === 0 ? (
             <Button
               type="button"
               disabled
@@ -992,7 +1016,7 @@ export function HomeServiceProviderProfile({
               type="button"
               onClick={() => {
                 if (!selectedServiceId || !provider) return;
-                const service = provider.services.find((s) => s.id === selectedServiceId);
+                const service = profileServices.find((s) => s.id === selectedServiceId);
                 if (!service) return;
                 onSelectService(service, rawServiceRowsRef.current.get(service.id));
               }}

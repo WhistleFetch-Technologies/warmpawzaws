@@ -660,9 +660,6 @@ export function UniversalServiceProviderList({
         keepProvidersPendingServiceFetch: true,
       });
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'B',location:'UniversalServiceProviderList.tsx:processFeedRows',message:'vet hub provider count',data:{feedRows:feedRows.length,final:finalProviders.length,category,serviceStyle},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     setProviders(finalProviders);
   }, [feedRows, category]);
 
