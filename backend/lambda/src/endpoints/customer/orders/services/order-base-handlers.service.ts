@@ -36,6 +36,7 @@ import {
   discardUnpaidShopOrder,
   expireShopPaymentHolds,
 } from '../../../../utils/shop-payment-hold';
+import { assertShopCheckoutPaymentAllowed } from '../../../../utils/shop-checkout-payment-flags';
 
 /** Module helpers (move-only). */
 
@@ -112,7 +113,19 @@ export class CreateCustomerOrderHandler extends BaseHandler {
       }
 
       const shippingAddress = body.shipping_address || body.shippingAddress || body.address || {};
+      // Legacy default was COD; online-only checkout rejects COD/wallet via assertShopCheckoutPaymentAllowed below.
       const paymentMethod = body.payment_method || body.paymentMethod || 'cod';
+      const walletAmountApplied = Math.max(
+        0,
+        parseFloat(String(body.walletAmountApplied || body.wallet_amount_applied || '0')) || 0
+      );
+      const shopPaymentGuard = assertShopCheckoutPaymentAllowed({
+        paymentMethod,
+        walletAmountApplied,
+      });
+      if (!shopPaymentGuard.ok) {
+        return this.error(shopPaymentGuard.error, shopPaymentGuard.status);
+      }
       const rawPaymentId = body.payment_id ?? body.paymentId;
       const paymentIdForRow =
         rawPaymentId != null &&
@@ -363,6 +376,15 @@ export class GetCustomerOrdersHandler extends BaseHandler {
         console.warn('[customer/orders] expireShopPaymentHolds failed:', e)
       );
 
+      const now = Date.now();
+      if (!(global as any).__shopRefundRetryLastRun || now - (global as any).__shopRefundRetryLastRun > 60_000) {
+        (global as any).__shopRefundRetryLastRun = now;
+        const { retryPendingShopRefunds } = await import('../../../../utils/payments/shop-order-refund');
+        void retryPendingShopRefunds({ limit: 20 }).catch((e) =>
+          console.warn('[customer/orders] retryPendingShopRefunds failed:', e)
+        );
+      }
+
       const status = context.event.queryStringParameters?.status;
       const limit = parseInt(context.event.queryStringParameters?.limit || '50', 10);
       const offset = parseInt(context.event.queryStringParameters?.offset || '0', 10);
@@ -391,6 +413,7 @@ export class GetCustomerOrdersHandler extends BaseHandler {
           o.shipping_pincode,
           o.cancelled_at,
           o.cancellation_reason,
+          o.cancelled_by,
           o.payment_hold_expires_at,
           o.payment_checkout_started_at,
           o.tracking_number,

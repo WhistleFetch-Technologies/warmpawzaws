@@ -38,9 +38,8 @@ function rowsToHubVendors(
         .map((v) => ({ ...v, planRows: filterPlanRowsForVetHub(v.planRows) }))
         .filter((v) => {
           if (v.planRows.length > 0) return true;
-          const raw = (v.raw || {}) as Record<string, unknown>;
-          const serviceCount = Number(raw.serviceCount ?? raw.service_count ?? 0);
-          return v.needsServiceFetch && Number.isFinite(serviceCount) && serviceCount > 0;
+          // Lean discover-services cards omit embedded services; keep for lazy expand.
+          return v.needsServiceFetch;
         })
     : list;
   return { list: finalList, relaxed };

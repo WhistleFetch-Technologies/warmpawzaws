@@ -107,7 +107,7 @@ export async function resolveImageForContext(
   let imageKey = key;
   let dto = await attachUrlsToImageDto({
     imageKey,
-    thumbKey: thumbKeyForDisplay(imageKey, null),
+    thumbKey: isWebpKey(imageKey) ? thumbKeyForDisplay(imageKey, null) : null,
     width: 0,
     height: 0,
     thumbWidth: null,
@@ -153,10 +153,12 @@ export async function resolveBareImageUrl(
 
   const key = extractRawImageKey(trimmed);
   if (key && !trimmed.includes('://')) {
-    const thumbKey = thumbKeyForDisplay(key, null);
-    if (context === 'list' && thumbKey) {
-      const thumbUrl = await urlForImageKey(thumbKey);
-      if (thumbUrl) return thumbUrl;
+    if (context === 'list' && isWebpKey(key)) {
+      const thumbKey = thumbKeyForDisplay(key, null);
+      if (thumbKey) {
+        const thumbUrl = await urlForImageKey(thumbKey);
+        if (thumbUrl) return thumbUrl;
+      }
     }
     return (await urlForImageKey(key)) ?? trimmed;
   }

@@ -41,4 +41,19 @@ describe('resolveImageForContext', () => {
     expect(resolved!.displayUrl).toBe(resolved!.url);
     expect(resolved!.displayUrl).not.toContain('.thumb.');
   });
+
+  it('returns full jpeg url for list context on legacy non-WebP keys', async () => {
+    const legacyKey = 'vendors/vendor1/facility/facility_123.jpeg';
+    const resolved = await resolveImageForContext(legacyKey, {
+      assetType: 'facility',
+      ownerId: 'vendor1',
+      vendorId: 'vendor1',
+      context: 'list',
+      migrate: false,
+    });
+    expect(resolved).not.toBeNull();
+    expect(resolved!.displayUrl).toContain('facility_123.jpeg');
+    expect(resolved!.displayUrl).not.toContain('.thumb.webp');
+    expect(resolved!.thumbUrl).toBeNull();
+  });
 });
