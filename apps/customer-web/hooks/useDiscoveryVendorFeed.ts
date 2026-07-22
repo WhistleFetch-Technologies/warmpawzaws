@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { discoveryNextCursor, discoveryVendorList } from '@/lib/discovery-list';
 
@@ -17,11 +17,15 @@ export function useDiscoveryVendorFeed({
   pageSize = 3,
 }: UseDiscoveryVendorFeedOptions) {
   const [vendors, setVendors] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(enabled);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cursorRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (enabled) setLoading(true);
+  }, [enabled]);
 
   const reset = useCallback(() => {
     cursorRef.current = null;
