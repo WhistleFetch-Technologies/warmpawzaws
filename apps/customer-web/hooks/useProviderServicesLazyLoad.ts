@@ -45,10 +45,6 @@ export function useProviderServicesLazyLoad<T>(opts: {
           cursor: append ? cursorRef.current : undefined,
         });
 
-        // #region agent log
-        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'E',location:'useProviderServicesLazyLoad.ts:fetch',message:'PFP vendor services fetch',data:{vid,serviceStyle,category,append,url},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-
         const res = await apiClient.get(url);
         const rows = vendorServicesRowsFromResponse(
           res as { services?: unknown[]; packages?: unknown[] }
@@ -71,14 +67,7 @@ export function useProviderServicesLazyLoad<T>(opts: {
           return merged;
         });
         setHydrated(true);
-
-        // #region agent log
-        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'E',location:'useProviderServicesLazyLoad.ts:done',message:'PFP vendor services loaded',data:{vid,serviceStyle,count:mapped.length,nextCursor:!!nc},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
       } catch (e) {
-        // #region agent log
-        fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'F',location:'useProviderServicesLazyLoad.ts:error',message:'PFP vendor services failed',data:{vendorId:vid,serviceStyle,error:String(e)},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         if (!append) setServices([]);
         setHydrated(true);
       } finally {
