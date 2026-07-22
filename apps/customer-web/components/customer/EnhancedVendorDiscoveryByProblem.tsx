@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { formatDistanceDisplay } from '@/lib/distance-display';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 
 interface EnhancedVendorDiscoveryByProblemProps {
   roleId: string;
@@ -80,7 +81,12 @@ export function EnhancedVendorDiscoveryByProblem({
 
       const data = await apiClient.get<{ results?: any[], roleConfig?: any }>(`/customer/vendors/discover-by-problem?${params.toString()}`);
       console.log('✅ Discovered results:', data);
-      setResults(data.results || []);
+      setResults(
+        (data.results || []).map((result: Record<string, unknown>) => ({
+          ...result,
+          photo: normalizeProviderListPhoto(result),
+        }))
+      );
       setRoleConfig(data.roleConfig);
     } catch (error) {
       console.error('Error discovering:', error);

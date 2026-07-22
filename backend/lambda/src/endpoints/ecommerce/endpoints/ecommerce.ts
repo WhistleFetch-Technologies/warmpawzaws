@@ -87,6 +87,7 @@ import {
   loadOrderItemIds,
 } from '../../../utils/resolve-ecommerce-commission-rate';
 import { paymentHoldExpiresAt, expireShopPaymentHolds } from '../../../utils/shop-payment-hold';
+import { assertShopCheckoutPaymentAllowed } from '../../../utils/shop-checkout-payment-flags';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
 import { writeEcommerceOrderSettlementLedgerRow } from '../../../utils/write-ecommerce-order-settlement';
 import {
@@ -644,6 +645,14 @@ export function registerEcommerceEndpoints(app: Hono) {
       const paymentMethod = orderData.payment_method || orderData.paymentMethod || 'online';
       const couponCode = orderData.coupon_code || orderData.couponCode;
       const walletAmountApplied = Math.max(0, parseFloat(String(orderData.walletAmountApplied || orderData.wallet_amount_applied || '0')) || 0);
+
+      const shopPaymentGuard = assertShopCheckoutPaymentAllowed({
+        paymentMethod,
+        walletAmountApplied,
+      });
+      if (!shopPaymentGuard.ok) {
+        return c.json({ error: shopPaymentGuard.error }, shopPaymentGuard.status as ContentfulStatusCode);
+      }
 
       if (!customerPhone || !items || items.length === 0) {
         return c.json({ error: 'customer_phone and items are required' }, 400);

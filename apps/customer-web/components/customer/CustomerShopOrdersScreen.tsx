@@ -298,6 +298,7 @@ export function CustomerShopOrdersScreen({
   const [returnSelectedIds, setReturnSelectedIds] = useState<Set<string>>(new Set());
   const [returnSubmitting, setReturnSubmitting] = useState(false);
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
+  const [cancellingDraftId, setCancellingDraftId] = useState<string | null>(null);
 
   const handleBack = () => {
     if (onBack) {
@@ -440,6 +441,21 @@ export function CustomerShopOrdersScreen({
     } catch (err: any) {
       console.error('Error cancelling order:', err);
       alert('Failed to cancel order: ' + (err.message || 'Unknown error'));
+    }
+  };
+
+  const cancelDraftOrder = async (orderId: string) => {
+    if (!confirm('Cancel this unpaid order? Reserved stock will be released.')) return;
+    setCancellingDraftId(orderId);
+    try {
+      await ordersApi.cancelDraft(orderId, { reason: 'customer_request' });
+      toast.success('Order cancelled');
+      await loadOrders();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to cancel order';
+      toast.error(message);
+    } finally {
+      setCancellingDraftId(null);
     }
   };
 
@@ -1011,7 +1027,17 @@ export function CustomerShopOrdersScreen({
                       </div>
 
                       <div className="flex flex-col gap-2">
-                        {['pending', 'confirmed', 'processing'].includes(order.status) && (
+                        {order.status === 'pending_payment' && (
+                          <button
+                            type="button"
+                            disabled={cancellingDraftId === order.id}
+                            onClick={() => void cancelDraftOrder(order.id)}
+                            className="w-full py-2.5 text-sm border border-red-200 text-red-600 rounded-xl font-medium hover:bg-red-50 disabled:opacity-50"
+                          >
+                            {cancellingDraftId === order.id ? 'Cancelling…' : 'Cancel order'}
+                          </button>
+                        )}
+                        {['pending', 'confirmed'].includes(order.status) && (
                           <button
                             type="button"
                             onClick={() => cancelOrder(order.id)}

@@ -5,6 +5,7 @@ import { registerCustomerOrdersIdPaymentresumeGetRoute } from './routes/customer
 import { registerCustomerOrdersIdGetRoute } from './routes/customer_orders_id_get.route';
 import { registerCustomerOrdersIdInvoiceGetRoute } from './routes/customer_orders_id_invoice_get.route';
 import { registerCustomerOrdersIdReturnPostRoute } from './routes/customer_orders_id_return_post.route';
+import { registerCustomerOrdersIdCancelDraftPostRoute } from './routes/customer_orders_id_cancel_draft_post.route';
 
 export function registerCustomerOrdersEndpoints(app: Hono) {
   registerCustomerOrdersPostRoute(app);
@@ -13,4 +14,5 @@ export function registerCustomerOrdersEndpoints(app: Hono) {
   registerCustomerOrdersIdGetRoute(app);
   registerCustomerOrdersIdInvoiceGetRoute(app);
   registerCustomerOrdersIdReturnPostRoute(app);
+  registerCustomerOrdersIdCancelDraftPostRoute(app);
 }

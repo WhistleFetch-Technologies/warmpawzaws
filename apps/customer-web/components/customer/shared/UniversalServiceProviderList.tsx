@@ -24,6 +24,7 @@ import {
   applyVetHubDiscoveryToProviders,
   isVetHubDiscoveryConfig,
 } from '@/lib/filter-hub-services';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 
 // ============================================================================
 // TYPES
@@ -685,6 +686,7 @@ export function UniversalServiceProviderList({
         // Clean provider names to remove trailing IDs and map nextAvailable to nextAvailableSlot
         const cleanedProviders = providerData.map((p: any) => ({
           ...p,
+          photo: normalizeProviderListPhoto(p),
           isOnline: p.isOnline ?? p.is_online,
           name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Provider'),
           vendorName: p.vendorName ? cleanProviderName(p.vendorName) : undefined,

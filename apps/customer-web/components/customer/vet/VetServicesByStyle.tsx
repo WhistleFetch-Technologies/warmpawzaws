@@ -28,6 +28,7 @@ import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 
 interface VetServicesByStyleProps {
@@ -163,6 +164,7 @@ export function VetServicesByStyle({
             filterProvidersServicesForVetHub(
               providerData.map((p: any) => ({
                 ...p,
+                photo: normalizeProviderListPhoto(p),
                 services: Array.isArray(p.services) ? p.services : [],
               }))
             )

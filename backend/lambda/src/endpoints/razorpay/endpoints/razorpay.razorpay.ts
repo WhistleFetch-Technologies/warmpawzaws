@@ -52,6 +52,7 @@ import {
   isShopOrderPaymentHoldActive,
   isShopOrderPaymentHoldExpired,
 } from '../../../utils/shop-payment-hold';
+import { assertShopCheckoutPaymentAllowed } from '../../../utils/shop-checkout-payment-flags';
 import { PaymentTransactionStatus, BookingPaymentStatus } from '../../constants';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipment';
@@ -434,6 +435,15 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           return this.error('This order uses cash on delivery; online payment is not required.', 400);
         }
 
+        const walletApplied = Math.round((parseFloat(String(shopOrder.wallet_amount_applied ?? 0)) || 0) * 100) / 100;
+        const shopWalletGuard = assertShopCheckoutPaymentAllowed({
+          paymentMethod: shopOrder.payment_method,
+          walletAmountApplied: walletApplied,
+        });
+        if (!shopWalletGuard.ok) {
+          return this.error(shopWalletGuard.error, shopWalletGuard.status);
+        }
+
         if (customerId) {
           const resolvedId = await resolveCustomerId(customerId);
           if (resolvedId) {
@@ -464,7 +474,6 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           vendor = null;
         }
 
-        const walletApplied = Math.round((parseFloat(String(shopOrder.wallet_amount_applied ?? 0)) || 0) * 100) / 100;
         chargeAmount = Math.round(
           ((parseFloat(String(shopOrder.total_amount ?? 0)) || 0) - walletApplied) * 100
         ) / 100;

@@ -36,6 +36,8 @@ import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { VendorRatingDisplay } from './shared/VendorRatingDisplay';
+import { CachedImage } from '@/components/shared/CachedImage';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 import { toast } from 'sonner';
 
 interface DiagnosticsServicesLandingProps {
@@ -47,6 +49,7 @@ interface DiagnosticsServicesLandingProps {
 interface DiagnosticCenter {
   id: string;
   businessName: string;
+  photoUrl?: string;
   rating?: number;
   reviewCount: number;
   /** Omitted when the lab has no coordinates (still bookable; shown after in-range labs). */
@@ -270,6 +273,7 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
         centers = vendorsList.map((v: any) => ({
           id: v.id,
           businessName: v.businessName || 'Diagnostic Center',
+          photoUrl: normalizeProviderListPhoto(v),
           rating:
             Number(v.reviewCount ?? v.review_count ?? 0) > 0 && v.rating != null
               ? Number(v.rating)
@@ -722,8 +726,18 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                     onClick={() => setExpandedCenter(expandedCenter === center.id ? null : center.id)}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-14 h-14 bg-gradient-to-br from-teal-600 to-teal-700 rounded-xl flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
-                        {center.businessName.charAt(0)}
+                      <div className="w-14 h-14 bg-gradient-to-br from-teal-600 to-teal-700 rounded-xl flex items-center justify-center text-white text-xl font-bold flex-shrink-0 overflow-hidden">
+                        {center.photoUrl ? (
+                          <CachedImage
+                            src={center.photoUrl}
+                            alt={center.businessName}
+                            className="h-full w-full object-cover"
+                            width={56}
+                            height={56}
+                          />
+                        ) : (
+                          center.businessName.charAt(0)
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">

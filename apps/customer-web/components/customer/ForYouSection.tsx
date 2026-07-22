@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api-client';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { readHomeSessionCache, writeHomeSessionCache } from '@/lib/home-session-cache';
 import { scheduleIdleWork } from '@/lib/schedule-idle';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 
 interface PreviousProvider {
   id: string;
@@ -100,7 +101,7 @@ export function ForYouSection({ phone, hotDeals = [], banners = [], onNavigate }
                   results.push({
                     id: res.provider.id,
                     name: res.provider.businessName || res.provider.name,
-                    photo: res.provider.photo,
+                    photo: normalizeProviderListPhoto(res.provider) ?? res.provider.photo,
                     rating: res.provider.rating,
                     lastVisit: res.provider.lastVisit,
                     serviceType: key,

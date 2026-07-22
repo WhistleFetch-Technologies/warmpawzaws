@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Video, Clock, Users, AlertCircle, CheckCircle2, X, User, Dog, Phone, ArrowLeft } from 'lucide-react';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 
 interface Provider {
   providerId?: string;
@@ -161,7 +162,10 @@ export function InstantTeleQueue({
       );
 
       if (response.success) {
-        const list = response.providers || [];
+        const list = (response.providers || []).map((p: Provider) => ({
+          ...p,
+          photo: normalizeProviderListPhoto(p as Record<string, unknown>),
+        }));
         setProviders(list);
         if (
           teleServiceQuery &&

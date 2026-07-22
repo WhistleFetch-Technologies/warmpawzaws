@@ -28,6 +28,7 @@ import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 import { resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 import { isDiscoveryAutoApplyPromotion } from '@/lib/promotion-banner-filter';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
@@ -236,6 +237,7 @@ export function GroomingServicesByStyle({
         // ✅ FIX: Enhance provider data with specialisation and amenities
         byStyleProviders = byStyleProviders.map((p: any) => ({
           ...p,
+          photo: normalizeProviderListPhoto(p),
           services: Array.isArray(p.services) ? p.services : [],
           specialisation: p.specialisation || p.vendorSpecialisation || p.vendor?.specialisation || p.specialization,
           amenities: Array.isArray(p.amenities) ? p.amenities : 
