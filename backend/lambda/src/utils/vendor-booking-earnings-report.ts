@@ -144,6 +144,7 @@ function rowToResolveContext(row: RawEarningsRow): BookingAccrualResolveContext 
     vendorRoleId: row.vendor_role_id,
     taxCategoryId: row.tax_category_id,
     hsnCodeId: row.hsn_code_id,
+    bookingNotes: row.booking_notes,
     payment: {
       platform_fee: row.platform_fee,
       convenience_fee: row.convenience_fee,
@@ -311,8 +312,8 @@ async function fetchRawEarningsRowsForIstRange(
             ve.metadata AS earnings_metadata,
             ve.settlement_id::text AS settlement_id,
             ve.payout_id::text AS payout_id,
-            COALESCE(s.settlement_status, s.status) AS settlement_status,
-            po.status AS payout_status,
+            s.settlement_status,
+            po.payout_status,
             b.notes AS booking_notes,
             b.service_id::text AS service_id,
             b.service_style,
@@ -359,7 +360,10 @@ async function fetchRawEarningsRowsForIstRange(
        ${vendorFilter}
      ORDER BY v.business_name ASC NULLS LAST, ve.realized_at ASC NULLS LAST`,
     params,
-  ).catch(() => ({ rows: [] }));
+  ).catch((err) => {
+    console.error('[vendor-booking-earnings-report] fetchRawEarningsRowsForIstRange failed:', err);
+    return { rows: [] };
+  });
 
   return (res.rows || []) as RawEarningsRow[];
 }

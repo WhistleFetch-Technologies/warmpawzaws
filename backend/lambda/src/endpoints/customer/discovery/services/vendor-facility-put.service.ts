@@ -207,7 +207,6 @@ export async function executevendorFacilityPut(c: Context) {
         // If column doesn't exist, we'll use a raw SQL query to add it first
         try {
           // Check if metadata column exists
-          const { query } = await import('../../../database/rds-connection');
           const columnCheck = await vendor_facility_putRepo.dbVendorFacilityPut2()
 
           if (columnCheck.rows.length === 0) {
@@ -239,7 +238,6 @@ export async function executevendorFacilityPut(c: Context) {
       updateData.updated_at = new Date().toISOString();
 
       // Update vendor record with facility information (use resolved vendor id)
-      const { update } = await import('../../../database/rds-connection');
       const updated = await vendor_facility_putRepo.dbVendorFacilityPut4(actualVendorId, updateData)
 
       if (updated.length === 0) {
