@@ -30,8 +30,10 @@ import { shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
+import { useDiscoveryProfileVendorResolve } from '@/hooks/useDiscoveryProfileVendorResolve';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
+import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
 import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
 import {
   buildVendorServicesPageUrl,
@@ -91,6 +93,7 @@ interface Provider {
   servicesHydrated?: boolean;
   servicesNextCursor?: string | null;
   servicesLoadingMore?: boolean;
+  priceMin?: number;
 }
 
 export function VetServicesByStyle({ 
@@ -139,18 +142,6 @@ export function VetServicesByStyle({
 
   const mapRowToProvider = useCallback((row: Record<string, unknown>): Provider => {
     const base = mapDiscoveryRowBaseFields(row);
-    const services = (Array.isArray(base.services) ? base.services : []).map((s: any) => ({
-      id: String(s.id ?? s.serviceId ?? s.service_id ?? ''),
-      serviceId: String(s.serviceId ?? s.id ?? s.service_id ?? ''),
-      name: String(s.name ?? s.serviceName ?? 'Service'),
-      price: Number(s.price ?? 0),
-      originalPrice: s.originalPrice != null ? Number(s.originalPrice) : undefined,
-      vendorDiscount: s.vendorDiscount != null ? Number(s.vendorDiscount) : undefined,
-      duration: Number(s.duration ?? 30),
-      description: s.description as string | undefined,
-      category: s.category as string | undefined,
-      isPackage: Boolean(s.isPackage),
-    }));
     return {
       providerId: base.providerId,
       providerType: 'vendor',
@@ -168,7 +159,8 @@ export function VetServicesByStyle({
       distance: base.distance != null ? Number(base.distance) : null,
       isVerified: base.isVerified,
       isIndividualProvider: base.isIndividualProvider,
-      services,
+      priceMin: base.priceMin,
+      services: [],
     };
   }, []);
 
@@ -184,17 +176,21 @@ export function VetServicesByStyle({
         (p) => p.providerId === want || p.vendorId === want
       );
     }
-    setProviders(
-      mapped.map((p) => ({
-        ...p,
-        services: filterServicesForVetHub(Array.isArray(p.services) ? p.services : []),
-      }))
-    );
+    setProviders(mapped);
     // #region agent log
     fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'B',location:'VetServicesByStyle.tsx:feedMap',message:'mapped providers after slim DTO',data:{feedRows:feedRows.length,mapped:mapped.length,vendorId:vendorId??null,serviceStyle},timestamp:Date.now()})}).catch(()=>{});
     // #endregion
     setLoading(feedLoading);
   }, [feedEnabled, feedRows, feedLoading, vendorId, mapRowToProvider, launchGate.ready, launchGate.blocked]);
+
+  const { showProfileLoading, profileResolveFailed } = useDiscoveryProfileVendorResolve({
+    vendorId,
+    feedEnabled,
+    feedLoading,
+    providers,
+    mapRow: mapRowToProvider,
+    setProviders,
+  });
 
   useEffect(() => {
     if (!feedEnabled || !vendorId) return;
@@ -578,7 +574,7 @@ export function VetServicesByStyle({
     );
   }
 
-  if (loading) {
+  if (loading || showProfileLoading) {
     return (
       <div
         className={`flex min-h-[100dvh] min-h-screen w-full items-center justify-center bg-white ${vendorId ? 'max-w-customer mx-auto' : 'max-w-md mx-auto'}`}
@@ -1004,7 +1000,8 @@ export function VetServicesByStyle({
                       onLoadMore={() => loadMoreProviderServices(profileProvider.providerId)}
                     />
                   </div>
-                ) : fetchingServicesFor === profileProvider.providerId ? (
+                ) : fetchingServicesFor === profileProvider.providerId ||
+                  !profileProvider.servicesHydrated ? (
                   <div className="text-center py-16">
                     <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42] mx-auto mb-3" />
                     <p className="text-gray-600">Loading services…</p>
@@ -1193,7 +1190,15 @@ export function VetServicesByStyle({
 
       {/* Content */}
       <div className="w-full px-4 sm:px-6 pb-24">
-        {providers.length === 0 ? (
+        {vendorId && providers.length !== 1 ? (
+          profileResolveFailed ? (
+            <Card className="p-8 text-center bg-white">
+              <h3 className="font-semibold text-gray-900 mb-2">Provider not found</h3>
+              <p className="text-gray-500 text-sm mb-4">This provider may no longer be available.</p>
+              <Button onClick={onBack} variant="outline">Go back</Button>
+            </Card>
+          ) : null
+        ) : providers.length === 0 ? (
           <Card className="p-8 text-center bg-white">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               {getStyleIcon()}
@@ -1246,17 +1251,12 @@ export function VetServicesByStyle({
                   <div className="flex min-w-0 w-full items-start justify-between gap-2">
                     <div className="flex min-w-0 flex-1 items-start gap-3">
                       {/* Provider Photo or Initial */}
-                      {provider.photo ? (
-                        <img 
-                          src={provider.photo} 
-                          alt={provider.name}
-                          className="h-12 w-12 shrink-0 rounded-full border-2 border-[#FF8C42] object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#FF8C42] text-lg font-bold text-white">
-                          {provider.name.charAt(0)}
-                        </div>
-                      )}
+                      <DiscoveryProviderAvatar
+                        name={provider.name}
+                        photo={provider.photo}
+                        className="h-12 w-12 shrink-0 rounded-full border-2 border-[#FF8C42] object-cover"
+                        fallbackClassName="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#FF8C42] text-lg font-bold text-white"
+                      />
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-gray-900">{provider.name}</h3>
@@ -1412,25 +1412,40 @@ export function VetServicesByStyle({
                   </div>
                 )}
 
-                {/* Quick Book - when not expanded */}
-                {!expanded && (provider.services.length > 0 || provider.servicesHydrated) && (
+                {!expanded && (
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service{provider.services.length !== 1 ? 's' : ''} available
-                      {provider.services[0] && (
-                        <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(
-                          Math.min(...provider.services.map(s => {
-                            // ✅ FIX GAP-7.1: Use discounted price if available
-                            const basePrice = s.originalPrice || s.price;
-                            const finalPrice = s.vendorDiscount 
-                              ? basePrice * (1 - s.vendorDiscount / 100)
-                              : basePrice;
-                            return finalPrice;
-                          }))
-                        )}</span>
-                      )}
-                      {provider.services[0] && (
-                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                      {provider.services.length > 0 ? (
+                        <>
+                          {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service
+                          {provider.services.length !== 1 ? 's' : ''} available
+                          <span className="text-gray-900 font-medium">
+                            {' '}
+                            from{' '}
+                            {formatPriceWithSymbol(
+                              Math.min(
+                                ...provider.services.map((s) => {
+                                  const basePrice = s.originalPrice || s.price;
+                                  const finalPrice = s.vendorDiscount
+                                    ? basePrice * (1 - s.vendorDiscount / 100)
+                                    : basePrice;
+                                  return finalPrice;
+                                })
+                              )
+                            )}
+                          </span>
+                          <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                        </>
+                      ) : provider.priceMin != null && provider.priceMin > 0 ? (
+                        <span>
+                          Services available{' '}
+                          <span className="text-gray-900 font-medium">
+                            from {formatPriceWithSymbol(provider.priceMin)}
+                          </span>
+                          <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                        </span>
+                      ) : (
+                        <span>Tap to view services</span>
                       )}
                     </div>
                     <Button

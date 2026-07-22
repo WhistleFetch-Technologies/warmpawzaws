@@ -164,7 +164,7 @@ export function InstantTeleQueue({
       if (response.success) {
         const list = (response.providers || []).map((p: Provider) => ({
           ...p,
-          photo: normalizeProviderListPhoto(p as Record<string, unknown>),
+          photo: normalizeProviderListPhoto(p as unknown as Record<string, unknown>),
         }));
         setProviders(list);
         if (

@@ -646,12 +646,11 @@ export function UniversalServiceProviderList({
   const processFeedRows = useCallback(() => {
     const cleanedProviders = feedRows.map((p) => {
       const base = mapDiscoveryRowBaseFields(p);
-      const services = (Array.isArray(base.services) ? base.services : []) as Service[];
       return {
         ...base,
         providerType: 'vendor' as const,
-        services,
-        needsServiceFetch: services.length === 0,
+        services: [] as Service[],
+        needsServiceFetch: true,
       } as Provider;
     });
 
