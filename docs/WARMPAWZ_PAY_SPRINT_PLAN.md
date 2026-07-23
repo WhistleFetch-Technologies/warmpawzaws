@@ -19,12 +19,12 @@ Warmpawz Pay is a **standalone walk-in payment product**: customer taps a center
 
 | Engineer | Focus | Primary branches |
 |----------|-------|------------------|
-| **Abhi** | Customer journey end-to-end: 4-layer customer read APIs, customer-web (navbar, vendor list, history, pay-screen layout shell) | `feature/abhi-wpay-customer` |
-| **Teammate** | Schema, admin catalogue + settlements UI, Razorpay payment flow (quote/initiate/verify), post-payment async | `feature/wpay-schema`, `feature/wpay-admin`, `feature/wpay-payment-flow`, `feature/wpay-post-payment` |
+| **Bindu** | Schema, admin catalogue + settlements UI, Razorpay payment flow (quote/initiate/verify) | `feature/wpay-schema`, `feature/wpay-admin`, `feature/wpay-payment-flow` |
+| **Abhi** | Post-payment async, customer 4-layer read APIs, customer-web UI, integration + feature flag | `feature/wpay-post-payment`, `feature/abhi-wpay-customer`, `feature/warmpawzpay` |
 
-**Shared integration:** One person acts as **integration owner** for `handler/index.ts` registration, feature flag, and final E2E validation.
+**Integration owner:** Abhi (`feature/warmpawzpay`) — `handler/index.ts` registration, feature flag, joint E2E, docs.
 
-**Pay screen split (agreed):** Abhi builds layout/shell (amount input, bill summary, CTA); teammate wires Razorpay open timing — do **not** change Razorpay initiation order per `customer-navigation.mdc`.
+**Pay screen split (agreed):** Abhi builds layout/shell (amount input, bill summary, CTA); Bindu wires Razorpay open timing — do **not** change Razorpay initiation order per `customer-navigation.mdc`.
 
 ---
 
@@ -35,23 +35,23 @@ Merge **sequentially** into `develop`. Do not merge all branches at once.
 ```text
 develop
   │
-  ├─① feature/wpay-schema                    ← TEAMMATE — merge FIRST (blocks everyone)
+  ├─① feature/wpay-schema                    ← BINDU — merge FIRST (blocks everyone)
   │     db/migrations: payment_source, original_amount, warmpawz_pay_vendor_catalog, indexes
   │
-  ├─② feature/wpay-admin                     ← TEAMMATE — after ①
+  ├─② feature/wpay-admin                     ← BINDU — after ①
   │     Admin catalogue CRUD + publish toggle + settlements sub-sidebar
   │
-  ├─③ feature/wpay-payment-flow              ← TEAMMATE — after ①
+  ├─③ feature/wpay-payment-flow              ← BINDU — after ①
   │     POST /v1/warmpawz-pay/quote | initiate | verify
   │     (can run parallel with ② if no handler conflicts)
   │
-  ├─④ feature/wpay-post-payment              ← TEAMMATE — after ③
+  ├─④ feature/wpay-post-payment              ← ABHI — after ③
   │     PostPaymentProcessor, settlement insert, reconciliation jobs
   │
   ├─⑤ feature/abhi-wpay-customer             ← ABHI — after ① (needs catalogue table)
   │     Customer 4-layer read APIs + customer-web UI
   │
-  └─⑥ feature/warmpawpay                     ← INTEGRATION — after ⑤ + ③
+  └─⑥ feature/warmpawzpay                     ← ABHI — after ⑤ + ③
         Route registration, feature flag, joint E2E, docs
         PR target: develop
 ```
@@ -60,20 +60,20 @@ develop
 
 | Step | Who | Action |
 |------|-----|--------|
-| 1 | Teammate | Push `feature/wpay-schema` → PR to `develop` → merge |
-| 2 | Teammate | Apply migration on dev RDS: `ENVIRONMENT=dev node scripts/run-migration-rds-node.js <file>.sql` |
-| 3 | Teammate | Push `feature/wpay-admin` (rebase on develop) → PR → merge |
-| 4 | Teammate | Push `feature/wpay-payment-flow` (rebase on develop) → PR → merge |
-| 5 | Abhi | Push `feature/abhi-wpay-customer` (rebase on develop after step 1) → PR → merge |
-| 6 | Teammate | Push `feature/wpay-post-payment` → PR → merge |
-| 7 | Either | Integration PR from `feature/warmpawpay` if any glue remains → merge |
+| 1 | Bindu | Push `feature/wpay-schema` → PR to `develop` → merge |
+| 2 | Bindu | Apply migration on dev RDS: `ENVIRONMENT=dev node scripts/run-migration-rds-node.js <file>.sql` |
+| 3 | Bindu | Push `feature/wpay-admin` (rebase on develop) → PR → merge |
+| 4 | Bindu | Push `feature/wpay-payment-flow` (rebase on develop) → PR → merge |
+| 5 | Abhi | Push `feature/wpay-post-payment` (after step 4) → PR → merge |
+| 6 | Abhi | Push `feature/abhi-wpay-customer` (rebase on develop after step 1) → PR → merge |
+| 7 | Abhi | Integration PR from `feature/warmpawzpay` → merge |
 | 8 | Team | Deploy dev: `./scripts/deploy-lambda-direct.sh && ./scripts/deploy-customer-web.sh && ./scripts/deploy-admin-web.sh` |
 | 9 | Team | Manual smoke on dev (see §8) |
 
 ### Conflict avoidance rules
 
-1. **One owner per file** — e.g. only teammate edits `payment-orchestrator.service.ts`.
-2. **Avoid everyone editing** `handler/index.ts` — integration owner merges registrations.
+1. **One owner per file** — e.g. only Bindu edits `payment-orchestrator.service.ts`; only Abhi edits `post-payment-processor.service.ts`.
+2. **Avoid everyone editing** `handler/index.ts` — Abhi merges registrations on `feature/warmpawzpay`.
 3. **Depend on interfaces** — schema owner defines repo interfaces; others consume.
 4. **Short-lived branches** — rebase every 2–3 days; merge within the sprint.
 5. **Customer API gate** — any `backend/lambda/src/endpoints/customer/**` work must pass `npm run validate:customer-layers`.
@@ -82,7 +82,7 @@ develop
 
 ## 4. Cross-team API contracts
 
-### 4.1 Catalogue table (teammate owns migration)
+### 4.1 Catalogue table (Bindu owns migration)
 
 ```sql
 -- Proposed: warmpawz_pay_vendor_catalog
@@ -133,7 +133,7 @@ Query params: `q` (name search), `limit`, `cursor`, `phone` or JWT `customerId`.
 
 Reuse `resolveVendorListSqlPage` / `encodeDiscoveryCursor` with **default limit 5**.
 
-### 4.4 Payment write APIs (teammate owns)
+### 4.4 Payment write APIs (Bindu owns)
 
 Base: `/v1/warmpawz-pay`
 
@@ -143,7 +143,7 @@ Base: `/v1/warmpawz-pay`
 | POST | `/v1/warmpawz-pay/initiate` | Create payment + Razorpay order |
 | POST | `/v1/warmpawz-pay/verify` | Complete payment |
 
-### 4.5 Admin APIs (teammate owns)
+### 4.5 Admin APIs (Bindu owns)
 
 | Area | Endpoints (sketch) |
 |------|-------------------|
@@ -156,9 +156,9 @@ Base: `/v1/warmpawz-pay`
 
 ### Phase 0 — Contract lock (Day 1)
 
-- [ ] Review teammate's `feature/wpay-schema` PR before coding repos
+- [ ] Review Bindu's `feature/wpay-schema` PR before coding repos
 - [ ] Confirm `warmpawz_pay_vendor_catalog` columns + eligibility flags
-- [ ] Confirm customer DTO shapes and pagination envelope with teammate
+- [ ] Confirm customer DTO shapes and pagination envelope with Bindu
 - [ ] Confirm pay-shell integration points: quote → initiate → verify request/response shapes
 - [ ] Run §0 dirty-tree gate per `endpoint-4-layer-parity.mdc` — work only on wpay files on a clean branch
 
@@ -194,7 +194,7 @@ index.ts    → registerCustomerWarmpawzPayEndpoints(app)
 - [ ] Extend `CustomerTabId` + `CUSTOMER_ROUTES.warmpawzPay` → `/warmpawz-pay` (`policy: 'focus'`)
 - [ ] Add `goToWarmpawzPay()` in `navigation-service.ts`
 - [ ] Wire `CustomerHomeWrapper.handleBottomNav` + `customer-account-sidebar-host.handleTabbedBottomNav`
-- [ ] Gate on `WARMPAWZ_PAY_ENABLED` runtime flag (read only; teammate defines flag)
+- [ ] Gate on `WARMPAWZ_PAY_ENABLED` runtime flag (Abhi sets on integration branch)
 - [ ] Update `--customer-tabbed-nav-offset` in `globals.css` if FAB height changes
 - [ ] `npm run test:navigation`
 
@@ -226,20 +226,45 @@ index.ts    → registerCustomerWarmpawzPayEndpoints(app)
 - [ ] Vendor card + offer banner from `discountPercent` / `maxDiscountAmount`
 - [ ] Bill amount input + quick amount chips (₹500, ₹1000, …)
 - [ ] Client-side preview summary (authoritative numbers from quote API)
-- [ ] "Proceed to Pay" button → calls teammate `quote` → `initiate` → **teammate opens Razorpay**
+- [ ] "Proceed to Pay" button → calls Bindu's `quote` → `initiate` → **Bindu opens Razorpay**
 - [ ] Success state → history or confirmation
 - [ ] **Do not** change Razorpay open timing
 
-### Phase 6 — Verification (Day 9)
+### Phase 6 — Post-payment async (Days 7–9)
+
+**Branch:** `feature/wpay-post-payment` (after Bindu's payment-flow merge)
+
+- [ ] `PostPaymentProcessor` (idempotent per subsystem)
+- [ ] Async settlement insert (`order_type = 'warmpawz_pay'`)
+- [ ] Async promotion usage insert
+- [ ] Async admin ledger (`transactions`)
+- [ ] Notifications via notification service
+- [ ] Reconciliation jobs:
+  - [ ] `reconcile-pending-payments`
+  - [ ] `reconcile-missing-settlements`
+  - [ ] `reconcile-missing-promo-usage`
+- [ ] Integration tests + smoke script `_warmpawz-pay-smoke-fixtures.json`
+- [ ] PR → `develop`
+
+### Phase 7 — Integration + feature flag (Day 10)
+
+**Branch:** `feature/warmpawzpay`
+
+- [ ] `WARMPAWZ_PAY_ENABLED` flag (Lambda env + customer/admin runtime config)
+- [ ] Register `registerWarmpawzPayRoutes(app)` + `registerCustomerWarmpawzPayEndpoints(app)` in `handler/index.ts`
+- [ ] Joint E2E with Bindu on dev
+- [ ] PR → `develop`
+
+### Phase 8 — Verification (Day 11)
 
 - [ ] `validate:customer-layers` green
 - [ ] `test:navigation` green
-- [ ] Manual dev smoke: admin publishes vendor → appears in list → pay (with teammate) → history row
-- [ ] PR: `feature/abhi-wpay-customer` → `develop`
+- [ ] Manual dev smoke: Bindu publishes vendor in admin → appears in list → pay → history row
+- [ ] PRs merged: `feature/abhi-wpay-customer`, `feature/wpay-post-payment`, `feature/warmpawzpay`
 
 ---
 
-## 6. Teammate — detailed task list
+## 6. Bindu — detailed task list
 
 ### Phase 0 — Schema (Days 1–2) — **MERGE FIRST**
 
@@ -300,29 +325,6 @@ Module: `backend/lambda/src/endpoints/warmpawz-pay/`
 - [ ] Export Razorpay hook for Abhi's pay shell
 - [ ] PR → `develop`
 
-### Phase 3 — Post-payment async (Days 7–9)
-
-**Branch:** `feature/wpay-post-payment` (after payment-flow merge)
-
-- [ ] `PostPaymentProcessor` (idempotent per subsystem)
-- [ ] Async settlement insert (`order_type = 'warmpawz_pay'`)
-- [ ] Async promotion usage insert
-- [ ] Async admin ledger (`transactions`)
-- [ ] Notifications via notification service
-- [ ] Reconciliation jobs:
-  - [ ] `reconcile-pending-payments`
-  - [ ] `reconcile-missing-settlements`
-  - [ ] `reconcile-missing-promo-usage`
-- [ ] Integration tests + smoke script `_warmpawz-pay-smoke-fixtures.json`
-- [ ] PR → `develop`
-
-### Phase 4 — Feature flag + integration (Day 10)
-
-- [ ] `WARMPAWZ_PAY_ENABLED` flag (Lambda env + customer/admin runtime config)
-- [ ] Register `registerWarmpawzPayRoutes(app)` in `handler/index.ts` (integration owner)
-- [ ] Admin refund API: `POST /v1/admin/warmpawz-pay/refunds` (Sprint 1 stretch / Sprint 2)
-- [ ] Joint E2E with Abhi on dev
-
 ---
 
 ## 7. Customer-web file map (Abhi)
@@ -346,21 +348,21 @@ Module: `backend/lambda/src/endpoints/warmpawz-pay/`
 
 ### Abhi
 
+- [ ] Post-payment processor + reconciliation jobs on dev
 - [ ] All customer read APIs live with lean DTOs + cursor pagination (5/page)
 - [ ] `validate:customer-layers` passes
 - [ ] Center navbar → vendor list → vendor pay shell → history flow works
 - [ ] Clock icon shows past payments with correct amounts
-- [ ] Feature hidden when flag off
+- [ ] Feature flag + handler registration on `feature/warmpawzpay`
 - [ ] `test:navigation` passes
 
-### Teammate
+### Bindu
 
 - [ ] Schema on dev RDS
 - [ ] Admin can add vendor, set discount %, publish/unpublish
 - [ ] Admin settlements tab shows wpay payments
 - [ ] Quote → initiate → verify completes a test payment on dev
-- [ ] Post-payment processor creates settlement + promo usage rows
-- [ ] Reconciliation jobs scheduled on dev
+- [ ] Razorpay hook exported for Abhi's pay shell
 
 ### Joint
 
@@ -387,15 +389,19 @@ flowchart TB
     TxGET["GET /customer/warmpawz-pay/transactions"]
   end
 
-  subgraph adminApp [Admin Web - Teammate]
+  subgraph adminApp [Admin Web - Bindu]
     Catalogue[Vendor catalogue CRUD]
   end
 
-  subgraph wpayBC [Warmpawz Pay BC - Teammate]
-    Quote[POST /quote]
-    Initiate[POST /initiate]
-    Verify[POST /verify]
-    PostProc[PostPaymentProcessor]
+  subgraph wpayBC [Warmpawz Pay BC]
+    subgraph binduFlow [Bindu]
+      Quote[POST /quote]
+      Initiate[POST /initiate]
+      Verify[POST /verify]
+    end
+    subgraph abhiFlow [Abhi]
+      PostProc[PostPaymentProcessor]
+    end
   end
 
   subgraph data [PostgreSQL]
@@ -420,11 +426,11 @@ flowchart TB
 
 | Risk | Owner | Mitigation |
 |------|-------|------------|
-| Catalogue table not in architecture doc | Teammate | Add to schema PR; Abhi blocks repo until merged |
-| Handler registration conflicts | Integration owner | Single PR for `handler/index.ts` |
+| Catalogue table not in architecture doc | Bindu | Add to schema PR; Abhi blocks repo until merged |
+| Handler registration conflicts | Abhi | Single integration PR on `feature/warmpawzpay` |
 | Dirty customer endpoint tree | Abhi | Fresh branch; wpay files only |
-| Razorpay timing regression | Teammate | Abhi does not touch open timing |
-| Duplicate history APIs | Both | Abhi owns `/customer/...` reads; teammate HistoryService shares SQL via repo interface |
+| Razorpay timing regression | Bindu | Abhi does not touch open timing |
+| Duplicate history APIs | Both | Abhi owns `/customer/...` reads; share SQL via repo interface |
 
 ---
 
@@ -437,10 +443,10 @@ cd backend/lambda && npm run validate:customer-layers
 # Customer navigation (Abhi)
 cd apps/customer-web && npm run test:navigation
 
-# Warmpawz Pay dependency guard (Teammate)
+# Warmpawz Pay dependency guard (Bindu)
 cd backend/lambda && npm run validate:warmpawz-pay-deps
 
-# Dev migration (Teammate, after schema PR merge)
+# Dev migration (Bindu, after schema PR merge)
 ENVIRONMENT=dev node scripts/run-migration-rds-node.js <migration_file>.sql
 
 # Dev deploy (integration)
