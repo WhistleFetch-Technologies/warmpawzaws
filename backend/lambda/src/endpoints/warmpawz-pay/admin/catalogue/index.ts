@@ -11,6 +11,9 @@ import {
 
 export type { CatalogueAdminRouteDeps };
 
+export { cataloguePublishHandler } from './handlers/catalogue-publish.handler';
+export { catalogueUnpublishHandler } from './handlers/catalogue-unpublish.handler';
+
 export interface RegisterWarmpawzPayCatalogueAdminRoutesOptions {
   readonly deps?: CatalogueAdminRouteDeps;
 }

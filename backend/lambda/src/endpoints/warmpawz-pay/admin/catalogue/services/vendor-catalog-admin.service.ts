@@ -1,6 +1,6 @@
 import { DRAFT, PUBLISHED } from '../../../constants/publish-status';
 import { CatalogueErrorCode } from '../dto/catalogue.errors';
-import type { CreateCatalogueRequest, CatalogueListQuery } from '../dto/catalogue.requests';
+import type { CreateCatalogueRequest, CatalogueListQuery, VendorCandidatesQuery } from '../dto/catalogue.requests';
 import type {
   BulkOperationResponse,
   BulkOperationResultItem,
@@ -8,9 +8,14 @@ import type {
   CatalogueListData,
   CatalogueListItem,
   EligibilityDTO,
+  VendorCandidateDTO,
+  VendorCandidateListData,
 } from '../dto/catalogue.responses';
 import type { IVendorCatalogRepository, CatalogueRowWithVendor } from '../../../repositories/interfaces/IVendorCatalogRepository';
-import type { IVendorEligibilityRepository } from '../../../repositories/interfaces/IVendorEligibilityRepository';
+import type {
+  IVendorEligibilityRepository,
+  VendorCandidateRow,
+} from '../../../repositories/interfaces/IVendorEligibilityRepository';
 import { CatalogueRepositoryError } from '../../../repositories/vendor-catalog.repository';
 import {
   CatalogueAuditService,
@@ -122,6 +127,30 @@ export class VendorCatalogAdminService {
 
     return {
       items,
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        total,
+        totalPages: total === 0 ? 0 : Math.ceil(total / query.pageSize),
+      },
+    };
+  }
+
+  async searchVendorCandidates(query: VendorCandidatesQuery): Promise<VendorCandidateListData> {
+    const filters = {
+      page: query.page,
+      pageSize: query.pageSize,
+      q: query.q,
+      status: query.status,
+    };
+
+    const [rows, total] = await Promise.all([
+      this.eligibilityRepository.searchCandidates(filters),
+      this.eligibilityRepository.countCandidates(filters),
+    ]);
+
+    return {
+      items: rows.map((row) => this.mapVendorCandidate(row)),
       pagination: {
         page: query.page,
         pageSize: query.pageSize,
@@ -294,6 +323,17 @@ export class VendorCatalogAdminService {
     resolved: ResolvedEligibility,
   ): CatalogueDetail {
     return this.buildCatalogueListItem(row, resolved);
+  }
+
+  private mapVendorCandidate(row: VendorCandidateRow): VendorCandidateDTO {
+    return {
+      vendorId: row.vendorId,
+      businessName: row.businessName,
+      city: row.city,
+      status: row.status,
+      payBillEnabled: row.payBillEnabled,
+      bankVerified: row.bankVerified,
+    };
   }
 
   private async runBulkOperation(

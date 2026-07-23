@@ -5,6 +5,8 @@ import { catalogueCreateHandler } from '../handlers/catalogue-create.handler';
 import { catalogueDeleteHandler } from '../handlers/catalogue-delete.handler';
 import { catalogueDetailHandler } from '../handlers/catalogue-detail.handler';
 import { catalogueListHandler } from '../handlers/catalogue-list.handler';
+import { cataloguePublishHandler } from '../handlers/catalogue-publish.handler';
+import { catalogueUnpublishHandler } from '../handlers/catalogue-unpublish.handler';
 import { vendorCandidatesHandler } from '../handlers/vendor-candidates.handler';
 
 export interface CatalogueAdminRouteDeps {
@@ -19,5 +21,11 @@ export function registerCatalogueAdminRoutes(app: Hono, deps: CatalogueAdminRout
   );
   app.get('/admin/warmpawz-pay/catalogue/:catalogueId', (c) => catalogueDetailHandler(c, deps));
   app.post('/admin/warmpawz-pay/catalogue', (c) => catalogueCreateHandler(c, deps));
+  app.post('/admin/warmpawz-pay/catalogue/:catalogueId/publish', (c) =>
+    cataloguePublishHandler(c, deps),
+  );
+  app.post('/admin/warmpawz-pay/catalogue/:catalogueId/unpublish', (c) =>
+    catalogueUnpublishHandler(c, deps),
+  );
   app.delete('/admin/warmpawz-pay/catalogue/:catalogueId', (c) => catalogueDeleteHandler(c, deps));
 }
