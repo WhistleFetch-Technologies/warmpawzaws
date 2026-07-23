@@ -284,6 +284,8 @@ module "lambda" {
       DISCOUNT_ENGINE_V2_CAMPAIGN_MODE    = "AUTHORITATIVE"
       COMMERCIAL_AI_COPILOT_ENABLED       = "true"
       FINANCE_FUNDING_AWARE_SETTLEMENT    = "SHADOW"
+      WARMPAWZ_PAY_ENABLED                = "true"
+      WARMPAWZ_PAY_ADMIN_ENABLED          = "true"
     }
   )
 

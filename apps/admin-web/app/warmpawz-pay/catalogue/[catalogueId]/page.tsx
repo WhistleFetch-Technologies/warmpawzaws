@@ -1,8 +1,12 @@
-'use client';
-export const dynamic = 'force-dynamic';
-
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
-import { CatalogueDetailPage } from '@/components/admin/warmpawz-pay/catalogue/CatalogueDetailPage';
+import { CatalogueDetailRouteClient } from './CatalogueDetailRouteClient';
+
+// `output: 'export'` requires at least one segment; build uses `placeholder` only for the HTML shell.
+export async function generateStaticParams() {
+  return [{ catalogueId: 'placeholder' }];
+}
+
+export const dynamicParams = true;
 
 export default function WarmpawzPayCatalogueDetailPage({
   params,
@@ -11,7 +15,7 @@ export default function WarmpawzPayCatalogueDetailPage({
 }) {
   return (
     <AdminLayout>
-      <CatalogueDetailPage catalogueId={params.catalogueId} />
+      <CatalogueDetailRouteClient catalogueId={params.catalogueId} />
     </AdminLayout>
   );
 }
