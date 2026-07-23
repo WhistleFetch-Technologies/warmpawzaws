@@ -33,6 +33,8 @@ const PUBLIC_ENDPOINTS = [
   '/service-catalog/services',
   '/services/discovery',
   '/config/roles',
+  '/config/commerce-switch',
+  '/config/commerce-switch/health',
   '/regions',
   '/webhooks',
 ];

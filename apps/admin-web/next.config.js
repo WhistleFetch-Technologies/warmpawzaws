@@ -40,6 +40,7 @@ const nextConfig = {
     '@warmpawz/shared-types',
     '@warmpawz/promotion-management-ui',
     '@warmpawz/commercial-campaign-ui',
+    '@warmpawz/commerce-switch-contracts',
   ],
   swcMinify: true,
   compress: true,

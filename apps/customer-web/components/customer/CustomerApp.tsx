@@ -11,6 +11,7 @@ import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { CustomerBookingMessagesModalProvider } from './messaging/CustomerBookingMessagesModalProvider';
 import { resetHomeBootstrapForPhone } from '@/lib/customer-home-bootstrap';
+import { prefetchCommerceSwitchConfigurationOnStartup } from '@/lib/commerce-switch-client';
 
 interface CustomerSession {
   phone: string;
@@ -55,6 +56,10 @@ export function CustomerApp({
   useEffect(() => {
     setSession(initialSession);
   }, [initialSession]);
+
+  useEffect(() => {
+    prefetchCommerceSwitchConfigurationOnStartup();
+  }, []);
 
   useEffect(() => {
     const userId = getResolvedCustomerId();

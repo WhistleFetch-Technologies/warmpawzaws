@@ -194,6 +194,8 @@ jobs:
         working-directory: backend/lambda
         run: |
           npm ci
+          npm run validate:commerce-switch
+          npm test -- --testPathPattern=commerce-switch
           npm run build
           ls -lh api-handler.zip  # Verify ZIP was created
 

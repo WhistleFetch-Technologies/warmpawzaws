@@ -135,6 +135,10 @@ export async function executecustomerCustomeridBookingsGet(c: Context) {
           selectedServices: parseSelectedServices(b.selected_services),
           selected_services: b.selected_services, // ✅ FIX: Include raw selected_services for frontend parsing
           totalDurationMinutes: b.total_duration_minutes != null ? Number(b.total_duration_minutes) : undefined,
+          commerceMode: b.commerce_mode ?? 'marketplace',
+          commerce_mode: b.commerce_mode ?? 'marketplace',
+          commerceVersion: b.commerce_version != null ? Number(b.commerce_version) : undefined,
+          commerce_version: b.commerce_version != null ? Number(b.commerce_version) : undefined,
           paymentSources: paymentSourcesByBooking.get(b.id) || [],
           ...packageFieldsFromBookingRow(b),
         })),
