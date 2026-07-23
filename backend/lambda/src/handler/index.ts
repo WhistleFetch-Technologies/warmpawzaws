@@ -36,6 +36,7 @@ import { registerVendorDashboardEndpoints } from '../endpoints/vendor/endpoints/
 import { registerAdminEndpoints } from '../endpoints/admin/endpoints/admin.controller';
 import { registerWarmpawzPayCatalogueAdminRoutes } from '../endpoints/warmpawz-pay/admin/catalogue';
 import { registerWarmpawzPayDashboardAdminRoutes } from '../endpoints/warmpawz-pay/admin/dashboard';
+import { registerWarmpawzPayMerchantsAdminRoutes } from '../endpoints/warmpawz-pay/admin/merchants';
 import { registerAdminAiCopilotEndpoints } from '../endpoints/admin/endpoints/admin-ai-copilot';
 import { registerCommercialAiCopilotEndpoints } from '../endpoints/admin/endpoints/commercial-ai-copilot.endpoints';
 import { registerVideoCallEndpoints } from '../endpoints/teleCommunication/endpoints/video-call.teleCommunication';
@@ -677,6 +678,7 @@ registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized 
 registerGpsTrackingEndpoints(app);
 registerAdminEndpoints(app);
 registerWarmpawzPayDashboardAdminRoutes(app);
+registerWarmpawzPayMerchantsAdminRoutes(app);
 registerWarmpawzPayCatalogueAdminRoutes(app);
 registerAdminAiCopilotEndpoints(app);
 registerCommercialAiCopilotEndpoints(app);

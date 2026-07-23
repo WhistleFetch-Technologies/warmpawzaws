@@ -197,7 +197,7 @@ export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
     section: 'main',
     sortOrder: 75,
     description: 'Warmpawz Pay vendor catalogue administration',
-    routeHint: '/warmpawz-pay/catalogue',
+    routeHint: '/warmpawz-pay',
   },
   {
     id: 'shop-refunds',

@@ -9,6 +9,8 @@ export * from './useOrders';
 export * from './usePayments';
 export * from './useBookings';
 export * from './warmpawz-pay/useCatalogue';
+export * from './warmpawz-pay/useWarmpawzPayDashboard';
+export * from './warmpawz-pay/useMerchants';
 export * from './warmpawz-pay/useBulkCatalogueActions';
 
 // Reusable hooks
