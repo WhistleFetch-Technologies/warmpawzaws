@@ -6,8 +6,12 @@
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../database/rds-connection';
 import { getRazorpayClient } from './razorpay-client';
-import { incrementSkuStock } from '../product-sku-order';
 import { discardUnpaidShopOrder } from '../shop-payment-hold';
+import {
+  ACTIVE_REFUND_STATUS_FILTER,
+  CUSTOMER_CANCEL_STATUSES,
+  VENDOR_CANCEL_STATUSES,
+} from './refund-status';
 
 export type ShopCancelledBy = 'pet_parent' | 'provider' | 'system';
 
@@ -74,8 +78,18 @@ type LockedOrderRow = {
   cancelled_by: string | null;
 };
 
-const DEFAULT_ALLOWED_STATUSES = ['pending', 'confirmed'];
-const VENDOR_ALLOWED_STATUSES = ['pending', 'confirmed', 'processing'];
+/** @deprecated Use CUSTOMER_CANCEL_STATUSES from refund-status */
+const DEFAULT_ALLOWED_STATUSES = [...CUSTOMER_CANCEL_STATUSES];
+const VENDOR_ALLOWED_STATUSES = [...VENDOR_CANCEL_STATUSES];
+
+function runQuery(
+  client: PoolClient | undefined,
+  sql: string,
+  params?: unknown[],
+): ReturnType<typeof query> {
+  if (client) return client.query(sql, params);
+  return query(sql, params);
+}
 
 function parseMetadata(raw: unknown): Record<string, unknown> {
   if (raw == null) return {};
@@ -126,41 +140,86 @@ async function lockShopOrder(
   return (res.rows[0] as LockedOrderRow | undefined) ?? null;
 }
 
+async function incrementSkuStockWithClient(
+  client: PoolClient | undefined,
+  skuRowId: string,
+  quantity: number,
+): Promise<void> {
+  if (!skuRowId || quantity <= 0) return;
+  await runQuery(
+    client,
+    `UPDATE product_skus SET stock = stock + $2, updated_at = NOW() WHERE id = $1`,
+    [skuRowId, quantity],
+  );
+  const parent = await runQuery(client, `SELECT product_id FROM product_skus WHERE id = $1`, [skuRowId]);
+  const productId = parent.rows[0]?.product_id;
+  if (productId) {
+    const sumRes = await runQuery(
+      client,
+      `SELECT COALESCE(SUM(stock), 0)::int AS total FROM product_skus WHERE product_id = $1`,
+      [productId],
+    );
+    const total = parseInt(String(sumRes.rows[0]?.total ?? '0'), 10) || 0;
+    await runQuery(client, `UPDATE products SET stock = $2, updated_at = NOW() WHERE id = $1`, [
+      productId,
+      total,
+    ]);
+  }
+}
+
 export async function restoreShopOrderStockIfNeeded(
   orderId: string,
   metadataFromOrderRow?: Record<string, unknown>,
+  client?: PoolClient,
 ): Promise<boolean> {
   const meta = metadataFromOrderRow ?? {};
   if (meta.stock_restored_at) return false;
 
-  const items = await query(
+  const items = await runQuery(
+    client,
     `SELECT product_sku_id, quantity
      FROM order_items
      WHERE order_id = $1::uuid AND product_sku_id IS NOT NULL`,
     [orderId],
   );
 
-  let restored = false;
+  if (items.rows.length === 0) return false;
+
+  const markRes = await runQuery(
+    client,
+    `UPDATE orders
+     SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('stock_restored_at', NOW()::text),
+         updated_at = NOW()
+     WHERE id = $1::uuid
+       AND (metadata IS NULL OR metadata->>'stock_restored_at' IS NULL)
+     RETURNING id`,
+    [orderId],
+  );
+  if (markRes.rows.length === 0) return false;
+
   for (const row of items.rows) {
     const skuId = row.product_sku_id ? String(row.product_sku_id) : '';
     const qty = Math.max(0, Math.floor(Number(row.quantity) || 0));
     if (skuId && qty > 0) {
-      await incrementSkuStock(skuId, qty);
-      restored = true;
+      await incrementSkuStockWithClient(client, skuId, qty);
     }
   }
+  return true;
+}
 
-  if (restored) {
-    await query(
-      `UPDATE orders
-       SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('stock_restored_at', NOW()::text),
-           updated_at = NOW()
-       WHERE id = $1::uuid
-         AND (metadata IS NULL OR metadata->>'stock_restored_at' IS NULL)`,
-      [orderId],
-    );
-  }
-  return restored;
+/** Set orders.payment_status when payment is fully refunded (shop orders). */
+export async function markShopOrderPaymentRefundedIfFull(
+  orderId: string,
+  client?: PoolClient,
+): Promise<void> {
+  await runQuery(
+    client,
+    `UPDATE orders
+     SET payment_status = 'refunded', updated_at = NOW()
+     WHERE id = $1::uuid
+       AND LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed')`,
+    [orderId],
+  );
 }
 
 async function sumActiveRefundsForPayment(client: PoolClient, paymentId: string): Promise<number> {
@@ -168,7 +227,7 @@ async function sumActiveRefundsForPayment(client: PoolClient, paymentId: string)
     `SELECT COALESCE(SUM(refund_amount), 0)::text AS total
      FROM refunds
      WHERE payment_id = $1::uuid
-       AND refund_status NOT IN ('failed', 'rejected')`,
+       AND ${ACTIVE_REFUND_STATUS_FILTER}`,
     [paymentId],
   );
   return parseFloat(String(res.rows[0]?.total ?? '0')) || 0;
@@ -251,12 +310,14 @@ export async function initiateShopOrderRazorpayRefund(
   let existingStatus = '';
   let skipRazorpay = false;
   let razorpayAmount = requestedAmount;
+  let paymentAmountForCap = 0;
 
   await withTransaction(async (client) => {
     const payment = await fetchLatestCompletedPayment(client, input.orderId);
     if (!payment?.razorpay_payment_id) return;
 
     razorpayPaymentId = payment.razorpay_payment_id;
+    paymentAmountForCap = payment.amount;
     const alreadyRefunded = await sumActiveRefundsForPayment(client, payment.id);
     const available = round2(Math.max(0, payment.amount - alreadyRefunded));
     razorpayAmount = round2(Math.min(requestedAmount, available));
@@ -353,6 +414,10 @@ export async function initiateShopOrderRazorpayRefund(
       customerId: input.customerId,
     }).catch(() => {});
 
+    if (paymentAmountForCap > 0 && razorpayAmount >= paymentAmountForCap - 0.01) {
+      await markShopOrderPaymentRefundedIfFull(input.orderId);
+    }
+
     return {
       success: true,
       refundStatus: 'processing',
@@ -390,6 +455,7 @@ export async function cancelPaidShopOrder(
   let customerId = '';
   let vendorId: string | null = null;
   let refundAmount = 0;
+  let paymentAmount = 0;
   let needsRazorpay = false;
   let alreadyCancelled = false;
 
@@ -459,12 +525,13 @@ export async function cancelPaidShopOrder(
       );
 
       if (!meta.stock_restored_at) {
-        stockRestored = await restoreShopOrderStockIfNeeded(input.orderId, meta);
+        stockRestored = await restoreShopOrderStockIfNeeded(input.orderId, meta, client);
       }
 
       if (isPaidOrder(row)) {
         const payment = await fetchLatestCompletedPayment(client, input.orderId);
         if (payment) {
+          paymentAmount = payment.amount;
           const alreadyRefunded = await sumActiveRefundsForPayment(client, payment.id);
           const available = round2(Math.max(0, payment.amount - alreadyRefunded));
           refundAmount = round2(
@@ -522,6 +589,8 @@ export async function cancelPaidShopOrder(
       });
       refundStatus = rz.refundStatus;
       refundId = rz.refundId || refundId;
+    } else if (refundAmount > 0.009 && paymentAmount > 0 && refundAmount >= paymentAmount - 0.01) {
+      await markShopOrderPaymentRefundedIfFull(input.orderId);
     }
 
     void notifyShopOrderStatusChangeAsync(input.orderId, previousStatus, reason);
@@ -714,4 +783,4 @@ export async function notifyShopRefundLifecycle(params: {
   }
 }
 
-export { VENDOR_ALLOWED_STATUSES };
+export { VENDOR_ALLOWED_STATUSES, CUSTOMER_CANCEL_STATUSES };

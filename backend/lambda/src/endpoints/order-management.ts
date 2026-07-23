@@ -23,6 +23,7 @@ import { isValidUUID } from '../types/entities';
 import {
   cancelPaidShopOrder,
   VENDOR_ALLOWED_STATUSES,
+  CUSTOMER_CANCEL_STATUSES,
 } from '../utils/payments/shop-order-refund';
 
 const validTransitions: Record<string, string[]> = {
@@ -36,6 +37,15 @@ const validTransitions: Record<string, string[]> = {
   'refunded': [],
 };
 
+function resolveOrderActor(c: { get: (key: string) => unknown }) {
+  const userId = String(c.get('userId') || '');
+  const userRole = String(c.get('userRole') || '').toLowerCase();
+  const isVendor = userRole === 'vendor';
+  const isCustomer = userRole === 'customer' || userRole === 'user' || userRole === 'pet_parent';
+  const isAdmin = userRole === 'admin' || userRole.startsWith('admin');
+  return { userId, userRole, isVendor, isCustomer, isAdmin };
+}
+
 export function registerOrderManagementEndpoints(app: Hono) {
   /**
    * PUT /orders/:orderId/status
@@ -44,10 +54,56 @@ export function registerOrderManagementEndpoints(app: Hono) {
   app.put("/orders/:orderId/status", async (c) => {
     try {
       const { orderId } = c.req.param();
-      const { status, trackingNumber, notes } = await c.req.json();
+      const body = await c.req.json();
+      const { status, trackingNumber, notes } = body;
+      const cancellationReason =
+        typeof body?.cancellation_reason === 'string' ? body.cancellation_reason : undefined;
+
+      const { userId, isVendor, isCustomer, isAdmin } = resolveOrderActor(c);
+      if (!userId) {
+        return c.json({ error: 'Authentication required' }, 401);
+      }
 
       if (!status) {
         return c.json({ error: 'status is required' }, 400);
+      }
+
+      if (status === 'cancelled') {
+        if (!isVendor && !isCustomer) {
+          return c.json({ error: 'Forbidden' }, 403);
+        }
+
+        const cancelResult = await cancelPaidShopOrder({
+          orderId,
+          reason: notes || cancellationReason || (isVendor ? 'Vendor cancellation' : 'Customer request'),
+          cancelledBy: isVendor ? 'provider' : 'pet_parent',
+          customerId: isCustomer && !isVendor ? userId : undefined,
+          vendorId: isVendor ? userId : undefined,
+          allowedStatuses: isVendor
+            ? [...VENDOR_ALLOWED_STATUSES]
+            : [...CUSTOMER_CANCEL_STATUSES],
+        });
+
+        if (!cancelResult.success) {
+          if (cancelResult.error === 'Order not found') {
+            return c.json({ error: 'Order not found' }, 404);
+          }
+          return c.json({ error: cancelResult.error || 'Cancellation failed' }, 400);
+        }
+
+        return c.json({
+          success: true,
+          orderId: cancelResult.orderId,
+          status: cancelResult.status,
+          cancelledBy: cancelResult.cancelledBy,
+          refundStatus: cancelResult.refundStatus,
+          stockRestored: cancelResult.stockRestored,
+          message: 'Order cancelled successfully',
+        });
+      }
+
+      if (isCustomer && !isVendor && !isAdmin) {
+        return c.json({ error: 'Forbidden' }, 403);
       }
 
       // Get order
@@ -81,10 +137,6 @@ export function registerOrderManagementEndpoints(app: Hono) {
 
       if (status === 'delivered') {
         updateData.delivered_at = new Date().toISOString();
-      }
-
-      if (status === 'cancelled') {
-        updateData.cancelled_at = new Date().toISOString();
       }
 
       // Update order
@@ -254,7 +306,7 @@ export function registerOrderManagementEndpoints(app: Hono) {
         cancelledBy: isVendor ? 'provider' : 'pet_parent',
         customerId: isCustomer && !isVendor ? userId : undefined,
         vendorId: isVendor ? userId : undefined,
-        allowedStatuses: isVendor ? VENDOR_ALLOWED_STATUSES : ['pending', 'confirmed'],
+        allowedStatuses: isVendor ? VENDOR_ALLOWED_STATUSES : [...CUSTOMER_CANCEL_STATUSES],
       });
 
       if (!result.success) {

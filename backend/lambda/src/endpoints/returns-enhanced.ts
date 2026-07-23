@@ -25,8 +25,20 @@ import {
 } from '../utils/category-return-eligibility';
 import {
   initiateShopOrderRazorpayRefund,
+  markShopOrderPaymentRefundedIfFull,
   type ShopRefundStatus,
 } from '../utils/payments/shop-order-refund';
+
+async function maybeMarkOrderFullyRefunded(orderId: string, refundAmount: number): Promise<void> {
+  const orderRes = await query(
+    `SELECT total_amount::text FROM orders WHERE id = $1::uuid LIMIT 1`,
+    [orderId],
+  );
+  const total = parseFloat(String(orderRes.rows[0]?.total_amount ?? '0')) || 0;
+  if (total > 0.009 && refundAmount >= total - 0.01) {
+    await markShopOrderPaymentRefundedIfFull(orderId);
+  }
+}
 
 const RETURN_REASONS = [
   { id: 'damaged', label: 'Product damaged/defective' },
@@ -634,6 +646,9 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
               vendorId: String(row.vendor_id),
             });
             refundStatus = rz.refundStatus;
+            if (rz.success) {
+              await maybeMarkOrderFullyRefunded(String(row.order_id), refundAmount);
+            }
           }
         }
       }
@@ -862,6 +877,9 @@ export function registerReturnsEnhancedEndpoints(app: Hono) {
           error: rz.error,
           refundStatus: rz.refundStatus,
         };
+        if (rz.success) {
+          await maybeMarkOrderFullyRefunded(String(returnRequest.order_id), refundAmount);
+        }
       }
 
       // Update return status
