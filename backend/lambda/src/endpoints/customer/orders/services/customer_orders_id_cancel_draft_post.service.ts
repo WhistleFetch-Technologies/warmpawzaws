@@ -1,11 +1,12 @@
 import type { Context } from 'hono';
+import { resolveCustomerIdFromHonoContext } from '../../../../utils/customer-id-from-auth';
 import { discardDraftShopOrder } from '../../../../utils/payments/shop-order-refund';
 import * as repo from '../repos/customer_orders_id_cancel_draft_post.repo';
 
 export async function executecustomerOrdersIdCancelDraftPost(c: Context) {
   try {
     const orderId = c.req.param('id');
-    const customerId = String(c.get('userId') || '');
+    const customerId = await resolveCustomerIdFromHonoContext(c);
     if (!customerId) {
       return c.json({ success: false, error: 'Authentication required' }, 401);
     }
