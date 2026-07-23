@@ -26,6 +26,11 @@ import { resolveCustomerVendorAmenities, shouldShowVendorAmenities } from '@/lib
 import { shareVendorProfile, universalCategoryToSharePersona } from '@/lib/vendor-profile-share';
 import { useProviderServicesLazyLoad } from '@/hooks/useProviderServicesLazyLoad';
 import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
+import {
+  mapFacilityRecentReviews,
+  mergeProviderAboutFromFacility,
+  type UniversalProviderProfileAbout,
+} from '@/lib/universal-provider-profile-enrichment';
 import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
 
 // ============================================================================
@@ -248,6 +253,10 @@ export function UniversalProviderProfile({
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [profileAmenities, setProfileAmenities] = useState<string[]>(provider.amenities || []);
   const [profileCustomAmenities, setProfileCustomAmenities] = useState<string[]>([]);
+  const [profileAbout, setProfileAbout] = useState<UniversalProviderProfileAbout>(() =>
+    mergeProviderAboutFromFacility(provider, null)
+  );
+  const [loadingProfileEnrichment, setLoadingProfileEnrichment] = useState(false);
   const [displayName, setDisplayName] = useState(provider.name);
 
   const vendorAccountId = String(provider.vendorId || provider.providerId || '').trim();
@@ -375,37 +384,52 @@ export function UniversalProviderProfile({
   }, [vendorAccountId]);
 
   useEffect(() => {
-    const vid = String(provider.vendorId || provider.providerId || '').trim();
-    if (!vid || !shouldShowVendorAmenities(serviceStyle)) return;
-    if (provider.amenities && provider.amenities.length > 0) {
-      setProfileAmenities(provider.amenities);
-    }
+    setProfileAbout(mergeProviderAboutFromFacility(provider, null));
+    setReviews([]);
+  }, [provider.providerId, provider.vendorId, provider.bio, provider.qualifications]);
+
+  useEffect(() => {
+    const vid = vendorAccountId;
+    if (!vid) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
+      setLoadingProfileEnrichment(true);
       try {
-        const res = (await apiClient.get(`/customer/facility/${encodeURIComponent(vid)}`)) as {
+        const res = (await apiClient.get(
+          `/customer/facility/${encodeURIComponent(vid)}`
+        )) as {
           success?: boolean;
           facility?: Record<string, unknown>;
           vendor?: Record<string, unknown>;
+          recentReviews?: unknown[];
         };
         if (cancelled || res?.success === false) return;
-        const resolved = resolveCustomerVendorAmenities({
-          ...(res.facility && typeof res.facility === 'object' ? res.facility : {}),
-          ...(res.vendor && typeof res.vendor === 'object' ? res.vendor : {}),
-          ...(provider.amenities ? { amenities: provider.amenities } : {}),
-        });
-        if (!cancelled) {
+
+        setProfileAbout(mergeProviderAboutFromFacility(provider, res));
+        const facilityReviews = mapFacilityRecentReviews(res.recentReviews);
+        if (facilityReviews.length > 0) {
+          setReviews(facilityReviews);
+        }
+
+        if (shouldShowVendorAmenities(serviceStyle)) {
+          const resolved = resolveCustomerVendorAmenities({
+            ...(res.facility && typeof res.facility === 'object' ? res.facility : {}),
+            ...(res.vendor && typeof res.vendor === 'object' ? res.vendor : {}),
+            ...(provider.amenities ? { amenities: provider.amenities } : {}),
+          });
           setProfileAmenities(resolved.amenities);
           setProfileCustomAmenities(resolved.customAmenities);
         }
       } catch {
         /* optional enrichment */
+      } finally {
+        if (!cancelled) setLoadingProfileEnrichment(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [provider.vendorId, provider.providerId, provider.amenities, serviceStyle]);
+  }, [vendorAccountId, serviceStyle, provider.providerId, provider.amenities]);
 
   const refreshAddresses = async () => {
     if (serviceStyle !== 'at_home') return;
@@ -531,15 +555,32 @@ export function UniversalProviderProfile({
 
   const loadReviews = async () => {
     const vendorId = provider.vendorId || provider.providerId;
-    if (!vendorId) return;
+    if (!vendorId || reviews.length > 0) return;
 
     try {
       setLoadingReviews(true);
-      const response = await apiClient.get(`/vendor/${vendorId}/reviews`) as any;
-      if (response?.reviews) {
+      try {
+        const facilityRes = (await apiClient.get(
+          `/customer/facility/${encodeURIComponent(vendorId)}`
+        )) as { success?: boolean; recentReviews?: unknown[] };
+        if (facilityRes?.success !== false) {
+          const mapped = mapFacilityRecentReviews(facilityRes.recentReviews);
+          if (mapped.length > 0) {
+            setReviews(mapped);
+            return;
+          }
+        }
+      } catch {
+        /* try vendor reviews fallback */
+      }
+
+      const response = (await apiClient.get(`/vendor/${vendorId}/reviews`)) as {
+        reviews?: Review[];
+      };
+      if (response?.reviews?.length) {
         setReviews(response.reviews);
       }
-    } catch (error) {
+    } catch {
       console.log('Could not load reviews');
     } finally {
       setLoadingReviews(false);
@@ -547,10 +588,10 @@ export function UniversalProviderProfile({
   };
 
   useEffect(() => {
-    if (activeTab === 'reviews' && reviews.length === 0) {
-      loadReviews();
+    if (activeTab === 'reviews' && reviews.length === 0 && !loadingProfileEnrichment) {
+      void loadReviews();
     }
-  }, [activeTab]);
+  }, [activeTab, loadingProfileEnrichment, reviews.length]);
 
   // Toggle service selection (single-select for tele; multi-select for other styles)
   const toggleService = (serviceId: string) => {
@@ -1052,44 +1093,64 @@ export function UniversalProviderProfile({
 
             {activeTab === 'about' && (
               <div className="space-y-4">
-                {provider.bio && (
+                {loadingProfileEnrichment ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto" />
+                  </div>
+                ) : null}
+
+                {profileAbout.bio ? (
                   <Card className="p-4">
                     <h3 className="font-medium mb-2">About</h3>
-                    <p className="text-sm text-gray-600">{provider.bio}</p>
+                    <p className="text-sm text-gray-600">{profileAbout.bio}</p>
                   </Card>
-                )}
+                ) : null}
 
-                {provider.qualifications && (
+                {profileAbout.qualifications ? (
                   <Card className="p-4">
                     <h3 className="font-medium mb-2 flex items-center gap-2">
                       <GraduationCap className="w-4 h-4 text-purple-500" />
                       Qualifications
                     </h3>
-                    <p className="text-sm text-gray-600">{provider.qualifications}</p>
+                    <p className="text-sm text-gray-600">{profileAbout.qualifications}</p>
                   </Card>
-                )}
+                ) : null}
 
-                {provider.languages && provider.languages.length > 0 && (
+                {profileAbout.languages.length > 0 ? (
                   <Card className="p-4">
                     <h3 className="font-medium mb-2">Languages</h3>
                     <div className="flex flex-wrap gap-2">
-                      {provider.languages.map((lang) => (
+                      {profileAbout.languages.map((lang) => (
                         <Badge key={lang} variant="secondary">{lang}</Badge>
                       ))}
                     </div>
                   </Card>
-                )}
+                ) : null}
 
-                {provider.address && (
+                {profileAbout.address ? (
                   <Card className="p-4">
                     <h3 className="font-medium mb-2 flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-gray-500" />
                       Location
                     </h3>
-                    <p className="text-sm text-gray-600">{provider.address}</p>
-                    {provider.city && <p className="text-sm text-gray-500">{provider.city}</p>}
+                    <p className="text-sm text-gray-600">{profileAbout.address}</p>
+                    {profileAbout.city ? (
+                      <p className="text-sm text-gray-500">{profileAbout.city}</p>
+                    ) : null}
                   </Card>
-                )}
+                ) : null}
+
+                {!loadingProfileEnrichment &&
+                !profileAbout.bio &&
+                !profileAbout.qualifications &&
+                profileAbout.languages.length === 0 &&
+                !profileAbout.address &&
+                (!showFacilitiesAmenitiesOnAbout ||
+                  (profileAmenities.length === 0 && profileCustomAmenities.length === 0)) ? (
+                  <Card className="p-6 text-center">
+                    <p className="text-gray-500">No additional information available</p>
+                  </Card>
+                ) : null}
 
                 {showFacilitiesAmenitiesOnAbout && (
                   <Card className="p-4">

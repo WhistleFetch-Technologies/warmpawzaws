@@ -67,7 +67,7 @@ export async function queryAndEnrichByStyleVendors(
       problemTitle: problemTitle || undefined,
       specializations: specBundle?.displayLabels?.length ? specBundle.displayLabels : [],
       fullServices: fullEnrichByStyle,
-      includeAvailability: false,
+      includeAvailability: true,
     });
   };
 

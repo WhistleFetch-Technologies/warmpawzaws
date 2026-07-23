@@ -127,6 +127,11 @@ export async function enrichDiscoveryListVendor(
           display: slot.display || opts.defaultAvailabilityDisplay,
         };
       }
+      console.log(
+        '[discovery-list-enrich] slot vendor=%s display=%s',
+        String(vendor.vendor_id).slice(0, 8),
+        String(nextAvailable.display || '').slice(0, 48)
+      );
     } catch {
       /* non-fatal */
     }

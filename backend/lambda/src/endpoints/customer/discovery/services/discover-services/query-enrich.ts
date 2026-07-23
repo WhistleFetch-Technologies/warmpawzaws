@@ -76,7 +76,7 @@ export async function queryAndEnrichDiscoverVendors(
       problemTitle: problemTitle || undefined,
       specializations: specBundle?.displayLabels?.length ? specBundle.displayLabels : [],
       fullServices: fullEnrichDiscover,
-      includeAvailability: false,
+      includeAvailability: true,
     });
   };
 
