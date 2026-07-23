@@ -5,6 +5,8 @@ import type {
 } from '../../../repositories/interfaces/IVendorEligibilityRepository';
 import { vendorEligibilityRepository } from '../../../repositories/vendor-eligibility.repository';
 
+import type { IVendorEligibilityService } from './interfaces/IVendorEligibilityService';
+
 const ACTIVE_VENDOR_STATUS = 'active';
 
 export const EligibilityWarningCode = {
@@ -17,7 +19,7 @@ export const EligibilityWarningCode = {
 export type EligibilityWarningCode =
   (typeof EligibilityWarningCode)[keyof typeof EligibilityWarningCode];
 
-export class VendorEligibilityService {
+export class VendorEligibilityService implements IVendorEligibilityService {
   constructor(
     private readonly eligibilityRepository: IVendorEligibilityRepository = vendorEligibilityRepository,
   ) {}

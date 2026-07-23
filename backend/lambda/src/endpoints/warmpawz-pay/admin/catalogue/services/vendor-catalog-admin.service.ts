@@ -17,7 +17,7 @@ import {
   toAuditEntity,
   type CatalogueAuditEntity,
 } from './catalogue-audit.service';
-import { VendorEligibilityService } from './vendor-eligibility.service';
+import type { IVendorEligibilityService } from './interfaces/IVendorEligibilityService';
 import type { VendorEligibilitySnapshot } from '../../../repositories/interfaces/IVendorEligibilityRepository';
 
 export class CatalogueAdminError extends Error {
@@ -43,7 +43,7 @@ export class VendorCatalogAdminService {
   constructor(
     private readonly catalogRepository: IVendorCatalogRepository,
     private readonly eligibilityRepository: IVendorEligibilityRepository,
-    private readonly eligibilityService: VendorEligibilityService,
+    private readonly eligibilityService: IVendorEligibilityService,
     private readonly auditService: CatalogueAuditService,
   ) {}
 
