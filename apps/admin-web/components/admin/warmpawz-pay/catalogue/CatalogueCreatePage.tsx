@@ -18,7 +18,7 @@ import { LoadingSkeleton } from './LoadingSkeleton';
 import { Pagination } from './Pagination';
 import { SearchBar } from './SearchBar';
 import { VendorCandidateTable } from './VendorCandidateTable';
-import { WarmpawzPayCatalogueShell } from './WarmpawzPayCatalogueShell';
+import { WarmpawzPayShell } from '@/components/admin/warmpawz-pay/shared/WarmpawzPayShell';
 
 const PAGE_SIZE = 20;
 
@@ -84,7 +84,7 @@ export function CatalogueCreatePage() {
   };
 
   return (
-    <WarmpawzPayCatalogueShell
+    <WarmpawzPayShell
       title="Add Catalogue Entry"
       subtitle="Search eligible vendors and create a draft catalogue entry."
       actions={
@@ -171,6 +171,6 @@ export function CatalogueCreatePage() {
           </div>
         ) : null}
       </div>
-    </WarmpawzPayCatalogueShell>
+    </WarmpawzPayShell>
   );
 }

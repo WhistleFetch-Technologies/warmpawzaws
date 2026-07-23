@@ -25,6 +25,21 @@ export interface CatalogueRowWithVendor extends CatalogueRow {
   readonly payBillEnabled: boolean;
   readonly bankVerified: boolean;
   readonly isDeleted: boolean;
+  readonly isActive: boolean;
+  readonly isOnline: boolean;
+  readonly vendorType: string | null;
+  readonly isSoloProvider: boolean;
+  readonly legacyCategory: string | null;
+  readonly roleName: string | null;
+  readonly roleCategory: string | null;
+  readonly customerService: string | null;
+  readonly roleConfig: unknown;
+  readonly pricingId: string | null;
+  readonly pricingDiscountType: string | null;
+  readonly pricingDiscountValue: number | null;
+  readonly pricingStatus: string | null;
+  readonly pricingEffectiveFrom: Date | null;
+  readonly pricingEffectiveUntil: Date | null;
 }
 
 export interface CatalogueAdminFilters {
@@ -37,6 +52,7 @@ export interface CatalogueAdminFilters {
   readonly q?: string;
   readonly city?: string;
   readonly vendorId?: string;
+  readonly category?: string;
 }
 
 export interface PublishedEligibleFilters {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Button,
   Dialog,
@@ -17,7 +17,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@warmpawz/ui';
-import { useVendorCandidates } from '@/hooks/warmpawz-pay/useCatalogue';
 import type {
   PricingDetail,
   PricingDiscountType,
@@ -25,7 +24,7 @@ import type {
 } from '@/lib/warmpawz-pay-pricing-admin';
 import { validatePricingForm } from '@/lib/warmpawz-pay-pricing-admin';
 
-export type PricingFormMode = 'create' | 'edit' | 'view';
+export type PricingFormMode = 'create' | 'edit';
 
 export interface PricingFormValues {
   readonly vendorId: string;
@@ -39,6 +38,8 @@ export interface PricingFormValues {
 export interface PricingFormDialogProps {
   readonly open: boolean;
   readonly mode: PricingFormMode;
+  readonly vendorId: string;
+  readonly businessName: string;
   readonly initial?: PricingDetail | null;
   readonly loading?: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -63,32 +64,19 @@ function defaultEffectiveFrom(): string {
 export function PricingFormDialog({
   open,
   mode,
+  vendorId,
+  businessName,
   initial = null,
   loading = false,
   onOpenChange,
   onSubmit,
 }: PricingFormDialogProps) {
-  const readOnly = mode === 'view';
-  const [vendorId, setVendorId] = useState('');
   const [discountType, setDiscountType] = useState<PricingDiscountType>('percentage');
   const [discountValue, setDiscountValue] = useState('10');
   const [status, setStatus] = useState<PricingStatus>('active');
   const [effectiveFrom, setEffectiveFrom] = useState(defaultEffectiveFrom());
   const [effectiveUntil, setEffectiveUntil] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [merchantSearch, setMerchantSearch] = useState('');
-
-  const candidateParams = useMemo(
-    () => ({
-      page: 1,
-      pageSize: 20,
-      q: merchantSearch || undefined,
-    }),
-    [merchantSearch],
-  );
-
-  const { data: candidatesData } = useVendorCandidates(candidateParams);
-  const candidates = candidatesData?.items ?? [];
 
   useEffect(() => {
     if (!open) {
@@ -96,14 +84,12 @@ export function PricingFormDialog({
     }
 
     if (initial) {
-      setVendorId(initial.vendorId);
       setDiscountType(initial.discountType);
       setDiscountValue(String(initial.discountValue));
       setStatus(initial.status);
       setEffectiveFrom(toDateInputValue(initial.effectiveFrom));
       setEffectiveUntil(toDateInputValue(initial.effectiveUntil));
     } else if (mode === 'create') {
-      setVendorId('');
       setDiscountType('percentage');
       setDiscountValue('10');
       setStatus('active');
@@ -114,12 +100,7 @@ export function PricingFormDialog({
     setValidationError(null);
   }, [open, initial, mode]);
 
-  const title =
-    mode === 'create'
-      ? 'Create Pricing'
-      : mode === 'edit'
-        ? 'Edit Pricing'
-        : 'View Pricing';
+  const title = mode === 'create' ? 'Configure Pricing' : 'Edit Pricing';
 
   const handleSubmit = () => {
     const parsedValue = Number(discountValue);
@@ -133,11 +114,6 @@ export function PricingFormDialog({
 
     if (error) {
       setValidationError(error);
-      return;
-    }
-
-    if (mode === 'create' && !vendorId) {
-      setValidationError('Select a merchant.');
       return;
     }
 
@@ -159,43 +135,15 @@ export function PricingFormDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Configure commercial discount terms for Quote Engine consumption.
+            Set commercial discount terms for {businessName}.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {mode === 'create' ? (
-            <div className="space-y-2">
-              <Label htmlFor="pricing-merchant-search">Search merchant</Label>
-              <Input
-                id="pricing-merchant-search"
-                value={merchantSearch}
-                onChange={(event) => setMerchantSearch(event.target.value)}
-                placeholder="Search catalogue merchants..."
-                disabled={readOnly || loading}
-              />
-              <Label htmlFor="pricing-merchant">Merchant</Label>
-              <Select value={vendorId} onValueChange={setVendorId} disabled={readOnly || loading}>
-                <SelectTrigger id="pricing-merchant">
-                  <SelectValue placeholder="Select merchant" />
-                </SelectTrigger>
-                <SelectContent>
-                  {candidates.map((candidate) => (
-                    <SelectItem key={candidate.vendorId} value={candidate.vendorId}>
-                      {candidate.businessName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              <Label>Merchant</Label>
-              <p className="text-sm text-gray-900">
-                {initial?.businessName ?? '—'} ({initial?.merchantName ?? '—'})
-              </p>
-            </div>
-          )}
+          <div className="space-y-1">
+            <Label>Vendor</Label>
+            <p className="text-sm text-gray-900">{businessName}</p>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -203,7 +151,7 @@ export function PricingFormDialog({
               <Select
                 value={discountType}
                 onValueChange={(value) => setDiscountType(value as PricingDiscountType)}
-                disabled={readOnly || loading}
+                disabled={loading}
               >
                 <SelectTrigger id="pricing-discount-type">
                   <SelectValue />
@@ -223,7 +171,7 @@ export function PricingFormDialog({
                 step={0.1}
                 value={discountValue}
                 onChange={(event) => setDiscountValue(event.target.value)}
-                disabled={readOnly || loading}
+                disabled={loading}
               />
             </div>
           </div>
@@ -233,7 +181,7 @@ export function PricingFormDialog({
             <Select
               value={status}
               onValueChange={(value) => setStatus(value as PricingStatus)}
-              disabled={readOnly || loading}
+              disabled={loading}
             >
               <SelectTrigger id="pricing-status">
                 <SelectValue />
@@ -253,7 +201,7 @@ export function PricingFormDialog({
                 type="date"
                 value={effectiveFrom}
                 onChange={(event) => setEffectiveFrom(event.target.value)}
-                disabled={readOnly || loading}
+                disabled={loading}
               />
             </div>
             <div className="space-y-2">
@@ -263,7 +211,7 @@ export function PricingFormDialog({
                 type="date"
                 value={effectiveUntil}
                 onChange={(event) => setEffectiveUntil(event.target.value)}
-                disabled={readOnly || loading}
+                disabled={loading}
               />
             </div>
           </div>
@@ -276,19 +224,12 @@ export function PricingFormDialog({
         </div>
 
         <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={loading}
-            onClick={() => onOpenChange(false)}
-          >
-            {readOnly ? 'Close' : 'Cancel'}
+          <Button type="button" variant="outline" disabled={loading} onClick={() => onOpenChange(false)}>
+            Cancel
           </Button>
-          {!readOnly ? (
-            <Button type="button" disabled={loading} onClick={handleSubmit}>
-              {loading ? 'Saving…' : mode === 'create' ? 'Create Pricing' : 'Save Changes'}
-            </Button>
-          ) : null}
+          <Button type="button" disabled={loading} onClick={handleSubmit}>
+            {loading ? 'Saving…' : mode === 'create' ? 'Save Pricing' : 'Save Changes'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

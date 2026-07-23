@@ -27,17 +27,6 @@ export interface PricingRowWithMerchant extends PricingRow {
   readonly roleConfig: unknown;
 }
 
-export interface PricingAdminFilters {
-  readonly page: number;
-  readonly pageSize: number;
-  readonly sortBy: string;
-  readonly sortOrder: 'asc' | 'desc';
-  readonly q?: string;
-  readonly category?: string;
-  readonly status?: string;
-  readonly discountType?: string;
-}
-
 export interface CreatePricingInput {
   readonly vendorId: string;
   readonly discountType: PricingDiscountType;
@@ -57,10 +46,6 @@ export interface UpdatePricingInput {
 }
 
 export interface IMerchantPricingRepository {
-  listAdmin(filters: PricingAdminFilters): Promise<readonly PricingRowWithMerchant[]>;
-
-  countAdmin(filters: PricingAdminFilters): Promise<number>;
-
   findByVendorId(vendorId: string): Promise<PricingRowWithMerchant | null>;
 
   findRowByVendorId(vendorId: string): Promise<PricingRow | null>;

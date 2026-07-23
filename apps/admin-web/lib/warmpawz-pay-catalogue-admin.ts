@@ -1,4 +1,11 @@
 import { apiClient } from '@/lib/api-client';
+import type {
+  MerchantBusinessType,
+  MerchantReadiness,
+  PlatformStatus,
+  WarmpawzPayStatus,
+} from '@/lib/warmpawz-pay-merchant-types';
+import type { PricingDiscountType, PricingStatus } from '@/lib/warmpawz-pay-pricing-admin';
 
 export const WPAY_CATALOGUE_API_BASE = '/admin/warmpawz-pay/catalogue';
 
@@ -18,6 +25,16 @@ export interface EligibilityDTO {
   readonly customerVisible: boolean;
 }
 
+export interface CataloguePricingSummary {
+  readonly configured: boolean;
+  readonly pricingId?: string;
+  readonly discountType?: PricingDiscountType;
+  readonly discountValue?: number;
+  readonly status?: PricingStatus;
+  readonly effectiveFrom?: string;
+  readonly effectiveUntil?: string | null;
+}
+
 export interface CatalogueListItem {
   readonly catalogueId: string;
   readonly vendorId: string;
@@ -32,8 +49,13 @@ export interface CatalogueListItem {
   readonly createdBy: string | null;
   readonly eligibility: EligibilityDTO;
   readonly warnings?: readonly string[];
-  /** Populated when backend exposes vendor category on catalogue list items. */
-  readonly category?: string;
+  readonly category: string;
+  readonly businessType: MerchantBusinessType;
+  readonly platformStatus: PlatformStatus;
+  readonly warmpawzPayStatus: WarmpawzPayStatus;
+  readonly customerVisible: boolean;
+  readonly readiness: MerchantReadiness;
+  readonly pricing: CataloguePricingSummary;
 }
 
 export interface CatalogueDetail extends CatalogueListItem {
@@ -110,6 +132,7 @@ export interface CatalogueListQueryParams {
   readonly eligibility?: Exclude<CatalogueEligibilityFilter, 'all'>;
   readonly city?: string;
   readonly vendorId?: string;
+  readonly category?: string;
 }
 
 export interface VendorCandidatesQueryParams {
@@ -158,6 +181,7 @@ export async function fetchCatalogueList(
       eligibility: params.eligibility,
       city: params.city,
       vendorId: params.vendorId,
+      category: params.category,
     })}`,
   );
   return assertSuccess(response);
@@ -262,6 +286,13 @@ export function formatCatalogueDate(value: string | null | undefined): string {
 export function formatCatalogueCategory(item: Pick<CatalogueListItem, 'category'>): string {
   const category = item.category?.trim();
   return category ? category : '—';
+}
+
+export function formatCatalogueDiscount(item: CatalogueListItem): string {
+  if (!item.pricing.configured || item.pricing.discountValue === undefined) {
+    return '—';
+  }
+  return `${item.pricing.discountValue}%`;
 }
 
 export function shortVendorId(vendorId: string): string {

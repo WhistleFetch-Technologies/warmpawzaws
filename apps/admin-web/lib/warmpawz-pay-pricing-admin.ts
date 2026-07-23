@@ -5,7 +5,7 @@ export const WPAY_PRICING_API_BASE = '/admin/warmpawz-pay/pricing';
 export type PricingDiscountType = 'percentage';
 export type PricingStatus = 'active' | 'disabled';
 
-export interface PricingListItem {
+export interface PricingDetail {
   readonly pricingId: string;
   readonly vendorId: string;
   readonly merchantName: string;
@@ -17,38 +17,9 @@ export interface PricingListItem {
   readonly effectiveFrom: string;
   readonly effectiveUntil: string | null;
   readonly updatedAt: string;
-}
-
-export interface PricingDetail extends PricingListItem {
   readonly catalogueId: string | null;
   readonly createdAt: string;
   readonly createdBy: string | null;
-}
-
-export interface PaginationResponse {
-  readonly page: number;
-  readonly pageSize: number;
-  readonly total: number;
-  readonly totalPages: number;
-}
-
-export interface PricingListData {
-  readonly items: readonly PricingListItem[];
-  readonly pagination: PaginationResponse;
-}
-
-export type PricingStatusFilter = 'active' | 'disabled' | 'all';
-export type PricingDiscountTypeFilter = 'percentage' | 'all';
-
-export interface PricingListQueryParams {
-  readonly page?: number;
-  readonly pageSize?: number;
-  readonly sortBy?: 'updatedAt' | 'effectiveFrom' | 'businessName';
-  readonly sortOrder?: 'asc' | 'desc';
-  readonly q?: string;
-  readonly category?: string;
-  readonly status?: PricingStatusFilter;
-  readonly discountType?: PricingDiscountTypeFilter;
 }
 
 export interface CreatePricingPayload {
@@ -92,40 +63,6 @@ function assertSuccess<T>(response: SuccessEnvelope<T> | ErrorEnvelope | T): T {
     }
   }
   return response as T;
-}
-
-function buildQueryString(
-  params: Record<string, string | number | undefined>,
-): string {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== '') {
-      search.set(key, String(value));
-    }
-  }
-  const qs = search.toString();
-  return qs ? `?${qs}` : '';
-}
-
-export async function fetchPricingList(
-  params: PricingListQueryParams,
-): Promise<PricingListData> {
-  const response = await apiClient.get<SuccessEnvelope<PricingListData> | PricingListData>(
-    `${WPAY_PRICING_API_BASE}${buildQueryString({
-      page: params.page,
-      pageSize: params.pageSize,
-      sortBy: params.sortBy,
-      sortOrder: params.sortOrder,
-      q: params.q,
-      category: params.category,
-      status: params.status && params.status !== 'all' ? params.status : undefined,
-      discountType:
-        params.discountType && params.discountType !== 'all'
-          ? params.discountType
-          : undefined,
-    })}`,
-  );
-  return assertSuccess(response);
 }
 
 export async function fetchPricingDetail(vendorId: string): Promise<PricingDetail> {

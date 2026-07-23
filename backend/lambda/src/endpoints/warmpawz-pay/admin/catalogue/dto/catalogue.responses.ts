@@ -1,10 +1,25 @@
 import type { PublishStatus } from '../../../constants/publish-status';
+import type { PricingDiscountType, PricingStatus } from '../../../constants/merchant-pricing';
+import type { MerchantBusinessType } from '../../../shared/merchant/merchant-business-type.resolver';
+import type { PlatformStatus } from '../../../shared/merchant/merchant-platform-status.resolver';
+import type { MerchantReadinessDTO } from '../../../shared/merchant/merchant-readiness.service';
+import type { WarmpawzPayStatus } from '../../../shared/merchant/merchant-warmpawz-pay-status.resolver';
 
 export interface EligibilityDTO {
   readonly payBillEnabled: boolean;
   readonly bankVerified: boolean;
   readonly vendorStatus: string;
   readonly customerVisible: boolean;
+}
+
+export interface CataloguePricingSummary {
+  readonly configured: boolean;
+  readonly pricingId?: string;
+  readonly discountType?: PricingDiscountType;
+  readonly discountValue?: number;
+  readonly status?: PricingStatus;
+  readonly effectiveFrom?: string;
+  readonly effectiveUntil?: string | null;
 }
 
 export interface CatalogueListItem {
@@ -21,6 +36,13 @@ export interface CatalogueListItem {
   readonly createdBy: string | null;
   readonly eligibility: EligibilityDTO;
   readonly warnings?: readonly string[];
+  readonly category: string;
+  readonly businessType: MerchantBusinessType;
+  readonly platformStatus: PlatformStatus;
+  readonly warmpawzPayStatus: WarmpawzPayStatus;
+  readonly customerVisible: boolean;
+  readonly readiness: MerchantReadinessDTO;
+  readonly pricing: CataloguePricingSummary;
 }
 
 export interface CatalogueAuditSummaryItem {

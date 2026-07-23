@@ -16,7 +16,7 @@ import { EligibilityBadge } from './EligibilityBadge';
 import { EligibilityWarnings } from './EligibilityWarnings';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import { StatusBadge } from './StatusBadge';
-import { WarmpawzPayCatalogueShell } from './WarmpawzPayCatalogueShell';
+import { WarmpawzPayShell } from '@/components/admin/warmpawz-pay/shared/WarmpawzPayShell';
 
 type PendingAction = 'publish' | 'unpublish' | 'delete';
 
@@ -80,15 +80,15 @@ export function CatalogueDetailPage({ catalogueId }: CatalogueDetailPageProps) {
 
   if (isLoading) {
     return (
-      <WarmpawzPayCatalogueShell title="Catalogue Detail">
+      <WarmpawzPayShell title="Catalogue Detail">
         <LoadingSkeleton />
-      </WarmpawzPayCatalogueShell>
+      </WarmpawzPayShell>
     );
   }
 
   if (error || !data) {
     return (
-      <WarmpawzPayCatalogueShell
+      <WarmpawzPayShell
         title="Catalogue Detail"
         actions={
           <Button type="button" variant="outline" onClick={() => router.push('/warmpawz-pay/catalogue')}>
@@ -99,12 +99,12 @@ export function CatalogueDetailPage({ catalogueId }: CatalogueDetailPageProps) {
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           {error instanceof Error ? error.message : 'Catalogue entry not found.'}
         </div>
-      </WarmpawzPayCatalogueShell>
+      </WarmpawzPayShell>
     );
   }
 
   return (
-    <WarmpawzPayCatalogueShell
+    <WarmpawzPayShell
       title={data.businessName}
       subtitle="Catalogue entry details and eligibility snapshot."
       actions={
@@ -223,6 +223,6 @@ export function CatalogueDetailPage({ catalogueId }: CatalogueDetailPageProps) {
         }}
         onConfirm={() => void runPendingAction()}
       />
-    </WarmpawzPayCatalogueShell>
+    </WarmpawzPayShell>
   );
 }

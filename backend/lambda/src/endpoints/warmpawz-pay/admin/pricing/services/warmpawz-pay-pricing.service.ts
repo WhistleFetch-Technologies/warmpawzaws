@@ -11,13 +11,11 @@ import {
   resolveMerchantCategory,
   serviceCategoryFromRoleConfig,
 } from '../../../shared/merchant/merchant-category.resolver';
-import type { CreatePricingRequest, PricingListQuery, UpdatePricingRequest } from '../dto/pricing.requests';
+import type { CreatePricingRequest, UpdatePricingRequest } from '../dto/pricing.requests';
 import { PricingErrorCode } from '../dto/pricing.errors';
 import type {
   DisablePricingResultDTO,
   PricingDetailDTO,
-  PricingListDataDTO,
-  PricingListItemDTO,
 } from '../dto/pricing.responses';
 import {
   PricingAuditService,
@@ -37,16 +35,6 @@ export class PricingAdminError extends Error {
   }
 }
 
-export class PricingListLoadError extends Error {
-  readonly cause?: unknown;
-
-  constructor(message: string, cause?: unknown) {
-    super(message);
-    this.name = 'PricingListLoadError';
-    this.cause = cause;
-  }
-}
-
 function assertEffectiveDates(from: Date, until: Date | null): void {
   if (until && until.getTime() < from.getTime()) {
     throw new PricingAdminError(
@@ -61,38 +49,6 @@ export class WarmpawzPayPricingService {
     private readonly pricingRepository: IMerchantPricingRepository = merchantPricingRepository,
     private readonly auditService: PricingAuditService = new PricingAuditService(),
   ) {}
-
-  async listPricing(query: PricingListQuery): Promise<PricingListDataDTO> {
-    const filters = {
-      page: query.page,
-      pageSize: query.pageSize,
-      sortBy: query.sortBy,
-      sortOrder: query.sortOrder,
-      q: query.q,
-      category: query.category,
-      status: query.status,
-      discountType: query.discountType,
-    };
-
-    try {
-      const [rows, total] = await Promise.all([
-        this.pricingRepository.listAdmin(filters),
-        this.pricingRepository.countAdmin(filters),
-      ]);
-
-      return {
-        items: rows.map((row) => this.mapListItem(row)),
-        pagination: {
-          page: query.page,
-          pageSize: query.pageSize,
-          total,
-          totalPages: total === 0 ? 0 : Math.ceil(total / query.pageSize),
-        },
-      };
-    } catch (error) {
-      throw new PricingListLoadError('Failed to load pricing list', error);
-    }
-  }
 
   async getPricingByMerchantId(merchantId: string): Promise<PricingDetailDTO | null> {
     const row = await this.pricingRepository.findByVendorId(merchantId);
@@ -271,7 +227,7 @@ export class WarmpawzPayPricingService {
     }
   }
 
-  private mapListItem(row: PricingRowWithMerchant): PricingListItemDTO {
+  private mapDetail(row: PricingRowWithMerchant): PricingDetailDTO {
     const category = resolveMerchantCategory({
       roleCategory: row.roleCategory,
       customerService: row.customerService,
@@ -291,12 +247,6 @@ export class WarmpawzPayPricingService {
       effectiveFrom: row.effectiveFrom.toISOString(),
       effectiveUntil: row.effectiveUntil ? row.effectiveUntil.toISOString() : null,
       updatedAt: row.updatedAt.toISOString(),
-    };
-  }
-
-  private mapDetail(row: PricingRowWithMerchant): PricingDetailDTO {
-    return {
-      ...this.mapListItem(row),
       catalogueId: row.catalogueId,
       createdAt: row.createdAt.toISOString(),
       createdBy: row.createdBy,

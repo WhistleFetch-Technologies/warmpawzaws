@@ -52,6 +52,7 @@ export const catalogueListQuerySchema = z
     eligibility: z.enum(ALLOWED_ELIGIBILITY_FILTERS).optional(),
     city: z.string().trim().min(1).max(MAX_CITY_LENGTH).optional(),
     vendorId: uuidSchema.optional(),
+    category: z.string().trim().min(1).max(MAX_SEARCH_QUERY_LENGTH).optional(),
   })
   .strict();
 

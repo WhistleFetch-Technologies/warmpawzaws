@@ -1,12 +1,9 @@
 'use client';
 
 import { Badge } from '@warmpawz/ui';
-import type { PlatformStatus } from '@/lib/warmpawz-pay-merchants-admin';
+import type { PlatformStatus } from '@/lib/warmpawz-pay-merchant-types';
 
-const VARIANTS: Record<
-  PlatformStatus,
-  string
-> = {
+const VARIANTS: Record<PlatformStatus, string> = {
   Approved: 'bg-green-100 text-green-800 hover:bg-green-100',
   Pending: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
   Suspended: 'bg-red-100 text-red-800 hover:bg-red-100',

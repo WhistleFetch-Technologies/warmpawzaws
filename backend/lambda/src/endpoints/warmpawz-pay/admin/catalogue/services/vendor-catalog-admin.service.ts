@@ -23,6 +23,11 @@ import { toAuditEntity } from './catalogue-audit.service';
 import { createCatalogueTransactionContext } from './catalogue-transaction.context';
 import type { IVendorEligibilityService } from './interfaces/IVendorEligibilityService';
 import type { VendorEligibilitySnapshot } from '../../../repositories/interfaces/IVendorEligibilityRepository';
+import type { PricingDiscountType, PricingStatus } from '../../../constants/merchant-pricing';
+import {
+  enrichCatalogueMerchant,
+  type CataloguePricingRowInput,
+} from '../../../shared/merchant/catalogue-merchant-enrichment';
 
 export class CatalogueAdminError extends Error {
   readonly code: CatalogueErrorCode;
@@ -118,6 +123,7 @@ export class VendorCatalogAdminService {
       q: query.q,
       city: query.city,
       vendorId: query.vendorId,
+      category: query.category,
     };
 
     const [rows, total] = await Promise.all([
@@ -437,15 +443,8 @@ export class VendorCatalogAdminService {
     vendorSnapshot: CatalogueRowWithVendor,
   ): CatalogueRowWithVendor {
     return {
+      ...vendorSnapshot,
       ...row,
-      businessName: vendorSnapshot.businessName,
-      ownerName: vendorSnapshot.ownerName,
-      city: vendorSnapshot.city,
-      phone: vendorSnapshot.phone,
-      vendorStatus: vendorSnapshot.vendorStatus,
-      payBillEnabled: vendorSnapshot.payBillEnabled,
-      bankVerified: vendorSnapshot.bankVerified,
-      isDeleted: vendorSnapshot.isDeleted,
     };
   }
 
@@ -475,6 +474,26 @@ export class VendorCatalogAdminService {
     row: CatalogueRowWithVendor,
     resolved: ResolvedEligibility,
   ): CatalogueListItem {
+    const enrichment = enrichCatalogueMerchant(
+      {
+        publishStatus: row.publishStatus,
+        vendorStatus: row.vendorStatus,
+        isActive: row.isActive,
+        isOnline: row.isOnline,
+        bankVerified: row.bankVerified,
+        payBillEnabled: row.payBillEnabled,
+        isDeleted: row.isDeleted,
+        vendorType: row.vendorType,
+        isSoloProvider: row.isSoloProvider,
+        roleName: row.roleName,
+        roleCategory: row.roleCategory,
+        customerService: row.customerService,
+        roleConfig: row.roleConfig,
+        legacyCategory: row.legacyCategory,
+      },
+      this.toPricingRowInput(row),
+    );
+
     return {
       catalogueId: row.id,
       vendorId: row.vendorId,
@@ -489,6 +508,34 @@ export class VendorCatalogAdminService {
       createdBy: row.createdBy,
       eligibility: resolved.eligibility,
       warnings: resolved.warnings.length > 0 ? resolved.warnings : undefined,
+      category: enrichment.category,
+      businessType: enrichment.businessType,
+      platformStatus: enrichment.platformStatus,
+      warmpawzPayStatus: enrichment.warmpawzPayStatus,
+      customerVisible: enrichment.customerVisible,
+      readiness: enrichment.readiness,
+      pricing: enrichment.pricing,
+    };
+  }
+
+  private toPricingRowInput(row: CatalogueRowWithVendor): CataloguePricingRowInput | null {
+    if (
+      !row.pricingId ||
+      !row.pricingDiscountType ||
+      row.pricingDiscountValue === null ||
+      !row.pricingStatus ||
+      !row.pricingEffectiveFrom
+    ) {
+      return null;
+    }
+
+    return {
+      pricingId: row.pricingId,
+      discountType: row.pricingDiscountType as PricingDiscountType,
+      discountValue: row.pricingDiscountValue,
+      status: row.pricingStatus as PricingStatus,
+      effectiveFrom: row.pricingEffectiveFrom,
+      effectiveUntil: row.pricingEffectiveUntil,
     };
   }
 

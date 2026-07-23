@@ -3,45 +3,17 @@ import {
   createPricing,
   disablePricing,
   fetchPricingDetail,
-  fetchPricingList,
   updatePricing,
   type CreatePricingPayload,
   type PricingDetail,
-  type PricingListData,
-  type PricingListQueryParams,
   type UpdatePricingPayload,
 } from '@/lib/warmpawz-pay-pricing-admin';
+import { catalogueQueryKeys } from '@/hooks/warmpawz-pay/useCatalogue';
 
 export const pricingQueryKeys = {
   all: ['warmpawz-pay-pricing'] as const,
-  list: (params: PricingListQueryParams) =>
-    [...pricingQueryKeys.all, 'list', params] as const,
   detail: (vendorId: string) => [...pricingQueryKeys.all, 'detail', vendorId] as const,
 };
-
-export interface UsePricingListResult {
-  readonly data: PricingListData | undefined;
-  readonly isLoading: boolean;
-  readonly isFetching: boolean;
-  readonly error: Error | null;
-  readonly refresh: () => Promise<unknown>;
-}
-
-export function usePricingList(params: PricingListQueryParams): UsePricingListResult {
-  const query = useQuery({
-    queryKey: pricingQueryKeys.list(params),
-    queryFn: () => fetchPricingList(params),
-    staleTime: 15_000,
-  });
-
-  return {
-    data: query.data,
-    isLoading: query.isLoading,
-    isFetching: query.isFetching,
-    error: query.error instanceof Error ? query.error : null,
-    refresh: () => query.refetch(),
-  };
-}
 
 export function usePricingDetail(vendorId: string | null) {
   return useQuery({
@@ -58,6 +30,7 @@ export function useCreatePricing() {
     mutationFn: (payload: CreatePricingPayload) => createPricing(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: pricingQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: catalogueQueryKeys.all });
     },
   });
 }
@@ -77,6 +50,7 @@ export function useUpdatePricing() {
       queryClient.invalidateQueries({
         queryKey: pricingQueryKeys.detail(variables.vendorId),
       });
+      queryClient.invalidateQueries({ queryKey: catalogueQueryKeys.all });
     },
   });
 }
@@ -87,6 +61,7 @@ export function useDisablePricing() {
     mutationFn: (vendorId: string) => disablePricing(vendorId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: pricingQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: catalogueQueryKeys.all });
     },
   });
 }

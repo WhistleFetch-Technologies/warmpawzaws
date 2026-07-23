@@ -1,7 +1,7 @@
 'use client';
 
 import { CheckCircle2, AlertCircle } from 'lucide-react';
-import type { MerchantReadiness } from '@/lib/warmpawz-pay-merchants-admin';
+import type { MerchantReadiness } from '@/lib/warmpawz-pay-merchant-types';
 
 export interface ReadinessDetailPanelProps {
   readonly readiness: MerchantReadiness;
@@ -11,7 +11,7 @@ export function ReadinessDetailPanel({ readiness }: ReadinessDetailPanelProps) {
   return (
     <div
       className="rounded-lg border border-blue-100 bg-blue-50/60 p-4"
-      aria-label="Merchant readiness checks"
+      aria-label="Vendor readiness checks"
     >
       <p className="mb-3 text-sm font-medium text-gray-900">Readiness checks</p>
       <ul className="space-y-2">

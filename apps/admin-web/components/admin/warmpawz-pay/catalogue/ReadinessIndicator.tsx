@@ -1,8 +1,8 @@
 'use client';
 
 import { Badge } from '@warmpawz/ui';
-import type { MerchantReadiness } from '@/lib/warmpawz-pay-merchants-admin';
-import { formatReadinessScore } from '@/lib/warmpawz-pay-merchants-admin';
+import type { MerchantReadiness } from '@/lib/warmpawz-pay-merchant-types';
+import { formatReadinessScore } from '@/lib/warmpawz-pay-merchant-types';
 
 export interface ReadinessIndicatorProps {
   readonly readiness: MerchantReadiness;

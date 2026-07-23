@@ -2,7 +2,7 @@ import { PRICING_STATUS } from '../../constants/merchant-pricing';
 import { MerchantPricingRepository } from '../merchant-pricing.repository';
 
 describe('MerchantPricingRepository', () => {
-  it('lists admin pricing rows with pagination params', async () => {
+  it('finds pricing by vendor id', async () => {
     const query = jest.fn().mockResolvedValue({
       rows: [
         {
@@ -28,19 +28,13 @@ describe('MerchantPricingRepository', () => {
     });
     const repo = new MerchantPricingRepository({ query });
 
-    const rows = await repo.listAdmin({
-      page: 1,
-      pageSize: 20,
-      sortBy: 'updatedAt',
-      sortOrder: 'desc',
-    });
+    const row = await repo.findByVendorId('vendor-1');
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0].discountValue).toBe(10);
-    expect(rows[0].businessName).toBe('Happy Paws');
+    expect(row?.discountValue).toBe(10);
+    expect(row?.businessName).toBe('Happy Paws');
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('warmpawz_pay_merchant_pricing'),
-      expect.arrayContaining([20, 0]),
+      ['vendor-1'],
     );
   });
 

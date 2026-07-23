@@ -22,25 +22,22 @@ function createPricingService(
   overrides: Partial<WarmpawzPayPricingService> = {},
 ): WarmpawzPayPricingService {
   return {
-    listPricing: jest.fn().mockResolvedValue({
-      items: [
-        {
-          pricingId: 'pricing-1',
-          vendorId: 'vendor-1',
-          merchantName: 'Anjali',
-          businessName: 'Happy Paws',
-          category: 'Grooming',
-          discountType: PRICING_DISCOUNT_TYPE.PERCENTAGE,
-          discountValue: 10,
-          status: PRICING_STATUS.ACTIVE,
-          effectiveFrom: '2026-07-01T00:00:00.000Z',
-          effectiveUntil: null,
-          updatedAt: '2026-07-23T00:00:00.000Z',
-        },
-      ],
-      pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    getPricingByMerchantId: jest.fn().mockResolvedValue({
+      pricingId: 'pricing-1',
+      vendorId: 'vendor-1',
+      merchantName: 'Anjali',
+      businessName: 'Happy Paws',
+      category: 'Grooming',
+      discountType: PRICING_DISCOUNT_TYPE.PERCENTAGE,
+      discountValue: 10,
+      status: PRICING_STATUS.ACTIVE,
+      effectiveFrom: '2026-07-01T00:00:00.000Z',
+      effectiveUntil: null,
+      updatedAt: '2026-07-23T00:00:00.000Z',
+      catalogueId: 'cat-1',
+      createdAt: '2026-07-01T00:00:00.000Z',
+      createdBy: 'admin-1',
     }),
-    getPricingByMerchantId: jest.fn(),
     createPricing: jest.fn(),
     updatePricing: jest.fn(),
     disablePricing: jest.fn(),
@@ -67,7 +64,7 @@ describe('Warmpawz Pay pricing admin routes', () => {
     process.env = originalEnv;
   });
 
-  it('GET /admin/warmpawz-pay/pricing returns list envelope', async () => {
+  it('GET /admin/warmpawz-pay/pricing/:merchantId returns detail envelope', async () => {
     const appWithAuth = new Hono();
     appWithAuth.use('*', async (c, next) => {
       setUserId(c, 'uat-admin-user');
@@ -77,14 +74,14 @@ describe('Warmpawz Pay pricing admin routes', () => {
       pricingService: createPricingService(),
     });
 
-    const res = await appWithAuth.request('http://localhost/admin/warmpawz-pay/pricing', {
+    const res = await appWithAuth.request('http://localhost/admin/warmpawz-pay/pricing/vendor-1', {
       headers: { Authorization: 'Bearer test-token' },
     });
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { success: boolean; data: { items: Array<{ businessName: string }> } };
+    const body = (await res.json()) as { success: boolean; data: { businessName: string } };
     expect(body.success).toBe(true);
-    expect(body.data.items[0].businessName).toBe('Happy Paws');
+    expect(body.data.businessName).toBe('Happy Paws');
   });
 
   it('returns 401 without auth context', async () => {
@@ -93,7 +90,7 @@ describe('Warmpawz Pay pricing admin routes', () => {
       pricingService: createPricingService(),
     });
 
-    const res = await app.request('http://localhost/admin/warmpawz-pay/pricing');
+    const res = await app.request('http://localhost/admin/warmpawz-pay/pricing/vendor-1');
     expect(res.status).toBe(401);
   });
 });

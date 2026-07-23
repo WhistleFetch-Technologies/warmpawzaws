@@ -19,8 +19,14 @@ import {
   useUnpublishCatalogueEntry,
 } from '@/hooks/warmpawz-pay/useCatalogue';
 import { useBulkCatalogueActions } from '@/hooks/warmpawz-pay/useBulkCatalogueActions';
+import {
+  useCreatePricing,
+  usePricingDetail,
+  useUpdatePricing,
+} from '@/hooks/warmpawz-pay/usePricing';
 import type {
   CatalogueEligibilityFilter,
+  CatalogueListItem,
   CataloguePublishStatusFilter,
 } from '@/lib/warmpawz-pay-catalogue-admin';
 import { BulkToolbar } from './BulkToolbar';
@@ -29,7 +35,12 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import { Pagination } from './Pagination';
 import { SearchBar } from './SearchBar';
-import { WarmpawzPayCatalogueShell } from './WarmpawzPayCatalogueShell';
+import {
+  PricingFormDialog,
+  type PricingFormMode,
+  type PricingFormValues,
+} from './PricingFormDialog';
+import { WarmpawzPayShell } from '@/components/admin/warmpawz-pay/shared/WarmpawzPayShell';
 
 type PendingAction =
   | { type: 'publish'; catalogueId: string }
@@ -41,6 +52,18 @@ type PendingAction =
 
 const PAGE_SIZE = 20;
 
+const CATEGORY_OPTIONS = [
+  'All categories',
+  'Veterinary',
+  'Grooming',
+  'Training',
+  'Walking',
+  'Sitting',
+  'Daycare',
+  'Ambulance',
+  'Other Services',
+] as const;
+
 export function CatalogueDashboardPage() {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
@@ -49,10 +72,17 @@ export function CatalogueDashboardPage() {
     useState<CataloguePublishStatusFilter>('all');
   const [eligibilityFilter, setEligibilityFilter] =
     useState<CatalogueEligibilityFilter>('all');
+  const [categoryFilter, setCategoryFilter] = useState('All categories');
   const [vendorIdFilter, setVendorIdFilter] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [rowBusyId, setRowBusyId] = useState<string | null>(null);
+  const [pricingItem, setPricingItem] = useState<CatalogueListItem | null>(null);
+  const [pricingFormOpen, setPricingFormOpen] = useState(false);
+
+  const createPricingMutation = useCreatePricing();
+  const updatePricingMutation = useUpdatePricing();
+  const pricingDetailQuery = usePricingDetail(pricingItem?.vendorId ?? null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -72,9 +102,13 @@ export function CatalogueDashboardPage() {
       publishStatus:
         publishStatusFilter === 'all' ? undefined : publishStatusFilter,
       eligibility: eligibilityFilter === 'all' ? undefined : eligibilityFilter,
+      category:
+        categoryFilter === 'All categories'
+          ? undefined
+          : categoryFilter.toLowerCase(),
       vendorId: vendorIdFilter.trim() || undefined,
     }),
-    [page, searchQuery, publishStatusFilter, eligibilityFilter, vendorIdFilter],
+    [page, searchQuery, publishStatusFilter, eligibilityFilter, categoryFilter, vendorIdFilter],
   );
 
   const { data, isLoading, isFetching, error } = useCatalogueList(listParams);
@@ -96,7 +130,51 @@ export function CatalogueDashboardPage() {
     publishMutation.isPending ||
     unpublishMutation.isPending ||
     deleteMutation.isPending ||
-    isBulkLoading;
+    isBulkLoading ||
+    createPricingMutation.isPending ||
+    updatePricingMutation.isPending;
+
+  const pricingFormMode: PricingFormMode =
+    pricingItem?.pricing.configured || pricingDetailQuery.data ? 'edit' : 'create';
+
+  const openPricingForm = (item: CatalogueListItem) => {
+    setPricingItem(item);
+    setPricingFormOpen(true);
+  };
+
+  const handlePricingSubmit = async (values: PricingFormValues) => {
+    if (!pricingItem) {
+      return;
+    }
+
+    try {
+      if (pricingFormMode === 'create') {
+        await createPricingMutation.mutateAsync({
+          vendorId: values.vendorId,
+          discountType: values.discountType,
+          discountValue: values.discountValue,
+          status: values.status,
+          effectiveFrom: values.effectiveFrom,
+          effectiveUntil: values.effectiveUntil || null,
+        });
+      } else {
+        await updatePricingMutation.mutateAsync({
+          vendorId: pricingItem.vendorId,
+          payload: {
+            discountType: values.discountType,
+            discountValue: values.discountValue,
+            status: values.status,
+            effectiveFrom: values.effectiveFrom,
+            effectiveUntil: values.effectiveUntil || null,
+          },
+        });
+      }
+      setPricingFormOpen(false);
+      setPricingItem(null);
+    } catch {
+      // keep dialog open on error
+    }
+  };
 
   const toggleAll = (checked: boolean) => {
     if (!checked) {
@@ -173,7 +251,7 @@ export function CatalogueDashboardPage() {
         };
       case 'unpublish':
         return {
-          title: 'Unpublish catalogue entry?',
+          title: 'Save as draft?',
           description: 'The entry will return to draft and stop being published.',
         };
       case 'delete':
@@ -189,7 +267,7 @@ export function CatalogueDashboardPage() {
         };
       case 'bulk-unpublish':
         return {
-          title: `Unpublish ${selectedIds.size} entries?`,
+          title: `Save ${selectedIds.size} entries as draft?`,
           description: 'Selected catalogue entries will return to draft.',
         };
       case 'bulk-delete':
@@ -202,9 +280,9 @@ export function CatalogueDashboardPage() {
   })();
 
   return (
-    <WarmpawzPayCatalogueShell
+    <WarmpawzPayShell
       title="Vendor Catalogue"
-      subtitle="Controls which vendors appear in customer Pay Bill discovery."
+      subtitle="Search vendors, manage publish status, pricing, and customer visibility in one place."
       actions={
         <Button type="button" asChild>
           <Link href="/warmpawz-pay/catalogue/create">
@@ -222,6 +300,24 @@ export function CatalogueDashboardPage() {
             placeholder="Search business name…"
             disabled={isLoading}
           />
+          <Select
+            value={categoryFilter}
+            onValueChange={(value) => {
+              setCategoryFilter(value);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-44 bg-white">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              {CATEGORY_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             value={publishStatusFilter}
             onValueChange={(value) => {
@@ -301,6 +397,7 @@ export function CatalogueDashboardPage() {
                 setPendingAction({ type: 'unpublish', catalogueId })
               }
               onDelete={(catalogueId) => setPendingAction({ type: 'delete', catalogueId })}
+              onEditPricing={openPricingForm}
             />
             <Pagination
               pagination={pagination}
@@ -324,6 +421,28 @@ export function CatalogueDashboardPage() {
         }}
         onConfirm={() => void runPendingAction()}
       />
-    </WarmpawzPayCatalogueShell>
+
+      {pricingItem ? (
+        <PricingFormDialog
+          open={pricingFormOpen}
+          mode={pricingFormMode}
+          vendorId={pricingItem.vendorId}
+          businessName={pricingItem.businessName}
+          initial={pricingDetailQuery.data ?? null}
+          loading={
+            createPricingMutation.isPending ||
+            updatePricingMutation.isPending ||
+            pricingDetailQuery.isFetching
+          }
+          onOpenChange={(open) => {
+            setPricingFormOpen(open);
+            if (!open) {
+              setPricingItem(null);
+            }
+          }}
+          onSubmit={(values) => void handlePricingSubmit(values)}
+        />
+      ) : null}
+    </WarmpawzPayShell>
   );
 }

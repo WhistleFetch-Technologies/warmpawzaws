@@ -36,23 +36,16 @@ describe('WarmpawzPayPricingService', () => {
     logDeleted: jest.fn().mockResolvedValue(undefined),
   } as unknown as PricingAuditService;
 
-  it('lists pricing rows with pagination', async () => {
+  it('returns pricing detail by merchant id', async () => {
     const repository: IMerchantPricingRepository = {
-      listAdmin: jest.fn().mockResolvedValue([sampleRow]),
-      countAdmin: jest.fn().mockResolvedValue(1),
+      findByVendorId: jest.fn().mockResolvedValue(sampleRow),
     } as unknown as IMerchantPricingRepository;
 
     const service = new WarmpawzPayPricingService(repository, auditService);
-    const result = await service.listPricing({
-      page: 1,
-      pageSize: 20,
-      sortBy: 'updatedAt',
-      sortOrder: 'desc',
-    });
+    const result = await service.getPricingByMerchantId('vendor-1');
 
-    expect(result.items[0].businessName).toBe('Happy Paws');
-    expect(result.items[0].discountValue).toBe(10);
-    expect(result.pagination.total).toBe(1);
+    expect(result?.businessName).toBe('Happy Paws');
+    expect(result?.discountValue).toBe(10);
   });
 
   it('rejects duplicate pricing on create', async () => {

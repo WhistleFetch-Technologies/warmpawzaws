@@ -8,12 +8,12 @@ import {
 import type {
   CreatePricingInput,
   IMerchantPricingRepository,
-  PricingAdminFilters,
   PricingRow,
   PricingRowWithMerchant,
   UpdatePricingInput,
 } from './interfaces/IMerchantPricingRepository';
 import type { VendorCatalogDbClient } from './vendor-catalog.repository';
+import { MERCHANT_ROLE_CATEGORY_EXPR } from '../shared/merchant/merchant-role-sql';
 
 const PRICING_TABLE = 'warmpawz_pay_merchant_pricing';
 const CATALOGUE_TABLE = 'warmpawz_pay_vendor_catalog';
@@ -36,7 +36,7 @@ const MERCHANT_JOIN_SELECT = `
   v.business_name,
   v.owner_name,
   v.category AS legacy_category,
-  r.category AS role_category,
+  ${MERCHANT_ROLE_CATEGORY_EXPR} AS role_category,
   r.customer_service,
   r.config AS role_config
 `;
@@ -113,85 +113,8 @@ function mapPricingRowWithMerchant(row: PricingWithMerchantDbRow): PricingRowWit
   };
 }
 
-function buildWhereClause(filters: PricingAdminFilters): {
-  readonly whereSql: string;
-  readonly params: unknown[];
-} {
-  const conditions: string[] = ['(v.is_deleted IS NOT TRUE)'];
-  const params: unknown[] = [];
-
-  if (filters.q) {
-    params.push(`%${filters.q}%`);
-    const searchParam = `$${params.length}`;
-    conditions.push(
-      `(v.business_name ILIKE ${searchParam} OR v.owner_name ILIKE ${searchParam})`,
-    );
-  }
-
-  if (filters.category) {
-    params.push(`%${filters.category}%`);
-    const categoryParam = `$${params.length}`;
-    conditions.push(
-      `(r.category ILIKE ${categoryParam} OR r.customer_service ILIKE ${categoryParam} OR v.category ILIKE ${categoryParam})`,
-    );
-  }
-
-  if (filters.status && filters.status !== 'all') {
-    params.push(filters.status);
-    conditions.push(`p.status = $${params.length}`);
-  }
-
-  if (filters.discountType && filters.discountType !== 'all') {
-    params.push(filters.discountType);
-    conditions.push(`p.discount_type = $${params.length}`);
-  }
-
-  return {
-    whereSql: conditions.join(' AND '),
-    params,
-  };
-}
-
-function resolveSortColumn(sortBy: string): string {
-  if (sortBy === 'effectiveFrom') return 'p.effective_from';
-  if (sortBy === 'businessName') return 'v.business_name';
-  return 'p.updated_at';
-}
-
 export class MerchantPricingRepository implements IMerchantPricingRepository {
   constructor(private readonly db: VendorCatalogDbClient = { query }) {}
-
-  async listAdmin(filters: PricingAdminFilters): Promise<readonly PricingRowWithMerchant[]> {
-    const { whereSql, params } = buildWhereClause(filters);
-    const sortColumn = resolveSortColumn(filters.sortBy);
-    const sortDirection = filters.sortOrder === 'asc' ? 'ASC' : 'DESC';
-    const limitParam = params.length + 1;
-    const offsetParam = params.length + 2;
-    const offset = (filters.page - 1) * filters.pageSize;
-
-    const sql = `
-      SELECT ${PRICING_COLUMNS}, ${MERCHANT_JOIN_SELECT}
-      ${PRICING_FROM_JOIN}
-      WHERE ${whereSql}
-      ORDER BY ${sortColumn} ${sortDirection}, p.id ${sortDirection}
-      LIMIT $${limitParam}
-      OFFSET $${offsetParam}
-    `;
-
-    const result = await this.db.query(sql, [...params, filters.pageSize, offset]);
-    return (result.rows as PricingWithMerchantDbRow[]).map(mapPricingRowWithMerchant);
-  }
-
-  async countAdmin(filters: PricingAdminFilters): Promise<number> {
-    const { whereSql, params } = buildWhereClause(filters);
-    const sql = `
-      SELECT COUNT(*)::int AS total
-      ${PRICING_FROM_JOIN}
-      WHERE ${whereSql}
-    `;
-    const result = await this.db.query(sql, params);
-    return Number(result.rows[0]?.total ?? 0);
-  }
 
   async findByVendorId(vendorId: string): Promise<PricingRowWithMerchant | null> {
     const sql = `

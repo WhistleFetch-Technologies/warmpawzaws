@@ -13,8 +13,13 @@ import type {
   UpdatePublishStatusParams,
 } from './interfaces/IVendorCatalogRepository';
 import { toOptionalAdminActorUuid } from '../admin/catalogue/utils/admin-actor-id';
+import {
+  MERCHANT_ROLE_CATEGORY_EXPR,
+  merchantCategoryFilterSql,
+} from '../shared/merchant/merchant-role-sql';
 
 const CATALOGUE_TABLE = 'warmpawz_pay_vendor_catalog';
+const PRICING_TABLE = 'warmpawz_pay_merchant_pricing';
 
 const CATALOGUE_COLUMNS =
   'id, vendor_id, publish_status, published_at, created_by, created_at, updated_at';
@@ -37,12 +42,29 @@ const VENDOR_JOIN_SELECT = `
   v.status AS vendor_status,
   v.pay_bill_enabled,
   v.bank_verified,
-  v.is_deleted
+  v.is_deleted,
+  COALESCE(v.is_active, false) AS is_active,
+  COALESCE(v.is_online, true) AS is_online,
+  v.vendor_type,
+  COALESCE(v.is_solo_provider, false) AS is_solo_provider,
+  v.category AS legacy_category,
+  r.name AS role_name,
+  ${MERCHANT_ROLE_CATEGORY_EXPR} AS role_category,
+  r.customer_service,
+  r.config AS role_config,
+  p.id AS pricing_id,
+  p.discount_type AS pricing_discount_type,
+  p.discount_value AS pricing_discount_value,
+  p.status AS pricing_status,
+  p.effective_from AS pricing_effective_from,
+  p.effective_until AS pricing_effective_until
 `;
 
 const ADMIN_FROM_JOIN = `
   FROM ${CATALOGUE_TABLE} c
   INNER JOIN vendors v ON v.id = c.vendor_id
+  LEFT JOIN roles r ON r.id = v.role_id
+  LEFT JOIN ${PRICING_TABLE} p ON p.vendor_id = c.vendor_id
 `;
 
 const ADMIN_BASE_WHERE = '(v.is_deleted IS NOT TRUE)';
@@ -98,6 +120,21 @@ interface CatalogueWithVendorDbRow extends CatalogueDbRow {
   readonly pay_bill_enabled: boolean;
   readonly bank_verified: boolean;
   readonly is_deleted: boolean | null;
+  readonly is_active: boolean | null;
+  readonly is_online: boolean | null;
+  readonly vendor_type: string | null;
+  readonly is_solo_provider: boolean | null;
+  readonly legacy_category: string | null;
+  readonly role_name: string | null;
+  readonly role_category: string | null;
+  readonly customer_service: string | null;
+  readonly role_config: unknown;
+  readonly pricing_id: string | null;
+  readonly pricing_discount_type: string | null;
+  readonly pricing_discount_value: string | number | null;
+  readonly pricing_status: string | null;
+  readonly pricing_effective_from: Date | string | null;
+  readonly pricing_effective_until: Date | string | null;
 }
 
 interface PublishedVendorDbRow {
@@ -116,8 +153,15 @@ interface PublishedEligibleCursor {
 
 type AdminFilterInput = Pick<
   CatalogueAdminFilters,
-  'publishStatus' | 'q' | 'city' | 'vendorId' | 'eligibility'
+  'publishStatus' | 'q' | 'city' | 'vendorId' | 'eligibility' | 'category'
 >;
+
+function toOptionalNumber(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return typeof value === 'number' ? value : Number(value);
+}
 
 function isPgError(error: unknown): error is { code?: string; message?: string } {
   return typeof error === 'object' && error !== null && 'code' in error;
@@ -177,6 +221,25 @@ function mapCatalogueRowWithVendor(row: CatalogueWithVendorDbRow): CatalogueRowW
     payBillEnabled: Boolean(row.pay_bill_enabled),
     bankVerified: Boolean(row.bank_verified),
     isDeleted: row.is_deleted === true,
+    isActive: row.is_active !== false,
+    isOnline: row.is_online !== false,
+    vendorType: row.vendor_type,
+    isSoloProvider: row.is_solo_provider === true,
+    legacyCategory: row.legacy_category,
+    roleName: row.role_name,
+    roleCategory: row.role_category,
+    customerService: row.customer_service,
+    roleConfig: row.role_config,
+    pricingId: row.pricing_id,
+    pricingDiscountType: row.pricing_discount_type,
+    pricingDiscountValue: toOptionalNumber(row.pricing_discount_value),
+    pricingStatus: row.pricing_status,
+    pricingEffectiveFrom: row.pricing_effective_from
+      ? toDate(row.pricing_effective_from)
+      : null,
+    pricingEffectiveUntil: row.pricing_effective_until
+      ? toDate(row.pricing_effective_until)
+      : null,
   };
 }
 
@@ -253,6 +316,11 @@ function buildAdminWhereClause(filters: AdminFilterInput): {
     conditions.push(CUSTOMER_VISIBLE_PREDICATE);
   } else if (filters.eligibility === 'not_customer_visible') {
     conditions.push(`NOT ${CUSTOMER_VISIBLE_PREDICATE}`);
+  }
+
+  if (filters.category) {
+    params.push(`%${filters.category}%`);
+    conditions.push(merchantCategoryFilterSql(`$${params.length}`));
   }
 
   return {

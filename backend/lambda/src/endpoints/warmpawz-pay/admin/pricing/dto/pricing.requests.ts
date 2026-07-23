@@ -1,24 +1,11 @@
 import { z } from 'zod';
 import { uuidSchema } from '../../../../../middleware/validation-middleware';
 import {
-  ALLOWED_PRICING_DISCOUNT_TYPE_FILTERS,
   ALLOWED_PRICING_DISCOUNT_TYPES,
-  ALLOWED_PRICING_SORT_FIELDS,
   ALLOWED_PRICING_STATUSES,
-  ALLOWED_PRICING_STATUS_FILTERS,
-  DEFAULT_PRICING_SORT_FIELD,
   PRICING_DISCOUNT_TYPE,
   PRICING_STATUS,
 } from '../../../constants/merchant-pricing';
-import {
-  ALLOWED_SORT_ORDERS,
-  DEFAULT_PAGE_SIZE,
-  DEFAULT_SORT_ORDER,
-  MAX_PAGE_SIZE,
-} from '../../../constants/catalogue-limits';
-
-const MAX_SEARCH_QUERY_LENGTH = 256;
-const MAX_CATEGORY_LENGTH = 128;
 
 const isoDateSchema = z
   .string()
@@ -75,35 +62,10 @@ export const updatePricingRequestSchema = z
 
 export type UpdatePricingRequest = z.infer<typeof updatePricingRequestSchema>;
 
-export const pricingListQuerySchema = z
-  .object({
-    page: z.coerce.number().int().min(1).optional().default(1),
-    pageSize: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .max(MAX_PAGE_SIZE)
-      .optional()
-      .default(DEFAULT_PAGE_SIZE),
-    sortBy: z.enum(ALLOWED_PRICING_SORT_FIELDS).optional().default(DEFAULT_PRICING_SORT_FIELD),
-    sortOrder: z.enum(ALLOWED_SORT_ORDERS).optional().default(DEFAULT_SORT_ORDER),
-    q: z.string().trim().min(1).max(MAX_SEARCH_QUERY_LENGTH).optional(),
-    category: z.string().trim().min(1).max(MAX_CATEGORY_LENGTH).optional(),
-    status: z.enum(ALLOWED_PRICING_STATUS_FILTERS).optional(),
-    discountType: z.enum(ALLOWED_PRICING_DISCOUNT_TYPE_FILTERS).optional(),
-  })
-  .strict();
-
-export type PricingListQuery = z.infer<typeof pricingListQuerySchema>;
-
 export function parseCreatePricingRequest(input: unknown): CreatePricingRequest {
   return createPricingRequestSchema.parse(input);
 }
 
 export function parseUpdatePricingRequest(input: unknown): UpdatePricingRequest {
   return updatePricingRequestSchema.parse(input);
-}
-
-export function parsePricingListQuery(input: unknown): PricingListQuery {
-  return pricingListQuerySchema.parse(input);
 }
