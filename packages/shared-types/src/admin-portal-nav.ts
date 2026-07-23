@@ -190,6 +190,16 @@ export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
     description: 'E-commerce and seller setup',
   },
   {
+    id: 'warmpawz-pay-catalogue',
+    label: 'Warmpawz Pay',
+    permissionId: 'admin.warmpawz_pay',
+    pathPrefixes: ['/warmpawz-pay'],
+    section: 'main',
+    sortOrder: 75,
+    description: 'Warmpawz Pay vendor catalogue administration',
+    routeHint: '/warmpawz-pay/catalogue',
+  },
+  {
     id: 'regions',
     label: 'Region Manager',
     permissionId: 'admin.platform_settings',

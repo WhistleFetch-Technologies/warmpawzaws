@@ -8,6 +8,8 @@ export * from './useVendors';
 export * from './useOrders';
 export * from './usePayments';
 export * from './useBookings';
+export * from './warmpawz-pay/useCatalogue';
+export * from './warmpawz-pay/useBulkCatalogueActions';
 
 // Reusable hooks
 export * from './useApiData';

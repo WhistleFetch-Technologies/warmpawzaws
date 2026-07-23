@@ -8,6 +8,7 @@ import {
   Megaphone,
   Headphones,
   BookOpen,
+  CreditCard,
   Database,
   Calendar,
   FileText,
@@ -63,6 +64,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   vendors: Users,
   customers: UserCircle,
   ecommerce: ShoppingCart,
+  'warmpawz-pay-catalogue': CreditCard,
   regions: Globe,
   loyalty: Gift,
   support: Headphones,
@@ -129,6 +131,11 @@ function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void
   if (item.id === 'marketing-campaigns') {
     return () => {
       window.location.href = '/marketing/campaigns';
+    };
+  }
+  if (item.id === 'warmpawz-pay-catalogue') {
+    return () => {
+      window.location.href = '/warmpawz-pay/catalogue';
     };
   }
   return () => onNavigate(item.id);

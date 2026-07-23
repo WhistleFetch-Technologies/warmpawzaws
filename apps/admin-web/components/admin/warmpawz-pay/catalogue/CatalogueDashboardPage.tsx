@@ -1,0 +1,329 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import {
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@warmpawz/ui';
+import { Plus } from 'lucide-react';
+import {
+  useCatalogueList,
+  useDeleteCatalogueEntry,
+  usePublishCatalogueEntry,
+  useUnpublishCatalogueEntry,
+} from '@/hooks/warmpawz-pay/useCatalogue';
+import { useBulkCatalogueActions } from '@/hooks/warmpawz-pay/useBulkCatalogueActions';
+import type {
+  CatalogueEligibilityFilter,
+  CataloguePublishStatusFilter,
+} from '@/lib/warmpawz-pay-catalogue-admin';
+import { BulkToolbar } from './BulkToolbar';
+import { CatalogueTable } from './CatalogueTable';
+import { ConfirmDialog } from './ConfirmDialog';
+import { LoadingSkeleton } from './LoadingSkeleton';
+import { Pagination } from './Pagination';
+import { SearchBar } from './SearchBar';
+import { WarmpawzPayCatalogueShell } from './WarmpawzPayCatalogueShell';
+
+type PendingAction =
+  | { type: 'publish'; catalogueId: string }
+  | { type: 'unpublish'; catalogueId: string }
+  | { type: 'delete'; catalogueId: string }
+  | { type: 'bulk-publish' }
+  | { type: 'bulk-unpublish' }
+  | { type: 'bulk-delete' };
+
+const PAGE_SIZE = 20;
+
+export function CatalogueDashboardPage() {
+  const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [publishStatusFilter, setPublishStatusFilter] =
+    useState<CataloguePublishStatusFilter>('all');
+  const [eligibilityFilter, setEligibilityFilter] =
+    useState<CatalogueEligibilityFilter>('all');
+  const [vendorIdFilter, setVendorIdFilter] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [rowBusyId, setRowBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  const listParams = useMemo(
+    () => ({
+      page,
+      pageSize: PAGE_SIZE,
+      sortBy: 'updatedAt' as const,
+      sortOrder: 'desc' as const,
+      q: searchQuery || undefined,
+      publishStatus:
+        publishStatusFilter === 'all' ? undefined : publishStatusFilter,
+      eligibility: eligibilityFilter === 'all' ? undefined : eligibilityFilter,
+      vendorId: vendorIdFilter.trim() || undefined,
+    }),
+    [page, searchQuery, publishStatusFilter, eligibilityFilter, vendorIdFilter],
+  );
+
+  const { data, isLoading, isFetching, error } = useCatalogueList(listParams);
+  const publishMutation = usePublishCatalogueEntry();
+  const unpublishMutation = useUnpublishCatalogueEntry();
+  const deleteMutation = useDeleteCatalogueEntry();
+  const { bulkPublish, bulkUnpublish, bulkDelete, isLoading: isBulkLoading } =
+    useBulkCatalogueActions();
+
+  const items = data?.items ?? [];
+  const pagination = data?.pagination ?? {
+    page: 1,
+    pageSize: PAGE_SIZE,
+    total: 0,
+    totalPages: 1,
+  };
+
+  const anyMutationPending =
+    publishMutation.isPending ||
+    unpublishMutation.isPending ||
+    deleteMutation.isPending ||
+    isBulkLoading;
+
+  const toggleAll = (checked: boolean) => {
+    if (!checked) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(items.map((item) => item.catalogueId)));
+  };
+
+  const toggleOne = (catalogueId: string, checked: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(catalogueId);
+      } else {
+        next.delete(catalogueId);
+      }
+      return next;
+    });
+  };
+
+  const runPendingAction = async () => {
+    if (!pendingAction) {
+      return;
+    }
+
+    try {
+      switch (pendingAction.type) {
+        case 'publish':
+          setRowBusyId(pendingAction.catalogueId);
+          await publishMutation.mutateAsync(pendingAction.catalogueId);
+          break;
+        case 'unpublish':
+          setRowBusyId(pendingAction.catalogueId);
+          await unpublishMutation.mutateAsync(pendingAction.catalogueId);
+          break;
+        case 'delete':
+          setRowBusyId(pendingAction.catalogueId);
+          await deleteMutation.mutateAsync(pendingAction.catalogueId);
+          setSelectedIds((current) => {
+            const next = new Set(current);
+            next.delete(pendingAction.catalogueId);
+            return next;
+          });
+          break;
+        case 'bulk-publish':
+          await bulkPublish([...selectedIds]);
+          setSelectedIds(new Set());
+          break;
+        case 'bulk-unpublish':
+          await bulkUnpublish([...selectedIds]);
+          setSelectedIds(new Set());
+          break;
+        case 'bulk-delete':
+          await bulkDelete([...selectedIds]);
+          setSelectedIds(new Set());
+          break;
+      }
+    } finally {
+      setRowBusyId(null);
+      setPendingAction(null);
+    }
+  };
+
+  const confirmCopy = (() => {
+    if (!pendingAction) {
+      return { title: '', description: '' };
+    }
+    switch (pendingAction.type) {
+      case 'publish':
+        return {
+          title: 'Publish catalogue entry?',
+          description: 'This vendor will be marked published in the Warmpawz Pay catalogue.',
+        };
+      case 'unpublish':
+        return {
+          title: 'Unpublish catalogue entry?',
+          description: 'The entry will return to draft and stop being published.',
+        };
+      case 'delete':
+        return {
+          title: 'Delete catalogue entry?',
+          description: 'This action cannot be undone.',
+          destructive: true,
+        };
+      case 'bulk-publish':
+        return {
+          title: `Publish ${selectedIds.size} entries?`,
+          description: 'Selected catalogue entries will be published.',
+        };
+      case 'bulk-unpublish':
+        return {
+          title: `Unpublish ${selectedIds.size} entries?`,
+          description: 'Selected catalogue entries will return to draft.',
+        };
+      case 'bulk-delete':
+        return {
+          title: `Delete ${selectedIds.size} entries?`,
+          description: 'This action cannot be undone.',
+          destructive: true,
+        };
+    }
+  })();
+
+  return (
+    <WarmpawzPayCatalogueShell
+      title="Vendor Catalogue"
+      subtitle="Controls which vendors appear in customer Pay Bill discovery."
+      actions={
+        <Button type="button" asChild>
+          <Link href="/warmpawz-pay/catalogue/create">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Vendor
+          </Link>
+        </Button>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
+          <SearchBar
+            value={searchInput}
+            onChange={setSearchInput}
+            placeholder="Search business name…"
+            disabled={isLoading}
+          />
+          <Select
+            value={publishStatusFilter}
+            onValueChange={(value) => {
+              setPublishStatusFilter(value as CataloguePublishStatusFilter);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-44 bg-white">
+              <SelectValue placeholder="Publish status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="published">Published</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={eligibilityFilter}
+            onValueChange={(value) => {
+              setEligibilityFilter(value as CatalogueEligibilityFilter);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-52 bg-white">
+              <SelectValue placeholder="Customer visibility" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All visibility</SelectItem>
+              <SelectItem value="customer_visible">Customer visible</SelectItem>
+              <SelectItem value="not_customer_visible">Not customer visible</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            value={vendorIdFilter}
+            onChange={(event) => {
+              setVendorIdFilter(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Filter by vendor ID"
+            className="max-w-xs bg-white"
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-gray-600">
+            {isFetching ? 'Refreshing…' : `${pagination.total} total entries`}
+          </p>
+          <BulkToolbar
+            selectedCount={selectedIds.size}
+            disabled={anyMutationPending}
+            onPublish={() => setPendingAction({ type: 'bulk-publish' })}
+            onUnpublish={() => setPendingAction({ type: 'bulk-unpublish' })}
+            onDelete={() => setPendingAction({ type: 'bulk-delete' })}
+            onClear={() => setSelectedIds(new Set())}
+          />
+        </div>
+
+        {error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {error instanceof Error ? error.message : 'Failed to load catalogue entries.'}
+          </div>
+        ) : null}
+
+        {isLoading ? (
+          <LoadingSkeleton />
+        ) : (
+          <>
+            <CatalogueTable
+              items={items}
+              selectedIds={selectedIds}
+              rowBusyId={rowBusyId}
+              disabled={anyMutationPending}
+              onToggleAll={toggleAll}
+              onToggleOne={toggleOne}
+              onPublish={(catalogueId) => setPendingAction({ type: 'publish', catalogueId })}
+              onUnpublish={(catalogueId) =>
+                setPendingAction({ type: 'unpublish', catalogueId })
+              }
+              onDelete={(catalogueId) => setPendingAction({ type: 'delete', catalogueId })}
+            />
+            <Pagination
+              pagination={pagination}
+              disabled={isFetching || anyMutationPending}
+              onPageChange={setPage}
+            />
+          </>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={pendingAction !== null}
+        title={confirmCopy.title}
+        description={confirmCopy.description}
+        destructive={'destructive' in confirmCopy && confirmCopy.destructive === true}
+        loading={anyMutationPending}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingAction(null);
+          }
+        }}
+        onConfirm={() => void runPendingAction()}
+      />
+    </WarmpawzPayCatalogueShell>
+  );
+}

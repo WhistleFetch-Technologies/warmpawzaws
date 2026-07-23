@@ -7,6 +7,7 @@ export function hrefForAdminSidebarView(view: string): string {
   if (view === 'vendor-admin' || view === 'vendor-management') return '/vendors';
   if (view === 'catalog-and-services') return '/catalog';
   if (view === 'region-manager') return '/regions';
+  if (view === 'warmpawz-pay-catalogue') return '/warmpawz-pay/catalogue';
 
   const item = getAdminPortalNavItems().find((i) => i.id === view);
   const path = item?.pathPrefixes?.[0];
