@@ -56,6 +56,9 @@ import { assertShopCheckoutPaymentAllowed } from '../../../utils/shop-checkout-p
 import { PaymentTransactionStatus, BookingPaymentStatus } from '../../constants';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipment';
+import { ACTIVE_REFUND_STATUS_FILTER, mapRazorpayRefundEventStatus } from '../../../utils/payments/refund-status';
+import { markShopOrderPaymentRefundedIfFull } from '../../../utils/payments/shop-order-refund';
+import { reconcileRazorpayRefundWebhook } from '../../../utils/payments/razorpay-refund-webhook-reconcile';
 
 // Razorpay configuration is imported from utils
 
@@ -2163,105 +2166,20 @@ class RazorpayWebhookHandler extends BaseHandler {
       }
     } else if (event === 'refund.created' || event === 'refund.processed') {
       const refund = payload_data.refund.entity;
-      
-      // ✅ SQL: Get payment details to calculate refund status
-      const { rows: paymentRows } = await query(
-        `SELECT id, booking_id, amount, payment_status 
-         FROM payments 
-         WHERE razorpay_payment_id = $1`,
-        [refund.payment_id]
-      );
-
-      if (paymentRows.length === 0) {
-        console.warn(`[RAZORPAY-WEBHOOK] Payment not found for refund: ${refund.id}`);
+      const reconcileResult = await reconcileRazorpayRefundWebhook({
+        razorpayRefundId: refund.id,
+        razorpayPaymentId: refund.payment_id,
+        refundAmountInr: refund.amount / 100,
+        razorpayStatus: refund.status,
+        refundReason: refund.notes?.reason || null,
+      });
+      if (reconcileResult) {
+        console.log(
+          `[RAZORPAY-WEBHOOK] ✅ Refund ${event} processed: ${refund.id}, full=${reconcileResult.isFullRefund}`,
+        );
+      } else {
         return this.success({ message: 'Webhook processed (payment not found)' });
       }
-
-      const payment = paymentRows[0];
-      const refundAmount = refund.amount / 100; // Convert from paise
-      const paymentAmount = parseFloat(payment.amount || '0');
-
-      // Calculate total refunded including this refund
-      const { rows: refundedRows } = await query(
-        `SELECT COALESCE(SUM(amount), 0) AS total_refunded 
-         FROM refunds 
-         WHERE payment_id = $1 
-           AND refund_status IN ('processed', 'processing', 'approved', 'completed')`,
-        [payment.id]
-      );
-
-      const totalRefunded = parseFloat(refundedRows[0]?.total_refunded || '0') + refundAmount;
-      const isFullRefund = totalRefunded >= paymentAmount;
-      
-      const newPaymentStatus = isFullRefund 
-        ? PaymentTransactionStatus.REFUNDED 
-        : PaymentTransactionStatus.PARTIALLY_REFUNDED;
-
-      // ✅ SQL: Process refund in transaction
-      await withTransaction(async (client) => {
-        // Create or update refund record
-        const { rows: existingRefund } = await client.query(
-          `SELECT id FROM refunds WHERE razorpay_refund_id = $1`,
-          [refund.id]
-        );
-
-        if (existingRefund.length === 0) {
-          // Create new refund record
-          await client.query(
-            `INSERT INTO refunds (
-              payment_id, booking_id, amount, reason, refund_type,
-              refund_status, razorpay_refund_id, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
-            [
-              payment.id,
-              payment.booking_id || null,
-              refundAmount,
-              refund.notes?.reason || null,
-              isFullRefund ? 'full' : 'partial',
-              refund.status === 'processed' ? 'processed' : 'processing',
-              refund.id,
-            ]
-          );
-        } else {
-          // Update existing refund record
-          await client.query(
-            `UPDATE refunds 
-             SET refund_status = $1, 
-                 amount = $2,
-                 updated_at = NOW()
-             WHERE razorpay_refund_id = $3`,
-            [
-              refund.status === 'processed' ? 'processed' : 'processing',
-              refundAmount,
-              refund.id,
-            ]
-          );
-        }
-
-        // ✅ Update payments table payment_status
-        await client.query(
-          `UPDATE payments 
-           SET payment_status = $1, updated_at = NOW()
-           WHERE id = $2`,
-          [newPaymentStatus, payment.id]
-        );
-
-        // ✅ Update booking payment status if booking exists
-        if (payment.booking_id) {
-          const bookingPaymentStatus = isFullRefund 
-            ? BookingPaymentStatus.REFUNDED 
-            : BookingPaymentStatus.PARTIAL;
-          
-          await client.query(
-            `UPDATE bookings 
-             SET payment_status = $1, updated_at = NOW()
-             WHERE id = $2`,
-            [bookingPaymentStatus, payment.booking_id]
-          );
-        }
-      });
-
-      console.log(`[RAZORPAY-WEBHOOK] ✅ Refund ${event} processed: ${refund.id}, Payment status: ${newPaymentStatus}`);
     }
 
     return this.success({ message: 'Webhook processed' });
@@ -2446,17 +2364,17 @@ class ProcessRefundHandler extends BaseHandler {
 
     // Calculate total already refunded
     const { rows: refundedRows } = await query(
-      `SELECT COALESCE(SUM(amount), 0) AS total_refunded 
-       FROM refunds 
-       WHERE payment_id = $1 
-         AND refund_status IN ('processed', 'processing', 'approved', 'completed')`,
+      `SELECT COALESCE(SUM(refund_amount), 0) AS total_refunded
+       FROM refunds
+       WHERE payment_id = $1::uuid
+         AND ${ACTIVE_REFUND_STATUS_FILTER}`,
       [payment.id]
     );
 
     const totalRefunded = parseFloat(refundedRows[0]?.total_refunded || '0');
     const availableToRefund = paymentAmount - totalRefunded;
 
-    if (refundAmount > availableToRefund) {
+    if (refundAmount > availableToRefund + 0.009) {
       return this.error(
         `Only ₹${availableToRefund} available to refund. Requested: ₹${refundAmount}`,
         400
@@ -2476,27 +2394,32 @@ class ProcessRefundHandler extends BaseHandler {
     );
 
     // Determine if full or partial refund
-    const isFullRefund = refundAmount === availableToRefund;
+    const isFullRefund = refundAmount >= availableToRefund - 0.009;
+    const dbRefundStatus = mapRazorpayRefundEventStatus(refund.status);
     const newPaymentStatus = isFullRefund 
       ? PaymentTransactionStatus.REFUNDED 
       : PaymentTransactionStatus.PARTIALLY_REFUNDED;
 
     // ✅ SQL: Process refund in transaction to ensure consistency
     await withTransaction(async (client) => {
-      // Create refund record
+      if (!payment.customer_id) {
+        throw new Error('Payment missing customer_id');
+      }
       await client.query(
         `INSERT INTO refunds (
-          payment_id, booking_id, amount, reason, refund_type,
-          refund_status, razorpay_refund_id, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-        RETURNING *`,
+          payment_id, booking_id, order_id, customer_id, refund_amount, refund_reason,
+          refund_status, razorpay_refund_id, requested_at, processed_at,
+          completed_at
+        ) VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, NOW(), NOW(),
+          CASE WHEN $7 = 'completed' THEN NOW() ELSE NULL END)`,
         [
           payment.id,
           payment.booking_id || null,
+          payment.order_id || null,
+          payment.customer_id,
           refundAmount,
-          reason || null,
-          isFullRefund ? 'full' : 'partial',
-          refund.status === 'processed' ? 'processed' : 'processing',
+          reason || 'Customer request',
+          dbRefundStatus,
           refund.id,
         ]
       );
@@ -2521,6 +2444,10 @@ class ProcessRefundHandler extends BaseHandler {
            WHERE id = $2`,
           [bookingPaymentStatus, payment.booking_id]
         );
+      }
+
+      if (payment.order_id && isFullRefund) {
+        await markShopOrderPaymentRefundedIfFull(String(payment.order_id), client);
       }
     });
 

@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { Clock, User, Phone, Home, Video, MapPin, MessageSquare, Navigation, CheckCircle2, Play, Radio, Map } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { isVendorTeleConsultationBooking } from '@/lib/vendor-utils';
 
 interface AppointmentCardProps {
   appointment: {
@@ -70,6 +71,7 @@ export function AppointmentCard({
 }: AppointmentCardProps) {
   const router = useRouter();
   const serviceType = appointment.serviceType?.toLowerCase();
+  const isTele = isVendorTeleConsultationBooking(appointment);
   
   // Determine service style icon and colors
   let typeIcon = Home;
@@ -196,7 +198,7 @@ export function AppointmentCard({
                 </Button>
               )}
 
-              {appointment.status === 'confirmed' && onStart && (
+              {appointment.status === 'confirmed' && onStart && !isTele && (
                 <Button
                   size="sm"
                   onClick={() => onStart(appointment.bookingId)}
@@ -206,6 +208,19 @@ export function AppointmentCard({
                   Start
                 </Button>
               )}
+
+              {isTele &&
+                onComplete &&
+                (appointment.status === 'confirmed' || appointment.status === 'in_progress') && (
+                  <Button
+                    size="sm"
+                    onClick={() => onComplete(appointment.bookingId)}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                    Mark Complete
+                  </Button>
+                )}
 
               {appointment.status === 'in_progress' && (
                 <>
@@ -249,7 +264,7 @@ export function AppointmentCard({
                       )}
                     </>
                   )}
-                  {onComplete && (
+                  {onComplete && !isTele && (
                     <Button
                       size="sm"
                       onClick={() => onComplete(appointment.bookingId)}

@@ -3,6 +3,8 @@
  * Center/business: metadata.facility_photos gallery first; solo: profile_photo_url first.
  */
 import { resolveImageForContext } from '../services/image';
+import { extractRawImageKey } from '../services/image/image-migrator';
+import { isWebpKey } from '../services/image/image-key-builder';
 import { regeneratePresignedUrl } from '../endpoints/constants/helper';
 
 export function vendorGalleryDrivesListingPhoto(v: Record<string, unknown> | null | undefined): boolean {
@@ -40,7 +42,13 @@ async function listingPhotoDisplayUrl(
       context: 'list',
       migrate: false,
     });
+    const regen = await regeneratePresignedUrl(raw);
+    const key = extractRawImageKey(raw);
+    if (key && !isWebpKey(key) && regen) {
+      return regen;
+    }
     if (resolved?.displayUrl) return resolved.displayUrl;
+    if (regen) return regen;
   }
   return regeneratePresignedUrl(raw);
 }

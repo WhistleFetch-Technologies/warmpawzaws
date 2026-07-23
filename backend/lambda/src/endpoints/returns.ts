@@ -25,6 +25,8 @@ import {
   assertReturnItemsAllowed,
   ReturnItemsNotAllowedError,
 } from '../utils/category-return-eligibility';
+import { returnOrderHandler } from './customer/orders/services/handler-instances.service';
+import { createEmptyLambdaContext } from './customer/shared/hono-lambda-bridge.utils';
 
 export function registerReturnsEndpoints(app: Hono) {
   /**
@@ -139,60 +141,42 @@ export function registerReturnsEndpoints(app: Hono) {
 
   /**
    * POST /customer/returns
-   * Create return request (Phase 1 - Mobile Improvements)
+   * Legacy mobile path — delegates to POST /customer/orders/:id/return (return_requests).
    */
   app.post("/customer/returns", async (c) => {
     try {
-      const { orderId, items, reason, customerId } = await c.req.json();
+      const body = await c.req.json();
+      const { orderId, items, reason, customerId } = body;
 
-      if (!orderId || !items || !reason || !customerId) {
-        return c.json({ error: 'orderId, items, reason, and customerId are required' }, 400);
+      if (!orderId || !items || !reason) {
+        return c.json({ error: 'orderId, items, and reason are required' }, 400);
       }
-
-      // Get order details
-      const orders = await select('orders', { id: orderId, customer_id: customerId });
-      if (orders.length === 0) {
-        return c.json({ error: 'Order not found' }, 404);
-      }
-
-      const order = orders[0];
 
       const normalizedItems = Array.isArray(items)
-        ? items.map((item: { orderItemId?: string; id?: string; quantity?: number }) => ({
-            orderItemId: String(item.orderItemId ?? item.id ?? ''),
+        ? items.map((item: { orderItemId?: string; itemId?: string; id?: string; quantity?: number }) => ({
+            orderItemId: String(item.orderItemId ?? item.itemId ?? item.id ?? ''),
             quantity: item.quantity,
           }))
         : [];
 
-      try {
-        await assertReturnItemsAllowed(orderId, normalizedItems);
-      } catch (err: unknown) {
-        if (err instanceof ReturnItemsNotAllowedError) {
-          return c.json({ error: err.message }, err.statusCode);
-        }
-        throw err;
-      }
+      const event: Record<string, unknown> = {
+        pathParameters: { id: String(orderId) },
+        queryStringParameters: customerId ? { customerId: String(customerId) } : {},
+        body: JSON.stringify({ reason, items: normalizedItems }),
+        headers: c.req.header ? Object.fromEntries(Object.entries(c.req.header())) : {},
+        requestContext: {
+          authorizer: {
+            claims: {
+              sub: c.req.header?.('x-user-id') || String(customerId || ''),
+            },
+          },
+        },
+      };
 
-      // Create return request
-      const returnRequest = await insert('returns', {
-        order_id: orderId,
-        customer_id: customerId,
-        vendor_id: order.vendor_id,
-        items: items,
-        return_reason: reason,
-        description: null,
-        images: [],
-        status: 'pending',
-        pickup_address: null,
-      });
-
-      return c.json({
-        success: true,
-        returnRequest: returnRequest[0],
-        message: 'Return request created successfully',
-      });
+      const result = await returnOrderHandler.execute(event, createEmptyLambdaContext());
+      return c.json(JSON.parse(result.body), result.statusCode as 400);
     } catch (error: any) {
-      console.error('Error creating return request:', error);
+      console.error('Error creating return request (legacy shim):', error);
       return c.json({ error: error.message }, 500);
     }
   });

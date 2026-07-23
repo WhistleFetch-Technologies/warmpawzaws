@@ -40,7 +40,8 @@ export function extractS3KeyFromUrl(url: string | null | undefined): string | nu
 }
 
 
-function uploadBucketCandidates(): string[] {
+/** Buckets that may hold vendor/product uploads (dev legacy + current user-uploads). */
+export function uploadBucketCandidates(): string[] {
     const seen = new Set<string>();
     const add = (name?: string | null) => {
         const t = name?.trim();
@@ -49,8 +50,53 @@ function uploadBucketCandidates(): string[] {
     add(process.env.S3_UPLOADS_BUCKET);
     add(process.env.S3_BUCKET_NAME);
     add('warmpawz-dev-uploads');
+    add('warmpawz-dev-user-uploads-057442119249');
     add(process.env.S3_STORAGE_BUCKET);
     return [...seen];
+}
+
+/** Find which upload bucket contains `key` (HeadObject probe). */
+export async function resolveUploadBucketForKey(s3Key: string): Promise<string | null> {
+    const key = String(s3Key || '').trim().replace(/^\/+/, '');
+    if (!key) return null;
+
+    const { S3Client, HeadObjectCommand } = await import('@aws-sdk/client-s3');
+    const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+
+    for (const bucket of uploadBucketCandidates()) {
+        try {
+            await s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+            return bucket;
+        } catch (headError: unknown) {
+            const err = headError as { name?: string; $metadata?: { httpStatusCode?: number } };
+            if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+                continue;
+            }
+            console.warn(`[resolveUploadBucketForKey] HeadObject failed bucket=${bucket} key=${key}:`, err);
+        }
+    }
+    return null;
+}
+
+/** Presign GET for a key in a known bucket. */
+export async function presignS3GetForBucketKey(
+    bucket: string,
+    s3Key: string,
+    expiresIn = 604800,
+): Promise<string | null> {
+    const key = String(s3Key || '').trim().replace(/^\/+/, '');
+    if (!bucket?.trim() || !key) return null;
+
+    const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+    const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+    const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+
+    const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({ Bucket: bucket.trim(), Key: key }),
+        { expiresIn },
+    );
+    return signedUrl?.startsWith('https://') ? signedUrl : null;
 }
 
 export async function regeneratePresignedUrl(s3KeyOrUrl: string | null | undefined): Promise<string | null> {
@@ -74,48 +120,16 @@ export async function regeneratePresignedUrl(s3KeyOrUrl: string | null | undefin
 
         console.log(`[PRESIGNED-URL] Regenerating URL for S3 key: ${s3Key}`);
 
-        const { S3Client, GetObjectCommand, HeadObjectCommand } = await import('@aws-sdk/client-s3');
-        const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-        const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-
-        let resolvedBucket: string | null = null;
-        for (const bucket of uploadBucketCandidates()) {
-            try {
-                await s3Client.send(
-                    new HeadObjectCommand({
-                        Bucket: bucket,
-                        Key: s3Key,
-                    })
-                );
-                resolvedBucket = bucket;
-                console.log(`[PRESIGNED-URL] Object exists in S3 bucket ${bucket}: ${s3Key}`);
-                break;
-            } catch (headError: any) {
-                if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
-                    continue;
-                }
-                console.warn(
-                    `[PRESIGNED-URL] Error checking object in ${bucket} for ${s3Key}:`,
-                    headError?.message
-                );
-            }
-        }
-
+        const resolvedBucket = await resolveUploadBucketForKey(s3Key);
         if (!resolvedBucket) {
             console.error(`[PRESIGNED-URL] Object not found in any upload bucket: ${s3Key}`);
             return null;
         }
 
-        const signedUrl = await getSignedUrl(
-            s3Client,
-            new GetObjectCommand({
-                Bucket: resolvedBucket,
-                Key: s3Key,
-            }),
-            { expiresIn: 604800 } // 7 days
-        );
+        console.log(`[PRESIGNED-URL] Object exists in S3 bucket ${resolvedBucket}: ${s3Key}`);
 
-        if (!signedUrl || typeof signedUrl !== 'string' || !signedUrl.startsWith('https://')) {
+        const signedUrl = await presignS3GetForBucketKey(resolvedBucket, s3Key);
+        if (!signedUrl) {
             console.error(`[PRESIGNED-URL] Invalid presigned URL generated for ${s3Key}`);
             return null;
         }

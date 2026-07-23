@@ -4,6 +4,10 @@
 
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import {
+  presignS3GetForBucketKey,
+  resolveUploadBucketForKey,
+} from '../../endpoints/constants/helper';
 import { presignS3GetUrlIfApplicable } from '../../utils/s3-media-presign';
 import { buildPublicS3ObjectUrl } from '../../utils/s3-presign-upload';
 import { getUploadsBucket } from './image-repository';
@@ -30,13 +34,20 @@ export async function urlForImageKey(key: string | null | undefined): Promise<st
     return (await presignS3GetUrlIfApplicable(trimmed)) ?? trimmed;
   }
 
-  const bucket = getUploadsBucket();
-  const stableUrl = buildPublicS3ObjectUrl(bucket, trimmed, AWS_REGION);
+  const objectKey = trimmed.replace(/^\/+/, '');
+  const resolvedBucket = await resolveUploadBucketForKey(objectKey);
+  const bucket = resolvedBucket ?? getUploadsBucket();
+  if (resolvedBucket) {
+    const signed = await presignS3GetForBucketKey(resolvedBucket, objectKey, PRESIGN_TTL_SECONDS);
+    if (signed) return signed;
+  }
+
+  const stableUrl = buildPublicS3ObjectUrl(bucket, objectKey, AWS_REGION);
   return (
     (await presignS3GetUrlIfApplicable(stableUrl)) ??
     (await getSignedUrl(
       s3Client,
-      new GetObjectCommand({ Bucket: bucket, Key: trimmed }),
+      new GetObjectCommand({ Bucket: bucket, Key: objectKey }),
       { expiresIn: PRESIGN_TTL_SECONDS },
     ))
   );

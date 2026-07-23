@@ -87,4 +87,11 @@ describe('shop/payment visibility guards', () => {
     const file = read('src/endpoints/order-management.ts');
     expect(file).toContain("return c.json({ error: 'Forbidden' }, 403)");
   });
+
+  test('PUT order status cancel delegates to cancelPaidShopOrder with customer status cap', () => {
+    const file = read('src/endpoints/order-management.ts');
+    expect(file).toContain("if (status === 'cancelled')");
+    expect(file).toContain('CUSTOMER_CANCEL_STATUSES');
+    expect(file).not.toContain("if (status === 'cancelled') {\n        updateData.cancelled_at");
+  });
 });

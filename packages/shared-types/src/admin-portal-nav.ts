@@ -200,6 +200,15 @@ export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
     routeHint: '/warmpawz-pay/catalogue',
   },
   {
+    id: 'shop-refunds',
+    label: 'Shop Refunds',
+    permissionId: 'admin.ecommerce',
+    pathPrefixes: ['/shop-refunds'],
+    section: 'main',
+    sortOrder: 76,
+    description: 'Shop order refunds and retry',
+  },
+  {
     id: 'regions',
     label: 'Region Manager',
     permissionId: 'admin.platform_settings',

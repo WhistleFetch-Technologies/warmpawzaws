@@ -54,6 +54,14 @@ describe('shop-order-refund orchestrator', () => {
     expect(file).toContain('Math.min(requestedAmount, available)');
   });
 
+  test('orchestrator uses shared cancel status constants and stock client', () => {
+    const file = read('src/utils/payments/shop-order-refund.ts');
+    expect(file).toContain('CUSTOMER_CANCEL_STATUSES');
+    expect(file).toContain('restoreShopOrderStockIfNeeded');
+    expect(file).toContain('client?: PoolClient');
+    expect(file).toContain('markShopOrderPaymentRefundedIfFull');
+  });
+
   test('global requireAuth middleware is registered', () => {
     const file = read('src/handler/index.ts');
     expect(file).toContain("app.use('*', requireAuth())");

@@ -1290,7 +1290,7 @@ export function GroomingServicesByStyle({
           </Card>
         ) : (
           <div className="space-y-4">
-            {/* ✅ FIXED: Filter and Sort Bar with actual filter controls */}
+            {/* Sort only — provider filters hidden until distance/rating filters work reliably */}
             <Card className="bg-white p-4 space-y-3">
               {/* Sort Dropdown */}
               <div className="flex items-center gap-3">
@@ -1305,55 +1305,6 @@ export function GroomingServicesByStyle({
                   <option value="rating">Sort: Rating</option>
                   <option value="reviews">Sort: Most Reviews</option>
                 </select>
-              </div>
-              
-              {/* ✅ NEW: Filter Controls */}
-              <div className="pt-3 border-t border-gray-200 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-gray-600" />
-                  <span className="text-sm font-medium text-gray-700">Filters</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {/* Min Rating Filter */}
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Min Rating</label>
-                    <select
-                      value={providerFilter.minRating || ''}
-                      onChange={(e) => setProviderFilter({ ...providerFilter, minRating: e.target.value ? Number(e.target.value) : undefined })}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                    >
-                      <option value="">Any</option>
-                      <option value="3">3+ Stars</option>
-                      <option value="4">4+ Stars</option>
-                      <option value="4.5">4.5+ Stars</option>
-                    </select>
-                  </div>
-                  
-                  {/* Max Distance Filter */}
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Max Distance</label>
-                    <select
-                      value={providerFilter.maxDistance || ''}
-                      onChange={(e) => setProviderFilter({ ...providerFilter, maxDistance: e.target.value ? Number(e.target.value) : undefined })}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                    >
-                      <option value="">Any</option>
-                      <option value="5">Within 5 km</option>
-                      <option value="10">Within 10 km</option>
-                      <option value="20">Within 20 km</option>
-                    </select>
-                  </div>
-                </div>
-                
-                {/* Clear Filters Button */}
-                {(providerFilter.minRating || providerFilter.maxDistance || providerFilter.specialisation || (providerFilter.amenities && providerFilter.amenities.length > 0)) && (
-                  <button
-                    onClick={() => setProviderFilter({})}
-                    className="w-full text-xs text-[#FF8C42] hover:text-[#E67A35] font-medium py-1"
-                  >
-                    Clear Filters
-                  </button>
-                )}
               </div>
             </Card>
             

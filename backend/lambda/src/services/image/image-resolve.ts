@@ -9,6 +9,7 @@ import { ensureWebpFromLegacy, extractRawImageKey } from './image-migrator';
 import type { ImagePersistTarget } from './image-migrator-persist';
 import { persistMigratedImageKey } from './image-migrator-persist';
 import { attachUrlsToImageDto, urlForImageKey } from './image-url-builder';
+import { presignS3GetUrlIfApplicable } from '../../utils/s3-media-presign';
 
 export type ResolvedImageDto = {
   imageKey: string;
@@ -103,6 +104,30 @@ export async function resolveImageForContext(
   }
 
   if (!key) return null;
+
+  // Stored full S3 URL: presign using bucket embedded in the URL (not default getUploadsBucket).
+  if (isManagedS3Url && opts.migrate === false) {
+    const stripped = stripPresignQuery(trimmed);
+    const presigned = await presignS3GetUrlIfApplicable(stripped);
+    if (presigned) {
+      const thumbKey = isWebpKey(key) ? thumbKeyForDisplay(key, null) : null;
+      let thumbUrl: string | null = null;
+      if (thumbKey) {
+        thumbUrl = await urlForImageKey(thumbKey);
+      }
+      const displayUrl = pickDisplayUrl(opts.context, presigned, thumbUrl);
+      return {
+        imageKey: key,
+        url: presigned,
+        thumbUrl,
+        displayUrl,
+        width: 0,
+        height: 0,
+        thumbWidth: null,
+        thumbHeight: null,
+      };
+    }
+  }
 
   let imageKey = key;
   let dto = await attachUrlsToImageDto({
