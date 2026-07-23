@@ -1,0 +1,38 @@
+name: Commerce Switch CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+      - prod
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  commerce-switch-validation:
+    name: Commerce Switch validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/lambda
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/lambda/package-lock.json
+
+      - name: Install Lambda dependencies
+        run: npm ci
+
+      - name: Validate Commerce Switch architecture boundaries
+        run: npm run validate:commerce-switch
+
+      - name: Run Commerce Switch unit tests
+        run: npm test -- --testPathPattern=commerce-switch

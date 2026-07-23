@@ -18,6 +18,7 @@ import {
 import { bootstrapPushNotifications } from '@/lib/push-bootstrap';
 import { signOutVendor } from '@/lib/session-utils';
 import { apiClient } from '@/lib/api-client';
+import { prefetchCommerceSwitchConfigurationOnStartup } from '@/lib/commerce-switch-client';
 import { clearVendorSession } from '@/lib/session-utils';
 import { VendorAppProps, VendorSession, VendorStatus } from './constants/interface';
  import { getInitialVendorState, determineVendorUIRoute, isSeller, isSellerStrict } from './constants/helpers';
@@ -45,6 +46,10 @@ export function VendorApp({ initialSession }: VendorAppProps) {
 
   const hasCheckedStatus = useRef(false);
   const isCheckingStatus = useRef(false);
+
+  useEffect(() => {
+    prefetchCommerceSwitchConfigurationOnStartup();
+  }, []);
 
   /**
    * Helper function to resolve vendorId from multiple sources

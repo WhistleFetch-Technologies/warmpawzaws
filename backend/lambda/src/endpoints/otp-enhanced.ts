@@ -25,6 +25,7 @@ import {
   completePackageSessionForBooking,
   type SqlClient,
 } from '../utils/package-session-sync';
+import { resolveCommerceModelForBookingCreate } from '../commerce-switch';
 
 // Type-only ambient declarations (no runtime emit): getSnsClient/PublishCommand are
 // referenced below but are not imported or defined anywhere in this module — that code
@@ -356,6 +357,22 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
 
       const initialStatus = 'pending';
 
+      let commerceMode = 'marketplace';
+      let commerceVersion = 1;
+      try {
+        const resolved = await resolveCommerceModelForBookingCreate({
+          customerId,
+          vendorId,
+          serviceId,
+          serviceType,
+          channel: 'internal',
+        });
+        commerceMode = resolved.commerceMode;
+        commerceVersion = resolved.commerceVersion;
+      } catch (commerceErr) {
+        console.warn('[CommerceSwitch] create-with-otp resolver failed:', commerceErr);
+      }
+
       // Create booking
       const booking = await insert('bookings', {
         customer_id: customerId,
@@ -373,6 +390,8 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
         notes: notes || null,
         otp_code: startOTP, // Store start OTP in booking
         otp_verified: false,
+        commerce_mode: commerceMode,
+        commerce_version: commerceVersion,
       });
 
       if (paymentRecord?.id) {

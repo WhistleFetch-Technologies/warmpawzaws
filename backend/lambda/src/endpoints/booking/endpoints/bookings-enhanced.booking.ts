@@ -29,6 +29,7 @@ import { randomUUID } from 'crypto';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../../../handler/base-handler-enhanced';
 import { query, select, insert, withTransaction } from '../../../database/rds-connection';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../../../utils/idempotency';
+import { resolveCommerceModelForBookingCreate } from '../../../commerce-switch';
 import { logAuditEntry, logBookingStatusChange } from '../../../utils/audit-log';
 import { calculateStaffETA } from '../../../utils/commute-time-calculator';
 import { validateServiceAvailability } from '../../../utils/service-availability-validator';
@@ -899,6 +900,22 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       }
     }
 
+    let bookingCommerceMode = 'marketplace';
+    let bookingCommerceVersion = 1;
+    try {
+      const commerceResolved = await resolveCommerceModelForBookingCreate({
+        customerId,
+        vendorId,
+        serviceId: lookupServiceId,
+        serviceType: serviceType || undefined,
+        channel: 'internal',
+      });
+      bookingCommerceMode = commerceResolved.commerceMode;
+      bookingCommerceVersion = commerceResolved.commerceVersion;
+    } catch (commerceErr) {
+      console.warn('[CommerceSwitch] booking create resolver failed, using marketplace:', commerceErr);
+    }
+
     try {
       const result = await withTransaction(async (client) => {
         // ✅ FIX: Check for duplicate booking first (same customer/vendor/date/time within last 5 minutes)
@@ -1670,6 +1687,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           flowVariantNorm === 'boarding'
             ? { flow_variant: flowVariantNorm }
             : {}),
+          commerce_mode: bookingCommerceMode,
+          commerce_version: bookingCommerceVersion,
         };
         
         // Add optional columns to bookingData
@@ -2839,6 +2858,12 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       customer_id: booking.customer_id,
       serviceId: booking.service_id,
       service_id: booking.service_id,
+      commerceMode: booking.commerce_mode ?? 'marketplace',
+      commerce_mode: booking.commerce_mode ?? 'marketplace',
+      commerceVersion:
+        booking.commerce_version != null ? Number(booking.commerce_version) : undefined,
+      commerce_version:
+        booking.commerce_version != null ? Number(booking.commerce_version) : undefined,
       // ✅ FIX: Schedule information - ensure booking_date and booking_time are properly formatted
       bookingDate: booking.booking_date,
       booking_date: booking.booking_date,

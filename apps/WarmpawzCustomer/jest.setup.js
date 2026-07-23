@@ -3,7 +3,11 @@
  * Mock setup for React Native testing
  */
 
-import '@testing-library/jest-native/extend-expect';
+try {
+  require('@testing-library/jest-native/extend-expect');
+} catch {
+  // Optional dev dependency; unit tests without component matchers still run.
+}
 
 // Mock AsyncStorage
 jest.mock('@react-native-async-storage/async-storage', () =>
