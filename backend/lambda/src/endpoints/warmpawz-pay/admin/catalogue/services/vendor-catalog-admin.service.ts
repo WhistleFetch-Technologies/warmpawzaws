@@ -1,4 +1,5 @@
 import { DRAFT, PUBLISHED } from '../../../constants/publish-status';
+import { withTransaction } from '../../../../../database/rds-connection';
 import { CatalogueErrorCode } from '../dto/catalogue.errors';
 import type { CreateCatalogueRequest, CatalogueListQuery, VendorCandidatesQuery } from '../dto/catalogue.requests';
 import type {
@@ -17,11 +18,9 @@ import type {
   VendorCandidateRow,
 } from '../../../repositories/interfaces/IVendorEligibilityRepository';
 import { CatalogueRepositoryError } from '../../../repositories/vendor-catalog.repository';
-import {
-  CatalogueAuditService,
-  toAuditEntity,
-  type CatalogueAuditEntity,
-} from './catalogue-audit.service';
+import { CatalogueAuditPersistenceError } from '../../../repositories/catalogue-audit.repository';
+import { toAuditEntity } from './catalogue-audit.service';
+import { createCatalogueTransactionContext } from './catalogue-transaction.context';
 import type { IVendorEligibilityService } from './interfaces/IVendorEligibilityService';
 import type { VendorEligibilitySnapshot } from '../../../repositories/interfaces/IVendorEligibilityRepository';
 
@@ -49,7 +48,6 @@ export class VendorCatalogAdminService {
     private readonly catalogRepository: IVendorCatalogRepository,
     private readonly eligibilityRepository: IVendorEligibilityRepository,
     private readonly eligibilityService: IVendorEligibilityService,
-    private readonly auditService: CatalogueAuditService,
   ) {}
 
   async createEntry(
@@ -78,9 +76,14 @@ export class VendorCatalogAdminService {
 
     let inserted;
     try {
-      inserted = await this.catalogRepository.insertDraft(input.vendorId, adminUserId);
+      inserted = await withTransaction(async (client) => {
+        const { catalogRepository, auditService } = createCatalogueTransactionContext(client);
+        const row = await catalogRepository.insertDraft(input.vendorId, adminUserId);
+        await auditService.logCreated(toAuditEntity(row), adminUserId);
+        return row;
+      });
     } catch (error) {
-      throw this.mapRepositoryError(error);
+      throw this.mapMutationError(error);
     }
 
     const entry = await this.catalogRepository.findById(inserted.id);
@@ -92,7 +95,6 @@ export class VendorCatalogAdminService {
     }
 
     const resolved = this.resolveEligibility(entry);
-    await this.auditService.logCreated(toAuditEntity(entry), adminUserId);
     return this.buildCatalogueDetail(entry, resolved);
   }
 
@@ -172,22 +174,36 @@ export class VendorCatalogAdminService {
     }
 
     const oldStatus = entry.publishStatus;
-    const updated = await this.catalogRepository.updatePublishStatus({
-      catalogueId,
-      publishStatus: PUBLISHED,
-      publishedAt: new Date(),
-    });
-    if (!updated) {
-      return null;
+    let refreshed;
+    try {
+      refreshed = await withTransaction(async (client) => {
+        const { catalogRepository, auditService } = createCatalogueTransactionContext(client);
+        const updated = await catalogRepository.updatePublishStatus({
+          catalogueId,
+          publishStatus: PUBLISHED,
+          publishedAt: new Date(),
+        });
+        if (!updated) {
+          return null;
+        }
+
+        const row = await catalogRepository.findById(catalogueId);
+        if (!row) {
+          return null;
+        }
+
+        await auditService.logPublished(toAuditEntity(row), adminUserId, { oldStatus });
+        return row;
+      });
+    } catch (error) {
+      throw this.mapMutationError(error);
     }
 
-    const refreshed = await this.catalogRepository.findById(catalogueId);
     if (!refreshed) {
       return null;
     }
 
     const refreshedResolved = this.resolveEligibility(refreshed);
-    await this.auditService.logPublished(toAuditEntity(refreshed), adminUserId, { oldStatus });
     return this.buildCatalogueDetail(refreshed, refreshedResolved);
   }
 
@@ -202,22 +218,36 @@ export class VendorCatalogAdminService {
       return this.buildCatalogueDetail(entry, resolved);
     }
 
-    const updated = await this.catalogRepository.updatePublishStatus({
-      catalogueId,
-      publishStatus: DRAFT,
-      publishedAt: null,
-    });
-    if (!updated) {
-      return null;
+    let refreshed;
+    try {
+      refreshed = await withTransaction(async (client) => {
+        const { catalogRepository, auditService } = createCatalogueTransactionContext(client);
+        const updated = await catalogRepository.updatePublishStatus({
+          catalogueId,
+          publishStatus: DRAFT,
+          publishedAt: null,
+        });
+        if (!updated) {
+          return null;
+        }
+
+        const row = await catalogRepository.findById(catalogueId);
+        if (!row) {
+          return null;
+        }
+
+        await auditService.logUnpublished(toAuditEntity(row), adminUserId);
+        return row;
+      });
+    } catch (error) {
+      throw this.mapMutationError(error);
     }
 
-    const refreshed = await this.catalogRepository.findById(catalogueId);
     if (!refreshed) {
       return null;
     }
 
     const refreshedResolved = this.resolveEligibility(refreshed);
-    await this.auditService.logUnpublished(toAuditEntity(refreshed), adminUserId);
     return this.buildCatalogueDetail(refreshed, refreshedResolved);
   }
 
@@ -230,18 +260,32 @@ export class VendorCatalogAdminService {
       return null;
     }
 
-    const deleted = await this.catalogRepository.deleteById(catalogueId);
+    let deleted = false;
+    try {
+      deleted = await withTransaction(async (client) => {
+        const { catalogRepository, auditService } = createCatalogueTransactionContext(client);
+        const removed = await catalogRepository.deleteById(catalogueId);
+        if (!removed) {
+          return false;
+        }
+
+        await auditService.logDeleted(toAuditEntity(entry), adminUserId);
+        return true;
+      });
+    } catch (error) {
+      throw this.mapMutationError(error);
+    }
+
     if (!deleted) {
       return null;
     }
 
-    await this.auditService.logDeleted(toAuditEntity(entry), adminUserId);
     return { deleted: true };
   }
 
   async bulkPublish(catalogueIds: readonly string[], adminUserId: string): Promise<BulkOperationResponse> {
     return this.runBulkOperation(catalogueIds, (catalogueId) =>
-      this.publish(catalogueId, adminUserId),
+      this.publishForBulk(catalogueId, adminUserId),
     );
   }
 
@@ -250,7 +294,7 @@ export class VendorCatalogAdminService {
     adminUserId: string,
   ): Promise<BulkOperationResponse> {
     return this.runBulkOperation(catalogueIds, (catalogueId) =>
-      this.unpublish(catalogueId, adminUserId),
+      this.unpublishForBulk(catalogueId, adminUserId),
     );
   }
 
@@ -259,10 +303,14 @@ export class VendorCatalogAdminService {
 
     for (const catalogueId of catalogueIds) {
       try {
-        const outcome = await this.deleteEntry(catalogueId, adminUserId);
+        const outcome = await this.deleteForBulk(catalogueId, adminUserId);
         if (!outcome) {
           results.push(
-            this.buildBulkFailure(catalogueId, CatalogueErrorCode.CATALOGUE_ENTRY_NOT_FOUND, 'Catalogue entry not found'),
+            this.buildBulkFailure(
+              catalogueId,
+              CatalogueErrorCode.CATALOGUE_ENTRY_NOT_FOUND,
+              'Catalogue entry not found',
+            ),
           );
           continue;
         }
@@ -273,6 +321,131 @@ export class VendorCatalogAdminService {
     }
 
     return this.buildBulkResponse(catalogueIds.length, results);
+  }
+
+  private async publishForBulk(
+    catalogueId: string,
+    adminUserId: string,
+  ): Promise<CatalogueDetail | null> {
+    const entry = await this.catalogRepository.findById(catalogueId);
+    if (!entry) {
+      return null;
+    }
+
+    const resolved = this.resolveEligibility(entry);
+    if (entry.publishStatus === PUBLISHED) {
+      return this.buildCatalogueDetail(entry, resolved);
+    }
+
+    const oldStatus = entry.publishStatus;
+    let refreshed;
+    try {
+      refreshed = await withTransaction(async (client) => {
+        const { catalogRepository, auditService } = createCatalogueTransactionContext(client);
+        const updated = await catalogRepository.updatePublishStatus({
+          catalogueId,
+          publishStatus: PUBLISHED,
+          publishedAt: new Date(),
+        });
+        if (!updated) {
+          return null;
+        }
+
+        const row = await catalogRepository.findById(catalogueId);
+        if (!row) {
+          return null;
+        }
+
+        await auditService.logBulkPublished([toAuditEntity(row)], adminUserId, { oldStatus });
+        return row;
+      });
+    } catch (error) {
+      throw this.mapMutationError(error);
+    }
+
+    if (!refreshed) {
+      return null;
+    }
+
+    return this.buildCatalogueDetail(refreshed, this.resolveEligibility(refreshed));
+  }
+
+  private async unpublishForBulk(
+    catalogueId: string,
+    adminUserId: string,
+  ): Promise<CatalogueDetail | null> {
+    const entry = await this.catalogRepository.findById(catalogueId);
+    if (!entry) {
+      return null;
+    }
+
+    const resolved = this.resolveEligibility(entry);
+    if (entry.publishStatus === DRAFT) {
+      return this.buildCatalogueDetail(entry, resolved);
+    }
+
+    let refreshed;
+    try {
+      refreshed = await withTransaction(async (client) => {
+        const { catalogRepository, auditService } = createCatalogueTransactionContext(client);
+        const updated = await catalogRepository.updatePublishStatus({
+          catalogueId,
+          publishStatus: DRAFT,
+          publishedAt: null,
+        });
+        if (!updated) {
+          return null;
+        }
+
+        const row = await catalogRepository.findById(catalogueId);
+        if (!row) {
+          return null;
+        }
+
+        await auditService.logBulkUnpublished([toAuditEntity(row)], adminUserId);
+        return row;
+      });
+    } catch (error) {
+      throw this.mapMutationError(error);
+    }
+
+    if (!refreshed) {
+      return null;
+    }
+
+    return this.buildCatalogueDetail(refreshed, this.resolveEligibility(refreshed));
+  }
+
+  private async deleteForBulk(
+    catalogueId: string,
+    adminUserId: string,
+  ): Promise<DeleteEntryResult | null> {
+    const entry = await this.catalogRepository.findById(catalogueId);
+    if (!entry) {
+      return null;
+    }
+
+    let deleted = false;
+    try {
+      deleted = await withTransaction(async (client) => {
+        const { catalogRepository, auditService } = createCatalogueTransactionContext(client);
+        const removed = await catalogRepository.deleteById(catalogueId);
+        if (!removed) {
+          return false;
+        }
+
+        await auditService.logBulkDeleted([toAuditEntity(entry)], adminUserId);
+        return true;
+      });
+    } catch (error) {
+      throw this.mapMutationError(error);
+    }
+
+    if (!deleted) {
+      return null;
+    }
+
+    return { deleted: true };
   }
 
   private resolveEligibility(row: CatalogueRowWithVendor): ResolvedEligibility {
@@ -399,6 +572,13 @@ export class VendorCatalogAdminService {
     if (error instanceof CatalogueRepositoryError) {
       return this.buildBulkFailure(catalogueId, error.code, error.message);
     }
+    if (error instanceof CatalogueAuditPersistenceError) {
+      return this.buildBulkFailure(
+        catalogueId,
+        CatalogueErrorCode.VALIDATION_ERROR,
+        error.message,
+      );
+    }
     return this.buildBulkFailure(
       catalogueId,
       CatalogueErrorCode.VALIDATION_ERROR,
@@ -406,9 +586,12 @@ export class VendorCatalogAdminService {
     );
   }
 
-  private mapRepositoryError(error: unknown): never {
+  private mapMutationError(error: unknown): never {
     if (error instanceof CatalogueRepositoryError) {
       throw new CatalogueAdminError(error.code, error.message);
+    }
+    if (error instanceof CatalogueAuditPersistenceError) {
+      throw error;
     }
     throw error;
   }

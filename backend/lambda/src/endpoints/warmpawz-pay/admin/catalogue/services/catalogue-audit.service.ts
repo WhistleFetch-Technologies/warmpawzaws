@@ -1,10 +1,10 @@
 import type { PublishStatus } from '../../../constants/publish-status';
+import { CatalogueAuditAction } from '../../../constants/catalogue-audit-actions';
 import type { CatalogueRow, CatalogueRowWithVendor } from '../../../repositories/interfaces/IVendorCatalogRepository';
+import type { ICatalogueAuditRepository } from '../../../repositories/interfaces/ICatalogueAuditRepository';
+import { catalogueAuditRepository } from '../../../repositories/catalogue-audit.repository';
+import { CatalogueAuditPersistenceError } from '../../../repositories/catalogue-audit.repository';
 
-/**
- * Minimal catalogue entity passed to audit methods.
- * Full persistence is intentionally deferred — see Phase 9.
- */
 export interface CatalogueAuditEntity {
   readonly catalogueId: string;
   readonly vendorId: string;
@@ -31,44 +31,175 @@ function toAuditEntity(row: CatalogueRow | CatalogueRowWithVendor): CatalogueAud
   };
 }
 
-/**
- * Catalogue audit abstraction.
- *
- * Real audit persistence (e.g. `entity_audit_log` / `admin_audit_log` inserts)
- * will be implemented in Phase 9. Until then, all methods are safe no-ops.
- */
+function buildEntitySnapshot(entity: CatalogueAuditEntity): Record<string, unknown> {
+  return {
+    publish_status: entity.publishStatus,
+    published_at: entity.publishedAt ? entity.publishedAt.toISOString() : null,
+    created_by: entity.createdBy,
+  };
+}
+
 export class CatalogueAuditService {
+  constructor(
+    private readonly auditRepository: ICatalogueAuditRepository = catalogueAuditRepository,
+  ) {}
+
   async logCreated(
-    _entry: CatalogueAuditEntity,
-    _adminUserId: string,
-    _metadata?: CatalogueAuditMetadata,
+    entry: CatalogueAuditEntity,
+    adminUserId: string,
+    metadata?: CatalogueAuditMetadata,
   ): Promise<void> {
-    // Phase 9: persist audit record for catalogue creation.
+    await this.persist({
+      action: CatalogueAuditAction.CREATE,
+      entry,
+      adminUserId,
+      metadata,
+      newValue: buildEntitySnapshot(entry),
+    });
   }
 
   async logPublished(
-    _entry: CatalogueAuditEntity,
-    _adminUserId: string,
-    _metadata?: CataloguePublishedAuditMetadata,
+    entry: CatalogueAuditEntity,
+    adminUserId: string,
+    metadata?: CataloguePublishedAuditMetadata,
   ): Promise<void> {
-    // Phase 9: persist audit record for publish transition.
+    const oldStatus = metadata?.oldStatus;
+    await this.persist({
+      action: CatalogueAuditAction.PUBLISH,
+      entry,
+      adminUserId,
+      metadata,
+      oldValue: oldStatus
+        ? {
+            publish_status: oldStatus,
+          }
+        : undefined,
+      newValue: buildEntitySnapshot(entry),
+    });
   }
 
   async logUnpublished(
-    _entry: CatalogueAuditEntity,
-    _adminUserId: string,
-    _metadata?: CatalogueAuditMetadata,
+    entry: CatalogueAuditEntity,
+    adminUserId: string,
+    metadata?: CatalogueAuditMetadata,
   ): Promise<void> {
-    // Phase 9: persist audit record for unpublish transition.
+    await this.persist({
+      action: CatalogueAuditAction.UNPUBLISH,
+      entry,
+      adminUserId,
+      metadata,
+      newValue: buildEntitySnapshot(entry),
+    });
   }
 
   async logDeleted(
-    _entry: CatalogueAuditEntity,
-    _adminUserId: string,
-    _metadata?: CatalogueAuditMetadata,
+    entry: CatalogueAuditEntity,
+    adminUserId: string,
+    metadata?: CatalogueAuditMetadata,
   ): Promise<void> {
-    // Phase 9: persist audit record for catalogue deletion.
+    await this.persist({
+      action: CatalogueAuditAction.DELETE,
+      entry,
+      adminUserId,
+      metadata,
+      oldValue: buildEntitySnapshot(entry),
+    });
+  }
+
+  async logBulkPublished(
+    entries: readonly CatalogueAuditEntity[],
+    adminUserId: string,
+    metadata?: CatalogueAuditMetadata,
+  ): Promise<void> {
+    await this.persistBulk(CatalogueAuditAction.BULK_PUBLISH, entries, adminUserId, metadata);
+  }
+
+  async logBulkUnpublished(
+    entries: readonly CatalogueAuditEntity[],
+    adminUserId: string,
+    metadata?: CatalogueAuditMetadata,
+  ): Promise<void> {
+    await this.persistBulk(CatalogueAuditAction.BULK_UNPUBLISH, entries, adminUserId, metadata);
+  }
+
+  async logBulkDeleted(
+    entries: readonly CatalogueAuditEntity[],
+    adminUserId: string,
+    metadata?: CatalogueAuditMetadata,
+  ): Promise<void> {
+    await this.persistBulk(CatalogueAuditAction.BULK_DELETE, entries, adminUserId, metadata);
+  }
+
+  private async persistBulk(
+    action: typeof CatalogueAuditAction.BULK_PUBLISH,
+    entries: readonly CatalogueAuditEntity[],
+    adminUserId: string,
+    metadata?: CatalogueAuditMetadata,
+  ): Promise<void>;
+  private async persistBulk(
+    action: typeof CatalogueAuditAction.BULK_UNPUBLISH,
+    entries: readonly CatalogueAuditEntity[],
+    adminUserId: string,
+    metadata?: CatalogueAuditMetadata,
+  ): Promise<void>;
+  private async persistBulk(
+    action: typeof CatalogueAuditAction.BULK_DELETE,
+    entries: readonly CatalogueAuditEntity[],
+    adminUserId: string,
+    metadata?: CatalogueAuditMetadata,
+  ): Promise<void>;
+  private async persistBulk(
+    action:
+      | typeof CatalogueAuditAction.BULK_PUBLISH
+      | typeof CatalogueAuditAction.BULK_UNPUBLISH
+      | typeof CatalogueAuditAction.BULK_DELETE,
+    entries: readonly CatalogueAuditEntity[],
+    adminUserId: string,
+    metadata?: CatalogueAuditMetadata,
+  ): Promise<void> {
+    for (const entry of entries) {
+      await this.persist({
+        action,
+        entry,
+        adminUserId,
+        metadata,
+        oldValue:
+          action === CatalogueAuditAction.BULK_DELETE
+            ? buildEntitySnapshot(entry)
+            : undefined,
+        newValue:
+          action === CatalogueAuditAction.BULK_DELETE
+            ? undefined
+            : buildEntitySnapshot(entry),
+      });
+    }
+  }
+
+  private async persist(params: {
+    readonly action: CatalogueAuditAction;
+    readonly entry: CatalogueAuditEntity;
+    readonly adminUserId: string;
+    readonly metadata?: CatalogueAuditMetadata;
+    readonly oldValue?: Record<string, unknown>;
+    readonly newValue?: Record<string, unknown>;
+  }): Promise<void> {
+    try {
+      await this.auditRepository.insert({
+        catalogueId: params.entry.catalogueId,
+        vendorId: params.entry.vendorId,
+        action: params.action,
+        performedBy: params.adminUserId,
+        metadata: params.metadata,
+        oldValue: params.oldValue,
+        newValue: params.newValue,
+      });
+    } catch (error) {
+      if (error instanceof CatalogueAuditPersistenceError) {
+        throw error;
+      }
+      throw new CatalogueAuditPersistenceError('Failed to write catalogue audit record', error);
+    }
   }
 }
 
-export { toAuditEntity };
+export { toAuditEntity, CatalogueAuditPersistenceError };

@@ -1,7 +1,6 @@
 import type { Hono } from 'hono';
 import { vendorCatalogRepository } from '../../repositories/vendor-catalog.repository';
 import { vendorEligibilityRepository } from '../../repositories/vendor-eligibility.repository';
-import { CatalogueAuditService } from './services/catalogue-audit.service';
 import { VendorCatalogAdminService } from './services/vendor-catalog-admin.service';
 import { VendorEligibilityService } from './services/vendor-eligibility.service';
 import {
@@ -29,7 +28,6 @@ function createDefaultCatalogueAdminDeps(): CatalogueAdminRouteDeps {
       vendorCatalogRepository,
       vendorEligibilityRepository,
       eligibilityService,
-      new CatalogueAuditService(),
     ),
     eligibilityRepository: vendorEligibilityRepository,
   };
