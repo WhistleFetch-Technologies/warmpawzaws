@@ -25,6 +25,7 @@ import {
   VENDOR_ALLOWED_STATUSES,
   CUSTOMER_CANCEL_STATUSES,
 } from '../utils/payments/shop-order-refund';
+import { resolveCustomerIdFromHonoContext } from '../utils/customer-id-from-auth';
 
 const validTransitions: Record<string, string[]> = {
   'pending': ['confirmed', 'cancelled'],
@@ -73,11 +74,20 @@ export function registerOrderManagementEndpoints(app: Hono) {
           return c.json({ error: 'Forbidden' }, 403);
         }
 
+        let customerOwnerId: string | undefined;
+        if (isCustomer && !isVendor) {
+          const resolvedCustomerId = await resolveCustomerIdFromHonoContext(c);
+          if (!resolvedCustomerId) {
+            return c.json({ error: 'Customer account not found' }, 401);
+          }
+          customerOwnerId = resolvedCustomerId;
+        }
+
         const cancelResult = await cancelPaidShopOrder({
           orderId,
           reason: notes || cancellationReason || (isVendor ? 'Vendor cancellation' : 'Customer request'),
           cancelledBy: isVendor ? 'provider' : 'pet_parent',
-          customerId: isCustomer && !isVendor ? userId : undefined,
+          customerId: customerOwnerId,
           vendorId: isVendor ? userId : undefined,
           allowedStatuses: isVendor
             ? [...VENDOR_ALLOWED_STATUSES]
@@ -300,11 +310,20 @@ export function registerOrderManagementEndpoints(app: Hono) {
         return c.json({ error: 'Forbidden' }, 403);
       }
 
+      let customerOwnerId: string | undefined;
+      if (isCustomer && !isVendor) {
+        const resolvedCustomerId = await resolveCustomerIdFromHonoContext(c);
+        if (!resolvedCustomerId) {
+          return c.json({ error: 'Customer account not found' }, 401);
+        }
+        customerOwnerId = resolvedCustomerId;
+      }
+
       const result = await cancelPaidShopOrder({
         orderId,
         reason: reason || (isVendor ? 'Vendor cancellation' : 'Customer request'),
         cancelledBy: isVendor ? 'provider' : 'pet_parent',
-        customerId: isCustomer && !isVendor ? userId : undefined,
+        customerId: customerOwnerId,
         vendorId: isVendor ? userId : undefined,
         allowedStatuses: isVendor ? VENDOR_ALLOWED_STATUSES : [...CUSTOMER_CANCEL_STATUSES],
       });
