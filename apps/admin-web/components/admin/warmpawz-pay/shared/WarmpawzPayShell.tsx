@@ -15,6 +15,7 @@ export interface WarmpawzPayShellProps {
 const NAV_ITEMS = [
   { href: '/warmpawz-pay', label: 'Dashboard' },
   { href: '/warmpawz-pay/merchants', label: 'Merchants' },
+  { href: '/warmpawz-pay/pricing', label: 'Pricing' },
   { href: '/warmpawz-pay/catalogue', label: 'Catalogue' },
 ] as const;
 

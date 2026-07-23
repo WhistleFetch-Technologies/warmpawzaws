@@ -35,7 +35,11 @@ describe('WarmpawzPayMerchantsService', () => {
       countMerchants: jest.fn().mockResolvedValue(1),
     };
 
-    const service = new WarmpawzPayMerchantsService(repository);
+    const pricingRepository = {
+      getActiveConfiguredVendorIds: jest.fn().mockResolvedValue(new Set(['vendor-1'])),
+    };
+
+    const service = new WarmpawzPayMerchantsService(repository, pricingRepository as never);
     const result = await service.listMerchants({
       page: 1,
       pageSize: 20,

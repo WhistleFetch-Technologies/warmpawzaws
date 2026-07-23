@@ -4,6 +4,13 @@ import { PUBLISHED } from '../constants/publish-status';
 import type { IDashboardMetricsRepository } from './interfaces/IDashboardMetricsRepository';
 
 const CATALOGUE_TABLE = 'warmpawz_pay_vendor_catalog';
+const PRICING_TABLE = 'warmpawz_pay_merchant_pricing';
+
+const ACTIVE_PRICING_PREDICATE = `
+  p.status = 'active'
+  AND p.effective_from <= NOW()
+  AND (p.effective_until IS NULL OR p.effective_until >= NOW())
+`;
 
 export interface DashboardMetricsDbClient {
   query(text: string, params?: unknown[]): Promise<QueryResult>;
@@ -28,12 +35,16 @@ export class DashboardMetricsRepository implements IDashboardMetricsRepository {
     return Number(row?.total ?? 0);
   }
 
-  /**
-   * Merchant Pricing is not implemented (Phase D).
-   * Return a safe default — no pricing tables or fake aggregates.
-   */
   async getAverageDiscountPercent(): Promise<number> {
-    return 0;
+    const sql = `
+      SELECT COALESCE(AVG(p.discount_value), 0)::float AS average_discount
+      FROM ${PRICING_TABLE} p
+      WHERE p.discount_type = 'percentage'
+        AND ${ACTIVE_PRICING_PREDICATE}
+    `;
+    const result = await this.db.query(sql);
+    const value = Number(result.rows[0]?.average_discount ?? 0);
+    return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
   }
 }
 

@@ -4,7 +4,9 @@ import type {
   IMerchantAdminRepository,
   MerchantAdminRow,
 } from '../../../repositories/interfaces/IMerchantAdminRepository';
+import type { IMerchantPricingRepository } from '../../../repositories/interfaces/IMerchantPricingRepository';
 import { merchantAdminRepository } from '../../../repositories/merchant-admin.repository';
+import { merchantPricingRepository } from '../../../repositories/merchant-pricing.repository';
 import { evaluateMerchant } from '../../../shared/merchant/merchant-readiness.service';
 
 export const WARMPAWZ_PAY_MERCHANTS_LOG_PREFIX = '[warmpawz-pay-merchants]';
@@ -22,6 +24,7 @@ export class MerchantListLoadError extends Error {
 export class WarmpawzPayMerchantsService {
   constructor(
     private readonly merchantRepository: IMerchantAdminRepository = merchantAdminRepository,
+    private readonly pricingRepository: IMerchantPricingRepository = merchantPricingRepository,
   ) {}
 
   async listMerchants(query: MerchantListQuery): Promise<MerchantListDataDTO> {
@@ -44,8 +47,14 @@ export class WarmpawzPayMerchantsService {
         this.merchantRepository.countMerchants(filters),
       ]);
 
+      const pricingConfiguredIds = await this.pricingRepository.getActiveConfiguredVendorIds(
+        rows.map((row) => row.vendorId),
+      );
+
       return {
-        items: rows.map((row) => this.mapMerchantListItem(row)),
+        items: rows.map((row) =>
+          this.mapMerchantListItem(row, pricingConfiguredIds.has(row.vendorId)),
+        ),
         pagination: {
           page: query.page,
           pageSize: query.pageSize,
@@ -58,7 +67,10 @@ export class WarmpawzPayMerchantsService {
     }
   }
 
-  private mapMerchantListItem(row: MerchantAdminRow): MerchantListItemDTO {
+  private mapMerchantListItem(
+    row: MerchantAdminRow,
+    pricingConfigured: boolean,
+  ): MerchantListItemDTO {
     const evaluation = evaluateMerchant({
       publishStatus: row.publishStatus,
       vendorStatus: row.vendorStatus,
@@ -74,7 +86,7 @@ export class WarmpawzPayMerchantsService {
       customerService: row.customerService,
       roleConfig: row.roleConfig,
       legacyCategory: row.legacyCategory,
-      pricingConfigured: false,
+      pricingConfigured,
     });
 
     return {
