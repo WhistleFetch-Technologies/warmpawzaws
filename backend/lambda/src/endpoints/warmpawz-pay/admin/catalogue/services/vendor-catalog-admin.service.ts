@@ -12,7 +12,7 @@ import type {
   VendorCandidateDTO,
   VendorCandidateListData,
 } from '../dto/catalogue.responses';
-import type { IVendorCatalogRepository, CatalogueRowWithVendor } from '../../../repositories/interfaces/IVendorCatalogRepository';
+import type { IVendorCatalogRepository, CatalogueRow, CatalogueRowWithVendor } from '../../../repositories/interfaces/IVendorCatalogRepository';
 import type {
   IVendorEligibilityRepository,
   VendorCandidateRow,
@@ -187,11 +187,7 @@ export class VendorCatalogAdminService {
           return null;
         }
 
-        const row = await catalogRepository.findById(catalogueId);
-        if (!row) {
-          return null;
-        }
-
+        const row = this.mergeCatalogueWithVendor(updated, entry);
         await auditService.logPublished(toAuditEntity(row), adminUserId, { oldStatus });
         return row;
       });
@@ -231,11 +227,7 @@ export class VendorCatalogAdminService {
           return null;
         }
 
-        const row = await catalogRepository.findById(catalogueId);
-        if (!row) {
-          return null;
-        }
-
+        const row = this.mergeCatalogueWithVendor(updated, entry);
         await auditService.logUnpublished(toAuditEntity(row), adminUserId);
         return row;
       });
@@ -351,11 +343,7 @@ export class VendorCatalogAdminService {
           return null;
         }
 
-        const row = await catalogRepository.findById(catalogueId);
-        if (!row) {
-          return null;
-        }
-
+        const row = this.mergeCatalogueWithVendor(updated, entry);
         await auditService.logBulkPublished([toAuditEntity(row)], adminUserId, { oldStatus });
         return row;
       });
@@ -397,11 +385,7 @@ export class VendorCatalogAdminService {
           return null;
         }
 
-        const row = await catalogRepository.findById(catalogueId);
-        if (!row) {
-          return null;
-        }
-
+        const row = this.mergeCatalogueWithVendor(updated, entry);
         await auditService.logBulkUnpublished([toAuditEntity(row)], adminUserId);
         return row;
       });
@@ -446,6 +430,23 @@ export class VendorCatalogAdminService {
     }
 
     return { deleted: true };
+  }
+
+  private mergeCatalogueWithVendor(
+    row: CatalogueRow,
+    vendorSnapshot: CatalogueRowWithVendor,
+  ): CatalogueRowWithVendor {
+    return {
+      ...row,
+      businessName: vendorSnapshot.businessName,
+      ownerName: vendorSnapshot.ownerName,
+      city: vendorSnapshot.city,
+      phone: vendorSnapshot.phone,
+      vendorStatus: vendorSnapshot.vendorStatus,
+      payBillEnabled: vendorSnapshot.payBillEnabled,
+      bankVerified: vendorSnapshot.bankVerified,
+      isDeleted: vendorSnapshot.isDeleted,
+    };
   }
 
   private resolveEligibility(row: CatalogueRowWithVendor): ResolvedEligibility {

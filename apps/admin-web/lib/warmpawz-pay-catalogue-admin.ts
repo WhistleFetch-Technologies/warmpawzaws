@@ -194,10 +194,16 @@ export async function createCatalogueEntry(vendorId: string): Promise<CatalogueD
   return assertSuccess(response);
 }
 
-export async function deleteCatalogueEntry(catalogueId: string): Promise<CatalogueDetail> {
-  const response = await apiClient.delete<SuccessEnvelope<CatalogueDetail> | CatalogueDetail>(
-    `${WPAY_CATALOGUE_API_BASE}/${catalogueId}`,
-  );
+export interface DeleteCatalogueEntryResult {
+  readonly deleted: true;
+}
+
+export async function deleteCatalogueEntry(
+  catalogueId: string,
+): Promise<DeleteCatalogueEntryResult> {
+  const response = await apiClient.delete<
+    SuccessEnvelope<DeleteCatalogueEntryResult> | DeleteCatalogueEntryResult
+  >(`${WPAY_CATALOGUE_API_BASE}/${catalogueId}`);
   return assertSuccess(response);
 }
 

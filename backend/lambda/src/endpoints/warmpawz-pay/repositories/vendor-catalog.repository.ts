@@ -12,6 +12,7 @@ import type {
   PublishedVendorRow,
   UpdatePublishStatusParams,
 } from './interfaces/IVendorCatalogRepository';
+import { toOptionalAdminActorUuid } from '../admin/catalogue/utils/admin-actor-id';
 
 const CATALOGUE_TABLE = 'warmpawz_pay_vendor_catalog';
 
@@ -277,7 +278,7 @@ export class VendorCatalogRepository implements IVendorCatalogRepository {
     `;
 
     try {
-      const result = await this.db.query(sql, [vendorId, DRAFT, createdBy]);
+      const result = await this.db.query(sql, [vendorId, DRAFT, toOptionalAdminActorUuid(createdBy)]);
       const row = result.rows[0] as CatalogueDbRow | undefined;
       if (!row) {
         throw new Error('Insert did not return a catalogue row');
@@ -323,7 +324,7 @@ export class VendorCatalogRepository implements IVendorCatalogRepository {
         ${CATALOGUE_SELECT},
         ${VENDOR_JOIN_SELECT}
       ${ADMIN_FROM_JOIN}
-      WHERE c.id = $1
+      WHERE c.id = $1 AND ${ADMIN_BASE_WHERE}
     `;
 
     const result = await this.db.query(sql, [catalogueId]);

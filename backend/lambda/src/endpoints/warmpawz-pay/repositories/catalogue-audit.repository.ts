@@ -4,6 +4,7 @@ import {
   CATALOGUE_AUDIT_ENTITY_TYPE,
   type CatalogueAuditAction,
 } from '../constants/catalogue-audit-actions';
+import { toOptionalAdminActorUuid } from '../admin/catalogue/utils/admin-actor-id';
 import type { ICatalogueDbClient } from './interfaces/ICatalogueDbClient';
 import type {
   CatalogueAuditRecord,
@@ -128,7 +129,7 @@ export class CatalogueAuditRepository implements ICatalogueAuditRepository {
         input.oldValue ? JSON.stringify(input.oldValue) : null,
         JSON.stringify(newValues),
         changedFields,
-        input.performedBy,
+        toOptionalAdminActorUuid(input.performedBy),
         'admin',
       ]);
 

@@ -1,10 +1,10 @@
 import type { Context } from 'hono';
-import { ZodError } from 'zod';
 import { parseBulkCatalogueRequest } from '../dto/catalogue.requests';
 import { getRequiredAdminUserId } from '../middleware/require-admin-permission.middleware';
 import type { CatalogueAdminRouteDeps } from '../routes/catalogue-admin.routes';
 import {
   catalogueSuccessResponse,
+  invalidJsonBodyError,
   mapCatalogueHandlerError,
 } from './catalogue-list.handler';
 
@@ -17,7 +17,7 @@ async function readBulkCatalogueOperationBody(c: Context): Promise<unknown> {
   try {
     return await c.req.json();
   } catch {
-    throw new ZodError([]);
+    throw invalidJsonBodyError();
   }
 }
 

@@ -8,6 +8,7 @@ import { parseCatalogueListQuery } from '../dto/catalogue.requests';
 import type { SuccessResponse } from '../dto/catalogue.responses';
 import { CatalogueAdminError } from '../services/vendor-catalog-admin.service';
 import { CatalogueRepositoryError } from '../../../repositories/vendor-catalog.repository';
+import { CatalogueAuditPersistenceError } from '../../../repositories/catalogue-audit.repository';
 import type { CatalogueAdminRouteDeps } from '../routes/catalogue-admin.routes';
 
 const CATALOGUE_ERROR_HTTP_STATUS: Readonly<Record<CatalogueErrorCode, number>> = {
@@ -19,7 +20,12 @@ const CATALOGUE_ERROR_HTTP_STATUS: Readonly<Record<CatalogueErrorCode, number>> 
   [CatalogueErrorCode.CATALOGUE_ENTRY_NOT_FOUND]: 404,
   [CatalogueErrorCode.DUPLICATE_CATALOGUE_ENTRY]: 409,
   [CatalogueErrorCode.FEATURE_DISABLED]: 503,
+  [CatalogueErrorCode.AUDIT_PERSISTENCE_ERROR]: 500,
 };
+
+export function invalidJsonBodyError(): CatalogueAdminError {
+  return new CatalogueAdminError(CatalogueErrorCode.VALIDATION_ERROR, 'Invalid JSON body');
+}
 
 export function catalogueSuccessResponse<T>(
   c: Context,
@@ -53,6 +59,17 @@ export function mapCatalogueHandlerError(c: Context, error: unknown): Response {
       },
     };
     return c.json(body, status as 400 | 401 | 403 | 404 | 409 | 503 | 500);
+  }
+
+  if (error instanceof CatalogueAuditPersistenceError) {
+    const body: CatalogueErrorResponse = {
+      success: false,
+      error: {
+        code: CatalogueErrorCode.AUDIT_PERSISTENCE_ERROR,
+        message: 'Failed to persist audit record',
+      },
+    };
+    return c.json(body, 500);
   }
 
   const body: CatalogueErrorResponse = {

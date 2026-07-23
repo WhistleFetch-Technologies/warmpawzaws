@@ -1,8 +1,10 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
+import { resolveAdminPermissionsFromRequest } from '../../../../admin/admin-resolve-permissions-from-request';
 import { CatalogueErrorCode, type CatalogueErrorResponse } from '../dto/catalogue.errors';
 import { hasWpayCataloguePermission } from '../authorization/permissions';
 import type { WpayCataloguePermissionId } from '../authorization/permissions';
 import type { AuthenticatedAdmin } from '../authorization/permission-types';
+import { CatalogueAdminError } from '../services/vendor-catalog-admin.service';
 import {
   ADMIN_PERMISSIONS_CONTEXT_KEY,
   ADMIN_USER_ID_CONTEXT_KEY,
@@ -28,6 +30,18 @@ function isAuthenticatedAdmin(value: unknown): value is AuthenticatedAdmin {
   );
 }
 
+function resolveAdminUserId(c: Context): string | null {
+  const adminUserIdFromContext = c.get(ADMIN_USER_ID_CONTEXT_KEY);
+  const userIdFromContext = c.get('userId');
+  if (typeof adminUserIdFromContext === 'string' && adminUserIdFromContext.length > 0) {
+    return adminUserIdFromContext;
+  }
+  if (typeof userIdFromContext === 'string' && userIdFromContext.length > 0) {
+    return userIdFromContext;
+  }
+  return null;
+}
+
 export function getAuthenticatedAdmin(c: Context): AuthenticatedAdmin | null {
   const authenticated = c.get(AUTHENTICATED_ADMIN_CONTEXT_KEY);
   if (isAuthenticatedAdmin(authenticated)) {
@@ -37,15 +51,7 @@ export function getAuthenticatedAdmin(c: Context): AuthenticatedAdmin | null {
     };
   }
 
-  const adminUserIdFromContext = c.get(ADMIN_USER_ID_CONTEXT_KEY);
-  const userIdFromContext = c.get('userId');
-  const adminUserId =
-    typeof adminUserIdFromContext === 'string' && adminUserIdFromContext.length > 0
-      ? adminUserIdFromContext
-      : typeof userIdFromContext === 'string' && userIdFromContext.length > 0
-        ? userIdFromContext
-        : null;
-
+  const adminUserId = resolveAdminUserId(c);
   if (!adminUserId) {
     return null;
   }
@@ -64,7 +70,10 @@ export function getAuthenticatedAdmin(c: Context): AuthenticatedAdmin | null {
 export function getRequiredAdminUserId(c: Context): string {
   const admin = getAuthenticatedAdmin(c);
   if (!admin) {
-    throw new Error('Authenticated admin context is required');
+    throw new CatalogueAdminError(
+      CatalogueErrorCode.UNAUTHORIZED,
+      'Authentication required',
+    );
   }
   return admin.adminUserId;
 }
@@ -95,12 +104,24 @@ export function requireAdminPermission(
   permission: WpayCataloguePermissionId,
 ): MiddlewareHandler {
   return async (c: Context, next: Next) => {
-    const admin = getAuthenticatedAdmin(c);
-    if (!admin) {
+    const adminUserId = resolveAdminUserId(c);
+    if (!adminUserId) {
       return unauthorizedResponse(c);
     }
 
-    if (!hasWpayCataloguePermission(admin.permissions, permission)) {
+    const permissions = await resolveAdminPermissionsFromRequest(
+      adminUserId,
+      c.req.header('Authorization'),
+    );
+
+    c.set(ADMIN_USER_ID_CONTEXT_KEY, adminUserId);
+    c.set(ADMIN_PERMISSIONS_CONTEXT_KEY, permissions);
+    c.set(AUTHENTICATED_ADMIN_CONTEXT_KEY, {
+      adminUserId,
+      permissions,
+    });
+
+    if (!hasWpayCataloguePermission(permissions, permission)) {
       return forbiddenResponse(c);
     }
 

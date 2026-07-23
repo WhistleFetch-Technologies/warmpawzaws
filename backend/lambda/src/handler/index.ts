@@ -34,6 +34,7 @@ import { registerRoleSeedingEndpoints } from '../endpoints/role-seeding';
 import { registerOnboardingFormManagementEndpoints } from '../endpoints/onboarding-form-management';
 import { registerVendorDashboardEndpoints } from '../endpoints/vendor/endpoints/vendor-dashboard';
 import { registerAdminEndpoints } from '../endpoints/admin/endpoints/admin.controller';
+import { registerWarmpawzPayCatalogueAdminRoutes } from '../endpoints/warmpawz-pay/admin/catalogue';
 import { registerAdminAiCopilotEndpoints } from '../endpoints/admin/endpoints/admin-ai-copilot';
 import { registerCommercialAiCopilotEndpoints } from '../endpoints/admin/endpoints/commercial-ai-copilot.endpoints';
 import { registerVideoCallEndpoints } from '../endpoints/teleCommunication/endpoints/video-call.teleCommunication';
@@ -674,6 +675,7 @@ registerSpecializedServiceFlows(app);
 registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
 registerAdminEndpoints(app);
+registerWarmpawzPayCatalogueAdminRoutes(app);
 registerAdminAiCopilotEndpoints(app);
 registerCommercialAiCopilotEndpoints(app);
 registerAdminCustomerEndpoints(app);
