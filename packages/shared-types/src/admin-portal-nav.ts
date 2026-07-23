@@ -190,6 +190,15 @@ export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
     description: 'E-commerce and seller setup',
   },
   {
+    id: 'shop-refunds',
+    label: 'Shop Refunds',
+    permissionId: 'admin.ecommerce',
+    pathPrefixes: ['/shop-refunds'],
+    section: 'main',
+    sortOrder: 75,
+    description: 'Shop order refunds and retry',
+  },
+  {
     id: 'regions',
     label: 'Region Manager',
     permissionId: 'admin.platform_settings',
