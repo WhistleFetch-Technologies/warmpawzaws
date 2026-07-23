@@ -1,6 +1,15 @@
 import type { Hono } from 'hono';
 import type { IVendorEligibilityRepository } from '../../../repositories/interfaces/IVendorEligibilityRepository';
 import type { VendorCatalogAdminService } from '../services/vendor-catalog-admin.service';
+import {
+  WPAY_CATALOGUE_BULK,
+  WPAY_CATALOGUE_CREATE,
+  WPAY_CATALOGUE_DELETE,
+  WPAY_CATALOGUE_PUBLISH,
+  WPAY_CATALOGUE_UNPUBLISH,
+  WPAY_CATALOGUE_VIEW,
+} from '../authorization/permissions';
+import { requireAdminPermission } from '../middleware/require-admin-permission.middleware';
 import { catalogueBulkDeleteHandler } from '../handlers/catalogue-bulk-delete.handler';
 import { catalogueBulkPublishHandler } from '../handlers/catalogue-bulk-publish.handler';
 import { catalogueBulkUnpublishHandler } from '../handlers/catalogue-bulk-unpublish.handler';
@@ -18,24 +27,54 @@ export interface CatalogueAdminRouteDeps {
 }
 
 export function registerCatalogueAdminRoutes(app: Hono, deps: CatalogueAdminRouteDeps): void {
-  app.get('/admin/warmpawz-pay/catalogue', (c) => catalogueListHandler(c, deps));
-  app.get('/admin/warmpawz-pay/catalogue/vendor-candidates', (c) =>
-    vendorCandidatesHandler(c, deps),
+  app.get(
+    '/admin/warmpawz-pay/catalogue',
+    requireAdminPermission(WPAY_CATALOGUE_VIEW),
+    (c) => catalogueListHandler(c, deps),
   );
-  app.post('/admin/warmpawz-pay/catalogue/bulk/publish', (c) =>
-    catalogueBulkPublishHandler(c, deps),
+  app.get(
+    '/admin/warmpawz-pay/catalogue/vendor-candidates',
+    requireAdminPermission(WPAY_CATALOGUE_VIEW),
+    (c) => vendorCandidatesHandler(c, deps),
   );
-  app.post('/admin/warmpawz-pay/catalogue/bulk/unpublish', (c) =>
-    catalogueBulkUnpublishHandler(c, deps),
+  app.post(
+    '/admin/warmpawz-pay/catalogue/bulk/publish',
+    requireAdminPermission(WPAY_CATALOGUE_BULK),
+    (c) => catalogueBulkPublishHandler(c, deps),
   );
-  app.post('/admin/warmpawz-pay/catalogue/bulk/delete', (c) => catalogueBulkDeleteHandler(c, deps));
-  app.get('/admin/warmpawz-pay/catalogue/:catalogueId', (c) => catalogueDetailHandler(c, deps));
-  app.post('/admin/warmpawz-pay/catalogue', (c) => catalogueCreateHandler(c, deps));
-  app.post('/admin/warmpawz-pay/catalogue/:catalogueId/publish', (c) =>
-    cataloguePublishHandler(c, deps),
+  app.post(
+    '/admin/warmpawz-pay/catalogue/bulk/unpublish',
+    requireAdminPermission(WPAY_CATALOGUE_BULK),
+    (c) => catalogueBulkUnpublishHandler(c, deps),
   );
-  app.post('/admin/warmpawz-pay/catalogue/:catalogueId/unpublish', (c) =>
-    catalogueUnpublishHandler(c, deps),
+  app.post(
+    '/admin/warmpawz-pay/catalogue/bulk/delete',
+    requireAdminPermission(WPAY_CATALOGUE_BULK),
+    (c) => catalogueBulkDeleteHandler(c, deps),
   );
-  app.delete('/admin/warmpawz-pay/catalogue/:catalogueId', (c) => catalogueDeleteHandler(c, deps));
+  app.get(
+    '/admin/warmpawz-pay/catalogue/:catalogueId',
+    requireAdminPermission(WPAY_CATALOGUE_VIEW),
+    (c) => catalogueDetailHandler(c, deps),
+  );
+  app.post(
+    '/admin/warmpawz-pay/catalogue',
+    requireAdminPermission(WPAY_CATALOGUE_CREATE),
+    (c) => catalogueCreateHandler(c, deps),
+  );
+  app.post(
+    '/admin/warmpawz-pay/catalogue/:catalogueId/publish',
+    requireAdminPermission(WPAY_CATALOGUE_PUBLISH),
+    (c) => cataloguePublishHandler(c, deps),
+  );
+  app.post(
+    '/admin/warmpawz-pay/catalogue/:catalogueId/unpublish',
+    requireAdminPermission(WPAY_CATALOGUE_UNPUBLISH),
+    (c) => catalogueUnpublishHandler(c, deps),
+  );
+  app.delete(
+    '/admin/warmpawz-pay/catalogue/:catalogueId',
+    requireAdminPermission(WPAY_CATALOGUE_DELETE),
+    (c) => catalogueDeleteHandler(c, deps),
+  );
 }

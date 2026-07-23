@@ -1,9 +1,9 @@
 import type { Context } from 'hono';
+import { getRequiredAdminUserId } from '../middleware/require-admin-permission.middleware';
 import type { CatalogueAdminRouteDeps } from '../routes/catalogue-admin.routes';
 import {
   catalogueSuccessResponse,
   mapCatalogueHandlerError,
-  readAdminUserId,
 } from './catalogue-list.handler';
 import {
   parseDedupedBulkCatalogueOperationRequest,
@@ -16,7 +16,7 @@ export async function catalogueBulkDeleteHandler(
 ): Promise<Response> {
   try {
     const catalogueIds = parseDedupedBulkCatalogueOperationRequest(await readBulkCatalogueOperationBody(c));
-    const data = await deps.adminService.bulkDelete(catalogueIds, readAdminUserId(c) ?? '');
+    const data = await deps.adminService.bulkDelete(catalogueIds, getRequiredAdminUserId(c));
     return catalogueSuccessResponse(c, data);
   } catch (error) {
     return mapCatalogueHandlerError(c, error);

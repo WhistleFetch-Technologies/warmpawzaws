@@ -65,11 +65,6 @@ export function mapCatalogueHandlerError(c: Context, error: unknown): Response {
   return c.json(body, 500 as const);
 }
 
-export function readAdminUserId(c: Context): string | null {
-  const adminUserId = c.get('adminUserId');
-  return typeof adminUserId === 'string' && adminUserId.length > 0 ? adminUserId : null;
-}
-
 export async function catalogueListHandler(
   c: Context,
   deps: CatalogueAdminRouteDeps,
