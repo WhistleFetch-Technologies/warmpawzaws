@@ -15,7 +15,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { signOutVendor } from '@/lib/session-utils';
-import { getVendorAllowedServiceStyles, hasVendorRole } from '@/lib/vendor-utils';
+import {
+  getVendorAllowedServiceStyles,
+  hasVendorRole,
+  isVendorTeleConsultationBooking,
+  resolveVendorBookingId,
+} from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
 import { vendorNavigate } from '@/lib/vendor-route-nav';
 
@@ -549,6 +554,45 @@ export function SoloProviderDashboard({
     } finally {
       setProcessingOtp(false);
     }
+  };
+
+  const handleScheduleCompleteClick = async (appointment: ScheduleItem) => {
+    setSelectedAppointment(appointment);
+
+    if (isVendorTeleConsultationBooking(appointment)) {
+      const bid = resolveVendorBookingId(appointment);
+      if (!bid) {
+        toast.error('Missing booking id');
+        return;
+      }
+
+      try {
+        setProcessingOtp(true);
+        const data = (await apiClient.post(`/vendor/bookings/${bid}/complete`, {
+          vendorId: vendorData?.id || vendorId,
+          otp: null,
+        })) as { success?: boolean; error?: string; message?: string };
+
+        if (data?.success !== false) {
+          toast.success(data?.message || 'Tele consultation marked as complete');
+          setSelectedAppointment(null);
+          fetchDashboardData(true);
+        } else {
+          toast.error(data?.error || 'Failed to complete booking');
+        }
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Failed to complete booking';
+        toast.error(msg);
+      } finally {
+        setProcessingOtp(false);
+      }
+      return;
+    }
+
+    setOtpAction('complete');
+    setShowOtpModal(true);
+    setOtp('');
+    setOtpError(null);
   };
 
   // Format time ago
@@ -1107,11 +1151,7 @@ export function SoloProviderDashboard({
                           onComplete={(bookingId) => {
                             const apt = todaySchedule.find(a => a.bookingId === bookingId);
                             if (apt) {
-                              setSelectedAppointment(apt);
-                              setOtpAction('complete');
-                              setShowOtpModal(true);
-                              setOtp('');
-                              setOtpError(null);
+                              void handleScheduleCompleteClick(apt);
                             }
                           }}
                           onNavigate={(lat, lng) => {
