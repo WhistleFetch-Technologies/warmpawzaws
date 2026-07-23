@@ -819,6 +819,7 @@ export default function App() {
                         orderId={props.route?.params?.orderId || ''}
                         order={props.route?.params?.order}
                         phone={session.phone}
+                        customerId={session.customerId}
                         onBack={() => handleNavigate('OrderHistory')}
                         onNavigate={handleNavigate}
                       />

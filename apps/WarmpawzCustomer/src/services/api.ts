@@ -322,9 +322,19 @@ export const CustomerApi = {
   },
   getOrderDetails: (orderId: string) => ApiService.get(`/customer/orders/${orderId}`),
   getOrderInvoice: (orderId: string) => ApiService.get(`/customer/orders/${orderId}/invoice`),
-  getOrderTracking: (orderId: string) => ApiService.get(`/customer/shop/orders/${orderId}/track`),
-  cancelOrder: (orderId: string, reason?: string) => 
-    ApiService.post(`/customer/shop/orders/${orderId}/cancel`, { reason }),
+  getOrderTracking: (orderId: string) => ApiService.get(`/orders/${orderId}/tracking`),
+  cancelOrder: (orderId: string, reason?: string) =>
+    ApiService.post(`/orders/${orderId}/cancel`, { reason }),
+  cancelDraftOrder: (orderId: string, data?: { reason?: string }) =>
+    ApiService.post(`/customer/orders/${orderId}/cancel-draft`, data ?? {}),
+  getOrderPaymentResume: (orderId: string, customerId: string) =>
+    ApiService.get(
+      `/customer/orders/${orderId}/payment-resume?customerId=${encodeURIComponent(customerId)}`,
+    ),
+  createEcommerceOrder: (orderData: Record<string, unknown>) =>
+    ApiService.post('/ecommerce/orders', orderData),
+  getOrderReturnEligibility: (orderId: string) =>
+    ApiService.get(`/orders/${orderId}/return-eligibility`),
   getOrderHistory: async (customerId: string) => {
     // Use new customer-orders endpoint
     const response = await ApiService.get(`/customer/orders?customerId=${customerId}`);
@@ -424,9 +434,10 @@ export const CustomerApi = {
   deleteCartItem: (customerId: string, itemId: string) =>
     ApiService.delete(`/customer/shop/cart/${customerId}/items/${itemId}`),
   
-  // Checkout
+  // Checkout — use createEcommerceOrder + resumeShopOrderPayment (online only)
+  /** @deprecated Use createEcommerceOrder + shop Razorpay flow */
   checkout: (customerId: string, paymentMethod: string, addressId: string, promoCode?: string) =>
-    ApiService.post('/customer/shop/checkout', { customerId, paymentMethod, addressId, promoCode }),
+    ApiService.post('/ecommerce/orders', { customerId, paymentMethod, addressId, promoCode }),
   
   // Coupons
   validateCoupon: (couponCode: string, cartTotal: number, customerId: string) =>
@@ -460,12 +471,13 @@ export const CustomerApi = {
   removeFromWishlist: (wishlistItemId: string) => ApiService.delete(`/customer/wishlist/${wishlistItemId}`),
   
   // Order Operations
-  getOrderInvoice: (orderId: string) => ApiService.get(`/orders/${orderId}/invoice`),
-  reorder: (orderId: string, customerId: string) => 
-    ApiService.post(`/customer/shop/orders/${orderId}/reorder`, { customerId }),
-  // Order Returns
-  createReturn: (returnData: { orderId: string; items: any[]; reason: string; customerId: string }) => 
-    ApiService.post('/customer/returns', returnData),
+  reorder: (orderId: string, customerId: string) =>
+    ApiService.post(`/orders/${orderId}/reorder`, { customerId }),
+  // Order Returns — canonical route (return_requests table)
+  returnOrder: (
+    orderId: string,
+    data: { reason?: string; items: Array<{ orderItemId: string; quantity?: number }> },
+  ) => ApiService.post(`/customer/orders/${orderId}/return`, data),
   
   // Events
   getEvents: (vendorId?: string) => {
@@ -569,7 +581,7 @@ export const CustomerApi = {
 
 // ✅ Payment API - Razorpay Integration
 export const PaymentApi = {
-  // Create Razorpay order
+  // Create Razorpay order (booking / legacy flows)
   createRazorpayOrder: (orderData: {
     amount: number;
     currency?: string;
@@ -578,16 +590,38 @@ export const PaymentApi = {
     bookingId?: string;
     customerId?: string;
     vendorId?: string;
-  }) => ApiService.post('/payment/razorpay/create-order', orderData),
-  
-  // Verify Razorpay payment
+  }) => ApiService.post('/razorpay/create-order', orderData),
+
+  /** Shop ecommerce order — must use type ecommerce_order */
+  createShopRazorpayOrder: (orderData: {
+    type: 'ecommerce_order';
+    orderId: string;
+    amount: number;
+    customerId: string;
+  }) => ApiService.post('/razorpay/create-order', orderData),
+
+  // Verify Razorpay payment (booking / legacy)
   verifyRazorpayPayment: (paymentData: {
     razorpayOrderId: string;
     razorpayPaymentId: string;
     razorpaySignature: string;
     bookingId?: string;
     customerId?: string;
-  }) => ApiService.post('/payment/razorpay/verify', paymentData),
+  }) =>
+    ApiService.post('/razorpay/verify-payment', {
+      razorpay_order_id: paymentData.razorpayOrderId,
+      razorpay_payment_id: paymentData.razorpayPaymentId,
+      razorpay_signature: paymentData.razorpaySignature,
+      bookingId: paymentData.bookingId,
+      customerId: paymentData.customerId,
+    }),
+
+  /** Verify shop Razorpay payment after native checkout */
+  verifyShopRazorpayPayment: (paymentData: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) => ApiService.post('/razorpay/verify-payment', paymentData),
   
   // Get payment status
   getPaymentStatus: (paymentId: string) => ApiService.get(`/payment/${paymentId}/status`),
@@ -1295,15 +1329,29 @@ export const SubscriptionApi = {
   },
 };
 
-// ✅ NEW: Order Return API (Phase 1 - Mobile Improvements)
+/** Backend return reason codes — match returns-enhanced RETURN_REASONS */
+export const SHOP_RETURN_REASONS = [
+  { id: 'damaged', label: 'Product damaged/defective' },
+  { id: 'wrong_item', label: 'Wrong item received' },
+  { id: 'not_as_described', label: 'Not as described' },
+  { id: 'quality_issue', label: 'Quality not satisfactory' },
+  { id: 'size_fit', label: 'Size/Fit issue' },
+  { id: 'changed_mind', label: 'Changed my mind' },
+  { id: 'better_price', label: 'Found better price elsewhere' },
+  { id: 'other', label: 'Other reason' },
+] as const;
+
+// ✅ Order Return API — canonical return_requests flow
 export const OrderReturnApi = {
-  createReturn: (returnData: { orderId: string; items: any[]; reason: string; customerId: string }) => 
-    ApiService.post('/customer/returns', returnData),
-  getReturnStatus: (returnId: string) => 
-    ApiService.get(`/customer/returns/${returnId}`),
-  getReturnHistory: (customerId: string) => 
+  createReturn: (
+    orderId: string,
+    data: { reason: string; items: Array<{ orderItemId: string; quantity?: number }> },
+  ) => ApiService.post(`/customer/orders/${orderId}/return`, data),
+  getReturnStatus: (returnId: string) =>
+    ApiService.get(`/returns/${returnId}`),
+  getReturnHistory: (customerId: string) =>
     ApiService.get(`/customer/${customerId}/returns`),
-  cancelReturn: (returnId: string, customerId: string) => 
-    ApiService.post(`/customer/returns/${returnId}/cancel`, { customerId }),
+  cancelReturn: (returnId: string, customerId: string) =>
+    ApiService.post(`/returns/${returnId}/cancel`, { customerId }),
 };
 

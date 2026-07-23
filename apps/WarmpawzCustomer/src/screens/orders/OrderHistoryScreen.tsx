@@ -29,7 +29,7 @@ interface Order {
   id: string;
   orderId: string;
   totalAmount: number;
-  status: 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'returned';
+  status: 'pending' | 'pending_payment' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'returned';
   createdAt: string;
   items?: Array<{
     name: string;
@@ -47,7 +47,7 @@ export function OrderHistoryScreen({
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'delivered' | 'cancelled'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'pending_payment' | 'delivered' | 'cancelled'>('all');
 
   useEffect(() => {
     loadOrders();
@@ -64,9 +64,11 @@ export function OrderHistoryScreen({
       
       let filtered = ordersData;
       if (filter === 'pending') {
-        filtered = ordersData.filter((o: Order) => 
-          ['pending', 'confirmed', 'processing', 'shipped'].includes(o.status)
+        filtered = ordersData.filter((o: Order) =>
+          ['pending', 'confirmed', 'processing', 'shipped'].includes(o.status),
         );
+      } else if (filter === 'pending_payment') {
+        filtered = ordersData.filter((o: Order) => o.status === 'pending_payment');
       } else if (filter === 'delivered') {
         filtered = ordersData.filter((o: Order) => o.status === 'delivered');
       } else if (filter === 'cancelled') {
@@ -148,7 +150,7 @@ export function OrderHistoryScreen({
           {item.status === 'delivered' && (
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => onNavigate && onNavigate('OrderReturn', { orderId: item.id })}
+              onPress={() => onNavigate && onNavigate('OrderReturn', { orderId: item.id, order: item })}
             >
               <Text style={styles.actionButtonText}>Return</Text>
             </TouchableOpacity>
@@ -186,22 +188,30 @@ export function OrderHistoryScreen({
 
       {/* Filters */}
       <View style={styles.filters}>
-        {(['all', 'pending', 'delivered', 'cancelled'] as const).map((filterOption) => (
+        {(
+          [
+            { key: 'all', label: 'All' },
+            { key: 'pending', label: 'Active' },
+            { key: 'pending_payment', label: 'Unpaid' },
+            { key: 'delivered', label: 'Delivered' },
+            { key: 'cancelled', label: 'Cancelled' },
+          ] as const
+        ).map((filterOption) => (
           <TouchableOpacity
-            key={filterOption}
+            key={filterOption.key}
             style={[
               styles.filterButton,
-              filter === filterOption && styles.filterButtonActive,
+              filter === filterOption.key && styles.filterButtonActive,
             ]}
-            onPress={() => setFilter(filterOption)}
+            onPress={() => setFilter(filterOption.key)}
           >
             <Text
               style={[
                 styles.filterButtonText,
-                filter === filterOption && styles.filterButtonTextActive,
+                filter === filterOption.key && styles.filterButtonTextActive,
               ]}
             >
-              {filterOption.charAt(0).toUpperCase() + filterOption.slice(1)}
+              {filterOption.label}
             </Text>
           </TouchableOpacity>
         ))}

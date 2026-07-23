@@ -1,10 +1,9 @@
 /**
  * Order Return Screen - Mobile
- * Return request for orders
- * Identical functionality to web app
+ * Return request via POST /customer/orders/:id/return (return_requests table)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,7 +16,7 @@ import {
 } from 'react-native';
 import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
-import { CustomerApi, OrderReturnApi } from '../../services/api';
+import { CustomerApi, OrderReturnApi, SHOP_RETURN_REASONS } from '../../services/api';
 
 interface OrderReturnScreenProps {
   orderId: string;
@@ -28,36 +27,86 @@ interface OrderReturnScreenProps {
   onSuccess?: () => void;
 }
 
-const RETURN_REASONS = [
-  'Defective/Damaged Product',
-  'Wrong Item Received',
-  'Not as Described',
-  'Size/Color Mismatch',
-  'Changed My Mind',
-  'Other',
-];
+type SelectedItem = { orderItemId: string; quantity: number };
 
 export function OrderReturnScreen({
   orderId,
-  order,
+  order: initialOrder,
   phone,
   onBack,
   onNavigate,
   onSuccess,
 }: OrderReturnScreenProps) {
   const [loading, setLoading] = useState(false);
-  const [selectedReason, setSelectedReason] = useState<string>('');
+  const [loadingOrder, setLoadingOrder] = useState(!initialOrder);
+  const [order, setOrder] = useState<any>(initialOrder);
+  const [eligible, setEligible] = useState<boolean | null>(null);
+  const [selectedReasonId, setSelectedReasonId] = useState<string>('');
   const [otherReason, setOtherReason] = useState('');
-  const [returnItems, setReturnItems] = useState<string[]>([]);
+  const [returnItems, setReturnItems] = useState<SelectedItem[]>([]);
   const [additionalNotes, setAdditionalNotes] = useState('');
 
+  useEffect(() => {
+    loadOrderAndEligibility();
+  }, [orderId]);
+
+  const loadOrderAndEligibility = async () => {
+    try {
+      setLoadingOrder(true);
+      let orderData = initialOrder;
+      if (!orderData) {
+        const response = await CustomerApi.getOrderDetails(orderId);
+        orderData = response.order || response;
+        setOrder(orderData);
+      }
+
+      try {
+        const eligibility = await CustomerApi.getOrderReturnEligibility(orderId);
+        const isEligible = (eligibility as { eligible?: boolean })?.eligible !== false;
+        setEligible(isEligible);
+        if (!isEligible) {
+          Alert.alert(
+            'Not eligible',
+            (eligibility as { message?: string })?.message ||
+              'This order is not eligible for return',
+          );
+        }
+      } catch {
+        setEligible(true);
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to load order');
+    } finally {
+      setLoadingOrder(false);
+    }
+  };
+
+  const getOrderItemId = (item: Record<string, unknown>): string =>
+    String(item.id || item.orderItemId || item.order_item_id || '');
+
+  const toggleItem = (item: Record<string, unknown>) => {
+    const orderItemId = getOrderItemId(item);
+    if (!orderItemId) return;
+
+    const qty = Math.max(1, parseInt(String(item.quantity ?? '1'), 10) || 1);
+    const existing = returnItems.find((i) => i.orderItemId === orderItemId);
+    if (existing) {
+      setReturnItems(returnItems.filter((i) => i.orderItemId !== orderItemId));
+    } else {
+      setReturnItems([...returnItems, { orderItemId, quantity: qty }]);
+    }
+  };
+
+  const isItemSelected = (item: Record<string, unknown>) =>
+    returnItems.some((i) => i.orderItemId === getOrderItemId(item));
+
   const handleSubmitReturn = async () => {
-    if (!selectedReason) {
+    if (!selectedReasonId) {
       Alert.alert('Error', 'Please select a return reason');
       return;
     }
 
-    if (selectedReason === 'Other' && !otherReason.trim()) {
+    if (selectedReasonId === 'other' && !otherReason.trim()) {
       Alert.alert('Error', 'Please provide a reason');
       return;
     }
@@ -67,29 +116,23 @@ export function OrderReturnScreen({
       return;
     }
 
+    const reasonLabel =
+      SHOP_RETURN_REASONS.find((r) => r.id === selectedReasonId)?.label || selectedReasonId;
+    const reason =
+      selectedReasonId === 'other'
+        ? otherReason.trim()
+        : `${selectedReasonId}:${reasonLabel}${additionalNotes ? ` — ${additionalNotes}` : ''}`;
+
     try {
       setLoading(true);
-
-      const returnData = {
-        orderId,
-        phone,
-        reason: selectedReason === 'Other' ? otherReason : selectedReason,
+      await OrderReturnApi.createReturn(orderId, {
+        reason,
         items: returnItems,
-        notes: additionalNotes,
-      };
-
-      // ✅ API Integration: Use OrderReturnApi
-      const customerId = await CustomerApi.getCustomerByPhone(phone).then(c => c.id || c.customerId).catch(() => null);
-      const returnResponse = await OrderReturnApi.createReturn({
-        orderId,
-        items: returnItems.map(itemId => ({ itemId, quantity: 1 })),
-        reason: returnData.reason,
-        customerId: customerId || phone,
       });
 
       Alert.alert(
         'Return Request Submitted',
-        'Your return request has been submitted. We will process it shortly.',
+        'Your return request has been submitted. The seller will review it shortly.',
         [
           {
             text: 'OK',
@@ -97,11 +140,11 @@ export function OrderReturnScreen({
               if (onSuccess) {
                 onSuccess();
               } else if (onNavigate) {
-                onNavigate('OrderDetail', { orderId });
+                onNavigate('OrderDetail', { orderId, order });
               }
             },
           },
-        ]
+        ],
       );
     } catch (error: any) {
       console.error('Error submitting return:', error);
@@ -111,13 +154,34 @@ export function OrderReturnScreen({
     }
   };
 
-  const toggleItem = (itemId: string) => {
-    if (returnItems.includes(itemId)) {
-      setReturnItems(returnItems.filter(id => id !== itemId));
-    } else {
-      setReturnItems([...returnItems, itemId]);
-    }
-  };
+  if (loadingOrder) {
+    return (
+      <ScreenShell style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </ScreenShell>
+    );
+  }
+
+  if (eligible === false) {
+    return (
+      <ScreenShell style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Return Request</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.ineligibleBox}>
+          <Text style={styles.ineligibleText}>This order is not eligible for return.</Text>
+        </View>
+      </ScreenShell>
+    );
+  }
+
+  const orderItems = order?.items || [];
 
   return (
     <ScreenShell style={styles.container}>
@@ -130,62 +194,66 @@ export function OrderReturnScreen({
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Order Info */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Order #{orderId}</Text>
+          <Text style={styles.sectionTitle}>Order #{order?.orderNumber || orderId}</Text>
           {order && (
             <View style={styles.orderInfo}>
               <Text style={styles.orderDate}>
-                Ordered on {new Date(order.createdAt || Date.now()).toLocaleDateString()}
+                Ordered on{' '}
+                {new Date(order.createdAt || order.created_at || Date.now()).toLocaleDateString()}
               </Text>
               <Text style={styles.orderTotal}>
-                Total: ₹{order.totalAmount?.toLocaleString() || '0'}
+                Total: ₹
+                {(order.totalAmount || order.total_amount || 0).toLocaleString?.() ||
+                  order.totalAmount ||
+                  order.total_amount ||
+                  '0'}
               </Text>
             </View>
           )}
         </View>
 
-        {/* Select Items */}
-        {order?.items && (
+        {orderItems.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Select Items to Return</Text>
-            {order.items.map((item: any) => (
-              <TouchableOpacity
-                key={item.id}
-                style={[
-                  styles.itemCard,
-                  returnItems.includes(item.id) && styles.itemCardSelected,
-                ]}
-                onPress={() => toggleItem(item.id)}
-              >
-                <View style={styles.itemInfo}>
-                  <Text style={styles.itemName}>{item.name}</Text>
-                  <Text style={styles.itemQuantity}>Qty: {item.quantity}</Text>
-                </View>
-                {returnItems.includes(item.id) && (
-                  <View style={styles.selectedIndicator}>
-                    <Text style={styles.selectedCheck}>✓</Text>
+            {orderItems.map((item: Record<string, unknown>, index: number) => {
+              const itemId = getOrderItemId(item) || `item-${index}`;
+              return (
+                <TouchableOpacity
+                  key={itemId}
+                  style={[styles.itemCard, isItemSelected(item) && styles.itemCardSelected]}
+                  onPress={() => toggleItem(item)}
+                >
+                  <View style={styles.itemInfo}>
+                    <Text style={styles.itemName}>
+                      {String(item.productName || item.name || 'Item')}
+                    </Text>
+                    <Text style={styles.itemQuantity}>Qty: {String(item.quantity ?? 1)}</Text>
                   </View>
-                )}
-              </TouchableOpacity>
-            ))}
+                  {isItemSelected(item) && (
+                    <View style={styles.selectedIndicator}>
+                      <Text style={styles.selectedCheck}>✓</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
-        {/* Return Reason */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Reason for Return</Text>
-          {RETURN_REASONS.map((reason) => (
+          {SHOP_RETURN_REASONS.map((reason) => (
             <TouchableOpacity
-              key={reason}
+              key={reason.id}
               style={[
                 styles.reasonCard,
-                selectedReason === reason && styles.reasonCardSelected,
+                selectedReasonId === reason.id && styles.reasonCardSelected,
               ]}
-              onPress={() => setSelectedReason(reason)}
+              onPress={() => setSelectedReasonId(reason.id)}
             >
-              <Text style={styles.reasonText}>{reason}</Text>
-              {selectedReason === reason && (
+              <Text style={styles.reasonText}>{reason.label}</Text>
+              {selectedReasonId === reason.id && (
                 <View style={styles.selectedIndicator}>
                   <Text style={styles.selectedCheck}>✓</Text>
                 </View>
@@ -194,8 +262,7 @@ export function OrderReturnScreen({
           ))}
         </View>
 
-        {/* Other Reason Input */}
-        {selectedReason === 'Other' && (
+        {selectedReasonId === 'other' && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Please specify</Text>
             <TextInput
@@ -208,7 +275,6 @@ export function OrderReturnScreen({
           </View>
         )}
 
-        {/* Additional Notes */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Additional Notes (Optional)</Text>
           <TextInput
@@ -221,7 +287,6 @@ export function OrderReturnScreen({
           />
         </View>
 
-        {/* Submit Button */}
         <TouchableOpacity
           style={[styles.submitButton, loading && styles.submitButtonDisabled]}
           onPress={handleSubmitReturn}
@@ -242,6 +307,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ineligibleBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  ineligibleText: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -388,4 +469,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-

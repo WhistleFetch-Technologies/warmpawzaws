@@ -112,6 +112,17 @@ describe('getVendorListingPhotoUrl', () => {
     expect(resolveImageForContext).not.toHaveBeenCalled();
   });
 
+  it('prefers regeneratePresignedUrl for legacy non-WebP keys', async () => {
+    regeneratePresignedUrl.mockResolvedValueOnce('https://signed.example/legacy.jpg');
+    const url = await getVendorListingPhotoUrl({
+      id: 'solo-legacy',
+      vendor_type: 'solo',
+      profile_photo_url: 'vendors/solo-legacy/profile/photo.jpg',
+    });
+    expect(url).toBe('https://signed.example/legacy.jpg');
+    expect(regeneratePresignedUrl).toHaveBeenCalled();
+  });
+
   it('returns null when no photo sources', async () => {
     expect(await getVendorListingPhotoUrl({ vendor_type: 'solo' })).toBeNull();
   });

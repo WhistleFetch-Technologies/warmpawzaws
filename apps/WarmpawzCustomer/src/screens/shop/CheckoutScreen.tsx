@@ -1,7 +1,6 @@
 /**
  * Checkout Screen - Mobile
- * Standalone checkout screen with payment integration
- * Identical functionality to web app
+ * Shop checkout: POST /ecommerce/orders + Razorpay ecommerce_order + verify
  */
 
 import React, { useState, useEffect } from 'react';
@@ -19,6 +18,12 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  buildMobileEcommerceOrderPayload,
+  generateIdempotencyKey,
+} from '../../utils/ecommerce/build-ecommerce-order-payload';
+import { extractEcommerceOrderIdFromResponse } from '../../utils/ecommerce/ecommerce-razorpay-payload';
+import { resumeShopOrderPayment } from '../../utils/ecommerce/resume-shop-order-payment';
 
 interface CheckoutScreenProps {
   phone: string;
@@ -51,7 +56,6 @@ export function CheckoutScreen({
   const [loading, setLoading] = useState(false);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'wallet' | 'razorpay' | 'cod'>('razorpay');
   const [couponCode, setCouponCode] = useState('');
   const [applyingCoupon, setApplyingCoupon] = useState(false);
   const [discount, setDiscount] = useState(0);
@@ -78,7 +82,6 @@ export function CheckoutScreen({
         setAddresses(formattedAddresses);
         setSelectedAddress(formattedAddresses.find(a => a.isDefault) || formattedAddresses[0] || null);
       } else {
-        // Fallback to empty array if no customerId
         setAddresses([]);
       }
     } catch (error) {
@@ -87,13 +90,9 @@ export function CheckoutScreen({
     }
   };
 
-  const getSubtotal = () => {
-    return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
-  };
+  const getSubtotal = () => cart.reduce((total, item) => total + item.price * item.quantity, 0);
 
-  const getTotal = () => {
-    return getSubtotal() - discount;
-  };
+  const getTotal = () => getSubtotal() - discount;
 
   const applyCoupon = async () => {
     if (!couponCode.trim()) {
@@ -110,7 +109,7 @@ export function CheckoutScreen({
       setApplyingCoupon(true);
       const subtotal = getSubtotal();
       const response = await CustomerApi.validateCoupon(couponCode.toUpperCase(), subtotal, customerId);
-      
+
       if ((response as any).valid) {
         setDiscount((response as any).discountAmount || 0);
         Alert.alert('Success', `Coupon applied! You saved ₹${(response as any).discountAmount || 0}`);
@@ -138,49 +137,74 @@ export function CheckoutScreen({
       return;
     }
 
+    if (!customerId) {
+      Alert.alert('Error', 'Customer ID required for checkout');
+      return;
+    }
+
     try {
       setLoading(true);
 
-      const orderData = {
+      const orderPayload = buildMobileEcommerceOrderPayload({
         phone,
         customerId,
-        items: cart,
-        address: selectedAddress,
-        paymentMethod,
-        couponCode: couponCode || undefined,
+        cart,
+        shippingAddress: selectedAddress,
         discount,
-        totalAmount: getTotal(),
-      };
+        idempotencyKey: generateIdempotencyKey(),
+        couponCode: couponCode || undefined,
+      });
 
-      // Call checkout API for e-commerce orders
-      if (!customerId) {
-        Alert.alert('Error', 'Customer ID required for checkout');
-        return;
+      const result = await CustomerApi.createEcommerceOrder(orderPayload);
+      const shopOrderId = extractEcommerceOrderIdFromResponse(result);
+      if (!shopOrderId) {
+        throw new Error('Order was not created');
       }
 
-      const response = await CustomerApi.checkout(
+      let profile: unknown = null;
+      try {
+        profile = await CustomerApi.getCustomerByPhone(phone);
+      } catch {
+        /* non-fatal */
+      }
+
+      await resumeShopOrderPayment({
+        orderId: shopOrderId,
+        payableAmount: getTotal(),
         customerId,
-        paymentMethod,
-        selectedAddress.id,
-        couponCode || undefined
-      );
-      
-      // Extract order ID from response
-      const orderId = (response as any).orderId || (response as any).order?.id || (response as any).id;
-
-      // Clear cart
-      await AsyncStorage.removeItem('warmpawz_cart');
-
-      if (onSuccess && orderId) {
-        onSuccess(orderId);
-      } else if (onNavigate && orderId) {
-        onNavigate('OrderSuccess', { orderId });
-      } else {
-        Alert.alert('Success', 'Order placed successfully!');
-      }
+        phone,
+        prefillName: selectedAddress.name,
+        profile,
+        onSuccess: async (paidOrderId) => {
+          await AsyncStorage.removeItem('warmpawz_cart');
+          if (onSuccess) {
+            onSuccess(paidOrderId);
+          } else if (onNavigate) {
+            onNavigate('OrderSuccess', { orderId: paidOrderId });
+          } else {
+            Alert.alert('Success', 'Order placed successfully!');
+          }
+        },
+        onDismiss: () => {
+          Alert.alert(
+            'Payment pending',
+            'Your order was created. You can complete payment from order details.',
+            [
+              {
+                text: 'View order',
+                onPress: () => onNavigate?.('OrderDetail', { orderId: shopOrderId }),
+              },
+              { text: 'OK' },
+            ],
+          );
+        },
+      });
     } catch (error: any) {
       console.error('Error placing order:', error);
-      Alert.alert('Error', error.message || 'Failed to place order. Please try again.');
+      const message = error?.message || 'Failed to place order. Please try again.';
+      if (!message.toLowerCase().includes('cancel')) {
+        Alert.alert('Error', message);
+      }
     } finally {
       setLoading(false);
     }
@@ -197,7 +221,6 @@ export function CheckoutScreen({
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Delivery Address */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Delivery Address</Text>
           {addresses.map((address) => (
@@ -232,7 +255,6 @@ export function CheckoutScreen({
           </TouchableOpacity>
         </View>
 
-        {/* Coupon Code */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Coupon Code</Text>
           <View style={styles.couponContainer}>
@@ -261,57 +283,14 @@ export function CheckoutScreen({
           )}
         </View>
 
-        {/* Payment Method */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Payment Method</Text>
-          <TouchableOpacity
-            style={[
-              styles.paymentOption,
-              paymentMethod === 'razorpay' && styles.paymentOptionSelected,
-            ]}
-            onPress={() => setPaymentMethod('razorpay')}
-          >
+          <Text style={styles.sectionTitle}>Payment</Text>
+          <View style={styles.paymentInfoCard}>
             <Text style={styles.paymentIcon}>💳</Text>
-            <Text style={styles.paymentText}>Razorpay</Text>
-            {paymentMethod === 'razorpay' && (
-              <View style={styles.selectedIndicator}>
-                <Text style={styles.selectedCheck}>✓</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.paymentOption,
-              paymentMethod === 'wallet' && styles.paymentOptionSelected,
-            ]}
-            onPress={() => setPaymentMethod('wallet')}
-          >
-            <Text style={styles.paymentIcon}>💰</Text>
-            <Text style={styles.paymentText}>Wallet</Text>
-            {paymentMethod === 'wallet' && (
-              <View style={styles.selectedIndicator}>
-                <Text style={styles.selectedCheck}>✓</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.paymentOption,
-              paymentMethod === 'cod' && styles.paymentOptionSelected,
-            ]}
-            onPress={() => setPaymentMethod('cod')}
-          >
-            <Text style={styles.paymentIcon}>💵</Text>
-            <Text style={styles.paymentText}>Cash on Delivery</Text>
-            {paymentMethod === 'cod' && (
-              <View style={styles.selectedIndicator}>
-                <Text style={styles.selectedCheck}>✓</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+            <Text style={styles.paymentInfoText}>Pay securely with Razorpay (UPI, cards, wallets)</Text>
+          </View>
         </View>
 
-        {/* Order Summary */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Order Summary</Text>
           <View style={styles.summaryCard}>
@@ -349,7 +328,7 @@ export function CheckoutScreen({
             <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.placeOrderButtonText}>
-              Place Order • ₹{getTotal().toLocaleString()}
+              Pay & Place Order • ₹{getTotal().toLocaleString()}
             </Text>
           )}
         </TouchableOpacity>
@@ -498,17 +477,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  paymentOption: {
+  paymentInfoCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.sm,
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-  paymentOptionSelected: {
+    borderWidth: 1,
     borderColor: colors.primary,
     backgroundColor: colors.gradientOrange50,
   },
@@ -516,9 +490,9 @@ const styles = StyleSheet.create({
     fontSize: 24,
     marginRight: spacing.md,
   },
-  paymentText: {
+  paymentInfoText: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 14,
     color: colors.text,
     fontWeight: '600',
   },
@@ -583,4 +557,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-

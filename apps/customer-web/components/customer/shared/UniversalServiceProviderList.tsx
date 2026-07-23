@@ -26,6 +26,7 @@ import {
 import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
+import { DiscoveryProviderAvatar } from './DiscoveryProviderAvatar';
 
 // ============================================================================
 // TYPES
@@ -101,6 +102,8 @@ interface UniversalServiceProviderListProps {
   problemTitle?: string; // Phase 2: "Best for [problem]" badge — passed to discover-services/by-style
   problems?: Problem[]; // ✅ NEW: List of problems to show as quick filters
   showProblemFilter?: boolean; // ✅ NEW: Whether to show the problem filter strip
+  /** When false, hides advanced filter UI (vet/grooming default off until filters work reliably). */
+  showProviderFilters?: boolean;
   previousProviderIds?: string[]; // Phase 2: Vendor IDs for "Used before" badge
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
@@ -364,10 +367,11 @@ function ProviderCard({ provider, serviceStyle, showPriceDisclaimer = false, isP
                 ))}
               </div>
             ) : provider.photo ? (
-              <img
-                src={provider.photo}
-                alt={provider.name}
+              <DiscoveryProviderAvatar
+                name={provider.name}
+                photo={provider.photo}
                 className="w-full h-full object-cover"
+                fallbackClassName="w-full h-full flex items-center justify-center text-2xl font-bold text-orange-500 bg-gradient-to-br from-orange-100 to-amber-100"
               />
             ) : (
 
@@ -599,6 +603,7 @@ export function UniversalServiceProviderList({
   problemTitle,
   problems,
   showProblemFilter = true,
+  showProviderFilters,
   previousProviderIds = [],
   onBack,
   onNavigate,
@@ -610,6 +615,13 @@ export function UniversalServiceProviderList({
 
   // ✅ NEW: Get problems for this category
   const categoryProblems = problems || DEFAULT_PROBLEMS[category] || [];
+
+  // Vet care + grooming: hide filter UI until distance/rating filters are reliable on discovery.
+  const providerFiltersEnabled =
+    showProviderFilters ?? !(category === 'vet' || category === 'grooming');
+  const problemFilterVisible =
+    providerFiltersEnabled && showProblemFilter && categoryProblems.length > 0;
+
   const [selectedProblem, setSelectedProblem] = useState<string | null>(specializationFilter || null);
 
   const [loading, setLoading] = useState(true);
@@ -817,7 +829,7 @@ export function UniversalServiceProviderList({
       {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
       <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 pb-8 sm:rounded-t-[2rem]">
         {/*FILTER SECTION STARTS*/}
-        {showProblemFilter && categoryProblems.length > 0 && (
+        {problemFilterVisible && (
           <div className="mb-4">
             <p className="text-sm font-medium text-gray-700 mb-2">What's the concern?</p>
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
@@ -875,7 +887,8 @@ export function UniversalServiceProviderList({
         </div>
         {/*SEARCH BAR SECTION ENDS*/}
 
-        {/* Filters Row */}
+        {/* Filters Row — hidden for vet/grooming until filter logic is fixed */}
+        {providerFiltersEnabled && (
         <div className="mb-4">
           <div className="flex items-center gap-2 overflow-x-auto pb-2">
             <Button
@@ -909,6 +922,7 @@ export function UniversalServiceProviderList({
             ))}
           </div>
         </div>
+        )}
 
         {/* Results Count */}
         <p className="text-sm text-slate-500 mb-4">
@@ -1062,6 +1076,7 @@ export function UniversalServiceProviderList({
       </div>
 
       {/* Filter Modal */}
+      {providerFiltersEnabled && (
       <FilterModal
         isOpen={showFilters}
         onClose={() => setShowFilters(false)}
@@ -1070,6 +1085,7 @@ export function UniversalServiceProviderList({
         specializations={specializations}
         compact={compactFilterSheet}
       />
+      )}
     </div>
   );
 }
