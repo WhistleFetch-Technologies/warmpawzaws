@@ -34,72 +34,72 @@ const requireWarmpawzPayAdminEnabled = requireFeatureFlag(FeatureFlag.WARMPAWZ_P
 export function registerCatalogueAdminRoutes(app: Hono, deps: CatalogueAdminRouteDeps): void {
   app.get(
     '/admin/warmpawz-pay/catalogue',
-    requireAdminPermission(WPAY_CATALOGUE_VIEW),
     requireWarmpawzPayEnabled,
     requireWarmpawzPayAdminEnabled,
+    requireAdminPermission(WPAY_CATALOGUE_VIEW),
     (c) => catalogueListHandler(c, deps),
   );
   app.get(
     '/admin/warmpawz-pay/catalogue/vendor-candidates',
-    requireAdminPermission(WPAY_CATALOGUE_VIEW),
     requireWarmpawzPayEnabled,
     requireWarmpawzPayAdminEnabled,
+    requireAdminPermission(WPAY_CATALOGUE_VIEW),
     (c) => vendorCandidatesHandler(c, deps),
   );
   app.post(
     '/admin/warmpawz-pay/catalogue/bulk/publish',
-    requireAdminPermission(WPAY_CATALOGUE_BULK),
     requireWarmpawzPayEnabled,
     requireWarmpawzPayAdminEnabled,
+    requireAdminPermission(WPAY_CATALOGUE_BULK),
     (c) => catalogueBulkPublishHandler(c, deps),
   );
   app.post(
     '/admin/warmpawz-pay/catalogue/bulk/unpublish',
-    requireAdminPermission(WPAY_CATALOGUE_BULK),
     requireWarmpawzPayEnabled,
     requireWarmpawzPayAdminEnabled,
+    requireAdminPermission(WPAY_CATALOGUE_BULK),
     (c) => catalogueBulkUnpublishHandler(c, deps),
   );
   app.post(
     '/admin/warmpawz-pay/catalogue/bulk/delete',
-    requireAdminPermission(WPAY_CATALOGUE_BULK),
     requireWarmpawzPayEnabled,
     requireWarmpawzPayAdminEnabled,
+    requireAdminPermission(WPAY_CATALOGUE_BULK),
     (c) => catalogueBulkDeleteHandler(c, deps),
   );
   app.get(
     '/admin/warmpawz-pay/catalogue/:catalogueId',
-    requireAdminPermission(WPAY_CATALOGUE_VIEW),
     requireWarmpawzPayEnabled,
     requireWarmpawzPayAdminEnabled,
+    requireAdminPermission(WPAY_CATALOGUE_VIEW),
     (c) => catalogueDetailHandler(c, deps),
   );
   app.post(
     '/admin/warmpawz-pay/catalogue',
-    requireAdminPermission(WPAY_CATALOGUE_CREATE),
     requireWarmpawzPayEnabled,
     requireWarmpawzPayAdminEnabled,
+    requireAdminPermission(WPAY_CATALOGUE_CREATE),
     (c) => catalogueCreateHandler(c, deps),
   );
   app.post(
     '/admin/warmpawz-pay/catalogue/:catalogueId/publish',
-    requireAdminPermission(WPAY_CATALOGUE_PUBLISH),
     requireWarmpawzPayEnabled,
     requireWarmpawzPayAdminEnabled,
+    requireAdminPermission(WPAY_CATALOGUE_PUBLISH),
     (c) => cataloguePublishHandler(c, deps),
   );
   app.post(
     '/admin/warmpawz-pay/catalogue/:catalogueId/unpublish',
-    requireAdminPermission(WPAY_CATALOGUE_UNPUBLISH),
     requireWarmpawzPayEnabled,
     requireWarmpawzPayAdminEnabled,
+    requireAdminPermission(WPAY_CATALOGUE_UNPUBLISH),
     (c) => catalogueUnpublishHandler(c, deps),
   );
   app.delete(
     '/admin/warmpawz-pay/catalogue/:catalogueId',
-    requireAdminPermission(WPAY_CATALOGUE_DELETE),
     requireWarmpawzPayEnabled,
     requireWarmpawzPayAdminEnabled,
+    requireAdminPermission(WPAY_CATALOGUE_DELETE),
     (c) => catalogueDeleteHandler(c, deps),
   );
 }
