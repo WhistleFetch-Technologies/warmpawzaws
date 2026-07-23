@@ -9,9 +9,11 @@ import {
   WPAY_CATALOGUE_UNPUBLISH,
   WPAY_CATALOGUE_VIEW,
 } from '../authorization/permissions';
-import { FeatureFlag } from '../feature-flags/feature-flags';
+import {
+  requireWarmpawzPayAdminEnabled,
+  requireWarmpawzPayEnabled,
+} from '../../shared/wpay-admin-route-guards';
 import { requireAdminPermission } from '../middleware/require-admin-permission.middleware';
-import { requireFeatureFlag } from '../middleware/require-feature-flag.middleware';
 import { catalogueBulkDeleteHandler } from '../handlers/catalogue-bulk-delete.handler';
 import { catalogueBulkPublishHandler } from '../handlers/catalogue-bulk-publish.handler';
 import { catalogueBulkUnpublishHandler } from '../handlers/catalogue-bulk-unpublish.handler';
@@ -27,9 +29,6 @@ export interface CatalogueAdminRouteDeps {
   readonly adminService: VendorCatalogAdminService;
   readonly eligibilityRepository: IVendorEligibilityRepository;
 }
-
-const requireWarmpawzPayEnabled = requireFeatureFlag(FeatureFlag.WARMPAWZ_PAY_ENABLED);
-const requireWarmpawzPayAdminEnabled = requireFeatureFlag(FeatureFlag.WARMPAWZ_PAY_ADMIN_ENABLED);
 
 export function registerCatalogueAdminRoutes(app: Hono, deps: CatalogueAdminRouteDeps): void {
   app.get(
