@@ -1,6 +1,9 @@
 import type { Hono } from 'hono';
 import type { IVendorEligibilityRepository } from '../../../repositories/interfaces/IVendorEligibilityRepository';
 import type { VendorCatalogAdminService } from '../services/vendor-catalog-admin.service';
+import { catalogueBulkDeleteHandler } from '../handlers/catalogue-bulk-delete.handler';
+import { catalogueBulkPublishHandler } from '../handlers/catalogue-bulk-publish.handler';
+import { catalogueBulkUnpublishHandler } from '../handlers/catalogue-bulk-unpublish.handler';
 import { catalogueCreateHandler } from '../handlers/catalogue-create.handler';
 import { catalogueDeleteHandler } from '../handlers/catalogue-delete.handler';
 import { catalogueDetailHandler } from '../handlers/catalogue-detail.handler';
@@ -19,6 +22,13 @@ export function registerCatalogueAdminRoutes(app: Hono, deps: CatalogueAdminRout
   app.get('/admin/warmpawz-pay/catalogue/vendor-candidates', (c) =>
     vendorCandidatesHandler(c, deps),
   );
+  app.post('/admin/warmpawz-pay/catalogue/bulk/publish', (c) =>
+    catalogueBulkPublishHandler(c, deps),
+  );
+  app.post('/admin/warmpawz-pay/catalogue/bulk/unpublish', (c) =>
+    catalogueBulkUnpublishHandler(c, deps),
+  );
+  app.post('/admin/warmpawz-pay/catalogue/bulk/delete', (c) => catalogueBulkDeleteHandler(c, deps));
   app.get('/admin/warmpawz-pay/catalogue/:catalogueId', (c) => catalogueDetailHandler(c, deps));
   app.post('/admin/warmpawz-pay/catalogue', (c) => catalogueCreateHandler(c, deps));
   app.post('/admin/warmpawz-pay/catalogue/:catalogueId/publish', (c) =>

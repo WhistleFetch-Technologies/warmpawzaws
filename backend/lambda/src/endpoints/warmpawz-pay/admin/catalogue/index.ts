@@ -13,6 +13,9 @@ export type { CatalogueAdminRouteDeps };
 
 export { cataloguePublishHandler } from './handlers/catalogue-publish.handler';
 export { catalogueUnpublishHandler } from './handlers/catalogue-unpublish.handler';
+export { catalogueBulkPublishHandler } from './handlers/catalogue-bulk-publish.handler';
+export { catalogueBulkUnpublishHandler } from './handlers/catalogue-bulk-unpublish.handler';
+export { catalogueBulkDeleteHandler } from './handlers/catalogue-bulk-delete.handler';
 
 export interface RegisterWarmpawzPayCatalogueAdminRoutesOptions {
   readonly deps?: CatalogueAdminRouteDeps;
