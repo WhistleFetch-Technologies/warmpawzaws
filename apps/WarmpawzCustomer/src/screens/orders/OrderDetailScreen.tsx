@@ -20,26 +20,45 @@ import { ScreenShell } from '../../components/layout/ScreenShell';
 import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { resumeShopOrderPayment } from '../../utils/ecommerce/resume-shop-order-payment';
 
 interface OrderDetailScreenProps {
   orderId: string;
   order?: any;
   phone: string;
+  customerId?: string;
   onBack: () => void;
   onNavigate?: (screen: string, data?: any) => void;
+}
+
+function normalizeOrderStatus(order: Record<string, unknown>): string {
+  const raw =
+    order.order_status ||
+    order.orderStatus ||
+    order.status ||
+    '';
+  return String(raw).toLowerCase();
+}
+
+function canCustomerCancel(status: string): boolean {
+  return status === 'pending' || status === 'confirmed';
 }
 
 export function OrderDetailScreen({
   orderId,
   order: initialOrder,
   phone,
+  customerId: customerIdProp,
   onBack,
   onNavigate,
 }: OrderDetailScreenProps) {
   const [order, setOrder] = useState<any>(initialOrder);
   const [loading, setLoading] = useState(!initialOrder);
   const [cancelling, setCancelling] = useState(false);
+  const [resumingPayment, setResumingPayment] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelIsDraft, setCancelIsDraft] = useState(false);
+  const [returnEligible, setReturnEligible] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!initialOrder) {
@@ -50,9 +69,19 @@ export function OrderDetailScreen({
   const loadOrderDetails = async () => {
     try {
       setLoading(true);
-      // ✅ WIRED: Using actual API call (Task 5 - Endpoint Wiring)
       const response = await CustomerApi.getOrderDetails(orderId);
-      setOrder(response.order || response);
+      const orderData = response.order || response;
+      setOrder(orderData);
+
+      const status = normalizeOrderStatus(orderData);
+      if (status === 'delivered') {
+        try {
+          const eligibility = await CustomerApi.getOrderReturnEligibility(orderId);
+          setReturnEligible((eligibility as { eligible?: boolean })?.eligible !== false);
+        } catch {
+          setReturnEligible(true);
+        }
+      }
     } catch (error: any) {
       console.error('Error loading order details:', error);
       Alert.alert('Error', error.message || 'Failed to load order details');
@@ -61,12 +90,29 @@ export function OrderDetailScreen({
     }
   };
 
+  const resolveCustomerId = async (): Promise<string | null> => {
+    if (customerIdProp) return customerIdProp;
+    if (order?.customerId || order?.customer_id) {
+      return String(order.customerId || order.customer_id);
+    }
+    try {
+      const profile = await CustomerApi.getCustomerByPhone(phone);
+      return profile?.id || profile?.customerId || null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleCancelOrder = async () => {
     try {
       setCancelling(true);
-      // ✅ WIRED: Using actual API call (Task 5 - Endpoint Wiring)
-      await CustomerApi.cancelOrder(orderId, 'Customer cancelled via app');
-      Alert.alert('Success', 'Order cancelled successfully');
+      if (cancelIsDraft) {
+        await CustomerApi.cancelDraftOrder(orderId, { reason: 'Customer cancelled draft via app' });
+        Alert.alert('Success', 'Unpaid order cancelled');
+      } else {
+        await CustomerApi.cancelOrder(orderId, 'Customer cancelled via app');
+        Alert.alert('Success', 'Order cancelled successfully. Refund will be processed if applicable.');
+      }
       setShowCancelModal(false);
       loadOrderDetails();
     } catch (error: any) {
@@ -74,6 +120,61 @@ export function OrderDetailScreen({
     } finally {
       setCancelling(false);
     }
+  };
+
+  const handleResumePayment = async () => {
+    const customerId = await resolveCustomerId();
+    if (!customerId) {
+      Alert.alert('Error', 'Please sign in again to complete payment');
+      return;
+    }
+
+    const payable =
+      parseFloat(String(order?.totalAmount ?? order?.total_amount ?? '0')) || 0;
+    if (payable <= 0) {
+      Alert.alert('Error', 'Invalid payment amount');
+      return;
+    }
+
+    try {
+      setResumingPayment(true);
+      let profile: unknown = null;
+      try {
+        profile = await CustomerApi.getCustomerByPhone(phone);
+      } catch {
+        /* non-fatal */
+      }
+
+      await resumeShopOrderPayment({
+        orderId,
+        payableAmount: payable,
+        customerId,
+        phone,
+        profile,
+        onSuccess: () => {
+          Alert.alert('Success', 'Payment completed successfully');
+          loadOrderDetails();
+        },
+      });
+    } catch (error: any) {
+      const message = error?.message || 'Payment failed';
+      if (!message.toLowerCase().includes('cancel')) {
+        Alert.alert('Error', message);
+      }
+    } finally {
+      setResumingPayment(false);
+    }
+  };
+
+  const handleReturnOrder = () => {
+    if (onNavigate) {
+      onNavigate('OrderReturn', { orderId, order });
+    }
+  };
+
+  const openCancelModal = (isDraft: boolean) => {
+    setCancelIsDraft(isDraft);
+    setShowCancelModal(true);
   };
 
   const handleTrackOrder = () => {
@@ -223,6 +324,11 @@ export function OrderDetailScreen({
     );
   }
 
+  const orderStatus = normalizeOrderStatus(order);
+  const showCancelPaid = canCustomerCancel(orderStatus);
+  const showDraftActions = orderStatus === 'pending_payment';
+  const showReturn = orderStatus === 'delivered' && returnEligible !== false;
+
   return (
     <>
     <OrangeBrandedScreenLayout
@@ -234,11 +340,11 @@ export function OrderDetailScreen({
         <View
           style={[
             styles.statusBadge,
-            { backgroundColor: getStatusColor(order.status) + '20' },
+            { backgroundColor: getStatusColor(orderStatus) + '20' },
           ]}
         >
-          <Text style={[styles.statusText, { color: getStatusColor(order.status) }]}>
-            {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+          <Text style={[styles.statusText, { color: getStatusColor(orderStatus) }]}>
+            {orderStatus.charAt(0).toUpperCase() + orderStatus.slice(1).replace(/_/g, ' ')}
           </Text>
         </View>
       }
@@ -498,19 +604,54 @@ export function OrderDetailScreen({
       </ScrollView>
 
       {/* Bottom Actions */}
-      {order.status !== 'cancelled' && (
+      {orderStatus !== 'cancelled' && (
         <View style={styles.bottomActions}>
-          {order.status === 'pending' && (
+          {showDraftActions && (
+            <>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.primaryActionButton]}
+                onPress={handleResumePayment}
+                disabled={resumingPayment}
+              >
+                {resumingPayment ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={[styles.actionButtonText, styles.primaryActionButtonText]}>
+                    Pay Now
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.cancelButton]}
+                onPress={() => openCancelModal(true)}
+              >
+                <Text style={[styles.actionButtonText, styles.cancelButtonText]}>
+                  Cancel Order
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+          {showCancelPaid && (
             <TouchableOpacity
               style={[styles.actionButton, styles.cancelButton]}
-              onPress={() => setShowCancelModal(true)}
+              onPress={() => openCancelModal(false)}
             >
               <Text style={[styles.actionButtonText, styles.cancelButtonText]}>
                 Cancel Order
               </Text>
             </TouchableOpacity>
           )}
-          {order.status === 'delivered' && (
+          {showReturn && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.primaryActionButton]}
+              onPress={handleReturnOrder}
+            >
+              <Text style={[styles.actionButtonText, styles.primaryActionButtonText]}>
+                Return Items
+              </Text>
+            </TouchableOpacity>
+          )}
+          {orderStatus === 'delivered' && (
             <TouchableOpacity
               style={[styles.actionButton, styles.primaryActionButton]}
               onPress={handleReorder}
@@ -520,7 +661,7 @@ export function OrderDetailScreen({
               </Text>
             </TouchableOpacity>
           )}
-          {['confirmed', 'shipped'].includes(order.status) && (
+          {['confirmed', 'shipped', 'processing'].includes(orderStatus) && (
             <TouchableOpacity
               style={[styles.actionButton, styles.primaryActionButton]}
               onPress={handleTrackOrder}
@@ -547,10 +688,13 @@ export function OrderDetailScreen({
               <View style={styles.modalIconContainer}>
                 <Text style={styles.modalIcon}>⚠️</Text>
               </View>
-              <Text style={styles.modalTitle}>Cancel Order?</Text>
+              <Text style={styles.modalTitle}>
+                {cancelIsDraft ? 'Cancel unpaid order?' : 'Cancel Order?'}
+              </Text>
               <Text style={styles.modalText}>
-                Are you sure you want to cancel this order? This action cannot be
-                undone.
+                {cancelIsDraft
+                  ? 'This will discard your unpaid order. No payment has been taken.'
+                  : 'Are you sure you want to cancel this order? Refund will be processed if applicable.'}
               </Text>
             </View>
             <View style={styles.modalActions}>
