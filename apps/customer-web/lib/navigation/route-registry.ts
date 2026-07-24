@@ -1,7 +1,7 @@
 /** Navigation policy for a customer route. */
 export type RoutePolicy = 'push' | 'replace' | 'reset' | 'focus';
 
-export type CustomerTabId = 'home' | 'shop' | 'bookings' | 'profile' | 'warmpawz-pay';
+export type CustomerTabId = 'home' | 'shop' | 'bookings' | 'profile' | 'warmpawzPay';
 
 /** Stable keys for duplicate-route prevention (shell + URL). */
 export const routeKey = {
@@ -29,7 +29,7 @@ export const CUSTOMER_ROUTES = {
   home: { path: '/', shell: 'home', tabRoot: true, policy: 'reset' } satisfies CustomerRouteDef,
   shop: { path: '/shop', shell: 'shop', tabRoot: true, policy: 'push' } satisfies CustomerRouteDef,
   bookings: { path: '/bookings', shell: 'my-bookings', tabRoot: true, policy: 'focus' } satisfies CustomerRouteDef,
-  warmpawzPay: { path: '/warmpawz-pay', tabRoot: true, policy: 'focus' } satisfies CustomerRouteDef,
+  warmpawzPay: { path: '/warmpawz-pay', shell: 'warmpawz-pay', tabRoot: true, policy: 'focus' } satisfies CustomerRouteDef,
   cart: { path: '/cart', policy: 'push' } satisfies CustomerRouteDef,
   checkout: { path: '/checkout', shell: 'checkout', policy: 'push' } satisfies CustomerRouteDef,
   orders: { path: '/orders', shell: 'order_history', policy: 'replace' } satisfies CustomerRouteDef,

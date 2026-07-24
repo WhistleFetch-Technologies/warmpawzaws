@@ -46,7 +46,7 @@ export function navigateCustomerTab(
     return;
   }
 
-  if (tab === 'warmpawz-pay') {
+  if (tab === 'warmpawzPay') {
     router.push(CUSTOMER_ROUTES.warmpawzPay.path);
   }
 }
