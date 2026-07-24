@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ChevronRight, Clock, Search } from 'lucide-react';
 import { useWpayVendorFeed } from '@/hooks/useWpayVendorFeed';
+import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryProviderAvatar';
 
 const CATEGORIES = [
@@ -67,7 +68,7 @@ export default function WarmpawzPayPage() {
           </button>
           <button
             type="button"
-            onClick={() => router.push('/warmpawz-pay/history')}
+            onClick={() => router.push(WPAY_HISTORY_PATH)}
             aria-label="Payment history"
             className="rounded-full bg-white/20 p-2"
           >

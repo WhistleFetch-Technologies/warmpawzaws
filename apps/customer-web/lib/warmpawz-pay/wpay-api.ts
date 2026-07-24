@@ -1,5 +1,7 @@
 import { apiClient } from '@/lib/api-client';
 
+export const WPAY_HISTORY_PATH = '/warmpawz-pay/history';
+
 export type WpayVendorCard = {
   vendorId: string;
   name: string;
