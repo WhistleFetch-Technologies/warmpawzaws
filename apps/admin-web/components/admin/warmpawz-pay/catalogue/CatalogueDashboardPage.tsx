@@ -123,8 +123,7 @@ export function CatalogueDashboardPage() {
 
   const savePricing = async (item: CatalogueListItem, discountValue: number) => {
     const catalogueId = await ensureCatalogueId(item);
-    const payload = {
-      vendorId: item.vendorId,
+    const pricingFields = {
       discountType: 'percentage' as const,
       discountValue,
       status: 'active' as const,
@@ -135,10 +134,13 @@ export function CatalogueDashboardPage() {
     if (item.pricing.configured) {
       await updatePricingMutation.mutateAsync({
         vendorId: item.vendorId,
-        payload,
+        payload: pricingFields,
       });
     } else {
-      await createPricingMutation.mutateAsync(payload);
+      await createPricingMutation.mutateAsync({
+        vendorId: item.vendorId,
+        ...pricingFields,
+      });
     }
 
     return catalogueId;

@@ -54,8 +54,8 @@ function handler(event) {
     { pattern: /^\/shop\/[^/]+$/, rewrite: '/shop/placeholder.html' },
     // Referral invite links — /invite/WARM… → placeholder shell (client reads code from URL).
     { pattern: /^\/invite\/[^/]+$/, rewrite: '/invite/placeholder.html' },
-    // Referral share links — /r/WARM… → placeholder shell (client reads code from URL).
-    { pattern: /^\/r\/[^/]+$/, rewrite: '/r/placeholder.html' },
+    // Warmpawz Pay vendor checkout — static export placeholder hydrates real vendor id from URL.
+    { pattern: /^\/warmpawz-pay\/vendors\/[^/]+$/, rewrite: '/warmpawz-pay/vendors/placeholder.html' },
   ];
 
   for (var i = 0; i < dynamicRoutes.length; i++) {

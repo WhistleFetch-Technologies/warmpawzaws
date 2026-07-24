@@ -1,7 +1,7 @@
 import { WarmpawzPayVendorClient } from './WarmpawzPayVendorClient';
 
 export async function generateStaticParams() {
-  return [{ vendorId: '_' }];
+  return [{ vendorId: 'placeholder' }];
 }
 
 export const dynamicParams = true;

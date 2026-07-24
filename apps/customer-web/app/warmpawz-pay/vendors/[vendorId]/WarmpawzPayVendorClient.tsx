@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useWpayVendorId } from '@/lib/warmpawz-pay/use-wpay-vendor-id';
 import { ArrowLeft } from 'lucide-react';
 import { fetchWpayVendorDetail, type WpayVendorDetail } from '@/lib/warmpawz-pay/wpay-api';
 import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryProviderAvatar';
@@ -14,7 +15,7 @@ function formatInr(n: number): string {
 
 export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   const router = useRouter();
-  const resolvedVendorId = String(vendorId ?? '').trim();
+  const resolvedVendorId = useWpayVendorId(vendorId);
 
   const [vendor, setVendor] = useState<WpayVendorDetail | null>(null);
   const [loading, setLoading] = useState(true);

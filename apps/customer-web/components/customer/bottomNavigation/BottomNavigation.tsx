@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from 'react';
 import { Home, ShoppingBag, Calendar, User, QrCode } from 'lucide-react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { isShopUiVisibleForAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
@@ -11,6 +12,32 @@ interface BottomNavigationProps {
   onNavigate: (screen: string) => void;
   onProfileClick?: () => void;
   profileMenuOpen?: boolean;
+}
+
+function TabIconButton({
+  label,
+  active,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  onClick?: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex flex-col items-center gap-1 ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+    >
+      {children}
+      <span className={`text-xs ${active ? 'font-medium text-[#FF8C42]' : 'text-gray-400'}`}>{label}</span>
+    </button>
+  );
 }
 
 export function BottomNavigation({
@@ -29,18 +56,12 @@ export function BottomNavigation({
   }
 
   const isActive = (screen: string) => {
-    if (screen === 'home') {
-      return currentScreen === 'home';
-    }
-    if (screen === 'shop') {
-      return currentScreen === 'shop';
-    }
+    if (screen === 'home') return currentScreen === 'home';
+    if (screen === 'shop') return currentScreen === 'shop';
     if (screen === 'bookings') {
       return currentScreen === 'my-bookings' || currentScreen === 'appointments';
     }
-    if (screen === 'warmpawz-pay') {
-      return currentScreen === 'warmpawz-pay';
-    }
+    if (screen === 'warmpawz-pay') return currentScreen === 'warmpawz-pay';
     if (screen === 'profile') {
       return (
         profileMenuOpen ||
@@ -66,43 +87,28 @@ export function BottomNavigation({
 
   return (
     <div className="cw-customer-tabbar-fixed fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-customer border-t border-gray-200 bg-white">
-      <div className="relative flex items-end justify-around px-2 pb-2 pt-2 sm:px-4">
-        <button onClick={() => handleNavClick('home')} className="flex flex-col items-center gap-1">
-          <Home className={`w-6 h-6 ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-          <span className={`text-xs font-medium ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`}>
-            Home
-          </span>
-        </button>
+      <div className="grid grid-cols-5 items-end px-1 pb-2 pt-2 sm:px-2">
+        <TabIconButton label="Home" active={isActive('home')} onClick={() => handleNavClick('home')}>
+          <Home className={`h-6 w-6 ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+        </TabIconButton>
 
-        {shopTabVisible ? (
-          commerceEnabled ? (
-            <button
-              type="button"
-              onClick={() => handleNavClick('shop')}
-              className="flex flex-col items-center gap-1"
-            >
-              <ShoppingBag className={`w-6 h-6 ${isActive('shop') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-              <span className={`text-xs ${isActive('shop') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
-                Shop
-              </span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled
-              className="flex flex-col items-center gap-1 opacity-40 cursor-not-allowed"
-            >
-              <ShoppingBag className="w-6 h-6 text-gray-400" />
-              <span className="text-xs text-gray-400">Soon</span>
-            </button>
-          )
-        ) : null}
+        {shopTabVisible && commerceEnabled ? (
+          <TabIconButton label="Shop" active={isActive('shop')} onClick={() => handleNavClick('shop')}>
+            <ShoppingBag className={`h-6 w-6 ${isActive('shop') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+          </TabIconButton>
+        ) : shopTabVisible ? (
+          <TabIconButton label="Soon" active={false} disabled>
+            <ShoppingBag className="h-6 w-6 text-gray-400" />
+          </TabIconButton>
+        ) : (
+          <div aria-hidden className="h-10" />
+        )}
 
         {wpayEnabled ? (
           <button
             type="button"
             onClick={() => handleNavClick('warmpawz-pay')}
-            className="-mt-6 flex flex-col items-center gap-0.5"
+            className="-mt-6 flex flex-col items-center justify-end gap-0.5"
             aria-label="Warmpawz Pay"
           >
             <div
@@ -120,16 +126,23 @@ export function BottomNavigation({
               SCAN TO PAY
             </span>
           </button>
-        ) : null}
+        ) : (
+          <div aria-hidden className="h-10" />
+        )}
 
-        <button onClick={() => handleNavClick('my-bookings')} className="flex flex-col items-center gap-1">
-          <Calendar className={`w-6 h-6 ${isActive('bookings') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-          <span className={`text-xs ${isActive('bookings') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
-            Bookings
-          </span>
-        </button>
+        <TabIconButton
+          label="Bookings"
+          active={isActive('bookings')}
+          onClick={() => handleNavClick('my-bookings')}
+        >
+          <Calendar className={`h-6 w-6 ${isActive('bookings') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+        </TabIconButton>
 
-        <button onClick={() => handleNavClick('profile')} className="flex flex-col items-center gap-0.5">
+        <button
+          type="button"
+          onClick={() => handleNavClick('profile')}
+          className="flex flex-col items-center gap-0.5"
+        >
           <div
             className={`flex items-center justify-center rounded-2xl px-5 py-1.5 transition-all ${
               profileActive ? 'bg-orange-100' : ''
