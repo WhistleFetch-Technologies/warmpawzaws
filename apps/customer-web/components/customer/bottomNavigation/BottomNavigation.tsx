@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { Home, ShoppingBag, Calendar, User, QrCode } from 'lucide-react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
-import { isShopUiVisibleForAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
+import { isAppReviewDemoAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
 import { useProfileMenuOpen } from '@/lib/profile-menu-open-context';
 import { isWarmpawzPayEnabled } from '@/lib/warmpawz-pay/wpay-feature-flag';
 
@@ -46,8 +46,8 @@ export function BottomNavigation({
   onProfileClick,
   profileMenuOpen: profileMenuOpenProp,
 }: BottomNavigationProps) {
-  const shopTabVisible = isShopUiVisibleForAccount(readStoredCustomerPhone());
-  const commerceEnabled = shopTabVisible && isCustomerEcommerceEnabled();
+  const phone = readStoredCustomerPhone();
+  const shopNavEnabled = isCustomerEcommerceEnabled() && !isAppReviewDemoAccount(phone);
   const profileMenuOpenContext = useProfileMenuOpen();
   const profileMenuOpen = profileMenuOpenProp ?? profileMenuOpenContext;
 
@@ -92,16 +92,14 @@ export function BottomNavigation({
           <Home className={`h-6 w-6 ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
         </TabIconButton>
 
-        {shopTabVisible && commerceEnabled ? (
+        {shopNavEnabled ? (
           <TabIconButton label="Shop" active={isActive('shop')} onClick={() => handleNavClick('shop')}>
             <ShoppingBag className={`h-6 w-6 ${isActive('shop') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
           </TabIconButton>
-        ) : shopTabVisible ? (
-          <TabIconButton label="Soon" active={false} disabled>
+        ) : (
+          <TabIconButton label="Shop" active={false} disabled>
             <ShoppingBag className="h-6 w-6 text-gray-400" />
           </TabIconButton>
-        ) : (
-          <div aria-hidden className="h-10" />
         )}
 
         {wpayEnabled ? (
