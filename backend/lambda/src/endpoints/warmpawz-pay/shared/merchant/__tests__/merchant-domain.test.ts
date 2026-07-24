@@ -61,6 +61,38 @@ describe('merchant domain resolvers', () => {
     ).toBe('Hidden');
   });
 
+  it('requires catalogue publish for customer visibility', () => {
+    const draftEvaluation = evaluateMerchant({
+      publishStatus: 'draft',
+      vendorStatus: 'approved',
+      isActive: true,
+      isOnline: true,
+      bankVerified: true,
+      isDeleted: false,
+      roleCategory: 'grooming',
+      vendorType: 'solo',
+      pricingConfigured: true,
+    });
+
+    expect(draftEvaluation.customerVisible).toBe(false);
+    expect(draftEvaluation.readiness.readyForPayBill).toBe(false);
+
+    const publishedEvaluation = evaluateMerchant({
+      publishStatus: PUBLISHED,
+      vendorStatus: 'approved',
+      isActive: true,
+      isOnline: true,
+      bankVerified: true,
+      isDeleted: false,
+      roleCategory: 'grooming',
+      vendorType: 'solo',
+      pricingConfigured: true,
+    });
+
+    expect(publishedEvaluation.customerVisible).toBe(true);
+    expect(publishedEvaluation.readiness.readyForPayBill).toBe(true);
+  });
+
   it('treats pricing configured as a warning and keeps customer visible when blockers pass', () => {
     const evaluation = evaluateMerchant({
       publishStatus: PUBLISHED,
@@ -68,7 +100,6 @@ describe('merchant domain resolvers', () => {
       isActive: true,
       isOnline: true,
       bankVerified: true,
-      payBillEnabled: true,
       isDeleted: false,
       roleCategory: 'grooming',
       vendorType: 'solo',
@@ -92,13 +123,12 @@ describe('merchant domain resolvers', () => {
       isActive: true,
       isOnline: false,
       bankVerified: false,
-      payBillEnabled: false,
       isDeleted: false,
       pricingConfigured: false,
     });
 
     expect(readiness.blockersTotal).toBe(4);
-    expect(readiness.blockersPassed).toBe(1);
+    expect(readiness.blockersPassed).toBe(2);
     expect(readiness.readyForPayBill).toBe(false);
   });
 });

@@ -11,6 +11,7 @@ import {
   resolveMerchantCategory,
   serviceCategoryFromRoleConfig,
 } from '../../../shared/merchant/merchant-category.resolver';
+import { resolveMerchantDisplayName } from '../../../shared/merchant/merchant-display-name.resolver';
 import type { CreatePricingRequest, UpdatePricingRequest } from '../dto/pricing.requests';
 import { PricingErrorCode } from '../dto/pricing.errors';
 import type {
@@ -235,11 +236,19 @@ export class WarmpawzPayPricingService {
       legacyCategory: row.legacyCategory,
     });
 
+    const displayName = resolveMerchantDisplayName({
+      businessName: row.businessName,
+      ownerName: row.ownerName,
+      vendorType: row.vendorType,
+      isSoloProvider: row.isSoloProvider,
+      roleName: row.roleName,
+    });
+
     return {
       pricingId: row.id,
       vendorId: row.vendorId,
-      merchantName: row.ownerName?.trim() || row.businessName,
-      businessName: row.businessName,
+      merchantName: displayName,
+      businessName: displayName,
       category,
       discountType: row.discountType,
       discountValue: row.discountValue,

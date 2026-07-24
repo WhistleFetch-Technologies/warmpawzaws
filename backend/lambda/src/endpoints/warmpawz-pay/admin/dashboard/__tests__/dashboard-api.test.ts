@@ -30,8 +30,6 @@ function createDashboardService(
       metrics: {
         publishedMerchants: { value: 5 },
         averageDiscountPercent: { value: 0 },
-        readyMerchants: { value: null, available: false, phase: 'B' },
-        blockedMerchants: { value: null, available: false, phase: 'B' },
       },
       generatedAt: '2026-07-23T12:00:00.000Z',
     }),
@@ -77,16 +75,6 @@ describe('GET /admin/warmpawz-pay/dashboard', () => {
     expect(body.success).toBe(true);
     expect(body.data.metrics.publishedMerchants).toEqual({ value: 5 });
     expect(body.data.metrics.averageDiscountPercent).toEqual({ value: 0 });
-    expect(body.data.metrics.readyMerchants).toEqual({
-      value: null,
-      available: false,
-      phase: 'B',
-    });
-    expect(body.data.metrics.blockedMerchants).toEqual({
-      value: null,
-      available: false,
-      phase: 'B',
-    });
     expect(body.data.generatedAt).toBe('2026-07-23T12:00:00.000Z');
   });
 

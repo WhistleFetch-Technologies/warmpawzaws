@@ -1,9 +1,8 @@
 'use client';
 
-import { Ban, Percent, Store, UserCheck } from 'lucide-react';
+import { Percent, Store } from 'lucide-react';
 import { MetricCard } from '@/components/admin/shared/MetricCard';
 import type { DashboardMetrics } from '@/lib/warmpawz-pay-dashboard-admin';
-import { isFutureMetric } from '@/lib/warmpawz-pay-dashboard-admin';
 
 export interface MetricsGridProps {
   readonly metrics: DashboardMetrics;
@@ -19,13 +18,6 @@ function formatCount(value: number): string {
 }
 
 export function MetricsGrid({ metrics }: MetricsGridProps) {
-  const readyAvailability = isFutureMetric(metrics.readyMerchants)
-    ? 'unavailable'
-    : 'available';
-  const blockedAvailability = isFutureMetric(metrics.blockedMerchants)
-    ? 'unavailable'
-    : 'available';
-
   return (
     <section
       aria-labelledby="warmpawz-pay-metrics-heading"
@@ -48,30 +40,6 @@ export function MetricsGrid({ metrics }: MetricsGridProps) {
         icon={Percent}
         iconClassName="text-green-500"
         valueClassName="text-gray-900"
-      />
-      <MetricCard
-        title="Ready Merchants"
-        value={
-          readyAvailability === 'available'
-            ? formatCount((metrics.readyMerchants as { value: number }).value)
-            : undefined
-        }
-        subtitle="Ready merchants"
-        icon={UserCheck}
-        iconClassName="text-blue-500"
-        availability={readyAvailability}
-      />
-      <MetricCard
-        title="Blocked Merchants"
-        value={
-          blockedAvailability === 'available'
-            ? formatCount((metrics.blockedMerchants as { value: number }).value)
-            : undefined
-        }
-        subtitle="Blocked merchants"
-        icon={Ban}
-        iconClassName="text-red-500"
-        availability={blockedAvailability}
       />
     </section>
   );

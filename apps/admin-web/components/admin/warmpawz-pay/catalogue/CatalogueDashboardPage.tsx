@@ -2,15 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import {
-  Button,
-  Input,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@warmpawz/ui';
+import { Button } from '@warmpawz/ui';
 import { Plus } from 'lucide-react';
 import {
   useCatalogueList,
@@ -24,17 +16,13 @@ import {
   usePricingDetail,
   useUpdatePricing,
 } from '@/hooks/warmpawz-pay/usePricing';
-import type {
-  CatalogueEligibilityFilter,
-  CatalogueListItem,
-  CataloguePublishStatusFilter,
-} from '@/lib/warmpawz-pay-catalogue-admin';
+import type { CatalogueEligibilityFilter, CatalogueListItem } from '@/lib/warmpawz-pay-catalogue-admin';
 import { BulkToolbar } from './BulkToolbar';
+import { CatalogueFilterBar } from './CatalogueFilterBar';
 import { CatalogueTable } from './CatalogueTable';
 import { ConfirmDialog } from './ConfirmDialog';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import { Pagination } from './Pagination';
-import { SearchBar } from './SearchBar';
 import {
   PricingFormDialog,
   type PricingFormMode,
@@ -46,30 +34,15 @@ type PendingAction =
   | { type: 'publish'; catalogueId: string }
   | { type: 'unpublish'; catalogueId: string }
   | { type: 'delete'; catalogueId: string }
-  | { type: 'bulk-publish' }
   | { type: 'bulk-unpublish' }
   | { type: 'bulk-delete' };
 
 const PAGE_SIZE = 20;
 
-const CATEGORY_OPTIONS = [
-  'All categories',
-  'Veterinary',
-  'Grooming',
-  'Training',
-  'Walking',
-  'Sitting',
-  'Daycare',
-  'Ambulance',
-  'Other Services',
-] as const;
-
 export function CatalogueDashboardPage() {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [publishStatusFilter, setPublishStatusFilter] =
-    useState<CataloguePublishStatusFilter>('all');
   const [eligibilityFilter, setEligibilityFilter] =
     useState<CatalogueEligibilityFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState('All categories');
@@ -92,15 +65,16 @@ export function CatalogueDashboardPage() {
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
+  const resetPage = () => setPage(1);
+
   const listParams = useMemo(
     () => ({
       page,
       pageSize: PAGE_SIZE,
       sortBy: 'updatedAt' as const,
       sortOrder: 'desc' as const,
+      publishStatus: 'published' as const,
       q: searchQuery || undefined,
-      publishStatus:
-        publishStatusFilter === 'all' ? undefined : publishStatusFilter,
       eligibility: eligibilityFilter === 'all' ? undefined : eligibilityFilter,
       category:
         categoryFilter === 'All categories'
@@ -108,14 +82,14 @@ export function CatalogueDashboardPage() {
           : categoryFilter.toLowerCase(),
       vendorId: vendorIdFilter.trim() || undefined,
     }),
-    [page, searchQuery, publishStatusFilter, eligibilityFilter, categoryFilter, vendorIdFilter],
+    [page, searchQuery, eligibilityFilter, categoryFilter, vendorIdFilter],
   );
 
   const { data, isLoading, isFetching, error } = useCatalogueList(listParams);
   const publishMutation = usePublishCatalogueEntry();
   const unpublishMutation = useUnpublishCatalogueEntry();
   const deleteMutation = useDeleteCatalogueEntry();
-  const { bulkPublish, bulkUnpublish, bulkDelete, isLoading: isBulkLoading } =
+  const { bulkUnpublish, bulkDelete, isLoading: isBulkLoading } =
     useBulkCatalogueActions();
 
   const items = data?.items ?? [];
@@ -220,10 +194,6 @@ export function CatalogueDashboardPage() {
             return next;
           });
           break;
-        case 'bulk-publish':
-          await bulkPublish([...selectedIds]);
-          setSelectedIds(new Set());
-          break;
         case 'bulk-unpublish':
           await bulkUnpublish([...selectedIds]);
           setSelectedIds(new Set());
@@ -260,11 +230,6 @@ export function CatalogueDashboardPage() {
           description: 'This action cannot be undone.',
           destructive: true,
         };
-      case 'bulk-publish':
-        return {
-          title: `Publish ${selectedIds.size} entries?`,
-          description: 'Selected catalogue entries will be published.',
-        };
       case 'bulk-unpublish':
         return {
           title: `Save ${selectedIds.size} entries as draft?`,
@@ -282,7 +247,7 @@ export function CatalogueDashboardPage() {
   return (
     <WarmpawzPayShell
       title="Vendor Catalogue"
-      subtitle="Search vendors, manage publish status, pricing, and customer visibility in one place."
+      subtitle="View and manage published Warmpawz Pay vendors."
       actions={
         <Button type="button" asChild>
           <Link href="/warmpawz-pay/catalogue/create">
@@ -293,82 +258,36 @@ export function CatalogueDashboardPage() {
       }
     >
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
-          <SearchBar
-            value={searchInput}
-            onChange={setSearchInput}
-            placeholder="Search business name…"
-            disabled={isLoading}
-          />
-          <Select
-            value={categoryFilter}
-            onValueChange={(value) => {
-              setCategoryFilter(value);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-44 bg-white">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              {CATEGORY_OPTIONS.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={publishStatusFilter}
-            onValueChange={(value) => {
-              setPublishStatusFilter(value as CataloguePublishStatusFilter);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-44 bg-white">
-              <SelectValue placeholder="Publish status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="published">Published</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select
-            value={eligibilityFilter}
-            onValueChange={(value) => {
-              setEligibilityFilter(value as CatalogueEligibilityFilter);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-52 bg-white">
-              <SelectValue placeholder="Customer visibility" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All visibility</SelectItem>
-              <SelectItem value="customer_visible">Customer visible</SelectItem>
-              <SelectItem value="not_customer_visible">Not customer visible</SelectItem>
-            </SelectContent>
-          </Select>
-          <Input
-            value={vendorIdFilter}
-            onChange={(event) => {
-              setVendorIdFilter(event.target.value);
-              setPage(1);
-            }}
-            placeholder="Filter by vendor ID"
-            className="max-w-xs bg-white"
-          />
-        </div>
+        <CatalogueFilterBar
+          searchInput={searchInput}
+          onSearchInputChange={setSearchInput}
+          categoryFilter={categoryFilter}
+          onCategoryFilterChange={(value) => {
+            setCategoryFilter(value);
+            resetPage();
+          }}
+          eligibilityFilter={eligibilityFilter}
+          onEligibilityFilterChange={(value) => {
+            setEligibilityFilter(value);
+            resetPage();
+          }}
+          vendorIdFilter={vendorIdFilter}
+          onVendorIdFilterChange={(value) => {
+            setVendorIdFilter(value);
+            resetPage();
+          }}
+          disabled={isLoading}
+        />
 
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-gray-600">
-            {isFetching ? 'Refreshing…' : `${pagination.total} total entries`}
+            {isFetching ? 'Refreshing…' : `${pagination.total} published vendors`}
           </p>
           <BulkToolbar
             selectedCount={selectedIds.size}
             disabled={anyMutationPending}
-            onPublish={() => setPendingAction({ type: 'bulk-publish' })}
+            showPublish={false}
+            onPublish={() => undefined}
             onUnpublish={() => setPendingAction({ type: 'bulk-unpublish' })}
             onDelete={() => setPendingAction({ type: 'bulk-delete' })}
             onClear={() => setSelectedIds(new Set())}

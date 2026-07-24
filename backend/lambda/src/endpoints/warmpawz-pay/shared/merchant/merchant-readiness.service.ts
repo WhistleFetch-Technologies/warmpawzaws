@@ -41,7 +41,6 @@ export interface MerchantReadinessInput {
   readonly isActive: boolean;
   readonly isOnline: boolean;
   readonly bankVerified: boolean;
-  readonly payBillEnabled: boolean;
   readonly isDeleted: boolean;
   readonly vendorType?: string | null;
   readonly isSoloProvider?: boolean | null;
@@ -111,10 +110,14 @@ export function buildMerchantReadiness(input: MerchantReadinessInput): MerchantR
       severity: 'blocker',
     },
     {
-      key: 'PAY_BILL_ENABLED',
-      label: 'Pay Bill Enabled',
-      passed: input.payBillEnabled === true,
+      key: 'CATALOGUE_PUBLISHED',
+      label: 'Published in Catalogue',
+      passed: input.publishStatus === PUBLISHED,
       severity: 'blocker',
+      detail:
+        input.publishStatus === PUBLISHED
+          ? undefined
+          : 'Admin must publish to enable Pay Bill for customers',
     },
     {
       key: 'PROFILE_ENABLED',

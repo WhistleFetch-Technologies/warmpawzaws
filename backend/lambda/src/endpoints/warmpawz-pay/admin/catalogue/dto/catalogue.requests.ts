@@ -70,6 +70,9 @@ export const vendorCandidatesQuerySchema = z
       .optional()
       .default(DEFAULT_PAGE_SIZE),
     status: z.string().trim().min(1).max(MAX_VENDOR_STATUS_LENGTH).optional(),
+    eligibility: z.enum(ALLOWED_ELIGIBILITY_FILTERS).optional(),
+    vendorId: uuidSchema.optional(),
+    category: z.string().trim().min(1).max(MAX_SEARCH_QUERY_LENGTH).optional(),
   })
   .strict();
 

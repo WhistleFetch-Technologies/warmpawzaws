@@ -13,7 +13,7 @@ import type {
   UpdatePricingInput,
 } from './interfaces/IMerchantPricingRepository';
 import type { VendorCatalogDbClient } from './vendor-catalog.repository';
-import { MERCHANT_ROLE_CATEGORY_EXPR } from '../shared/merchant/merchant-role-sql';
+import { MERCHANT_ROLE_CATEGORY_EXPR, MERCHANT_SOLO_PROVIDER_EXPR } from '../shared/merchant/merchant-role-sql';
 
 const PRICING_TABLE = 'warmpawz_pay_merchant_pricing';
 const CATALOGUE_TABLE = 'warmpawz_pay_vendor_catalog';
@@ -35,6 +35,9 @@ const PRICING_COLUMNS = `
 const MERCHANT_JOIN_SELECT = `
   v.business_name,
   v.owner_name,
+  v.vendor_type,
+  r.name AS role_name,
+  ${MERCHANT_SOLO_PROVIDER_EXPR} AS is_solo_provider,
   v.category AS legacy_category,
   ${MERCHANT_ROLE_CATEGORY_EXPR} AS role_category,
   r.customer_service,
@@ -71,6 +74,9 @@ interface PricingDbRow {
 interface PricingWithMerchantDbRow extends PricingDbRow {
   readonly business_name: string;
   readonly owner_name: string | null;
+  readonly vendor_type: string | null;
+  readonly role_name: string | null;
+  readonly is_solo_provider: boolean;
   readonly legacy_category: string | null;
   readonly role_category: string | null;
   readonly customer_service: string | null;
@@ -106,6 +112,9 @@ function mapPricingRowWithMerchant(row: PricingWithMerchantDbRow): PricingRowWit
     ...mapPricingRow(row),
     businessName: row.business_name,
     ownerName: row.owner_name,
+    vendorType: row.vendor_type,
+    roleName: row.role_name,
+    isSoloProvider: row.is_solo_provider === true,
     legacyCategory: row.legacy_category,
     roleCategory: row.role_category,
     customerService: row.customer_service,

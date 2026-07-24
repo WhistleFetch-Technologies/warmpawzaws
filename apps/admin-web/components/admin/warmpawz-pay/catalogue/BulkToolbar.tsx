@@ -6,6 +6,7 @@ import { Trash2, Upload, Download } from 'lucide-react';
 export interface BulkToolbarProps {
   readonly selectedCount: number;
   readonly disabled?: boolean;
+  readonly showPublish?: boolean;
   readonly onPublish: () => void;
   readonly onUnpublish: () => void;
   readonly onDelete: () => void;
@@ -15,6 +16,7 @@ export interface BulkToolbarProps {
 export function BulkToolbar({
   selectedCount,
   disabled = false,
+  showPublish = true,
   onPublish,
   onUnpublish,
   onDelete,
@@ -30,10 +32,12 @@ export function BulkToolbar({
         {selectedCount} selected
       </span>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" size="sm" disabled={disabled} onClick={onPublish}>
-          <Upload className="mr-1 h-4 w-4" />
-          Bulk Publish
-        </Button>
+        {showPublish ? (
+          <Button type="button" size="sm" disabled={disabled} onClick={onPublish}>
+            <Upload className="mr-1 h-4 w-4" />
+            Bulk Publish
+          </Button>
+        ) : null}
         <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={onUnpublish}>
           <Download className="mr-1 h-4 w-4" />
           Bulk Unpublish

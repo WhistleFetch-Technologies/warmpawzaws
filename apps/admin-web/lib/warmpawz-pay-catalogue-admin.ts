@@ -19,7 +19,6 @@ export type CatalogueEligibilityFilter =
   | 'all';
 
 export interface EligibilityDTO {
-  readonly payBillEnabled: boolean;
   readonly bankVerified: boolean;
   readonly vendorStatus: string;
   readonly customerVisible: boolean;
@@ -71,8 +70,9 @@ export interface VendorCandidateDTO {
   readonly businessName: string;
   readonly city: string | null;
   readonly status: string;
-  readonly payBillEnabled: boolean;
   readonly bankVerified: boolean;
+  readonly category: string;
+  readonly platformStatus: PlatformStatus;
 }
 
 export interface PaginationResponse {
@@ -140,6 +140,9 @@ export interface VendorCandidatesQueryParams {
   readonly page?: number;
   readonly pageSize?: number;
   readonly status?: string;
+  readonly eligibility?: Exclude<CatalogueEligibilityFilter, 'all'>;
+  readonly vendorId?: string;
+  readonly category?: string;
 }
 
 function assertSuccess<T>(response: SuccessEnvelope<T> | ErrorEnvelope | T): T {
@@ -205,6 +208,9 @@ export async function fetchVendorCandidates(
       page: params.page,
       pageSize: params.pageSize,
       status: params.status,
+      eligibility: params.eligibility,
+      vendorId: params.vendorId,
+      category: params.category,
     })}`,
   );
   return assertSuccess(response);
@@ -303,9 +309,9 @@ export function shortVendorId(vendorId: string): string {
 }
 
 export function customerVisibleFromCandidate(candidate: VendorCandidateDTO): boolean {
+  const status = candidate.status.toLowerCase();
   return (
-    candidate.status === 'active' &&
-    candidate.payBillEnabled &&
+    (status === 'active' || status === 'approved') &&
     candidate.bankVerified
   );
 }
@@ -314,11 +320,9 @@ export function eligibilityWarningsFromCandidate(
   candidate: VendorCandidateDTO,
 ): string[] {
   const warnings: string[] = [];
-  if (candidate.status !== 'active') {
-    warnings.push(`Vendor status is "${candidate.status}" (expected active).`);
-  }
-  if (!candidate.payBillEnabled) {
-    warnings.push('Pay Bill is not enabled for this vendor.');
+  const status = candidate.status.toLowerCase();
+  if (status !== 'active' && status !== 'approved') {
+    warnings.push(`Vendor status is "${candidate.status}" (expected approved or active).`);
   }
   if (!candidate.bankVerified) {
     warnings.push('Bank account is not verified.');

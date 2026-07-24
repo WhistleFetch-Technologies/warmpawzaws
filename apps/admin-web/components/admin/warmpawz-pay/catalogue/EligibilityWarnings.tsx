@@ -10,18 +10,18 @@ export interface EligibilityWarningsProps {
 
 export function EligibilityWarnings({ eligibility, warnings = [] }: EligibilityWarningsProps) {
   const derivedWarnings = [...warnings];
+  const status = eligibility.vendorStatus.toLowerCase();
 
-  if (eligibility.vendorStatus !== 'active') {
+  if (status !== 'active' && status !== 'approved') {
     derivedWarnings.push(`Vendor status is "${eligibility.vendorStatus}".`);
-  }
-  if (!eligibility.payBillEnabled) {
-    derivedWarnings.push('Pay Bill is not enabled for this vendor.');
   }
   if (!eligibility.bankVerified) {
     derivedWarnings.push('Bank account is not verified.');
   }
   if (!eligibility.customerVisible) {
-    derivedWarnings.push('This vendor is not customer-visible in Pay Bill discovery.');
+    derivedWarnings.push(
+      'This vendor is not customer-visible in Pay Bill discovery (must be published with approved/active profile and bank verified).',
+    );
   }
 
   const uniqueWarnings = Array.from(new Set(derivedWarnings));

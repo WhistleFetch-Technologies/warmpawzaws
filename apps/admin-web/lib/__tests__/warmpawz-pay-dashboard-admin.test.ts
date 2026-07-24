@@ -1,8 +1,4 @@
-import {
-  fetchWarmpawzPayDashboard,
-  isFutureMetric,
-  type DashboardMetric,
-} from '../warmpawz-pay-dashboard-admin';
+import { fetchWarmpawzPayDashboard } from '../warmpawz-pay-dashboard-admin';
 import { apiClient } from '../api-client';
 
 jest.mock('../api-client', () => ({
@@ -18,18 +14,6 @@ describe('warmpawz-pay-dashboard-admin', () => {
     jest.clearAllMocks();
   });
 
-  it('isFutureMetric identifies unavailable dashboard metrics', () => {
-    const futureMetric: DashboardMetric = {
-      value: null,
-      available: false,
-      phase: 'B',
-    };
-    const liveMetric: DashboardMetric = { value: 3 };
-
-    expect(isFutureMetric(futureMetric)).toBe(true);
-    expect(isFutureMetric(liveMetric)).toBe(false);
-  });
-
   it('fetchWarmpawzPayDashboard unwraps success envelope', async () => {
     mockedGet.mockResolvedValue({
       success: true,
@@ -37,8 +21,6 @@ describe('warmpawz-pay-dashboard-admin', () => {
         metrics: {
           publishedMerchants: { value: 4 },
           averageDiscountPercent: { value: 8 },
-          readyMerchants: { value: null, available: false, phase: 'B' },
-          blockedMerchants: { value: null, available: false, phase: 'B' },
         },
         generatedAt: '2026-07-23T12:00:00.000Z',
       },

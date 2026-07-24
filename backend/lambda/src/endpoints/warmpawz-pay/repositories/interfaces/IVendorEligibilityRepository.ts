@@ -1,3 +1,6 @@
+import type { PublishStatus } from '../../constants/publish-status';
+import type { CatalogueEligibilityFilter } from '../../constants/catalogue-limits';
+
 export interface VendorEligibilitySnapshot {
   readonly vendorId: string;
   readonly businessName: string;
@@ -5,9 +8,10 @@ export interface VendorEligibilitySnapshot {
   readonly city: string | null;
   readonly phone: string | null;
   readonly vendorStatus: string;
-  readonly payBillEnabled: boolean;
+  readonly isActive: boolean;
   readonly bankVerified: boolean;
   readonly isDeleted: boolean;
+  readonly publishStatus?: PublishStatus;
 }
 
 export interface VendorCandidateFilters {
@@ -15,15 +19,27 @@ export interface VendorCandidateFilters {
   readonly pageSize: number;
   readonly q?: string;
   readonly status?: string;
+  readonly category?: string;
+  readonly vendorId?: string;
+  readonly eligibility?: Exclude<CatalogueEligibilityFilter, 'all'>;
 }
 
 export interface VendorCandidateRow {
   readonly vendorId: string;
   readonly businessName: string;
+  readonly ownerName: string | null;
+  readonly vendorType: string | null;
+  readonly roleName: string | null;
+  readonly isSoloProvider: boolean;
   readonly city: string | null;
   readonly status: string;
-  readonly payBillEnabled: boolean;
+  readonly isActive: boolean;
   readonly bankVerified: boolean;
+  readonly isDeleted: boolean;
+  readonly legacyCategory: string | null;
+  readonly roleCategory: string | null;
+  readonly customerService: string | null;
+  readonly roleConfig: unknown;
 }
 
 export interface VendorExistenceResult {

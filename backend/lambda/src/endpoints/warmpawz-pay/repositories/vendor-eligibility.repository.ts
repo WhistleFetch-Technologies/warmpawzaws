@@ -7,6 +7,15 @@ import type {
   VendorEligibilitySnapshot,
   VendorExistenceResult,
 } from './interfaces/IVendorEligibilityRepository';
+import {
+  MERCHANT_ROLE_CATEGORY_EXPR,
+  MERCHANT_SOLO_PROVIDER_EXPR,
+  merchantCategoryFilterSql,
+} from '../shared/merchant/merchant-role-sql';
+import {
+  VENDOR_APPROVED_ACTIVE_SQL,
+  WPAY_VENDOR_PAY_BILL_READY_SQL,
+} from '../shared/merchant/merchant-eligibility-sql';
 
 const CATALOGUE_TABLE = 'warmpawz_pay_vendor_catalog';
 
@@ -33,7 +42,7 @@ interface VendorSnapshotDbRow {
   readonly city: string | null;
   readonly phone: string | null;
   readonly status: string;
-  readonly pay_bill_enabled: boolean;
+  readonly is_active: boolean | null;
   readonly bank_verified: boolean;
   readonly is_deleted: boolean | null;
 }
@@ -41,10 +50,19 @@ interface VendorSnapshotDbRow {
 interface VendorCandidateDbRow {
   readonly id: string;
   readonly business_name: string;
+  readonly owner_name: string | null;
+  readonly vendor_type: string | null;
+  readonly is_solo_provider: boolean | null;
   readonly city: string | null;
   readonly status: string;
-  readonly pay_bill_enabled: boolean;
+  readonly is_active: boolean | null;
   readonly bank_verified: boolean;
+  readonly is_deleted: boolean | null;
+  readonly legacy_category: string | null;
+  readonly role_name: string | null;
+  readonly role_category: string | null;
+  readonly customer_service: string | null;
+  readonly role_config: unknown;
 }
 
 interface VendorExistenceDbRow {
@@ -52,7 +70,10 @@ interface VendorExistenceDbRow {
   readonly is_deleted: boolean | null;
 }
 
-type CandidateFilterInput = Pick<VendorCandidateFilters, 'q' | 'status'>;
+type CandidateFilterInput = Pick<
+  VendorCandidateFilters,
+  'q' | 'status' | 'category' | 'vendorId' | 'eligibility'
+>;
 
 function mapSnapshot(row: VendorSnapshotDbRow): VendorEligibilitySnapshot {
   return {
@@ -62,7 +83,7 @@ function mapSnapshot(row: VendorSnapshotDbRow): VendorEligibilitySnapshot {
     city: row.city,
     phone: row.phone,
     vendorStatus: row.status,
-    payBillEnabled: Boolean(row.pay_bill_enabled),
+    isActive: row.is_active !== false,
     bankVerified: Boolean(row.bank_verified),
     isDeleted: row.is_deleted === true,
   };
@@ -72,10 +93,19 @@ function mapCandidate(row: VendorCandidateDbRow): VendorCandidateRow {
   return {
     vendorId: row.id,
     businessName: row.business_name,
+    ownerName: row.owner_name,
+    vendorType: row.vendor_type,
+    roleName: row.role_name,
+    isSoloProvider: row.is_solo_provider === true,
     city: row.city,
     status: row.status,
-    payBillEnabled: Boolean(row.pay_bill_enabled),
+    isActive: row.is_active !== false,
     bankVerified: Boolean(row.bank_verified),
+    isDeleted: row.is_deleted === true,
+    legacyCategory: row.legacy_category,
+    roleCategory: row.role_category,
+    customerService: row.customer_service,
+    roleConfig: row.role_config,
   };
 }
 
@@ -91,12 +121,28 @@ function buildCandidateWhereClause(filters: CandidateFilterInput): {
     conditions.push(`v.status = $${params.length}`);
   }
 
+  if (filters.vendorId) {
+    params.push(filters.vendorId);
+    conditions.push(`v.id = $${params.length}`);
+  }
+
   if (filters.q) {
     params.push(`%${filters.q}%`);
     const searchParam = `$${params.length}`;
     conditions.push(
-      `(v.business_name ILIKE ${searchParam} OR v.city ILIKE ${searchParam} OR v.phone ILIKE ${searchParam})`,
+      `(v.business_name ILIKE ${searchParam} OR v.owner_name ILIKE ${searchParam} OR v.city ILIKE ${searchParam} OR v.phone ILIKE ${searchParam})`,
     );
+  }
+
+  if (filters.eligibility === 'customer_visible') {
+    conditions.push(WPAY_VENDOR_PAY_BILL_READY_SQL);
+  } else if (filters.eligibility === 'not_customer_visible') {
+    conditions.push(`NOT ${WPAY_VENDOR_PAY_BILL_READY_SQL}`);
+  }
+
+  if (filters.category) {
+    params.push(`%${filters.category}%`);
+    conditions.push(merchantCategoryFilterSql(`$${params.length}`));
   }
 
   return {
@@ -104,6 +150,11 @@ function buildCandidateWhereClause(filters: CandidateFilterInput): {
     params,
   };
 }
+
+const CANDIDATE_FROM_JOIN = `
+  FROM ${VENDORS_TABLE} v
+  LEFT JOIN roles r ON r.id = v.role_id
+`;
 
 export class VendorEligibilityRepository implements IVendorEligibilityRepository {
   constructor(private readonly db: VendorEligibilityDbClient = { query }) {}
@@ -117,7 +168,7 @@ export class VendorEligibilityRepository implements IVendorEligibilityRepository
         v.city,
         v.phone,
         v.status,
-        v.pay_bill_enabled,
+        COALESCE(v.is_active, true) AS is_active,
         v.bank_verified,
         v.is_deleted
       FROM ${VENDORS_TABLE} v
@@ -141,11 +192,20 @@ export class VendorEligibilityRepository implements IVendorEligibilityRepository
       SELECT
         v.id,
         v.business_name,
+        v.owner_name,
+        v.vendor_type,
+        ${MERCHANT_SOLO_PROVIDER_EXPR} AS is_solo_provider,
         v.city,
         v.status,
-        v.pay_bill_enabled,
-        v.bank_verified
-      FROM ${VENDORS_TABLE} v
+        COALESCE(v.is_active, true) AS is_active,
+        v.bank_verified,
+        v.is_deleted,
+        v.category AS legacy_category,
+        r.name AS role_name,
+        ${MERCHANT_ROLE_CATEGORY_EXPR} AS role_category,
+        r.customer_service,
+        r.config AS role_config
+      ${CANDIDATE_FROM_JOIN}
       WHERE ${whereSql}
       ORDER BY v.business_name ASC
       LIMIT $${limitParam}
@@ -161,7 +221,7 @@ export class VendorEligibilityRepository implements IVendorEligibilityRepository
 
     const sql = `
       SELECT COUNT(*)::int AS total
-      FROM ${VENDORS_TABLE} v
+      ${CANDIDATE_FROM_JOIN}
       WHERE ${whereSql}
     `;
 
@@ -190,3 +250,6 @@ export class VendorEligibilityRepository implements IVendorEligibilityRepository
 }
 
 export const vendorEligibilityRepository = new VendorEligibilityRepository();
+
+// Exported for tests / reuse
+export { VENDOR_APPROVED_ACTIVE_SQL };

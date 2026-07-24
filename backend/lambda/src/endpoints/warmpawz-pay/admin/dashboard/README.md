@@ -20,12 +20,7 @@ Both must be enabled (same as catalogue admin):
 | Metric | Source |
 |--------|--------|
 | `publishedMerchants` | `COUNT(*)` on `warmpawz_pay_vendor_catalog` where `publish_status = 'published'` |
-| `averageDiscountPercent` | `0` until Merchant Pricing (Phase D) |
-
-## Phase B placeholders (not computed)
-
-- `readyMerchants` — `{ value: null, available: false, phase: "B" }`
-- `blockedMerchants` — `{ value: null, available: false, phase: "B" }`
+| `averageDiscountPercent` | Active merchant pricing average from `warmpawz_pay_merchant_pricing` |
 
 ## Architecture
 

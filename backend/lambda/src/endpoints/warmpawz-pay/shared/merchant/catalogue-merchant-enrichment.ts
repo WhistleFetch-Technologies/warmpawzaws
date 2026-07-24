@@ -15,7 +15,6 @@ export interface CatalogueMerchantEnrichmentInput {
   readonly isActive: boolean;
   readonly isOnline: boolean;
   readonly bankVerified: boolean;
-  readonly payBillEnabled: boolean;
   readonly isDeleted: boolean;
   readonly vendorType?: string | null;
   readonly isSoloProvider?: boolean | null;

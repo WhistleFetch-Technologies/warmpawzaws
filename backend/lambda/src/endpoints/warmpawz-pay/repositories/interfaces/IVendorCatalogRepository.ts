@@ -22,7 +22,6 @@ export interface CatalogueRowWithVendor extends CatalogueRow {
   readonly city: string | null;
   readonly phone: string | null;
   readonly vendorStatus: string;
-  readonly payBillEnabled: boolean;
   readonly bankVerified: boolean;
   readonly isDeleted: boolean;
   readonly isActive: boolean;

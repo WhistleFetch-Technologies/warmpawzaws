@@ -1,23 +1,31 @@
 import type { EligibilityDTO } from '../dto/catalogue.responses';
+import { PUBLISHED } from '../../../constants/publish-status';
 import type {
   IVendorEligibilityRepository,
   VendorEligibilitySnapshot,
 } from '../../../repositories/interfaces/IVendorEligibilityRepository';
 import { vendorEligibilityRepository } from '../../../repositories/vendor-eligibility.repository';
+import { isPlatformApproved } from '../../../shared/merchant/merchant-platform-status.resolver';
 
 import type { IVendorEligibilityService } from './interfaces/IVendorEligibilityService';
 
-const ACTIVE_VENDOR_STATUS = 'active';
-
 export const EligibilityWarningCode = {
-  VENDOR_NOT_ACTIVE: 'VENDOR_NOT_ACTIVE',
+  VENDOR_NOT_APPROVED: 'VENDOR_NOT_APPROVED',
   BANK_NOT_VERIFIED: 'BANK_NOT_VERIFIED',
-  PAY_BILL_NOT_ENABLED: 'PAY_BILL_NOT_ENABLED',
   VENDOR_DELETED: 'VENDOR_DELETED',
+  NOT_PUBLISHED: 'NOT_PUBLISHED',
 } as const;
 
 export type EligibilityWarningCode =
   (typeof EligibilityWarningCode)[keyof typeof EligibilityWarningCode];
+
+function isVendorPlatformEligible(snapshot: VendorEligibilitySnapshot): boolean {
+  return isPlatformApproved({
+    vendorStatus: snapshot.vendorStatus,
+    isActive: snapshot.isActive,
+    isDeleted: snapshot.isDeleted,
+  });
+}
 
 export class VendorEligibilityService implements IVendorEligibilityService {
   constructor(
@@ -25,10 +33,13 @@ export class VendorEligibilityService implements IVendorEligibilityService {
   ) {}
 
   computeCustomerVisible(snapshot: VendorEligibilitySnapshot): boolean {
+    if (snapshot.publishStatus !== PUBLISHED) {
+      return false;
+    }
+
     return (
-      snapshot.vendorStatus === ACTIVE_VENDOR_STATUS &&
+      isVendorPlatformEligible(snapshot) &&
       snapshot.bankVerified &&
-      snapshot.payBillEnabled &&
       !snapshot.isDeleted
     );
   }
@@ -39,14 +50,14 @@ export class VendorEligibilityService implements IVendorEligibilityService {
     if (snapshot.isDeleted) {
       warnings.push(EligibilityWarningCode.VENDOR_DELETED);
     }
-    if (snapshot.vendorStatus !== ACTIVE_VENDOR_STATUS) {
-      warnings.push(EligibilityWarningCode.VENDOR_NOT_ACTIVE);
+    if (!isVendorPlatformEligible(snapshot)) {
+      warnings.push(EligibilityWarningCode.VENDOR_NOT_APPROVED);
     }
     if (!snapshot.bankVerified) {
       warnings.push(EligibilityWarningCode.BANK_NOT_VERIFIED);
     }
-    if (!snapshot.payBillEnabled) {
-      warnings.push(EligibilityWarningCode.PAY_BILL_NOT_ENABLED);
+    if (snapshot.publishStatus !== PUBLISHED) {
+      warnings.push(EligibilityWarningCode.NOT_PUBLISHED);
     }
 
     return warnings;
@@ -54,7 +65,6 @@ export class VendorEligibilityService implements IVendorEligibilityService {
 
   buildEligibilityDto(snapshot: VendorEligibilitySnapshot): EligibilityDTO {
     return {
-      payBillEnabled: snapshot.payBillEnabled,
       bankVerified: snapshot.bankVerified,
       vendorStatus: snapshot.vendorStatus,
       customerVisible: this.computeCustomerVisible(snapshot),

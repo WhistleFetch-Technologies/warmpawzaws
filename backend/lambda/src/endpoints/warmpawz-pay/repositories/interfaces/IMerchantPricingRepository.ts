@@ -21,6 +21,9 @@ export interface PricingRow {
 export interface PricingRowWithMerchant extends PricingRow {
   readonly businessName: string;
   readonly ownerName: string | null;
+  readonly vendorType: string | null;
+  readonly roleName: string | null;
+  readonly isSoloProvider: boolean;
   readonly legacyCategory: string | null;
   readonly roleCategory: string | null;
   readonly customerService: string | null;

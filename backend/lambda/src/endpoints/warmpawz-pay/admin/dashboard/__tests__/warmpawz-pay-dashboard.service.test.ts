@@ -15,7 +15,7 @@ function createRepository(
 }
 
 describe('WarmpawzPayDashboardService', () => {
-  it('composes dashboard metrics with Phase B placeholders', async () => {
+  it('composes dashboard metrics from repository', async () => {
     const repository = createRepository();
     const service = new WarmpawzPayDashboardService(repository);
 
@@ -23,16 +23,6 @@ describe('WarmpawzPayDashboardService', () => {
 
     expect(result.metrics.publishedMerchants).toEqual({ value: 12 });
     expect(result.metrics.averageDiscountPercent).toEqual({ value: 0 });
-    expect(result.metrics.readyMerchants).toEqual({
-      value: null,
-      available: false,
-      phase: 'B',
-    });
-    expect(result.metrics.blockedMerchants).toEqual({
-      value: null,
-      available: false,
-      phase: 'B',
-    });
     expect(result.generatedAt).toEqual(expect.any(String));
     expect(() => new Date(result.generatedAt).toISOString()).not.toThrow();
   });

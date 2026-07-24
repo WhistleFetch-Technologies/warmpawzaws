@@ -6,7 +6,7 @@ export function DashboardMetricsSkeleton() {
       className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-pulse"
       aria-hidden="true"
     >
-      {Array.from({ length: 4 }).map((_, index) => (
+      {Array.from({ length: 2 }).map((_, index) => (
         <div
           key={index}
           className="rounded-lg border border-gray-200 bg-white p-6 space-y-3"

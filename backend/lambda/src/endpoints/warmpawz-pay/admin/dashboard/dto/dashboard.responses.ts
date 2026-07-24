@@ -2,17 +2,9 @@ export interface DashboardMetricValue {
   readonly value: number;
 }
 
-export interface DashboardFutureMetric {
-  readonly value: null;
-  readonly available: false;
-  readonly phase: 'B';
-}
-
 export interface DashboardMetricsDTO {
   readonly publishedMerchants: DashboardMetricValue;
   readonly averageDiscountPercent: DashboardMetricValue;
-  readonly readyMerchants: DashboardFutureMetric;
-  readonly blockedMerchants: DashboardFutureMetric;
 }
 
 export interface DashboardDataDTO {

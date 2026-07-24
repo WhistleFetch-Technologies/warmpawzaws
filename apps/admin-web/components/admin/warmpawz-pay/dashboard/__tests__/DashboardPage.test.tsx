@@ -41,8 +41,6 @@ jest.mock('../MetricsGrid', () => ({
     <div>
       <span>{metrics.publishedMerchants.value}</span>
       <span>{metrics.averageDiscountPercent.value}%</span>
-      {metrics.readyMerchants.available === false ? <span>Coming Soon</span> : null}
-      {metrics.blockedMerchants.available === false ? <span>Coming Soon</span> : null}
     </div>
   ),
 }));
@@ -59,8 +57,6 @@ const sampleDashboardData: WarmpawzPayDashboardData = {
   metrics: {
     publishedMerchants: { value: 2 },
     averageDiscountPercent: { value: 12.5 },
-    readyMerchants: { value: null, available: false, phase: 'B' },
-    blockedMerchants: { value: null, available: false, phase: 'B' },
   },
   generatedAt: '2026-07-23T12:00:00.000Z',
 };
@@ -97,21 +93,6 @@ describe('DashboardPage', () => {
 
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByText('12.5%')).toBeInTheDocument();
-    expect(screen.getByText('12.5%')).toBeInTheDocument();
-  });
-
-  it('renders coming soon cards for unavailable metrics', () => {
-    mockUseWarmpawzPayDashboard.mockReturnValue({
-      data: sampleDashboardData,
-      isLoading: false,
-      isFetching: false,
-      error: null,
-      refresh: jest.fn(),
-    });
-
-    render(<DashboardPage />);
-
-    expect(screen.getAllByText('Coming Soon')).toHaveLength(2);
   });
 
   it('renders error state with retry action on API failure', () => {
@@ -152,6 +133,5 @@ describe('DashboardPage', () => {
     expect(
       screen.getByText('No merchants have been published yet.'),
     ).toBeInTheDocument();
-    expect(screen.queryByText('Coming Soon')).not.toBeInTheDocument();
   });
 });

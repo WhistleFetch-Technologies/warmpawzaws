@@ -15,8 +15,11 @@ import type {
 import { toOptionalAdminActorUuid } from '../admin/catalogue/utils/admin-actor-id';
 import {
   MERCHANT_ROLE_CATEGORY_EXPR,
+  MERCHANT_SOLO_PROVIDER_EXPR,
   merchantCategoryFilterSql,
 } from '../shared/merchant/merchant-role-sql';
+import { wpayCatalogueCustomerVisibleSql } from '../shared/merchant/merchant-eligibility-sql';
+import { resolveMerchantDisplayName } from '../shared/merchant/merchant-display-name.resolver';
 
 const CATALOGUE_TABLE = 'warmpawz_pay_vendor_catalog';
 const PRICING_TABLE = 'warmpawz_pay_merchant_pricing';
@@ -40,13 +43,12 @@ const VENDOR_JOIN_SELECT = `
   v.city,
   v.phone,
   v.status AS vendor_status,
-  v.pay_bill_enabled,
   v.bank_verified,
   v.is_deleted,
   COALESCE(v.is_active, false) AS is_active,
   COALESCE(v.is_online, true) AS is_online,
   v.vendor_type,
-  COALESCE(v.is_solo_provider, false) AS is_solo_provider,
+  ${MERCHANT_SOLO_PROVIDER_EXPR} AS is_solo_provider,
   v.category AS legacy_category,
   r.name AS role_name,
   ${MERCHANT_ROLE_CATEGORY_EXPR} AS role_category,
@@ -69,14 +71,7 @@ const ADMIN_FROM_JOIN = `
 
 const ADMIN_BASE_WHERE = '(v.is_deleted IS NOT TRUE)';
 
-const CUSTOMER_VISIBLE_PREDICATE = `
-  (
-    c.publish_status = '${PUBLISHED}'
-    AND v.status = 'active'
-    AND v.bank_verified = true
-    AND v.pay_bill_enabled = true
-  )
-`;
+const CUSTOMER_VISIBLE_PREDICATE = wpayCatalogueCustomerVisibleSql('c');
 
 const SORT_COLUMN_MAP: Readonly<Record<CatalogueSortField, string>> = {
   updatedAt: 'c.updated_at',
@@ -117,7 +112,6 @@ interface CatalogueWithVendorDbRow extends CatalogueDbRow {
   readonly city: string | null;
   readonly phone: string | null;
   readonly vendor_status: string;
-  readonly pay_bill_enabled: boolean;
   readonly bank_verified: boolean;
   readonly is_deleted: boolean | null;
   readonly is_active: boolean | null;
@@ -211,20 +205,26 @@ function mapCatalogueRow(row: CatalogueDbRow): CatalogueRow {
 }
 
 function mapCatalogueRowWithVendor(row: CatalogueWithVendorDbRow): CatalogueRowWithVendor {
+  const isSoloProvider = row.is_solo_provider === true;
   return {
     ...mapCatalogueRow(row),
-    businessName: row.business_name,
+    businessName: resolveMerchantDisplayName({
+      businessName: row.business_name,
+      ownerName: row.owner_name,
+      vendorType: row.vendor_type,
+      isSoloProvider,
+      roleName: row.role_name,
+    }),
     ownerName: row.owner_name,
     city: row.city,
     phone: row.phone,
     vendorStatus: row.vendor_status,
-    payBillEnabled: Boolean(row.pay_bill_enabled),
     bankVerified: Boolean(row.bank_verified),
     isDeleted: row.is_deleted === true,
     isActive: row.is_active !== false,
     isOnline: row.is_online !== false,
     vendorType: row.vendor_type,
-    isSoloProvider: row.is_solo_provider === true,
+    isSoloProvider,
     legacyCategory: row.legacy_category,
     roleName: row.role_name,
     roleCategory: row.role_category,
@@ -308,7 +308,7 @@ function buildAdminWhereClause(filters: AdminFilterInput): {
     params.push(`%${filters.q}%`);
     const searchParam = `$${params.length}`;
     conditions.push(
-      `(v.business_name ILIKE ${searchParam} OR v.city ILIKE ${searchParam} OR v.phone ILIKE ${searchParam})`,
+      `(v.business_name ILIKE ${searchParam} OR v.owner_name ILIKE ${searchParam} OR v.city ILIKE ${searchParam} OR v.phone ILIKE ${searchParam})`,
     );
   }
 
@@ -472,11 +472,8 @@ export class VendorCatalogRepository implements IVendorCatalogRepository {
     filters: PublishedEligibleFilters,
   ): Promise<readonly PublishedVendorRow[]> {
     const conditions: string[] = [
-      `c.publish_status = '${PUBLISHED}'`,
-      "v.status = 'active'",
-      'v.bank_verified = true',
-      'v.pay_bill_enabled = true',
       ADMIN_BASE_WHERE,
+      wpayCatalogueCustomerVisibleSql('c'),
     ];
     const params: unknown[] = [];
 
@@ -489,7 +486,7 @@ export class VendorCatalogRepository implements IVendorCatalogRepository {
       params.push(`%${filters.q}%`);
       const searchParam = `$${params.length}`;
       conditions.push(
-        `(v.business_name ILIKE ${searchParam} OR v.city ILIKE ${searchParam} OR v.phone ILIKE ${searchParam})`,
+        `(v.business_name ILIKE ${searchParam} OR v.owner_name ILIKE ${searchParam} OR v.city ILIKE ${searchParam} OR v.phone ILIKE ${searchParam})`,
       );
     }
 

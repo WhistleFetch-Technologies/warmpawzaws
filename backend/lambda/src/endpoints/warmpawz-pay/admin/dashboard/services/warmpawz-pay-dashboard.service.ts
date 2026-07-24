@@ -29,8 +29,6 @@ export class WarmpawzPayDashboardService {
         metrics: {
           publishedMerchants: { value: publishedMerchants },
           averageDiscountPercent: { value: averageDiscountPercent },
-          readyMerchants: { value: null, available: false, phase: 'B' },
-          blockedMerchants: { value: null, available: false, phase: 'B' },
         },
         generatedAt: new Date().toISOString(),
       };

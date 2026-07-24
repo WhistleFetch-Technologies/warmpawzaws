@@ -6,19 +6,9 @@ export interface DashboardMetricValue {
   readonly value: number;
 }
 
-export interface DashboardFutureMetric {
-  readonly value: null;
-  readonly available: false;
-  readonly phase: string;
-}
-
-export type DashboardMetric = DashboardMetricValue | DashboardFutureMetric;
-
 export interface DashboardMetrics {
   readonly publishedMerchants: DashboardMetricValue;
   readonly averageDiscountPercent: DashboardMetricValue;
-  readonly readyMerchants: DashboardMetric;
-  readonly blockedMerchants: DashboardMetric;
 }
 
 export interface WarmpawzPayDashboardData {
@@ -50,10 +40,6 @@ function assertSuccess<T>(response: SuccessEnvelope<T> | ErrorEnvelope | T): T {
     }
   }
   return response as T;
-}
-
-export function isFutureMetric(metric: DashboardMetric): metric is DashboardFutureMetric {
-  return 'available' in metric && metric.available === false;
 }
 
 export async function fetchWarmpawzPayDashboard(): Promise<WarmpawzPayDashboardData> {

@@ -28,6 +28,12 @@ import {
   enrichCatalogueMerchant,
   type CataloguePricingRowInput,
 } from '../../../shared/merchant/catalogue-merchant-enrichment';
+import {
+  resolveMerchantCategory,
+  serviceCategoryFromRoleConfig,
+} from '../../../shared/merchant/merchant-category.resolver';
+import { resolveMerchantDisplayName } from '../../../shared/merchant/merchant-display-name.resolver';
+import { resolvePlatformStatus } from '../../../shared/merchant/merchant-platform-status.resolver';
 
 export class CatalogueAdminError extends Error {
   readonly code: CatalogueErrorCode;
@@ -150,6 +156,10 @@ export class VendorCatalogAdminService {
       pageSize: query.pageSize,
       q: query.q,
       status: query.status,
+      category: query.category,
+      vendorId: query.vendorId,
+      eligibility:
+        query.eligibility && query.eligibility !== 'all' ? query.eligibility : undefined,
     };
 
     const [rows, total] = await Promise.all([
@@ -464,9 +474,10 @@ export class VendorCatalogAdminService {
       city: row.city,
       phone: row.phone,
       vendorStatus: row.vendorStatus,
-      payBillEnabled: row.payBillEnabled,
+      isActive: row.isActive,
       bankVerified: row.bankVerified,
       isDeleted: row.isDeleted,
+      publishStatus: row.publishStatus,
     };
   }
 
@@ -481,7 +492,6 @@ export class VendorCatalogAdminService {
         isActive: row.isActive,
         isOnline: row.isOnline,
         bankVerified: row.bankVerified,
-        payBillEnabled: row.payBillEnabled,
         isDeleted: row.isDeleted,
         vendorType: row.vendorType,
         isSoloProvider: row.isSoloProvider,
@@ -547,13 +557,33 @@ export class VendorCatalogAdminService {
   }
 
   private mapVendorCandidate(row: VendorCandidateRow): VendorCandidateDTO {
+    const category = resolveMerchantCategory({
+      roleCategory: row.roleCategory,
+      customerService: row.customerService,
+      serviceCategory: serviceCategoryFromRoleConfig(row.roleConfig),
+      legacyCategory: row.legacyCategory,
+    });
+
+    const platformStatus = resolvePlatformStatus({
+      vendorStatus: row.status,
+      isActive: row.isActive,
+      isDeleted: row.isDeleted,
+    });
+
     return {
       vendorId: row.vendorId,
-      businessName: row.businessName,
+      businessName: resolveMerchantDisplayName({
+        businessName: row.businessName,
+        ownerName: row.ownerName,
+        vendorType: row.vendorType,
+        isSoloProvider: row.isSoloProvider,
+        roleName: row.roleName,
+      }),
       city: row.city,
       status: row.status,
-      payBillEnabled: row.payBillEnabled,
       bankVerified: row.bankVerified,
+      category,
+      platformStatus,
     };
   }
 

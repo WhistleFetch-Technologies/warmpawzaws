@@ -6,7 +6,6 @@ import type { MerchantReadinessDTO } from '../../../shared/merchant/merchant-rea
 import type { WarmpawzPayStatus } from '../../../shared/merchant/merchant-warmpawz-pay-status.resolver';
 
 export interface EligibilityDTO {
-  readonly payBillEnabled: boolean;
   readonly bankVerified: boolean;
   readonly vendorStatus: string;
   readonly customerVisible: boolean;
@@ -60,8 +59,9 @@ export interface VendorCandidateDTO {
   readonly businessName: string;
   readonly city: string | null;
   readonly status: string;
-  readonly payBillEnabled: boolean;
   readonly bankVerified: boolean;
+  readonly category: string;
+  readonly platformStatus: PlatformStatus;
 }
 
 export interface PaginationResponse {
