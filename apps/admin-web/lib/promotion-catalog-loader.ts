@@ -26,11 +26,21 @@ function mapServiceOption(s: Record<string, unknown>): TargetOption | null {
   const textId = String(s.service_id ?? '').trim();
   const id = /^[0-9a-f-]{36}$/i.test(uuid) ? uuid : textId || uuid;
   if (!id) return null;
+  const priceRaw = s.base_price ?? s.basePrice ?? s.price;
+  const price =
+    priceRaw != null && priceRaw !== '' && Number.isFinite(Number(priceRaw)) && Number(priceRaw) > 0
+      ? Number(priceRaw)
+      : undefined;
+  const subtitleParts = [
+    s.category_name ? String(s.category_name) : '',
+    price != null ? `₹${price}` : '',
+  ].filter(Boolean);
   return {
     id,
     label: String(s.display_name ?? s.service_name ?? s.name ?? id),
-    subtitle: s.category_name ? String(s.category_name) : undefined,
+    subtitle: subtitleParts.length ? subtitleParts.join(' · ') : undefined,
     group: s.service_style ? String(s.service_style) : undefined,
+    price,
   };
 }
 
