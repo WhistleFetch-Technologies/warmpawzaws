@@ -1,9 +1,10 @@
 "use client";
 
-import { Home, ShoppingBag, Calendar, User } from 'lucide-react';
+import { Home, ShoppingBag, Calendar, User, QrCode } from 'lucide-react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { isShopUiVisibleForAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
 import { useProfileMenuOpen } from '@/lib/profile-menu-open-context';
+import { isWarmpawzPayEnabled } from '@/lib/warmpawz-pay/wpay-feature-flag';
 
 interface BottomNavigationProps {
   currentScreen: string;
@@ -37,6 +38,9 @@ export function BottomNavigation({
     if (screen === 'bookings') {
       return currentScreen === 'my-bookings' || currentScreen === 'appointments';
     }
+    if (screen === 'warmpawz-pay') {
+      return currentScreen === 'warmpawz-pay';
+    }
     if (screen === 'profile') {
       return (
         profileMenuOpen ||
@@ -58,10 +62,11 @@ export function BottomNavigation({
   };
 
   const profileActive = isActive('profile');
+  const wpayEnabled = isWarmpawzPayEnabled();
 
   return (
     <div className="cw-customer-tabbar-fixed fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-customer border-t border-gray-200 bg-white">
-      <div className="flex items-center justify-around px-4 py-3 sm:px-6">
+      <div className="relative flex items-end justify-around px-2 pb-2 pt-2 sm:px-4">
         <button onClick={() => handleNavClick('home')} className="flex flex-col items-center gap-1">
           <Home className={`w-6 h-6 ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
           <span className={`text-xs font-medium ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`}>
@@ -91,6 +96,30 @@ export function BottomNavigation({
               <span className="text-xs text-gray-400">Soon</span>
             </button>
           )
+        ) : null}
+
+        {wpayEnabled ? (
+          <button
+            type="button"
+            onClick={() => handleNavClick('warmpawz-pay')}
+            className="-mt-6 flex flex-col items-center gap-0.5"
+            aria-label="Warmpawz Pay"
+          >
+            <div
+              className={`flex h-14 w-14 items-center justify-center rounded-full shadow-lg ${
+                isActive('warmpawz-pay') ? 'bg-[#FF6B00] ring-4 ring-orange-100' : 'bg-[#FF8C42]'
+              }`}
+            >
+              <QrCode className="h-7 w-7 text-white" />
+            </div>
+            <span
+              className={`text-[10px] font-semibold ${
+                isActive('warmpawz-pay') ? 'text-[#FF6B00]' : 'text-[#FF8C42]'
+              }`}
+            >
+              SCAN TO PAY
+            </span>
+          </button>
         ) : null}
 
         <button onClick={() => handleNavClick('my-bookings')} className="flex flex-col items-center gap-1">

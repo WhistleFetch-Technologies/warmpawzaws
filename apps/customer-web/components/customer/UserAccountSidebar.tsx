@@ -10,7 +10,7 @@ import {
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
   Trash2, Plus, Check, Wallet, ShoppingBag,
-  Gift, Users, Award, Smartphone, Building2, MessageSquare, X
+  Gift, Users, Award, Smartphone, Building2, MessageSquare, X, QrCode
 } from 'lucide-react';
 import { ProfileAccountHero } from '@/components/customer/profile/ProfileAccountHero';
 import { ProfileMenuFloatingSheet } from '@/components/customer/profile/ProfileMenuFloatingSheet';
@@ -1298,6 +1298,15 @@ export function UserAccountSidebar({
       iconBg: 'bg-green-100',
       iconColor: 'text-green-600',
       action: 'wallet' as const,
+      isExternal: true,
+    },
+    {
+      icon: QrCode,
+      label: 'Warmpawz Pay',
+      subtitle: 'View pay-at-vendor transactions',
+      iconBg: 'bg-orange-100',
+      iconColor: 'text-orange-600',
+      action: 'warmpawz-pay' as const,
       isExternal: true,
     },
     {

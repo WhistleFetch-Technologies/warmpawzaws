@@ -203,6 +203,7 @@ import { registerAdminGovernanceEndpoints } from 'src/endpoints/admin/endpoints/
 import { registerAdminIntegrationEndpoints } from 'src/endpoints/admin/endpoints/admin-integrations';
 import { registerAdminGovernanceEnhancedEndpoints } from 'src/endpoints/admin/endpoints/admin-governance-enhanced';
 import { registerCustomerAppointmentsEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-appointments';
+import { registerCustomerWarmpawzPayEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-warmpawz-pay';
 import { registerCustomerOrdersEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-orders';
 import { registerAdminCustomServicesEndpoints } from 'src/endpoints/admin/endpoints/admin-custom-services';
 import { registerGpsTrackingEndpoints } from 'src/endpoints/gpsTracking/endpoints/gps-tracking';
@@ -670,6 +671,7 @@ registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be b
 registerCustomerOrdersEndpoints(app);
 // /customer/appointments MUST register before /customer/:customerId or "appointments" is captured as :customerId → list API never runs.
 registerCustomerAppointmentsEndpoints(app);
+registerCustomerWarmpawzPayEndpoints(app); // /customer/warmpawz-pay/vendors — before /customer/:customerId
 // Specialized flows under /customer/* (pet-matching, holiday-packages) MUST register before /customer/:customerId
 // or paths like /customer/pet-matching are captured as customerId="pet-matching" and return 4xx.
 registerSpecializedServiceFlows(app);

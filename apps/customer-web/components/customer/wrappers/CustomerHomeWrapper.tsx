@@ -2125,6 +2125,8 @@ export function CustomerHomeWrapper({
       setSpaBoardingVendorsSlug(null);
       setBoardingVendorsReturnScreen(null);
       shellNav.focusTabRoot('bookings');
+    } else if (screen === 'warmpawz-pay') {
+      router.push('/warmpawz-pay');
     } else if (screen === 'profile') {
       setPetSitterOriginScreen(null);
       setPetSitterFacilityOptionId(null);

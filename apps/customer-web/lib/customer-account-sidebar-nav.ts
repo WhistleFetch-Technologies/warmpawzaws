@@ -34,6 +34,10 @@ export function navigateFromStandaloneAccountMenu(
     router.push('/wallet');
     return;
   }
+  if (path === 'warmpawz-pay') {
+    router.push('/warmpawz-pay/history');
+    return;
+  }
   if (path === 'my-packages') {
     rememberBeforeMyPackagesNav();
     router.push('/my-packages');

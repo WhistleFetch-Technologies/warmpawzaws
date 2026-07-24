@@ -63,6 +63,14 @@ export function createCustomerNavigation(router: CoordinatorRouter) {
       router.push(CUSTOMER_ROUTES.bookings.path);
     },
 
+    goToWarmpawzPay(opts?: { replace?: boolean }) {
+      if (opts?.replace) {
+        router.replace(CUSTOMER_ROUTES.warmpawzPay.path);
+        return;
+      }
+      router.push(CUSTOMER_ROUTES.warmpawzPay.path);
+    },
+
     goToWishlist() {
       router.push(CUSTOMER_ROUTES.wishlist.path);
     },

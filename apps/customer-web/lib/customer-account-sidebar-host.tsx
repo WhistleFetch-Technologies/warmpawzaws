@@ -74,6 +74,8 @@ export function useCustomerAccountSidebarHost(): CustomerAccountSidebarHost {
         nav.goToCart();
       } else if (screen === 'my-bookings') {
         nav.handleTab('bookings');
+      } else if (screen === 'warmpawz-pay') {
+        nav.goToWarmpawzPay();
       }
     },
     [openAccountMenu, router]
