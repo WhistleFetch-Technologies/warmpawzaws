@@ -14,7 +14,7 @@ import {
   resolveWithProductionMode,
 } from '../../discount-engine/resolver/production-bridge';
 import { mapResolverResultToCouponValidation } from '../../discount-engine/resolver/resolver-result-mappers';
-import { couponRowMatchesService } from '../../utils/coupon-targeting';
+import { couponRowMatchesService, couponRowMatchesVendor } from '../../utils/coupon-targeting';
 
 export { countCustomerCouponUsages } from '../../discount-engine/adapters/coupon-usage-counts';
 
@@ -38,6 +38,10 @@ export type CouponValidationOptions = {
   serviceCategory?: string;
   /** Required to enforce max_uses_per_user / metadata.maxUsesPerUser */
   customerId?: string;
+  /** Checkout vendor — enforces vendor-scoped platform coupons. */
+  vendorId?: string;
+  /** Booking service ids — enforces service-scoped platform coupons. */
+  serviceIds?: string[];
   /** Optional — enables booking-reservation counting for in-flight checkouts */
   couponCode?: string;
   /** When re-validating an existing booking, exclude it from the usage count */
@@ -121,6 +125,17 @@ async function validateCouponLegacy(
     }
 
     const coupon = coupons[0];
+
+    if (
+      options?.vendorId &&
+      !couponRowMatchesVendor(coupon as Record<string, unknown>, options.vendorId)
+    ) {
+      return {
+        success: false,
+        valid: false,
+        error: 'This coupon is not valid for this provider',
+      };
+    }
 
     if (
       domain === DiscountDomain.SERVICE &&
@@ -253,6 +268,17 @@ export async function validateCouponForAmount(
   }
 
   if (
+    options?.vendorId &&
+    !couponRowMatchesVendor(coupon as Record<string, unknown>, options.vendorId)
+  ) {
+    return {
+      success: false,
+      valid: false,
+      error: 'This coupon is not valid for this provider',
+    };
+  }
+
+  if (
     domain === DiscountDomain.SERVICE &&
     options?.serviceCategory &&
     !couponRowMatchesService(coupon as Record<string, unknown>, options.serviceCategory)
@@ -299,6 +325,9 @@ export async function validateCouponForAmount(
     customerId: options?.customerId,
     customerUsageCount,
     maxUsesPerUser: resolveCouponMaxUsesPerUser(coupon as Record<string, unknown>),
+    vendorId: options?.vendorId,
+    serviceIds: options?.serviceIds,
+    serviceCategory: options?.serviceCategory,
   });
 
   const { value } = await resolveWithProductionMode({
