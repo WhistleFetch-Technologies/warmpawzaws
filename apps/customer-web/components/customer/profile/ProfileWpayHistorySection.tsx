@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { QrCode } from 'lucide-react';
+import { WpayHistoryList } from '@/components/warmpawz-pay/WpayHistoryList';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 
 export function ProfileWpayHistorySection() {
