@@ -1,4 +1,4 @@
-import { query } from '../database/rds-connection';
+import { query } from '../../../database/rds-connection';
 
 export type WpayAdminPaymentDbRow = {
   payment_id: string;

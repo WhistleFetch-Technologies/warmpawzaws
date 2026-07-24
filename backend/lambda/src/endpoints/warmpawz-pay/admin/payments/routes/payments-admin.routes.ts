@@ -3,8 +3,8 @@ import {
   requireWarmpawzPayAdminEnabled,
   requireWarmpawzPayEnabled,
 } from '../../shared/wpay-admin-route-guards';
-import { WPAY_DASHBOARD_VIEW } from '../dashboard/authorization/permissions';
-import { requireDashboardAdminPermission } from '../dashboard/middleware/require-dashboard-admin-permission.middleware';
+import { WPAY_DASHBOARD_VIEW } from '../../dashboard/authorization/permissions';
+import { requireDashboardAdminPermission } from '../../dashboard/middleware/require-dashboard-admin-permission.middleware';
 import { paymentsListHandler } from '../handlers/payments-list.handler';
 import type { WarmpawzPayPaymentsService } from '../services/warmpawz-pay-payments.service';
 
