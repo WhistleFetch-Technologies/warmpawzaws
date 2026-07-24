@@ -16,6 +16,42 @@ export interface CatalogueRow {
   readonly updatedAt: Date;
 }
 
+/** Admin unified list row — approved vendor with optional catalogue entry. */
+export interface CatalogueAdminListRow {
+  readonly inCatalogue: boolean;
+  readonly id: string | null;
+  readonly vendorId: string;
+  readonly publishStatus: PublishStatus | null;
+  readonly publishedAt: Date | null;
+  readonly createdBy: string | null;
+  readonly createdAt: Date | null;
+  readonly updatedAt: Date | null;
+  readonly vendorUpdatedAt: Date;
+  readonly businessName: string;
+  readonly ownerName: string | null;
+  readonly city: string | null;
+  readonly phone: string | null;
+  readonly vendorStatus: string;
+  readonly bankVerified: boolean;
+  readonly isDeleted: boolean;
+  readonly isActive: boolean;
+  readonly isOnline: boolean;
+  readonly vendorType: string | null;
+  readonly isSoloProvider: boolean;
+  readonly legacyCategory: string | null;
+  readonly roleName: string | null;
+  readonly roleDisplayName: string | null;
+  readonly roleCategory: string | null;
+  readonly customerService: string | null;
+  readonly roleConfig: unknown;
+  readonly pricingId: string | null;
+  readonly pricingDiscountType: string | null;
+  readonly pricingDiscountValue: number | null;
+  readonly pricingStatus: string | null;
+  readonly pricingEffectiveFrom: Date | null;
+  readonly pricingEffectiveUntil: Date | null;
+}
+
 export interface CatalogueRowWithVendor extends CatalogueRow {
   readonly businessName: string;
   readonly ownerName: string | null;
@@ -30,6 +66,7 @@ export interface CatalogueRowWithVendor extends CatalogueRow {
   readonly isSoloProvider: boolean;
   readonly legacyCategory: string | null;
   readonly roleName: string | null;
+  readonly roleDisplayName: string | null;
   readonly roleCategory: string | null;
   readonly customerService: string | null;
   readonly roleConfig: unknown;
@@ -51,6 +88,8 @@ export interface CatalogueAdminFilters {
   readonly q?: string;
   readonly city?: string;
   readonly vendorId?: string;
+  readonly serviceCategory?: string;
+  /** @deprecated Use serviceCategory (launch id slug). */
   readonly category?: string;
 }
 
@@ -89,7 +128,7 @@ export interface IVendorCatalogRepository {
 
   existsForVendor(vendorId: string): Promise<boolean>;
 
-  listAdmin(filters: CatalogueAdminFilters): Promise<readonly CatalogueRowWithVendor[]>;
+  listAdmin(filters: CatalogueAdminFilters): Promise<readonly CatalogueAdminListRow[]>;
 
   countAdmin(filters: CatalogueAdminFilters): Promise<number>;
 

@@ -34,7 +34,12 @@ export const DEFAULT_SORT_ORDER: SortOrder = 'desc';
 export const ALLOWED_PUBLISH_STATUSES: readonly PublishStatus[] = [DRAFT, PUBLISHED];
 
 /** Admin list filter — includes aggregate option. */
-export const ALLOWED_PUBLISH_STATUS_FILTERS = ['draft', 'published', 'all'] as const;
+export const ALLOWED_PUBLISH_STATUS_FILTERS = [
+  'draft',
+  'published',
+  'not_in_catalogue',
+  'all',
+] as const;
 
 export type CataloguePublishStatusFilter = (typeof ALLOWED_PUBLISH_STATUS_FILTERS)[number];
 

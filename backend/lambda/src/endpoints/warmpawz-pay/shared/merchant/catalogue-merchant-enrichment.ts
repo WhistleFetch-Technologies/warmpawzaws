@@ -19,6 +19,7 @@ export interface CatalogueMerchantEnrichmentInput {
   readonly vendorType?: string | null;
   readonly isSoloProvider?: boolean | null;
   readonly roleName?: string | null;
+  readonly roleDisplayName?: string | null;
   readonly roleCategory?: string | null;
   readonly customerService?: string | null;
   readonly roleConfig?: unknown;

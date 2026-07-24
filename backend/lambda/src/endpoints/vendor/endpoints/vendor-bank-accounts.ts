@@ -18,6 +18,7 @@ import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
 import { promoteVendorBankAccountToPrimary } from '../../../utils/vendor-bank-primary';
 import { resolveVendorById } from './vendorProfile.vendor';
 import { geocodeVendorAddressFields } from '../../../utils/vendor-address-geocode';
+import { markVendorBankVerified } from '../../../utils/sync-vendor-bank-verified';
 
 /** Normalize DB boolean (pg usually returns boolean; some paths may return 't'/'f' strings). */
 function isDbTruthy(v: unknown): boolean {
@@ -423,12 +424,7 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         verified_at: new Date().toISOString(),
       });
       const resolvedVendorId = resolvedVendorIdForSelect;
-      try {
-        await query(
-          `UPDATE vendors SET bank_verified = true, updated_at = NOW() WHERE id = $1`,
-          [resolvedVendorId]
-        );
-      } catch (_) {}
+      await markVendorBankVerified(resolvedVendorId);
       console.log(`✅ Bank account ${accountId} verified (strict check passed)`);
 
       return c.json({

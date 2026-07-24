@@ -24,3 +24,14 @@ export function merchantCategoryFilterSql(categoryParam: string): string {
     OR r.name ILIKE ${categoryParam}
   )`;
 }
+
+/** Match normalized launch-service tokens against role/vendor category fields. */
+export function merchantServiceCategoryFilterSql(tokensParam: string): string {
+  return `(
+    LOWER(COALESCE(r.customer_service, '')) = ANY(${tokensParam}::text[])
+    OR LOWER(COALESCE(${MERCHANT_ROLE_CATEGORY_EXPR}, '')) = ANY(${tokensParam}::text[])
+    OR LOWER(COALESCE(v.category, '')) = ANY(${tokensParam}::text[])
+    OR LOWER(COALESCE(r.name, '')) = ANY(${tokensParam}::text[])
+    OR LOWER(COALESCE(r.display_name, '')) = ANY(${tokensParam}::text[])
+  )`;
+}

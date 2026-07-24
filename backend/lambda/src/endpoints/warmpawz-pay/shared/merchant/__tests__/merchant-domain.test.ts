@@ -1,36 +1,43 @@
 import { evaluateMerchant, buildMerchantReadiness } from '../merchant-readiness.service';
-import { resolveMerchantCategory } from '../merchant-category.resolver';
+import { resolveMerchantServiceCategory } from '../merchant-service-category.resolver';
 import { resolveMerchantBusinessType } from '../merchant-business-type.resolver';
 import { resolvePlatformStatus } from '../merchant-platform-status.resolver';
 import { resolveWarmpawzPayStatus } from '../merchant-warmpawz-pay-status.resolver';
 import { PUBLISHED } from '../../../constants/publish-status';
 
 describe('merchant domain resolvers', () => {
-  it('resolves category using approved priority order', () => {
+  it('resolves launch service category from customer_service first', () => {
     expect(
-      resolveMerchantCategory({
-        roleCategory: 'grooming',
+      resolveMerchantServiceCategory({
         customerService: 'vet',
-        legacyCategory: 'legacy',
+        roleCategory: 'healthcare',
+        roleDisplayName: 'Vet Clinic',
       }),
-    ).toBe('Grooming');
+    ).toMatchObject({
+      serviceCategoryId: 'vet',
+      serviceCategory: 'Vet',
+      roleLabel: 'Vet Clinic',
+    });
 
     expect(
-      resolveMerchantCategory({
-        customerService: 'vet',
-        legacyCategory: 'legacy',
+      resolveMerchantServiceCategory({
+        customerService: 'training',
+        roleDisplayName: 'Behaviorist Center',
       }),
-    ).toBe('Vet');
+    ).toMatchObject({
+      serviceCategoryId: 'training',
+      serviceCategory: 'Training',
+      roleLabel: 'Behaviorist Center',
+    });
 
     expect(
-      resolveMerchantCategory({
-        serviceCategory: 'training',
-        legacyCategory: 'legacy',
+      resolveMerchantServiceCategory({
+        legacyCategory: 'walker',
       }),
-    ).toBe('Training');
-
-    expect(resolveMerchantCategory({ legacyCategory: 'walker' })).toBe('Walker');
-    expect(resolveMerchantCategory({})).toBe('Unknown');
+    ).toMatchObject({
+      serviceCategoryId: 'walker',
+      serviceCategory: 'Walking',
+    });
   });
 
   it('resolves business type as Solo, Business, or Center', () => {
@@ -69,7 +76,7 @@ describe('merchant domain resolvers', () => {
       isOnline: true,
       bankVerified: true,
       isDeleted: false,
-      roleCategory: 'grooming',
+      customerService: 'grooming',
       vendorType: 'solo',
       pricingConfigured: true,
     });
@@ -84,7 +91,7 @@ describe('merchant domain resolvers', () => {
       isOnline: true,
       bankVerified: true,
       isDeleted: false,
-      roleCategory: 'grooming',
+      customerService: 'grooming',
       vendorType: 'solo',
       pricingConfigured: true,
     });
@@ -101,7 +108,7 @@ describe('merchant domain resolvers', () => {
       isOnline: true,
       bankVerified: true,
       isDeleted: false,
-      roleCategory: 'grooming',
+      customerService: 'grooming',
       vendorType: 'solo',
       pricingConfigured: false,
     });

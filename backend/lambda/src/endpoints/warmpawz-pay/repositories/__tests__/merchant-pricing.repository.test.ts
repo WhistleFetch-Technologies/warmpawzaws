@@ -55,4 +55,43 @@ describe('MerchantPricingRepository', () => {
     expect(ids.has('vendor-1')).toBe(true);
     expect(ids.has('vendor-2')).toBe(true);
   });
+
+  it('stores null created_by for non-UUID admin actors on insert', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [
+        {
+          id: 'pricing-1',
+          vendor_id: 'vendor-1',
+          catalogue_id: 'cat-1',
+          discount_type: 'percentage',
+          discount_value: '15',
+          status: PRICING_STATUS.ACTIVE,
+          effective_from: new Date('2026-07-01T00:00:00.000Z'),
+          effective_until: null,
+          created_by: null,
+          created_at: new Date('2026-07-01T00:00:00.000Z'),
+          updated_at: new Date('2026-07-23T00:00:00.000Z'),
+        },
+      ],
+    });
+    const repo = new MerchantPricingRepository({ query });
+
+    await repo.insert(
+      {
+        vendorId: 'vendor-1',
+        discountType: 'percentage',
+        discountValue: 15,
+        status: PRICING_STATUS.ACTIVE,
+        effectiveFrom: new Date('2026-07-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        createdBy: 'uat-admin-user',
+      },
+      'cat-1',
+    );
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO warmpawz_pay_merchant_pricing'),
+      expect.arrayContaining([null]),
+    );
+  });
 });

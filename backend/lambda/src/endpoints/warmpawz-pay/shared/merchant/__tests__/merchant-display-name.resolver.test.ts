@@ -4,7 +4,7 @@ import {
 } from '../merchant-display-name.resolver';
 
 describe('merchant-display-name.resolver', () => {
-  it('treats empty, Business, and Vendor as placeholder business names', () => {
+  it('treats empty, Business, and Vendor as placeholder names', () => {
     expect(isPlaceholderBusinessName('')).toBe(true);
     expect(isPlaceholderBusinessName('  Business  ')).toBe(true);
     expect(isPlaceholderBusinessName('Vendor')).toBe(true);
@@ -31,14 +31,34 @@ describe('merchant-display-name.resolver', () => {
     ).toBe('Bindu Grooming');
   });
 
-  it('keeps business name for non-solo vendors even when placeholder', () => {
+  it('uses real business name when owner name is onboarding placeholder Vendor', () => {
+    expect(
+      resolveMerchantDisplayName({
+        businessName: 'Bindushree M',
+        ownerName: 'Vendor',
+        vendorType: 'business',
+      }),
+    ).toBe('Bindushree M');
+  });
+
+  it('uses owner name for business/center vendors with placeholder business name', () => {
     expect(
       resolveMerchantDisplayName({
         businessName: 'Business',
         ownerName: 'Acme Owner',
         vendorType: 'business',
       }),
-    ).toBe('Business');
+    ).toBe('Acme Owner');
+  });
+
+  it('returns Unknown when both names are onboarding placeholders', () => {
+    expect(
+      resolveMerchantDisplayName({
+        businessName: 'Business',
+        ownerName: 'Vendor',
+        vendorType: 'business',
+      }),
+    ).toBe('Unknown');
   });
 
   it('falls back to owner name when business name is empty for any vendor type', () => {

@@ -6,11 +6,9 @@ import {
   type MerchantBusinessType,
 } from './merchant-business-type.resolver';
 import {
-  isMerchantCategoryConfigured,
-  resolveMerchantCategory,
-  serviceCategoryFromRoleConfig,
-  type MerchantCategoryInput,
-} from './merchant-category.resolver';
+  isServiceCategoryConfigured,
+  resolveMerchantServiceCategory,
+} from './merchant-service-category.resolver';
 import {
   isPlatformApproved,
   resolvePlatformStatus,
@@ -45,6 +43,7 @@ export interface MerchantReadinessInput {
   readonly vendorType?: string | null;
   readonly isSoloProvider?: boolean | null;
   readonly roleName?: string | null;
+  readonly roleDisplayName?: string | null;
   readonly roleCategory?: string | null;
   readonly customerService?: string | null;
   readonly roleConfig?: unknown;
@@ -73,13 +72,14 @@ function countBlockers(checks: readonly ReadinessCheck[]): {
 }
 
 export function buildMerchantReadiness(input: MerchantReadinessInput): MerchantReadinessDTO {
-  const categoryInput: MerchantCategoryInput = {
-    roleCategory: input.roleCategory,
+  const serviceCategory = resolveMerchantServiceCategory({
     customerService: input.customerService,
-    serviceCategory: serviceCategoryFromRoleConfig(input.roleConfig),
+    roleCategory: input.roleCategory,
+    roleConfig: input.roleConfig,
     legacyCategory: input.legacyCategory,
-  };
-  const category = resolveMerchantCategory(categoryInput);
+    roleName: input.roleName,
+    roleDisplayName: input.roleDisplayName,
+  });
   const businessType = resolveMerchantBusinessType({
     vendorType: input.vendorType,
     isSoloProvider: input.isSoloProvider,
@@ -129,9 +129,11 @@ export function buildMerchantReadiness(input: MerchantReadinessInput): MerchantR
     {
       key: 'CATEGORY_CONFIGURED',
       label: 'Category Configured',
-      passed: isMerchantCategoryConfigured(category),
+      passed: isServiceCategoryConfigured(serviceCategory),
       severity: 'warning',
-      detail: isMerchantCategoryConfigured(category) ? undefined : 'Category could not be resolved',
+      detail: isServiceCategoryConfigured(serviceCategory)
+        ? undefined
+        : 'Category could not be resolved',
     },
     {
       key: 'BUSINESS_TYPE_RESOLVED',
@@ -177,12 +179,15 @@ export function computeCustomerVisible(
 }
 
 export function evaluateMerchant(input: MerchantReadinessInput): MerchantEvaluationDTO {
-  const category = resolveMerchantCategory({
-    roleCategory: input.roleCategory,
+  const serviceCategory = resolveMerchantServiceCategory({
     customerService: input.customerService,
-    serviceCategory: serviceCategoryFromRoleConfig(input.roleConfig),
+    roleCategory: input.roleCategory,
+    roleConfig: input.roleConfig,
     legacyCategory: input.legacyCategory,
+    roleName: input.roleName,
+    roleDisplayName: input.roleDisplayName,
   });
+  const category = serviceCategory.serviceCategory;
   const businessType = resolveMerchantBusinessType({
     vendorType: input.vendorType,
     isSoloProvider: input.isSoloProvider,

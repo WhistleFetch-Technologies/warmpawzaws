@@ -14,10 +14,18 @@ const STATUS_VARIANT: Record<PublishStatus, 'secondary' | 'default'> = {
 };
 
 export interface StatusBadgeProps {
-  readonly status: PublishStatus;
+  readonly status: PublishStatus | null;
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
+  if (!status) {
+    return (
+      <Badge variant="outline" className="text-gray-600">
+        Not in catalogue
+      </Badge>
+    );
+  }
+
   return (
     <Badge variant={STATUS_VARIANT[status]} className="capitalize">
       {STATUS_LABELS[status]}

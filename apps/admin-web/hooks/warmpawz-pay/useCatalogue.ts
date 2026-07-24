@@ -5,6 +5,7 @@ import {
   deleteCatalogueEntry,
   fetchCatalogueDetail,
   fetchCatalogueList,
+  fetchServiceCategories,
   fetchVendorCandidates,
   publishCatalogueEntry,
   unpublishCatalogueEntry,
@@ -21,6 +22,7 @@ export const catalogueQueryKeys = {
     [...catalogueQueryKeys.all, 'detail', catalogueId] as const,
   vendorCandidates: (params: VendorCandidatesQueryParams) =>
     [...catalogueQueryKeys.all, 'vendor-candidates', params] as const,
+  serviceCategories: () => [...catalogueQueryKeys.all, 'service-categories'] as const,
 };
 
 function invalidateCatalogueQueries(
@@ -57,6 +59,14 @@ export function useVendorCandidates(params: VendorCandidatesQueryParams) {
     queryKey: catalogueQueryKeys.vendorCandidates(params),
     queryFn: () => fetchVendorCandidates(params),
     staleTime: 15_000,
+  });
+}
+
+export function useServiceCategories() {
+  return useQuery({
+    queryKey: catalogueQueryKeys.serviceCategories(),
+    queryFn: () => fetchServiceCategories(),
+    staleTime: 60_000,
   });
 }
 

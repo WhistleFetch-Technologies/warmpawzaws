@@ -11,7 +11,6 @@ export * from './useBookings';
 export * from './warmpawz-pay/useCatalogue';
 export * from './warmpawz-pay/useWarmpawzPayDashboard';
 export * from './warmpawz-pay/usePricing';
-export * from './warmpawz-pay/useBulkCatalogueActions';
 
 // Reusable hooks
 export * from './useApiData';

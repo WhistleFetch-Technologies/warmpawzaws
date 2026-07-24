@@ -15,12 +15,36 @@ export const pricingQueryKeys = {
   detail: (vendorId: string) => [...pricingQueryKeys.all, 'detail', vendorId] as const,
 };
 
+function isPricingNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('pricing_not_found') ||
+    message.includes('pricing not found') ||
+    message.includes('404')
+  );
+}
+
+export async function fetchPricingDetailOrNull(vendorId: string): Promise<PricingDetail | null> {
+  try {
+    return await fetchPricingDetail(vendorId);
+  } catch (error) {
+    if (isPricingNotFoundError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 export function usePricingDetail(vendorId: string | null) {
   return useQuery({
     queryKey: pricingQueryKeys.detail(vendorId ?? ''),
-    queryFn: () => fetchPricingDetail(vendorId as string),
+    queryFn: () => fetchPricingDetailOrNull(vendorId as string),
     enabled: Boolean(vendorId),
     staleTime: 15_000,
+    retry: false,
   });
 }
 

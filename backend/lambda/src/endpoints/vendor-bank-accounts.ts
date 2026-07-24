@@ -15,6 +15,7 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { resolveVendorById } from './vendor/endpoints/vendor-profile.vendor';
+import { markVendorBankVerified } from '../utils/sync-vendor-bank-verified';
 
 export function registerVendorBankAccountEndpoints(app: Hono) {
 
@@ -359,12 +360,7 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         verified_at: new Date().toISOString(),
       });
       const resolvedVendorId = resolvedVendorIdForSelect;
-      try {
-        await query(
-          `UPDATE vendors SET bank_verified = true, updated_at = NOW() WHERE id = $1`,
-          [resolvedVendorId]
-        );
-      } catch (_) {}
+      await markVendorBankVerified(resolvedVendorId);
       console.log(`✅ Bank account ${accountId} verified (strict check passed)`);
 
       return c.json({

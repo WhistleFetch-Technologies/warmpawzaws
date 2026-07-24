@@ -11,7 +11,11 @@ export const WPAY_CATALOGUE_API_BASE = '/admin/warmpawz-pay/catalogue';
 
 export type PublishStatus = 'draft' | 'published';
 
-export type CataloguePublishStatusFilter = 'draft' | 'published' | 'all';
+export type CataloguePublishStatusFilter =
+  | 'draft'
+  | 'published'
+  | 'not_in_catalogue'
+  | 'all';
 
 export type CatalogueEligibilityFilter =
   | 'customer_visible'
@@ -35,20 +39,25 @@ export interface CataloguePricingSummary {
 }
 
 export interface CatalogueListItem {
-  readonly catalogueId: string;
+  readonly catalogueId: string | null;
+  readonly inCatalogue: boolean;
   readonly vendorId: string;
   readonly businessName: string;
   readonly ownerName?: string;
   readonly city?: string;
   readonly phone?: string;
-  readonly publishStatus: PublishStatus;
+  readonly publishStatus: PublishStatus | null;
   readonly publishedAt: string | null;
-  readonly createdAt: string;
-  readonly updatedAt: string;
+  readonly createdAt: string | null;
+  readonly updatedAt: string | null;
   readonly createdBy: string | null;
   readonly eligibility: EligibilityDTO;
   readonly warnings?: readonly string[];
   readonly category: string;
+  readonly serviceCategory: string;
+  readonly serviceCategoryId: string;
+  readonly roleLabel: string;
+  readonly categoryDisplay: string;
   readonly businessType: MerchantBusinessType;
   readonly platformStatus: PlatformStatus;
   readonly warmpawzPayStatus: WarmpawzPayStatus;
@@ -72,7 +81,16 @@ export interface VendorCandidateDTO {
   readonly status: string;
   readonly bankVerified: boolean;
   readonly category: string;
+  readonly serviceCategory: string;
+  readonly serviceCategoryId: string;
+  readonly roleLabel: string;
+  readonly categoryDisplay: string;
   readonly platformStatus: PlatformStatus;
+}
+
+export interface ServiceCategoryOption {
+  readonly id: string;
+  readonly label: string;
 }
 
 export interface PaginationResponse {
@@ -132,6 +150,8 @@ export interface CatalogueListQueryParams {
   readonly eligibility?: Exclude<CatalogueEligibilityFilter, 'all'>;
   readonly city?: string;
   readonly vendorId?: string;
+  readonly serviceCategory?: string;
+  /** @deprecated Use serviceCategory (launch id slug). */
   readonly category?: string;
 }
 
@@ -142,6 +162,8 @@ export interface VendorCandidatesQueryParams {
   readonly status?: string;
   readonly eligibility?: Exclude<CatalogueEligibilityFilter, 'all'>;
   readonly vendorId?: string;
+  readonly serviceCategory?: string;
+  /** @deprecated Use serviceCategory (launch id slug). */
   readonly category?: string;
 }
 
@@ -184,7 +206,7 @@ export async function fetchCatalogueList(
       eligibility: params.eligibility,
       city: params.city,
       vendorId: params.vendorId,
-      category: params.category,
+      serviceCategory: params.serviceCategory ?? params.category,
     })}`,
   );
   return assertSuccess(response);
@@ -210,9 +232,16 @@ export async function fetchVendorCandidates(
       status: params.status,
       eligibility: params.eligibility,
       vendorId: params.vendorId,
-      category: params.category,
+      serviceCategory: params.serviceCategory ?? params.category,
     })}`,
   );
+  return assertSuccess(response);
+}
+
+export async function fetchServiceCategories(): Promise<readonly ServiceCategoryOption[]> {
+  const response = await apiClient.get<
+    SuccessEnvelope<readonly ServiceCategoryOption[]> | readonly ServiceCategoryOption[]
+  >(`${WPAY_CATALOGUE_API_BASE}/service-categories`);
   return assertSuccess(response);
 }
 
@@ -289,9 +318,15 @@ export function formatCatalogueDate(value: string | null | undefined): string {
   return date.toLocaleString();
 }
 
-export function formatCatalogueCategory(item: Pick<CatalogueListItem, 'category'>): string {
-  const category = item.category?.trim();
-  return category ? category : '—';
+export function formatCatalogueCategory(
+  item: Pick<CatalogueListItem, 'category' | 'serviceCategory' | 'roleLabel'>,
+): string {
+  const serviceCategory = item.serviceCategory?.trim() || item.category?.trim();
+  if (!serviceCategory) {
+    return '—';
+  }
+  const roleLabel = item.roleLabel?.trim();
+  return roleLabel ? `${serviceCategory} · ${roleLabel}` : serviceCategory;
 }
 
 export function formatCatalogueDiscount(item: CatalogueListItem): string {

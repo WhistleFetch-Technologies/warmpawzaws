@@ -2,6 +2,7 @@ import type { QueryResult } from 'pg';
 import { query } from '../../../database/rds-connection';
 import type {
   IVendorEligibilityRepository,
+  ServiceCategoryOption,
   VendorCandidateFilters,
   VendorCandidateRow,
   VendorEligibilitySnapshot,
@@ -10,8 +11,13 @@ import type {
 import {
   MERCHANT_ROLE_CATEGORY_EXPR,
   MERCHANT_SOLO_PROVIDER_EXPR,
-  merchantCategoryFilterSql,
+  merchantServiceCategoryFilterSql,
 } from '../shared/merchant/merchant-role-sql';
+import {
+  expandServiceCategoryFilterTokens,
+  launchServiceLabel,
+} from '../shared/merchant/merchant-service-category.resolver';
+import { mapCatalogSlugToLaunchServiceId } from '@warmpawz/service-launch-mappings';
 import {
   VENDOR_APPROVED_ACTIVE_SQL,
   WPAY_VENDOR_PAY_BILL_READY_SQL,
@@ -60,6 +66,7 @@ interface VendorCandidateDbRow {
   readonly is_deleted: boolean | null;
   readonly legacy_category: string | null;
   readonly role_name: string | null;
+  readonly role_display_name: string | null;
   readonly role_category: string | null;
   readonly customer_service: string | null;
   readonly role_config: unknown;
@@ -72,7 +79,7 @@ interface VendorExistenceDbRow {
 
 type CandidateFilterInput = Pick<
   VendorCandidateFilters,
-  'q' | 'status' | 'category' | 'vendorId' | 'eligibility'
+  'q' | 'status' | 'category' | 'serviceCategory' | 'vendorId' | 'eligibility'
 >;
 
 function mapSnapshot(row: VendorSnapshotDbRow): VendorEligibilitySnapshot {
@@ -96,6 +103,7 @@ function mapCandidate(row: VendorCandidateDbRow): VendorCandidateRow {
     ownerName: row.owner_name,
     vendorType: row.vendor_type,
     roleName: row.role_name,
+    roleDisplayName: row.role_display_name,
     isSoloProvider: row.is_solo_provider === true,
     city: row.city,
     status: row.status,
@@ -140,9 +148,13 @@ function buildCandidateWhereClause(filters: CandidateFilterInput): {
     conditions.push(`NOT ${WPAY_VENDOR_PAY_BILL_READY_SQL}`);
   }
 
-  if (filters.category) {
-    params.push(`%${filters.category}%`);
-    conditions.push(merchantCategoryFilterSql(`$${params.length}`));
+  const serviceCategory = filters.serviceCategory ?? filters.category;
+  if (serviceCategory) {
+    const tokens = expandServiceCategoryFilterTokens(serviceCategory);
+    if (tokens.length > 0) {
+      params.push(tokens);
+      conditions.push(merchantServiceCategoryFilterSql(`$${params.length}`));
+    }
   }
 
   return {
@@ -202,6 +214,7 @@ export class VendorEligibilityRepository implements IVendorEligibilityRepository
         v.is_deleted,
         v.category AS legacy_category,
         r.name AS role_name,
+        r.display_name AS role_display_name,
         ${MERCHANT_ROLE_CATEGORY_EXPR} AS role_category,
         r.customer_service,
         r.config AS role_config
@@ -246,6 +259,35 @@ export class VendorEligibilityRepository implements IVendorEligibilityRepository
       vendorId: row.id,
       isDeleted: row.is_deleted === true,
     };
+  }
+
+  async listServiceCategories(): Promise<readonly ServiceCategoryOption[]> {
+    const sql = `
+      SELECT DISTINCT TRIM(r.customer_service) AS customer_service
+      FROM roles r
+      WHERE COALESCE(r.is_active, true) = true
+        AND r.customer_service IS NOT NULL
+        AND TRIM(r.customer_service) <> ''
+      ORDER BY customer_service ASC
+    `;
+
+    const result = await this.db.query(sql);
+    const byId = new Map<string, ServiceCategoryOption>();
+
+    for (const row of result.rows as Array<{ customer_service: string }>) {
+      const raw = String(row.customer_service ?? '').trim();
+      if (!raw) {
+        continue;
+      }
+      const id = mapCatalogSlugToLaunchServiceId(raw);
+      if (!byId.has(id)) {
+        byId.set(id, { id, label: launchServiceLabel(id) });
+      }
+    }
+
+    return Array.from(byId.values()).sort((left, right) =>
+      left.label.localeCompare(right.label),
+    );
   }
 }
 

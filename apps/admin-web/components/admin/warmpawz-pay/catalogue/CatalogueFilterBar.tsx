@@ -1,18 +1,23 @@
 'use client';
 
 import { Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@warmpawz/ui';
-import type { CatalogueEligibilityFilter } from '@/lib/warmpawz-pay-catalogue-admin';
+import type {
+  CatalogueEligibilityFilter,
+  CataloguePublishStatusFilter,
+  ServiceCategoryOption,
+} from '@/lib/warmpawz-pay-catalogue-admin';
 import { SearchBar } from './SearchBar';
+import { buildServiceCategoryFilterOptions } from './MerchantCategoryCell';
 import {
-  CATALOGUE_CATEGORY_OPTIONS,
   PLATFORM_STATUS_FILTER_OPTIONS,
+  PUBLISH_STATUS_FILTER_OPTIONS,
 } from './catalogue-filter-options';
-
 export interface CatalogueFilterBarProps {
   readonly searchInput: string;
   readonly onSearchInputChange: (value: string) => void;
   readonly categoryFilter: string;
   readonly onCategoryFilterChange: (value: string) => void;
+  readonly serviceCategoryOptions?: readonly ServiceCategoryOption[];
   readonly eligibilityFilter: CatalogueEligibilityFilter;
   readonly onEligibilityFilterChange: (value: CatalogueEligibilityFilter) => void;
   readonly vendorIdFilter: string;
@@ -20,6 +25,9 @@ export interface CatalogueFilterBarProps {
   readonly platformStatusFilter?: string;
   readonly onPlatformStatusFilterChange?: (value: string) => void;
   readonly showPlatformStatus?: boolean;
+  readonly publishStatusFilter?: CataloguePublishStatusFilter;
+  readonly onPublishStatusFilterChange?: (value: CataloguePublishStatusFilter) => void;
+  readonly showPublishStatus?: boolean;
   readonly disabled?: boolean;
   readonly searchPlaceholder?: string;
 }
@@ -29,6 +37,7 @@ export function CatalogueFilterBar({
   onSearchInputChange,
   categoryFilter,
   onCategoryFilterChange,
+  serviceCategoryOptions = [],
   eligibilityFilter,
   onEligibilityFilterChange,
   vendorIdFilter,
@@ -36,9 +45,14 @@ export function CatalogueFilterBar({
   platformStatusFilter = 'all',
   onPlatformStatusFilterChange,
   showPlatformStatus = false,
+  publishStatusFilter = 'all',
+  onPublishStatusFilterChange,
+  showPublishStatus = false,
   disabled = false,
   searchPlaceholder = 'Search business name…',
 }: CatalogueFilterBarProps) {
+  const categoryOptions = buildServiceCategoryFilterOptions(serviceCategoryOptions);
+
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
       <SearchBar
@@ -56,9 +70,9 @@ export function CatalogueFilterBar({
           <SelectValue placeholder="Category" />
         </SelectTrigger>
         <SelectContent>
-          {CATALOGUE_CATEGORY_OPTIONS.map((option) => (
-            <SelectItem key={option} value={option}>
-              {option}
+          {categoryOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
             </SelectItem>
           ))}
         </SelectContent>
@@ -74,6 +88,26 @@ export function CatalogueFilterBar({
           </SelectTrigger>
           <SelectContent>
             {PLATFORM_STATUS_FILTER_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
+      {showPublishStatus && onPublishStatusFilterChange ? (
+        <Select
+          value={publishStatusFilter}
+          onValueChange={(value) =>
+            onPublishStatusFilterChange(value as CataloguePublishStatusFilter)
+          }
+          disabled={disabled}
+        >
+          <SelectTrigger className="w-48 bg-white">
+            <SelectValue placeholder="Catalogue status" />
+          </SelectTrigger>
+          <SelectContent>
+            {PUBLISH_STATUS_FILTER_OPTIONS.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>

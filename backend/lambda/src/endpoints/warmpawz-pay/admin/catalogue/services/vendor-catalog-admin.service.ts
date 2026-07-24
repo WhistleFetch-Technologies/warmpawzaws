@@ -10,9 +10,10 @@ import type {
   CatalogueListItem,
   EligibilityDTO,
   VendorCandidateDTO,
+  ServiceCategoryOptionDTO,
   VendorCandidateListData,
 } from '../dto/catalogue.responses';
-import type { IVendorCatalogRepository, CatalogueRow, CatalogueRowWithVendor } from '../../../repositories/interfaces/IVendorCatalogRepository';
+import type { IVendorCatalogRepository, CatalogueRow, CatalogueRowWithVendor, CatalogueAdminListRow } from '../../../repositories/interfaces/IVendorCatalogRepository';
 import type {
   IVendorEligibilityRepository,
   VendorCandidateRow,
@@ -28,11 +29,12 @@ import {
   enrichCatalogueMerchant,
   type CataloguePricingRowInput,
 } from '../../../shared/merchant/catalogue-merchant-enrichment';
-import {
-  resolveMerchantCategory,
-  serviceCategoryFromRoleConfig,
-} from '../../../shared/merchant/merchant-category.resolver';
 import { resolveMerchantDisplayName } from '../../../shared/merchant/merchant-display-name.resolver';
+import {
+  resolveMerchantServiceCategory,
+  type MerchantServiceCategoryInput,
+  type MerchantServiceCategoryResult,
+} from '../../../shared/merchant/merchant-service-category.resolver';
 import { resolvePlatformStatus } from '../../../shared/merchant/merchant-platform-status.resolver';
 
 export class CatalogueAdminError extends Error {
@@ -129,7 +131,7 @@ export class VendorCatalogAdminService {
       q: query.q,
       city: query.city,
       vendorId: query.vendorId,
-      category: query.category,
+      serviceCategory: query.serviceCategory ?? query.category,
     };
 
     const [rows, total] = await Promise.all([
@@ -137,7 +139,9 @@ export class VendorCatalogAdminService {
       this.catalogRepository.countAdmin(filters),
     ]);
 
-    const items = rows.map((row) => this.buildCatalogueListItem(row, this.resolveEligibility(row)));
+    const items = rows.map((row) =>
+      this.buildCatalogueListItemFromAdminRow(row, this.resolveEligibilityForAdminRow(row)),
+    );
 
     return {
       items,
@@ -156,7 +160,7 @@ export class VendorCatalogAdminService {
       pageSize: query.pageSize,
       q: query.q,
       status: query.status,
-      category: query.category,
+      serviceCategory: query.serviceCategory ?? query.category,
       vendorId: query.vendorId,
       eligibility:
         query.eligibility && query.eligibility !== 'all' ? query.eligibility : undefined,
@@ -176,6 +180,10 @@ export class VendorCatalogAdminService {
         totalPages: total === 0 ? 0 : Math.ceil(total / query.pageSize),
       },
     };
+  }
+
+  async listServiceCategories(): Promise<readonly ServiceCategoryOptionDTO[]> {
+    return this.eligibilityRepository.listServiceCategories();
   }
 
   async publish(catalogueId: string, adminUserId: string): Promise<CatalogueDetail | null> {
@@ -481,6 +489,118 @@ export class VendorCatalogAdminService {
     };
   }
 
+  private resolveEligibilityForAdminRow(row: CatalogueAdminListRow): ResolvedEligibility {
+    const snapshot = this.toEligibilitySnapshotFromAdminRow(row);
+    return {
+      eligibility: this.eligibilityService.buildEligibilityDto(snapshot),
+      warnings: this.eligibilityService.buildWarnings(snapshot),
+    };
+  }
+
+  private toEligibilitySnapshotFromAdminRow(
+    row: CatalogueAdminListRow,
+  ): VendorEligibilitySnapshot {
+    return {
+      vendorId: row.vendorId,
+      businessName: row.businessName,
+      ownerName: row.ownerName,
+      city: row.city,
+      phone: row.phone,
+      vendorStatus: row.vendorStatus,
+      isActive: row.isActive,
+      bankVerified: row.bankVerified,
+      isDeleted: row.isDeleted,
+      publishStatus: row.publishStatus ?? DRAFT,
+    };
+  }
+
+  private buildCatalogueListItemFromAdminRow(
+    row: CatalogueAdminListRow,
+    resolved: ResolvedEligibility,
+  ): CatalogueListItem {
+    const enrichmentPublishStatus = row.publishStatus ?? DRAFT;
+    const enrichment = enrichCatalogueMerchant(
+      {
+        publishStatus: enrichmentPublishStatus,
+        vendorStatus: row.vendorStatus,
+        isActive: row.isActive,
+        isOnline: row.isOnline,
+        bankVerified: row.bankVerified,
+        isDeleted: row.isDeleted,
+        vendorType: row.vendorType,
+        isSoloProvider: row.isSoloProvider,
+        roleName: row.roleName,
+        roleDisplayName: row.roleDisplayName,
+        roleCategory: row.roleCategory,
+        customerService: row.customerService,
+        roleConfig: row.roleConfig,
+        legacyCategory: row.legacyCategory,
+      },
+      this.toPricingRowInputFromAdminRow(row),
+    );
+    const categoryFields = this.resolveCategoryFields({
+      customerService: row.customerService,
+      roleCategory: row.roleCategory,
+      roleConfig: row.roleConfig,
+      legacyCategory: row.legacyCategory,
+      roleName: row.roleName,
+      roleDisplayName: row.roleDisplayName,
+    });
+
+    const displayUpdatedAt = row.updatedAt ?? row.vendorUpdatedAt;
+
+    return {
+      catalogueId: row.id,
+      inCatalogue: row.inCatalogue,
+      vendorId: row.vendorId,
+      businessName: row.businessName,
+      ownerName: row.ownerName ?? undefined,
+      city: row.city ?? undefined,
+      phone: row.phone ?? undefined,
+      publishStatus: row.publishStatus,
+      publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
+      createdAt: row.createdAt ? row.createdAt.toISOString() : null,
+      updatedAt: displayUpdatedAt.toISOString(),
+      createdBy: row.createdBy,
+      eligibility: resolved.eligibility,
+      warnings: resolved.warnings.length > 0 ? resolved.warnings : undefined,
+      category: categoryFields.serviceCategory,
+      serviceCategory: categoryFields.serviceCategory,
+      serviceCategoryId: categoryFields.serviceCategoryId,
+      roleLabel: categoryFields.roleLabel,
+      categoryDisplay: categoryFields.categoryDisplay,
+      businessType: enrichment.businessType,
+      platformStatus: enrichment.platformStatus,
+      warmpawzPayStatus: row.inCatalogue ? enrichment.warmpawzPayStatus : 'Hidden',
+      customerVisible: row.inCatalogue ? enrichment.customerVisible : false,
+      readiness: enrichment.readiness,
+      pricing: enrichment.pricing,
+    };
+  }
+
+  private toPricingRowInputFromAdminRow(
+    row: CatalogueAdminListRow,
+  ): CataloguePricingRowInput | null {
+    if (
+      !row.pricingId ||
+      !row.pricingDiscountType ||
+      row.pricingDiscountValue === null ||
+      !row.pricingStatus ||
+      !row.pricingEffectiveFrom
+    ) {
+      return null;
+    }
+
+    return {
+      pricingId: row.pricingId,
+      discountType: row.pricingDiscountType as PricingDiscountType,
+      discountValue: row.pricingDiscountValue,
+      status: row.pricingStatus as PricingStatus,
+      effectiveFrom: row.pricingEffectiveFrom,
+      effectiveUntil: row.pricingEffectiveUntil,
+    };
+  }
+
   private buildCatalogueListItem(
     row: CatalogueRowWithVendor,
     resolved: ResolvedEligibility,
@@ -496,6 +616,7 @@ export class VendorCatalogAdminService {
         vendorType: row.vendorType,
         isSoloProvider: row.isSoloProvider,
         roleName: row.roleName,
+        roleDisplayName: row.roleDisplayName,
         roleCategory: row.roleCategory,
         customerService: row.customerService,
         roleConfig: row.roleConfig,
@@ -503,9 +624,18 @@ export class VendorCatalogAdminService {
       },
       this.toPricingRowInput(row),
     );
+    const categoryFields = this.resolveCategoryFields({
+      customerService: row.customerService,
+      roleCategory: row.roleCategory,
+      roleConfig: row.roleConfig,
+      legacyCategory: row.legacyCategory,
+      roleName: row.roleName,
+      roleDisplayName: row.roleDisplayName,
+    });
 
     return {
       catalogueId: row.id,
+      inCatalogue: true,
       vendorId: row.vendorId,
       businessName: row.businessName,
       ownerName: row.ownerName ?? undefined,
@@ -518,7 +648,11 @@ export class VendorCatalogAdminService {
       createdBy: row.createdBy,
       eligibility: resolved.eligibility,
       warnings: resolved.warnings.length > 0 ? resolved.warnings : undefined,
-      category: enrichment.category,
+      category: categoryFields.serviceCategory,
+      serviceCategory: categoryFields.serviceCategory,
+      serviceCategoryId: categoryFields.serviceCategoryId,
+      roleLabel: categoryFields.roleLabel,
+      categoryDisplay: categoryFields.categoryDisplay,
       businessType: enrichment.businessType,
       platformStatus: enrichment.platformStatus,
       warmpawzPayStatus: enrichment.warmpawzPayStatus,
@@ -557,11 +691,13 @@ export class VendorCatalogAdminService {
   }
 
   private mapVendorCandidate(row: VendorCandidateRow): VendorCandidateDTO {
-    const category = resolveMerchantCategory({
-      roleCategory: row.roleCategory,
+    const categoryFields = this.resolveCategoryFields({
       customerService: row.customerService,
-      serviceCategory: serviceCategoryFromRoleConfig(row.roleConfig),
+      roleCategory: row.roleCategory,
+      roleConfig: row.roleConfig,
       legacyCategory: row.legacyCategory,
+      roleName: row.roleName,
+      roleDisplayName: row.roleDisplayName,
     });
 
     const platformStatus = resolvePlatformStatus({
@@ -582,9 +718,19 @@ export class VendorCatalogAdminService {
       city: row.city,
       status: row.status,
       bankVerified: row.bankVerified,
-      category,
+      category: categoryFields.serviceCategory,
+      serviceCategory: categoryFields.serviceCategory,
+      serviceCategoryId: categoryFields.serviceCategoryId,
+      roleLabel: categoryFields.roleLabel,
+      categoryDisplay: categoryFields.categoryDisplay,
       platformStatus,
     };
+  }
+
+  private resolveCategoryFields(
+    input: MerchantServiceCategoryInput,
+  ): MerchantServiceCategoryResult {
+    return resolveMerchantServiceCategory(input);
   }
 
   private async runBulkOperation(

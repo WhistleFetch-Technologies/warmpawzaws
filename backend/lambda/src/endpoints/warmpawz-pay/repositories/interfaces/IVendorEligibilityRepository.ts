@@ -20,6 +20,7 @@ export interface VendorCandidateFilters {
   readonly q?: string;
   readonly status?: string;
   readonly category?: string;
+  readonly serviceCategory?: string;
   readonly vendorId?: string;
   readonly eligibility?: Exclude<CatalogueEligibilityFilter, 'all'>;
 }
@@ -30,6 +31,7 @@ export interface VendorCandidateRow {
   readonly ownerName: string | null;
   readonly vendorType: string | null;
   readonly roleName: string | null;
+  readonly roleDisplayName: string | null;
   readonly isSoloProvider: boolean;
   readonly city: string | null;
   readonly status: string;
@@ -47,12 +49,19 @@ export interface VendorExistenceResult {
   readonly isDeleted: boolean;
 }
 
+export interface ServiceCategoryOption {
+  readonly id: string;
+  readonly label: string;
+}
+
 export interface IVendorEligibilityRepository {
   getSnapshot(vendorId: string): Promise<VendorEligibilitySnapshot | null>;
 
   searchCandidates(filters: VendorCandidateFilters): Promise<readonly VendorCandidateRow[]>;
 
   countCandidates(filters: VendorCandidateFilters): Promise<number>;
+
+  listServiceCategories(): Promise<readonly ServiceCategoryOption[]>;
 
   /**
    * Returns vendor existence for create validation.

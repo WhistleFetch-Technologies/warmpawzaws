@@ -22,20 +22,25 @@ export interface CataloguePricingSummary {
 }
 
 export interface CatalogueListItem {
-  readonly catalogueId: string;
+  readonly catalogueId: string | null;
+  readonly inCatalogue: boolean;
   readonly vendorId: string;
   readonly businessName: string;
   readonly ownerName?: string;
   readonly city?: string;
   readonly phone?: string;
-  readonly publishStatus: PublishStatus;
+  readonly publishStatus: PublishStatus | null;
   readonly publishedAt: string | null;
-  readonly createdAt: string;
-  readonly updatedAt: string;
+  readonly createdAt: string | null;
+  readonly updatedAt: string | null;
   readonly createdBy: string | null;
   readonly eligibility: EligibilityDTO;
   readonly warnings?: readonly string[];
   readonly category: string;
+  readonly serviceCategory: string;
+  readonly serviceCategoryId: string;
+  readonly roleLabel: string;
+  readonly categoryDisplay: string;
   readonly businessType: MerchantBusinessType;
   readonly platformStatus: PlatformStatus;
   readonly warmpawzPayStatus: WarmpawzPayStatus;
@@ -61,7 +66,16 @@ export interface VendorCandidateDTO {
   readonly status: string;
   readonly bankVerified: boolean;
   readonly category: string;
+  readonly serviceCategory: string;
+  readonly serviceCategoryId: string;
+  readonly roleLabel: string;
+  readonly categoryDisplay: string;
   readonly platformStatus: PlatformStatus;
+}
+
+export interface ServiceCategoryOptionDTO {
+  readonly id: string;
+  readonly label: string;
 }
 
 export interface PaginationResponse {
@@ -105,4 +119,5 @@ export interface VendorCandidateListData {
 export type CatalogueListResponse = SuccessResponse<CatalogueListData>;
 export type CatalogueDetailResponse = SuccessResponse<CatalogueDetail>;
 export type VendorCandidateListResponse = SuccessResponse<VendorCandidateListData>;
+export type ServiceCategoryListResponse = SuccessResponse<readonly ServiceCategoryOptionDTO[]>;
 export type BulkOperationSuccessResponse = SuccessResponse<BulkOperationResponse>;

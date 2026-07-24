@@ -13,6 +13,7 @@ import type {
   UpdatePricingInput,
 } from './interfaces/IMerchantPricingRepository';
 import type { VendorCatalogDbClient } from './vendor-catalog.repository';
+import { toOptionalAdminActorUuid } from '../admin/catalogue/utils/admin-actor-id';
 import { MERCHANT_ROLE_CATEGORY_EXPR, MERCHANT_SOLO_PROVIDER_EXPR } from '../shared/merchant/merchant-role-sql';
 
 const PRICING_TABLE = 'warmpawz_pay_merchant_pricing';
@@ -184,7 +185,7 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
       input.status,
       input.effectiveFrom,
       input.effectiveUntil,
-      input.createdBy,
+      toOptionalAdminActorUuid(input.createdBy),
     ]);
 
     const row = result.rows[0] as PricingDbRow;

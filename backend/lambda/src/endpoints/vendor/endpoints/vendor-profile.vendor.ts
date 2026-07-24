@@ -22,6 +22,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { getEffectiveCapabilities } from '../../../utils/capability-filter';
 import { computeEffectiveAllowedServiceStyles } from '../../../utils/effective-service-styles';
+import { markVendorBankVerified } from '../../../utils/sync-vendor-bank-verified';
 
 /** Parse roles.config when stored as JSON string (Postgres json/jsonb driver variance). */
 export function parseRoleConfigJson(config: unknown): Record<string, any> {
@@ -1813,6 +1814,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
       const verifyPayload: any = {
         is_verified: true,
+        verification_status: 'verified',
         verified_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -1836,7 +1838,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
         await update('vendor_bank_details', { vendor_id: resolvedVendorId }, verifyPayload);
       }
 
-      return c.json({ 
+      await markVendorBankVerified(resolvedVendorId);
+
+      return c.json({
         success: true, 
         message: 'Bank account verified successfully. Name, IFSC, and account number validated.',
         verified: true,
