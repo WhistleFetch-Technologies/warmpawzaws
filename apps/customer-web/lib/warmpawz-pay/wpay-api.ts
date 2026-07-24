@@ -21,7 +21,6 @@ export type WpayTransactionCard = {
   paymentId: string;
   vendorId: string;
   vendorName: string;
-  vendorCategory: string | null;
   originalAmount: number;
   discountPercent: number;
   discountAmount: number;

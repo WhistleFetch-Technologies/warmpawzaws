@@ -8,6 +8,18 @@ import { useWarmpawzPayDashboard } from '@/hooks/warmpawz-pay/useWarmpawzPayDash
 import type { WarmpawzPayDashboardData } from '@/lib/warmpawz-pay-dashboard-admin';
 
 jest.mock('@/hooks/warmpawz-pay/useWarmpawzPayDashboard');
+jest.mock('@/hooks/warmpawz-pay/useWarmpawzPayPayments', () => ({
+  useWarmpawzPayPayments: () => ({
+    data: { items: [], page: 1, pageSize: 5, total: 0, totalPages: 0 },
+    isLoading: false,
+    error: null,
+    refresh: jest.fn(),
+  }),
+}));
+
+jest.mock('../PaymentsTable', () => ({
+  PaymentsTable: () => null,
+}));
 
 jest.mock('@/components/admin/marketing/analytics/AnalyticsStateViews', () => ({
   AnalyticsErrorState: ({

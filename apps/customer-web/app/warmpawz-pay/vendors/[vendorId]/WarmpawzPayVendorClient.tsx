@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { QrCode } from 'lucide-react';
 import { useWpayVendorId } from '@/lib/warmpawz-pay/use-wpay-vendor-id';
 import { fetchWpayVendorDetail, type WpayVendorDetail } from '@/lib/warmpawz-pay/wpay-api';
+import { runWpayRazorpayCheckout } from '@/lib/warmpawz-pay/wpay-razorpay-checkout';
 import { VendorProfileDashboardHeader } from '@/components/customer/shared/VendorProfileDashboardHeader';
 import { VendorHeroPhotoCarousel } from '@/components/customer/shared/VendorHeroPhotoCarousel';
 import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryProviderAvatar';
@@ -25,6 +26,8 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [amountInput, setAmountInput] = useState('');
   const [quoteReady, setQuoteReady] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!resolvedVendorId) return;
@@ -62,9 +65,39 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
     setQuoteReady(true);
   }, [billAmount]);
 
-  const onProceedToPay = useCallback(() => {
-    alert('Payment flow API not wired yet (quote/initiate/verify). Preview only.');
-  }, []);
+  const onProceedToPay = useCallback(async () => {
+    if (!vendor || !resolvedVendorId || billAmount <= 0) return;
+    const phone =
+      localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || '';
+    if (!phone) {
+      setPayError('Please log in to continue');
+      return;
+    }
+
+    setPaying(true);
+    setPayError(null);
+    try {
+      const result = await runWpayRazorpayCheckout({
+        vendorId: resolvedVendorId,
+        vendorName: vendor.name,
+        originalAmount: billAmount,
+        customerPhone: phone,
+      });
+      const saved = Number(result.savedAmount ?? result.discountAmount ?? discountAmount);
+      const qs = new URLSearchParams({
+        saved: String(saved),
+        vendor: vendor.name,
+      });
+      router.push(`/warmpawz-pay/success?${qs.toString()}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Payment failed';
+      if (msg !== 'Payment cancelled') {
+        setPayError(msg);
+      }
+    } finally {
+      setPaying(false);
+    }
+  }, [billAmount, discountAmount, resolvedVendorId, router, vendor]);
 
   if (loading) {
     return <p className="p-8 text-center text-sm text-gray-500">Loading…</p>;
@@ -198,12 +231,13 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
 
             <button
               type="button"
-              disabled={billAmount <= 0}
-              onClick={quoteReady ? onProceedToPay : onGetDiscount}
+              disabled={billAmount <= 0 || paying}
+              onClick={quoteReady ? () => void onProceedToPay() : onGetDiscount}
               className="w-full rounded-xl bg-[#FF6B00] py-3 text-center font-semibold text-white disabled:opacity-50"
             >
-              {quoteReady ? 'Proceed to Pay' : 'Get Discount'}
+              {paying ? 'Opening payment…' : quoteReady ? 'Proceed to Pay' : 'Get Discount'}
             </button>
+            {payError ? <p className="text-center text-sm text-red-600">{payError}</p> : null}
           </div>
         </div>
       </div>
