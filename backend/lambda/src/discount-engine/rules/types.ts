@@ -21,6 +21,8 @@ export interface RuleContext {
   published?: boolean;
 
   vendorId?: string;
+  /** Platform coupon vendor allow-list. */
+  vendorIds?: string[];
   contextVendorId?: string;
   customerId?: string;
 

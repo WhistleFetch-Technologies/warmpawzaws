@@ -1,6 +1,8 @@
 import {
   couponRowMatchesService,
+  couponRowMatchesVendor,
   parseCouponApplicableServices,
+  parseCouponVendorIds,
 } from '../coupon-targeting';
 
 describe('coupon-targeting', () => {
@@ -60,5 +62,30 @@ describe('coupon-targeting', () => {
         'grooming'
       )
     ).toBe(false);
+  });
+
+  it('parses vendor ids from metadata.selectedTargets.vendors', () => {
+    expect(
+      parseCouponVendorIds({
+        metadata: {
+          selectedTargets: { vendors: ['a6db6389-7506-49b7-afed-70b493fa9ba0'] },
+        },
+      })
+    ).toEqual(['a6db6389-7506-49b7-afed-70b493fa9ba0']);
+  });
+
+  it('matches vendor-scoped coupon only for allowed vendor', () => {
+    const row = {
+      metadata: {
+        selectedTargets: { vendors: ['vendor-a'] },
+      },
+    };
+    expect(couponRowMatchesVendor(row, 'vendor-a')).toBe(true);
+    expect(couponRowMatchesVendor(row, 'vendor-b')).toBe(false);
+    expect(couponRowMatchesVendor(row)).toBe(false);
+  });
+
+  it('allows platform-wide coupons without vendor targeting', () => {
+    expect(couponRowMatchesVendor({ applicable_to: 'all' }, 'any-vendor')).toBe(true);
   });
 });

@@ -120,6 +120,8 @@ export async function resolveBookingCouponDiscount(params: {
     customerId: params.customerId,
     couponCode: code,
     excludeBookingId: params.excludeBookingId,
+    vendorId: params.vendorId,
+    serviceIds: params.serviceIds,
   });
   if (platformCoupon.valid && platformCoupon.discountAmount && platformCoupon.discountAmount > 0) {
     return {

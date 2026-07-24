@@ -6,6 +6,7 @@ import { DiscountStatus } from '../enums/discount-status';
 import { DiscountTrigger } from '../enums/discount-trigger';
 import type { PromotionRow } from '../../utils/vendor-promotion-engine';
 import type { ServicePromotionRow } from '../../utils/service-promotion-engine';
+import { parseCouponVendorIds } from '../../utils/coupon-targeting';
 import {
   parseIntSafe,
   parseJsonbStringArray,
@@ -234,6 +235,7 @@ export class CandidateNormalizer {
 
   fromCoupon(row: Record<string, unknown>): DiscountCandidate {
     const code = parseOptionalString(row.code) ?? '';
+    const vendorIds = parseCouponVendorIds(row);
 
     return {
       id: String(row.id),
@@ -249,6 +251,8 @@ export class CandidateNormalizer {
           row.min_order_amount != null ? parseNum(row.min_order_amount) : null,
         applicableServices: parseServicesList(row.applicable_services),
         serviceCategory: parseOptionalString(row.service_category),
+        vendorIds: vendorIds.length > 0 ? vendorIds : undefined,
+        vendorId: vendorIds.length === 1 ? vendorIds[0] : undefined,
       },
       benefits: {
         type: 'coupon',

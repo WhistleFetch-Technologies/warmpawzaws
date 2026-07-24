@@ -120,6 +120,7 @@ export function wizardToAdminCouponPayload(
     applicable_to: applicableTo(form, discountDomain),
     applicable_services: applicableServices,
     service_category: primaryCategory && primaryCategory !== 'all' ? primaryCategory : undefined,
+    vendor_ids: form.selectedTargets.vendors ?? [],
     target_scopes: form.targetScopes,
     selected_targets: form.selectedTargets,
     discount_domain: discountDomain,

@@ -2,6 +2,49 @@ import { promotionCategoriesMatch } from '@/lib/promotion-banner-filter';
 
 export type { PromotionFilterInput } from '@/lib/promotion-banner-filter';
 
+function parseCouponMetadata(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object') return raw as Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+export function parseCouponVendorIds(row: {
+  vendor_ids?: unknown;
+  vendorIds?: unknown;
+  metadata?: unknown;
+}): string[] {
+  const meta = parseCouponMetadata(row.metadata);
+  const selected =
+    (meta.selectedTargets as Record<string, unknown> | undefined) ??
+    (meta.selected_targets as Record<string, unknown> | undefined) ??
+    {};
+  const fromTargets = Array.isArray(selected.vendors)
+    ? selected.vendors.map((x) => String(x).trim()).filter(Boolean)
+    : [];
+  const topLevel = row.vendor_ids ?? row.vendorIds ?? meta.vendorIds ?? meta.vendor_ids;
+  const fromTop = Array.isArray(topLevel)
+    ? topLevel.map((x) => String(x).trim()).filter(Boolean)
+    : [];
+  return Array.from(new Set([...fromTargets, ...fromTop]));
+}
+
+/** Mirrors backend couponRowMatchesVendor. */
+export function couponOfferMatchesVendor(
+  row: { vendor_ids?: unknown; vendorIds?: unknown; metadata?: unknown },
+  vendorId?: string
+): boolean {
+  const vendorIds = parseCouponVendorIds(row);
+  if (vendorIds.length === 0) return true;
+  if (!vendorId) return false;
+  return vendorIds.includes(String(vendorId).trim());
+}
+
 export function parseCouponApplicableServices(raw: unknown): string[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.map((x) => String(x).trim()).filter(Boolean);
