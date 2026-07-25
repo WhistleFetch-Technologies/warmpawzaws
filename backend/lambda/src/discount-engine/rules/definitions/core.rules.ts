@@ -156,6 +156,27 @@ function isUuidToken(value: string): boolean {
   return /^[0-9a-f-]{36}$/i.test(value);
 }
 
+export class CouponVendorTargetRule implements DiscountRule {
+  readonly ruleName = 'CouponVendorTargetRule';
+  readonly group = 'domain';
+  applies(ctx: RuleContext): boolean {
+    return ctx.domain === 'coupon';
+  }
+  evaluate(ctx: RuleContext): RuleResult {
+    const vendorIds = (ctx.vendorIds ?? [])
+      .map((id) => String(id).trim())
+      .filter(Boolean);
+    if (vendorIds.length === 0) return pass(this.ruleName);
+    if (!ctx.contextVendorId) {
+      return fail(this.ruleName, 'This coupon is not valid for this provider');
+    }
+    if (!vendorIds.includes(String(ctx.contextVendorId).trim())) {
+      return fail(this.ruleName, 'This coupon is not valid for this provider');
+    }
+    return pass(this.ruleName);
+  }
+}
+
 export class CouponServiceTargetRule implements DiscountRule {
   readonly ruleName = 'CouponServiceTargetRule';
   readonly group = 'domain';

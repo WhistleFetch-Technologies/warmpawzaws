@@ -12,7 +12,7 @@ import {
   couponValidateOrderTypeForCheckout,
   type AppliedCheckoutCoupon,
 } from '@/lib/pricing/coupon-validation';
-import { couponOfferMatchesService } from '@/lib/pricing/coupon-targeting';
+import { couponOfferMatchesService, couponOfferMatchesVendor } from '@/lib/pricing/coupon-targeting';
 import { fetchBookingDiscountQuote } from '@/lib/service-booking-pricing';
 import { couponRejectionMessageFromQuote } from '@/lib/pricing/coupon-policy-messages';
 import type { UnifiedResolverResponse } from '@/lib/pricing/unified-resolver-response';
@@ -109,7 +109,7 @@ export function CouponSection({
     if (expanded) {
       void fetchAvailablePromotions();
     }
-  }, [vendorId, expanded, orderAmount, customerId, checkoutKind, serviceCategory]);
+  }, [vendorId, expanded, orderAmount, customerId, checkoutKind, serviceCategory, serviceIds]);
 
   const fetchAvailablePromotions = async () => {
     setLoadingPromotions(true);
@@ -125,7 +125,7 @@ export function CouponSection({
           : apiClient.get<any>(
               `/promotions/active?includeCoupons=true&includeCodedPromotions=true&discount_domain=SERVICE${
                 serviceCategory ? `&service=${encodeURIComponent(serviceCategory)}` : ''
-              }`
+              }${vendorId ? `&vendorId=${encodeURIComponent(vendorId)}` : ''}`
             ),
       ]);
       const vendorPromotions = Array.isArray((vendorRes as any)?.promotions) ? (vendorRes as any).promotions : [];
@@ -144,6 +144,7 @@ export function CouponSection({
         .filter((promo: Promotion) =>
           orderType === 'order' ? true : couponOfferMatchesService(promo, serviceCategory)
         )
+        .filter((promo: Promotion) => couponOfferMatchesVendor(promo, vendorId))
         .map((promo: Promotion) => ({
           ...promo,
           discount_value: toFiniteNumber(promo.discount_value),

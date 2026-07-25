@@ -218,20 +218,33 @@ export function couponValidateToDiscountContext(
     customerId?: string;
     customerUsageCount?: number;
     maxUsesPerUser?: number | null;
+    vendorId?: string;
+    serviceIds?: string[];
+    serviceCategory?: string;
   }
 ): DiscountContext {
+  const serviceIds = options?.serviceIds?.map((id) => String(id).trim()).filter(Boolean);
   return {
     domain: options?.domain ?? DiscountDomain.ECOMMERCE,
     trigger: DiscountTrigger.CODE,
     owner: DiscountOwner.PLATFORM,
+    vendorId: options?.vendorId,
     amount,
     customerId: options?.customerId,
     couponCode: String(coupon.code ?? ''),
+    booking:
+      serviceIds?.length || options?.serviceCategory
+        ? {
+            serviceIds: serviceIds?.length ? serviceIds : undefined,
+            serviceCategory: options?.serviceCategory,
+          }
+        : undefined,
     metadata: {
       [METADATA_COUPON_USAGE_COUNT]: options?.usageCount,
       customerCouponUsageCount: options?.customerUsageCount,
       maxUsesPerUser: options?.maxUsesPerUser ?? null,
       [METADATA_PRELOADED_ROWS]: [coupon],
+      [METADATA_EVALUATION_MODE]: 'full',
     },
   };
 }

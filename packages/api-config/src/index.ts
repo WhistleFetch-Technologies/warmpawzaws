@@ -49,6 +49,10 @@ export const ENDPOINTS = {
 
   // Booking
   BOOKING: (id: string) => `/booking/${id}`,
+
+  // Commerce Switch
+  CONFIG_COMMERCE_SWITCH: '/config/commerce-switch',
+  ADMIN_COMMERCE_SWITCH: '/admin/commerce-switch/configuration',
 } as const;
 
 export default { getApiBaseUrl, ENDPOINTS };

@@ -71,6 +71,7 @@ export function candidateToRuleContext(
     endDate: candidate.endDate,
     published: candidate.rules.published,
     vendorId: candidate.rules.vendorId,
+    vendorIds: candidate.rules.vendorIds,
     contextVendorId: runtime.contextVendorId,
     customerId: runtime.customerId,
     usageLimit: candidate.usage?.limit,

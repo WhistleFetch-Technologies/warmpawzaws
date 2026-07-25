@@ -9,6 +9,7 @@ import {
   CouponMaxUsesRule,
   CouponMaxUsesPerUserRule,
   CouponServiceTargetRule,
+  CouponVendorTargetRule,
   DateRangeIstRule,
   DateRangeUtcRule,
   FirstBookingRule,
@@ -343,6 +344,24 @@ describe('Discount Engine Phase 3 — Rule Engine', () => {
         applicableServices: ['00000000-0000-4000-8000-000000000001'],
       });
       expect(result.passed).toBe(false);
+    });
+
+    it('CouponVendorTargetRule rejects vendor-scoped coupon for wrong provider', () => {
+      const result = new CouponVendorTargetRule().evaluate({
+        domain: 'coupon',
+        vendorIds: ['vendor-a'],
+        contextVendorId: 'vendor-b',
+      });
+      expect(result.passed).toBe(false);
+    });
+
+    it('CouponVendorTargetRule accepts vendor-scoped coupon for matching provider', () => {
+      const result = new CouponVendorTargetRule().evaluate({
+        domain: 'coupon',
+        vendorIds: ['vendor-a'],
+        contextVendorId: 'vendor-a',
+      });
+      expect(result.passed).toBe(true);
     });
 
     it('PlatformMatchRule mirrors booking platform context matching', () => {

@@ -185,6 +185,7 @@ import { registerPlatformTaxEndpoints } from '../endpoints/platform-tax-document
 import { registerReviewsEnhancedEndpoints } from '../endpoints/reviews-enhanced';
 import { registerReturnsEnhancedEndpoints } from '../endpoints/returns-enhanced';
 import { registerFeeConfigEndpoints } from '../endpoints/fee-config';
+import { registerCommerceSwitchEndpoints } from '../endpoints/commerce-switch.endpoints';
 import { registerKYCVerificationEndpoints } from '../endpoints/kyc-verification';
 import { registerSpecializationMasterEndpoints } from '../endpoints/specialization-master';
 import platformPoliciesApp from '../endpoints/platform-policies';
@@ -827,6 +828,7 @@ registerProblemGridEndpoints(app);
 registerVendorDashboardMissingEndpoints(app);
 registerUIDashboardConfigEndpoints(app); // UI Dashboard Configuration (Marketing > Dashboard UI) - LEGACY, kept for backward compatibility
 registerServiceLaunchConfigEndpoints(app); // Service Launch Config by Geography (Marketing > Dashboard UI) - NEW
+registerCommerceSwitchEndpoints(app); // Platform Commerce Switch (active commerce model)
 registerCarePlansEndpoints(app); // Care Plans Generation (Support/CRM > Complete Plan)
 registerVendorSupportEndpoints(app); // Vendor Support Tickets
 registerVendorLiveStatusEndpoints(app); // Vendor/Staff Live Status Eligibility for Customer App Listing

@@ -94,4 +94,14 @@ describe('shop/payment visibility guards', () => {
     expect(file).toContain('CUSTOMER_CANCEL_STATUSES');
     expect(file).not.toContain("if (status === 'cancelled') {\n        updateData.cancelled_at");
   });
+
+  test('shop order cancel resolves real customer UUID for UAT opaque tokens', () => {
+    const orderMgmt = read('src/endpoints/order-management.ts');
+    const cancelDraft = read(
+      'src/endpoints/customer/orders/services/customer_orders_id_cancel_draft_post.service.ts',
+    );
+    expect(orderMgmt).toContain('resolveCustomerIdFromHonoContext');
+    expect(cancelDraft).toContain('resolveCustomerIdFromHonoContext');
+    expect(read('src/utils/customer-id-from-auth.ts')).toContain('resolvePostgresCustomerIdFromAuthHeaders');
+  });
 });
