@@ -59,6 +59,7 @@ import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipm
 import { ACTIVE_REFUND_STATUS_FILTER, mapRazorpayRefundEventStatus } from '../../../utils/payments/refund-status';
 import { markShopOrderPaymentRefundedIfFull } from '../../../utils/payments/shop-order-refund';
 import { reconcileRazorpayRefundWebhook } from '../../../utils/payments/razorpay-refund-webhook-reconcile';
+import { ensureBookingStartOtpIfNeeded, scheduleBookingStartOtpIfNeeded } from '../../../utils/booking-start-otp';
 
 // Razorpay configuration is imported from utils
 
@@ -738,6 +739,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           // Wallet fully covered the booking — Razorpay verify will never run, so record
           // promo/coupon usage now (idempotent for coupons via coupon_usages booking check).
           if (walletFullyPaidBooking) {
+            scheduleBookingStartOtpIfNeeded(String(bookingId), '[RAZORPAY-CREATE-ORDER]');
             Promise.resolve()
               .then(async () => {
                 const { recordBookingPromotionUsageFromBooking } = await import(
@@ -1546,33 +1548,10 @@ class VerifyPaymentHandler extends BaseHandler {
           });
 
         // ✅ AUTO-GENERATE OTP for in-person services when booking transitions to confirmed
-        try {
-          const { rows: bookingDetails } = await client.query(
-            `SELECT service_type, otp_code FROM bookings WHERE id = $1`,
-            [bookingId]
-          );
-          const bkDetail = bookingDetails[0];
-          const serviceType = bkDetail?.service_type || '';
-          const isTele = ['tele', 'online', 'video_consultation', 'tele_consultation'].includes(serviceType);
-
-          if (!isTele && !bkDetail?.otp_code) {
-            const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
-            const otpExpiry = new Date();
-            otpExpiry.setHours(otpExpiry.getHours() + 24);
-
-            await client.query(
-              `UPDATE bookings SET otp_code = $1, otp_expires_at = $2, updated_at = NOW() WHERE id = $3`,
-              [otpCode, otpExpiry.toISOString(), bookingId]
-            );
-            console.log(`[PAYMENT-VERIFY] OTP ${otpCode} generated for booking ${bookingId} (service_type: ${serviceType})`);
-          } else if (isTele) {
-            console.log(`[PAYMENT-VERIFY] Tele service - no OTP needed for booking ${bookingId}`);
-          } else {
-            console.log(`[PAYMENT-VERIFY] OTP already exists for booking ${bookingId}: ${bkDetail?.otp_code}`);
-          }
-        } catch (otpErr: any) {
-          console.warn(`[PAYMENT-VERIFY] Failed to generate OTP for booking ${bookingId}:`, otpErr?.message);
-        }
+        await ensureBookingStartOtpIfNeeded(String(bookingId), {
+          execQuery: (sql, params) => client.query(sql, params),
+          logPrefix: '[PAYMENT-VERIFY]',
+        });
 
         let loyaltyBookingKind: ReturnType<typeof resolveLoyaltyBookingKind> = 'other';
         let customerIdOut: string | null = payment.customer_id ?? null;
@@ -2023,6 +2002,10 @@ class RazorpayWebhookHandler extends BaseHandler {
       if (bookingToNotify) {
         await notifyBookingCreated(bookingToNotify, (context as HandlerContext & { requestId?: string }).requestId)
           .catch((e) => console.error('[RAZORPAY-WEBHOOK] Notification failed:', e));
+      }
+
+      if (paymentRecord?.booking_id) {
+        scheduleBookingStartOtpIfNeeded(String(paymentRecord.booking_id), '[RAZORPAY-WEBHOOK]');
       }
 
       // ✅ Trigger automatic settlement if marketplace mode is enabled

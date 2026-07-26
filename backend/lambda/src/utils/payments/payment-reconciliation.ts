@@ -18,6 +18,10 @@
 
 import { query } from '../../database/rds-connection';
 import { SQL_RECONFIRM_PAID_AFTER_HOLD_CANCEL } from '../customer-booking-visibility';
+import {
+  backfillMissingBookingStartOtps,
+  scheduleBookingStartOtpIfNeeded,
+} from '../booking-start-otp';
 
 /**
  * Reconcile pending bookings against both local payment records AND Razorpay API.
@@ -28,6 +32,7 @@ import { SQL_RECONFIRM_PAID_AFTER_HOLD_CANCEL } from '../customer-booking-visibi
  * @param bookingRows - Array of booking row objects (will be mutated in place)
  */
 export async function reconcileBookingPayments(bookingRows: any[]): Promise<void> {
+  try {
   // ── Tier 1: DB-based reconciliation ──────────────────────────────────────
   // Check ALL bookings with payment_status != 'paid' (not just pending status)
   // This catches completed/cancelled bookings where payment was never recorded
@@ -35,8 +40,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
     (b: any) => b.payment_status !== 'paid'
   );
 
-  if (unpaidBookings.length === 0) return;
-
+  if (unpaidBookings.length > 0) {
   const pendingIds = unpaidBookings.map((b: any) => b.id);
 
   try {
@@ -64,6 +68,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
            WHERE id = $1 AND payment_status != 'paid'`,
           [bookingId]
         ).catch((err: any) => console.error(`[RECONCILE-T1] Update failed for ${bookingId}:`, err));
+        scheduleBookingStartOtpIfNeeded(String(bookingId), '[RECONCILE-T1]');
       }
 
       // Patch in-memory rows
@@ -83,6 +88,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
     }
   } catch (err: any) {
     console.error('[RECONCILE-T1] Error:', err);
+  }
   }
 
   // ── Tier 1a: Paid on booking row but hold-expiry left status cancelled ─────
@@ -106,6 +112,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
       [row.id]
     ).catch((e: any) => console.error(`[RECONCILE-T1a] Update failed for ${row.id}:`, e));
     row.status = 'confirmed';
+    scheduleBookingStartOtpIfNeeded(String(row.id), '[RECONCILE-T1a]');
   }
 
   // ── Tier 1b: Wallet ledger debits cover booking total but booking row never flipped to paid ──
@@ -170,6 +177,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
           ) {
             row.status = 'confirmed';
           }
+          scheduleBookingStartOtpIfNeeded(String(row.id), '[RECONCILE-T1b]');
         }
       }
     } catch (wErr: any) {
@@ -183,8 +191,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
     (b: any) => b.payment_status !== 'paid'
   );
 
-  if (stillUnpaidBookings.length === 0) return;
-
+  if (stillUnpaidBookings.length > 0) {
   const stillPendingIds = stillUnpaidBookings.map((b: any) => b.id);
 
   try {
@@ -199,7 +206,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
       [stillPendingIds]
     );
 
-    if (pendingPaymentsWithRzp.rows.length === 0) return;
+    if (pendingPaymentsWithRzp.rows.length > 0) {
 
     // Limit to 3 API calls per request to keep response time reasonable
     const toCheck = pendingPaymentsWithRzp.rows.slice(0, 3);
@@ -282,6 +289,7 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
           ).catch((err: any) =>
             console.error(`[RECONCILE-T2] Failed to update booking ${payment.booking_id}:`, err)
           );
+          scheduleBookingStartOtpIfNeeded(String(payment.booking_id), '[RECONCILE-T2]');
 
           // Patch in-memory row
           for (const row of bookingRows) {
@@ -311,7 +319,18 @@ export async function reconcileBookingPayments(bookingRows: any[]): Promise<void
         // Non-critical: continue with next payment
       }
     }
+    }
   } catch (rzpReconcileErr: any) {
     console.error('[RECONCILE-T2] Error during Razorpay reconciliation:', rzpReconcileErr);
+  }
+  }
+
+  // ── Tier 3: Backfill OTP for paid in-person rows still missing otp_code ──
+  } finally {
+    try {
+      await backfillMissingBookingStartOtps(bookingRows);
+    } catch (t3Err: any) {
+      console.error('[RECONCILE-T3] OTP backfill error:', t3Err);
+    }
   }
 }
