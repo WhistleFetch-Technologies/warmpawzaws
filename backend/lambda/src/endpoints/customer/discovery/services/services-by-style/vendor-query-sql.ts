@@ -12,7 +12,8 @@ export function buildByStyleVendorSql(
     maxResults: number;
     sqlOffsetByStyle: number;
     specializationByStyleFragment: string;
-  }
+  },
+  sqlOptions?: { wapptCatalogueOnly?: boolean }
 ): string {
   const {
     catTextExact,
@@ -36,6 +37,12 @@ export function buildByStyleVendorSql(
     vendorSpecsJsonbSqlByStyle,
   } = categoryCtx;
   const { maxResults, sqlOffsetByStyle, specializationByStyleFragment } = parsed;
+  const wapptJoin = sqlOptions?.wapptCatalogueOnly
+    ? `
+        INNER JOIN warmpawz_appointments_vendor_catalog wappt_c
+          ON wappt_c.vendor_id = v.id
+          AND wappt_c.publish_status = 'published'`
+    : '';
 
   return `
         SELECT DISTINCT ON (v.id)
@@ -50,7 +57,7 @@ export function buildByStyleVendorSql(
           r.config AS role_config,
           COALESCE((SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id), 0) AS avg_rating,
           COALESCE((SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id), 0) AS review_count
-        FROM vendors v
+        FROM vendors v${wapptJoin}
         LEFT JOIN roles r ON v.role_id = r.id
         WHERE v.is_active = true
           AND ${sqlVendorDiscoverableStatus('v')}

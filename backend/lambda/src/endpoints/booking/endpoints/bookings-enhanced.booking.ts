@@ -83,6 +83,11 @@ import {
   UpdateBookingStatusRequestSchema,
 } from '@warmpawz/api-contracts/bookings';
 import {
+  isWarmpawzAppointmentsBooking,
+  resolveWarmpawzAppointmentsBookingPreflight,
+  WAPPT_BOOKING_MODE,
+} from '../../warmpawz-appointments/shared/wappt-booking-preflight';
+import {
   boardingBilled24hUnits,
   computeBoardingStayPriceRupeesPublic,
   computeStayBilledMinutes,
@@ -279,6 +284,41 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // Accept snake_case Razorpay field from older clients
     if (typeof (body as any).razorpay_order_id === 'string' && (body as any).razorpay_order_id.trim() && !(body as any).razorpayOrderId) {
       (body as any).razorpayOrderId = String((body as any).razorpay_order_id).trim();
+    }
+
+    let wapptAppointmentFee: number | null = null;
+    const rawBookingBody = body as Record<string, unknown>;
+    if (isWarmpawzAppointmentsBooking(rawBookingBody)) {
+      const vendorIdForWappt = String(rawBookingBody.vendorId || '');
+      if (!vendorIdForWappt) {
+        return this.error(
+          'vendorId is required for Warmpawz Appointments booking',
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId,
+        );
+      }
+      const preflight = await resolveWarmpawzAppointmentsBookingPreflight({
+        vendorId: vendorIdForWappt,
+        serviceStyle: String(
+          rawBookingBody.serviceType || rawBookingBody.serviceStyle || 'at_center',
+        ),
+      });
+      if (!preflight.ok) {
+        return this.error(
+          preflight.message,
+          preflight.status,
+          preflight.status === 403 ? 'FORBIDDEN' : 'VALIDATION_ERROR',
+          undefined,
+          requestId,
+        );
+      }
+      body.serviceId = preflight.resolvedServiceId;
+      body.amount = preflight.appointmentFee;
+      body.totalAmount = preflight.appointmentFee;
+      body.bookingMode = WAPPT_BOOKING_MODE;
+      wapptAppointmentFee = preflight.appointmentFee;
     }
 
     // Validate request with Zod schema
@@ -900,20 +940,27 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       }
     }
 
+    const isWapptBooking =
+      wapptAppointmentFee != null || isWarmpawzAppointmentsBooking(body as Record<string, unknown>);
     let bookingCommerceMode = 'marketplace';
     let bookingCommerceVersion = 1;
-    try {
-      const commerceResolved = await resolveCommerceModelForBookingCreate({
-        customerId,
-        vendorId,
-        serviceId: lookupServiceId,
-        serviceType: serviceType || undefined,
-        channel: 'internal',
-      });
-      bookingCommerceMode = commerceResolved.commerceMode;
-      bookingCommerceVersion = commerceResolved.commerceVersion;
-    } catch (commerceErr) {
-      console.warn('[CommerceSwitch] booking create resolver failed, using marketplace:', commerceErr);
+    if (isWapptBooking) {
+      bookingCommerceMode = WAPPT_BOOKING_MODE;
+      bookingCommerceVersion = 1;
+    } else {
+      try {
+        const commerceResolved = await resolveCommerceModelForBookingCreate({
+          customerId,
+          vendorId,
+          serviceId: lookupServiceId,
+          serviceType: serviceType || undefined,
+          channel: 'internal',
+        });
+        bookingCommerceMode = commerceResolved.commerceMode;
+        bookingCommerceVersion = commerceResolved.commerceVersion;
+      } catch (commerceErr) {
+        console.warn('[CommerceSwitch] booking create resolver failed, using marketplace:', commerceErr);
+      }
     }
 
     try {
@@ -1259,15 +1306,17 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         // ✅ Calculate final amounts considering multiple services
         // Priority: 1. Package (free), 2. Subscription (free), 3. Selected services total, 4. Pet sitting (server), 5. Client amount
         const calculatedBasePrice =
-          totalSelectedServicesAmount > 0
-            ? totalSelectedServicesAmount
-            : boardingServerTotalRupee != null
-              ? boardingServerTotalRupee
-              : swimmingServerTotalRupee != null
-                ? swimmingServerTotalRupee
-                : petSittingServerTotalRupee != null
-                  ? petSittingServerTotalRupee
-                  : (amount || 0);
+          wapptAppointmentFee != null
+            ? wapptAppointmentFee
+            : totalSelectedServicesAmount > 0
+              ? totalSelectedServicesAmount
+              : boardingServerTotalRupee != null
+                ? boardingServerTotalRupee
+                : swimmingServerTotalRupee != null
+                  ? swimmingServerTotalRupee
+                  : petSittingServerTotalRupee != null
+                    ? petSittingServerTotalRupee
+                    : (amount || 0);
         const listedServerPrice =
           (!selectedServices || selectedServices.length === 0) &&
           petSittingServerTotalRupee == null &&
@@ -1286,6 +1335,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         let resolvedBookingPromotions: Awaited<ReturnType<typeof resolveBookingPromotions>> | null =
           null;
         if (
+          wapptAppointmentFee == null &&
           !isPackageBooking &&
           !isSubscriptionBooking &&
           grossPayableBeforeWallet > 0 &&

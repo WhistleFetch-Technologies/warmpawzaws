@@ -215,6 +215,8 @@ interface UniversalPaymentPageProps {
   } | null;
   /** Lab diagnostics: pay-first payload from DiagnosticsBookingFlow; booking is created only after payment. */
   prepaidBookingPayload?: Record<string, unknown>;
+  /** Warmpawz Appointments: server validates catalogue fee on create. */
+  bookingMode?: 'warmpawz_appointments';
   initialPromotionId?: string;
   initialPromotionIntent?: {
     promotionId?: string;
@@ -453,6 +455,7 @@ export function UniversalPaymentPage({
   resumeRazorpayOrderId,
   resumeFinancialSnapshot,
   prepaidBookingPayload,
+  bookingMode,
   initialPromotionId,
   initialPromotionIntent,
   initialAppliedCoupon,
@@ -2675,6 +2678,7 @@ export function UniversalPaymentPage({
           customerName: customerNameValue, // âœ… Customer name
           address: addressValue, // âœ… Optional string
           notes: '', // âœ… Optional string
+          ...(bookingMode ? { bookingMode } : {}),
           // âœ… NEW: Pass selected services for multi-service bookings
           selectedServices: selectedServices && selectedServices.length > 0
             ? selectedServices.map(s => ({

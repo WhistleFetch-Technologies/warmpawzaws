@@ -50,6 +50,8 @@ interface GroomingBookingRouterProps {
   petBreed?: string;
   notes?: string;
   skipToPayment?: boolean; // Flag to skip directly to payment
+  /** Warmpawz Appointments: skip service pick; pay admin catalogue fee */
+  appointmentsMode?: boolean;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -90,6 +92,7 @@ export function GroomingBookingRouter({
   petBreed: preFilledPetBreed, // ✅ NEW: Pre-filled pet breed
   notes: preFilledNotes, // ✅ NEW: Pre-filled notes
   skipToPayment, // ✅ NEW: Flag to skip to payment
+  appointmentsMode = false,
   onBack, 
   onNavigate, 
   onViewBooking,
@@ -98,7 +101,11 @@ export function GroomingBookingRouter({
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to datetime
   // ✅ NEW: Also skip if multiple services are already selected from salon profile
   // This preserves the service-style context when coming from service listing or profile
-  const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService || vendorId || (selectedServices && selectedServices.length > 0));
+  const hasServiceContext =
+    appointmentsMode && vendorId
+      ? true
+      : (serviceType || serviceStyle) &&
+        (serviceId || selectedService || vendorId || (selectedServices && selectedServices.length > 0));
   
   // ✅ NEW: Check if we have complete booking data (from provider profile, etc.) - skip directly to payment
   const hasCompleteBookingData = skipToPayment && preFilledDate && preFilledTime && preFilledPetId && serviceId;
@@ -128,6 +135,30 @@ export function GroomingBookingRouter({
     preFilledPetId ? { id: preFilledPetId, name: preFilledPetName || '', species: '', breed: preFilledPetBreed || '' } : null
   );
   const [selectedAddress, setSelectedAddress] = useState<any>(null);
+  const [appointmentFee, setAppointmentFee] = useState<number | null>(
+    appointmentsMode && price ? Number(price) : null,
+  );
+
+  useEffect(() => {
+    if (!appointmentsMode || !vendorId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get<{
+          success?: boolean;
+          appointmentFee?: number;
+        }>(`/customer/warmpawz-appointments/vendors/${vendorId}/fee`);
+        if (!cancelled && res?.success && res.appointmentFee != null) {
+          setAppointmentFee(Number(res.appointmentFee));
+        }
+      } catch {
+        if (!cancelled) toast.error('Could not load appointment fee for this vendor');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [appointmentsMode, vendorId]);
   
   // ✅ ANALYTICS: Track booking steps
   const analytics = useBookingAnalytics('grooming', selectedServiceType as any);
@@ -957,9 +988,11 @@ export function GroomingBookingRouter({
     return (
       <UniversalPaymentPage
         type="booking"
-        serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
+        serviceId={appointmentsMode ? 'warmpawz_appointments' : (selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId)}
         serviceName={
-          allSelectedServices.length > 1
+          appointmentsMode
+            ? 'Appointment'
+            : allSelectedServices.length > 1
             ? `${allSelectedServices.length} Services Selected`
             : selectedServiceOption?.name || serviceName || 'Grooming Service'
         }
@@ -984,11 +1017,14 @@ export function GroomingBookingRouter({
         address={selectedAddress}
         showAddressSelection={selectedServiceType === 'at_home'}
         baseAmount={
-          allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) ||
+          appointmentsMode
+            ? appointmentFee ?? price ?? 0
+            : allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) ||
           selectedServiceOption?.price ||
           price ||
           499
         }
+        bookingMode={appointmentsMode ? 'warmpawz_appointments' : undefined}
         priceIncludesTax={
           catalogPriceIncludesTax(selectedServiceOption) ||
           (!!allSelectedServices?.length && catalogPriceIncludesTax(allSelectedServices[0]))

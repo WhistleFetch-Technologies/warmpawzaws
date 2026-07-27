@@ -206,6 +206,10 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   }, [phone]);
 
   const navigateGroomingStyle = async (screen: string) => {
+    if (screen === 'wappt_grooming_center') {
+      onNavigate?.('wappt_grooming_center');
+      return;
+    }
     const styleKey = GROOMING_STYLE_LAUNCH_MAP[screen];
     if (styleKey) {
       const allowed = await gateServiceStyleNavigation(phone, 'grooming', styleKey, (msg) =>
@@ -331,6 +335,16 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const serviceTypes = useMemo(
     () => {
       const cards = [
+      {
+        id: 'wappt_grooming_center',
+        name: 'Book Appointment',
+        description: 'Fixed fee · pick a slot',
+        image: `${GROOMING_IMG}/grooming-center.webp`,
+        badge: 'WARMPAWZ',
+        badgeClass: 'bg-[#FF8C42] text-white',
+        trustedBy: 'Admin-priced appointment fee',
+        arrowClass: 'bg-[#FF8C42] hover:bg-[#E67A35]',
+      },
       {
         id: 'grooming_center',
         name: 'Grooming Centre',
