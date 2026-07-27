@@ -37,6 +37,7 @@ import { registerAdminEndpoints } from '../endpoints/admin/endpoints/admin.contr
 import { registerWarmpawzPayCatalogueAdminRoutes } from '../endpoints/warmpawz-pay/admin/catalogue';
 import { registerWarmpawzPayDashboardAdminRoutes } from '../endpoints/warmpawz-pay/admin/dashboard';
 import { registerWarmpawzPayPricingAdminRoutes } from '../endpoints/warmpawz-pay/admin/pricing';
+import { registerWarmpawzPayPaymentsAdminRoutes } from '../endpoints/warmpawz-pay/admin/payments';
 import { registerAdminAiCopilotEndpoints } from '../endpoints/admin/endpoints/admin-ai-copilot';
 import { registerCommercialAiCopilotEndpoints } from '../endpoints/admin/endpoints/commercial-ai-copilot.endpoints';
 import { registerVideoCallEndpoints } from '../endpoints/teleCommunication/endpoints/video-call.teleCommunication';
@@ -204,6 +205,7 @@ import { registerAdminGovernanceEndpoints } from 'src/endpoints/admin/endpoints/
 import { registerAdminIntegrationEndpoints } from 'src/endpoints/admin/endpoints/admin-integrations';
 import { registerAdminGovernanceEnhancedEndpoints } from 'src/endpoints/admin/endpoints/admin-governance-enhanced';
 import { registerCustomerAppointmentsEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-appointments';
+import { registerCustomerWarmpawzPayEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-warmpawz-pay';
 import { registerCustomerOrdersEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-orders';
 import { registerAdminCustomServicesEndpoints } from 'src/endpoints/admin/endpoints/admin-custom-services';
 import { registerGpsTrackingEndpoints } from 'src/endpoints/gpsTracking/endpoints/gps-tracking';
@@ -671,6 +673,7 @@ registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be b
 registerCustomerOrdersEndpoints(app);
 // /customer/appointments MUST register before /customer/:customerId or "appointments" is captured as :customerId → list API never runs.
 registerCustomerAppointmentsEndpoints(app);
+registerCustomerWarmpawzPayEndpoints(app); // /customer/warmpawz-pay/vendors — before /customer/:customerId
 // Specialized flows under /customer/* (pet-matching, holiday-packages) MUST register before /customer/:customerId
 // or paths like /customer/pet-matching are captured as customerId="pet-matching" and return 4xx.
 registerSpecializedServiceFlows(app);
@@ -679,6 +682,7 @@ registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized 
 registerGpsTrackingEndpoints(app);
 registerAdminEndpoints(app);
 registerWarmpawzPayDashboardAdminRoutes(app);
+registerWarmpawzPayPaymentsAdminRoutes(app);
 registerWarmpawzPayPricingAdminRoutes(app);
 registerWarmpawzPayCatalogueAdminRoutes(app);
 registerAdminAiCopilotEndpoints(app);

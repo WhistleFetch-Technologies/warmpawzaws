@@ -1,4 +1,5 @@
 import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import {
   rememberBeforeMyPackagesNav,
   rememberHelpBackFromCurrentUrl,
@@ -32,6 +33,10 @@ export function navigateFromStandaloneAccountMenu(
   }
   if (path === 'wallet' || path === 'account/wallet') {
     router.push('/wallet');
+    return;
+  }
+  if (path === 'warmpawz-pay') {
+    router.push(WPAY_HISTORY_PATH);
     return;
   }
   if (path === 'my-packages') {

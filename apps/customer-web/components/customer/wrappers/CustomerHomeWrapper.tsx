@@ -49,6 +49,7 @@ import {
   clearWishlistOpenedFromShopMark,
   rememberHelpBackSpaScreen,
 } from '@/lib/go-back-or-replace';
+import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import {
   navigateToArticleFromHome,
   navigateToArticlesList,
@@ -2095,6 +2096,8 @@ export function CustomerHomeWrapper({
       }
     } else if (path === 'appointments') {
       openAccountHubFromMenu('appointments');
+    } else if (path === 'warmpawz-pay') {
+      router.push(WPAY_HISTORY_PATH);
     } else if (path === 'support_help' || path === 'help') {
       if (currentScreen === 'wallet') {
         pushWalletHubChild('support_help');
@@ -2137,6 +2140,8 @@ export function CustomerHomeWrapper({
       setSpaBoardingVendorsSlug(null);
       setBoardingVendorsReturnScreen(null);
       shellNav.focusTabRoot('bookings');
+    } else if (screen === 'warmpawz-pay') {
+      router.push('/warmpawz-pay');
     } else if (screen === 'profile') {
       setPetSitterOriginScreen(null);
       setPetSitterFacilityOptionId(null);
