@@ -9,6 +9,7 @@ export function hrefForAdminSidebarView(view: string): string {
   if (view === 'region-manager') return '/regions';
 
   const item = getAdminPortalNavItems().find((i) => i.id === view);
+  if (item?.routeHint?.startsWith('/')) return item.routeHint;
   const path = item?.pathPrefixes?.[0];
   if (path) return path;
 

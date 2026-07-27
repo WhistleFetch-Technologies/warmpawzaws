@@ -33,6 +33,7 @@ import {
 import { useState, useEffect, useMemo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { filterMarketingSidebarNavItems, isLegacyPromotionUiEnabled } from '@/lib/legacy-promotion-ui';
+import { isWarmpawzAppointmentsAdminEnabled } from '@/lib/warmpawz-appointments-admin-feature';
 import {
   MARKETING_PORTAL_NAV_GROUPS,
   MARKETING_PORTAL_TOP_LINKS,
@@ -83,6 +84,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   'notification-engine': Bell,
   reports: BarChart3,
   'platform-settings': Settings,
+  'warmpawz-appointments-catalogue': Calendar,
 };
 
 function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void): () => void {
@@ -129,6 +131,11 @@ function navOnClick(item: AdminPortalNavItem, onNavigate: (view: string) => void
   if (item.id === 'marketing-campaigns') {
     return () => {
       window.location.href = '/marketing/campaigns';
+    };
+  }
+  if (item.id === 'warmpawz-appointments-catalogue') {
+    return () => {
+      window.location.href = item.routeHint ?? '/warmpawz-appointments/catalogue';
     };
   }
   return () => onNavigate(item.id);
@@ -271,8 +278,12 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
   const visibleMainNav = useMemo(() => {
     if (!hydrated) return mainNavItems;
     const perms = getStoredAdminPermissions();
-    if (perms.includes('admin.full_access') || perms.includes('*')) return mainNavItems;
-    return mainNavItems.filter((item) => canSeeNavItem(item, hydrated));
+    let items = mainNavItems;
+    if (!isWarmpawzAppointmentsAdminEnabled()) {
+      items = items.filter((item) => item.id !== 'warmpawz-appointments-catalogue');
+    }
+    if (perms.includes('admin.full_access') || perms.includes('*')) return items;
+    return items.filter((item) => canSeeNavItem(item, hydrated));
   }, [hydrated, mainNavItems, pathname, activeView]);
 
   const visibleMarketingNav = useMemo(() => {
