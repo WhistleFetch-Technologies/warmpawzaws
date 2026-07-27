@@ -84,6 +84,10 @@ export function registerPushNotificationEndpoints(app: Hono) {
         'announcements', // Platform announcements
       ];
 
+      if (userType === 'customer') {
+        topics.push('commerce_switch_config');
+      }
+
       for (const topic of topics) {
         try {
           const subscribed = await subscribeToTopic(fcmToken, topic);

@@ -9,7 +9,7 @@ import type { ServiceBookingCommerceRouteResult, ServiceBookingRouteContext } fr
 
 /**
  * Resolve which commerce model governs a service-booking navigation entry.
- * Callers must use `useMarketplaceFlow` — when true, run existing Marketplace navigation unchanged.
+ * Callers must branch on `useMarketplaceFlow` / `effectiveModelId` — do not ignore the result.
  */
 export function resolveServiceBookingCommerceRoute(
   context: ServiceBookingRouteContext
@@ -23,7 +23,7 @@ export function resolveServiceBookingCommerceRoute(
     };
   }
 
-  const configuredModelId = getActiveCommerceModel();
+  const configuredModelId = context.activeModelId ?? getActiveCommerceModel();
 
   if (configuredModelId === 'marketplace') {
     return {
@@ -53,34 +53,9 @@ export function resolveServiceBookingCommerceRoute(
   };
 }
 
-/**
- * PR-9 safety: when Pay is selected but routes are not implemented yet, fall back to Marketplace
- * without throwing or breaking navigation.
- */
-export function applyMarketplaceNavigationFallback(
-  route: ServiceBookingCommerceRouteResult
-): ServiceBookingCommerceRouteResult {
-  if (route.useMarketplaceFlow || route.excludedDomain) {
-    return route;
-  }
-
-  if (process.env.NODE_ENV === 'development') {
-    console.warn(
-      '[CommerceSwitch] warmpawz_pay routing selected but customer Pay navigation is not implemented; using marketplace',
-      route
-    );
-  }
-
-  return {
-    ...route,
-    effectiveModelId: 'marketplace',
-    useMarketplaceFlow: true,
-    fallbackReason: 'warmpawz_pay_navigation_not_implemented',
-  };
-}
-
+/** Runtime module selection — no marketplace override when Warmpawz Pay is active. */
 export function resolveServiceBookingCommerceRouteForNavigation(
   context: ServiceBookingRouteContext
 ): ServiceBookingCommerceRouteResult {
-  return applyMarketplaceNavigationFallback(resolveServiceBookingCommerceRoute(context));
+  return resolveServiceBookingCommerceRoute(context);
 }

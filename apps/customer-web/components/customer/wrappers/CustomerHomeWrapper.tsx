@@ -87,6 +87,11 @@ import {
 import { syncIosShellStackDepth } from '@/lib/navigation/ios-shell-history';
 import { resolveServiceBookingCommerceRouteForNavigation } from '@/lib/commerce-switch-routing';
 import {
+  isWarmpawzPayBookingFlow,
+  launchWarmpawzPayServiceBooking,
+} from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
+import { useCommerceConfig } from '@/lib/commerce-config-provider';
+import {
   BACK_HANDLER_PRIORITY,
   registerBackHandler,
 } from '@/lib/navigation/back-handler-registry';
@@ -465,6 +470,7 @@ export function CustomerHomeWrapper({
   ]);
 
   const router = useRouter();
+  const { activeModelId } = useCommerceConfig();
   const customerNav = useMemo(() => createCustomerNavigation(router), [router]);
   const pathname = usePathname() || '/';
   const searchParams = useSearchParams();
@@ -1334,7 +1340,7 @@ export function CustomerHomeWrapper({
 
   const executeNavigateToService = (service: string, _data?: any) => {
     const data = _data;
-    resolveServiceBookingCommerceRouteForNavigation({
+    const commerceRoute = resolveServiceBookingCommerceRouteForNavigation({
       serviceKey: service,
       category: typeof data?.category === 'string' ? data.category : undefined,
       serviceStyle:
@@ -1344,12 +1350,23 @@ export function CustomerHomeWrapper({
             ? data.service_style
             : undefined,
       serviceType: typeof data?.serviceType === 'string' ? data.serviceType : undefined,
+      activeModelId,
     });
     captureBannerNavigationOrigin(data);
     const vendorRow: Record<string, unknown> =
       data && typeof data === 'object' ? { ...(data as Record<string, unknown>) } : {};
     const featuredVendorId = pickCustomerVendorAccountId(vendorRow);
     const vid = featuredVendorId.trim() !== '' ? featuredVendorId.trim() : undefined;
+
+    if (isWarmpawzPayBookingFlow(commerceRoute)) {
+      launchWarmpawzPayServiceBooking({
+        router,
+        serviceKey: service,
+        category: typeof data?.category === 'string' ? data.category : undefined,
+        vendorId: vid,
+      });
+      return;
+    }
 
     /** Home / promos pass `{ vendorId, vendorName?, … }` — open profile hub, not only the service landing. */
     if (vid && service === 'walker') {

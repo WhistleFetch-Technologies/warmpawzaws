@@ -1,5 +1,5 @@
 import type { CommerceRouteAdapter } from '../types';
-import { isWarmpawzPayFeatureEnabled } from '../warmpawz-pay-feature';
+import { isWarmpawzPayModuleCapable } from '../warmpawz-pay-feature';
 
 /**
  * Warmpawz Pay routing adapter stub — capability probe only.
@@ -9,6 +9,6 @@ import { isWarmpawzPayFeatureEnabled } from '../warmpawz-pay-feature';
 export const warmpawzPayRouteAdapter: CommerceRouteAdapter = {
   modelId: 'warmpawz_pay',
   isAvailable(): boolean {
-    return isWarmpawzPayFeatureEnabled();
+    return isWarmpawzPayModuleCapable();
   },
 };

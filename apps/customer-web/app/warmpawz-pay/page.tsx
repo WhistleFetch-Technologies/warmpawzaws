@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ChevronRight, Clock, Search } from 'lucide-react';
 import { useWpayVendorFeed } from '@/hooks/useWpayVendorFeed';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
@@ -22,11 +22,20 @@ function matchesVendorSearch(name: string, query: string): boolean {
   return name.toLowerCase().includes(q);
 }
 
-export default function WarmpawzPayPage() {
+function WarmpawzPayPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [category, setCategory] = useState('all');
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const requested = searchParams.get('category');
+    if (!requested) return;
+    if (CATEGORIES.some((entry) => entry.id === requested)) {
+      setCategory(requested);
+    }
+  }, [searchParams]);
 
   const { vendors, loading, loadingMore, hasMore, error, loadMore } = useWpayVendorFeed({
     category,
@@ -138,5 +147,13 @@ export default function WarmpawzPayPage() {
         ) : null}
       </div>
     </div>
+  );
+}
+
+export default function WarmpawzPayPage() {
+  return (
+    <Suspense fallback={<p className="py-8 text-center text-sm text-gray-500">Loading…</p>}>
+      <WarmpawzPayPageContent />
+    </Suspense>
   );
 }

@@ -21,7 +21,13 @@ import {
   isPharmacyCategory,
 } from '@/lib/search-category-detect';
 import type { NutritionVendorCardModel } from '@/components/customer/nutrition/NutritionVendorDetailsCard';
-import { resolveServiceBookingCommerceRouteForNavigation } from '@/lib/commerce-switch-routing';
+import type { CommerceModelId } from '@warmpawz/commerce-switch-contracts';
+import { getActiveCommerceModel } from '@/lib/commerce-switch-client';
+import {
+  isWarmpawzPayBookingFlow,
+  launchWarmpawzPayServiceBooking,
+  resolveServiceBookingCommerceRouteForNavigation,
+} from '@/lib/commerce-switch-routing';
 
 export const SEARCH_BOOKING_INTENT_KEY = 'warmpawz_search_booking_intent';
 export const SEARCH_NUTRITION_BOOKING_INTENT_KEY = 'warmpawz_search_nutrition_booking_intent';
@@ -144,6 +150,8 @@ export interface SearchBookingLaunchParams {
   reviewCount?: number;
   router: AppRouterInstance;
   returnSearchUrl?: string;
+  /** Prefer CommerceConfigProvider value; falls back to synced module cache. */
+  activeModelId?: CommerceModelId;
 }
 
 export function resolveSearchCategoryPersona(category: string): {
@@ -598,12 +606,25 @@ export function launchSearchServiceBooking({
   reviewCount = 0,
   router,
   returnSearchUrl,
+  activeModelId: activeModelIdParam,
 }: SearchBookingLaunchParams): void {
-  resolveServiceBookingCommerceRouteForNavigation({
+  const activeModelId = activeModelIdParam ?? getActiveCommerceModel();
+  const commerceRoute = resolveServiceBookingCommerceRouteForNavigation({
     serviceKey: category,
     category,
     serviceStyle: serviceStyleOpt,
+    activeModelId,
   });
+
+  if (isWarmpawzPayBookingFlow(commerceRoute)) {
+    launchWarmpawzPayServiceBooking({
+      router,
+      serviceKey: category,
+      category,
+      vendorId,
+    });
+    return;
+  }
 
   if (isNutritionCategory(category)) {
     launchSearchNutritionBooking({

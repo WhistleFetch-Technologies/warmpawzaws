@@ -38,6 +38,27 @@ echo -e "${GREEN}✅ Lambda built successfully${NC}"
 echo -e "${BLUE}📊 Package size: $(ls -lh $LAMBDA_ZIP | awk '{print $5}')${NC}"
 echo ""
 
+echo -e "${BLUE}🔍 Validating deployment artifact (Commerce Switch + full package)...${NC}"
+npm run validate:lambda-artifact
+
+# Reject uploads that would shrink an already-full deployment (handler-only regression guard)
+if command -v aws > /dev/null 2>&1; then
+  CURRENT_CODE_SIZE=$(aws lambda get-function-configuration \
+    --function-name "$LAMBDA_FUNCTION_NAME" \
+    --region "$AWS_REGION" \
+    --query 'CodeSize' \
+    --output text 2>/dev/null || echo "0")
+  NEW_ZIP_SIZE=$(stat -c%s "$LAMBDA_ZIP" 2>/dev/null || wc -c < "$LAMBDA_ZIP")
+  if [ "${CURRENT_CODE_SIZE:-0}" -gt 10485760 ] && [ "${NEW_ZIP_SIZE:-0}" -lt $((CURRENT_CODE_SIZE / 2)) ]; then
+    echo -e "${RED}❌ Refusing upload: new zip (${NEW_ZIP_SIZE} bytes) is much smaller than deployed Lambda (${CURRENT_CODE_SIZE} bytes).${NC}"
+    echo -e "${RED}   This usually means a handler-only package would overwrite a full deployment.${NC}"
+    exit 1
+  fi
+fi
+
+echo -e "${GREEN}✅ Artifact validation passed${NC}"
+echo ""
+
 # Step 2: Update Lambda function code
 echo -e "${BLUE}📤 Uploading Lambda function code...${NC}"
 if aws lambda update-function-code \
@@ -68,6 +89,23 @@ echo -e "${BLUE}⏳ Waiting for Lambda to be ready...${NC}"
 aws lambda wait function-updated \
   --function-name "$LAMBDA_FUNCTION_NAME" \
   --region "$AWS_REGION" || true
+
+echo -e "${BLUE}🔍 Post-deploy verification (HTTP + deployed bundle)...${NC}"
+if [ "$LAMBDA_FUNCTION_NAME" = "warmpawz-dev-api-handler" ]; then
+  API_BASE_URL="${API_BASE_URL:-https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com}" \
+    LAMBDA_FUNCTION_NAME="$LAMBDA_FUNCTION_NAME" \
+    AWS_REGION="$AWS_REGION" \
+    npm run post-deploy:lambda-verify
+elif [ "$LAMBDA_FUNCTION_NAME" = "warmpawz-prod-api-handler" ]; then
+  API_BASE_URL="${API_BASE_URL:-https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com}" \
+    LAMBDA_FUNCTION_NAME="$LAMBDA_FUNCTION_NAME" \
+    AWS_REGION="$AWS_REGION" \
+    npm run post-deploy:lambda-verify
+else
+  echo -e "${YELLOW}⚠️  Skipping post-deploy HTTP verify for custom function: $LAMBDA_FUNCTION_NAME${NC}"
+fi
+echo -e "${GREEN}✅ Post-deploy verification passed${NC}"
+echo ""
 
 echo -e "${GREEN}✅ Lambda deployment complete!${NC}"
 echo ""

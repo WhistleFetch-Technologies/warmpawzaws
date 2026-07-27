@@ -65,6 +65,16 @@ export function hasCommerceSwitchConfiguration(): boolean {
   return isFresh(cache);
 }
 
+export function getCommerceSwitchConfigurationVersion(): number {
+  return readCachedConfig().version;
+}
+
+export async function refreshCommerceSwitchConfiguration(): Promise<PublicCommerceConfiguration> {
+  cache = null;
+  inflight = null;
+  return prefetchCommerceSwitchConfiguration();
+}
+
 async function fetchCommerceSwitchConfigurationOnce(): Promise<PublicCommerceConfiguration> {
   try {
     const res = await apiClient.get<PublicCommerceConfiguration & { success?: boolean }>(

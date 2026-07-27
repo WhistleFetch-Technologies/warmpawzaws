@@ -1,7 +1,7 @@
 import { clearCommerceSwitchCache } from '@/lib/commerce-switch-client';
 import {
-  applyMarketplaceNavigationFallback,
   resolveServiceBookingCommerceRoute,
+  resolveServiceBookingCommerceRouteForNavigation,
 } from '../resolve-service-booking-commerce-route';
 import { warmpawzPayRouteAdapter } from '../adapters/warmpawz-pay-route-adapter';
 import { marketplaceRouteAdapter } from '../adapters/marketplace-route-adapter';
@@ -21,7 +21,6 @@ describe('resolveServiceBookingCommerceRoute', () => {
     jest.clearAllMocks();
     clearCommerceSwitchCache();
     delete process.env.NEXT_PUBLIC_WARMPAWZ_PAY_ENABLED;
-    delete process.env.NEXT_PUBLIC_WARMPAWZ_PAY_CUSTOMER_APIS_DEPLOYED;
     getActiveCommerceModel.mockReturnValue('marketplace');
   });
 
@@ -51,7 +50,18 @@ describe('resolveServiceBookingCommerceRoute', () => {
     expect(route.useMarketplaceFlow).toBe(true);
   });
 
-  it('falls back to marketplace when warmpawz_pay is configured but unavailable', () => {
+  it('prefers activeModelId from context over module cache', () => {
+    getActiveCommerceModel.mockReturnValue('marketplace');
+    const route = resolveServiceBookingCommerceRoute({
+      serviceKey: 'grooming',
+      activeModelId: 'warmpawz_pay',
+    });
+    expect(route.configuredModelId).toBe('warmpawz_pay');
+    expect(route.useMarketplaceFlow).toBe(false);
+  });
+
+  it('falls back to marketplace when warmpawz_pay is configured but module is disabled', () => {
+    process.env.NEXT_PUBLIC_WARMPAWZ_PAY_ENABLED = 'false';
     getActiveCommerceModel.mockReturnValue('warmpawz_pay');
     const route = resolveServiceBookingCommerceRoute({ serviceKey: 'grooming', category: 'grooming' });
     expect(route.configuredModelId).toBe('warmpawz_pay');
@@ -60,36 +70,23 @@ describe('resolveServiceBookingCommerceRoute', () => {
     expect(route.fallbackReason).toBe('warmpawz_pay_unavailable');
   });
 
-  it('selects warmpawz_pay when configured and feature flags are set', () => {
-    process.env.NEXT_PUBLIC_WARMPAWZ_PAY_ENABLED = 'true';
-    process.env.NEXT_PUBLIC_WARMPAWZ_PAY_CUSTOMER_APIS_DEPLOYED = 'true';
+  it('selects warmpawz_pay when configured and module is capable', () => {
     getActiveCommerceModel.mockReturnValue('warmpawz_pay');
     const route = resolveServiceBookingCommerceRoute({ serviceKey: 'vet', category: 'vet' });
     expect(route.effectiveModelId).toBe('warmpawz_pay');
     expect(route.useMarketplaceFlow).toBe(false);
   });
 
-  it('applyMarketplaceNavigationFallback keeps marketplace routes unchanged', () => {
-    const route = applyMarketplaceNavigationFallback(
-      resolveServiceBookingCommerceRoute({ serviceKey: 'training' })
-    );
-    expect(route.useMarketplaceFlow).toBe(true);
-  });
-
-  it('applyMarketplaceNavigationFallback downgrades pay-only route to marketplace navigation', () => {
-    process.env.NEXT_PUBLIC_WARMPAWZ_PAY_ENABLED = 'true';
-    process.env.NEXT_PUBLIC_WARMPAWZ_PAY_CUSTOMER_APIS_DEPLOYED = 'true';
+  it('resolveServiceBookingCommerceRouteForNavigation does not force marketplace fallback', () => {
     getActiveCommerceModel.mockReturnValue('warmpawz_pay');
-    const raw = resolveServiceBookingCommerceRoute({ serviceKey: 'grooming' });
-    const safe = applyMarketplaceNavigationFallback(raw);
-    expect(raw.useMarketplaceFlow).toBe(false);
-    expect(safe.useMarketplaceFlow).toBe(true);
-    expect(safe.fallbackReason).toBe('warmpawz_pay_navigation_not_implemented');
+    const route = resolveServiceBookingCommerceRouteForNavigation({ serviceKey: 'grooming' });
+    expect(route.useMarketplaceFlow).toBe(false);
+    expect(route.effectiveModelId).toBe('warmpawz_pay');
   });
 
   it('registers marketplace and warmpawz_pay adapters', () => {
     expect(getCommerceRouteAdapter('marketplace')).toBe(marketplaceRouteAdapter);
     expect(getCommerceRouteAdapter('warmpawz_pay')).toBe(warmpawzPayRouteAdapter);
-    expect(warmpawzPayRouteAdapter.isAvailable()).toBe(false);
+    expect(warmpawzPayRouteAdapter.isAvailable()).toBe(true);
   });
 });

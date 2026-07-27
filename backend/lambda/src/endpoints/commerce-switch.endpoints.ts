@@ -66,6 +66,15 @@ export function registerCommerceSwitchEndpoints(app: Hono): void {
           features: parsed.features ?? current.features,
         },
       });
+
+      void import('../utils/commerce-switch-sync-publisher').then(({ publishCommerceSwitchConfigurationUpdate }) =>
+        publishCommerceSwitchConfigurationUpdate({
+          version: saved.version,
+          activeModelId: saved.activeModelId,
+          updatedAt: saved.updatedAt,
+        })
+      );
+
       return c.json({ success: true, configuration: saved });
     } catch (error: any) {
       if (String(error?.message || '').includes('CONFIG_VERSION_CONFLICT')) {

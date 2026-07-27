@@ -78,6 +78,9 @@ jobs:
         run: npm run build:backend
       - name: Package Lambda
         run: npm run package:lambda
+      - name: Validate Lambda artifact (Commerce Switch + full package)
+        working-directory: backend/lambda
+        run: npm run validate:lambda-artifact
       - name: Upload Lambda zip
         uses: actions/upload-artifact@v4
         with:
