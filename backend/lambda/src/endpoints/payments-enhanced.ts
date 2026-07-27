@@ -39,6 +39,7 @@ import {
   resolveLockedBookingGrossFromNotes,
 } from '../utils/booking-financial-gross';
 import { triggerAutoShipment } from '../utils/logistics/trigger-auto-shipment';
+import { scheduleBookingStartOtpIfNeeded } from '../utils/booking-start-otp';
 
 // Type-only helper (no runtime emit)
 type BookingStatusChange = { bookingId: string; from: string | null; to: string | null };
@@ -654,6 +655,9 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
               console.error('[PAYMENT-CREATE] Failed to notify booking after wallet payment:', notifyErr);
             }
           }
+          if (payment.booking_id) {
+            scheduleBookingStartOtpIfNeeded(String(payment.booking_id), '[PAYMENT-CREATE]');
+          }
 
           // Wallet-only payments never reach Razorpay verify, so record promo/coupon
           // usage here (idempotent for coupons via coupon_usages booking check).
@@ -726,6 +730,9 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
             } catch (notifyErr) {
               console.error('[PAYMENT-CREATE] Failed to notify after wallet/service parity:', notifyErr);
             }
+          }
+          if (payment.booking_id) {
+            scheduleBookingStartOtpIfNeeded(String(payment.booking_id), '[PAYMENT-CREATE]');
           }
         } catch (e) {
           console.error('[PAYMENT-CREATE] Wallet vs booking-total confirm failed:', e);
@@ -842,6 +849,7 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
 
       try {
         let bookingToNotify: string | null = null;
+        let webhookBookingId: string | null = null;
         let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
 
         // Use transaction for atomicity
@@ -875,6 +883,7 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
 
           // Update booking payment status
           if (payment.booking_id) {
+            webhookBookingId = String(payment.booking_id);
             const { rows: bookingRows } = await client.query(
               `SELECT * FROM bookings WHERE id = $1 FOR UPDATE`,
               [payment.booking_id]
@@ -930,6 +939,7 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
         if (bookingToNotify) {
           await notifyBookingCreated(bookingToNotify, requestId);
         }
+        scheduleBookingStartOtpIfNeeded(webhookBookingId, '[PAYMENTS-WEBHOOK]');
 
         // Publish event
         try {
