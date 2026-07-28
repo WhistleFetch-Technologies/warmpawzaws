@@ -4,6 +4,7 @@ import {
   sqlVendorOnlineForCustomerDiscovery,
   sqlVendorServiceDiscoverable,
 } from '../../../../../lib/discovery-vendor-query';
+import { sqlWapptCatalogueVendorJoin } from '../shared/wappt-catalogue-vendor-join';
 import type { ServicesByStyleCategoryContext } from './types';
 
 export function buildByStyleVendorSql(
@@ -37,12 +38,7 @@ export function buildByStyleVendorSql(
     vendorSpecsJsonbSqlByStyle,
   } = categoryCtx;
   const { maxResults, sqlOffsetByStyle, specializationByStyleFragment } = parsed;
-  const wapptJoin = sqlOptions?.wapptCatalogueOnly
-    ? `
-        INNER JOIN warmpawz_appointments_vendor_catalog wappt_c
-          ON wappt_c.vendor_id = v.id
-          AND wappt_c.publish_status = 'published'`
-    : '';
+  const wapptJoin = sqlWapptCatalogueVendorJoin(sqlOptions?.wapptCatalogueOnly);
 
   return `
         SELECT DISTINCT ON (v.id)

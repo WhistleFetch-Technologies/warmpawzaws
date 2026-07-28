@@ -8,11 +8,16 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
+import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 
 export function minPriceForVendor(v: BoardingListVendor): number | null {
   if (v.planRows.length > 0) {
-    return Math.min(...v.planRows.map((p) => p.price));
+    const prices = v.planRows
+      .map((p) => p.price)
+      .filter((p): p is number => p != null && p > 0);
+    return prices.length > 0 ? Math.min(...prices) : null;
   }
+  if (shouldHideDiscoveryPricing(v)) return null;
   // Slim discover cards: use aggregated priceMin until expand fetches planRows
   const raw = (v.raw || {}) as Record<string, unknown>;
   const fromCard = Number(raw.priceMin ?? raw.price_min ?? raw.price ?? 0);

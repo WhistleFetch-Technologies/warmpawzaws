@@ -1838,6 +1838,16 @@ export function CustomerHomeWrapper({
     else if (screen === 'shop') {
       goToShopFromParent();
     }
+    else if (screen === 'grooming-booking' && data?.appointmentsMode) {
+      setVetServiceData({
+        vendorId: data?.vendorId,
+        serviceType: data?.serviceType || 'vet',
+        serviceStyle: data?.serviceStyle || 'at_center',
+        vendorName: data?.vendorName,
+        appointmentsMode: true,
+      });
+      navigateToScreen('grooming-booking');
+    }
     else if (screen === 'purchase-package') {
       const vid = String(data?.vendorId ?? data?.doctorId ?? '').trim();
       const vsid = String(data?.vendorServiceId ?? (data as any)?.vendor_service_id ?? '').trim();
@@ -3714,10 +3724,8 @@ export function CustomerHomeWrapper({
           }
           setGroomingCenterProfileVendorId(null);
           navigateToScreen('grooming_center');
-        } else if (screen === 'wappt_grooming_center') {
-          navigateToScreen('wappt_grooming_center');
-        } else if (screen === 'wappt_vet_center') {
-          navigateToScreen('wappt_vet_center');
+        } else if (screen === 'grooming-booking' && data?.appointmentsMode) {
+          groomingCenterNavigate(screen, data);
         } else if (screen === 'grooming_home' || screen === 'at_home') {
           if (process.env.NODE_ENV === 'development') {
             console.log('🟢 [CustomerHomeWrapper] Setting grooming_home screen');
@@ -3767,6 +3775,17 @@ export function CustomerHomeWrapper({
           console.log('🟢 [CustomerHomeWrapper] Training navigation:', screen, data);
         }
         if (screen === 'create-booking' || screen === 'training-booking' || screen === 'booking') {
+          if (data?.appointmentsMode) {
+            setVetServiceData({
+              vendorId: data?.vendorId,
+              serviceType: data?.serviceType || 'training',
+              serviceStyle: data?.serviceStyle || 'at_center',
+              vendorName: data?.vendorName,
+              appointmentsMode: true,
+            });
+            navigateToScreen('grooming-booking');
+            return;
+          }
           setSelectedVendorId(data?.vendorId);
           setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'training', trainer: data?.trainer, service: data?.service, serviceId: data?.serviceId, vendorName: data?.vendorName, price: data?.price, duration: data?.duration });
           navigateToScreen('training-booking');
@@ -3958,6 +3977,15 @@ export function CustomerHomeWrapper({
               sittingOptionId: data?.sittingOptionId,
             });
             navigateToScreen('create-booking');
+          } else if (screen === 'grooming-booking' && data?.appointmentsMode) {
+            setVetServiceData({
+              vendorId: data?.vendorId,
+              serviceType: data?.serviceType || 'sitting',
+              serviceStyle: data?.serviceStyle || 'at_center',
+              vendorName: data?.vendorName,
+              appointmentsMode: true,
+            });
+            navigateToScreen('grooming-booking');
           } else if (screen === 'pet-sitter-vendors' || screen === 'pet-sitter-facility') {
             setPetSitterFacilityOptionId(
               typeof data?.sittingOptionId === 'string' ? data.sittingOptionId : null
@@ -4842,8 +4870,6 @@ export function CustomerHomeWrapper({
       handleNavigateToService(screen, data);
     }
   }} />;
-  
-  // ✅ Grooming Service Style Screens - Frame UI (CustomerScreenWrapper for bottom nav, back → grooming)
   const groomingCenterNavigate = (screen: string, data?: any) => {
     if (screen === 'grooming_embed_vendor_profile' && data?.vendorId) {
       setGroomingCenterProfileVendorId(String(data.vendorId));
@@ -4854,8 +4880,8 @@ export function CustomerHomeWrapper({
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({
         vendorId: data?.vendorId,
-        serviceType: 'grooming',
-        serviceStyle: 'at_center',
+        serviceType: data?.serviceType || 'grooming',
+        serviceStyle: data?.serviceStyle || 'at_center',
         groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
         service: data?.service,
         serviceId: data?.serviceId,
@@ -4895,62 +4921,6 @@ export function CustomerHomeWrapper({
       handleNavigateToService(screen, data);
     }
   };
-  if (currentScreen === 'wappt_vet_center') {
-    return (
-      <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
-          <UniversalServicesByStyle
-            phone={phone}
-            roleId="veterinarian"
-            serviceStyle="at_center"
-            serviceTypeName="Book Appointment"
-            category="vet"
-            specialization={problemGridSpecialization}
-            bookingScreen="grooming-booking"
-            appointmentsMode
-            queryExtras={{ allStyles: 'true' }}
-            onBack={() => backFromBannerOr(handleBack, vetServiceData)}
-            onNavigate={(screen, data) => {
-              if (screen === 'grooming-booking' || screen === 'create-booking') {
-                groomingCenterNavigate(screen, data);
-                return;
-              }
-              handleVetNavigate(screen, data);
-            }}
-          />
-        </div>
-      </CustomerScreenWrapper>
-    );
-  }
-  if (currentScreen === 'wappt_grooming_center') {
-    return (
-      <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
-          <UniversalServicesByStyle
-            phone={phone}
-            roleId="groomer"
-            serviceStyle="at_center"
-            serviceTypeName="Book Appointment"
-            category="grooming"
-            specialization={problemGridSpecialization}
-            bookingScreen="grooming-booking"
-            appointmentsMode
-            onBack={() => {
-              backFromBannerOr(() => {
-                if (returnToProblemGridFromStyleHub) {
-                  setReturnToProblemGridFromStyleHub(false);
-                  navigateToScreen('problem_grid_flow');
-                  return;
-                }
-                handleBack();
-              }, vetServiceData);
-            }}
-            onNavigate={groomingCenterNavigate}
-          />
-        </div>
-      </CustomerScreenWrapper>
-    );
-  }
   if (currentScreen === 'grooming_center') {
     return (
       <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>

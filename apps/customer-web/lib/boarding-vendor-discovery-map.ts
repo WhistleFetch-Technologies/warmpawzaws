@@ -19,7 +19,7 @@ export interface BoardingPlanRow {
   serviceId?: string;
   vendorServiceId?: string;
   name: string;
-  price: number;
+  price: number | null;
   duration?: number;
   serviceStyle?: string;
   description?: string;
@@ -29,6 +29,13 @@ export interface BoardingPlanRow {
   isPackage?: boolean;
   packageDetails?: unknown;
   metadata?: unknown;
+}
+
+function parsePlanRowPrice(s: Record<string, unknown>): number | null {
+  const raw = s.price ?? s.custom_price ?? s.base_price;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = typeof raw === 'string' ? parseFloat(raw) : Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 function parseMetadataIfString(meta: unknown): Record<string, unknown> | undefined {
@@ -244,7 +251,7 @@ export function planRowsFromDiscoveryServices(services: unknown[] | undefined): 
     if (!rowId || !name) continue;
     if (seen.has(rowId)) continue;
     seen.add(rowId);
-    const price = parseFloat(String(s.price ?? s.custom_price ?? s.base_price ?? '0')) || 0;
+    const price = parsePlanRowPrice(s);
     const desc = pickBestDescription(s);
     const pkg = packageFieldsFromServiceRow(s);
     out.push({
@@ -300,7 +307,7 @@ export function mapServicesApiResponseToPlanRows(servicesResponse: any): Boardin
       serviceId: s.serviceId || s.service_id,
       vendorServiceId: String(s.vendorServiceId ?? s.vendor_service_id ?? s.id ?? '').trim() || undefined,
       name: s.serviceName || s.name || s.service_name || 'Boarding',
-      price: parseFloat(String(s.price || '0')) || 0,
+      price: parsePlanRowPrice(s as Record<string, unknown>),
       duration: s.duration || s.duration_minutes,
       serviceStyle: s.serviceStyle || s.service_style,
       description: desc || undefined,
@@ -347,7 +354,9 @@ export function buildBoardingVendorListFromRows(
       })() || '9 AM - 8 PM';
 
     const basePrice =
-      service.priceRange ||
+      service.warmpawzAppointments === true
+        ? ''
+        : service.priceRange ||
       service.price_range ||
       (service.price ? `₹${service.price}` : '') ||
       (service.priceMin ? `From ₹${service.priceMin}` : '') ||

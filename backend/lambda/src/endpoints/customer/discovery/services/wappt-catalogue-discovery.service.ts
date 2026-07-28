@@ -1,6 +1,6 @@
 import { WAPPT_APPOINTMENTS_ENV_KEY } from '../constants/wappt-catalogue';
 import { dbIsVendorWapptCataloguePublished } from '../repos/wappt-catalogue.repo';
-import type { ServicesByStyleDiscoveryOptions } from './services-by-style/discovery-options';
+import type { CatalogueDiscoveryOptions } from './shared/catalogue-discovery-options';
 
 const TRUTHY = new Set(['true', '1', 'yes', 'on']);
 
@@ -13,7 +13,7 @@ export function isWarmpawzAppointmentsDiscoveryEnabled(): boolean {
   return envFlagEnabled(process.env[WAPPT_APPOINTMENTS_ENV_KEY]);
 }
 
-export function resolveWarmpawzByStyleDiscoveryOptions(): ServicesByStyleDiscoveryOptions {
+export function resolveWarmpawzCatalogueDiscoveryOptions(): CatalogueDiscoveryOptions {
   if (!isWarmpawzAppointmentsDiscoveryEnabled()) {
     return {};
   }
@@ -23,6 +23,11 @@ export function resolveWarmpawzByStyleDiscoveryOptions(): ServicesByStyleDiscove
     appointmentListResponse: false,
     markWarmpawzAppointments: true,
   };
+}
+
+/** @deprecated use resolveWarmpawzCatalogueDiscoveryOptions */
+export function resolveWarmpawzByStyleDiscoveryOptions(): CatalogueDiscoveryOptions {
+  return resolveWarmpawzCatalogueDiscoveryOptions();
 }
 
 export async function shouldOmitVendorServicePricing(vendorId: string): Promise<boolean> {

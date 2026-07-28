@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, type MouseEvent } from 'react';
+import { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
 import { CachedImage } from '@/components/shared/CachedImage';
-import { Stethoscope, Star, ChevronRight, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2, Calendar } from 'lucide-react';
+import { Stethoscope, Star, ChevronRight, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -43,6 +43,7 @@ import {
   resolveServiceStyleLaunchFromCatalog,
 } from '@/lib/customer-service-style-launch';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
+import { buildHubWarmpawzBookingNav } from '@/lib/wappt-hub-booking-nav';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -296,21 +297,10 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     });
 
     if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
-      const wapptCard = {
-        id: 'wappt_vet_center',
-        name: 'Book Appointment',
-        description: 'Fixed fee · pick a slot',
-        image: `${VET_IMG}/clinic-visit.webp`,
-        Icon: Calendar,
-        iconColor: 'text-white',
-        iconBg: 'bg-[#FF8C42]',
-        badge: 'WARMPAWZ',
-        comingSoon: false as boolean | undefined,
-      };
-      return [wapptCard, ...launchFiltered];
+      return launchFiltered;
     }
 
-    const filtered = launchFiltered.filter((service) => {
+    return launchFiltered.filter((service) => {
       const styles = serviceTypeStyleMap[service.id] ?? [service.id];
       return styles.some((style: string) =>
         allowedServiceStyles.some(
@@ -320,19 +310,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         ),
       );
     });
-
-    const wapptCard = {
-      id: 'wappt_vet_center',
-      name: 'Book Appointment',
-      description: 'Fixed fee · pick a slot',
-      image: `${VET_IMG}/clinic-visit.webp`,
-      Icon: Calendar,
-      iconColor: 'text-white',
-      iconBg: 'bg-[#FF8C42]',
-      badge: 'WARMPAWZ',
-      comingSoon: false as boolean | undefined,
-    };
-    return [wapptCard, ...filtered];
   }, [allowedServiceStyles, vetClinicBadgeText, styleLaunchByCard]);
 
   const problemGridItems = useMemo(() => {
@@ -347,6 +324,16 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     }
     return legacyProblems.length > 0 ? legacyProblems : VET_PROBLEMS;
   }, [bootstrapProblems, legacyProblems]);
+
+  const handleWarmpawzBookAppointment = useCallback(
+    (v: BoardingListVendor) => {
+      onNavigate(
+        'grooming-booking',
+        buildHubWarmpawzBookingNav(v, { category: 'vet', serviceStyle: 'at_center' })
+      );
+    },
+    [onNavigate]
+  );
 
   // ✅ FIX: Validate pet context before allowing navigation
   const handleNavigate = (screen: string, navData?: any) => {
@@ -577,8 +564,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
                   if (service.id === 'clinic') {
                     handleNavigate('vet-clinic-list');
-                  } else if (service.id === 'wappt_vet_center') {
-                    handleNavigate('wappt_vet_center');
                   } else if (service.id === 'tele') {
                     handleNavigate('vet-tele-consultation');
                   } else if (service.id === 'home') {
@@ -749,6 +734,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     onOpenCenterDetails={openVetCenterProfile}
                     customerId={phone}
                     serviceCategory="vet"
+                    onBookAppointment={handleWarmpawzBookAppointment}
                   />
                 );
               })

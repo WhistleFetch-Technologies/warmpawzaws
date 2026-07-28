@@ -24,6 +24,7 @@ import { formatDistanceDisplay } from '@/lib/distance-display';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
+import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 
 export interface BoardingVendorExpandableCardProps {
   v: BoardingListVendor;
@@ -55,6 +56,8 @@ export interface BoardingVendorExpandableCardProps {
   serviceCategory?: string;
   /** When true (default), service rows use winning promotion pricing from the API */
   usePromoQuote?: boolean;
+  /** Warmpawz Appointments — opens slot picker (no per-service booking). */
+  onBookAppointment?: (v: BoardingListVendor) => void;
 }
 
 export function BoardingVendorExpandableCard({
@@ -75,6 +78,7 @@ export function BoardingVendorExpandableCard({
   customerId,
   serviceCategory,
   usePromoQuote = true,
+  onBookAppointment,
 }: BoardingVendorExpandableCardProps) {
   const centerProfileVendorId =
     pickCustomerVendorAccountId((v.raw ?? {}) as Record<string, unknown>) || v.id;
@@ -91,6 +95,8 @@ export function BoardingVendorExpandableCard({
     raw.roleDisplayName || raw.roleName || raw.vendorType || ''
   ).trim();
   const nextSlot = resolveNextAvailableLabel(raw);
+  const appointmentsMode = shouldHideDiscoveryPricing(v);
+  const showPricing = !appointmentsMode;
 
   return (
     <Card className="bg-white rounded-xl border border-gray-100 shadow-sm">
@@ -183,7 +189,7 @@ export function BoardingVendorExpandableCard({
                   <span className="text-sm text-gray-500">{formatDistanceDisplay(v as any)}</span>
                 </>
               )}
-              {minP != null && (v.planRows.length > 0 || v.needsServiceFetch) && (
+              {showPricing && minP != null && (v.planRows.length > 0 || v.needsServiceFetch) && (
                 <>
                   <span className="text-gray-300">•</span>
                   <span className="text-sm font-semibold text-[#FF8C42]">
@@ -191,7 +197,7 @@ export function BoardingVendorExpandableCard({
                   </span>
                 </>
               )}
-              {minP == null && v.planRows.length === 0 && (
+              {showPricing && minP == null && v.planRows.length === 0 && (
                 <>
                   <span className="text-gray-300">•</span>
                   <span className="text-sm font-bold text-[#FF8C42]">{priceForCard(v, serviceSlug)}</span>
@@ -291,14 +297,17 @@ export function BoardingVendorExpandableCard({
                             </div>
                           ) : (
                             <p className="mt-1 line-clamp-2 text-sm italic text-gray-400">
-                              Boarding plan — tap Book Now to continue.
+                              {appointmentsMode
+                                ? 'Service menu — book an appointment to continue.'
+                                : 'Boarding plan — tap Book Now to continue.'}
                             </p>
                           )}
                         </div>
+                        {showPricing ? (
                         <div className="shrink-0 text-right">
                           {usePromoQuote && promoVendorId ? (
                             <ServiceListingPrice
-                              basePrice={plan.price}
+                              basePrice={plan.price ?? 0}
                               vendorId={promoVendorId}
                               serviceId={String(plan.vendorServiceId ?? plan.serviceId ?? plan.rowId)}
                               customerId={customerId}
@@ -308,7 +317,7 @@ export function BoardingVendorExpandableCard({
                             />
                           ) : (
                             <div className="mb-1 text-lg font-bold tabular-nums text-[#FF8C42]">
-                              {formatPriceWithSymbol(plan.price)}
+                              {plan.price != null ? formatPriceWithSymbol(plan.price) : null}
                             </div>
                           )}
                           {showPriceDisclaimer && (
@@ -317,6 +326,7 @@ export function BoardingVendorExpandableCard({
                             </p>
                           )}
                         </div>
+                        ) : null}
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -334,6 +344,7 @@ export function BoardingVendorExpandableCard({
                             </Badge>
                           ) : null}
                         </div>
+                        {!appointmentsMode ? (
                         <Button
                           type="button"
                           size="sm"
@@ -345,6 +356,7 @@ export function BoardingVendorExpandableCard({
                         >
                           Book Now
                         </Button>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -361,20 +373,37 @@ export function BoardingVendorExpandableCard({
             {v.planRows.length > 0 ? (
               <>
                 {v.planRows.length} service{v.planRows.length !== 1 ? 's' : ''} available
-                {minP != null && (
+                {showPricing && minP != null && (
                   <span className="text-gray-900 font-medium"> from {formatPriceWithSymbol(minP)}</span>
                 )}
-                {showPriceDisclaimer && minP != null && (
+                {showPricing && showPriceDisclaimer && minP != null && (
                   <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                 )}
               </>
             ) : v.needsServiceFetch ? (
-              <span className="text-gray-500">Tap to load services & prices</span>
+              <span className="text-gray-500">
+                {appointmentsMode ? 'Tap to view services' : 'Tap to load services & prices'}
+              </span>
             ) : (
-              <span className="text-gray-500">No priced services in listing — open details</span>
+              <span className="text-gray-500">
+                {appointmentsMode ? 'No services listed' : 'No priced services in listing — open details'}
+              </span>
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {appointmentsMode && onBookAppointment ? (
+              <Button
+                type="button"
+                size="sm"
+                className="bg-[#FF8C42] hover:bg-[#E67A35] text-white"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onBookAppointment(v);
+                }}
+              >
+                Book Appointment
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"
