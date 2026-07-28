@@ -1,5 +1,5 @@
 /**
- * Slim vendor card for Warmpawz Appointments discovery (no pricing fields).
+ * Slim vendor card for Warmpawz Appointments discovery (no pricing or time fields).
  */
 
 export type AppointmentVendorCardDTO = {
@@ -15,8 +15,6 @@ export type AppointmentVendorCardDTO = {
   distanceKm: number | null;
   distanceText: string | null;
   shortAddress: string | null;
-  availabilityText: string;
-  nextAvailableSlot?: string;
   serviceStyle?: string;
 };
 
@@ -30,18 +28,11 @@ function shortAddressFromCard(card: Record<string, unknown>): string | null {
   return city || address || null;
 }
 
-function availabilityTextFromCard(card: Record<string, unknown>): string {
-  const next = card.nextAvailable as { display?: string } | undefined;
-  if (next?.display && String(next.display).trim()) return String(next.display);
-  return 'Tap to view availability';
-}
-
 export function toAppointmentVendorCardDTO(
   card: Record<string, unknown>,
   serviceStyle?: string
 ): AppointmentVendorCardDTO {
   const id = String(card.vendorId ?? card.id ?? '');
-  const availabilityText = availabilityTextFromCard(card);
   return {
     id,
     vendorId: id,
@@ -60,8 +51,6 @@ export function toAppointmentVendorCardDTO(
           : null,
     distanceText: (card.distanceText as string | null) ?? null,
     shortAddress: shortAddressFromCard(card),
-    availabilityText,
-    nextAvailableSlot: availabilityText,
     ...(serviceStyle ? { serviceStyle } : {}),
   };
 }

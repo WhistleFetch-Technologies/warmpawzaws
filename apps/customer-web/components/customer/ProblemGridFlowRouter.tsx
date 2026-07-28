@@ -21,6 +21,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
+import { shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
 import {
   Home,
   Building2,
@@ -291,9 +292,13 @@ export function ProblemGridFlowRouter({
     categoryHint: selectedProblem?.category,
   }) as ServiceStyle[];
   const groomingOnlyHomeAndCenter = isGroomingProblem(selectedProblem);
-  const availableStyles = groomingOnlyHomeAndCenter
+  const availableStyles = (groomingOnlyHomeAndCenter
     ? (['at_home', 'at_center'] as ServiceStyle[])
-    : normalizedAvailableStyles;
+    : normalizedAvailableStyles
+  ).filter((style) => {
+    if (!shouldHideMarketplaceStyleTiles()) return true;
+    return style === 'tele';
+  });
   const hasTeleOption = availableStyles.includes('tele');
 
   useEffect(() => {

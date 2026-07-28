@@ -215,6 +215,8 @@ interface UniversalPaymentPageProps {
   } | null;
   /** Lab diagnostics: pay-first payload from DiagnosticsBookingFlow; booking is created only after payment. */
   prepaidBookingPayload?: Record<string, unknown>;
+  /** Warmpawz Appointments flat-fee booking mode */
+  bookingMode?: string;
   initialPromotionId?: string;
   initialPromotionIntent?: {
     promotionId?: string;
@@ -453,6 +455,7 @@ export function UniversalPaymentPage({
   resumeRazorpayOrderId,
   resumeFinancialSnapshot,
   prepaidBookingPayload,
+  bookingMode,
   initialPromotionId,
   initialPromotionIntent,
   initialAppliedCoupon,
@@ -2643,6 +2646,7 @@ export function UniversalPaymentPage({
           vendorId: vendorId, // âœ… Required UUID
           serviceId: finalServiceId, // âœ… Required UUID (resolved above)
           serviceName: serviceName, // âœ… Service name for booking
+          ...(bookingMode ? { bookingMode } : {}),
           bookingDate: bookingDate, // âœ… Format: YYYY-MM-DD
           bookingTime: normalizedBookingTime, // âœ… Format: HH:MM or HH:MM:SS
           serviceType: serviceTypeValue, // âœ… Required enum

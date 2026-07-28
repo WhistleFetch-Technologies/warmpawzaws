@@ -35,6 +35,12 @@ import {
 import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
 import { DiscoveryProviderAvatar } from './DiscoveryProviderAvatar';
 import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
+import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
+import type { WapptStyleFilter } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
+import {
+  buildWarmpawzAppointmentsBookingNav,
+  resolveWarmpawzBookingScreen,
+} from '@/lib/warmpawz-appointments-customer';
 import { useDiscoveryProfileVendorResolve } from '@/hooks/useDiscoveryProfileVendorResolve';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import {
@@ -65,6 +71,8 @@ interface UniversalServicesByStyleProps {
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   bookingScreen?: string; // ✅ NEW: Screen name for booking (e.g., 'vet-booking', 'grooming-booking')
+  appointmentsMode?: boolean;
+  wapptStyleFilter?: WapptStyleFilter;
 }
 
 // Provider can be vendor (for at_center) or staff/individual (for at_home/tele)
@@ -137,7 +145,9 @@ export function UniversalServicesByStyle({
   profileBackScreen,
   onBack, 
   onNavigate,
-  bookingScreen = 'booking' // Default booking screen
+  bookingScreen = 'booking', // Default booking screen
+  appointmentsMode = false,
+  wapptStyleFilter = 'all',
 }: UniversalServicesByStyleProps) {
   const router = useRouter();
   const config = getRoleConfig(roleId);
@@ -162,20 +172,27 @@ export function UniversalServicesByStyle({
   providersRef.current = providers;
   const launchGate = useServiceStyleLaunchGate(phone, finalCategory, serviceStyle);
 
-  const feedEnabled = launchGate.ready && !launchGate.blocked;
-  const {
-    rows: feedRows,
-    loading: feedLoading,
-    loadingMore,
-    hasMore,
-    loadMore,
-  } = useByStyleDiscoveryFeed({
+  const feedEnabled = appointmentsMode || (launchGate.ready && !launchGate.blocked);
+
+  const wapptFeed = useWarmpawzAppointmentsByCategoryFeed({
+    category: finalCategory,
+    serviceStyle: wapptStyleFilter,
+    enabled: appointmentsMode && feedEnabled,
+  });
+
+  const normalFeed = useByStyleDiscoveryFeed({
     phone,
     serviceStyle,
     category: finalCategory,
     specialization,
-    enabled: feedEnabled,
+    enabled: !appointmentsMode && feedEnabled,
   });
+
+  const feedRows = appointmentsMode ? wapptFeed.vendors : normalFeed.rows;
+  const feedLoading = appointmentsMode ? wapptFeed.loading : normalFeed.loading;
+  const loadingMore = appointmentsMode ? wapptFeed.loadingMore : normalFeed.loadingMore;
+  const hasMore = appointmentsMode ? wapptFeed.hasMore : normalFeed.hasMore;
+  const loadMore = appointmentsMode ? wapptFeed.loadMore : normalFeed.loadMore;
 
   const mapRowToProvider = useCallback((row: Record<string, unknown>): Provider => {
     const base = mapDiscoveryRowBaseFields(row);
@@ -204,18 +221,21 @@ export function UniversalServicesByStyle({
       distance: base.distance != null ? Number(base.distance) : null,
       isVerified: base.isVerified,
       isIndividualProvider: base.isIndividualProvider,
-      nextAvailableSlot:
-        nextSlot && nextSlot !== 'Tap to view availability' ? nextSlot : undefined,
+      nextAvailableSlot: appointmentsMode
+        ? undefined
+        : nextSlot && nextSlot !== 'Tap to view availability'
+          ? nextSlot
+          : undefined,
       specialization: base.specialization,
       amenities: Array.isArray(row.amenities) ? (row.amenities as string[]) : undefined,
-      priceMin: base.priceMin,
+      priceMin: appointmentsMode ? undefined : base.priceMin,
       services: [],
     };
-  }, []);
+  }, [appointmentsMode]);
 
   useEffect(() => {
     if (!feedEnabled) {
-      if (launchGate.ready && launchGate.blocked) setLoading(false);
+      if (!appointmentsMode && launchGate.ready && launchGate.blocked) setLoading(false);
       return;
     }
     let mapped = feedRows.map(mapRowToProvider);
@@ -421,6 +441,33 @@ export function UniversalServicesByStyle({
 
   const openProviderProfileForChevron = (e: MouseEvent, provider: Provider) => {
     e.stopPropagation();
+    if (appointmentsMode) {
+      const vid = String(provider.vendorId || provider.providerId || '');
+      const style =
+        wapptStyleFilter === 'all'
+          ? serviceStyle
+          : wapptStyleFilter;
+      const nav = buildWarmpawzAppointmentsBookingNav({
+        vendorId: vid,
+        vendorName: provider.name,
+        serviceStyle: style,
+        category: finalCategory,
+      });
+      if (roleId === 'veterinarian') {
+        onNavigate('vet-clinic-profile', {
+          ...nav,
+          clinicProfileBackScreen: profileBackScreen || 'wappt-discovery',
+        });
+        return;
+      }
+      if (roleId === 'groomer') {
+        const screen = style === 'at_home' ? 'grooming_home' : 'grooming_center';
+        onNavigate(screen, { ...nav, vendorId: vid });
+        return;
+      }
+      onNavigate(resolveWarmpawzBookingScreen(finalCategory), nav);
+      return;
+    }
     const row = provider as unknown as Record<string, unknown>;
     if (roleId === 'trainer') {
       onNavigate('training_embed_vendor_profile', {
@@ -1391,7 +1438,7 @@ export function UniversalServicesByStyle({
                             {provider.experienceYears} years experience
                           </div>
                         )}
-                        {provider.nextAvailableSlot && (
+                        {provider.nextAvailableSlot && !appointmentsMode && (
                           <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
                             <Clock className="w-3 h-3" />
                             <span>Next: {provider.nextAvailableSlot}</span>
@@ -1414,7 +1461,7 @@ export function UniversalServicesByStyle({
                 </div>
 
                 {/* Services List - Expanded */}
-                {expanded && (
+                {expanded && !appointmentsMode && (
                   <div className="bg-gray-50 p-4 space-y-3">
                     {/* Provider details for staff/individual */}
                     {provider.qualifications && (
@@ -1528,7 +1575,9 @@ export function UniversalServicesByStyle({
                 {!expanded && (
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      {provider.services.length > 0 ? (
+                      {appointmentsMode ? (
+                        <span>Tap to view profile &amp; book</span>
+                      ) : provider.services.length > 0 ? (
                         <>
                           {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service
                           {provider.services.length !== 1 ? 's' : ''} available
@@ -1565,11 +1614,15 @@ export function UniversalServicesByStyle({
                       className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (appointmentsMode) {
+                          openProviderProfileForChevron(e, provider);
+                          return;
+                        }
                         setSelectedProvider(provider.providerId);
                         void fetchProviderServices(provider.providerId);
                       }}
                     >
-                      View Services
+                      {appointmentsMode ? 'Book Appointment' : 'View Services'}
                     </Button>
                   </div>
                 )}

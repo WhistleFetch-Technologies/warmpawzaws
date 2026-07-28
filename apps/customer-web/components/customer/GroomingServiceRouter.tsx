@@ -40,7 +40,7 @@ import {
   type BoardingPlanRow,
   findBoardingListVendorByProfileKey,
 } from '@/lib/boarding-vendor-discovery-map';
-import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
@@ -208,7 +208,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
 
   const navigateGroomingStyle = async (screen: string) => {
     if (screen === 'wappt_grooming') {
-      onNavigate?.('wappt-grooming-discovery', { category: 'grooming' });
+      onNavigate?.('wappt-discovery', { category: 'grooming' });
       return;
     }
     const styleKey = GROOMING_STYLE_LAUNCH_MAP[screen];
@@ -359,7 +359,13 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     ];
       return cards.filter((service) => {
         const launchStatus = styleLaunchByCard[service.id];
-        return !(launchStatus && isServiceStyleHidden(launchStatus));
+        if (launchStatus && isServiceStyleHidden(launchStatus)) {
+          return false;
+        }
+        if (shouldHideMarketplaceStyleTiles()) {
+          return false;
+        }
+        return true;
       });
     },
     [groomingCenterBadgeText, styleLaunchByCard]

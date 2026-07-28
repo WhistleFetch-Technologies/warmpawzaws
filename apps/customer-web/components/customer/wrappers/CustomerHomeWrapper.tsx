@@ -50,6 +50,7 @@ import {
   rememberHelpBackSpaScreen,
 } from '@/lib/go-back-or-replace';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
+import { isWarmpawzPayCommerceActive } from '@/lib/warmpawz-appointments-customer';
 import {
   navigateToArticleFromHome,
   navigateToArticlesList,
@@ -294,8 +295,7 @@ type ScreenType =
   | 'vet-booking'
   | 'vet-doctor-details'
   | 'vet-clinic-list'
-  | 'wappt-vet-discovery'
-  | 'wappt-grooming-discovery'
+  | 'wappt-discovery'
   | 'vet-clinic-profile'
   | 'vet-clinic-booking'
   | 'vet-services-by-style'
@@ -541,6 +541,7 @@ export function CustomerHomeWrapper({
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedService, setSelectedService] = useState<string>('');
   const [vetServiceData, setVetServiceData] = useState<any>(null);
+  const [wapptDiscoveryCategory, setWapptDiscoveryCategory] = useState<string>('vet');
   const [walkerServiceData, setWalkerServiceData] = useState<any>(null);
   const [selectedPetData, setSelectedPetData] = useState<any>(null);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
@@ -1792,8 +1793,9 @@ export function CustomerHomeWrapper({
       else setVetClinicFromHome(false);
       navigateToScreen('vet-clinic-list');
     }
-    else if (screen === 'wappt-vet-discovery') {
-      navigateToScreen('wappt-vet-discovery');
+    else if (screen === 'wappt-discovery') {
+      setWapptDiscoveryCategory(String((data as any)?.category || 'vet'));
+      navigateToScreen('wappt-discovery');
     }
     else if (screen === 'vet-clinic-booking') navigateToScreen('vet-clinic-booking');
     else if (screen === 'vet-tele-consultation') {
@@ -2153,6 +2155,10 @@ export function CustomerHomeWrapper({
       setBoardingVendorsReturnScreen(null);
       shellNav.focusTabRoot('bookings');
     } else if (screen === 'warmpawz-pay') {
+      if (!isWarmpawzPayCommerceActive()) {
+        goToHome();
+        return;
+      }
       router.push('/warmpawz-pay');
     } else if (screen === 'profile') {
       setPetSitterOriginScreen(null);
@@ -3143,7 +3149,7 @@ export function CustomerHomeWrapper({
       { title: 'Veterinary Services', subtitle: 'Professional pet healthcare', showBackButton: true, skipHeader: true }
     );
   }
-  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} onBack={() => backFromBannerOr(handleBack, vetServiceData)} onInternalBackReady={(fn) => { vetBookingInternalBackRef.current = fn; }} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
+  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} appointmentsMode={vetServiceData?.appointmentsMode === true} onBack={() => backFromBannerOr(handleBack, vetServiceData)} onInternalBackReady={(fn) => { vetBookingInternalBackRef.current = fn; }} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
   if (currentScreen === 'vet-doctor-details')
     return (
       <VetDoctorDetails
@@ -3153,31 +3159,40 @@ export function CustomerHomeWrapper({
         onNavigate={handleVetNavigate}
       />
     );
-  if (currentScreen === 'wappt-vet-discovery' || currentScreen === 'wappt-grooming-discovery') {
-    const wapptCategory = currentScreen === 'wappt-vet-discovery' ? 'vet' : 'grooming';
+  if (currentScreen === 'wappt-discovery') {
     return (
       <WarmpawzAppointmentsDiscovery
-        category={wapptCategory}
+        category={wapptDiscoveryCategory}
+        phone={phone}
         onBack={handleBack}
-        onVendorSelect={(v) => {
-          if (wapptCategory === 'vet') {
-            setVetServiceData({
-              vendorId: v.vendorId,
-              vendorName: v.vendorName,
-              serviceStyle: v.serviceStyle,
-              clinicProfileBackScreen: 'wappt-vet-discovery',
-            });
-            navigateToScreen('vet-clinic-profile');
-          } else {
-            const style = String(v.serviceStyle || 'at_center').toLowerCase();
-            if (style === 'at_home' || style === 'home') {
-              setGroomingHomeProfileVendorId(v.vendorId);
-              navigateToScreen('grooming_home');
-            } else {
-              setGroomingCenterProfileVendorId(v.vendorId);
-              navigateToScreen('grooming_center');
+        onNavigate={(screen, data) => {
+          const payload = { ...(data || {}) };
+          if (wapptDiscoveryCategory === 'vet') {
+            setVetServiceData((prev: Record<string, unknown> | null) => ({
+              ...(prev || {}),
+              ...payload,
+              id: payload.vendorId || payload.id,
+              vendorId: payload.vendorId,
+            }));
+            handleVetNavigate(screen, payload);
+            return;
+          }
+          if (wapptDiscoveryCategory === 'grooming') {
+            if (screen === 'grooming_home' && payload.vendorId) {
+              setGroomingHomeProfileVendorId(String(payload.vendorId));
+            } else if (payload.vendorId) {
+              setGroomingCenterProfileVendorId(String(payload.vendorId));
             }
           }
+          if (screen === 'grooming_center' || screen === 'grooming_home') {
+            navigateToScreen(screen as ScreenType);
+            return;
+          }
+          if (screen === 'vet-booking' || screen === 'grooming-booking' || screen === 'training-booking') {
+            navigateToScreen(screen as ScreenType);
+            return;
+          }
+          navigateToScreen(screen as ScreenType);
         }}
       />
     );
@@ -3752,8 +3767,9 @@ export function CustomerHomeWrapper({
           }
           setProblemGridSpecialization(data?.problemId || undefined);
           navigateToScreen('problem_grid_flow');
-        } else if (screen === 'wappt-grooming-discovery') {
-          navigateToScreen('wappt-grooming-discovery');
+        } else if (screen === 'wappt-discovery') {
+          setWapptDiscoveryCategory(String(data?.category || 'grooming'));
+          navigateToScreen('wappt-discovery');
         } else if (screen === 'grooming_center' || screen === 'at_center') {
           if (process.env.NODE_ENV === 'development') {
             console.log('🟢 [CustomerHomeWrapper] Setting grooming_center screen');
@@ -5140,6 +5156,7 @@ export function CustomerHomeWrapper({
     vendorName={vetServiceData?.vendorName}
     price={vetServiceData?.price}
     duration={vetServiceData?.duration}
+    appointmentsMode={vetServiceData?.appointmentsMode === true}
     onBack={() => backFromBannerOr(handleBack, vetServiceData)} 
     onInternalBackReady={(fn) => {
       groomingBookingInternalBackRef.current = fn;

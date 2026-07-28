@@ -1,9 +1,7 @@
 import { query } from '../../../../database/rds-connection';
 import { acceptableStylesForService } from '../../../../lib/search-discovery-parity';
 import { wapptCatalogueCustomerVisibleSql } from '../../../warmpawz-appointments/shared/catalogue-eligibility-sql';
-import {
-  merchantServiceCategoryFilterSql,
-} from '../../../warmpawz-appointments/shared/merchant/merchant-role-sql';
+import { merchantServiceCategoryFilterSql } from '../../../warmpawz-appointments/shared/merchant/merchant-role-sql';
 import { expandServiceCategoryFilterTokens } from '../../../warmpawz-appointments/shared/merchant/merchant-service-category.resolver';
 
 export type WapptDiscoveryVendorRow = {
@@ -27,7 +25,7 @@ export async function dbListWapptDiscoveryByCategory(opts: {
   serviceStyle: 'all' | 'at_center' | 'at_home';
   limit: number;
   offset: number;
-}): Promise<{ rows: WapptDiscoveryVendorRow[]; total: number }> {
+}): Promise<{ rows: WapptDiscoveryVendorRow[]; hasMore: boolean }> {
   const conditions: string[] = [
     '(v.is_deleted IS NOT TRUE)',
     wapptCatalogueCustomerVisibleSql('c'),
@@ -57,17 +55,7 @@ export async function dbListWapptDiscoveryByCategory(opts: {
     )
   `);
 
-  const countSql = `
-    SELECT COUNT(DISTINCT v.id)::int AS total
-    FROM warmpawz_appointments_vendor_catalog c
-    INNER JOIN vendors v ON v.id = c.vendor_id
-    LEFT JOIN roles r ON r.id = v.role_id
-    WHERE ${conditions.join(' AND ')}
-  `;
-  const countResult = await query(countSql, params);
-  const total = Number(countResult.rows[0]?.total ?? 0);
-
-  params.push(opts.limit);
+  params.push(opts.limit + 1);
   const limitParam = `$${params.length}`;
   params.push(opts.offset);
   const offsetParam = `$${params.length}`;
@@ -83,16 +71,24 @@ export async function dbListWapptDiscoveryByCategory(opts: {
       COALESCE(v.is_online, false) AS is_online,
       r.display_name AS role_display_name,
       r.name AS role_name,
-      COALESCE((SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id), 0) AS avg_rating,
-      COALESCE((SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id), 0) AS review_count
+      COALESCE(rv.avg_rating, 0) AS avg_rating,
+      COALESCE(rv.review_count, 0) AS review_count
     FROM warmpawz_appointments_vendor_catalog c
     INNER JOIN vendors v ON v.id = c.vendor_id
     LEFT JOIN roles r ON r.id = v.role_id
+    LEFT JOIN (
+      SELECT vendor_id, AVG(rating)::float AS avg_rating, COUNT(*)::int AS review_count
+      FROM reviews
+      GROUP BY vendor_id
+    ) rv ON rv.vendor_id = v.id
     WHERE ${conditions.join(' AND ')}
     ORDER BY COALESCE(v.business_name, v.owner_name, '') ASC, v.id ASC
     LIMIT ${limitParam} OFFSET ${offsetParam}
   `;
 
   const listResult = await query(listSql, params);
-  return { rows: listResult.rows as WapptDiscoveryVendorRow[], total };
+  const allRows = listResult.rows as WapptDiscoveryVendorRow[];
+  const hasMore = allRows.length > opts.limit;
+  const rows = hasMore ? allRows.slice(0, opts.limit) : allRows;
+  return { rows, hasMore };
 }

@@ -1,14 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { CachedImage } from '@/components/shared/CachedImage';
-import { ChevronLeft, MapPin, Star } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import {
-  useWarmpawzAppointmentsDiscovery,
-  type WapptStyleFilter,
-} from '@/hooks/useWarmpawzAppointmentsDiscovery';
+import { ChevronLeft } from 'lucide-react';
+import { UniversalServicesByStyle } from '@/components/customer/shared/UniversalServicesByStyle';
+import type { RoleId } from '@/components/customer/shared/roleConfig';
+import type { WapptStyleFilter } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
 import { getWarmpawzAppointmentBookingTitle } from '@/lib/warmpawz-appointments-customer';
 
 const STYLE_FILTERS: { id: WapptStyleFilter; label: string }[] = [
@@ -17,23 +13,35 @@ const STYLE_FILTERS: { id: WapptStyleFilter; label: string }[] = [
   { id: 'at_home', label: 'At home' },
 ];
 
+const CATEGORY_ROLE: Record<string, RoleId> = {
+  vet: 'veterinarian',
+  grooming: 'groomer',
+  training: 'trainer',
+};
+
+const CATEGORY_BOOKING_SCREEN: Record<string, string> = {
+  vet: 'vet-booking',
+  grooming: 'grooming-booking',
+  training: 'training-booking',
+};
+
 type WarmpawzAppointmentsDiscoveryProps = {
   category: string;
+  phone: string;
   onBack: () => void;
-  onVendorSelect: (vendor: { vendorId: string; vendorName: string; serviceStyle: string }) => void;
+  onNavigate: (screen: string, data?: Record<string, unknown>) => void;
 };
 
 export function WarmpawzAppointmentsDiscovery({
   category,
+  phone,
   onBack,
-  onVendorSelect,
+  onNavigate,
 }: WarmpawzAppointmentsDiscoveryProps) {
   const [styleFilter, setStyleFilter] = useState<WapptStyleFilter>('all');
-  const { vendors, loading, error, hasMore, loadMore } = useWarmpawzAppointmentsDiscovery({
-    category,
-    serviceStyle: styleFilter,
-  });
+  const roleId = CATEGORY_ROLE[category] ?? 'veterinarian';
   const { title, subtitle } = getWarmpawzAppointmentBookingTitle(category);
+  const listServiceStyle = styleFilter === 'at_home' ? 'at_home' : 'at_center';
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
@@ -64,73 +72,18 @@ export function WarmpawzAppointmentsDiscovery({
           ))}
         </div>
       </div>
-
-      <div className="flex-1 space-y-3 p-4">
-        {error ? (
-          <Card className="p-6 text-center text-sm text-red-600">{error}</Card>
-        ) : null}
-        {loading && vendors.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-500">Loading providers…</p>
-        ) : null}
-        {!loading && vendors.length === 0 && !error ? (
-          <Card className="p-8 text-center">
-            <p className="text-gray-600">No appointment providers published for this category yet.</p>
-          </Card>
-        ) : null}
-        {vendors.map((v) => (
-          <button
-            key={v.vendorId}
-            type="button"
-            className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:border-orange-200"
-            onClick={() =>
-              onVendorSelect({
-                vendorId: v.vendorId,
-                vendorName: v.name,
-                serviceStyle: styleFilter === 'all' ? 'at_center' : styleFilter,
-              })
-            }
-          >
-            <div className="flex gap-3">
-              <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-orange-50">
-                {v.photoUrl ? (
-                  <CachedImage src={v.photoUrl} alt="" fill className="object-cover" sizes="56px" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-lg font-bold text-orange-400">
-                    {v.name.charAt(0)}
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="truncate font-semibold text-slate-900">{v.name}</h3>
-                <p className="text-xs text-slate-500">{v.roleDisplayName}</p>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                  {v.rating > 0 ? (
-                    <span className="inline-flex items-center gap-0.5">
-                      <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                      {v.rating.toFixed(1)}
-                      {v.reviewCount > 0 ? ` (${v.reviewCount})` : ''}
-                    </span>
-                  ) : null}
-                  {v.shortAddress ? (
-                    <span className="inline-flex items-center gap-0.5 truncate">
-                      <MapPin className="h-3 w-3 shrink-0" />
-                      {v.shortAddress}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-1 text-xs text-orange-600">{v.availabilityText}</p>
-              </div>
-            </div>
-          </button>
-        ))}
-        {hasMore ? (
-          <div className="flex justify-center pt-2">
-            <Button variant="outline" disabled={loading} onClick={loadMore}>
-              {loading ? 'Loading…' : 'Load more'}
-            </Button>
-          </div>
-        ) : null}
-      </div>
+      <UniversalServicesByStyle
+        phone={phone}
+        roleId={roleId}
+        serviceStyle={listServiceStyle}
+        category={category}
+        appointmentsMode
+        wapptStyleFilter={styleFilter}
+        profileBackScreen="wappt-discovery"
+        onBack={onBack}
+        onNavigate={onNavigate}
+        bookingScreen={CATEGORY_BOOKING_SCREEN[category] ?? 'grooming-booking'}
+      />
     </div>
   );
 }

@@ -43,7 +43,7 @@ import {
   resolveServiceStyleLaunchFromCatalog,
 } from '@/lib/customer-service-style-launch';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
-import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -297,7 +297,11 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     });
 
     if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
-      return launchFiltered;
+      if (shouldHideMarketplaceStyleTiles()) {
+      return launchFiltered.filter((s) => s.id === 'tele');
+    }
+
+    return launchFiltered;
     }
 
     return launchFiltered.filter((service) => {
@@ -569,7 +573,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   }
 
                   if (service.id === 'wappt_book') {
-                    handleNavigate('wappt-vet-discovery', { category: 'vet' });
+                    handleNavigate('wappt-discovery', { category: 'vet' });
                   } else if (service.id === 'clinic') {
                     handleNavigate('vet-clinic-list');
                   } else if (service.id === 'tele') {

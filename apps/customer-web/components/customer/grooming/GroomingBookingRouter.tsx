@@ -28,6 +28,12 @@ import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { BookingConfirmationSavings } from '../pricing/BookingConfirmationSavings';
 import { MarketplaceReview } from '../marketplace/MarketplaceReview';
+import {
+  getWarmpawzAppointmentServiceLabel,
+  WAPPT_APPOINTMENT_SERVICE_ID,
+  WAPPT_DEFAULT_SLOT_DURATION_MIN,
+  WAPPT_BOOKING_MODE,
+} from '@/lib/warmpawz-appointments-customer';
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -50,6 +56,7 @@ interface GroomingBookingRouterProps {
   petBreed?: string;
   notes?: string;
   skipToPayment?: boolean; // Flag to skip directly to payment
+  appointmentsMode?: boolean;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -90,6 +97,7 @@ export function GroomingBookingRouter({
   petBreed: preFilledPetBreed, // ✅ NEW: Pre-filled pet breed
   notes: preFilledNotes, // ✅ NEW: Pre-filled notes
   skipToPayment, // ✅ NEW: Flag to skip to payment
+  appointmentsMode = false,
   onBack, 
   onNavigate, 
   onViewBooking,
@@ -98,7 +106,9 @@ export function GroomingBookingRouter({
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to datetime
   // ✅ NEW: Also skip if multiple services are already selected from salon profile
   // This preserves the service-style context when coming from service listing or profile
-  const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService || vendorId || (selectedServices && selectedServices.length > 0));
+  const hasServiceContext = appointmentsMode && vendorId
+    ? true
+    : (serviceType || serviceStyle) && (serviceId || selectedService || vendorId || (selectedServices && selectedServices.length > 0));
   
   // ✅ NEW: Check if we have complete booking data (from provider profile, etc.) - skip directly to payment
   const hasCompleteBookingData = skipToPayment && preFilledDate && preFilledTime && preFilledPetId && serviceId;
@@ -169,15 +179,67 @@ export function GroomingBookingRouter({
   // ✅ NEW: If selectedServices array is provided, use the first one (for single service display)
   // but we'll pass all selectedServices to the payment/booking API
   const [selectedVendorService, setSelectedVendorService] = useState<any>(
-    serviceId ? {
-      id: serviceId,
-      serviceId: serviceId,
-      name: serviceName,
-      price: price,
-      duration: duration,
-      serviceStyle: serviceStyle || serviceType
-    } : (selectedServices && selectedServices.length > 0 ? selectedServices[0] : null)
+    appointmentsMode
+      ? {
+          id: WAPPT_APPOINTMENT_SERVICE_ID,
+          serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
+          service_id: WAPPT_APPOINTMENT_SERVICE_ID,
+          name: getWarmpawzAppointmentServiceLabel({
+            category: 'grooming',
+            serviceStyle: serviceStyle || serviceType || 'at_center',
+          }),
+          price: price ?? 0,
+          duration: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+          serviceStyle: serviceStyle || serviceType,
+        }
+      : serviceId
+        ? {
+            id: serviceId,
+            serviceId: serviceId,
+            name: serviceName,
+            price: price,
+            duration: duration,
+            serviceStyle: serviceStyle || serviceType,
+          }
+        : selectedServices && selectedServices.length > 0
+          ? selectedServices[0]
+          : null,
   );
+  const [appointmentFee, setAppointmentFee] = useState<number | null>(
+    appointmentsMode && price != null ? Number(price) : null,
+  );
+
+  useEffect(() => {
+    if (!appointmentsMode || !vendorId) return;
+    let cancelled = false;
+    void apiClient
+      .get<{ appointmentFee?: number }>(
+        `/customer/warmpawz-appointments/vendors/${encodeURIComponent(String(vendorId))}/fee`,
+      )
+      .then((res) => {
+        if (cancelled) return;
+        const fee = Number(res?.appointmentFee ?? 0);
+        setAppointmentFee(fee > 0 ? fee : null);
+        setSelectedVendorService({
+          id: WAPPT_APPOINTMENT_SERVICE_ID,
+          serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
+          service_id: WAPPT_APPOINTMENT_SERVICE_ID,
+          name: getWarmpawzAppointmentServiceLabel({
+            category: 'grooming',
+            serviceStyle: serviceStyle || serviceType || 'at_center',
+          }),
+          price: fee > 0 ? fee : price ?? 0,
+          duration: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+          serviceStyle: serviceStyle || serviceType,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setAppointmentFee(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [appointmentsMode, vendorId, serviceStyle, serviceType, price]);
   
   // ✅ NEW: Store all selected services for passing to booking API
   const [allSelectedServices, setAllSelectedServices] = useState<any[]>(selectedServices || []);
@@ -957,12 +1019,18 @@ export function GroomingBookingRouter({
     return (
       <UniversalPaymentPage
         type="booking"
-        serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
+        serviceId={appointmentsMode ? WAPPT_APPOINTMENT_SERVICE_ID : (selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId)}
         serviceName={
-          allSelectedServices.length > 1
-            ? `${allSelectedServices.length} Services Selected`
-            : selectedServiceOption?.name || serviceName || 'Grooming Service'
+          appointmentsMode
+            ? getWarmpawzAppointmentServiceLabel({
+                category: 'grooming',
+                serviceStyle: selectedServiceType,
+              })
+            : allSelectedServices.length > 1
+              ? `${allSelectedServices.length} Services Selected`
+              : selectedServiceOption?.name || serviceName || 'Grooming Service'
         }
+        bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
         serviceDescription={`Grooming by ${groomer?.name || 'professional groomer'}`}
         serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
         category="grooming"
@@ -984,10 +1052,12 @@ export function GroomingBookingRouter({
         address={selectedAddress}
         showAddressSelection={selectedServiceType === 'at_home'}
         baseAmount={
-          allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) ||
-          selectedServiceOption?.price ||
-          price ||
-          499
+          appointmentsMode
+            ? (appointmentFee ?? selectedVendorService?.price ?? price ?? 0)
+            : allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) ||
+              selectedServiceOption?.price ||
+              price ||
+              499
         }
         priceIncludesTax={
           catalogPriceIncludesTax(selectedServiceOption) ||
