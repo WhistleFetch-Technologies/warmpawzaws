@@ -1,6 +1,22 @@
 import { query } from '../../../database/rds-connection';
 import { PUBLISHED } from '../constants/publish-status';
 import { resolveMerchantDisplayName } from '../shared/merchant/merchant-display-name.resolver';
+import { WAPPT_BOOKING_MODE } from '../shared/wappt-booking-preflight';
+
+/** SQL fragment: bookings that belong to Warmpawz Appointments (tagged or catalogue fee match). */
+const WAPPT_BOOKING_FILTER_SQL = `
+  (
+    b.commerce_mode = '${WAPPT_BOOKING_MODE}'
+    OR (
+      wappt.vendor_id IS NOT NULL
+      AND ABS(COALESCE(b.base_price, 0) - COALESCE(wappt.appointment_fee, 0)) < 0.02
+    )
+  )`;
+
+const WAPPT_CATALOGUE_JOIN_SQL = `
+  LEFT JOIN warmpawz_appointments_vendor_catalog wappt
+    ON wappt.vendor_id = b.vendor_id
+   AND wappt.publish_status = '${PUBLISHED}'`;
 
 export interface WapptDashboardMetrics {
   readonly publishedVendorCount: number;
@@ -24,7 +40,8 @@ async function fetchWapptAppointmentRevenue(): Promise<number> {
     const revenueRes = await query(
       `SELECT COALESCE(SUM(COALESCE(b.total_amount, b.base_price, 0)), 0)::float AS total_revenue
        FROM bookings b
-       WHERE b.commerce_mode = 'warmpawz_appointments'
+       ${WAPPT_CATALOGUE_JOIN_SQL}
+       WHERE ${WAPPT_BOOKING_FILTER_SQL}
          AND (
            LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed')
            OR LOWER(COALESCE(b.status, '')) IN ('confirmed', 'completed', 'in_progress')
@@ -33,9 +50,8 @@ async function fetchWapptAppointmentRevenue(): Promise<number> {
     return Number(revenueRes.rows[0]?.total_revenue ?? 0);
   } catch (err: unknown) {
     const msg = String((err as { message?: string })?.message ?? err);
-    // ponytail: dev may lag migration 1081 — metrics still useful without revenue
-    if (msg.includes('commerce_mode')) {
-      console.warn('[wappt-dashboard] commerce_mode column missing; revenue defaults to 0');
+    if (msg.includes('commerce_mode') && msg.includes('does not exist')) {
+      console.error('[wappt-dashboard] commerce_mode column missing on bookings — run migration 1081_add_bookings_commerce_mode.sql');
       return 0;
     }
     throw err;
@@ -81,7 +97,8 @@ export async function listWapptAdminBookings(params: {
       query(
         `SELECT COUNT(*)::int AS total
          FROM bookings b
-         WHERE b.commerce_mode = 'warmpawz_appointments'`,
+         ${WAPPT_CATALOGUE_JOIN_SQL}
+         WHERE ${WAPPT_BOOKING_FILTER_SQL}`,
       ),
       query(
         `SELECT
@@ -97,7 +114,8 @@ export async function listWapptAdminBookings(params: {
          FROM bookings b
          INNER JOIN customers c ON c.id = b.customer_id
          INNER JOIN vendors v ON v.id = b.vendor_id
-         WHERE b.commerce_mode = 'warmpawz_appointments'
+         ${WAPPT_CATALOGUE_JOIN_SQL}
+         WHERE ${WAPPT_BOOKING_FILTER_SQL}
          ORDER BY b.created_at DESC
          LIMIT $1 OFFSET $2`,
         [pageSize, offset],
@@ -105,8 +123,8 @@ export async function listWapptAdminBookings(params: {
     ]);
   } catch (err: unknown) {
     const msg = String((err as { message?: string })?.message ?? err);
-    if (msg.includes('commerce_mode')) {
-      console.warn('[wappt-dashboard] commerce_mode column missing; bookings list empty');
+    if (msg.includes('commerce_mode') && msg.includes('does not exist')) {
+      console.error('[wappt-dashboard] commerce_mode column missing on bookings — run migration 1081_add_bookings_commerce_mode.sql');
       return { rows: [], total: 0 };
     }
     throw err;

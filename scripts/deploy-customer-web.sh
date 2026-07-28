@@ -304,22 +304,16 @@ if [ "$HTML_ALIAS_FAILED" -gt 0 ]; then
 fi
 
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"
-# Quote each path so shells do not expand wildcards (e.g. /_next/*) before aws sees them.
-INVALIDATION_PATH_ARGS=( "/index.html" "/runtime-config.js" "/_next/*" )
-if git rev-parse HEAD~1 >/dev/null 2>&1; then
-  if git diff --name-only HEAD~1 HEAD -- "apps/${APP_NAME}/public/images" "apps/${APP_NAME}/public/logo.webp" 2>/dev/null | grep -q .; then
-    INVALIDATION_PATH_ARGS+=( "/images/*" "/logo.webp" )
-    echo -e "${BLUE}   Static images changed in last commit — including /images/* and /logo.webp${NC}"
-  fi
-fi
-
+# Use a single wildcard path so shells (especially Git Bash on Windows) never expand
+# `/_next/*` into invalid path tokens before AWS CLI sees them — that caused stale
+# index.html + fresh chunks and `Unexpected token '<'` on webpack-*.js.
 INVALIDATION_ID=$(aws cloudfront create-invalidation \
   --distribution-id "${CLOUDFRONT_DIST_ID}" \
-  --paths "${INVALIDATION_PATH_ARGS[@]}" \
+  --paths '/*' \
   --query 'Invalidation.Id' \
-  --output text)
+  --output text 2>/dev/null || true)
 
-if [ $? -eq 0 ]; then
+if [ -n "${INVALIDATION_ID}" ] && [ "${INVALIDATION_ID}" != "None" ]; then
   echo -e "${GREEN}✅ CloudFront invalidation created: ${INVALIDATION_ID}${NC}"
   echo -e "${YELLOW}⏳ Full propagation may take 5-15 minutes${NC}"
 else

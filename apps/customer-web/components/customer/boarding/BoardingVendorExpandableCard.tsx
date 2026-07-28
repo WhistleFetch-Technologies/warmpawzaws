@@ -391,19 +391,6 @@ export function BoardingVendorExpandableCard({
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            {appointmentsMode && onBookAppointment ? (
-              <Button
-                type="button"
-                size="sm"
-                className="bg-[#FF8C42] hover:bg-[#E67A35] text-white"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onBookAppointment(v);
-                }}
-              >
-                Book Appointment
-              </Button>
-            ) : null}
             <Button
               type="button"
               size="sm"

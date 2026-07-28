@@ -71,6 +71,7 @@ import {
   buildRazorpayEcommerceCreateOrderPayload,
   extractEcommerceOrderIdFromResponse,
 } from '@/lib/ecommerce/ecommerce-razorpay-payload';
+import { isWarmpawzAppointmentsPaymentRequest } from '@/lib/warmpawz-appointments-customer';
 
 // Razorpay type declaration
 declare global {
@@ -465,6 +466,7 @@ export function UniversalPaymentPage({
   onSuccess,
   onPaymentAbandoned,
 }: UniversalPaymentPageProps) {
+  const isWapptAppointments = isWarmpawzAppointmentsPaymentRequest({ bookingMode, serviceId });
   const appShell = layoutVariant === 'appShell';
   const isPaymentResume = flowType === 'payment-resume';
   const lockedSnapshot = isPaymentResume ? resumeFinancialSnapshot ?? null : null;
@@ -994,7 +996,7 @@ export function UniversalPaymentPage({
   // Check if customer has active subscription that covers this booking
   useEffect(() => {
     const checkSubscriptionCoverage = async () => {
-      if (type !== 'booking' || !customerId || !vendorId) {
+      if (type !== 'booking' || !customerId || !vendorId || isWapptAppointments) {
         return;
       }
 
@@ -1029,7 +1031,7 @@ export function UniversalPaymentPage({
     };
 
     checkSubscriptionCoverage();
-  }, [type, customerId, vendorId, resolvedServiceId, serviceId, serviceStyle, category, customerPhone]);
+  }, [type, customerId, vendorId, resolvedServiceId, serviceId, serviceStyle, category, customerPhone, isWapptAppointments]);
 
   useEffect(() => {
     if (showAddressSelection) {
@@ -1042,6 +1044,11 @@ export function UniversalPaymentPage({
     const resolveServiceId = async () => {
       if (!serviceId || !vendorId || type !== 'booking') {
         return; // Only resolve for bookings with serviceId
+      }
+
+      if (isWapptAppointments) {
+        setResolvedServiceId(serviceId);
+        return;
       }
 
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1103,7 +1110,7 @@ export function UniversalPaymentPage({
     };
 
     resolveServiceId();
-  }, [serviceId, vendorId, type, selectedServices]);
+  }, [serviceId, vendorId, type, selectedServices, isWapptAppointments]);
 
 
   //  Pre-load Razorpay script on component mount so it's ready when user clicks payment
@@ -2361,9 +2368,13 @@ export function UniversalPaymentPage({
         const hasValidServiceIdFromSelectedServices = selectedServices && selectedServices.length > 0 && 
           selectedServices[0].id && uuidRegex.test(selectedServices[0].id);
 
+        if (isWapptAppointments) {
+          finalServiceId = serviceId || 'warmpawz_appointments';
+        }
+
         // If not a UUID, resolve it NOW (synchronously)
         // BUT skip if we already got a valid UUID from selectedServices
-        if (!uuidRegex.test(finalServiceId) && !hasValidServiceIdFromSelectedServices) {
+        if (!isWapptAppointments && !uuidRegex.test(finalServiceId) && !hasValidServiceIdFromSelectedServices) {
           console.log(`ðŸ”„ Resolving serviceId "${finalServiceId}" to UUID synchronously...`);
 
           try {
@@ -2475,8 +2486,8 @@ export function UniversalPaymentPage({
           }
         }
 
-        // Final validation - MUST be UUID at this point
-        if (!uuidRegex.test(finalServiceId)) {
+        // Final validation - MUST be UUID at this point (Warmpawz Appointments uses server-side preflight)
+        if (!isWapptAppointments && !uuidRegex.test(finalServiceId)) {
           toast.error(
             `Invalid service ID format. Please go back and select the service again. ` +
             `Received: ${serviceId}, Resolved: ${finalServiceId}`
@@ -2619,9 +2630,9 @@ export function UniversalPaymentPage({
           ? (timeMatch[3] !== undefined ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:${timeMatch[3]}` : `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`)
           : bookingTime;
 
-        // âœ… FINAL CHECK: If selectedServices is provided, ensure we use vendor_services.id
+        // FINAL CHECK: If selectedServices is provided, ensure we use vendor_services.id
         // This is a last-ditch check to prevent using services.id instead of vendor_services.id
-        if (selectedServices && selectedServices.length > 0) {
+        if (!isWapptAppointments && selectedServices && selectedServices.length > 0) {
           const firstSelectedService = selectedServices[0];
           if (firstSelectedService.id && uuidRegex.test(String(firstSelectedService.id))) {
             // Only override if current finalServiceId doesn't match the vendor_services.id

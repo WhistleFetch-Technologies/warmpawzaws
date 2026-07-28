@@ -947,6 +947,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     if (isWapptBooking) {
       bookingCommerceMode = WAPPT_BOOKING_MODE;
       bookingCommerceVersion = 1;
+      console.log('[WAPPT-BOOKING] commerce_mode set', {
+        vendorId,
+        bookingCommerceMode,
+        appointmentFee: wapptAppointmentFee,
+        requestId,
+      });
     } else {
       try {
         const commerceResolved = await resolveCommerceModelForBookingCreate({

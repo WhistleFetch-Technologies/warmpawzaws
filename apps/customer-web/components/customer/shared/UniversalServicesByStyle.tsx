@@ -1599,18 +1599,6 @@ export function UniversalServicesByStyle({
                         <span>Tap to view services</span>
                       )}
                     </div>
-                    {appointmentsMode ? (
-                      <Button
-                        size="sm"
-                        className="bg-[#FF8C42] text-white hover:bg-[#E67A35]"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleBookAppointment(provider);
-                        }}
-                      >
-                        Book Now
-                      </Button>
-                    ) : (
                     <Button
                       size="sm"
                       variant="outline"
@@ -1623,7 +1611,6 @@ export function UniversalServicesByStyle({
                     >
                       View Services
                     </Button>
-                    )}
                   </div>
                 )}
               </Card>

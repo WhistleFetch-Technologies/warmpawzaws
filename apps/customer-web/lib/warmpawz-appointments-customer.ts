@@ -43,6 +43,16 @@ export function buildWarmpawzAppointmentsBookingNav(opts: {
 /** Synthetic service id used for Warmpawz Appointments slot + checkout APIs */
 export const WAPPT_APPOINTMENT_SERVICE_ID = 'warmpawz_appointments';
 
+export const WAPPT_BOOKING_MODE = 'warmpawz_appointments' as const;
+
+export function isWarmpawzAppointmentsPaymentRequest(opts: {
+  bookingMode?: string;
+  serviceId?: string;
+}): boolean {
+  const sid = String(opts.serviceId ?? '').trim().toLowerCase();
+  return opts.bookingMode === WAPPT_BOOKING_MODE || sid === WAPPT_APPOINTMENT_SERVICE_ID;
+}
+
 /** Default slot duration when no per-service selection (flat-fee catalogue booking). */
 export const WAPPT_DEFAULT_SLOT_DURATION_MIN = 30;
 

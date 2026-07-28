@@ -14,5 +14,6 @@ export async function wapptBookingsListHandler(c: Context): Promise<Response> {
   const page = Math.max(1, Number(c.req.query('page') || 1) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(c.req.query('pageSize') || 20) || 20));
   const data = await listWapptAdminBookings({ page, pageSize });
+  console.log('[wappt-dashboard] bookings list', { page, pageSize, total: data.total });
   return WapptAdminSuccessResponse(c, data);
 }

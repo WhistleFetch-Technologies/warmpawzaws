@@ -1019,19 +1019,6 @@ export function ClinicListView({
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end">
-                        {appointmentsMode ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="bg-[#FF8C42] hover:bg-[#E67A35] text-white"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleBookAppointment(clinic);
-                            }}
-                          >
-                            Book Appointment
-                          </Button>
-                        ) : null}
                         <Button
                           type="button"
                           size="sm"
