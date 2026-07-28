@@ -12,11 +12,12 @@ export const MARKETPLACE_MODEL_DESCRIPTOR: CommerceModelDescriptor = {
 
 export const WARMPAWZ_PAY_MODEL_DESCRIPTOR: CommerceModelDescriptor = {
   id: 'warmpawz_pay',
-  displayName: 'Warmpawz Pay',
-  description: 'Two-phase service booking model (experimental; adapter not enabled by default).',
+  displayName: 'Warmpawz Pay + Appointments',
+  description:
+    'Warmpawz Pay scan-to-pay plus admin-curated Book Appointment flow (flat fee, no service selection).',
   status: 'experimental',
   introducedInVersion: '1.0',
-  capabilities: ['service_booking', 'slot_fee', 'final_balance'],
+  capabilities: ['service_booking', 'slot_fee', 'final_balance', 'warmpawz_appointments'],
 };
 
 export function bootstrapCommerceModels(): void {

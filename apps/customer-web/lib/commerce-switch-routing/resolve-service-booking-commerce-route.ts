@@ -54,8 +54,7 @@ export function resolveServiceBookingCommerceRoute(
 }
 
 /**
- * PR-9 safety: when Pay is selected but routes are not implemented yet, fall back to Marketplace
- * without throwing or breaking navigation.
+ * PR-9 safety: when Pay is selected but adapter is unavailable, fall back to Marketplace.
  */
 export function applyMarketplaceNavigationFallback(
   route: ServiceBookingCommerceRouteResult
@@ -64,9 +63,14 @@ export function applyMarketplaceNavigationFallback(
     return route;
   }
 
+  const adapter = getCommerceRouteAdapter(route.configuredModelId);
+  if (adapter.isAvailable()) {
+    return route;
+  }
+
   if (process.env.NODE_ENV === 'development') {
     console.warn(
-      '[CommerceSwitch] warmpawz_pay routing selected but customer Pay navigation is not implemented; using marketplace',
+      '[CommerceSwitch] warmpawz_pay selected but adapter unavailable; using marketplace',
       route
     );
   }
@@ -75,7 +79,7 @@ export function applyMarketplaceNavigationFallback(
     ...route,
     effectiveModelId: 'marketplace',
     useMarketplaceFlow: true,
-    fallbackReason: 'warmpawz_pay_navigation_not_implemented',
+    fallbackReason: 'warmpawz_pay_unavailable',
   };
 }
 

@@ -34,6 +34,9 @@ interface Promotion {
   applicable_services?: unknown;
   service_category?: string;
   applicable_to?: string;
+  vendor_ids?: unknown;
+  vendorIds?: unknown;
+  metadata?: unknown;
 }
 
 export type AppliedCoupon = AppliedCheckoutCoupon;

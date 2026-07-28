@@ -181,6 +181,13 @@ const GroomingServiceRouter = dynamic(() => import('../GroomingServiceRouter').t
 const GroomingServicesByStyle = dynamic(() => import('../grooming/GroomingServicesByStyle').then((m) => ({ default: m.GroomingServicesByStyle })), { loading: LoadingSpinner });
 const TrainingServiceRouter = dynamic(() => import('../TrainingServiceRouter').then((m) => ({ default: m.TrainingServiceRouter })), { loading: LoadingSpinner });
 const GroomingBookingRouter = dynamic(() => import('../grooming/GroomingBookingRouter').then((m) => ({ default: m.GroomingBookingRouter })), { loading: LoadingSpinner });
+const WarmpawzAppointmentsDiscovery = dynamic(
+  () =>
+    import('../warmpawz-appointments/WarmpawzAppointmentsDiscovery').then((m) => ({
+      default: m.WarmpawzAppointmentsDiscovery,
+    })),
+  { loading: LoadingSpinner },
+);
 const UniversalServicesByStyle = dynamic(() => import('../shared/UniversalServicesByStyle').then((m) => ({ default: m.UniversalServicesByStyle })), { loading: LoadingSpinner });
 const BoardingServiceRouter = dynamic(() => import('../BoardingServiceRouter').then((m) => ({ default: m.BoardingServiceRouter })), { loading: LoadingSpinner });
 const BoardingBookingRouter = dynamic(() => import('../boarding/BoardingBookingRouter').then((m) => ({ default: m.BoardingBookingRouter })), { loading: LoadingSpinner });
@@ -287,6 +294,8 @@ type ScreenType =
   | 'vet-booking'
   | 'vet-doctor-details'
   | 'vet-clinic-list'
+  | 'wappt-vet-discovery'
+  | 'wappt-grooming-discovery'
   | 'vet-clinic-profile'
   | 'vet-clinic-booking'
   | 'vet-services-by-style'
@@ -1783,6 +1792,9 @@ export function CustomerHomeWrapper({
       else setVetClinicFromHome(false);
       navigateToScreen('vet-clinic-list');
     }
+    else if (screen === 'wappt-vet-discovery') {
+      navigateToScreen('wappt-vet-discovery');
+    }
     else if (screen === 'vet-clinic-booking') navigateToScreen('vet-clinic-booking');
     else if (screen === 'vet-tele-consultation') {
       if ((data as any)?.startStep === 'scheduled') setTeleSkipToScheduled(true);
@@ -3141,6 +3153,35 @@ export function CustomerHomeWrapper({
         onNavigate={handleVetNavigate}
       />
     );
+  if (currentScreen === 'wappt-vet-discovery' || currentScreen === 'wappt-grooming-discovery') {
+    const wapptCategory = currentScreen === 'wappt-vet-discovery' ? 'vet' : 'grooming';
+    return (
+      <WarmpawzAppointmentsDiscovery
+        category={wapptCategory}
+        onBack={handleBack}
+        onVendorSelect={(v) => {
+          if (wapptCategory === 'vet') {
+            setVetServiceData({
+              vendorId: v.vendorId,
+              vendorName: v.vendorName,
+              serviceStyle: v.serviceStyle,
+              clinicProfileBackScreen: 'wappt-vet-discovery',
+            });
+            navigateToScreen('vet-clinic-profile');
+          } else {
+            const style = String(v.serviceStyle || 'at_center').toLowerCase();
+            if (style === 'at_home' || style === 'home') {
+              setGroomingHomeProfileVendorId(v.vendorId);
+              navigateToScreen('grooming_home');
+            } else {
+              setGroomingCenterProfileVendorId(v.vendorId);
+              navigateToScreen('grooming_center');
+            }
+          }
+        }}
+      />
+    );
+  }
   if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} specialization={problemGridSpecialization} onBack={handleBack} onNavigate={(screen, data) => {
     if (screen === 'purchase-package') {
       handleVetNavigate(screen, data);
@@ -3711,6 +3752,8 @@ export function CustomerHomeWrapper({
           }
           setProblemGridSpecialization(data?.problemId || undefined);
           navigateToScreen('problem_grid_flow');
+        } else if (screen === 'wappt-grooming-discovery') {
+          navigateToScreen('wappt-grooming-discovery');
         } else if (screen === 'grooming_center' || screen === 'at_center') {
           if (process.env.NODE_ENV === 'development') {
             console.log('🟢 [CustomerHomeWrapper] Setting grooming_center screen');
