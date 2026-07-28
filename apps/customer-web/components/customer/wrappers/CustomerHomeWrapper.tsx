@@ -378,6 +378,8 @@ type ScreenType =
   | 'services_by_problem'
   | 'problem_grid_flow'
   | 'grooming_center'
+  | 'wappt_grooming_center'
+  | 'wappt_vet_center'
   | 'grooming_home'
   | 'grooming-booking'
   | 'training-booking'
@@ -1854,6 +1856,22 @@ export function CustomerHomeWrapper({
     else if (screen === 'shop') {
       goToShopFromParent();
     }
+    else if ((screen === 'vet-booking' || screen === 'grooming-booking') && data?.appointmentsMode) {
+      const serviceType = data?.serviceType || 'vet';
+      const targetScreen =
+        screen === 'grooming-booking' && serviceType === 'vet'
+          ? 'vet-booking'
+          : screen;
+      setVetServiceData({
+        vendorId: data?.vendorId,
+        serviceType,
+        serviceStyle: data?.serviceStyle || 'at_center',
+        vendorName: data?.vendorName,
+        serviceId: 'warmpawz_appointments',
+        appointmentsMode: true,
+      });
+      navigateToScreen(targetScreen as ScreenType);
+    }
     else if (screen === 'purchase-package') {
       const vid = String(data?.vendorId ?? data?.doctorId ?? '').trim();
       const vsid = String(data?.vendorServiceId ?? (data as any)?.vendor_service_id ?? '').trim();
@@ -3148,7 +3166,7 @@ export function CustomerHomeWrapper({
       { title: 'Veterinary Services', subtitle: 'Professional pet healthcare', showBackButton: true, skipHeader: true }
     );
   }
-  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} onBack={() => backFromBannerOr(handleBack, vetServiceData)} onInternalBackReady={(fn) => { vetBookingInternalBackRef.current = fn; }} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
+  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} appointmentsMode={Boolean(vetServiceData?.appointmentsMode)} onBack={() => backFromBannerOr(handleBack, vetServiceData)} onInternalBackReady={(fn) => { vetBookingInternalBackRef.current = fn; }} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
   if (currentScreen === 'vet-doctor-details')
     return (
       <VetDoctorDetails
@@ -3734,6 +3752,8 @@ export function CustomerHomeWrapper({
           }
           setGroomingCenterProfileVendorId(null);
           navigateToScreen('grooming_center');
+        } else if (screen === 'grooming-booking' && data?.appointmentsMode) {
+          groomingCenterNavigate(screen, data);
         } else if (screen === 'grooming_home' || screen === 'at_home') {
           if (process.env.NODE_ENV === 'development') {
             console.log('🟢 [CustomerHomeWrapper] Setting grooming_home screen');
@@ -3783,6 +3803,17 @@ export function CustomerHomeWrapper({
           console.log('🟢 [CustomerHomeWrapper] Training navigation:', screen, data);
         }
         if (screen === 'create-booking' || screen === 'training-booking' || screen === 'booking') {
+          if (data?.appointmentsMode) {
+            setVetServiceData({
+              vendorId: data?.vendorId,
+              serviceType: data?.serviceType || 'training',
+              serviceStyle: data?.serviceStyle || 'at_center',
+              vendorName: data?.vendorName,
+              appointmentsMode: true,
+            });
+            navigateToScreen('grooming-booking');
+            return;
+          }
           setSelectedVendorId(data?.vendorId);
           setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'training', trainer: data?.trainer, service: data?.service, serviceId: data?.serviceId, vendorName: data?.vendorName, price: data?.price, duration: data?.duration });
           navigateToScreen('training-booking');
@@ -3974,6 +4005,15 @@ export function CustomerHomeWrapper({
               sittingOptionId: data?.sittingOptionId,
             });
             navigateToScreen('create-booking');
+          } else if (screen === 'grooming-booking' && data?.appointmentsMode) {
+            setVetServiceData({
+              vendorId: data?.vendorId,
+              serviceType: data?.serviceType || 'sitting',
+              serviceStyle: data?.serviceStyle || 'at_center',
+              vendorName: data?.vendorName,
+              appointmentsMode: true,
+            });
+            navigateToScreen('grooming-booking');
           } else if (screen === 'pet-sitter-vendors' || screen === 'pet-sitter-facility') {
             setPetSitterFacilityOptionId(
               typeof data?.sittingOptionId === 'string' ? data.sittingOptionId : null
@@ -4858,8 +4898,6 @@ export function CustomerHomeWrapper({
       handleNavigateToService(screen, data);
     }
   }} />;
-  
-  // ✅ Grooming Service Style Screens - Frame UI (CustomerScreenWrapper for bottom nav, back → grooming)
   const groomingCenterNavigate = (screen: string, data?: any) => {
     if (screen === 'grooming_embed_vendor_profile' && data?.vendorId) {
       setGroomingCenterProfileVendorId(String(data.vendorId));
@@ -4870,15 +4908,16 @@ export function CustomerHomeWrapper({
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({
         vendorId: data?.vendorId,
-        serviceType: 'grooming',
-        serviceStyle: 'at_center',
+        serviceType: data?.serviceType || 'grooming',
+        serviceStyle: data?.serviceStyle || 'at_center',
         groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
         service: data?.service,
-        serviceId: data?.serviceId,
+        serviceId: data?.appointmentsMode ? 'warmpawz_appointments' : data?.serviceId,
         selectedServices: data?.selectedServices, // ✅ FIX: Pass multiple selected services
         vendorName: data?.vendorName,
         price: data?.price,
         duration: data?.duration,
+        appointmentsMode: Boolean(data?.appointmentsMode),
       });
       navigateToScreen('grooming-booking');
     } else {
@@ -4895,15 +4934,16 @@ export function CustomerHomeWrapper({
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({
         vendorId: data?.vendorId,
-        serviceType: 'grooming',
-        serviceStyle: 'at_home',
+        serviceType: data?.serviceType || 'grooming',
+        serviceStyle: data?.serviceStyle || 'at_home',
         groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
         service: data?.service,
-        serviceId: data?.serviceId,
-        selectedServices: data?.selectedServices, // ✅ FIX: Pass multiple selected services
+        serviceId: data?.appointmentsMode ? 'warmpawz_appointments' : data?.serviceId,
+        selectedServices: data?.selectedServices,
         vendorName: data?.vendorName,
         price: data?.price,
         duration: data?.duration,
+        appointmentsMode: Boolean(data?.appointmentsMode),
       });
       navigateToScreen('grooming-booking');
     } else {
@@ -5108,12 +5148,14 @@ export function CustomerHomeWrapper({
     groomer={vetServiceData?.groomer}
     selectedService={vetServiceData?.service}
     serviceId={vetServiceData?.serviceId}
+    serviceType={vetServiceData?.serviceType}
     serviceName={vetServiceData?.service?.name}
     serviceStyle={vetServiceData?.serviceStyle || 'at_center'}
     selectedServices={vetServiceData?.selectedServices}
     vendorName={vetServiceData?.vendorName}
     price={vetServiceData?.price}
     duration={vetServiceData?.duration}
+    appointmentsMode={Boolean(vetServiceData?.appointmentsMode)}
     onBack={() => backFromBannerOr(handleBack, vetServiceData)} 
     onInternalBackReady={(fn) => {
       groomingBookingInternalBackRef.current = fn;

@@ -138,7 +138,8 @@ else
 (function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: "${API_BASE_URL}",
-    uatMode: true
+    uatMode: true,
+    warmpawzAppointmentsAdminEnabled: true
   };
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();

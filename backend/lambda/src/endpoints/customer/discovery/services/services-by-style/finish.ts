@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { buildAppointmentVendorListResponse } from '../../../../../utils/appointment-list-response';
 import { paginateEnrichedVendorPage } from '../../../../../utils/discovery-list-pagination';
 import {
   applyDiscoveryRadiusFilter,
@@ -6,6 +7,7 @@ import {
   sortDiscoveryVendorCards,
 } from '../../../../../utils/discovery-vendor-list-post-process';
 import { buildVendorListResponse } from '../../../../../utils/discovery-list-response';
+import type { ServicesByStyleDiscoveryOptions } from './discovery-options';
 import type { ServicesByStyleCategoryContext, ServicesByStyleParsed, VendorRadiusLookup } from './types';
 
 export function finishServicesByStyleResponse(
@@ -15,7 +17,8 @@ export function finishServicesByStyleResponse(
   providers: Record<string, unknown>[],
   vendorRowCount: number,
   vendorRadiusLookupByStyle: VendorRadiusLookup,
-  specializationApplied: string | null
+  specializationApplied: string | null,
+  discoveryOptions: ServicesByStyleDiscoveryOptions = {}
 ) {
   const {
     serviceStyle,
@@ -60,7 +63,10 @@ export function finishServicesByStyleResponse(
     vendorRadiusLookup: vendorRadiusLookupByStyle,
   });
 
-  sortDiscoveryVendorCards(results, sortBy);
+  sortDiscoveryVendorCards(
+    results,
+    discoveryOptions.omitPricing && sortBy === 'price' ? 'relevance' : sortBy
+  );
 
   const { page: pageCardsByStyle, nextCursor: nextCursorByStyle } = paginateEnrichedVendorPage(
     results,
@@ -71,27 +77,50 @@ export function finishServicesByStyleResponse(
     sqlOffsetByStyle
   );
 
-  return c.json(
-    buildVendorListResponse({
-      style: serviceStyle,
-      enrichedCards: pageCardsByStyle,
-      nextCursor: nextCursorByStyle,
-      serviceStyleNorm: serviceStyleNormByStyle,
-      specializationApplied,
-      appliedFilters: {
-        minRating: minRatingVal,
-        maxDistance:
-          maxDistanceKm ??
-          (customerLat != null &&
-          customerLng != null &&
-          radius != null &&
-          radius > 0
-            ? radius
-            : undefined),
-        homeDiscoveryFallbackKm:
-          serviceStyleNormByStyle === 'at_home' ? platformHomeByStyle : undefined,
-        sortBy,
-      },
-    })
-  );
+  const responseBody = discoveryOptions.appointmentListResponse
+    ? buildAppointmentVendorListResponse({
+        style: serviceStyle,
+        enrichedCards: pageCardsByStyle,
+        nextCursor: nextCursorByStyle,
+        serviceStyleNorm: serviceStyleNormByStyle,
+        specializationApplied,
+        appliedFilters: {
+          minRating: minRatingVal,
+          maxDistance:
+            maxDistanceKm ??
+            (customerLat != null &&
+            customerLng != null &&
+            radius != null &&
+            radius > 0
+              ? radius
+              : undefined),
+          homeDiscoveryFallbackKm:
+            serviceStyleNormByStyle === 'at_home' ? platformHomeByStyle : undefined,
+          sortBy: discoveryOptions.omitPricing && sortBy === 'price' ? 'relevance' : sortBy,
+        },
+      })
+    : buildVendorListResponse({
+        style: serviceStyle,
+        enrichedCards: pageCardsByStyle,
+        nextCursor: nextCursorByStyle,
+        serviceStyleNorm: serviceStyleNormByStyle,
+        specializationApplied,
+        warmpawzAppointments: discoveryOptions.markWarmpawzAppointments === true,
+        appliedFilters: {
+          minRating: minRatingVal,
+          maxDistance:
+            maxDistanceKm ??
+            (customerLat != null &&
+            customerLng != null &&
+            radius != null &&
+            radius > 0
+              ? radius
+              : undefined),
+          homeDiscoveryFallbackKm:
+            serviceStyleNormByStyle === 'at_home' ? platformHomeByStyle : undefined,
+          sortBy,
+        },
+      });
+
+  return c.json(responseBody);
 }

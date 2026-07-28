@@ -41,6 +41,10 @@ import {
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
 import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
+import {
+  buildWarmpawzAppointmentsBookingNav,
+  resolveWarmpawzBookingScreen,
+} from '@/lib/warmpawz-appointments-customer';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -95,6 +99,7 @@ interface Provider {
   servicesNextCursor?: string | null;
   servicesLoadingMore?: boolean;
   priceMin?: number;
+  warmpawzAppointments?: boolean;
 }
 
 export function VetServicesByStyle({ 
@@ -124,6 +129,7 @@ export function VetServicesByStyle({
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
   const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
+  const [wapptCatalogueVendor, setWapptCatalogueVendor] = useState(false);
   const providersRef = useRef(providers);
   providersRef.current = providers;
   const launchGate = useServiceStyleLaunchGate(phone, category, serviceStyle);
@@ -163,6 +169,7 @@ export function VetServicesByStyle({
       isVerified: base.isVerified,
       isIndividualProvider: base.isIndividualProvider,
       priceMin: base.priceMin,
+      warmpawzAppointments: base.warmpawzAppointments,
       services: [],
     };
   }, []);
@@ -293,6 +300,31 @@ export function VetServicesByStyle({
 
   const isProfileView = vendorId && providers.length === 1;
   const profileProvider = isProfileView ? providers[0] : null;
+  const profileAppointmentsMode =
+    profileProvider?.warmpawzAppointments === true || wapptCatalogueVendor;
+
+  useEffect(() => {
+    if (!vendorId || !isProfileView) {
+      setWapptCatalogueVendor(false);
+      return;
+    }
+    if (profileProvider?.warmpawzAppointments) {
+      setWapptCatalogueVendor(true);
+      return;
+    }
+    let cancelled = false;
+    void apiClient
+      .get(`/customer/warmpawz-appointments/vendors/${encodeURIComponent(vendorId)}/fee`)
+      .then(() => {
+        if (!cancelled) setWapptCatalogueVendor(true);
+      })
+      .catch(() => {
+        if (!cancelled) setWapptCatalogueVendor(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [vendorId, isProfileView, profileProvider?.warmpawzAppointments, profileProvider?.providerId]);
 
   // Load vendor and facility details for profile view
   const loadVendorProfile = async () => {
@@ -466,9 +498,31 @@ export function VetServicesByStyle({
     setSelectedServices(newSelection);
   };
 
+  const handleBookAppointment = () => {
+    if (!profileProvider) return;
+    const vid = String(profileProvider.vendorId || profileProvider.providerId || vendorId || '').trim();
+    if (!vid) return;
+    // #region agent log
+    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'VetServicesByStyle.tsx:handleBookAppointment',message:'wappt profile book',data:{vendorId:vid,profileAppointmentsMode,serviceStyle,category},timestamp:Date.now(),hypothesisId:'H2',runId:'pre-fix'})}).catch(()=>{});
+    // #endregion
+    onNavigate(
+      resolveWarmpawzBookingScreen(category),
+      buildWarmpawzAppointmentsBookingNav({
+        vendorId: vid,
+        vendorName: profileProvider.vendorName || profileProvider.name,
+        serviceStyle,
+        category,
+      })
+    );
+  };
+
   // ✅ FIX: Pass all selected services to booking, not just the first one
   // This matches the grooming flow where multiple services can be selected
   const handleBookServices = () => {
+    if (profileAppointmentsMode) {
+      handleBookAppointment();
+      return;
+    }
     if (selectedServices.size === 0) {
       // If no services selected, navigate with first service or all services
       if (profileProvider?.services && profileProvider.services.length > 0) {
@@ -926,11 +980,19 @@ export function VetServicesByStyle({
                       return (
                         <div
                           key={service.id}
-                          onClick={() => toggleServiceSelection(service.id)}
-                          className={`p-4 rounded-xl border-2 transition-all cursor-pointer hover:shadow-md ${
-                            isSelected
-                              ? 'border-[#FF8C42] bg-gradient-to-br from-orange-50 to-orange-100 shadow-md'
-                              : 'border-gray-200 hover:border-[#FF8C42]/50 bg-white'
+                          onClick={
+                            profileAppointmentsMode
+                              ? undefined
+                              : () => toggleServiceSelection(service.id)
+                          }
+                          className={`p-4 rounded-xl border-2 transition-all ${
+                            profileAppointmentsMode
+                              ? 'border-gray-200 bg-white'
+                              : `cursor-pointer hover:shadow-md ${
+                                  isSelected
+                                    ? 'border-[#FF8C42] bg-gradient-to-br from-orange-50 to-orange-100 shadow-md'
+                                    : 'border-gray-200 hover:border-[#FF8C42]/50 bg-white'
+                                }`
                           }`}
                         >
                           <div className="flex w-full min-w-0 items-start justify-between gap-3">
@@ -964,8 +1026,8 @@ export function VetServicesByStyle({
                                 )}
                               </div>
                             </div>
+                            {!profileAppointmentsMode ? (
                             <div className="ml-2 flex w-[7.25rem] shrink-0 flex-col items-end text-right">
-                              {/* ✅ FIX GAP-7.1: Use ServicePricingDisplay for vendor discount */}
                               <ServicePricingDisplay
                                 basePrice={service.originalPrice || service.price}
                                 vendorDiscount={service.vendorDiscount}
@@ -986,6 +1048,7 @@ export function VetServicesByStyle({
                                 </div>
                               )}
                             </div>
+                            ) : null}
                           </div>
                         </div>
                       );
@@ -1084,7 +1147,7 @@ export function VetServicesByStyle({
         {/* Fixed bottom bar — same width as app column (mobile shell) */}
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center">
           <div className="pointer-events-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
-          {selectedServices.size > 0 && (
+          {selectedServices.size > 0 && !profileAppointmentsMode && (
             <div className="border-b border-orange-100 bg-orange-50 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -1107,10 +1170,12 @@ export function VetServicesByStyle({
           <div className="p-4">
             <Button 
               onClick={handleBookServices}
-              disabled={profileProvider.services.length === 0}
+              disabled={!profileAppointmentsMode && profileProvider.services.length === 0}
               className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] disabled:cursor-not-allowed disabled:bg-gray-300 sm:text-lg"
             >
-              {selectedServices.size === 0 
+              {profileAppointmentsMode
+                ? 'Book Appointment'
+                : selectedServices.size === 0 
                 ? (profileProvider.services.length === 0 ? 'No Services Available' : 'Select Services to Book')
                 : serviceStyle === 'tele'
                   ? `Continue • ${formatPriceWithSymbol(totalPrice)}`

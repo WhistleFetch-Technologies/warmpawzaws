@@ -26,8 +26,13 @@ const CreateBookingRequestSchemaBase = z.object({
   vendorId: z.string().uuid('Invalid vendor ID format'),
   serviceId: z.union([
     z.string().uuid('Invalid service ID format'),
-    z.string().refine(s => /^diagnostics?$/i.test(s), 'Must be UUID or diagnostics')
+    z.string().refine(
+      (s) => /^diagnostics?$/i.test(s) || /^warmpawz_appointments$/i.test(s),
+      'Must be UUID, diagnostics, or warmpawz_appointments',
+    ),
   ]),
+  /** Warmpawz Appointments: server reads catalogue fee; client may send slug serviceId. */
+  bookingMode: z.enum(['warmpawz_appointments']).optional(),
   staffId: z.string().uuid('Invalid staff ID format').optional(),
   bookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
   bookingTime: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/, 'Invalid time format (HH:MM)'),

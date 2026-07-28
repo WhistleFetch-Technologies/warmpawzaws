@@ -4,6 +4,7 @@ import {
   sqlVendorOnlineForCustomerDiscovery,
   sqlVendorServiceDiscoverable,
 } from '../../../../../lib/discovery-vendor-query';
+import { sqlWapptCatalogueVendorJoin } from '../shared/wappt-catalogue-vendor-join';
 import type { ServicesByStyleCategoryContext } from './types';
 
 export function buildByStyleVendorSql(
@@ -12,7 +13,8 @@ export function buildByStyleVendorSql(
     maxResults: number;
     sqlOffsetByStyle: number;
     specializationByStyleFragment: string;
-  }
+  },
+  sqlOptions?: { wapptCatalogueOnly?: boolean }
 ): string {
   const {
     catTextExact,
@@ -36,6 +38,7 @@ export function buildByStyleVendorSql(
     vendorSpecsJsonbSqlByStyle,
   } = categoryCtx;
   const { maxResults, sqlOffsetByStyle, specializationByStyleFragment } = parsed;
+  const wapptJoin = sqlWapptCatalogueVendorJoin(sqlOptions?.wapptCatalogueOnly);
 
   return `
         SELECT DISTINCT ON (v.id)
@@ -50,7 +53,7 @@ export function buildByStyleVendorSql(
           r.config AS role_config,
           COALESCE((SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id), 0) AS avg_rating,
           COALESCE((SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id), 0) AS review_count
-        FROM vendors v
+        FROM vendors v${wapptJoin}
         LEFT JOIN roles r ON v.role_id = r.id
         WHERE v.is_active = true
           AND ${sqlVendorDiscoverableStatus('v')}

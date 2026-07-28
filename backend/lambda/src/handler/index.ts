@@ -38,6 +38,8 @@ import { registerWarmpawzPayCatalogueAdminRoutes } from '../endpoints/warmpawz-p
 import { registerWarmpawzPayDashboardAdminRoutes } from '../endpoints/warmpawz-pay/admin/dashboard';
 import { registerWarmpawzPayPricingAdminRoutes } from '../endpoints/warmpawz-pay/admin/pricing';
 import { registerWarmpawzPayPaymentsAdminRoutes } from '../endpoints/warmpawz-pay/admin/payments';
+import { registerWarmpawzAppointmentsCatalogueAdminRoutes } from '../endpoints/warmpawz-appointments/admin/catalogue';
+import { registerWarmpawzAppointmentsDashboardAdmin } from '../endpoints/warmpawz-appointments/admin/dashboard';
 import { registerAdminAiCopilotEndpoints } from '../endpoints/admin/endpoints/admin-ai-copilot';
 import { registerCommercialAiCopilotEndpoints } from '../endpoints/admin/endpoints/commercial-ai-copilot.endpoints';
 import { registerVideoCallEndpoints } from '../endpoints/teleCommunication/endpoints/video-call.teleCommunication';
@@ -206,6 +208,7 @@ import { registerAdminIntegrationEndpoints } from 'src/endpoints/admin/endpoints
 import { registerAdminGovernanceEnhancedEndpoints } from 'src/endpoints/admin/endpoints/admin-governance-enhanced';
 import { registerCustomerAppointmentsEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-appointments';
 import { registerCustomerWarmpawzPayEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-warmpawz-pay';
+import { registerCustomerWarmpawzAppointmentsEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-warmpawz-appointments';
 import { registerCustomerOrdersEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-orders';
 import { registerAdminCustomServicesEndpoints } from 'src/endpoints/admin/endpoints/admin-custom-services';
 import { registerGpsTrackingEndpoints } from 'src/endpoints/gpsTracking/endpoints/gps-tracking';
@@ -671,6 +674,8 @@ registerAddressEndpoints(app); // /customer/addresses - MUST be before /customer
 registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be before /customer/:customerId
 // GET/POST /customer/orders MUST register before /customer/:customerId or "orders" is treated as a customer id → HTTP 404.
 registerCustomerOrdersEndpoints(app);
+// /customer/warmpawz-appointments/* MUST register before /customer/:customerId
+registerCustomerWarmpawzAppointmentsEndpoints(app);
 // /customer/appointments MUST register before /customer/:customerId or "appointments" is captured as :customerId → list API never runs.
 registerCustomerAppointmentsEndpoints(app);
 registerCustomerWarmpawzPayEndpoints(app); // /customer/warmpawz-pay/vendors — before /customer/:customerId
@@ -685,6 +690,8 @@ registerWarmpawzPayDashboardAdminRoutes(app);
 registerWarmpawzPayPaymentsAdminRoutes(app);
 registerWarmpawzPayPricingAdminRoutes(app);
 registerWarmpawzPayCatalogueAdminRoutes(app);
+registerWarmpawzAppointmentsCatalogueAdminRoutes(app);
+registerWarmpawzAppointmentsDashboardAdmin(app);
 registerAdminAiCopilotEndpoints(app);
 registerCommercialAiCopilotEndpoints(app);
 registerAdminCustomerEndpoints(app);

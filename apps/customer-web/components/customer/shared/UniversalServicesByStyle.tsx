@@ -35,6 +35,7 @@ import {
 import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
 import { DiscoveryProviderAvatar } from './DiscoveryProviderAvatar';
 import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
+import { useAppointmentsByStyleFeed } from '@/hooks/useAppointmentsByStyleFeed';
 import { useDiscoveryProfileVendorResolve } from '@/hooks/useDiscoveryProfileVendorResolve';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import {
@@ -65,6 +66,9 @@ interface UniversalServicesByStyleProps {
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   bookingScreen?: string; // ✅ NEW: Screen name for booking (e.g., 'vet-booking', 'grooming-booking')
+  /** Warmpawz Appointments: catalogue discovery, no prices, Book Now → slot + flat fee checkout */
+  appointmentsMode?: boolean;
+  queryExtras?: Record<string, string | number | undefined | null>;
 }
 
 // Provider can be vendor (for at_center) or staff/individual (for at_home/tele)
@@ -137,7 +141,9 @@ export function UniversalServicesByStyle({
   profileBackScreen,
   onBack, 
   onNavigate,
-  bookingScreen = 'booking' // Default booking screen
+  bookingScreen = 'booking', // Default booking screen
+  appointmentsMode = false,
+  queryExtras,
 }: UniversalServicesByStyleProps) {
   const router = useRouter();
   const config = getRoleConfig(roleId);
@@ -163,19 +169,29 @@ export function UniversalServicesByStyle({
   const launchGate = useServiceStyleLaunchGate(phone, finalCategory, serviceStyle);
 
   const feedEnabled = launchGate.ready && !launchGate.blocked;
+  const apptFeed = useAppointmentsByStyleFeed({
+    phone,
+    serviceStyle,
+    category: finalCategory,
+    roleId,
+    specialization,
+    queryExtras,
+    enabled: feedEnabled && appointmentsMode,
+  });
+  const normalFeed = useByStyleDiscoveryFeed({
+    phone,
+    serviceStyle,
+    category: finalCategory,
+    specialization,
+    enabled: feedEnabled && !appointmentsMode,
+  });
   const {
     rows: feedRows,
     loading: feedLoading,
     loadingMore,
     hasMore,
     loadMore,
-  } = useByStyleDiscoveryFeed({
-    phone,
-    serviceStyle,
-    category: finalCategory,
-    specialization,
-    enabled: feedEnabled,
-  });
+  } = appointmentsMode ? apptFeed : normalFeed;
 
   const mapRowToProvider = useCallback((row: Record<string, unknown>): Provider => {
     const base = mapDiscoveryRowBaseFields(row);
@@ -538,6 +554,24 @@ export function UniversalServicesByStyle({
     }
 
     console.log(`✅ [${config.roleName}] Navigating to booking with data:`, bookingData);
+    onNavigate(bookingScreen, bookingData);
+  };
+
+  const handleBookAppointment = (provider: Provider) => {
+    const bookingData: Record<string, unknown> = {
+      appointmentsMode: true,
+      serviceName: 'Appointment',
+      serviceStyle,
+      serviceId: 'warmpawz_appointments',
+    };
+    if (provider.providerType === 'vendor') {
+      bookingData.vendorId = provider.providerId || provider.vendorId;
+      bookingData.vendorName = provider.name;
+    } else {
+      bookingData.vendorId = provider.vendorId;
+      bookingData.vendorName = provider.vendorName || provider.name;
+      bookingData.staffId = provider.staffId || provider.providerId;
+    }
     onNavigate(bookingScreen, bookingData);
   };
 
@@ -1469,6 +1503,7 @@ export function UniversalServicesByStyle({
                                 </div>
                               ) : null}
                             </div>
+                            {!appointmentsMode ? (
                             <div className="shrink-0 text-right">
                               <ServicePricingDisplay
                                 basePrice={service.originalPrice || service.price}
@@ -1484,6 +1519,7 @@ export function UniversalServicesByStyle({
                                 {INDICATIVE_PRICING_NOTE}
                               </p>
                             </div>
+                            ) : null}
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -1497,6 +1533,7 @@ export function UniversalServicesByStyle({
                                 </Badge>
                               )}
                             </div>
+                            {!appointmentsMode ? (
                             <Button
                               size="sm"
                               className="h-8 shrink-0 rounded-full bg-[#FF8C42] px-5 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
@@ -1507,6 +1544,7 @@ export function UniversalServicesByStyle({
                             >
                               Book Now
                             </Button>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -1528,7 +1566,9 @@ export function UniversalServicesByStyle({
                 {!expanded && (
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      {provider.services.length > 0 ? (
+                      {appointmentsMode ? (
+                        <span>View services · flat appointment fee at checkout</span>
+                      ) : provider.services.length > 0 ? (
                         <>
                           {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service
                           {provider.services.length !== 1 ? 's' : ''} available

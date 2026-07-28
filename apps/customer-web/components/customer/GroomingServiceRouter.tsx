@@ -34,6 +34,7 @@ import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
 import { HUB_DISCOVERY_GROOMING } from '@/lib/service-hub-discovery-config';
+import { buildHubWarmpawzBookingNav } from '@/lib/wappt-hub-booking-nav';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import {
   type BoardingListVendor,
@@ -219,6 +220,16 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   useEffect(() => {
     loadPreviousGroomer();
   }, [phone]);
+
+  const handleWarmpawzBookAppointment = useCallback(
+    (v: BoardingListVendor) => {
+      onNavigate?.(
+        'grooming-booking',
+        buildHubWarmpawzBookingNav(v, { category: 'grooming', serviceStyle: 'at_center' })
+      );
+    },
+    [onNavigate]
+  );
 
   const handleBookPlan = useCallback(
     (v: BoardingListVendor, plan: BoardingPlanRow) => {
@@ -642,6 +653,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                       onOpenCenterDetails={openVendorDetails}
                       customerId={phone}
                       serviceCategory="grooming"
+                      onBookAppointment={handleWarmpawzBookAppointment}
                     />
                   );
                 })

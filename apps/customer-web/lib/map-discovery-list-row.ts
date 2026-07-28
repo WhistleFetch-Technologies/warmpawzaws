@@ -31,11 +31,6 @@ export function mapDiscoveryRowBaseFields(row: DiscoveryListRow) {
     reviewCount > 0 && Number.isFinite(rawRating) && rawRating > 0 ? rawRating : 0;
 
   const nextAvailableSlot = resolveNextAvailableLabel(row) ?? undefined;
-  // #region agent log
-  if (typeof window !== 'undefined' && nextAvailableSlot?.toLowerCase().includes('tap to view')) {
-    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2643f5'},body:JSON.stringify({sessionId:'2643f5',hypothesisId:'C',location:'map-discovery-list-row.ts',message:'fallback availability on card',data:{vendorId:String(row.vendorId??row.id??'').slice(0,8),availabilityText:nextAvailableSlot},timestamp:Date.now()})}).catch(()=>{});
-  }
-  // #endregion
 
   return {
     id,
@@ -67,6 +62,7 @@ export function mapDiscoveryRowBaseFields(row: DiscoveryListRow) {
       ? (row.specializations as string[])
       : undefined,
     priceMin: row.priceMin != null ? Number(row.priceMin) : undefined,
+    warmpawzAppointments: row.warmpawzAppointments === true,
     nextAvailableSlot,
     services: Array.isArray(row.services) ? row.services : [],
     raw: row,

@@ -28,6 +28,14 @@ import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { BookingConfirmationSavings } from '../pricing/BookingConfirmationSavings';
 import { MarketplaceReview } from '../marketplace/MarketplaceReview';
+import {
+  getWarmpawzAppointmentServiceLabel,
+  getWarmpawzBookingHeaderInfo,
+  getWarmpawzLocationFallbackLabel,
+  resolveWarmpawzBookingCategory,
+  WAPPT_APPOINTMENT_SERVICE_ID,
+  WAPPT_DEFAULT_SLOT_DURATION_MIN,
+} from '@/lib/warmpawz-appointments-customer';
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -50,6 +58,8 @@ interface GroomingBookingRouterProps {
   petBreed?: string;
   notes?: string;
   skipToPayment?: boolean; // Flag to skip directly to payment
+  /** Warmpawz Appointments: skip service pick; pay admin catalogue fee */
+  appointmentsMode?: boolean;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -90,15 +100,31 @@ export function GroomingBookingRouter({
   petBreed: preFilledPetBreed, // ✅ NEW: Pre-filled pet breed
   notes: preFilledNotes, // ✅ NEW: Pre-filled notes
   skipToPayment, // ✅ NEW: Flag to skip to payment
+  appointmentsMode = false,
   onBack, 
   onNavigate, 
   onViewBooking,
   onInternalBackReady // ✅ NEW: Callback to expose internal handleBack
 }: GroomingBookingRouterProps) {
+  const bookingCategory = appointmentsMode
+    ? resolveWarmpawzBookingCategory(serviceType)
+    : 'grooming';
+
+  useEffect(() => {
+    if (!appointmentsMode) return;
+    // #region agent log
+    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'GroomingBookingRouter.tsx:mount',message:'wappt booking context',data:{bookingCategory,serviceType,serviceStyle,vendorId:vendorId?.slice(0,8),vendorName:vendorNameProp},timestamp:Date.now(),hypothesisId:'H2',runId:'post-fix'})}).catch(()=>{});
+    // #endregion
+  }, [appointmentsMode, bookingCategory, serviceType, serviceStyle, vendorId, vendorNameProp]);
+
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to datetime
   // ✅ NEW: Also skip if multiple services are already selected from salon profile
   // This preserves the service-style context when coming from service listing or profile
-  const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService || vendorId || (selectedServices && selectedServices.length > 0));
+  const hasServiceContext =
+    appointmentsMode && vendorId
+      ? true
+      : (serviceType || serviceStyle) &&
+        (serviceId || selectedService || vendorId || (selectedServices && selectedServices.length > 0));
   
   // ✅ NEW: Check if we have complete booking data (from provider profile, etc.) - skip directly to payment
   const hasCompleteBookingData = skipToPayment && preFilledDate && preFilledTime && preFilledPetId && serviceId;
@@ -128,6 +154,30 @@ export function GroomingBookingRouter({
     preFilledPetId ? { id: preFilledPetId, name: preFilledPetName || '', species: '', breed: preFilledPetBreed || '' } : null
   );
   const [selectedAddress, setSelectedAddress] = useState<any>(null);
+  const [appointmentFee, setAppointmentFee] = useState<number | null>(
+    appointmentsMode && price ? Number(price) : null,
+  );
+
+  useEffect(() => {
+    if (!appointmentsMode || !vendorId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get<{
+          success?: boolean;
+          appointmentFee?: number;
+        }>(`/customer/warmpawz-appointments/vendors/${vendorId}/fee`);
+        if (!cancelled && res?.success && res.appointmentFee != null) {
+          setAppointmentFee(Number(res.appointmentFee));
+        }
+      } catch {
+        if (!cancelled) toast.error('Could not load appointment fee for this vendor');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [appointmentsMode, vendorId]);
   
   // ✅ ANALYTICS: Track booking steps
   const analytics = useBookingAnalytics('grooming', selectedServiceType as any);
@@ -169,43 +219,87 @@ export function GroomingBookingRouter({
   // ✅ NEW: If selectedServices array is provided, use the first one (for single service display)
   // but we'll pass all selectedServices to the payment/booking API
   const [selectedVendorService, setSelectedVendorService] = useState<any>(
-    serviceId ? {
-      id: serviceId,
-      serviceId: serviceId,
-      name: serviceName,
-      price: price,
-      duration: duration,
-      serviceStyle: serviceStyle || serviceType
-    } : (selectedServices && selectedServices.length > 0 ? selectedServices[0] : null)
+    appointmentsMode
+      ? {
+          id: WAPPT_APPOINTMENT_SERVICE_ID,
+          serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
+          name: serviceName || 'Appointment',
+          price: price,
+          duration: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+          serviceStyle: serviceStyle || serviceType,
+        }
+      : serviceId
+        ? {
+            id: serviceId,
+            serviceId: serviceId,
+            name: serviceName,
+            price: price,
+            duration: duration,
+            serviceStyle: serviceStyle || serviceType,
+          }
+        : selectedServices && selectedServices.length > 0
+          ? selectedServices[0]
+          : null,
   );
   
   // ✅ NEW: Store all selected services for passing to booking API
   const [allSelectedServices, setAllSelectedServices] = useState<any[]>(selectedServices || []);
   
   // ✅ NEW: Multi-service selection state
-  const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(
-    new Set(selectedServices?.map(s => s.id || s.serviceId) || (serviceId ? [serviceId] : []))
-  );
+  const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(() => {
+    if (appointmentsMode) return new Set([WAPPT_APPOINTMENT_SERVICE_ID]);
+    return new Set(
+      selectedServices?.map((s) => s.id || s.serviceId) || (serviceId ? [serviceId] : []),
+    );
+  });
 
-  const groomingProvidersDiscovery = useDiscoveryCount({
+  const [vendorProfile, setVendorProfile] = useState<{
+    name?: string;
+    business_name?: string;
+    address?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!appointmentsMode || !vendorId) return;
+    let cancelled = false;
+    void apiClient
+      .get<{ vendor?: Record<string, unknown>; success?: boolean }>(`/customer/vendor/${vendorId}`)
+      .then((res) => {
+        if (cancelled) return;
+        const v = (res?.vendor ?? res) as Record<string, unknown> | undefined;
+        if (v && typeof v === 'object') {
+          setVendorProfile({
+            name: String(v.name ?? v.business_name ?? ''),
+            business_name: String(v.business_name ?? v.name ?? ''),
+            address: String(v.address ?? v.full_address ?? ''),
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [appointmentsMode, vendorId]);
+
+  const providersDiscovery = useDiscoveryCount({
     phone,
     serviceStyle: selectedServiceType === 'at_center' ? 'at_center' : 'at_home',
-    category: 'grooming',
+    category: appointmentsMode ? bookingCategory : 'grooming',
   });
 
   const groomingProviderStatValue = useMemo(() => {
     const st =
-      groomingProvidersDiscovery.isLoading || groomingProvidersDiscovery.isFetching
+      providersDiscovery.isLoading || providersDiscovery.isFetching
         ? 'loading'
-        : groomingProvidersDiscovery.isError
+        : providersDiscovery.isError
           ? 'error'
           : 'success';
-    return formatDiscoveryCountStat(groomingProvidersDiscovery.data, st);
+    return formatDiscoveryCountStat(providersDiscovery.data, st);
   }, [
-    groomingProvidersDiscovery.data,
-    groomingProvidersDiscovery.isLoading,
-    groomingProvidersDiscovery.isFetching,
-    groomingProvidersDiscovery.isError,
+    providersDiscovery.data,
+    providersDiscovery.isLoading,
+    providersDiscovery.isFetching,
+    providersDiscovery.isError,
   ]);
 
   /** Deep link / profile context: vendor package rows must go to purchase-package, not one-off booking. */
@@ -360,13 +454,16 @@ export function GroomingBookingRouter({
 
   // Load slots when date is selected and vendor is known
   useEffect(() => {
-    if (selectedDate && vendorId && selectedServiceIds.size > 0) {
+    const canLoadSlots =
+      selectedDate &&
+      vendorId &&
+      (appointmentsMode || selectedServiceIds.size > 0);
+    if (canLoadSlots) {
       loadTimeSlots(selectedDate);
     } else {
-      // Reset slots when date is cleared
       setTimeSlots([]);
     }
-  }, [selectedDate, vendorId, selectedServiceType, selectedServiceIds]);
+  }, [selectedDate, vendorId, selectedServiceType, selectedServiceIds, appointmentsMode]);
 
   // Scheduling policy and operating-hours are deprecated (replaced by advance availability).
   // Slots come from GET /customer/vendor/:id/available-slots only; no extra policy/hours APIs.
@@ -424,15 +521,22 @@ export function GroomingBookingRouter({
     
     try {
       setLoadingSlots(true);
-      // ✅ NEW: Calculate total duration for multiple services
-      const totalDuration = calculateTotalDuration();
-      const serviceIds = Array.from(selectedServiceIds).join(',');
+      const totalDuration = appointmentsMode
+        ? WAPPT_DEFAULT_SLOT_DURATION_MIN
+        : calculateTotalDuration() || WAPPT_DEFAULT_SLOT_DURATION_MIN;
+      const serviceIds = appointmentsMode
+        ? WAPPT_APPOINTMENT_SERVICE_ID
+        : Array.from(selectedServiceIds).join(',');
       
       const raw = await apiClient.get(
         `/customer/vendor/${vendorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}&totalDuration=${totalDuration}&serviceIds=${serviceIds}`
       );
 
       const { success, slots } = normalizeAvailableSlotsResponse(raw, date);
+
+      // #region agent log
+      fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'GroomingBookingRouter.tsx:loadTimeSlots',message:'slot load result',data:{appointmentsMode,bookingCategory,serviceStyle:selectedServiceType,date,slotCount:slots?.length??0,success,vendorId:vendorId?.slice(0,8)},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
+      // #endregion
 
       if (success && slots.length > 0) {
         setTimeSlots(slots);
@@ -453,10 +557,10 @@ export function GroomingBookingRouter({
 
   useEffect(() => {
     loadCustomerData();
-    if (vendorId) {
+    if (vendorId && !appointmentsMode) {
       loadVendorServices();
     }
-  }, [phone, vendorId]);
+  }, [phone, vendorId, appointmentsMode]);
 
   // ✅ NEW: Auto-proceed to payment when skipping with complete data
   const autoProceedRef = useRef(false);
@@ -469,12 +573,13 @@ export function GroomingBookingRouter({
   }, [hasCompleteBookingData, step, showPaymentPage, customerId, selectedPet?.id, selectedDate, selectedTime]);
 
   const loadVendorServices = async () => {
-    if (!vendorId) return;
+    if (!vendorId || appointmentsMode) return;
     
     try {
       setLoading(true);
-      // Load actual vendor grooming services
-      const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=grooming`) as any;
+      const servicesResponse = await apiClient.get(
+        `/customer/vendor/${vendorId}/services?category=${bookingCategory}`,
+      ) as any;
       if (servicesResponse.success && servicesResponse.services) {
         const merged = mergeCustomerVendorServicesPayload(servicesResponse);
         setVendorServices(merged);
@@ -833,6 +938,17 @@ export function GroomingBookingRouter({
     if (step === 'confirmation') {
       return { title: 'Booking Confirmed', subtitle: 'Your appointment is scheduled', icon: CheckCircle2 };
     }
+    if (appointmentsMode) {
+      const wapptHeader = getWarmpawzBookingHeaderInfo({
+        category: bookingCategory,
+        serviceStyle: selectedServiceType,
+      });
+      return {
+        title: wapptHeader.title,
+        subtitle: wapptHeader.subtitle,
+        icon: selectedServiceType === 'at_home' ? Home : Building2,
+      };
+    }
     if (step === 'datetime') {
       return {
         title: 'Book Grooming',
@@ -851,7 +967,26 @@ export function GroomingBookingRouter({
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
   const groomingProviderStatLabel =
-    selectedServiceType === 'at_center' ? 'Salons' : 'Groomers';
+    appointmentsMode && bookingCategory === 'vet'
+      ? selectedServiceType === 'at_center'
+        ? 'Clinics'
+        : 'Vets'
+      : selectedServiceType === 'at_center'
+        ? 'Salons'
+        : 'Groomers';
+
+  const displayVendorName =
+    vendorNameProp ||
+    groomer?.business_name ||
+    groomer?.name ||
+    vendorProfile?.business_name ||
+    vendorProfile?.name ||
+    (appointmentsMode ? getWarmpawzLocationFallbackLabel(bookingCategory) : 'Grooming Center');
+
+  const displayVendorAddress =
+    groomer?.address ||
+    vendorProfile?.address ||
+    (appointmentsMode ? 'Address will be shared after confirmation' : 'Address will be shared after confirmation');
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   // ✅ FIX: Prepare step indicators for header
@@ -871,10 +1006,11 @@ export function GroomingBookingRouter({
     }));
   };
 
-  const reviewTotal =
-    (allSelectedServices && allSelectedServices.length > 0
+  const reviewTotal = appointmentsMode
+    ? (appointmentFee ?? price ?? 0)
+    : ((allSelectedServices && allSelectedServices.length > 0
       ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
-      : selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0) ?? 0;
+      : selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0) ?? 0);
 
   const groomingPrePaymentSummary = (
     <>
@@ -908,9 +1044,14 @@ export function GroomingBookingRouter({
       ) : (
         (() => {
           const svc = selectedServiceOption || allSelectedServices?.[0];
-          const svcName = svc?.name || svc?.serviceName || serviceName || 'Grooming Service';
-          const svcDuration = svc?.duration ?? duration ?? 0;
-          const svcPrice = svc?.price ?? price ?? 0;
+          const svcName = appointmentsMode
+            ? getWarmpawzAppointmentServiceLabel({
+                category: bookingCategory,
+                serviceStyle: selectedServiceType,
+              })
+            : svc?.name || svc?.serviceName || serviceName || 'Grooming Service';
+          const svcDuration = appointmentsMode ? WAPPT_DEFAULT_SLOT_DURATION_MIN : (svc?.duration ?? duration ?? 0);
+          const svcPrice = appointmentsMode ? (appointmentFee ?? price ?? 0) : (svc?.price ?? price ?? 0);
           return (
             <div className="flex items-center gap-3 pb-4 border-b">
               <div
@@ -957,15 +1098,24 @@ export function GroomingBookingRouter({
     return (
       <UniversalPaymentPage
         type="booking"
-        serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
+        serviceId={appointmentsMode ? 'warmpawz_appointments' : (selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId)}
         serviceName={
-          allSelectedServices.length > 1
+          appointmentsMode
+            ? getWarmpawzAppointmentServiceLabel({
+                category: bookingCategory,
+                serviceStyle: selectedServiceType,
+              })
+            : allSelectedServices.length > 1
             ? `${allSelectedServices.length} Services Selected`
             : selectedServiceOption?.name || serviceName || 'Grooming Service'
         }
-        serviceDescription={`Grooming by ${groomer?.name || 'professional groomer'}`}
+        serviceDescription={
+          appointmentsMode
+            ? `Appointment with ${vendorNameProp || groomer?.name || 'provider'}`
+            : `Grooming by ${groomer?.name || 'professional groomer'}`
+        }
         serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
-        category="grooming"
+        category={appointmentsMode ? bookingCategory : 'grooming'}
         vendorId={vendorId || ''}
         vendorName={groomer?.name || vendorNameProp || 'Grooming Professional'}
         vendorAddress={
@@ -984,11 +1134,14 @@ export function GroomingBookingRouter({
         address={selectedAddress}
         showAddressSelection={selectedServiceType === 'at_home'}
         baseAmount={
-          allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) ||
+          appointmentsMode
+            ? appointmentFee ?? price ?? 0
+            : allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) ||
           selectedServiceOption?.price ||
           price ||
           499
         }
+        bookingMode={appointmentsMode ? 'warmpawz_appointments' : undefined}
         priceIncludesTax={
           catalogPriceIncludesTax(selectedServiceOption) ||
           (!!allSelectedServices?.length && catalogPriceIncludesTax(allSelectedServices[0]))
@@ -1380,10 +1533,10 @@ export function GroomingBookingRouter({
                       <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-orange-500" />
                       <div className="min-w-0 flex-1 overflow-hidden">
                         <h3 className="font-semibold text-gray-900">
-                          {groomer?.business_name || groomer?.name || 'Grooming Center'}
+                          {displayVendorName}
                         </h3>
                         <p className="break-words text-sm text-gray-600">
-                          {groomer?.address || 'Address will be shared after confirmation'}
+                          {displayVendorAddress}
                         </p>
                       </div>
                     </div>
