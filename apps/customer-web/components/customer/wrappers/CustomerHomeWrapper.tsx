@@ -3166,7 +3166,11 @@ export function CustomerHomeWrapper({
         phone={phone}
         onBack={handleBack}
         onNavigate={(screen, data) => {
-          const payload = { ...(data || {}) };
+          const payload = {
+            ...(data || {}),
+            appointmentsMode: true,
+            returnScreen: 'wappt-discovery',
+          } as Record<string, unknown>;
           if (wapptDiscoveryCategory === 'vet') {
             setVetServiceData((prev: Record<string, unknown> | null) => ({
               ...(prev || {}),
@@ -3183,6 +3187,18 @@ export function CustomerHomeWrapper({
             } else if (payload.vendorId) {
               setGroomingCenterProfileVendorId(String(payload.vendorId));
             }
+            if (screen === 'grooming_center' || screen === 'grooming_home') {
+              navigateToScreen(screen as ScreenType);
+              return;
+            }
+            if (screen === 'grooming-booking') {
+              navigateToScreen('grooming-booking');
+              return;
+            }
+          }
+          if (wapptDiscoveryCategory === 'training' && screen === 'training-booking') {
+            navigateToScreen('training-booking');
+            return;
           }
           if (screen === 'grooming_center' || screen === 'grooming_home') {
             navigateToScreen(screen as ScreenType);
@@ -3257,6 +3273,8 @@ export function CustomerHomeWrapper({
         duration: data?.duration,
         doctor: data?.doctor,
         clinic: data?.clinic,
+        appointmentsMode: data?.appointmentsMode === true || vetServiceData?.appointmentsMode === true,
+        returnScreen: data?.returnScreen || vetServiceData?.returnScreen,
       });
       navigateToScreen('vet-booking');
     } else {

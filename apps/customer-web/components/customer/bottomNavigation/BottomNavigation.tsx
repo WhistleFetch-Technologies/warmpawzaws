@@ -87,7 +87,9 @@ export function BottomNavigation({
 
   return (
     <div className="cw-customer-tabbar-fixed fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-customer border-t border-gray-200 bg-white">
-      <div className="grid grid-cols-5 items-end px-1 pb-2 pt-2 sm:px-2">
+      <div
+        className={`grid items-end px-1 pb-2 pt-2 sm:px-2 ${wpayEnabled ? 'grid-cols-5' : 'grid-cols-4'}`}
+      >
         <TabIconButton label="Home" active={isActive('home')} onClick={() => handleNavClick('home')}>
           <Home className={`h-6 w-6 ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
         </TabIconButton>
@@ -124,9 +126,7 @@ export function BottomNavigation({
               SCAN TO PAY
             </span>
           </button>
-        ) : (
-          <div aria-hidden className="h-10" />
-        )}
+        ) : null}
 
         <TabIconButton
           label="Bookings"

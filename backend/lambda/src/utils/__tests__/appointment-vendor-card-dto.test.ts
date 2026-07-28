@@ -4,7 +4,7 @@
 import { toAppointmentVendorCardDTO } from '../appointment-vendor-card-dto';
 
 describe('toAppointmentVendorCardDTO', () => {
-  it('omits priceMin and time fields from appointment cards', () => {
+  it('includes availability without price fields on appointment cards', () => {
     const dto = toAppointmentVendorCardDTO({
       vendorId: 'v1',
       name: 'Test Clinic',
@@ -15,7 +15,7 @@ describe('toAppointmentVendorCardDTO', () => {
     });
     expect(dto.vendorId).toBe('v1');
     expect((dto as { priceMin?: number }).priceMin).toBeUndefined();
-    expect((dto as { availabilityText?: string }).availabilityText).toBeUndefined();
-    expect((dto as { nextAvailableSlot?: string }).nextAvailableSlot).toBeUndefined();
+    expect(dto.availabilityText).toBe('Tomorrow 10am');
+    expect(dto.nextAvailableSlot).toBe('Tomorrow 10am');
   });
 });

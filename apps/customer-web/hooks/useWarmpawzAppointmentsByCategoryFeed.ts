@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useDiscoveryVendorFeed } from '@/hooks/useDiscoveryVendorFeed';
 import { discoveryNextCursor, discoveryVendorList } from '@/lib/discovery-list';
 
@@ -28,6 +28,11 @@ export function useWarmpawzAppointmentsByCategoryFeed(opts: {
   );
 
   const feed = useDiscoveryVendorFeed({ buildUrl, enabled, pageSize });
+
+  useEffect(() => {
+    if (!enabled) return;
+    void feed.reload();
+  }, [enabled, category, serviceStyle, feed.reload]);
 
   return {
     vendors: feed.vendors,

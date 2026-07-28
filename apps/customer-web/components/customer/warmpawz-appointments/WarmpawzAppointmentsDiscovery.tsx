@@ -3,7 +3,9 @@
 import { useState } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { UniversalServicesByStyle } from '@/components/customer/shared/UniversalServicesByStyle';
-import type { RoleId } from '@/components/customer/shared/roleConfig';
+import { VetServicesByStyle } from '@/components/customer/vet/VetServicesByStyle';
+import { GroomingServicesByStyle } from '@/components/customer/grooming/GroomingServicesByStyle';
+import type { RoleId, ServiceStyle } from '@/components/customer/shared/roleConfig';
 import type { WapptStyleFilter } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
 import { getWarmpawzAppointmentBookingTitle } from '@/lib/warmpawz-appointments-customer';
 
@@ -41,11 +43,23 @@ export function WarmpawzAppointmentsDiscovery({
   const [styleFilter, setStyleFilter] = useState<WapptStyleFilter>('all');
   const roleId = CATEGORY_ROLE[category] ?? 'veterinarian';
   const { title, subtitle } = getWarmpawzAppointmentBookingTitle(category);
-  const listServiceStyle = styleFilter === 'at_home' ? 'at_home' : 'at_center';
+  const listServiceStyle: ServiceStyle = styleFilter === 'at_home' ? 'at_home' : 'at_center';
+
+  const sharedListProps = {
+    phone,
+    serviceStyle: listServiceStyle,
+    category,
+    appointmentsMode: true as const,
+    wapptStyleFilter: styleFilter,
+    hideDashboardHeader: true,
+    profileBackScreen: 'wappt-discovery',
+    onBack,
+    onNavigate,
+  };
 
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50">
-      <div className="sticky top-0 z-10 border-b bg-white px-4 py-3">
+    <div className="mx-auto flex h-[100dvh] w-full max-w-customer flex-col overflow-hidden bg-gray-50">
+      <div className="sticky top-0 z-10 shrink-0 border-b bg-white px-4 py-3">
         <div className="flex items-center gap-3">
           <button type="button" onClick={onBack} className="rounded-full p-2 hover:bg-gray-100">
             <ChevronLeft className="h-5 w-5" />
@@ -72,18 +86,23 @@ export function WarmpawzAppointmentsDiscovery({
           ))}
         </div>
       </div>
-      <UniversalServicesByStyle
-        phone={phone}
-        roleId={roleId}
-        serviceStyle={listServiceStyle}
-        category={category}
-        appointmentsMode
-        wapptStyleFilter={styleFilter}
-        profileBackScreen="wappt-discovery"
-        onBack={onBack}
-        onNavigate={onNavigate}
-        bookingScreen={CATEGORY_BOOKING_SCREEN[category] ?? 'grooming-booking'}
-      />
+
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {category === 'vet' ? (
+          <VetServicesByStyle
+            {...sharedListProps}
+            discoveryProfileBackScreen="wappt-discovery"
+          />
+        ) : category === 'grooming' ? (
+          <GroomingServicesByStyle {...sharedListProps} />
+        ) : (
+          <UniversalServicesByStyle
+            {...sharedListProps}
+            roleId={roleId}
+            bookingScreen={CATEGORY_BOOKING_SCREEN[category] ?? 'grooming-booking'}
+          />
+        )}
+      </div>
     </div>
   );
 }

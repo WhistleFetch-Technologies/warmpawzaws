@@ -73,6 +73,7 @@ interface UniversalServicesByStyleProps {
   bookingScreen?: string; // ✅ NEW: Screen name for booking (e.g., 'vet-booking', 'grooming-booking')
   appointmentsMode?: boolean;
   wapptStyleFilter?: WapptStyleFilter;
+  hideDashboardHeader?: boolean;
 }
 
 // Provider can be vendor (for at_center) or staff/individual (for at_home/tele)
@@ -148,6 +149,7 @@ export function UniversalServicesByStyle({
   bookingScreen = 'booking', // Default booking screen
   appointmentsMode = false,
   wapptStyleFilter = 'all',
+  hideDashboardHeader = false,
 }: UniversalServicesByStyleProps) {
   const router = useRouter();
   const config = getRoleConfig(roleId);
@@ -221,11 +223,8 @@ export function UniversalServicesByStyle({
       distance: base.distance != null ? Number(base.distance) : null,
       isVerified: base.isVerified,
       isIndividualProvider: base.isIndividualProvider,
-      nextAvailableSlot: appointmentsMode
-        ? undefined
-        : nextSlot && nextSlot !== 'Tap to view availability'
-          ? nextSlot
-          : undefined,
+      nextAvailableSlot:
+        nextSlot && nextSlot !== 'Tap to view availability' ? nextSlot : undefined,
       specialization: base.specialization,
       amenities: Array.isArray(row.amenities) ? (row.amenities as string[]) : undefined,
       priceMin: appointmentsMode ? undefined : base.priceMin,
@@ -716,7 +715,7 @@ export function UniversalServicesByStyle({
     });
   };
 
-  if (launchGate.ready && launchGate.blocked) {
+  if (!appointmentsMode && launchGate.ready && launchGate.blocked) {
     return (
       <div className="min-h-screen bg-gray-50">
         <ServiceStyleLaunchBlocked message={launchGate.blockMessage} onBack={onBack} />
@@ -726,7 +725,11 @@ export function UniversalServicesByStyle({
 
   if (loading || showProfileLoading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
+      <div
+        className={`flex items-center justify-center bg-white ${
+          hideDashboardHeader ? 'h-full min-h-0' : 'min-h-screen'
+        }`}
+      >
         <div className="text-center">
           <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42] mx-auto mb-3" />
           <p className="text-gray-600">Loading {vendorId ? 'provider profile' : 'available services'}...</p>
@@ -1283,8 +1286,14 @@ export function UniversalServicesByStyle({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col relative overflow-hidden">
-      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame */}
+    <div
+      className={`flex flex-col bg-gray-50 relative ${
+        hideDashboardHeader
+          ? 'h-full min-h-0 overflow-hidden'
+          : 'min-h-screen overflow-hidden'
+      }`}
+    >
+      {!hideDashboardHeader ? (
       <ServiceDashboardHeader
         fullWidth
         serviceName={config.displayName}
@@ -1298,10 +1307,15 @@ export function UniversalServicesByStyle({
         bottomEdge="sheet"
         sheetToneClass="bg-white"
       />
+      ) : null}
 
       {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
-      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">
-      {/* Info section */}
+      <div
+        className={`flex-1 min-h-0 overflow-y-auto cw-scroll-pad-tabbar bg-white ${
+          hideDashboardHeader ? '' : '-mt-4 rounded-t-[1.75rem] sm:rounded-t-[2rem]'
+        }`}
+      >
+      {!hideDashboardHeader ? (
       <div className="px-6 pt-6 pb-2">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
@@ -1325,9 +1339,10 @@ export function UniversalServicesByStyle({
           </div>
         )}
       </div>
+      ) : null}
 
       {/* Content */}
-      <div className="px-4 pb-24">
+      <div className={`px-4 pb-24 ${hideDashboardHeader ? 'pt-4' : ''}`}>
         {vendorId && providers.length !== 1 ? (
           profileResolveFailed ? (
             <Card className="p-8 text-center bg-white">
@@ -1438,7 +1453,7 @@ export function UniversalServicesByStyle({
                             {provider.experienceYears} years experience
                           </div>
                         )}
-                        {provider.nextAvailableSlot && !appointmentsMode && (
+                        {provider.nextAvailableSlot && (
                           <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
                             <Clock className="w-3 h-3" />
                             <span>Next: {provider.nextAvailableSlot}</span>

@@ -43,6 +43,12 @@ import {
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
 import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
+import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
+import type { WapptStyleFilter } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
+import {
+  buildWarmpawzAppointmentsBookingNav,
+  resolveWarmpawzBookingScreen,
+} from '@/lib/warmpawz-appointments-customer';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -51,6 +57,10 @@ interface GroomingServicesByStyleProps {
   category?: string;
   vendorId?: string; // Optional: filter to show only this vendor's services (vendor profile mode)
   specialization?: string;
+  appointmentsMode?: boolean;
+  wapptStyleFilter?: WapptStyleFilter;
+  hideDashboardHeader?: boolean;
+  profileBackScreen?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
 }
@@ -105,6 +115,10 @@ export function GroomingServicesByStyle({
   category = 'grooming',
   vendorId,
   specialization,
+  appointmentsMode = false,
+  wapptStyleFilter = 'all',
+  hideDashboardHeader = false,
+  profileBackScreen,
   onBack, 
   onNavigate 
 }: GroomingServicesByStyleProps) {
@@ -128,20 +142,27 @@ export function GroomingServicesByStyle({
   const [promotions, setPromotions] = useState<any[]>([]);
   const launchGate = useServiceStyleLaunchGate(phone, category, serviceStyle);
 
-  const feedEnabled = launchGate.ready && !launchGate.blocked;
-  const {
-    rows: feedRows,
-    loading: feedLoading,
-    loadingMore,
-    hasMore,
-    loadMore,
-  } = useByStyleDiscoveryFeed({
+  const feedEnabled = appointmentsMode || (launchGate.ready && !launchGate.blocked);
+
+  const wapptFeed = useWarmpawzAppointmentsByCategoryFeed({
+    category,
+    serviceStyle: wapptStyleFilter,
+    enabled: appointmentsMode && feedEnabled,
+  });
+
+  const normalFeed = useByStyleDiscoveryFeed({
     phone,
     serviceStyle,
     category,
     specialization,
-    enabled: feedEnabled,
+    enabled: !appointmentsMode && feedEnabled,
   });
+
+  const feedRows = appointmentsMode ? wapptFeed.vendors : normalFeed.rows;
+  const feedLoading = appointmentsMode ? wapptFeed.loading : normalFeed.loading;
+  const loadingMore = appointmentsMode ? wapptFeed.loadingMore : normalFeed.loadingMore;
+  const hasMore = appointmentsMode ? wapptFeed.hasMore : normalFeed.hasMore;
+  const loadMore = appointmentsMode ? wapptFeed.loadMore : normalFeed.loadMore;
 
   const mapRowToGroomingProvider = useCallback((row: Record<string, unknown>): Provider => {
     const base = mapDiscoveryRowBaseFields(row);
@@ -170,14 +191,14 @@ export function GroomingServicesByStyle({
       isIndividualProvider: base.isIndividualProvider,
       nextAvailableSlot:
         label && label !== 'Tap to view availability' ? label : undefined,
-      priceMin: base.priceMin,
+      priceMin: appointmentsMode ? undefined : base.priceMin,
       services: [],
     };
-  }, []);
+  }, [appointmentsMode]);
 
   useEffect(() => {
     if (!feedEnabled) {
-      if (launchGate.ready && launchGate.blocked) setLoading(false);
+      if (!appointmentsMode && launchGate.ready && launchGate.blocked) setLoading(false);
       return;
     }
     let mapped = feedRows.map(mapRowToGroomingProvider);
@@ -495,6 +516,20 @@ export function GroomingServicesByStyle({
 
   const openGroomingProviderProfile = (e: MouseEvent, provider: Provider) => {
     e.stopPropagation();
+    if (appointmentsMode) {
+      const vid = String(provider.vendorId || provider.providerId || '');
+      const style =
+        wapptStyleFilter === 'all' ? serviceStyle : wapptStyleFilter;
+      const nav = buildWarmpawzAppointmentsBookingNav({
+        vendorId: vid,
+        vendorName: provider.name,
+        serviceStyle: style,
+        category,
+      });
+      const screen = style === 'at_home' ? 'grooming_home' : 'grooming_center';
+      onNavigate(screen, { ...nav, vendorId: vid, appointmentsMode: true });
+      return;
+    }
     const vid = getWebGroomingTrainingEmbedVendorId(provider as unknown as Record<string, unknown>);
     onNavigate('grooming_embed_vendor_profile', { vendorId: vid, serviceStyle });
   };
@@ -617,6 +652,21 @@ export function GroomingServicesByStyle({
   // ✅ FIX: Pass all selected services to booking, not just the first one
   // This matches the vet flow where multiple services can be selected
   const handleBookServices = () => {
+    if (appointmentsMode && profileProvider) {
+      const vid = String(profileProvider.vendorId || profileProvider.providerId || '');
+      const style =
+        wapptStyleFilter === 'all' ? serviceStyle : wapptStyleFilter;
+      onNavigate(resolveWarmpawzBookingScreen(category), {
+        ...buildWarmpawzAppointmentsBookingNav({
+          vendorId: vid,
+          vendorName: profileProvider.name,
+          serviceStyle: style,
+          category,
+        }),
+        appointmentsMode: true,
+      });
+      return;
+    }
     if (selectedServices.size === 0) {
       // If no services selected, navigate with first service or all services
       if (profileProvider?.services && profileProvider.services.length > 0) {
@@ -704,7 +754,7 @@ export function GroomingServicesByStyle({
     });
   };
 
-  if (launchGate.ready && launchGate.blocked) {
+  if (!appointmentsMode && launchGate.ready && launchGate.blocked) {
     return (
       <div className="min-h-screen bg-gray-50">
         <ServiceStyleLaunchBlocked message={launchGate.blockMessage} onBack={onBack} />
@@ -1182,7 +1232,7 @@ export function GroomingServicesByStyle({
 
         {/* Fixed bottom CTA — above app tab bar (globals --customer-footer-offset); do not use bottom-0 or it hides behind BottomNavigation z-50 */}
         <div className="cw-fixed-above-customer-tabbar fixed left-0 right-0 z-40 mx-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg">
-          {selectedServices.size > 0 && (
+          {selectedServices.size > 0 && !appointmentsMode && (
             <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
               <div className="flex items-center justify-between">
                 <div>
@@ -1203,10 +1253,12 @@ export function GroomingServicesByStyle({
           <div className="p-4">
             <Button 
               onClick={handleBookServices}
-              disabled={profileProvider.services.length === 0}
+              disabled={!appointmentsMode && profileProvider.services.length === 0}
               className="w-full bg-[#FF8C42] hover:bg-[#E67A35] h-12 text-lg text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              {selectedServices.size === 0 
+              {appointmentsMode
+                ? 'Book Appointment'
+                : selectedServices.size === 0 
                 ? (profileProvider.services.length === 0 ? 'No Services Available' : 'Select Services to Book')
                 : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
               }
@@ -1220,8 +1272,12 @@ export function GroomingServicesByStyle({
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+    <div
+      className={`mx-auto flex w-full max-w-customer flex-col bg-gray-50 ${
+        hideDashboardHeader ? 'h-full min-h-0' : 'min-h-screen'
+      }`}
+    >
+      {!hideDashboardHeader ? (
       <ServiceDashboardHeader
         fullWidth
         serviceName={getServiceTitle()}
@@ -1234,10 +1290,15 @@ export function GroomingServicesByStyle({
         headerColor="bg-[#FF8C42]"
         sheetToneClass="bg-white"
       />
+      ) : null}
 
       {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
-      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">
-      {/* Info section */}
+      <div
+        className={`flex-1 min-h-0 overflow-y-auto cw-scroll-pad-tabbar bg-white ${
+          hideDashboardHeader ? '' : '-mt-4 rounded-t-[1.75rem] sm:rounded-t-[2rem]'
+        }`}
+      >
+      {!hideDashboardHeader ? (
       <div className="px-6 pt-6 pb-2">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
@@ -1261,9 +1322,10 @@ export function GroomingServicesByStyle({
           </div>
         )}
       </div>
+      ) : null}
 
       {/* Content */}
-      <div className="px-4 cw-scroll-pad-tabbar">
+      <div className={`px-4 cw-scroll-pad-tabbar ${hideDashboardHeader ? 'pt-4' : ''}`}>
         {vendorId && providers.length !== 1 ? (
           profileResolveFailed ? (
             <Card className="p-8 text-center bg-white">
@@ -1420,7 +1482,7 @@ export function GroomingServicesByStyle({
                 </div>
 
                 {/* Services List - Expanded */}
-                {expanded && (
+                {expanded && !appointmentsMode && (
                   <div className="bg-gray-50 p-4 space-y-3">
                     {/* Provider details for staff/individual */}
                     {provider.qualifications && (
@@ -1525,7 +1587,13 @@ export function GroomingServicesByStyle({
                 {!expanded && (
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      {provider.services.length > 0 ? (
+                      {appointmentsMode ? (
+                        <span>
+                          {provider.nextAvailableSlot
+                            ? `Next: ${provider.nextAvailableSlot}`
+                            : 'Tap to view profile & book'}
+                        </span>
+                      ) : provider.services.length > 0 ? (
                         <>
                           {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service
                           {provider.services.length !== 1 ? 's' : ''} available
@@ -1554,11 +1622,15 @@ export function GroomingServicesByStyle({
                       className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (appointmentsMode) {
+                          openGroomingProviderProfile(e, provider);
+                          return;
+                        }
                         setSelectedProvider(provider.providerId);
                         void fetchProviderServices(provider.providerId);
                       }}
                     >
-                      View Services
+                      {appointmentsMode ? 'Book Appointment' : 'View Services'}
                     </Button>
                   </div>
                 )}

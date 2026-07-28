@@ -5,6 +5,7 @@ import {
 } from '../../../../utils/discovery-cursor';
 import { buildAppointmentVendorListResponse } from '../../../../utils/appointment-list-response';
 import { dbListWapptDiscoveryByCategory } from '../repos/discovery_by_category_get.repo';
+import { enrichWapptDiscoveryCards } from '../shared/wappt-discovery-enrich';
 
 const DEFAULT_LIMIT = 3;
 const MAX_LIMIT = 20;
@@ -60,7 +61,8 @@ export async function executeDiscoveryByCategoryGet(c: Context) {
     offset: sqlOffset,
   });
 
-  const enrichedCards = rows.map((row) => mapRowToCard(row, serviceStyle));
+  const baseCards = rows.map((row) => mapRowToCard(row, serviceStyle));
+  const enrichedCards = await enrichWapptDiscoveryCards(baseCards, serviceStyle);
   const nextCursor = hasMore
     ? encodeDiscoveryCursor({ o: 0, s: sqlOffset + rows.length })
     : null;
