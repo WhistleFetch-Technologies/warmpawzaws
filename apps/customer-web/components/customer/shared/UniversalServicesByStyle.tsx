@@ -68,6 +68,7 @@ interface UniversalServicesByStyleProps {
   bookingScreen?: string; // ✅ NEW: Screen name for booking (e.g., 'vet-booking', 'grooming-booking')
   /** Warmpawz Appointments: catalogue discovery, no prices, Book Now → slot + flat fee checkout */
   appointmentsMode?: boolean;
+  queryExtras?: Record<string, string | number | undefined | null>;
 }
 
 // Provider can be vendor (for at_center) or staff/individual (for at_home/tele)
@@ -142,6 +143,7 @@ export function UniversalServicesByStyle({
   onNavigate,
   bookingScreen = 'booking', // Default booking screen
   appointmentsMode = false,
+  queryExtras,
 }: UniversalServicesByStyleProps) {
   const router = useRouter();
   const config = getRoleConfig(roleId);
@@ -171,7 +173,9 @@ export function UniversalServicesByStyle({
     phone,
     serviceStyle,
     category: finalCategory,
+    roleId,
     specialization,
+    queryExtras,
     enabled: feedEnabled && appointmentsMode,
   });
   const normalFeed = useByStyleDiscoveryFeed({

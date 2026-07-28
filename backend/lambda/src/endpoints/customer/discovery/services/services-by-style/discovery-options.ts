@@ -6,4 +6,6 @@ export type ServicesByStyleDiscoveryOptions = {
   omitPricing?: boolean;
   /** Use appointment card DTO (no priceMin) in the JSON envelope. */
   appointmentListResponse?: boolean;
+  /** Tag vendor cards with warmpawzAppointments: true in the list DTO. */
+  markWarmpawzAppointments?: boolean;
 };

@@ -19,6 +19,7 @@ import {
   Navigation,
   TestTube,
   Sparkles,
+  Calendar,
 } from 'lucide-react';
 
 const BG_ICON =
@@ -85,6 +86,14 @@ const VET_SERVICE_CARD_BACKGROUNDS: Record<
       { Icon: Heart, className: 'absolute left-[28%] top-3 h-8 w-8 rotate-[14deg] opacity-[0.16]' },
       { Icon: PawPrint, className: 'absolute left-[8%] bottom-4 h-9 w-9 -rotate-[18deg] opacity-[0.17]' },
       { Icon: Stethoscope, className: 'absolute left-[36%] bottom-7 h-7 w-7 rotate-12 opacity-[0.14]' },
+    ],
+  },
+  wappt_vet_center: {
+    tint: 'text-orange-400',
+    icons: [
+      { Icon: Calendar, className: 'absolute -left-0.5 top-10 h-11 w-11 rotate-[8deg] opacity-[0.22]' },
+      { Icon: Stethoscope, className: 'absolute left-[28%] top-2 h-8 w-8 -rotate-12 opacity-[0.16]' },
+      { Icon: PawPrint, className: 'absolute left-[8%] bottom-4 h-9 w-9 rotate-[18deg] opacity-[0.18]' },
     ],
   },
 };

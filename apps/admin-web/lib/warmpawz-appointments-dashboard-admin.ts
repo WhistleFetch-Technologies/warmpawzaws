@@ -25,12 +25,25 @@ export interface WapptBookingsListResponse {
 }
 
 type SuccessEnvelope<T> = { success: true; data: T };
+type ErrorEnvelope = { success: false; error: { message?: string } };
+
+function assertSuccess<T>(response: SuccessEnvelope<T> | ErrorEnvelope | T): T {
+  if (response && typeof response === 'object' && 'success' in response) {
+    if (response.success === true && 'data' in response) {
+      return response.data;
+    }
+    if (response.success === false && 'error' in response) {
+      throw new Error(response.error.message || 'Request failed');
+    }
+  }
+  return response as T;
+}
 
 export async function fetchWapptDashboardMetrics(): Promise<WapptDashboardMetrics> {
-  const res = await apiClient.get<SuccessEnvelope<WapptDashboardMetrics>>(
+  const res = await apiClient.get<SuccessEnvelope<WapptDashboardMetrics> | ErrorEnvelope>(
     `${WAPPT_DASHBOARD_API_BASE}/dashboard`,
   );
-  return res.data;
+  return assertSuccess(res);
 }
 
 export async function fetchWapptBookingsList(params: {
@@ -41,8 +54,8 @@ export async function fetchWapptBookingsList(params: {
     page: String(params.page),
     pageSize: String(params.pageSize),
   });
-  const res = await apiClient.get<SuccessEnvelope<WapptBookingsListResponse>>(
+  const res = await apiClient.get<SuccessEnvelope<WapptBookingsListResponse> | ErrorEnvelope>(
     `${WAPPT_DASHBOARD_API_BASE}/bookings?${qs.toString()}`,
   );
-  return res.data;
+  return assertSuccess(res);
 }

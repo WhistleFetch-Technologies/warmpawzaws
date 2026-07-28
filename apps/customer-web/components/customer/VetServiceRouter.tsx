@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, type MouseEvent } from 'react';
 import { CachedImage } from '@/components/shared/CachedImage';
-import { Stethoscope, Star, ChevronRight, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2 } from 'lucide-react';
+import { Stethoscope, Star, ChevronRight, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -12,7 +12,7 @@ import { useProblemGridByRole, type ProblemGridItem } from './useProblemGridByRo
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { VetProblemGrid } from './vet/VetProblemGrid';
 import { VetServiceCardBackground } from './vet/VetServiceCardBackground';
-import { VET_HEADER_BANNER, VET_SERVICE_CARDS } from './vet/constants/vet-hub-assets';
+import { VET_HEADER_BANNER, VET_SERVICE_CARDS, VET_IMG } from './vet/constants/vet-hub-assets';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from './shared/StandardizedFooter';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
@@ -296,10 +296,21 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     });
 
     if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
-      return launchFiltered;
+      const wapptCard = {
+        id: 'wappt_vet_center',
+        name: 'Book Appointment',
+        description: 'Fixed fee · pick a slot',
+        image: `${VET_IMG}/clinic-visit.webp`,
+        Icon: Calendar,
+        iconColor: 'text-white',
+        iconBg: 'bg-[#FF8C42]',
+        badge: 'WARMPAWZ',
+        comingSoon: false as boolean | undefined,
+      };
+      return [wapptCard, ...launchFiltered];
     }
 
-    return launchFiltered.filter((service) => {
+    const filtered = launchFiltered.filter((service) => {
       const styles = serviceTypeStyleMap[service.id] ?? [service.id];
       return styles.some((style: string) =>
         allowedServiceStyles.some(
@@ -309,6 +320,19 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         ),
       );
     });
+
+    const wapptCard = {
+      id: 'wappt_vet_center',
+      name: 'Book Appointment',
+      description: 'Fixed fee · pick a slot',
+      image: `${VET_IMG}/clinic-visit.webp`,
+      Icon: Calendar,
+      iconColor: 'text-white',
+      iconBg: 'bg-[#FF8C42]',
+      badge: 'WARMPAWZ',
+      comingSoon: false as boolean | undefined,
+    };
+    return [wapptCard, ...filtered];
   }, [allowedServiceStyles, vetClinicBadgeText, styleLaunchByCard]);
 
   const problemGridItems = useMemo(() => {
@@ -553,6 +577,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
                   if (service.id === 'clinic') {
                     handleNavigate('vet-clinic-list');
+                  } else if (service.id === 'wappt_vet_center') {
+                    handleNavigate('wappt_vet_center');
                   } else if (service.id === 'tele') {
                     handleNavigate('vet-tele-consultation');
                   } else if (service.id === 'home') {

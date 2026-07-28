@@ -1,8 +1,3 @@
-import type { ServicesByStyleDiscoveryOptions } from '../../discovery/services/services-by-style/discovery-options';
-
-/** Warmpawz Appointments discovery: catalogue-gated list, no pricing on cards. */
-export const WAPPT_BY_STYLE_DISCOVERY_OPTIONS: ServicesByStyleDiscoveryOptions = {
-  wapptCatalogueOnly: true,
-  omitPricing: true,
-  appointmentListResponse: true,
-};
+/** @deprecated Use GET /customer/services/by-style (auto catalogue filter when WAPPT enabled). */
+export const WAPPT_DISCOVERY_BY_STYLE_PATH =
+  '/customer/warmpawz-appointments/discovery/by-style' as const;

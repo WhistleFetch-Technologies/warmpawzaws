@@ -64,6 +64,8 @@ export type EnrichDiscoveryListVendorOpts = {
   fullServices?: boolean;
   /** When false, skip slot scan. Default true with soft timeout. */
   includeAvailability?: boolean;
+  /** Omit priceMin/priceMax on the card (Warmpawz Appointments list). */
+  omitPricing?: boolean;
 };
 
 /**
@@ -165,12 +167,17 @@ export async function enrichDiscoveryListVendor(
     nextAvailable,
     isVerified: true,
     isOnline: vendorRowIsOnline(vendor.is_online),
-    priceMin: priceMin && priceMin > 0 ? priceMin : undefined,
-    priceMax: priceMax && priceMax > 0 ? priceMax : undefined,
     serviceCount,
     specializations: specializations.length ? specializations : undefined,
     bestForProblem: opts.problemTitle || undefined,
   };
+
+  if (!opts.omitPricing) {
+    if (priceMin && priceMin > 0) card.priceMin = priceMin;
+    if (priceMax && priceMax > 0) card.priceMax = priceMax;
+  } else {
+    card.warmpawzAppointments = true;
+  }
 
   card.services = opts.fullServices
     ? services.map((s) => slimDiscoveryListService(s as Record<string, unknown>))

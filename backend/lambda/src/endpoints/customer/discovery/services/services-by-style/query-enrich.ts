@@ -60,9 +60,14 @@ export async function queryAndEnrichByStyleVendors(
         ? await fetchServices(vendor.vendor_id, vendor.role_name)
         : [];
     const specBundle = vendorSpecBundleForByStyle.get(vendor.vendor_id);
+    // ponytail: omitPricing skips stats fetch; SQL EXISTS already proved services — avoid dropping all cards
+    const listStats =
+      fullEnrichByStyle && !omitPricing
+        ? null
+        : stats || { serviceCount: omitPricing ? 1 : 0 };
     return enrichDiscoveryListVendor({
       vendor,
-      stats: fullEnrichByStyle && !omitPricing ? null : stats || { serviceCount: 0 },
+      stats: listStats,
       services,
       acceptableStyles,
       distResolver: distResolverByStyle,
@@ -72,6 +77,7 @@ export async function queryAndEnrichByStyleVendors(
       specializations: specBundle?.displayLabels?.length ? specBundle.displayLabels : [],
       fullServices: fullEnrichByStyle && !omitPricing,
       includeAvailability: true,
+      omitPricing,
     });
   };
 

@@ -373,6 +373,7 @@ type ScreenType =
   | 'problem_grid_flow'
   | 'grooming_center'
   | 'wappt_grooming_center'
+  | 'wappt_vet_center'
   | 'grooming_home'
   | 'grooming-booking'
   | 'training-booking'
@@ -3715,6 +3716,8 @@ export function CustomerHomeWrapper({
           navigateToScreen('grooming_center');
         } else if (screen === 'wappt_grooming_center') {
           navigateToScreen('wappt_grooming_center');
+        } else if (screen === 'wappt_vet_center') {
+          navigateToScreen('wappt_vet_center');
         } else if (screen === 'grooming_home' || screen === 'at_home') {
           if (process.env.NODE_ENV === 'development') {
             console.log('🟢 [CustomerHomeWrapper] Setting grooming_home screen');
@@ -4892,6 +4895,33 @@ export function CustomerHomeWrapper({
       handleNavigateToService(screen, data);
     }
   };
+  if (currentScreen === 'wappt_vet_center') {
+    return (
+      <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
+          <UniversalServicesByStyle
+            phone={phone}
+            roleId="veterinarian"
+            serviceStyle="at_center"
+            serviceTypeName="Book Appointment"
+            category="vet"
+            specialization={problemGridSpecialization}
+            bookingScreen="grooming-booking"
+            appointmentsMode
+            queryExtras={{ allStyles: 'true' }}
+            onBack={() => backFromBannerOr(handleBack, vetServiceData)}
+            onNavigate={(screen, data) => {
+              if (screen === 'grooming-booking' || screen === 'create-booking') {
+                groomingCenterNavigate(screen, data);
+                return;
+              }
+              handleVetNavigate(screen, data);
+            }}
+          />
+        </div>
+      </CustomerScreenWrapper>
+    );
+  }
   if (currentScreen === 'wappt_grooming_center') {
     return (
       <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>

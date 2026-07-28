@@ -13,7 +13,10 @@ export type ServiceCardDTO = {
   serviceStyle: string | null;
 };
 
-export function toServiceCardDTO(row: Record<string, unknown>): ServiceCardDTO {
+export function toServiceCardDTO(
+  row: Record<string, unknown>,
+  options?: { omitPricing?: boolean },
+): ServiceCardDTO {
   const desc =
     (row.shortDescription as string) ||
     (row.description as string) ||
@@ -21,6 +24,14 @@ export function toServiceCardDTO(row: Record<string, unknown>): ServiceCardDTO {
     null;
   const shortDescription =
     desc && desc.length > 120 ? `${desc.slice(0, 117)}...` : desc;
+
+  const omitPricing = options?.omitPricing === true;
+  const rawPrice =
+    row.price != null && Number.isFinite(Number(row.price))
+      ? Number(row.price)
+      : row.base_price != null
+        ? Number(row.base_price)
+        : null;
 
   return {
     id: String(row.id ?? row.serviceId ?? ''),
@@ -35,17 +46,15 @@ export function toServiceCardDTO(row: Record<string, unknown>): ServiceCardDTO {
     categoryLabel: String(
       row.categoryLabel ?? row.categoryName ?? row.category ?? row.categorySlug ?? ''
     ) || null,
-    price:
-      row.price != null && Number.isFinite(Number(row.price))
-        ? Number(row.price)
-        : row.base_price != null
-          ? Number(row.base_price)
-          : null,
+    price: omitPricing ? null : rawPrice,
     isPackage: !!(row.isPackage ?? row.is_package),
     serviceStyle: (row.serviceStyle as string) ?? (row.service_style as string) ?? null,
   };
 }
 
-export function toServiceCardDTOList(rows: Record<string, unknown>[]): ServiceCardDTO[] {
-  return rows.map((r) => toServiceCardDTO(r));
+export function toServiceCardDTOList(
+  rows: Record<string, unknown>[],
+  options?: { omitPricing?: boolean },
+): ServiceCardDTO[] {
+  return rows.map((r) => toServiceCardDTO(r, options));
 }

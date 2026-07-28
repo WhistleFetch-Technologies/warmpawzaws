@@ -105,6 +105,7 @@ export function finishServicesByStyleResponse(
         nextCursor: nextCursorByStyle,
         serviceStyleNorm: serviceStyleNormByStyle,
         specializationApplied,
+        warmpawzAppointments: discoveryOptions.markWarmpawzAppointments === true,
         appliedFilters: {
           minRating: minRatingVal,
           maxDistance:
