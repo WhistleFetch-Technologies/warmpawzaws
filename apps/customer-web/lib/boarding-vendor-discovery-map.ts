@@ -19,7 +19,7 @@ export interface BoardingPlanRow {
   serviceId?: string;
   vendorServiceId?: string;
   name: string;
-  price: number | null;
+  price?: number;
   duration?: number;
   serviceStyle?: string;
   description?: string;
@@ -31,11 +31,11 @@ export interface BoardingPlanRow {
   metadata?: unknown;
 }
 
-function parsePlanRowPrice(s: Record<string, unknown>): number | null {
+function parsePlanRowPrice(s: Record<string, unknown>): number | undefined {
   const raw = s.price ?? s.custom_price ?? s.base_price;
-  if (raw === null || raw === undefined || raw === '') return null;
+  if (raw === null || raw === undefined || raw === '') return undefined;
   const n = typeof raw === 'string' ? parseFloat(raw) : Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 function parseMetadataIfString(meta: unknown): Record<string, unknown> | undefined {
