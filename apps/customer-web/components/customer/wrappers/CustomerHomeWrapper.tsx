@@ -1838,16 +1838,21 @@ export function CustomerHomeWrapper({
     else if (screen === 'shop') {
       goToShopFromParent();
     }
-    else if (screen === 'grooming-booking' && data?.appointmentsMode) {
+    else if ((screen === 'vet-booking' || screen === 'grooming-booking') && data?.appointmentsMode) {
+      const serviceType = data?.serviceType || 'vet';
+      const targetScreen =
+        screen === 'grooming-booking' && serviceType === 'vet'
+          ? 'vet-booking'
+          : screen;
       setVetServiceData({
         vendorId: data?.vendorId,
-        serviceType: data?.serviceType || 'vet',
+        serviceType,
         serviceStyle: data?.serviceStyle || 'at_center',
         vendorName: data?.vendorName,
         serviceId: 'warmpawz_appointments',
         appointmentsMode: true,
       });
-      navigateToScreen('grooming-booking');
+      navigateToScreen(targetScreen as ScreenType);
     }
     else if (screen === 'purchase-package') {
       const vid = String(data?.vendorId ?? data?.doctorId ?? '').trim();
@@ -3139,7 +3144,7 @@ export function CustomerHomeWrapper({
       { title: 'Veterinary Services', subtitle: 'Professional pet healthcare', showBackButton: true, skipHeader: true }
     );
   }
-  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} onBack={() => backFromBannerOr(handleBack, vetServiceData)} onInternalBackReady={(fn) => { vetBookingInternalBackRef.current = fn; }} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
+  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} appointmentsMode={Boolean(vetServiceData?.appointmentsMode)} onBack={() => backFromBannerOr(handleBack, vetServiceData)} onInternalBackReady={(fn) => { vetBookingInternalBackRef.current = fn; }} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
   if (currentScreen === 'vet-doctor-details')
     return (
       <VetDoctorDetails

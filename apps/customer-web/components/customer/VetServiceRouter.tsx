@@ -44,6 +44,7 @@ import {
 } from '@/lib/customer-service-style-launch';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
 import { buildHubWarmpawzBookingNav } from '@/lib/wappt-hub-booking-nav';
+import { resolveWarmpawzBookingScreen } from '@/lib/warmpawz-appointments-customer';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -328,7 +329,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const handleWarmpawzBookAppointment = useCallback(
     (v: BoardingListVendor) => {
       onNavigate(
-        'grooming-booking',
+        resolveWarmpawzBookingScreen('vet'),
         buildHubWarmpawzBookingNav(v, { category: 'vet', serviceStyle: 'at_center' })
       );
     },

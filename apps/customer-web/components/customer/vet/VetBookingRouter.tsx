@@ -32,6 +32,11 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import {
+  getWarmpawzAppointmentServiceLabel,
+  WAPPT_APPOINTMENT_SERVICE_ID,
+  WAPPT_DEFAULT_SLOT_DURATION_MIN,
+} from '@/lib/warmpawz-appointments-customer';
 
 interface VetBookingRouterProps {
   phone: string;
@@ -48,6 +53,8 @@ interface VetBookingRouterProps {
   duration?: number; // ✅ FIX: Add duration
   selectedServices?: any[]; // ✅ NEW: Multiple selected services (from VetServicesByStyle, etc.)
   vendorName?: string; // ✅ NEW: Clinic/center/vendor name for display
+  /** Warmpawz Appointments: flat admin fee, skip per-service pick */
+  appointmentsMode?: boolean;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -84,6 +91,7 @@ export function VetBookingRouter({
   duration,
   selectedServices,
   vendorName: vendorNameProp,
+  appointmentsMode = false,
   onBack, 
   onNavigate, 
   onViewBooking,
@@ -103,7 +111,11 @@ export function VetBookingRouter({
 
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to details
   // ✅ NEW: Also consider selectedServices (multi-service from VetServicesByStyle)
-  const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService || (selectedServices && selectedServices.length > 0));
+  const hasServiceContext =
+    appointmentsMode && (vendorId || doctorId)
+      ? true
+      : (serviceType || serviceStyle) &&
+        (serviceId || selectedService || (selectedServices && selectedServices.length > 0));
   const initialStep: BookingStep = hasServiceContext ? 'details' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
   // Map 'clinic' to 'at_center'; must be declared before effects that reference it (dependency arrays run during render).
@@ -200,15 +212,67 @@ export function VetBookingRouter({
   });
   // ✅ FIX: Initialize selectedVendorService with passed service data if available
   const [selectedVendorService, setSelectedVendorService] = useState<any>(
-    selectedService || (selectedServices && selectedServices.length > 0 ? selectedServices[0] : null) || (serviceId ? {
-      id: serviceId,
-      serviceId: serviceId,
-      name: serviceName,
-      price: price,
-      duration: duration,
-      serviceStyle: serviceStyle || serviceType
-    } : null)
+    appointmentsMode
+      ? {
+          id: WAPPT_APPOINTMENT_SERVICE_ID,
+          serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
+          service_id: WAPPT_APPOINTMENT_SERVICE_ID,
+          name: getWarmpawzAppointmentServiceLabel({
+            category: 'vet',
+            serviceStyle: String(serviceStyle || serviceType || 'at_center'),
+          }),
+          price: price ?? 0,
+          duration: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+          serviceStyle: serviceStyle || serviceType,
+        }
+      : selectedService ||
+          (selectedServices && selectedServices.length > 0 ? selectedServices[0] : null) ||
+          (serviceId
+            ? {
+                id: serviceId,
+                serviceId: serviceId,
+                name: serviceName,
+                price: price,
+                duration: duration,
+                serviceStyle: serviceStyle || serviceType,
+              }
+            : null),
   );
+  const [appointmentFee, setAppointmentFee] = useState<number | null>(
+    appointmentsMode && price != null ? Number(price) : null,
+  );
+
+  useEffect(() => {
+    if (!appointmentsMode || !(vendorId || doctorId)) return;
+    let cancelled = false;
+    const vid = vendorId || doctorId;
+    void apiClient
+      .get<{ success?: boolean; appointmentFee?: number }>(
+        `/customer/warmpawz-appointments/vendors/${encodeURIComponent(String(vid))}/fee`,
+      )
+      .then((res) => {
+        if (cancelled || !res?.success || res.appointmentFee == null) return;
+        const fee = Number(res.appointmentFee);
+        setAppointmentFee(fee);
+        setSelectedVendorService((prev: any) => ({
+          ...(prev || {}),
+          id: WAPPT_APPOINTMENT_SERVICE_ID,
+          serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
+          service_id: WAPPT_APPOINTMENT_SERVICE_ID,
+          name: getWarmpawzAppointmentServiceLabel({
+            category: 'vet',
+            serviceStyle: String(serviceStyle || serviceType || 'at_center'),
+          }),
+          price: fee,
+          duration: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+          serviceStyle: serviceStyle || serviceType,
+        }));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [appointmentsMode, vendorId, doctorId, serviceStyle, serviceType]);
   
   // Package awareness state
   const [activePackage, setActivePackage] = useState<any>(null);
@@ -387,12 +451,14 @@ export function VetBookingRouter({
     try {
       setLoadingSlots(true);
       const opt = getSelectedServiceOption();
-      const totalSlotDuration =
-        allSelectedServices.length > 0
+      const totalSlotDuration = appointmentsMode
+        ? WAPPT_DEFAULT_SLOT_DURATION_MIN
+        : allSelectedServices.length > 0
           ? Math.max(15, allSelectedServices.reduce((sum, s) => sum + (Number(s.duration) || 0), 0))
           : Math.max(15, Number(opt?.duration ?? selectedVendorService?.duration ?? duration ?? 30));
-      const serviceIds =
-        allSelectedServices.length > 0
+      const serviceIds = appointmentsMode
+        ? WAPPT_APPOINTMENT_SERVICE_ID
+        : allSelectedServices.length > 0
           ? allSelectedServices.map((s: any) => s.serviceId || s.id).filter(Boolean).join(',')
           : String(
               (opt && 'serviceId' in opt && opt.serviceId ? opt.serviceId : undefined) ||
@@ -434,10 +500,10 @@ export function VetBookingRouter({
   useEffect(() => {
     loadCustomerData();
     loadUserProfile();
-    if (doctorId || vendorId) {
+    if (!appointmentsMode && (doctorId || vendorId)) {
       loadVendorServices();
     }
-  }, [phone, doctorId, vendorId]);
+  }, [phone, doctorId, vendorId, appointmentsMode]);
 
   // ✅ CRITICAL: Resolve serviceId prop to UUID when vendorServices are loaded
   useEffect(() => {
@@ -975,14 +1041,16 @@ export function VetBookingRouter({
   }, [allSelectedServices, selectedServiceOption]);
 
   const bookingSummaryBaseAmount = useMemo(() => {
+    if (appointmentsMode) return appointmentFee ?? selectedVendorService?.price ?? 0;
     if (selectedPackageForSwitch) return 0;
     return allSelectedServices?.length
       ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0)
       : (selectedServiceOption?.price ?? 0);
-  }, [allSelectedServices, selectedServiceOption, selectedPackageForSwitch]);
+  }, [appointmentsMode, appointmentFee, selectedVendorService?.price, allSelectedServices, selectedServiceOption, selectedPackageForSwitch]);
 
   const bookingDiscountResolver = useBookingDiscountResolver({
     enabled:
+      !appointmentsMode &&
       Boolean(vendorId || doctorId) &&
       bookingSummaryBaseAmount > 0 &&
       !selectedPackageForSwitch,
@@ -1052,11 +1120,75 @@ export function VetBookingRouter({
   const vetPaymentScreen =
     step === 'payment' &&
     showPaymentPage &&
-    selectedVendorService &&
     selectedPet &&
     selectedDate &&
-    selectedTime
+    selectedTime &&
+    (appointmentsMode ? true : selectedVendorService)
       ? (() => {
+          if (appointmentsMode) {
+            const displayVendorName =
+              vendorNameProp || doctor?.name || doctor?.clinic_name || doctor?.clinicName || 'Veterinary Clinic';
+            const wapptFee = appointmentFee ?? selectedVendorService?.price ?? 0;
+            return (
+              <UniversalPaymentPage
+                type="booking"
+                layoutVariant="appShell"
+                category="veterinary"
+                vendorId={(vendorId || doctorId || clinicId || '') as string}
+                vendorName={displayVendorName}
+                serviceId={WAPPT_APPOINTMENT_SERVICE_ID}
+                serviceName={getWarmpawzAppointmentServiceLabel({
+                  category: 'vet',
+                  serviceStyle: selectedServiceType,
+                })}
+                serviceDescription={`Appointment at ${displayVendorName}`}
+                serviceStyle={
+                  selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'
+                }
+                bookingDate={selectedDate}
+                bookingTime={selectedTime}
+                petId={selectedPet.id}
+                petName={selectedPet.name}
+                petBreed={selectedPet.breed}
+                addressId={selectedServiceType === 'at_home' ? selectedAddress?.id : undefined}
+                address={
+                  selectedServiceType === 'at_home' && selectedAddress
+                    ? {
+                        id: selectedAddress.id,
+                        label: selectedAddress.label,
+                        addressLine1: selectedAddress.addressLine1 || selectedAddress.address,
+                        city: selectedAddress.city,
+                        pincode: selectedAddress.pincode,
+                        state: selectedAddress.state,
+                      }
+                    : undefined
+                }
+                baseAmount={wapptFee}
+                duration={WAPPT_DEFAULT_SLOT_DURATION_MIN}
+                customerPhone={phone}
+                customerId={customerId || undefined}
+                bookingMode="warmpawz_appointments"
+                onBack={() => {
+                  setShowPaymentPage(false);
+                  if (step === 'payment') setStep('summary');
+                }}
+                onPaymentAbandoned={() => {
+                  if (selectedDate) void loadTimeSlots(selectedDate);
+                }}
+                onSuccess={(bookingId, _orderId, _otp, meta) => {
+                  setBookingId(bookingId);
+                  setPaymentSummary(
+                    meta?.paymentSources?.length
+                      ? { paymentSources: meta.paymentSources, totalPaid: meta.totalPaid }
+                      : null,
+                  );
+                  setShowPaymentPage(false);
+                  setStep('confirmation');
+                }}
+              />
+            );
+          }
+
           const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
           let finalServiceId = selectedVendorService.service_id || selectedVendorService.serviceId;
 
@@ -1567,15 +1699,24 @@ export function VetBookingRouter({
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-orange-100 text-orange-600">
                     {selectedServiceType === 'tele' ? <Video className="w-5 h-5" /> : selectedServiceType === 'at_home' ? <Home className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
                   </div>
-                  <div className="flex-1"><p className="font-semibold">{selectedServiceOption?.name || 'Vet Consultation'}</p><p className="text-xs text-gray-500">{selectedServiceOption?.duration ?? 0} mins</p></div>
-                  <p className="font-bold text-orange-600">{formatPriceWithSymbol(selectedServiceOption?.price ?? 0)}</p>
+                  <div className="flex-1">
+                    <p className="font-semibold">
+                      {appointmentsMode
+                        ? getWarmpawzAppointmentServiceLabel({ category: 'vet', serviceStyle: selectedServiceType })
+                        : selectedServiceOption?.name || 'Vet Consultation'}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {appointmentsMode ? 'Flat appointment fee' : `${selectedServiceOption?.duration ?? 0} mins`}
+                    </p>
+                  </div>
+                  <p className="font-bold text-orange-600">{formatPriceWithSymbol(bookingSummaryBaseAmount)}</p>
                 </div>
               )}
               <div className="flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-gray-400" /><span>{selectedDate && new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {formatTime12Hour(selectedTime)}</span></div>
               <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-gray-400" /><span>{selectedPet?.name} ({selectedPet?.breed})</span></div>
               {selectedServiceType === 'at_home' && selectedAddress && <div className="flex items-center gap-2 text-sm"><MapPin className="w-4 h-4 text-gray-400" /><span>{selectedAddress.street || selectedAddress.address || 'Address'}</span></div>}
-              <div className="pt-2 flex justify-between font-semibold"><span>Subtotal</span><span className="text-orange-600">{formatPriceWithSymbol(selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0) : (selectedServiceOption?.price ?? 0)))}</span></div>
-              {!selectedPackageForSwitch && (vendorId || doctorId) ? (
+              <div className="pt-2 flex justify-between font-semibold"><span>Subtotal</span><span className="text-orange-600">{formatPriceWithSymbol(bookingSummaryBaseAmount)}</span></div>
+              {!appointmentsMode && !selectedPackageForSwitch && (vendorId || doctorId) ? (
                 <ServiceBookingPromoSummary
                   vendorId={vendorId || doctorId}
                   customerId={customerId}
@@ -1588,7 +1729,7 @@ export function VetBookingRouter({
                   loading={bookingDiscountResolver.loading}
                 />
               ) : null}
-              {!selectedPackageForSwitch && (vendorId || doctorId) ? (
+              {!appointmentsMode && !selectedPackageForSwitch && (vendorId || doctorId) ? (
                 <CheckoutCouponPanel
                   kind="service_booking"
                   vendorId={vendorId || doctorId}
@@ -1616,7 +1757,7 @@ export function VetBookingRouter({
                 </div>
               )}
             </div>
-            {loadingPackages ? <div className="py-4 text-center text-sm text-gray-500">Loading packages...</div> : recommendedPackages.length > 0 ? (
+            {loadingPackages ? <div className="py-4 text-center text-sm text-gray-500">Loading packages...</div> : !appointmentsMode && recommendedPackages.length > 0 ? (
               <div className="bg-orange-50 rounded-xl p-4 border border-orange-200">
                 <p className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><Package className="w-4 h-4 text-orange-500" />Get a package instead</p>
                 {recommendedPackages.slice(0, 2).map((pkg: any) => {

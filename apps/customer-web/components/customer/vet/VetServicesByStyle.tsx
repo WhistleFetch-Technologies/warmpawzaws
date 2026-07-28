@@ -41,7 +41,10 @@ import {
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
 import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
-import { buildWarmpawzAppointmentsBookingNav } from '@/lib/warmpawz-appointments-customer';
+import {
+  buildWarmpawzAppointmentsBookingNav,
+  resolveWarmpawzBookingScreen,
+} from '@/lib/warmpawz-appointments-customer';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -503,7 +506,7 @@ export function VetServicesByStyle({
     fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'VetServicesByStyle.tsx:handleBookAppointment',message:'wappt profile book',data:{vendorId:vid,profileAppointmentsMode,serviceStyle,category},timestamp:Date.now(),hypothesisId:'H2',runId:'pre-fix'})}).catch(()=>{});
     // #endregion
     onNavigate(
-      'grooming-booking',
+      resolveWarmpawzBookingScreen(category),
       buildWarmpawzAppointmentsBookingNav({
         vendorId: vid,
         vendorName: profileProvider.vendorName || profileProvider.name,

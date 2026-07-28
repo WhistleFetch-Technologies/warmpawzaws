@@ -46,7 +46,10 @@ import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
-import { buildWarmpawzAppointmentsBookingNav } from '@/lib/warmpawz-appointments-customer';
+import {
+  buildWarmpawzAppointmentsBookingNav,
+  resolveWarmpawzBookingScreen,
+} from '@/lib/warmpawz-appointments-customer';
 
 interface ClinicListViewProps {
   phone: string;
@@ -686,7 +689,7 @@ export function ClinicListView({
 
   const handleBookAppointment = (clinic: ClinicProvider) => {
     onNavigate(
-      'grooming-booking',
+      resolveWarmpawzBookingScreen('vet'),
       buildWarmpawzAppointmentsBookingNav({
         vendorId: clinic.id,
         vendorName: clinic.name,

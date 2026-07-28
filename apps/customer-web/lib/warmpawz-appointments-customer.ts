@@ -85,3 +85,28 @@ export function getWarmpawzLocationFallbackLabel(category: string): string {
   if (cat === 'training') return 'Training Center';
   return 'Service Location';
 }
+
+export function resolveWarmpawzBookingScreen(category?: string): string {
+  const cat = resolveWarmpawzBookingCategory(category);
+  if (cat === 'vet') return 'vet-booking';
+  if (cat === 'training') return 'training-booking';
+  if (cat === 'sitting') return 'sitting-booking';
+  return 'grooming-booking';
+}
+
+export function getWarmpawzAppointmentServiceLabel(opts: {
+  category: string;
+  serviceStyle: string;
+}): string {
+  const cat = resolveWarmpawzBookingCategory(opts.category);
+  const style = opts.serviceStyle;
+  if (cat === 'vet') {
+    if (style === 'tele') return 'Tele Consultation';
+    if (style === 'at_home') return 'Home Visit Appointment';
+    return 'Clinic Visit Appointment';
+  }
+  if (cat === 'training') return 'Training Appointment';
+  if (cat === 'sitting') return 'Pet Sitting Appointment';
+  if (style === 'at_home') return 'At-Home Appointment';
+  return 'Appointment';
+}

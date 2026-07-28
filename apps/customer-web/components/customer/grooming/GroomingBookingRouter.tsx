@@ -29,6 +29,7 @@ import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { BookingConfirmationSavings } from '../pricing/BookingConfirmationSavings';
 import { MarketplaceReview } from '../marketplace/MarketplaceReview';
 import {
+  getWarmpawzAppointmentServiceLabel,
   getWarmpawzBookingHeaderInfo,
   getWarmpawzLocationFallbackLabel,
   resolveWarmpawzBookingCategory,
@@ -1005,10 +1006,11 @@ export function GroomingBookingRouter({
     }));
   };
 
-  const reviewTotal =
-    (allSelectedServices && allSelectedServices.length > 0
+  const reviewTotal = appointmentsMode
+    ? (appointmentFee ?? price ?? 0)
+    : ((allSelectedServices && allSelectedServices.length > 0
       ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
-      : selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0) ?? 0;
+      : selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0) ?? 0);
 
   const groomingPrePaymentSummary = (
     <>
@@ -1042,9 +1044,14 @@ export function GroomingBookingRouter({
       ) : (
         (() => {
           const svc = selectedServiceOption || allSelectedServices?.[0];
-          const svcName = svc?.name || svc?.serviceName || serviceName || 'Grooming Service';
-          const svcDuration = svc?.duration ?? duration ?? 0;
-          const svcPrice = svc?.price ?? price ?? 0;
+          const svcName = appointmentsMode
+            ? getWarmpawzAppointmentServiceLabel({
+                category: bookingCategory,
+                serviceStyle: selectedServiceType,
+              })
+            : svc?.name || svc?.serviceName || serviceName || 'Grooming Service';
+          const svcDuration = appointmentsMode ? WAPPT_DEFAULT_SLOT_DURATION_MIN : (svc?.duration ?? duration ?? 0);
+          const svcPrice = appointmentsMode ? (appointmentFee ?? price ?? 0) : (svc?.price ?? price ?? 0);
           return (
             <div className="flex items-center gap-3 pb-4 border-b">
               <div
@@ -1094,14 +1101,21 @@ export function GroomingBookingRouter({
         serviceId={appointmentsMode ? 'warmpawz_appointments' : (selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId)}
         serviceName={
           appointmentsMode
-            ? 'Appointment'
+            ? getWarmpawzAppointmentServiceLabel({
+                category: bookingCategory,
+                serviceStyle: selectedServiceType,
+              })
             : allSelectedServices.length > 1
             ? `${allSelectedServices.length} Services Selected`
             : selectedServiceOption?.name || serviceName || 'Grooming Service'
         }
-        serviceDescription={`Grooming by ${groomer?.name || 'professional groomer'}`}
+        serviceDescription={
+          appointmentsMode
+            ? `Appointment with ${vendorNameProp || groomer?.name || 'provider'}`
+            : `Grooming by ${groomer?.name || 'professional groomer'}`
+        }
         serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
-        category="grooming"
+        category={appointmentsMode ? bookingCategory : 'grooming'}
         vendorId={vendorId || ''}
         vendorName={groomer?.name || vendorNameProp || 'Grooming Professional'}
         vendorAddress={
