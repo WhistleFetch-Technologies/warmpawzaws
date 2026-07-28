@@ -9,6 +9,7 @@
     "build": "npm run build:contracts && npm run build:mappings && npm run clean && npm run build:bundle && npm run package",
     "build:ts": "tsc --noEmit",
     "validate:customer-layers": "node scripts/validate-customer-layers.js",
+    "verify:wappt-customer-flow": "node scripts/wappt-customer-flow-verify.js",
     "validate:commerce-switch": "node scripts/validate-commerce-switch.js",
     "release-verify:commerce-switch": "node scripts/commerce-switch-release-verify.js",
     "smoke:commerce-switch": "node scripts/commerce-switch-smoke.js",

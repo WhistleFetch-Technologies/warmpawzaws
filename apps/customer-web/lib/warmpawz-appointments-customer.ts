@@ -39,3 +39,49 @@ export function buildWarmpawzAppointmentsBookingNav(opts: {
     serviceType: opts.category,
   };
 }
+
+/** Synthetic service id used for Warmpawz Appointments slot + checkout APIs */
+export const WAPPT_APPOINTMENT_SERVICE_ID = 'warmpawz_appointments';
+
+/** Default slot duration when no per-service selection (flat-fee catalogue booking). */
+export const WAPPT_DEFAULT_SLOT_DURATION_MIN = 30;
+
+export function resolveWarmpawzBookingCategory(serviceType?: string): string {
+  const raw = String(serviceType || 'grooming').trim().toLowerCase();
+  if (raw === 'vet' || raw === 'veterinarian') return 'vet';
+  if (raw === 'training' || raw === 'trainer') return 'training';
+  if (raw === 'sitting' || raw === 'walker' || raw === 'pet_sitter') return 'sitting';
+  if (raw === 'boarding') return 'boarding';
+  return raw || 'grooming';
+}
+
+export function getWarmpawzBookingHeaderInfo(opts: {
+  category: string;
+  serviceStyle: string;
+}): { title: string; subtitle: string } {
+  const cat = resolveWarmpawzBookingCategory(opts.category);
+  const style = opts.serviceStyle;
+  if (cat === 'vet') {
+    if (style === 'tele') return { title: 'Tele Consultation', subtitle: 'Schedule, pet & details' };
+    if (style === 'at_home') return { title: 'Home Visit', subtitle: 'Schedule, pet & address' };
+    return { title: 'Clinic Visit', subtitle: 'Schedule, pet & location' };
+  }
+  if (cat === 'training') {
+    if (style === 'at_home') return { title: 'Home Training', subtitle: 'Schedule, pet & address' };
+    return { title: 'Training Session', subtitle: 'Schedule, pet & location' };
+  }
+  if (cat === 'sitting') {
+    return { title: 'Pet Sitting', subtitle: 'Schedule, pet & address' };
+  }
+  if (style === 'at_home') {
+    return { title: 'At-Home Appointment', subtitle: 'Schedule, pet & address' };
+  }
+  return { title: 'Book Appointment', subtitle: 'Schedule, pet & location' };
+}
+
+export function getWarmpawzLocationFallbackLabel(category: string): string {
+  const cat = resolveWarmpawzBookingCategory(category);
+  if (cat === 'vet') return 'Clinic';
+  if (cat === 'training') return 'Training Center';
+  return 'Service Location';
+}

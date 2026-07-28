@@ -1844,6 +1844,7 @@ export function CustomerHomeWrapper({
         serviceType: data?.serviceType || 'vet',
         serviceStyle: data?.serviceStyle || 'at_center',
         vendorName: data?.vendorName,
+        serviceId: 'warmpawz_appointments',
         appointmentsMode: true,
       });
       navigateToScreen('grooming-booking');
@@ -4884,7 +4885,7 @@ export function CustomerHomeWrapper({
         serviceStyle: data?.serviceStyle || 'at_center',
         groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
         service: data?.service,
-        serviceId: data?.serviceId,
+        serviceId: data?.appointmentsMode ? 'warmpawz_appointments' : data?.serviceId,
         selectedServices: data?.selectedServices, // ✅ FIX: Pass multiple selected services
         vendorName: data?.vendorName,
         price: data?.price,
@@ -4906,15 +4907,16 @@ export function CustomerHomeWrapper({
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({
         vendorId: data?.vendorId,
-        serviceType: 'grooming',
-        serviceStyle: 'at_home',
+        serviceType: data?.serviceType || 'grooming',
+        serviceStyle: data?.serviceStyle || 'at_home',
         groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
         service: data?.service,
-        serviceId: data?.serviceId,
-        selectedServices: data?.selectedServices, // ✅ FIX: Pass multiple selected services
+        serviceId: data?.appointmentsMode ? 'warmpawz_appointments' : data?.serviceId,
+        selectedServices: data?.selectedServices,
         vendorName: data?.vendorName,
         price: data?.price,
         duration: data?.duration,
+        appointmentsMode: Boolean(data?.appointmentsMode),
       });
       navigateToScreen('grooming-booking');
     } else {
@@ -5119,6 +5121,7 @@ export function CustomerHomeWrapper({
     groomer={vetServiceData?.groomer}
     selectedService={vetServiceData?.service}
     serviceId={vetServiceData?.serviceId}
+    serviceType={vetServiceData?.serviceType}
     serviceName={vetServiceData?.service?.name}
     serviceStyle={vetServiceData?.serviceStyle || 'at_center'}
     selectedServices={vetServiceData?.selectedServices}
