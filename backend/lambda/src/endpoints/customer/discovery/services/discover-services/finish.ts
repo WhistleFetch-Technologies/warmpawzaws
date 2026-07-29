@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import type { CatalogueDiscoveryOptions } from '../shared/catalogue-discovery-options';
 import { paginateEnrichedVendorPage } from '../../../../../utils/discovery-list-pagination';
 import {
   applyDiscoveryRadiusFilter,
@@ -14,7 +15,8 @@ export function finishDiscoverServicesResponse(
   categoryCtx: DiscoverCategoryContext,
   providers: Record<string, unknown>[],
   vendorRowCount: number,
-  vendorRadiusLookupDiscover: VendorRadiusLookup
+  vendorRadiusLookupDiscover: VendorRadiusLookup,
+  discoveryOptions: CatalogueDiscoveryOptions = {},
 ) {
   const {
     serviceStyle,
@@ -48,7 +50,10 @@ export function finishDiscoverServicesResponse(
     vendorRadiusLookup: vendorRadiusLookupDiscover,
   });
 
-  sortDiscoveryVendorCards(results, sortBy);
+  sortDiscoveryVendorCards(
+    results,
+    discoveryOptions.omitPricing && sortBy === 'price' ? 'relevance' : sortBy
+  );
 
   const { page: pageCards, nextCursor } = paginateEnrichedVendorPage(
     results,
@@ -65,6 +70,7 @@ export function finishDiscoverServicesResponse(
       enrichedCards: pageCards,
       nextCursor,
       serviceStyleNorm: serviceStyleNormDiscover,
+      warmpawzAppointments: discoveryOptions.markWarmpawzAppointments === true,
       appliedFilters: {
         minRating: minRatingVal,
         maxDistance:
@@ -77,7 +83,7 @@ export function finishDiscoverServicesResponse(
             : undefined),
         homeDiscoveryFallbackKm:
           serviceStyleNormDiscover === 'at_home' ? platformHomeDiscover : undefined,
-        sortBy,
+        sortBy: discoveryOptions.omitPricing && sortBy === 'price' ? 'relevance' : sortBy,
       },
     })
   );

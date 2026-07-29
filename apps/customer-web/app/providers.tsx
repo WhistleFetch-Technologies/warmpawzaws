@@ -14,6 +14,7 @@ import { CapacitorVendorDeepLinkListener } from '@/components/CapacitorVendorDee
 import { VendorSharePathBootstrap } from '@/components/VendorSharePathBootstrap';
 import { NavigationBackBridge } from '@/components/navigation/NavigationBackBridge';
 import { StaticImagePrewarm } from '@/components/StaticImagePrewarm';
+import { CommerceConfigProvider } from '@/lib/commerce-config-provider';
 
 // Lazy load DevTools - only imported in development mode
 const ReactQueryDevtools = lazy(() =>
@@ -49,18 +50,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <StaticImagePrewarm />
         <CartProvider>
           <SearchContextProvider>
-            <ScrollToTop />
-            <Suspense fallback={null}>
-              <AnalyticsRouteTracker />
-            </Suspense>
-            {children}
-            <Toaster position="top-right" />
-            {/* Only load DevTools in development mode - prevents bundle bloat in production */}
-            {process.env.NODE_ENV === 'development' && (
+            <CommerceConfigProvider>
+              <ScrollToTop />
               <Suspense fallback={null}>
-                <ReactQueryDevtools initialIsOpen={false} />
+                <AnalyticsRouteTracker />
               </Suspense>
-            )}
+              {children}
+              <Toaster position="top-right" />
+              {/* Only load DevTools in development mode - prevents bundle bloat in production */}
+              {process.env.NODE_ENV === 'development' && (
+                <Suspense fallback={null}>
+                  <ReactQueryDevtools initialIsOpen={false} />
+                </Suspense>
+              )}
+            </CommerceConfigProvider>
           </SearchContextProvider>
         </CartProvider>
       </ClientErrorBoundary>

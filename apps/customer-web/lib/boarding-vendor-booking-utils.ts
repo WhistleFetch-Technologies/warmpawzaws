@@ -8,11 +8,16 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
+import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 
 export function minPriceForVendor(v: BoardingListVendor): number | null {
   if (v.planRows.length > 0) {
-    return Math.min(...v.planRows.map((p) => p.price));
+    const prices = v.planRows
+      .map((p) => p.price)
+      .filter((p): p is number => p != null && p > 0);
+    return prices.length > 0 ? Math.min(...prices) : null;
   }
+  if (shouldHideDiscoveryPricing(v)) return null;
   // Slim discover cards: use aggregated priceMin until expand fetches planRows
   const raw = (v.raw || {}) as Record<string, unknown>;
   const fromCard = Number(raw.priceMin ?? raw.price_min ?? raw.price ?? 0);
@@ -65,7 +70,7 @@ export function boardingPlanRowForPackageCheck(plan: BoardingPlanRow): Record<st
     vendorServiceId: plan.vendorServiceId ?? plan.rowId,
     serviceId: plan.serviceId,
     name: plan.name,
-    price: plan.price,
+    price: plan.price ?? 0,
     duration: plan.duration,
     serviceStyle: plan.serviceStyle,
     isPackage: plan.isPackage,
@@ -119,7 +124,7 @@ export function buildBoardingBookPlanPayload(
     serviceType: isSwimming ? 'swimming' : 'boarding',
     serviceId: plan.rowId,
     serviceName: plan.name,
-    price: plan.price,
+    price: plan.price ?? 0,
     duration: plan.duration || (isSwimming ? 60 : 1440),
     serviceStyle: plan.serviceStyle || 'at_center',
     ...(isSwimming ? { flowVariant: 'swimming' as const } : {}),

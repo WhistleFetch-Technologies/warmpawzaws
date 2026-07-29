@@ -115,6 +115,10 @@ import {
 // Import theme
 import { colors } from './src/theme/colors';
 import { prefetchCommerceSwitchConfigurationOnStartup } from './src/lib/commerce-switch-client';
+import {
+  ensureCommerceSwitchSyncListeners,
+  handleCommerceSwitchPushData,
+} from './src/lib/commerce-switch-sync';
 
 const Stack = createNativeStackNavigator();
 
@@ -128,6 +132,7 @@ export default function App() {
 
   useEffect(() => {
     prefetchCommerceSwitchConfigurationOnStartup();
+    return ensureCommerceSwitchSyncListeners();
   }, []);
 
   useEffect(() => {
@@ -176,11 +181,11 @@ export default function App() {
   // app is foregrounded.
   useEffect(() => {
     const cleanup = setupNotificationListeners(
-      (_notification) => {
-        // Foreground: expo-notifications will display its own banner via
-        // setNotificationHandler in utils/notifications.ts. Nothing to do here
-        // beyond letting screens that subscribe to their own polling pick up
-        // fresh state on the next interval.
+      (notification) => {
+        const data = (notification?.request?.content?.data ?? {}) as Record<string, string>;
+        if (data.type === 'commerce_switch_updated') {
+          handleCommerceSwitchPushData(data);
+        }
       },
       (response) => {
         try {

@@ -98,6 +98,15 @@ $zipSize = (Get-Item $zipPath).Length / 1MB
 Write-Host "  Package size: $([math]::Round($zipSize, 2)) MB" -ForegroundColor Gray
 Write-Host ""
 
+Write-Host "Step 2b: Validating deployment artifact..." -ForegroundColor Yellow
+npm run validate:lambda-artifact
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  ❌ Artifact validation failed — refusing to upload incomplete package" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  ✅ Artifact validation passed" -ForegroundColor Green
+Write-Host ""
+
 # Deploy to Lambda
 Write-Host "Step 3: Deploying to $LambdaFunctionName..." -ForegroundColor Yellow
 Write-Host "  Region: $Region" -ForegroundColor Gray
@@ -140,6 +149,18 @@ try {
 } catch {
     Write-Host "  ⚠️ Could not verify Lambda readiness (non-fatal)" -ForegroundColor Yellow
 }
+Write-Host ""
+
+Write-Host "Step 4b: Post-deploy verification..." -ForegroundColor Yellow
+$env:API_BASE_URL = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
+$env:LAMBDA_FUNCTION_NAME = $LambdaFunctionName
+$env:AWS_REGION = $Region
+npm run post-deploy:lambda-verify
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  ❌ Post-deploy verification failed" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  ✅ Post-deploy verification passed" -ForegroundColor Green
 Write-Host ""
 
 # Verify API Gateway integration

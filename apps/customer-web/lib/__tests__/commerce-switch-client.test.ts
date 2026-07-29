@@ -14,6 +14,8 @@ import {
   isWarmpawzPay,
   prefetchCommerceSwitchConfiguration,
   prefetchCommerceSwitchConfigurationOnStartup,
+  refreshCommerceSwitchConfiguration,
+  subscribeCommerceSwitchConfiguration,
 } from '../commerce-switch-client';
 
 const mockedGet = apiClient.get as jest.Mock;
@@ -99,5 +101,47 @@ describe('commerce-switch-client (read-only)', () => {
     await prefetchCommerceSwitchConfiguration();
 
     expect(mockedGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies subscribers when config is fetched', async () => {
+    mockedGet.mockResolvedValue({
+      activeModelId: 'warmpawz_pay',
+      version: 4,
+      schemaVersion: '1.0',
+      availableModels: ['marketplace', 'warmpawz_pay'],
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    });
+
+    const listener = jest.fn();
+    subscribeCommerceSwitchConfiguration(listener);
+    await prefetchCommerceSwitchConfiguration();
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ activeModelId: 'warmpawz_pay', version: 4 })
+    );
+  });
+
+  it('force refresh bypasses cache', async () => {
+    mockedGet
+      .mockResolvedValueOnce({
+        activeModelId: 'marketplace',
+        version: 1,
+        schemaVersion: '1.0',
+        availableModels: ['marketplace'],
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      })
+      .mockResolvedValueOnce({
+        activeModelId: 'warmpawz_pay',
+        version: 2,
+        schemaVersion: '1.0',
+        availableModels: ['marketplace', 'warmpawz_pay'],
+        updatedAt: '2026-01-02T00:00:00.000Z',
+      });
+
+    await prefetchCommerceSwitchConfiguration();
+    await refreshCommerceSwitchConfiguration({ force: true });
+
+    expect(mockedGet).toHaveBeenCalledTimes(2);
+    expect(getActiveCommerceModel()).toBe('warmpawz_pay');
   });
 });

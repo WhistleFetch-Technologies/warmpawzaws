@@ -9,7 +9,7 @@ import type { ServiceBookingCommerceRouteResult, ServiceBookingRouteContext } fr
 
 /**
  * Resolve which commerce model governs a service-booking navigation entry.
- * Callers must use `useMarketplaceFlow` — when true, run existing Marketplace navigation unchanged.
+ * Callers must branch on `useMarketplaceFlow` / `effectiveModelId` — do not ignore the result.
  */
 export function resolveServiceBookingCommerceRoute(
   context: ServiceBookingRouteContext
@@ -23,7 +23,7 @@ export function resolveServiceBookingCommerceRoute(
     };
   }
 
-  const configuredModelId = getActiveCommerceModel();
+  const configuredModelId = context.activeModelId ?? getActiveCommerceModel();
 
   if (configuredModelId === 'marketplace') {
     return {

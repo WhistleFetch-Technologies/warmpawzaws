@@ -8,6 +8,18 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+function readGitSha() {
+  try {
+    return execSync('git rev-parse HEAD', {
+      cwd: path.join(__dirname, '..', '..', '..'),
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
 const lambdaRoot = path.join(__dirname, '..');
 const distDir = path.join(lambdaRoot, 'dist');
 const handlerPath = path.join(distDir, 'handler.js');
@@ -88,6 +100,19 @@ const assetsDest = path.join(distDir, 'assets');
 if (fs.existsSync(assetsSrc)) {
   fs.cpSync(assetsSrc, assetsDest, { recursive: true });
 }
+
+const buildManifest = {
+  artifact: 'api-handler',
+  builtAt: new Date().toISOString(),
+  gitSha: readGitSha(),
+  handlerBytes: fs.statSync(handlerPath).size,
+  nodeVersion: process.version,
+};
+fs.writeFileSync(
+  path.join(distDir, '.lambda-build-manifest.json'),
+  JSON.stringify(buildManifest, null, 2)
+);
+console.log('Build manifest:', JSON.stringify(buildManifest));
 
 function zipWithPowerShell(sourcePattern, destinationPath, literalPath) {
   const useLiteral = Boolean(literalPath);

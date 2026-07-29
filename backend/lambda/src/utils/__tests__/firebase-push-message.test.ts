@@ -1,5 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
-import { buildUnifiedPushMessage } from '../firebase-client';
+import { buildUnifiedPushMessage, buildSilentDataFcmMessage } from '../firebase-client';
 
 describe('buildUnifiedPushMessage', () => {
   test('includes Android channel config unchanged for scalable Android delivery', () => {
@@ -46,5 +46,34 @@ describe('buildUnifiedPushMessage', () => {
     expect(message.tokens).toEqual(['android-tok', 'ios-tok']);
     expect(message.android).toBeDefined();
     expect(message.apns).toBeDefined();
+  });
+
+  test('silent data message has no notification block and uses background APNs', () => {
+    const message = buildSilentDataFcmMessage(
+      {
+        data: {
+          type: 'commerce_switch_updated',
+          configurationVersion: '12',
+          activeModelId: 'warmpawz_pay',
+        },
+      },
+      'topic',
+      'all_customers'
+    );
+
+    expect(message.notification).toBeUndefined();
+    expect(message.topic).toBe('all_customers');
+    expect(message.data).toEqual({
+      type: 'commerce_switch_updated',
+      configurationVersion: '12',
+      activeModelId: 'warmpawz_pay',
+    });
+
+    const apns = message.apns as {
+      headers?: { 'apns-push-type'?: string };
+      payload?: { aps?: { 'content-available'?: number } };
+    };
+    expect(apns?.headers?.['apns-push-type']).toBe('background');
+    expect(apns?.payload?.aps?.['content-available']).toBe(1);
   });
 });

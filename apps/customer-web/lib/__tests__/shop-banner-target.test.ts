@@ -25,11 +25,15 @@ describe('customer shop banner target', () => {
       '/shop/11111111-1111-1111-1111-111111111111'
     );
     expect(target?.targetLevel).toBe('product');
-    expect(resolveShopBannerProductPath(target)).toBe('/shop/11111111-1111-1111-1111-111111111111');
+    expect(resolveShopBannerProductPath(target)).toBe(
+      '/shop/placeholder?productId=11111111-1111-1111-1111-111111111111'
+    );
   });
 
   it('resolves legacy cta link without metadata', () => {
     const target = parseShopBannerTargetFromMetadata(null, '/shop/22222222-2222-2222-2222-222222222222');
-    expect(resolveShopBannerProductPath(target)).toBe('/shop/22222222-2222-2222-2222-222222222222');
+    expect(resolveShopBannerProductPath(target)).toBe(
+      '/shop/placeholder?productId=22222222-2222-2222-2222-222222222222'
+    );
   });
 });

@@ -1,13 +1,13 @@
 import { resolvePromotionDestination } from '@/lib/promotion-navigation';
 
 describe('resolvePromotionDestination', () => {
-  it('routes all + grooming promotion to grooming', () => {
+  it('routes all + grooming promotion to grooming_center when style omitted (defaults at_center)', () => {
     expect(
       resolvePromotionDestination(
         { service_category: 'grooming' },
         'all'
       )
-    ).toBe('grooming');
+    ).toBe('grooming_center');
   });
 
   it('routes all + training_home style using alias', () => {

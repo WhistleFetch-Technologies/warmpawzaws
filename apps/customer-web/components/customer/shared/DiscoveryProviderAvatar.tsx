@@ -35,5 +35,13 @@ export function DiscoveryProviderAvatar({
     );
   }
 
-  return <div className={fallbackClassName}>{initial}</div>;
+  return (
+    <div
+      className={fallbackClassName}
+      role="img"
+      aria-label={`Avatar for ${name}`}
+    >
+      {initial}
+    </div>
+  );
 }

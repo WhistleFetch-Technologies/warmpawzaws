@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Read-only Commerce Switch client for customer-web (PR-6).
- * Fetches platform config once at startup; no booking, payment, or routing logic.
+ * Read-only Commerce Switch client for customer-web.
+ * Fetches platform config at startup; supports reactive refresh when version changes.
  */
 import { apiClient } from '@/lib/api-client';
 import {
@@ -21,7 +21,13 @@ const CACHE_TTL_MS = 300_000;
 
 let cache: CacheState | null = null;
 let inflight: Promise<PublicCommerceConfiguration> | null = null;
+let syncInflight: Promise<PublicCommerceConfiguration> | null = null;
 let startupPrefetchStarted = false;
+let syncGeneration = 0;
+let pendingMinVersion = 0;
+
+type CommerceConfigListener = (config: PublicCommerceConfiguration) => void;
+const listeners = new Set<CommerceConfigListener>();
 
 function isFresh(entry: CacheState | null): entry is CacheState {
   if (!entry) return false;
@@ -57,14 +63,47 @@ function readCachedConfig(): PublicCommerceConfiguration {
   return marketplaceFallback(false);
 }
 
+function notifyListeners(config: PublicCommerceConfiguration): void {
+  for (const listener of listeners) {
+    try {
+      listener(config);
+    } catch (err) {
+      console.warn('[CommerceSwitch] listener error', err);
+    }
+  }
+}
+
+function storeConfig(config: PublicCommerceConfiguration): PublicCommerceConfiguration {
+  cache = { config, fetchedAt: Date.now() };
+  notifyListeners(config);
+  return config;
+}
+
+export function subscribeCommerceSwitchConfiguration(
+  listener: CommerceConfigListener
+): () => void {
+  listeners.add(listener);
+  if (cache) listener(cache.config);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
 export function clearCommerceSwitchCache(): void {
   cache = null;
   inflight = null;
+  syncInflight = null;
   startupPrefetchStarted = false;
+  syncGeneration = 0;
+  pendingMinVersion = 0;
 }
 
 export function hasCommerceSwitchConfiguration(): boolean {
   return isFresh(cache);
+}
+
+export function getCommerceSwitchConfigurationVersion(): number {
+  return readCachedConfig().version;
 }
 
 async function fetchCommerceSwitchConfigurationOnce(): Promise<PublicCommerceConfiguration> {
@@ -73,24 +112,24 @@ async function fetchCommerceSwitchConfigurationOnce(): Promise<PublicCommerceCon
       COMMERCE_SWITCH_ENDPOINTS.CONFIG
     );
     const config = normalizeConfig(res);
-    cache = { config, fetchedAt: Date.now() };
     if (process.env.NODE_ENV === 'development') {
       console.log('[CommerceSwitch] loaded', config.activeModelId, 'v', config.version);
     }
-    return config;
+    return storeConfig(config);
   } catch (err) {
     console.warn('[CommerceSwitch] config fetch failed, using marketplace default', err);
     const fallback = marketplaceFallback(true);
-    cache = { config: fallback, fetchedAt: Date.now() };
-    return fallback;
+    return storeConfig(fallback);
   }
 }
 
 /**
  * Fetch GET /config/commerce-switch with in-memory cache and in-flight deduplication.
  */
-export async function prefetchCommerceSwitchConfiguration(): Promise<PublicCommerceConfiguration> {
-  if (isFresh(cache)) return cache.config;
+export async function prefetchCommerceSwitchConfiguration(
+  force = false
+): Promise<PublicCommerceConfiguration> {
+  if (!force && isFresh(cache)) return cache.config;
 
   if (!inflight) {
     inflight = fetchCommerceSwitchConfigurationOnce().finally(() => {
@@ -99,6 +138,61 @@ export async function prefetchCommerceSwitchConfiguration(): Promise<PublicComme
   }
 
   return inflight;
+}
+
+export async function refreshCommerceSwitchConfiguration(options?: {
+  force?: boolean;
+}): Promise<PublicCommerceConfiguration> {
+  if (options?.force) {
+    cache = null;
+    inflight = null;
+  }
+  return prefetchCommerceSwitchConfiguration(Boolean(options?.force));
+}
+
+/**
+ * Race-safe sync used by event-driven Commerce Switch updates.
+ * Dedupes concurrent calls and rejects responses older than expectedMinVersion.
+ */
+export async function syncCommerceSwitchConfiguration(options?: {
+  expectedMinVersion?: number;
+  force?: boolean;
+}): Promise<PublicCommerceConfiguration> {
+  const minVersion = options?.expectedMinVersion ?? 0;
+  if (minVersion > pendingMinVersion) {
+    pendingMinVersion = minVersion;
+  }
+
+  const localVersion = readCachedConfig().version;
+  if (
+    !options?.force &&
+    minVersion > 0 &&
+    localVersion >= minVersion &&
+    isFresh(cache)
+  ) {
+    return cache!.config;
+  }
+
+  if (syncInflight) {
+    return syncInflight;
+  }
+
+  const generation = ++syncGeneration;
+  syncInflight = refreshCommerceSwitchConfiguration({ force: true })
+    .then((config) => {
+      if (generation < syncGeneration && config.version < pendingMinVersion) {
+        return config;
+      }
+      if (config.version >= pendingMinVersion) {
+        pendingMinVersion = config.version;
+      }
+      return config;
+    })
+    .finally(() => {
+      syncInflight = null;
+    });
+
+  return syncInflight;
 }
 
 /**

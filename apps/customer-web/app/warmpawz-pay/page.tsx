@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, ChevronRight, Clock, Search } from 'lucide-react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ArrowLeft, Clock, Search } from 'lucide-react';
 import { useWpayVendorFeed } from '@/hooks/useWpayVendorFeed';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
-import { DiscoveryProviderAvatar } from '@/components/customer/shared/DiscoveryProviderAvatar';
+import { mapWpayVendorCardToProps } from '@/lib/warmpawz-pay/map-wpay-vendor-card-to-props';
+import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 
 const CATEGORIES = [
   { id: 'all', label: 'All' },
@@ -22,11 +23,20 @@ function matchesVendorSearch(name: string, query: string): boolean {
   return name.toLowerCase().includes(q);
 }
 
-export default function WarmpawzPayPage() {
+function WarmpawzPayPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [category, setCategory] = useState('all');
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const requested = searchParams.get('category');
+    if (!requested) return;
+    if (CATEGORIES.some((entry) => entry.id === requested)) {
+      setCategory(requested);
+    }
+  }, [searchParams]);
 
   const { vendors, loading, loadingMore, hasMore, error, loadMore } = useWpayVendorFeed({
     category,
@@ -109,27 +119,21 @@ export default function WarmpawzPayPage() {
           <p className="py-8 text-center text-sm text-gray-500">{emptyMessage}</p>
         ) : null}
 
-        {filteredVendors.map((v) => (
-          <button
-            key={v.vendorId}
-            type="button"
-            onClick={() => router.push(`/warmpawz-pay/vendors/${encodeURIComponent(v.vendorId)}`)}
-            className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left shadow-sm"
-          >
-            <DiscoveryProviderAvatar name={v.name} photo={v.photoUrl ?? undefined} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-semibold text-gray-900">{v.name}</p>
-              {v.phone ? <p className="truncate text-xs text-gray-500">{v.phone}</p> : null}
-              <p className="truncate text-xs text-gray-500">{v.address}</p>
-              {v.discountPercent > 0 ? (
-                <span className="mt-1 inline-block rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-                  {v.discountPercent}% OFF
-                </span>
-              ) : null}
-            </div>
-            <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" />
-          </button>
-        ))}
+        {!loading
+          ? filteredVendors.map((v) => (
+              <button
+                key={v.vendorId}
+                type="button"
+                className="block w-full text-left"
+                aria-label={`View ${v.name}`}
+                onClick={() =>
+                  router.push(`/warmpawz-pay/vendors/${encodeURIComponent(v.vendorId)}`)
+                }
+              >
+                <WarmpawzPayVendorCard {...mapWpayVendorCardToProps(v)} />
+              </button>
+            ))
+          : null}
 
         {hasMore ? (
           <div ref={sentinelRef} className="py-3 text-center text-sm text-gray-400">
@@ -138,5 +142,13 @@ export default function WarmpawzPayPage() {
         ) : null}
       </div>
     </div>
+  );
+}
+
+export default function WarmpawzPayPage() {
+  return (
+    <Suspense fallback={<p className="py-8 text-center text-sm text-gray-500">Loading…</p>}>
+      <WarmpawzPayPageContent />
+    </Suspense>
   );
 }

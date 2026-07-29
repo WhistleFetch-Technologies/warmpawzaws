@@ -674,6 +674,8 @@ registerAddressEndpoints(app); // /customer/addresses - MUST be before /customer
 registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be before /customer/:customerId
 // GET/POST /customer/orders MUST register before /customer/:customerId or "orders" is treated as a customer id → HTTP 404.
 registerCustomerOrdersEndpoints(app);
+// /customer/warmpawz-appointments/* MUST register before /customer/:customerId
+registerCustomerWarmpawzAppointmentsEndpoints(app);
 // /customer/appointments MUST register before /customer/:customerId or "appointments" is captured as :customerId → list API never runs.
 registerCustomerAppointmentsEndpoints(app);
 registerCustomerWarmpawzPayEndpoints(app); // /customer/warmpawz-pay/vendors — before /customer/:customerId

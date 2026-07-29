@@ -26,6 +26,7 @@ import { ServiceDashboardHeader } from "./shared/ServiceDashboardHeader";
 import { BoardingVendorExpandableCard } from "./boarding/BoardingVendorExpandableCard";
 import { useHubVendorDiscovery } from "@/hooks/useHubVendorDiscovery";
 import { HUB_DISCOVERY_SITTING } from "@/lib/service-hub-discovery-config";
+import { buildHubWarmpawzBookingNav } from "@/lib/wappt-hub-booking-nav";
 import { fetchPetSitterHubRows } from "@/lib/pet-sitter-hub-fetch";
 import { pickCustomerVendorAccountId } from "@warmpawz/shared-types";
 import { minPriceForVendor } from "@/lib/boarding-vendor-booking-utils";
@@ -285,6 +286,16 @@ export function PetSitterServiceRouter({
       sittingOptionId: selectedSittingOption || undefined,
     });
   };
+
+  const handleWarmpawzBookAppointment = useCallback(
+    (v: BoardingListVendor) => {
+      onNavigate?.(
+        'grooming-booking',
+        buildHubWarmpawzBookingNav(v, { category: 'sitting', serviceStyle: 'at_center' })
+      );
+    },
+    [onNavigate]
+  );
 
   const handleBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
     onNavigate?.("pet-sitter-booking", {
@@ -599,6 +610,7 @@ export function PetSitterServiceRouter({
                         onOpenCenterDetails={(e) => openSitterVendorProfile(e, v)}
                         customerId={phone}
                         serviceCategory="pet_sitting"
+                        onBookAppointment={handleWarmpawzBookAppointment}
                       />
                     );
                   })

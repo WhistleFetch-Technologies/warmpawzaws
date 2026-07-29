@@ -1,15 +1,20 @@
 import type { Context } from 'hono';
-import { resolveVendorById } from '../../../vendor/endpoints/vendorProfile.vendor';
 import {
   paginateServiceCardPage,
   resolveServiceListPage,
 } from '../../../../utils/discovery-list-pagination';
-import { toServiceCardDTOList } from '../../../../utils/discovery-service-card-dto';
+import { resolveVendorById } from '../../../vendor/endpoints/vendorProfile.vendor';
 import { vendorRowIsOnline } from '../repos/legacy-helpers.repo';
 import { dbFetchVendorServicesList } from '../repos/vendor-services-list.repo';
+import { shouldOmitVendorServicePricing } from './wappt-catalogue-discovery.service';
 import { filterVendorServicesByStyle } from './vendor-services/filter-by-style';
 import { mapVendorServiceRows } from './vendor-services/map-vendor-service-rows';
 import { loadVendorServicePackageInclusions } from './vendor-services/package-inclusions';
+import {
+  buildVendorServicesCardResponse,
+  buildVendorServicesLegacyResponse,
+  stripVendorServicePrices,
+} from './vendor-services/wappt-pricing';
 
 export async function executevendorServices(c: Context) {
   try {
@@ -34,13 +39,15 @@ export async function executevendorServices(c: Context) {
 
     let combined = mapVendorServiceRows(
       (result.rows || []) as Record<string, unknown>[],
-      inclusions
+      inclusions,
     );
     combined = filterVendorServicesByStyle(combined, serviceStyle);
 
     const hasActivePackageForVendor =
       inclusions.includedVendorServiceIds.size > 0 ||
       inclusions.includedLegacyServiceIds.size > 0;
+
+    const omitPricing = await shouldOmitVendorServicePricing(resolvedVendorId);
 
     const servicePage = resolveServiceListPage(c.req.query('limit'), c.req.query('cursor'));
     if (servicePage.cardMode) {
@@ -50,23 +57,28 @@ export async function executevendorServices(c: Context) {
         slice,
         servicePage.pageSize,
         servicePage.offset,
-        fetchedExtra
+        fetchedExtra,
       );
-      return c.json({
-        success: true,
-        services: toServiceCardDTOList(page as Record<string, unknown>[]),
-        nextCursor,
-        count: page.length,
-      });
+      return c.json(
+        buildVendorServicesCardResponse({
+          page: page as Record<string, unknown>[],
+          nextCursor,
+          omitPricing,
+        }),
+      );
     }
 
-    return c.json({
-      success: true,
-      services: combined,
-      packages: combined.filter((s) => s.isPackage),
-      count: combined.length,
-      hasActivePackage: hasActivePackageForVendor,
-    });
+    const legacyServices = omitPricing
+      ? stripVendorServicePrices(combined as Record<string, unknown>[])
+      : combined;
+
+    return c.json(
+      buildVendorServicesLegacyResponse({
+        services: legacyServices as Record<string, unknown>[],
+        hasActivePackage: hasActivePackageForVendor,
+        omitPricing,
+      }),
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch services';
     console.error('Error fetching vendor services:', error);

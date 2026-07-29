@@ -3,6 +3,7 @@
 import { apiClient } from '@/lib/api-client';
 import {
   COMMERCE_SWITCH_ENDPOINTS,
+  COMMERCE_SWITCH_SYNC,
   DEFAULT_COMMERCE_MODEL_ID,
   type CommerceModelDescriptor,
   type CommerceModelId,
@@ -104,5 +105,21 @@ export async function saveAdminCommerceConfiguration(input: {
   } catch (err) {
     console.warn('[CommerceSwitch] governance propagate failed (config saved):', err);
   }
+
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      const channel = new BroadcastChannel(COMMERCE_SWITCH_SYNC.BROADCAST_CHANNEL);
+      channel.postMessage({
+        type: COMMERCE_SWITCH_SYNC.DATA_TYPE,
+        configurationVersion: res.configuration.version,
+        activeModelId: res.configuration.activeModelId,
+        updatedAt: res.configuration.updatedAt,
+      });
+      channel.close();
+    } catch (err) {
+      console.warn('[CommerceSwitch] same-browser broadcast failed (non-fatal):', err);
+    }
+  }
+
   return res.configuration;
 }

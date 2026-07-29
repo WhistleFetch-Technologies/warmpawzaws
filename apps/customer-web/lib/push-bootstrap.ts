@@ -1,5 +1,6 @@
 import { WARMPAWZ_ANDROID_PUSH_CHANNEL_ID } from './push-channel';
 import { navigateFromPushPayload } from './push-navigation';
+import { handleCommerceSwitchPushData } from './commerce-switch-sync';
 
 /**
  * push-bootstrap.ts — customer-web
@@ -39,6 +40,19 @@ let capacitorRegistrationContext: {
 let capacitorRegistrationPipeline: Promise<void> | null = null;
 let capacitorPushTapListenersAttached = false;
 
+function extractPushDataFromNotification(notification: unknown): Record<string, string> {
+  const envelope = notification as {
+    data?: Record<string, unknown>;
+    notification?: { data?: Record<string, unknown> };
+  };
+  const raw = envelope?.data ?? envelope?.notification?.data ?? {};
+  const data: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (value != null) data[key] = String(value);
+  }
+  return data;
+}
+
 function extractPushDataFromAction(action: unknown): Record<string, string> {
   const envelope = action as {
     notification?: { data?: Record<string, unknown> };
@@ -62,21 +76,33 @@ async function attachCapacitorPushTapListeners(PushNotifications: {
 
   await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
     console.log('[push-bootstrap] pushNotificationActionPerformed');
+    const data = extractPushDataFromAction(action);
+    if (data.type === 'commerce_switch_updated') {
+      handleCommerceSwitchPushData(data);
+      return;
+    }
     try {
-      navigateFromPushPayload(extractPushDataFromAction(action));
+      navigateFromPushPayload(data);
     } catch (err) {
       console.warn('[push-bootstrap] push tap navigation failed:', err);
       window.location.assign('/');
     }
   });
 
-  // iOS: no system tray banner when app is foreground — in-app toast only (Android unchanged).
-  if (isCapacitorIos()) {
-    await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+  await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+    const data = extractPushDataFromNotification(notification);
+    if (data.type === 'commerce_switch_updated') {
+      console.log('[push-bootstrap] commerce switch silent push received');
+      handleCommerceSwitchPushData(data);
+      return;
+    }
+
+    // iOS: no system tray banner when app is foreground — in-app toast only (Android unchanged).
+    if (isCapacitorIos()) {
       console.log('[push-bootstrap] pushNotificationReceived (iOS foreground)');
       void showIosForegroundPushToast(notification);
-    });
-  }
+    }
+  });
 
   console.log('[push-bootstrap] push tap listener attached');
 }
@@ -544,6 +570,16 @@ async function setupForegroundPushListener(): Promise<void> {
     const messaging = getMessaging();
     onMessage(messaging, (payload) => {
       console.log('[push-bootstrap] Foreground message received');
+
+      const data: Record<string, string> = {};
+      for (const [key, value] of Object.entries(payload.data ?? {})) {
+        if (value != null) data[key] = String(value);
+      }
+
+      if (data.type === 'commerce_switch_updated') {
+        handleCommerceSwitchPushData(data);
+        return;
+      }
 
       try {
         if (Notification.permission === 'granted') {

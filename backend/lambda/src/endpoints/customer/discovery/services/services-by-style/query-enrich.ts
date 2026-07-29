@@ -15,6 +15,7 @@ import type {
   VendorSpecBundle,
   VendorStatsMap,
 } from './types';
+import type { ServicesByStyleDiscoveryOptions } from './discovery-options';
 import { buildByStyleVendorSql } from './vendor-query-sql';
 
 export type ByStyleQueryEnrichResult = {
@@ -27,8 +28,10 @@ export type ByStyleQueryEnrichResult = {
 export async function queryAndEnrichByStyleVendors(
   parsed: ServicesByStyleParsed,
   categoryCtx: ServicesByStyleCategoryContext,
-  fetchServices: (vendorId: string, vendorRoleName?: string | null) => Promise<unknown[]>
+  fetchServices: (vendorId: string, vendorRoleName?: string | null) => Promise<unknown[]>,
+  discoveryOptions: ServicesByStyleDiscoveryOptions = {}
 ): Promise<ByStyleQueryEnrichResult> {
+  const omitPricing = discoveryOptions.omitPricing === true;
   const {
     problemTitle,
     specializationFilterByStyle,
@@ -52,13 +55,19 @@ export async function queryAndEnrichByStyleVendors(
 
   const enrichVendor = async (vendor: any) => {
     const stats = vendorStatsByStyle.get(String(vendor.vendor_id));
-    const services = fullEnrichByStyle
-      ? await fetchServices(vendor.vendor_id, vendor.role_name)
-      : [];
+    const services =
+      fullEnrichByStyle && !omitPricing
+        ? await fetchServices(vendor.vendor_id, vendor.role_name)
+        : [];
     const specBundle = vendorSpecBundleForByStyle.get(vendor.vendor_id);
+    // ponytail: omitPricing skips stats fetch; SQL EXISTS already proved services — avoid dropping all cards
+    const listStats =
+      fullEnrichByStyle && !omitPricing
+        ? null
+        : stats || { serviceCount: omitPricing ? 1 : 0 };
     return enrichDiscoveryListVendor({
       vendor,
-      stats: fullEnrichByStyle ? null : stats || { serviceCount: 0 },
+      stats: listStats,
       services,
       acceptableStyles,
       distResolver: distResolverByStyle,
@@ -66,8 +75,9 @@ export async function queryAndEnrichByStyleVendors(
       defaultAvailabilityDisplay: 'Tap to view availability',
       problemTitle: problemTitle || undefined,
       specializations: specBundle?.displayLabels?.length ? specBundle.displayLabels : [],
-      fullServices: fullEnrichByStyle,
+      fullServices: fullEnrichByStyle && !omitPricing,
       includeAvailability: true,
+      omitPricing,
     });
   };
 
@@ -93,11 +103,15 @@ export async function queryAndEnrichByStyleVendors(
   console.log(`[by-style] specialization filter: raw="${specializationFilterByStyle}" keys=${JSON.stringify(specKeysByStyle)} fragmentApplied=${specializationByStyleFragment.length > 0}`);
 
   const vendorDistanceColsByStyle = await vendorDistanceSelectColumnsSql('v');
-  const vendorSql = buildByStyleVendorSql(categoryCtx, {
-    maxResults,
-    sqlOffsetByStyle,
-    specializationByStyleFragment,
-  }).replace('PLACEHOLDER_VENDOR_DISTANCE_COLS', vendorDistanceColsByStyle);
+  const vendorSql = buildByStyleVendorSql(
+    categoryCtx,
+    {
+      maxResults,
+      sqlOffsetByStyle,
+      specializationByStyleFragment,
+    },
+    { wapptCatalogueOnly: discoveryOptions.wapptCatalogueOnly }
+  ).replace('PLACEHOLDER_VENDOR_DISTANCE_COLS', vendorDistanceColsByStyle);
 
   const vendorRows = await services_by_styleRepo.dbServicesByStyle3(vendorSql, vendorParamsByStyle);
   vendorSpecBundleForByStyle = await batchLoadVendorSpecializationsForDiscovery(
@@ -111,7 +125,7 @@ export async function queryAndEnrichByStyleVendors(
     });
   }
   const byStyleVendorIds = (vendorRows.rows || []).map((r: any) => String(r.vendor_id));
-  if (!fullEnrichByStyle && byStyleVendorIds.length > 0) {
+  if (!fullEnrichByStyle && !discoveryOptions.omitPricing && byStyleVendorIds.length > 0) {
     const vetExcludeExtra = isVetCategoryDiscoveryByStyle
       ? vetExcludeNonVetSqlByStyle
       : undefined;

@@ -46,6 +46,10 @@ import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
+import {
+  buildWarmpawzAppointmentsBookingNav,
+  resolveWarmpawzBookingScreen,
+} from '@/lib/warmpawz-appointments-customer';
 
 interface ClinicListViewProps {
   phone: string;
@@ -97,6 +101,7 @@ export interface ClinicProvider {
   servicesNextCursor?: string | null;
   servicesLoadingMore?: boolean;
   vendorType?: string;
+  warmpawzAppointments?: boolean;
 }
 
 /** Prefer the longest vendor-authored description (catalog vs custom vs short). */
@@ -146,7 +151,7 @@ function coerceStringOrNumber(v: unknown, fallback: string | number): string | n
   return s ?? fallback;
 }
 
-function mapApiServiceToRow(p: any, vendorId: string, index: number): ClinicServiceRow {
+function mapApiServiceToRow(p: any, vendorId: string, index: number, omitPrice: boolean): ClinicServiceRow {
   const normalized = normalizeVendorServiceRowForPackage(p);
   const vendorServiceId = coerceStringOrNumber(
     normalized.id ?? normalized.vendor_service_id ?? p.vendor_service_id,
@@ -161,9 +166,14 @@ function mapApiServiceToRow(p: any, vendorId: string, index: number): ClinicServ
   const stableKey = catalogServiceId ? `cat-${catalogServiceId}` : `vs-${vendorId}-${vendorServiceId}`;
   const desc = pickBestVendorDescription(normalized);
   const priceRaw =
-    normalized.price ?? normalized.custom_price ?? normalized.base_price ?? normalized.amount ?? 0;
+    normalized.price ?? normalized.custom_price ?? normalized.base_price ?? normalized.amount;
   const priceNum = typeof priceRaw === 'string' ? parseFloat(priceRaw) : Number(priceRaw);
-  const price = Number.isFinite(priceNum) && !Number.isNaN(priceNum) ? priceNum : 0;
+  const price =
+    omitPrice || priceRaw === null || priceRaw === undefined
+      ? 0
+      : Number.isFinite(priceNum) && !Number.isNaN(priceNum)
+        ? priceNum
+        : 0;
   const durRaw = normalized.duration ?? normalized.durationMinutes ?? normalized.duration_minutes ?? 30;
   const durNum = typeof durRaw === 'string' ? parseInt(durRaw, 10) : Number(durRaw);
   const duration = Number.isFinite(durNum) && durNum > 0 ? durNum : 30;
@@ -200,9 +210,10 @@ function mapByStyleProvider(p: any): ClinicProvider | null {
   if (isSoloVendor(p)) return null;
   const id = String(p.providerId || p.vendorId || p.id || '');
   if (!id) return null;
+  const omitPrice = p.warmpawzAppointments === true;
   const rawServices = Array.isArray(p.services) ? p.services : [];
   const services = filterServicesForVetHub<ClinicServiceRow>(
-    rawServices.map((s: any, i: number) => mapApiServiceToRow(s, id, i))
+    rawServices.map((s: any, i: number) => mapApiServiceToRow(s, id, i, omitPrice))
   );
   const nextSlot = resolveNextAvailableLabel(p);
   const address =
@@ -235,6 +246,7 @@ function mapByStyleProvider(p: any): ClinicProvider | null {
     services,
     needsServiceFetch: services.length === 0,
     vendorType: p.vendorType,
+    warmpawzAppointments: omitPrice,
   };
 }
 
@@ -301,7 +313,7 @@ export function ClinicListView({
         const rawRows = vendorServicesRowsFromResponse(res);
         const vetRows = mapVendorServicesForVetHub(rawRows);
         const rows = filterServicesForVetHub<ClinicServiceRow>(
-          vetRows.map((s, i) => mapApiServiceToRow(s, clinicId, i))
+          vetRows.map((s, i) => mapApiServiceToRow(s, clinicId, i, clinic.warmpawzAppointments === true))
         );
         const nextCursor = vendorServicesNextCursor(res);
         setClinics((prev) =>
@@ -389,7 +401,7 @@ export function ClinicListView({
         let rows: ClinicServiceRow[] = [];
         if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'object') {
           rows = filterServicesForVetHub<ClinicServiceRow>(
-            raw.map((s: any, i: number) => mapApiServiceToRow(s, vendorId, i))
+            raw.map((s: any, i: number) => mapApiServiceToRow(s, vendorId, i, service.warmpawzAppointments === true))
           );
         }
         vendorMap.set(vendorId, {
@@ -669,8 +681,22 @@ export function ClinicListView({
   ];
 
   const minPriceForClinic = (c: ClinicProvider) => {
+    if (c.warmpawzAppointments) return null;
     if (!c.services.length) return null;
-    return Math.min(...c.services.map((s) => s.price));
+    const prices = c.services.map((s) => s.price).filter((p) => p > 0);
+    return prices.length > 0 ? Math.min(...prices) : null;
+  };
+
+  const handleBookAppointment = (clinic: ClinicProvider) => {
+    onNavigate(
+      resolveWarmpawzBookingScreen('vet'),
+      buildWarmpawzAppointmentsBookingNav({
+        vendorId: clinic.id,
+        vendorName: clinic.name,
+        serviceStyle: 'at_center',
+        category: 'vet',
+      })
+    );
   };
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
@@ -735,6 +761,8 @@ export function ClinicListView({
             {sortedClinics.map((clinic) => {
               const expanded = selectedClinicId === clinic.id;
               const minP = minPriceForClinic(clinic);
+              const appointmentsMode = clinic.warmpawzAppointments === true;
+              const showPricing = !appointmentsMode;
               const headerActsAsCollapse = expanded;
               const headerInteractive = headerActsAsCollapse;
               return (
@@ -817,7 +845,7 @@ export function ClinicListView({
                               </span>
                             </>
                           )}
-                          {minP != null && clinic.services.length > 0 && (
+                          {showPricing && minP != null && clinic.services.length > 0 && (
                             <>
                               <span className="text-gray-300">•</span>
                               <span className="text-sm font-semibold text-[#FF8C42]">
@@ -906,11 +934,14 @@ export function ClinicListView({
                                       </div>
                                     ) : (
                                       <p className="mt-1.5 text-gray-400 text-sm line-clamp-2 italic">
-                                        Professional in-clinic care — tap Book Now to continue.
+                                        {appointmentsMode
+                                          ? 'Service menu — book an appointment to continue.'
+                                          : 'Professional in-clinic care — tap Book Now to continue.'}
                                       </p>
                                     )}
                                   </div>
 
+                                  {showPricing ? (
                                   <div className="shrink-0 text-right">
                                     <ServicePricingDisplay
                                       basePrice={service.price}
@@ -923,6 +954,7 @@ export function ClinicListView({
                                     />
                                     <p className="mt-0.5 text-[11px] leading-4 text-gray-500 max-w-[9rem]">{INDICATIVE_PRICING_NOTE}</p>
                                   </div>
+                                  ) : null}
                                 </div>
 
                                 {/* Row 3: badges (left) | Book Now (right) */}
@@ -933,6 +965,7 @@ export function ClinicListView({
                                     <span className="text-gray-300">·</span>
                                     <span>{resolveServiceCategoryDisplayLabel(service) || 'Vet Care'}</span>
                                   </div>
+                                  {!appointmentsMode ? (
                                   <Button
                                     type="button"
                                     size="sm"
@@ -944,6 +977,7 @@ export function ClinicListView({
                                   >
                                     Book Now
                                   </Button>
+                                  ) : null}
                                 </div>
                               </div>
                             );
@@ -966,7 +1000,7 @@ export function ClinicListView({
                           <>
                             {clinic.services.length} service{clinic.services.length !== 1 ? 's' : ''}{' '}
                             available
-                            {minP != null && (
+                            {showPricing && minP != null && (
                               <span className="text-gray-900 font-medium">
                                 {' '}
                                 from {formatPriceWithSymbol(minP)}
@@ -974,11 +1008,13 @@ export function ClinicListView({
                             )}
                           </>
                         ) : clinic.needsServiceFetch ? (
-                          <span className="text-gray-500">Tap to load services & prices</span>
+                          <span className="text-gray-500">
+                            {appointmentsMode ? 'Tap to view services' : 'Tap to load services & prices'}
+                          </span>
                         ) : (
                           <span className="text-gray-500">No services available</span>
                         )}
-                        {minP != null && (
+                        {showPricing && minP != null && (
                           <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                         )}
                       </div>

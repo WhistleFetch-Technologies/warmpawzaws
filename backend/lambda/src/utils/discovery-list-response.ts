@@ -18,8 +18,11 @@ export function buildVendorListResponse(opts: {
   appliedFilters?: Record<string, unknown>;
   specializationApplied?: string | null;
   serviceStyleNorm?: string;
+  warmpawzAppointments?: boolean;
 }): VendorListResponseBody {
-  const vendors = toVendorCardDTOList(opts.enrichedCards, opts.serviceStyleNorm);
+  const vendors = toVendorCardDTOList(opts.enrichedCards, opts.serviceStyleNorm, {
+    warmpawzAppointments: opts.warmpawzAppointments,
+  });
   return {
     success: true,
     ...(opts.style != null ? { style: opts.style } : {}),

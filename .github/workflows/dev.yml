@@ -197,6 +197,7 @@ jobs:
           npm run validate:commerce-switch
           npm test -- --testPathPattern=commerce-switch
           npm run build
+          npm run validate:lambda-artifact
           ls -lh api-handler.zip  # Verify ZIP was created
 
       - name: Upload Lambda artifact
@@ -367,6 +368,10 @@ jobs:
           name: lambda-handlers
           path: backend/lambda
 
+      - name: Validate Lambda artifact before upload
+        working-directory: backend/lambda
+        run: npm run validate:lambda-artifact
+
       - name: Update Lambda function code
         run: |
           echo "⚡ Updating Lambda function code (NO INFRASTRUCTURE CHANGES)..."
@@ -376,6 +381,22 @@ jobs:
             --region ${{ env.AWS_REGION }}
           
           echo "✅ Lambda function code updated successfully"
+
+      - name: Wait for Lambda update
+        run: |
+          aws lambda wait function-updated \
+            --function-name warmpawz-dev-api-handler \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Post-deploy Lambda + Commerce Switch verification
+        working-directory: backend/lambda
+        env:
+          API_BASE_URL: https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com
+          LAMBDA_FUNCTION_NAME: warmpawz-dev-api-handler
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          npm run post-deploy:lambda-verify
+          npm run release-verify:commerce-switch
 
   # ============================================
   # DEPLOY FRONTEND APPS

@@ -304,6 +304,65 @@ export function buildUnifiedPushMessage(
   return buildFcmMessage(payload, target, address);
 }
 
+export type SilentDataPushPayload = {
+  data: Record<string, string>;
+};
+
+/**
+ * Data-only FCM message — no tray notification. Used for Commerce Switch config sync.
+ * Android: high priority wakes app; iOS: content-available background delivery.
+ */
+export function buildSilentDataFcmMessage(
+  payload: SilentDataPushPayload,
+  target: 'token' | 'tokens' | 'topic',
+  address: string | string[]
+): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    data: payload.data,
+    android: {
+      priority: 'high' as const,
+    },
+    apns: {
+      headers: {
+        'apns-priority': '5',
+        'apns-push-type': 'background',
+      },
+      payload: {
+        aps: {
+          'content-available': 1,
+        },
+        ...payload.data,
+      },
+    },
+  };
+
+  if (target === 'token') {
+    base.token = address;
+  } else if (target === 'tokens') {
+    base.tokens = address;
+  } else {
+    base.topic = address;
+  }
+
+  return base;
+}
+
+export async function sendSilentDataPushToTopic(
+  topic: string,
+  data: Record<string, string>
+): Promise<PushNotificationResult> {
+  try {
+    const messaging = await getFirebaseMessaging();
+    const message = buildSilentDataFcmMessage({ data }, 'topic', topic);
+    const response = await messaging.send(message);
+    console.log('[Firebase] Silent data topic push sent:', response);
+    return { success: true, messageId: response };
+  } catch (error: any) {
+    console.error('[Firebase] Silent data topic push error:', error);
+    return { success: false, error: error.message, errorCode: error.code };
+  }
+}
+
 /**
  * Send push notification to a single device
  */

@@ -232,6 +232,20 @@ export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
     description: 'E-commerce and seller setup',
   },
   {
+    id: 'warmpawz-appointments-catalogue',
+    label: 'Warmpawz Appointments',
+    permissionId: 'admin.warmpawz_appointments',
+    permissionsAny: [
+      'admin.warmpawz_appointments',
+      'admin.warmpawz_appointments.catalogue.view',
+    ],
+    pathPrefixes: ['/warmpawz-appointments'],
+    section: 'main',
+    sortOrder: 74,
+    description: 'Warmpawz Appointments vendor catalogue administration',
+    routeHint: '/warmpawz-appointments/catalogue',
+  },
+  {
     id: 'warmpawz-pay-catalogue',
     label: 'Warmpawz Pay',
     permissionId: 'admin.warmpawz_pay',

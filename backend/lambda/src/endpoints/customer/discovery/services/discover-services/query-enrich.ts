@@ -13,6 +13,8 @@ import {
   sqlVendorMatchesDeclaredSpecialization,
   vendorDistanceSelectColumnsSql,
 } from '../../repos/legacy-helpers.repo';
+import type { CatalogueDiscoveryOptions } from '../shared/catalogue-discovery-options';
+import { sqlWapptCatalogueVendorJoin } from '../shared/wappt-catalogue-vendor-join';
 import type {
   DiscoverCategoryContext,
   DiscoverServicesParsed,
@@ -30,8 +32,10 @@ export type DiscoverQueryEnrichResult = {
 export async function queryAndEnrichDiscoverVendors(
   parsed: DiscoverServicesParsed,
   categoryCtx: DiscoverCategoryContext,
-  fetchServices: (vendorId: string, vendorRoleName?: string | null) => Promise<unknown[]>
+  fetchServices: (vendorId: string, vendorRoleName?: string | null) => Promise<unknown[]>,
+  discoveryOptions: CatalogueDiscoveryOptions = {},
 ): Promise<DiscoverQueryEnrichResult> {
+  const omitPricing = discoveryOptions.omitPricing === true;
   const {
     category,
     roleId,
@@ -59,13 +63,18 @@ export async function queryAndEnrichDiscoverVendors(
 
   const enrichVendor = async (vendor: any) => {
     const stats = vendorStatsDiscover.get(String(vendor.vendor_id));
-    const services = fullEnrichDiscover
-      ? await fetchServices(vendor.vendor_id, vendor.role_name)
-      : [];
+    const services =
+      fullEnrichDiscover && !omitPricing
+        ? await fetchServices(vendor.vendor_id, vendor.role_name)
+        : [];
     const specBundle = vendorSpecBundleForDiscover.get(vendor.vendor_id);
+    const listStats =
+      fullEnrichDiscover && !omitPricing
+        ? null
+        : stats || { serviceCount: omitPricing ? 1 : 0 };
     return enrichDiscoveryListVendor({
       vendor,
-      stats: fullEnrichDiscover ? null : stats || { serviceCount: 0 },
+      stats: listStats,
       services,
       acceptableStyles,
       distResolver: distResolverDiscover,
@@ -75,8 +84,9 @@ export async function queryAndEnrichDiscoverVendors(
         : 'Tap to view availability',
       problemTitle: problemTitle || undefined,
       specializations: specBundle?.displayLabels?.length ? specBundle.displayLabels : [],
-      fullServices: fullEnrichDiscover,
+      fullServices: fullEnrichDiscover && !omitPricing,
       includeAvailability: true,
+      omitPricing,
     });
   };
 
@@ -103,6 +113,7 @@ export async function queryAndEnrichDiscoverVendors(
   }
 
   const vendorDistanceColsDiscover = await vendorDistanceSelectColumnsSql('v');
+  const wapptJoin = sqlWapptCatalogueVendorJoin(discoveryOptions.wapptCatalogueOnly);
   const vendorSql = `
         SELECT DISTINCT ON (v.id)
           v.id AS vendor_id, v.business_name, v.owner_name, v.phone,
@@ -116,7 +127,7 @@ export async function queryAndEnrichDiscoverVendors(
           r.config AS role_config,
           COALESCE((SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id), 0) AS avg_rating,
           COALESCE((SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id), 0) AS review_count
-        FROM vendors v
+        FROM vendors v${wapptJoin}
         LEFT JOIN roles r ON v.role_id = r.id
         WHERE v.is_active = true
           AND ${sqlVendorDiscoverableStatus('v')}
@@ -140,7 +151,7 @@ export async function queryAndEnrichDiscoverVendors(
     });
   }
   const discoverVendorIds = (vendorRows.rows || []).map((r: any) => String(r.vendor_id));
-  if (!fullEnrichDiscover && discoverVendorIds.length > 0) {
+  if (!fullEnrichDiscover && !omitPricing && discoverVendorIds.length > 0) {
     const sittingExcludeExtra = sittingDiscoveryRelaxed
       ? `AND NOT (
                 LOWER(TRIM(COALESCE(vs.category, ''))) = ANY(ARRAY[
@@ -174,6 +185,12 @@ export async function queryAndEnrichDiscoverVendors(
     vendorRows.rows || [],
     enrichVendor
   );
+
+  // #region agent log
+  if (discoveryOptions.wapptCatalogueOnly) {
+    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'discover-services/query-enrich.ts',message:'wappt catalogue vendor count',data:{vendorCount:vendorRows.rows?.length??0,category,serviceStyle:serviceStyleNormDiscover,providerCount:providers.length},timestamp:Date.now(),hypothesisId:'H1',runId:'pre-fix'})}).catch(()=>{});
+  }
+  // #endregion
 
   return {
     providers: providers as Record<string, unknown>[],

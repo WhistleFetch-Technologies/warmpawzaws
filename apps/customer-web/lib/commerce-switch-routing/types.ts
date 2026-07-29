@@ -6,6 +6,8 @@ export interface ServiceBookingRouteContext {
   category?: string;
   serviceStyle?: string;
   serviceType?: string;
+  /** Runtime active model from CommerceConfigProvider (preferred over module cache). */
+  activeModelId?: CommerceModelId;
 }
 
 export interface ServiceBookingCommerceRouteResult {

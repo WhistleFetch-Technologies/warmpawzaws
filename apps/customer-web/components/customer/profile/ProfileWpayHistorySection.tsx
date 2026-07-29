@@ -4,9 +4,18 @@ import { useRouter } from 'next/navigation';
 import { QrCode } from 'lucide-react';
 import { WpayHistoryList } from '@/components/warmpawz-pay/WpayHistoryList';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
+import { useCommerceConfigOptional } from '@/lib/commerce-config-provider';
+import { isWarmpawzPayModuleCapable } from '@/lib/commerce-switch-routing';
 
 export function ProfileWpayHistorySection() {
   const router = useRouter();
+  const commerce = useCommerceConfigOptional();
+  const showSection =
+    commerce?.isWarmpawzPay === true && commerce.isLoaded && isWarmpawzPayModuleCapable();
+
+  if (!showSection) {
+    return null;
+  }
 
   return (
     <div className="rounded-2xl border border-stone-200/90 bg-white p-4 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">

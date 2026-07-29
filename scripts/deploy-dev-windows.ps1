@@ -10,8 +10,12 @@ function Deploy-Lambda {
   Set-Location "$Root\backend\lambda"
   npm run build
   if (-not (Test-Path 'api-handler.zip')) { throw 'api-handler.zip missing after build' }
+  npm run validate:lambda-artifact
   aws lambda update-function-code --function-name warmpawz-dev-api-handler --zip-file fileb://api-handler.zip --region $Region --output text | Out-Null
   aws lambda wait function-updated --function-name warmpawz-dev-api-handler --region $Region
+  $env:API_BASE_URL = $ApiBase
+  $env:LAMBDA_FUNCTION_NAME = 'warmpawz-dev-api-handler'
+  npm run post-deploy:lambda-verify
   Write-Host 'Lambda deployed.' -ForegroundColor Green
   Set-Location $Root
 }

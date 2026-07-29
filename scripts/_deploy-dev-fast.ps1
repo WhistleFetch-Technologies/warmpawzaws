@@ -58,7 +58,13 @@ function Deploy-App($Name, $Bucket, $CfId, $BuildEnv) {
 Write-Host "=== Lambda ===" -ForegroundColor Cyan
 Push-Location (Join-Path $Root "backend\lambda")
 npm run build
+if (-not (Test-Path "api-handler.zip")) { throw "api-handler.zip missing after npm run build" }
+npm run validate:lambda-artifact
 aws lambda update-function-code --function-name warmpawz-dev-api-handler --zip-file fileb://api-handler.zip --region $Region --output text --query LastModified
+aws lambda wait function-updated --function-name warmpawz-dev-api-handler --region $Region
+$env:API_BASE_URL = $Api
+$env:LAMBDA_FUNCTION_NAME = "warmpawz-dev-api-handler"
+npm run post-deploy:lambda-verify
 if (Test-Path loyalty-consumer.zip) {
   aws lambda update-function-code --function-name warmpawz-dev-loyalty-events-consumer --zip-file fileb://loyalty-consumer.zip --region $Region --output text --query LastModified
 }

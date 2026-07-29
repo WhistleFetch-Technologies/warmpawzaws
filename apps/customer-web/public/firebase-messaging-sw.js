@@ -29,12 +29,26 @@ function setupFirebaseMessaging(config) {
     _initialized = true;
 
     messaging.onBackgroundMessage((payload) => {
+      const data = payload.data ?? {};
+
+      if (data.type === 'commerce_switch_updated') {
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+          for (const client of clientList) {
+            client.postMessage({
+              type: 'COMMERCE_SWITCH_SYNC',
+              data,
+            });
+          }
+        });
+        return;
+      }
+
       const title = payload.notification?.title ?? 'Warmpawz';
       const body  = payload.notification?.body  ?? '';
 
       const notificationOptions = {
         body,
-        data:  payload.data ?? {},
+        data,
         tag:   'warmpawz-push',
         icon:  '/icons/icon-192x192.webp',
         badge: '/icons/badge-72x72.webp',
