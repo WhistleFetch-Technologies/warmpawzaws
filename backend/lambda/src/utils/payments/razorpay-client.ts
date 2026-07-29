@@ -528,6 +528,13 @@ export function getRazorpayClient() {
     },
   };
 
+  const refunds = {
+    async fetch(refundId: string) {
+      const id = encodeURIComponent(String(refundId || '').trim());
+      return razorpayRequest(`/refunds/${id}`, 'GET', undefined, 20000);
+    },
+  };
+
   const payouts = {
     /** Create payout (Composite API: pass account_number + fund_account with contact + bank_account). Optional idempotencyKey. */
     async create(body: any, idempotencyKey?: string) {
@@ -602,6 +609,7 @@ export function getRazorpayClient() {
     getRazorpayXAccountNumber: getPayoutSourceAccountNumber,
     getPayoutSourceAccountNumber,
     payments,
+    refunds,
     payouts,
     validateBankAccount,
     /** Same Razorpay key/secret as payments — POST /v1/payments/validate/vpa */

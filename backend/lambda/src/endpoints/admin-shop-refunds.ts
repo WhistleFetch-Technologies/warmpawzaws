@@ -1,10 +1,15 @@
 /**
- * Admin shop refunds & returns ops — paginated list + single-row retry.
+ * Admin shop refunds & returns ops — paginated list, missing queue, initiate, reconcile, retry.
  */
 
 import { Hono } from 'hono';
 import { query } from '../database/rds-connection';
-import { initiateShopOrderRazorpayRefund } from '../utils/payments/shop-order-refund';
+import {
+  SHOP_MISSING_REFUND_FROM,
+  SHOP_MISSING_REFUND_WHERE,
+  initiateShopOrderRazorpayRefund,
+  reconcileShopRefundById,
+} from '../utils/payments/shop-order-refund';
 
 function parseLimit(raw: string | undefined, fallback = 50, max = 100): number {
   const n = raw ? parseInt(raw, 10) : fallback;
@@ -62,6 +67,128 @@ export function registerAdminShopRefundsEndpoints(app: Hono) {
       });
     } catch (e: unknown) {
       console.error('[admin/shop-refunds] list', e);
+      return c.json({ success: false, error: (e as Error).message }, 500);
+    }
+  });
+
+  app.get('/admin/shop-refunds/missing', async (c) => {
+    try {
+      const limit = parseLimit(c.req.query('limit'));
+      const offset = parseOffset(c.req.query('offset'));
+      const params: unknown[] = [limit, offset];
+
+      const listSql = `
+        SELECT o.id AS order_id, o.order_number, o.order_status, o.payment_status,
+               o.cancelled_at, o.cancellation_reason,
+               p.razorpay_payment_id, p.amount AS refund_amount,
+               COALESCE(c.full_name, '') AS customer_name,
+               COALESCE(v.business_name, '') AS vendor_name,
+               o.customer_id::text AS customer_id,
+               o.vendor_id::text AS vendor_id
+        ${SHOP_MISSING_REFUND_FROM}
+        ${SHOP_MISSING_REFUND_WHERE}
+        ORDER BY o.cancelled_at DESC NULLS LAST
+        LIMIT $1 OFFSET $2`;
+
+      const countSql = `
+        SELECT COUNT(*)::int AS total
+        ${SHOP_MISSING_REFUND_FROM}
+        ${SHOP_MISSING_REFUND_WHERE}`;
+
+      const [listRes, countRes] = await Promise.all([
+        query(listSql, params),
+        query(countSql, []),
+      ]);
+
+      return c.json({
+        success: true,
+        missing: listRes.rows,
+        total: countRes.rows[0]?.total ?? 0,
+        limit,
+        offset,
+      });
+    } catch (e: unknown) {
+      console.error('[admin/shop-refunds/missing]', e);
+      return c.json({ success: false, error: (e as Error).message }, 500);
+    }
+  });
+
+  app.post('/admin/shop-refunds/initiate', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const orderNumber = body?.orderNumber ? String(body.orderNumber).trim() : '';
+      const orderId = body?.orderId ? String(body.orderId).trim() : '';
+      const reason = body?.reason
+        ? String(body.reason)
+        : 'Admin initiated shop refund';
+
+      if (!orderNumber && !orderId) {
+        return c.json({ success: false, error: 'orderNumber or orderId is required' }, 400);
+      }
+
+      const orderRes = await query(
+        `SELECT o.id::text, o.customer_id::text, o.vendor_id::text, o.total_amount::text,
+                o.order_status, o.payment_status, o.order_number,
+                p.amount::text AS payment_amount
+         FROM orders o
+         JOIN payments p ON p.order_id = o.id
+         WHERE ($1::text <> '' AND o.order_number = $1)
+            OR ($2::text <> '' AND o.id = $2::uuid)
+         ORDER BY p.created_at DESC NULLS LAST
+         LIMIT 1`,
+        [orderNumber, orderId],
+      );
+      const order = orderRes.rows[0];
+      if (!order) {
+        return c.json({ success: false, error: 'Shop order not found' }, 404);
+      }
+
+      const amount =
+        parseFloat(String(order.payment_amount)) ||
+        parseFloat(String(order.total_amount)) ||
+        0;
+      if (amount <= 0.009) {
+        return c.json({ success: false, error: 'Invalid refund amount for order' }, 400);
+      }
+
+      const result = await initiateShopOrderRazorpayRefund({
+        orderId: String(order.id),
+        amount,
+        reason,
+        customerId: order.customer_id ? String(order.customer_id) : undefined,
+        vendorId: order.vendor_id ? String(order.vendor_id) : undefined,
+      });
+
+      return c.json({
+        success: result.success,
+        orderNumber: order.order_number,
+        orderId: order.id,
+        refundStatus: result.refundStatus,
+        refundId: result.refundId,
+        razorpayRefundId: result.razorpayRefundId,
+        alreadyProcessed: result.alreadyProcessed,
+        error: result.error,
+      });
+    } catch (e: unknown) {
+      console.error('[admin/shop-refunds/initiate]', e);
+      return c.json({ success: false, error: (e as Error).message }, 500);
+    }
+  });
+
+  app.post('/admin/shop-refunds/:refundId/reconcile', async (c) => {
+    try {
+      const refundId = c.req.param('refundId');
+      const result = await reconcileShopRefundById(refundId);
+      if (!result.success && result.error === 'Shop refund not found') {
+        return c.json({ success: false, error: result.error }, 404);
+      }
+      return c.json({
+        success: result.success,
+        refundStatus: result.refundStatus,
+        error: result.error,
+      });
+    } catch (e: unknown) {
+      console.error('[admin/shop-refunds/reconcile]', e);
       return c.json({ success: false, error: (e as Error).message }, 500);
     }
   });
@@ -131,11 +258,13 @@ export function registerAdminShopRefundsEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Shop refund not found' }, 404);
       }
       if (row.razorpay_refund_id) {
+        const reconcileResult = await reconcileShopRefundById(refundId);
         return c.json({
-          success: true,
-          refundStatus: 'processing',
-          message: 'Refund already initiated with Razorpay',
+          success: reconcileResult.success,
+          refundStatus: reconcileResult.refundStatus ?? 'processing',
+          message: 'Refund already initiated with Razorpay — reconciled status from gateway',
           alreadyProcessed: true,
+          error: reconcileResult.error,
         });
       }
 

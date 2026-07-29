@@ -16,6 +16,11 @@ describe('shop-order-refund orchestrator', () => {
     expect(file).toContain('export async function initiateShopOrderRazorpayRefund');
     expect(file).toContain('export async function restoreShopOrderStockIfNeeded');
     expect(file).toContain('export async function retryPendingShopRefunds');
+    expect(file).toContain('export async function reconcileStuckShopRefunds');
+    expect(file).toContain('export async function reconcileShopRefundById');
+    expect(file).toContain('export async function applyShopRefundDbState');
+    expect(file).toContain('SHOP_MISSING_REFUND_FROM');
+    expect(file).toContain('mapRazorpayRefundEventStatus');
     expect(file).toContain('FOR UPDATE');
     expect(file).toContain('stock_restored_at');
     expect(file).toContain('sumActiveRefundsForPayment');
@@ -79,7 +84,24 @@ describe('shop-order-refund orchestrator', () => {
   test('admin shop-refunds ops endpoints registered', () => {
     const file = read('src/endpoints/admin-shop-refunds.ts');
     expect(file).toContain('/admin/shop-refunds');
+    expect(file).toContain('/admin/shop-refunds/missing');
+    expect(file).toContain('/admin/shop-refunds/initiate');
+    expect(file).toContain('/admin/shop-refunds/:refundId/reconcile');
     expect(file).toContain('/admin/shop-refunds/:refundId/retry');
+    expect(file).toContain('reconcileShopRefundById');
     expect(file).toContain('LIMIT');
+  });
+
+  test('cancelled shop order recovery uses payments table truth', () => {
+    const file = read('src/utils/payments/shop-order-refund.ts');
+    expect(file).toContain('resolveShopRefundAmount');
+    expect(file).toContain('fetchLatestCompletedPayment');
+    expect(file).toContain('alreadyCancelled = true');
+  });
+
+  test('razorpay client exposes refunds.fetch for reconcile', () => {
+    const file = read('src/utils/payments/razorpay-client.ts');
+    expect(file).toContain('refunds');
+    expect(file).toContain('/refunds/');
   });
 });

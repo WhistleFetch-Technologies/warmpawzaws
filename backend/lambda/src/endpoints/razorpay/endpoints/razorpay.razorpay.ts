@@ -1868,6 +1868,12 @@ class RazorpayWebhookHandler extends BaseHandler {
       let ecommerceOrderForShipment: string | null = null;
       let ecommerceOrderToNotify: string | null = null;
       let ecommerceVendorIdForCommission: string | null = null;
+      let cancelledShopOrderLateRefund: {
+        orderId: string;
+        amount: number;
+        customerId?: string;
+        vendorId?: string;
+      } | null = null;
 
       // ✅ FIX: Use transaction with fallback lookup (razorpay_payment_id → razorpay_order_id)
       // Previously only looked up by razorpay_payment_id, which is NULL until verify-payment runs.
@@ -1975,6 +1981,32 @@ class RazorpayWebhookHandler extends BaseHandler {
             if (vendorId) {
               ecommerceVendorIdForCommission = vendorId;
             }
+          } else {
+            const { rows: lateCancelRows } = await client.query(
+              `SELECT o.id::text, o.customer_id::text, o.vendor_id::text, p.amount::text
+               FROM orders o
+               JOIN payments p ON p.id = $2::uuid
+               WHERE o.id = $1::uuid
+                 AND o.order_status = 'cancelled'
+                 AND LOWER(COALESCE(o.order_type, 'ecommerce')) IN ('ecommerce', 'shop', 'shop_order')
+                 AND p.razorpay_payment_id IS NOT NULL
+                 AND NOT EXISTS (
+                   SELECT 1 FROM refunds r
+                   WHERE r.order_id = o.id
+                     AND r.refund_status NOT IN ('failed', 'rejected')
+                 )
+               LIMIT 1`,
+              [paymentRecord.order_id, paymentRecord.id],
+            );
+            const lateRow = lateCancelRows[0];
+            if (lateRow) {
+              cancelledShopOrderLateRefund = {
+                orderId: String(lateRow.id),
+                amount: parseFloat(String(lateRow.amount)) || 0,
+                customerId: lateRow.customer_id ? String(lateRow.customer_id) : undefined,
+                vendorId: lateRow.vendor_id ? String(lateRow.vendor_id) : undefined,
+              };
+            }
           }
         }
       });
@@ -2054,6 +2086,20 @@ class RazorpayWebhookHandler extends BaseHandler {
       if (ecommerceOrderToNotify) {
         void notifyShopOrderPaid(ecommerceOrderToNotify).catch((e) =>
           console.error('[RAZORPAY-WEBHOOK] Shop order notification failed:', e)
+        );
+      }
+
+      if (cancelledShopOrderLateRefund && cancelledShopOrderLateRefund.amount > 0.009) {
+        const late = cancelledShopOrderLateRefund;
+        const { initiateShopOrderRazorpayRefund } = await import('../../../utils/payments/shop-order-refund');
+        void initiateShopOrderRazorpayRefund({
+          orderId: late.orderId,
+          amount: late.amount,
+          reason: 'Late payment capture on cancelled shop order',
+          customerId: late.customerId,
+          vendorId: late.vendorId,
+        }).catch((e) =>
+          console.error('[RAZORPAY-WEBHOOK] Late-cancel shop refund failed:', late.orderId, e),
         );
       }
     } else if (event === 'payment.failed') {
