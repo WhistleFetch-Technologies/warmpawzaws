@@ -53,9 +53,38 @@ export function resolveServiceBookingCommerceRoute(
   };
 }
 
-/** Runtime module selection — no marketplace override when Warmpawz Pay is active. */
+/**
+ * PR-9 safety: when Pay is selected but adapter is unavailable, fall back to Marketplace.
+ */
+export function applyMarketplaceNavigationFallback(
+  route: ServiceBookingCommerceRouteResult
+): ServiceBookingCommerceRouteResult {
+  if (route.useMarketplaceFlow || route.excludedDomain) {
+    return route;
+  }
+
+  const adapter = getCommerceRouteAdapter(route.configuredModelId);
+  if (adapter.isAvailable()) {
+    return route;
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(
+      '[CommerceSwitch] warmpawz_pay selected but adapter unavailable; using marketplace',
+      route
+    );
+  }
+
+  return {
+    ...route,
+    effectiveModelId: 'marketplace',
+    useMarketplaceFlow: true,
+    fallbackReason: 'warmpawz_pay_unavailable',
+  };
+}
+
 export function resolveServiceBookingCommerceRouteForNavigation(
   context: ServiceBookingRouteContext
 ): ServiceBookingCommerceRouteResult {
-  return resolveServiceBookingCommerceRoute(context);
+  return applyMarketplaceNavigationFallback(resolveServiceBookingCommerceRoute(context));
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
+import { useState, useEffect, useMemo, type MouseEvent } from 'react';
 import { CachedImage } from '@/components/shared/CachedImage';
-import { Stethoscope, Star, ChevronRight, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2 } from 'lucide-react';
+import { Stethoscope, Star, ChevronRight, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -12,7 +12,7 @@ import { useProblemGridByRole, type ProblemGridItem } from './useProblemGridByRo
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { VetProblemGrid } from './vet/VetProblemGrid';
 import { VetServiceCardBackground } from './vet/VetServiceCardBackground';
-import { VET_HEADER_BANNER, VET_SERVICE_CARDS, VET_IMG } from './vet/constants/vet-hub-assets';
+import { VET_HEADER_BANNER, VET_IMG, VET_SERVICE_CARDS } from './vet/constants/vet-hub-assets';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from './shared/StandardizedFooter';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
@@ -43,8 +43,7 @@ import {
   resolveServiceStyleLaunchFromCatalog,
 } from '@/lib/customer-service-style-launch';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
-import { buildHubWarmpawzBookingNav } from '@/lib/wappt-hub-booking-nav';
-import { resolveWarmpawzBookingScreen } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -298,7 +297,11 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     });
 
     if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
-      return launchFiltered;
+      if (shouldHideMarketplaceStyleTiles()) {
+      return launchFiltered.filter((s) => s.id === 'tele');
+    }
+
+    return launchFiltered;
     }
 
     return launchFiltered.filter((service) => {
@@ -313,6 +316,22 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     });
   }, [allowedServiceStyles, vetClinicBadgeText, styleLaunchByCard]);
 
+  const serviceTypesWithWappt = useMemo(() => {
+    if (!isWarmpawzAppointmentsHubEnabled('vet')) return serviceTypes;
+    const wapptCard = {
+      id: 'wappt_book',
+      name: 'Book Appointment',
+      description: 'Fixed fee · pick a slot',
+      image: `${VET_IMG}/clinic-visit.webp`,
+      Icon: Calendar,
+      iconColor: 'text-white',
+      iconBg: 'bg-[#FF8C42]',
+      badge: 'WARMPAWZ',
+      comingSoon: false as boolean | undefined,
+    };
+    return [wapptCard, ...serviceTypes];
+  }, [serviceTypes]);
+
   const problemGridItems = useMemo(() => {
     if (bootstrapProblems.length > 0) {
       const mapped: ProblemGridItem[] = bootstrapProblems.map((p) => ({
@@ -325,16 +344,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     }
     return legacyProblems.length > 0 ? legacyProblems : VET_PROBLEMS;
   }, [bootstrapProblems, legacyProblems]);
-
-  const handleWarmpawzBookAppointment = useCallback(
-    (v: BoardingListVendor) => {
-      onNavigate(
-        resolveWarmpawzBookingScreen('vet'),
-        buildHubWarmpawzBookingNav(v, { category: 'vet', serviceStyle: 'at_center' })
-      );
-    },
-    [onNavigate]
-  );
 
   // ✅ FIX: Validate pet context before allowing navigation
   const handleNavigate = (screen: string, navData?: any) => {
@@ -546,7 +555,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            {serviceTypes.map((service) => {
+            {serviceTypesWithWappt.map((service) => {
               const launchStatus = styleLaunchByCard[service.id];
               const isComingSoon =
                 launchStatus != null
@@ -563,7 +572,9 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     if (!allowed) return;
                   }
 
-                  if (service.id === 'clinic') {
+                  if (service.id === 'wappt_book') {
+                    handleNavigate('wappt-discovery', { category: 'vet' });
+                  } else if (service.id === 'clinic') {
                     handleNavigate('vet-clinic-list');
                   } else if (service.id === 'tele') {
                     handleNavigate('vet-tele-consultation');
@@ -735,7 +746,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     onOpenCenterDetails={openVetCenterProfile}
                     customerId={phone}
                     serviceCategory="vet"
-                    onBookAppointment={handleWarmpawzBookAppointment}
                   />
                 );
               })

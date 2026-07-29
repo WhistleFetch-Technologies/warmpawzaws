@@ -2,9 +2,9 @@ import type { CommerceRouteAdapter } from '../types';
 import { isWarmpawzPayModuleCapable } from '../warmpawz-pay-feature';
 
 /**
- * Warmpawz Pay routing adapter stub — capability probe only.
- * Does NOT import Warmpawz Pay modules or call payment APIs.
- * Future teams implement navigation when customer Pay APIs are live.
+ * Warmpawz Pay + Appointments routing adapter — capability probe only.
+ * When commerce switch is warmpawz_pay and Pay customer APIs are deployed,
+ * callers route to Pay tab and Book Appointment discovery (not legacy marketplace).
  */
 export const warmpawzPayRouteAdapter: CommerceRouteAdapter = {
   modelId: 'warmpawz_pay',

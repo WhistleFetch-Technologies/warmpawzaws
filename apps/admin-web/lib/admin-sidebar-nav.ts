@@ -8,6 +8,7 @@ export function hrefForAdminSidebarView(view: string): string {
   if (view === 'catalog-and-services') return '/catalog';
   if (view === 'region-manager') return '/regions';
   if (view === 'warmpawz-pay-catalogue') return '/warmpawz-pay';
+  if (view === 'warmpawz-appointments-catalogue') return '/warmpawz-appointments';
 
   const item = getAdminPortalNavItems().find((i) => i.id === view);
   if (item?.routeHint?.startsWith('/')) return item.routeHint;

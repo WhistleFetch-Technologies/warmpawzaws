@@ -32,6 +32,8 @@ function shortAddressFromCard(card: Record<string, unknown>): string | null {
 
 function availabilityTextFromCard(card: Record<string, unknown>): string {
   const next = card.nextAvailable as { display?: string } | undefined;
+  const slot = card.nextAvailableSlot ?? card.availabilityText;
+  if (typeof slot === 'string' && slot.trim()) return slot.trim();
   if (next?.display && String(next.display).trim()) return String(next.display);
   return 'Tap to view availability';
 }

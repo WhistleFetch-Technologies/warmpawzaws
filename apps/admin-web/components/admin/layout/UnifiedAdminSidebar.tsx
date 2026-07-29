@@ -66,6 +66,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   customers: UserCircle,
   ecommerce: ShoppingCart,
   'warmpawz-pay-catalogue': CreditCard,
+  'warmpawz-appointments-catalogue': Calendar,
   regions: Globe,
   loyalty: Gift,
   support: Headphones,

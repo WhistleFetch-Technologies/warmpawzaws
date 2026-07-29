@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { dbFetchPublishedVendorAppointmentFee } from '../repos/vendor_fee.repo';
+import { dbFetchPublishedVendorAppointmentFee } from '../repos/vendor_fee_get.repo';
 
 export async function executeVendorFeeGet(c: Context) {
   const vendorId = c.req.param('vendorId');

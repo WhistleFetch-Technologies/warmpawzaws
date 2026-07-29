@@ -256,12 +256,26 @@ export const ADMIN_PORTAL_NAV_ITEMS: AdminPortalNavItem[] = [
     routeHint: '/warmpawz-pay',
   },
   {
+    id: 'warmpawz-appointments-catalogue',
+    label: 'Warmpawz Appointments',
+    permissionId: 'admin.warmpawz_appointments',
+    permissionsAny: [
+      'admin.warmpawz_appointments',
+      'admin.warmpawz_appointments.catalogue.view',
+    ],
+    pathPrefixes: ['/warmpawz-appointments'],
+    section: 'main',
+    sortOrder: 76,
+    description: 'Warmpawz Appointments vendor catalogue and flat-fee booking',
+    routeHint: '/warmpawz-appointments/catalogue',
+  },
+  {
     id: 'shop-refunds',
     label: 'Shop Refunds',
     permissionId: 'admin.ecommerce',
     pathPrefixes: ['/shop-refunds'],
     section: 'main',
-    sortOrder: 76,
+    sortOrder: 77,
     description: 'Shop order refunds and retry',
   },
   {

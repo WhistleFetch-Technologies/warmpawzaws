@@ -35,7 +35,12 @@ import {
 import { DiscoveryVendorFeedSentinel } from './DiscoveryVendorFeedSentinel';
 import { DiscoveryProviderAvatar } from './DiscoveryProviderAvatar';
 import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
-import { useAppointmentsByStyleFeed } from '@/hooks/useAppointmentsByStyleFeed';
+import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
+import type { WapptStyleFilter } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
+import {
+  buildWarmpawzAppointmentsBookingNav,
+  resolveWarmpawzBookingScreen,
+} from '@/lib/warmpawz-appointments-customer';
 import { useDiscoveryProfileVendorResolve } from '@/hooks/useDiscoveryProfileVendorResolve';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import {
@@ -66,9 +71,9 @@ interface UniversalServicesByStyleProps {
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   bookingScreen?: string; // ✅ NEW: Screen name for booking (e.g., 'vet-booking', 'grooming-booking')
-  /** Warmpawz Appointments: catalogue discovery, no prices, Book Now → slot + flat fee checkout */
   appointmentsMode?: boolean;
-  queryExtras?: Record<string, string | number | undefined | null>;
+  wapptStyleFilter?: WapptStyleFilter;
+  hideDashboardHeader?: boolean;
 }
 
 // Provider can be vendor (for at_center) or staff/individual (for at_home/tele)
@@ -143,7 +148,8 @@ export function UniversalServicesByStyle({
   onNavigate,
   bookingScreen = 'booking', // Default booking screen
   appointmentsMode = false,
-  queryExtras,
+  wapptStyleFilter = 'all',
+  hideDashboardHeader = false,
 }: UniversalServicesByStyleProps) {
   const router = useRouter();
   const config = getRoleConfig(roleId);
@@ -168,30 +174,27 @@ export function UniversalServicesByStyle({
   providersRef.current = providers;
   const launchGate = useServiceStyleLaunchGate(phone, finalCategory, serviceStyle);
 
-  const feedEnabled = launchGate.ready && !launchGate.blocked;
-  const apptFeed = useAppointmentsByStyleFeed({
-    phone,
-    serviceStyle,
+  const feedEnabled = appointmentsMode || (launchGate.ready && !launchGate.blocked);
+
+  const wapptFeed = useWarmpawzAppointmentsByCategoryFeed({
     category: finalCategory,
-    roleId,
-    specialization,
-    queryExtras,
-    enabled: feedEnabled && appointmentsMode,
+    serviceStyle: wapptStyleFilter,
+    enabled: appointmentsMode && feedEnabled,
   });
+
   const normalFeed = useByStyleDiscoveryFeed({
     phone,
     serviceStyle,
     category: finalCategory,
     specialization,
-    enabled: feedEnabled && !appointmentsMode,
+    enabled: !appointmentsMode && feedEnabled,
   });
-  const {
-    rows: feedRows,
-    loading: feedLoading,
-    loadingMore,
-    hasMore,
-    loadMore,
-  } = appointmentsMode ? apptFeed : normalFeed;
+
+  const feedRows = appointmentsMode ? wapptFeed.vendors : normalFeed.rows;
+  const feedLoading = appointmentsMode ? wapptFeed.loading : normalFeed.loading;
+  const loadingMore = appointmentsMode ? wapptFeed.loadingMore : normalFeed.loadingMore;
+  const hasMore = appointmentsMode ? wapptFeed.hasMore : normalFeed.hasMore;
+  const loadMore = appointmentsMode ? wapptFeed.loadMore : normalFeed.loadMore;
 
   const mapRowToProvider = useCallback((row: Record<string, unknown>): Provider => {
     const base = mapDiscoveryRowBaseFields(row);
@@ -224,14 +227,14 @@ export function UniversalServicesByStyle({
         nextSlot && nextSlot !== 'Tap to view availability' ? nextSlot : undefined,
       specialization: base.specialization,
       amenities: Array.isArray(row.amenities) ? (row.amenities as string[]) : undefined,
-      priceMin: base.priceMin,
+      priceMin: appointmentsMode ? undefined : base.priceMin,
       services: [],
     };
-  }, []);
+  }, [appointmentsMode]);
 
   useEffect(() => {
     if (!feedEnabled) {
-      if (launchGate.ready && launchGate.blocked) setLoading(false);
+      if (!appointmentsMode && launchGate.ready && launchGate.blocked) setLoading(false);
       return;
     }
     let mapped = feedRows.map(mapRowToProvider);
@@ -437,6 +440,33 @@ export function UniversalServicesByStyle({
 
   const openProviderProfileForChevron = (e: MouseEvent, provider: Provider) => {
     e.stopPropagation();
+    if (appointmentsMode) {
+      const vid = String(provider.vendorId || provider.providerId || '');
+      const style =
+        wapptStyleFilter === 'all'
+          ? serviceStyle
+          : wapptStyleFilter;
+      const nav = buildWarmpawzAppointmentsBookingNav({
+        vendorId: vid,
+        vendorName: provider.name,
+        serviceStyle: style,
+        category: finalCategory,
+      });
+      if (roleId === 'veterinarian') {
+        onNavigate('vet-clinic-profile', {
+          ...nav,
+          clinicProfileBackScreen: profileBackScreen || 'wappt-discovery',
+        });
+        return;
+      }
+      if (roleId === 'groomer') {
+        const screen = style === 'at_home' ? 'grooming_home' : 'grooming_center';
+        onNavigate(screen, { ...nav, vendorId: vid });
+        return;
+      }
+      onNavigate(resolveWarmpawzBookingScreen(finalCategory), nav);
+      return;
+    }
     const row = provider as unknown as Record<string, unknown>;
     if (roleId === 'trainer') {
       onNavigate('training_embed_vendor_profile', {
@@ -554,24 +584,6 @@ export function UniversalServicesByStyle({
     }
 
     console.log(`✅ [${config.roleName}] Navigating to booking with data:`, bookingData);
-    onNavigate(bookingScreen, bookingData);
-  };
-
-  const handleBookAppointment = (provider: Provider) => {
-    const bookingData: Record<string, unknown> = {
-      appointmentsMode: true,
-      serviceName: 'Appointment',
-      serviceStyle,
-      serviceId: 'warmpawz_appointments',
-    };
-    if (provider.providerType === 'vendor') {
-      bookingData.vendorId = provider.providerId || provider.vendorId;
-      bookingData.vendorName = provider.name;
-    } else {
-      bookingData.vendorId = provider.vendorId;
-      bookingData.vendorName = provider.vendorName || provider.name;
-      bookingData.staffId = provider.staffId || provider.providerId;
-    }
     onNavigate(bookingScreen, bookingData);
   };
 
@@ -703,7 +715,7 @@ export function UniversalServicesByStyle({
     });
   };
 
-  if (launchGate.ready && launchGate.blocked) {
+  if (!appointmentsMode && launchGate.ready && launchGate.blocked) {
     return (
       <div className="min-h-screen bg-gray-50">
         <ServiceStyleLaunchBlocked message={launchGate.blockMessage} onBack={onBack} />
@@ -713,7 +725,11 @@ export function UniversalServicesByStyle({
 
   if (loading || showProfileLoading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
+      <div
+        className={`flex items-center justify-center bg-white ${
+          hideDashboardHeader ? 'h-full min-h-0' : 'min-h-screen'
+        }`}
+      >
         <div className="text-center">
           <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42] mx-auto mb-3" />
           <p className="text-gray-600">Loading {vendorId ? 'provider profile' : 'available services'}...</p>
@@ -1270,8 +1286,14 @@ export function UniversalServicesByStyle({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col relative overflow-hidden">
-      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame */}
+    <div
+      className={`flex flex-col bg-gray-50 relative ${
+        hideDashboardHeader
+          ? 'h-full min-h-0 overflow-hidden'
+          : 'min-h-screen overflow-hidden'
+      }`}
+    >
+      {!hideDashboardHeader ? (
       <ServiceDashboardHeader
         fullWidth
         serviceName={config.displayName}
@@ -1285,10 +1307,15 @@ export function UniversalServicesByStyle({
         bottomEdge="sheet"
         sheetToneClass="bg-white"
       />
+      ) : null}
 
       {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
-      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">
-      {/* Info section */}
+      <div
+        className={`flex-1 min-h-0 overflow-y-auto cw-scroll-pad-tabbar bg-white ${
+          hideDashboardHeader ? '' : '-mt-4 rounded-t-[1.75rem] sm:rounded-t-[2rem]'
+        }`}
+      >
+      {!hideDashboardHeader ? (
       <div className="px-6 pt-6 pb-2">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
@@ -1312,9 +1339,10 @@ export function UniversalServicesByStyle({
           </div>
         )}
       </div>
+      ) : null}
 
       {/* Content */}
-      <div className="px-4 pb-24">
+      <div className={`px-4 pb-24 ${hideDashboardHeader ? 'pt-4' : ''}`}>
         {vendorId && providers.length !== 1 ? (
           profileResolveFailed ? (
             <Card className="p-8 text-center bg-white">
@@ -1448,7 +1476,7 @@ export function UniversalServicesByStyle({
                 </div>
 
                 {/* Services List - Expanded */}
-                {expanded && (
+                {expanded && !appointmentsMode && (
                   <div className="bg-gray-50 p-4 space-y-3">
                     {/* Provider details for staff/individual */}
                     {provider.qualifications && (
@@ -1503,7 +1531,6 @@ export function UniversalServicesByStyle({
                                 </div>
                               ) : null}
                             </div>
-                            {!appointmentsMode ? (
                             <div className="shrink-0 text-right">
                               <ServicePricingDisplay
                                 basePrice={service.originalPrice || service.price}
@@ -1519,7 +1546,6 @@ export function UniversalServicesByStyle({
                                 {INDICATIVE_PRICING_NOTE}
                               </p>
                             </div>
-                            ) : null}
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -1533,7 +1559,6 @@ export function UniversalServicesByStyle({
                                 </Badge>
                               )}
                             </div>
-                            {!appointmentsMode ? (
                             <Button
                               size="sm"
                               className="h-8 shrink-0 rounded-full bg-[#FF8C42] px-5 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
@@ -1544,7 +1569,6 @@ export function UniversalServicesByStyle({
                             >
                               Book Now
                             </Button>
-                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -1567,7 +1591,7 @@ export function UniversalServicesByStyle({
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
                       {appointmentsMode ? (
-                        <span>View services · flat appointment fee at checkout</span>
+                        <span>Tap to view profile &amp; book</span>
                       ) : provider.services.length > 0 ? (
                         <>
                           {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service
@@ -1605,11 +1629,15 @@ export function UniversalServicesByStyle({
                       className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (appointmentsMode) {
+                          openProviderProfileForChevron(e, provider);
+                          return;
+                        }
                         setSelectedProvider(provider.providerId);
                         void fetchProviderServices(provider.providerId);
                       }}
                     >
-                      View Services
+                      {appointmentsMode ? 'Book Appointment' : 'View Services'}
                     </Button>
                   </div>
                 )}

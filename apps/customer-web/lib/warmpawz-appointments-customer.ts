@@ -1,49 +1,52 @@
-/** Customer Warmpawz Appointments — runtime feature flag (mirrors Lambda WARMPAWZ_APPOINTMENTS_ENABLED). */
-export function isWarmpawzAppointmentsCustomerEnabled(): boolean {
-  if (typeof window !== 'undefined') {
-    const runtime = (
-      window as unknown as {
-        __WARMPAWZ_RUNTIME_CONFIG__?: { warmpawzAppointmentsEnabled?: boolean | string };
-      }
-    ).__WARMPAWZ_RUNTIME_CONFIG__?.warmpawzAppointmentsEnabled;
-    if (runtime === true || runtime === 'true') return true;
-    if (runtime === false || runtime === 'false') return false;
-  }
-  return process.env.NEXT_PUBLIC_WARMPAWZ_APPOINTMENTS_ENABLED === 'true';
+import { isWarmpawzPay } from '@/lib/commerce-switch-client';
+import { resolveServiceBookingCommerceRouteForNavigation } from '@/lib/commerce-switch-routing';
+
+export const WAPPT_APPOINTMENT_SERVICE_ID = 'warmpawz_appointments';
+export const WAPPT_BOOKING_MODE = 'warmpawz_appointments' as const;
+export const WAPPT_DEFAULT_SLOT_DURATION_MIN = 30;
+
+export function isWarmpawzPayCommerceActive(): boolean {
+  return isWarmpawzPay();
 }
 
-export function isWarmpawzAppointmentsVendor(row: Record<string, unknown> | null | undefined): boolean {
-  if (!row) return false;
-  return row.warmpawzAppointments === true;
+export function shouldHideMarketplaceStyleTiles(): boolean {
+  return isWarmpawzPayCommerceActive();
+}
+
+export function isWarmpawzAppointmentsHubEnabled(category: string): boolean {
+  const route = resolveServiceBookingCommerceRouteForNavigation({
+    serviceKey: category,
+    category,
+  });
+  return !route.useMarketplaceFlow && !route.excludedDomain;
 }
 
 export type WarmpawzAppointmentsBookingNav = {
   vendorId: string;
-  vendorName: string;
-  appointmentsMode: true;
+  vendorName?: string;
   serviceStyle: string;
-  serviceType: string;
+  category: string;
+  appointmentsMode: true;
+  serviceId: typeof WAPPT_APPOINTMENT_SERVICE_ID;
+  bookingMode: typeof WAPPT_APPOINTMENT_SERVICE_ID;
 };
 
 export function buildWarmpawzAppointmentsBookingNav(opts: {
   vendorId: string;
-  vendorName: string;
+  vendorName?: string;
   serviceStyle: string;
   category: string;
 }): WarmpawzAppointmentsBookingNav {
   return {
     vendorId: opts.vendorId,
     vendorName: opts.vendorName,
-    appointmentsMode: true,
     serviceStyle: opts.serviceStyle,
-    serviceType: opts.category,
+    category: opts.category,
+    appointmentsMode: true,
+    serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
+    bookingMode: WAPPT_APPOINTMENT_SERVICE_ID,
   };
 }
-
-/** Synthetic service id used for Warmpawz Appointments slot + checkout APIs */
-export const WAPPT_APPOINTMENT_SERVICE_ID = 'warmpawz_appointments';
-
-export const WAPPT_BOOKING_MODE = 'warmpawz_appointments' as const;
 
 export function isWarmpawzAppointmentsPaymentRequest(opts: {
   bookingMode?: string;
@@ -52,9 +55,6 @@ export function isWarmpawzAppointmentsPaymentRequest(opts: {
   const sid = String(opts.serviceId ?? '').trim().toLowerCase();
   return opts.bookingMode === WAPPT_BOOKING_MODE || sid === WAPPT_APPOINTMENT_SERVICE_ID;
 }
-
-/** Default slot duration when no per-service selection (flat-fee catalogue booking). */
-export const WAPPT_DEFAULT_SLOT_DURATION_MIN = 30;
 
 export function resolveWarmpawzBookingCategory(serviceType?: string): string {
   const raw = String(serviceType || 'grooming').trim().toLowerCase();
@@ -65,37 +65,6 @@ export function resolveWarmpawzBookingCategory(serviceType?: string): string {
   return raw || 'grooming';
 }
 
-export function getWarmpawzBookingHeaderInfo(opts: {
-  category: string;
-  serviceStyle: string;
-}): { title: string; subtitle: string } {
-  const cat = resolveWarmpawzBookingCategory(opts.category);
-  const style = opts.serviceStyle;
-  if (cat === 'vet') {
-    if (style === 'tele') return { title: 'Tele Consultation', subtitle: 'Schedule, pet & details' };
-    if (style === 'at_home') return { title: 'Home Visit', subtitle: 'Schedule, pet & address' };
-    return { title: 'Clinic Visit', subtitle: 'Schedule, pet & location' };
-  }
-  if (cat === 'training') {
-    if (style === 'at_home') return { title: 'Home Training', subtitle: 'Schedule, pet & address' };
-    return { title: 'Training Session', subtitle: 'Schedule, pet & location' };
-  }
-  if (cat === 'sitting') {
-    return { title: 'Pet Sitting', subtitle: 'Schedule, pet & address' };
-  }
-  if (style === 'at_home') {
-    return { title: 'At-Home Appointment', subtitle: 'Schedule, pet & address' };
-  }
-  return { title: 'Book Appointment', subtitle: 'Schedule, pet & location' };
-}
-
-export function getWarmpawzLocationFallbackLabel(category: string): string {
-  const cat = resolveWarmpawzBookingCategory(category);
-  if (cat === 'vet') return 'Clinic';
-  if (cat === 'training') return 'Training Center';
-  return 'Service Location';
-}
-
 export function resolveWarmpawzBookingScreen(category?: string): string {
   const cat = resolveWarmpawzBookingCategory(category);
   if (cat === 'vet') return 'vet-booking';
@@ -104,19 +73,31 @@ export function resolveWarmpawzBookingScreen(category?: string): string {
   return 'grooming-booking';
 }
 
-export function getWarmpawzAppointmentServiceLabel(opts: {
+export function getWarmpawzAppointmentServiceLabel(_opts?: {
+  category?: string;
+  serviceStyle?: string;
+}): string {
+  return 'Appointment';
+}
+
+export function getWarmpawzBookingHeaderInfo(opts: {
   category: string;
   serviceStyle: string;
-}): string {
-  const cat = resolveWarmpawzBookingCategory(opts.category);
+}): { title: string; subtitle: string } {
   const style = opts.serviceStyle;
-  if (cat === 'vet') {
-    if (style === 'tele') return 'Tele Consultation';
-    if (style === 'at_home') return 'Home Visit Appointment';
-    return 'Clinic Visit Appointment';
+  if (style === 'tele') {
+    return { title: 'Tele Consultation', subtitle: 'Schedule, pet & details' };
   }
-  if (cat === 'training') return 'Training Appointment';
-  if (cat === 'sitting') return 'Pet Sitting Appointment';
-  if (style === 'at_home') return 'At-Home Appointment';
-  return 'Appointment';
+  if (style === 'at_home') {
+    return { title: 'Book Appointment', subtitle: 'Schedule, pet & address' };
+  }
+  return { title: 'Book Appointment', subtitle: 'Schedule, pet & location' };
+}
+
+export function getWarmpawzAppointmentBookingTitle(category: string): {
+  title: string;
+  subtitle: string;
+} {
+  const label = category.charAt(0).toUpperCase() + category.slice(1);
+  return { title: 'Book Appointment', subtitle: `${label} · schedule & pay flat fee` };
 }

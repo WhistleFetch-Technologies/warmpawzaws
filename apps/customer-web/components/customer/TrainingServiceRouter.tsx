@@ -43,6 +43,8 @@ import { buildHubWarmpawzBookingNav } from '@/lib/wappt-hub-booking-nav';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
+import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
+import { Calendar } from 'lucide-react';
 
 interface TrainingServiceRouterProps {
   phone: string;
@@ -233,18 +235,32 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     [onNavigate]
   );
 
-  const serviceTypes = useMemo(
-    () =>
-      TRAINING_TYPE_CARDS.map((card) =>
-        card.id === 'training_center'
-          ? {
-              ...card,
-              badge: trainingCenterBadgeText.toUpperCase(),
-            }
-          : { ...card, badge: card.badge ?? 'PERSONALIZED' },
-      ),
-    [trainingCenterBadgeText],
-  );
+  const serviceTypes = useMemo(() => {
+    const base = TRAINING_TYPE_CARDS.map((card) =>
+      card.id === 'training_center'
+        ? { ...card, badge: trainingCenterBadgeText.toUpperCase() }
+        : { ...card, badge: card.badge ?? 'PERSONALIZED' },
+    );
+    if (shouldHideMarketplaceStyleTiles()) return [];
+    return base;
+  }, [trainingCenterBadgeText]);
+
+  const serviceTypesWithWappt = useMemo(() => {
+    if (!isWarmpawzAppointmentsHubEnabled('training')) return serviceTypes;
+    const wapptCard = {
+      id: 'wappt_training',
+      name: 'Book Appointment',
+      description: 'Fixed fee · pick a slot',
+      image: TRAINING_TYPE_CARDS[0].image,
+      Icon: Calendar,
+      iconColor: 'text-white',
+      iconBg: 'bg-[#FF8C42]',
+      badge: 'WARMPAWZ',
+      badgeClass: 'bg-[#FF8C42] text-white',
+      arrowClass: 'bg-[#FF8C42] hover:bg-orange-600',
+    };
+    return [wapptCard, ...serviceTypes];
+  }, [serviceTypes]);
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
@@ -453,11 +469,17 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               <PawPrint className="h-3.5 w-3.5 text-[#FF8C42]" aria-hidden />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {serviceTypes.map((service) => (
+              {serviceTypesWithWappt.map((service) => (
                 <button
                   key={service.id}
                   type="button"
-                  onClick={() => onNavigate?.(service.id)}
+                  onClick={() => {
+                    if (service.id === 'wappt_training') {
+                      onNavigate?.('wappt-discovery', { category: 'training' });
+                      return;
+                    }
+                    onNavigate?.(service.id);
+                  }}
                   className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
                 >
                   <div className="relative h-28 w-full sm:h-32">

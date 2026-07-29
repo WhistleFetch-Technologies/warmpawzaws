@@ -41,6 +41,7 @@ import {
   type BoardingPlanRow,
   findBoardingListVendorByProfileKey,
 } from '@/lib/boarding-vendor-discovery-map';
+import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
@@ -207,6 +208,10 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   }, [phone]);
 
   const navigateGroomingStyle = async (screen: string) => {
+    if (screen === 'wappt_grooming') {
+      onNavigate?.('wappt-discovery', { category: 'grooming' });
+      return;
+    }
     const styleKey = GROOMING_STYLE_LAUNCH_MAP[screen];
     if (styleKey) {
       const allowed = await gateServiceStyleNavigation(phone, 'grooming', styleKey, (msg) =>
@@ -365,11 +370,34 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     ];
       return cards.filter((service) => {
         const launchStatus = styleLaunchByCard[service.id];
-        return !(launchStatus && isServiceStyleHidden(launchStatus));
+        if (launchStatus && isServiceStyleHidden(launchStatus)) {
+          return false;
+        }
+        if (shouldHideMarketplaceStyleTiles()) {
+          return false;
+        }
+        return true;
       });
     },
     [groomingCenterBadgeText, styleLaunchByCard]
   );
+
+  const serviceTypesWithWappt = useMemo(() => {
+    if (!isWarmpawzAppointmentsHubEnabled('grooming')) return serviceTypes;
+    return [
+      {
+        id: 'wappt_grooming',
+        name: 'Book Appointment',
+        description: 'Fixed fee · pick a slot',
+        image: `${GROOMING_IMG}/grooming-center.webp`,
+        badge: 'WARMPAWZ',
+        badgeClass: 'bg-[#FF8C42] text-white',
+        trustedBy: 'Admin-curated providers',
+        arrowClass: 'bg-[#FF8C42] hover:bg-orange-600',
+      },
+      ...serviceTypes,
+    ];
+  }, [serviceTypes]);
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
@@ -520,7 +548,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           <div>
             <h2 className="mb-3 text-lg font-bold text-slate-900">Choose Service Type</h2>
             <div className="grid grid-cols-2 gap-3">
-              {serviceTypes.map((service) => (
+              {serviceTypesWithWappt.map((service) => (
                 <button
                   key={service.id}
                   type="button"

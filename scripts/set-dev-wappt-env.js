@@ -1,32 +1,34 @@
 #!/usr/bin/env node
-/** Enable Warmpawz Appointments feature flags on dev Lambda API handler. */
+/**
+ * Set Warmpawz Appointments feature flags on dev API Lambda.
+ * Usage: node scripts/set-dev-wappt-env.js
+ */
 const { execSync } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
-const fn = process.env.LAMBDA_FUNCTION_NAME || 'warmpawz-dev-api-handler';
-const region = process.env.AWS_REGION || 'ap-south-1';
+const FUNCTION = process.env.LAMBDA_FUNCTION_NAME || 'warmpawz-dev-api-handler';
+const REGION = process.env.AWS_REGION || 'ap-south-1';
 
-const raw = execSync(
-  `aws lambda get-function-configuration --function-name ${fn} --region ${region} --query Environment.Variables --output json`,
-  { encoding: 'utf8' },
-);
-const vars = JSON.parse(raw);
-vars.WARMPAWZ_APPOINTMENTS_ENABLED = 'true';
-vars.WARMPAWZ_APPOINTMENTS_ADMIN_ENABLED = 'true';
+function main() {
+  const raw = execSync(
+    `aws lambda get-function-configuration --function-name ${FUNCTION} --region ${REGION} --output json`,
+    { encoding: 'utf8' },
+  );
+  const cfg = JSON.parse(raw);
+  const env = { ...(cfg.Environment?.Variables || {}) };
+  env.WARMPAWZ_APPOINTMENTS_ENABLED = 'true';
+  env.WARMPAWZ_APPOINTMENTS_ADMIN_ENABLED = 'true';
 
-const file = path.join(os.tmpdir(), 'lambda-env-wappt.json');
-fs.writeFileSync(file, JSON.stringify({ Variables: vars }));
+  const payload = JSON.stringify({
+    FunctionName: FUNCTION,
+    Environment: { Variables: env },
+  });
+  const tmp = require('path').join(require('os').tmpdir(), 'wappt-lambda-env.json');
+  require('fs').writeFileSync(tmp, payload);
+  execSync(
+    `aws lambda update-function-configuration --region ${REGION} --cli-input-json file://${tmp.replace(/\\/g, '/')}`,
+    { stdio: 'inherit' },
+  );
+  console.log('Updated Lambda env:', FUNCTION);
+}
 
-execSync(
-  `aws lambda update-function-configuration --function-name ${fn} --region ${region} --environment file://${file.replace(/\\/g, '/')}`,
-  { stdio: 'inherit' },
-);
-execSync(`aws lambda wait function-updated --function-name ${fn} --region ${region}`, { stdio: 'inherit' });
-
-const check = execSync(
-  `aws lambda get-function-configuration --function-name ${fn} --region ${region} --query Environment.Variables.{WAPPT:WARMPAWZ_APPOINTMENTS_ENABLED,WAPPT_ADMIN:WARMPAWZ_APPOINTMENTS_ADMIN_ENABLED} --output json`,
-  { encoding: 'utf8' },
-);
-console.log('Warmpawz Appointments flags on dev Lambda:', check);
+main();

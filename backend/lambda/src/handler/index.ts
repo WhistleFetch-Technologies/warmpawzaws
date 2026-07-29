@@ -679,6 +679,7 @@ registerCustomerWarmpawzAppointmentsEndpoints(app);
 // /customer/appointments MUST register before /customer/:customerId or "appointments" is captured as :customerId → list API never runs.
 registerCustomerAppointmentsEndpoints(app);
 registerCustomerWarmpawzPayEndpoints(app); // /customer/warmpawz-pay/vendors — before /customer/:customerId
+registerCustomerWarmpawzAppointmentsEndpoints(app); // /customer/warmpawz-appointments/* — before /customer/:customerId
 // Specialized flows under /customer/* (pet-matching, holiday-packages) MUST register before /customer/:customerId
 // or paths like /customer/pet-matching are captured as customerId="pet-matching" and return 4xx.
 registerSpecializedServiceFlows(app);
@@ -690,8 +691,8 @@ registerWarmpawzPayDashboardAdminRoutes(app);
 registerWarmpawzPayPaymentsAdminRoutes(app);
 registerWarmpawzPayPricingAdminRoutes(app);
 registerWarmpawzPayCatalogueAdminRoutes(app);
-registerWarmpawzAppointmentsCatalogueAdminRoutes(app);
 registerWarmpawzAppointmentsDashboardAdmin(app);
+registerWarmpawzAppointmentsCatalogueAdminRoutes(app);
 registerAdminAiCopilotEndpoints(app);
 registerCommercialAiCopilotEndpoints(app);
 registerAdminCustomerEndpoints(app);
