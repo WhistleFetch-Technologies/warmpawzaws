@@ -1,0 +1,127 @@
+/**
+ * PR-15 CTA screenshots — live app + full prop preview (icons/subtitles).
+ */
+import { chromium, devices } from 'playwright';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const OUT_DIR = path.join(__dirname, '..', 'screenshots', 'pr-15');
+const BASE = process.env.CUSTOMER_WEB_URL || 'http://localhost:3001';
+
+fs.mkdirSync(OUT_DIR, { recursive: true });
+
+const PREVIEW_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Inter, system-ui, -apple-system, sans-serif; background: #f3f4f6; padding: 16px; }
+  .section { background: #FFF9F2; border-top: 1px solid rgba(240,230,220,.8); padding: 12px; border-radius: 0 0 12px 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card {
+    height: 68px; border: 0; border-radius: 12px; padding: 10px 12px;
+    display: flex; align-items: center; justify-content: flex-start;
+    color: #fff; cursor: pointer; box-shadow: 0 3px 8px rgba(0,0,0,.12);
+  }
+  .card.orange { background: linear-gradient(90deg, #F55A1C 0%, #FFAD4A 100%); box-shadow: 0 3px 8px rgba(245,90,28,.22); }
+  .card.green { background: linear-gradient(90deg, #17855A 0%, #44C984 100%); box-shadow: 0 3px 8px rgba(23,133,90,.22); }
+  .row { display: inline-flex; align-items: center; gap: 10px; max-width: 100%; }
+  .icon-slot { width: 28px; height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .icon-slot svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; }
+  .text { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+  .title { font-size: 14px; font-weight: 700; line-height: 1.2; color: #fff; }
+  .sub { margin-top: 2px; font-size: 11px; font-weight: 400; line-height: 1.25; color: rgba(255,255,255,.75); }
+  .wrap { max-width: 390px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .body { padding: 16px; color: #6b7280; font-size: 12px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="body">PR-15 CTA preview — full props (icon + subtitle)</div>
+    <div class="section">
+      <div class="grid">
+        <button type="button" class="card orange">
+          <span class="row">
+            <span class="icon-slot" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+            </span>
+            <span class="text">
+              <span class="title">Book Appointment</span>
+              <span class="sub">Reserve your slot</span>
+            </span>
+          </span>
+        </button>
+        <button type="button" class="card green">
+          <span class="row">
+            <span class="icon-slot" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </span>
+            <span class="text">
+              <span class="title">Pay Bill by Warmpawz</span>
+              <span class="sub">Get discount</span>
+            </span>
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+async function captureLiveApp(browser) {
+  const context = await browser.newContext({ viewport: devices['iPhone 13'].viewport });
+  const page = await context.newPage();
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle', timeout: 120000 }).catch(() => {});
+  await page.waitForTimeout(2000);
+
+  // Reuse auth flow from main script — quick path: try discovery via home if logged in
+  const vetCare = page.getByRole('button', { name: /Vet Care/i }).first();
+  if (await vetCare.isVisible().catch(() => false)) {
+    await vetCare.click().catch(() => {});
+    await page.waitForTimeout(2000);
+    const book = page.getByRole('button', { name: /^Book Appointment$/i }).first();
+    if (await book.isVisible().catch(() => false)) {
+      await book.click().catch(() => {});
+      await page.waitForTimeout(4000);
+    }
+  }
+
+  await page.waitForSelector('[data-slot="card"]', { timeout: 30000 }).catch(() => {});
+  const card = page.locator('[data-slot="card"]').first();
+  if (await card.count()) {
+    await card.screenshot({ path: path.join(OUT_DIR, 'appointment-discovery-live-card.png') });
+    console.log('Saved live card');
+  }
+  await page.screenshot({ path: path.join(OUT_DIR, 'appointment-discovery-live.png'), fullPage: true });
+  await context.close();
+}
+
+async function captureFullPropsPreview(browser) {
+  const htmlPath = path.join(OUT_DIR, 'cta-full-props-preview.html');
+  fs.writeFileSync(htmlPath, PREVIEW_HTML);
+  const page = await browser.newPage({ viewport: { width: 390, height: 200 } });
+  await page.goto(`file:///${htmlPath.replace(/\\/g, '/')}`);
+  await page.waitForTimeout(500);
+  await page.locator('.section').screenshot({ path: path.join(OUT_DIR, 'cta-full-props-preview.png') });
+  console.log('Saved full props preview');
+  await page.close();
+}
+
+async function main() {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    await captureFullPropsPreview(browser);
+    await captureLiveApp(browser);
+  } finally {
+    await browser.close();
+  }
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

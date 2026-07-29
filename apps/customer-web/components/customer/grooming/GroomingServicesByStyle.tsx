@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Building2, Home, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Scissors, Sparkles, Check, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -49,6 +50,9 @@ import {
   buildWarmpawzAppointmentsBookingNav,
   resolveWarmpawzBookingScreen,
 } from '@/lib/warmpawz-appointments-customer';
+import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
+import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
+import { mapDiscoveryProviderToVendorCardProps } from '@/lib/warmpawz-pay/map-discovery-provider-to-vendor-card-props';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -85,6 +89,7 @@ interface Provider {
   rating: string;
   reviewCount: number;
   distance?: number | null;
+  distanceText?: string | null;
   isVerified?: boolean;
   isIndividualProvider?: boolean;
   nextAvailableSlot?: string;
@@ -122,6 +127,7 @@ export function GroomingServicesByStyle({
   onBack, 
   onNavigate 
 }: GroomingServicesByStyleProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
@@ -187,6 +193,7 @@ export function GroomingServicesByStyle({
       rating: String(base.rating),
       reviewCount: base.reviewCount,
       distance: base.distance != null ? Number(base.distance) : null,
+      distanceText: base.distanceText,
       isVerified: base.isVerified,
       isIndividualProvider: base.isIndividualProvider,
       nextAvailableSlot:
@@ -1371,6 +1378,57 @@ export function GroomingServicesByStyle({
             </Card>
             
             {filteredAndSortedProviders.map((provider) => {
+              if (appointmentsMode) {
+                const providerAddress = getProviderAddress(provider);
+                return (
+                  <WarmpawzPayVendorCard
+                    key={provider.providerId}
+                    {...mapDiscoveryProviderToVendorCardProps({
+                      provider: {
+                        name: provider.name,
+                        photo: provider.photo,
+                        isVerified: provider.isVerified,
+                        rating: provider.rating,
+                        reviewCount: provider.reviewCount,
+                        distance: provider.distance,
+                        distanceText: provider.distanceText,
+                        nextAvailableSlot: provider.nextAvailableSlot,
+                        experienceYears: provider.experienceYears,
+                        providerType: provider.providerType,
+                        city: provider.city,
+                      },
+                      subtitle: getProviderTypeLabel(provider),
+                      address: providerAddress,
+                      footerHint: provider.nextAvailableSlot
+                        ? `Next: ${provider.nextAvailableSlot}`
+                        : 'Tap to view profile & book',
+                      profileAriaLabel: `View profile: ${provider.name}`,
+                      verifiedAriaLabel: 'Verified provider',
+                      primaryActionClassName:
+                        'text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10',
+                      primaryLabel: 'Book Appointment',
+                      onPrimary: (e) => openGroomingProviderProfile(e, provider),
+                      onProfileClick: (e) => openGroomingProviderProfile(e, provider),
+                      secondaryLabel: 'Pay with Warmpawz',
+                      onSecondary: (e) => {
+                        e.stopPropagation();
+                        const vendorId = String(
+                          provider.vendorId || provider.providerId || '',
+                        ).trim();
+                        if (!vendorId) return;
+                        // nav-exception: WPay module uses URL routes (same entry as Pay Hub)
+                        launchWarmpawzPayServiceBooking({
+                          router,
+                          serviceKey: 'grooming',
+                          category: 'grooming',
+                          vendorId,
+                        });
+                      },
+                    })}
+                  />
+                );
+              }
+
               const expanded = selectedProvider === provider.providerId;
               const headerInteractive = expanded;
               const providerAddress = getProviderAddress(provider);

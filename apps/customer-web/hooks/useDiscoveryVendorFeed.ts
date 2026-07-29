@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { discoveryNextCursor, discoveryVendorList } from '@/lib/discovery-list';
+import {
+  extractImageFieldsFromRow,
+  logDiscoveryImageStage,
+} from '@/lib/warmpawz-pay/debug-log-discovery-image';
 
 export type UseDiscoveryVendorFeedOptions = {
   /** Build URL without limit/cursor — hook appends pagination. */
@@ -45,6 +49,24 @@ export function useDiscoveryVendorFeed({
         const url = buildUrl({ limit: pageSize, cursor: cursor ?? undefined });
         const data = await apiClient.get<Record<string, unknown>>(url);
         const batch = discoveryVendorList(data);
+        const binduRaw = batch.find((row) =>
+          /bindu vet clinic/i.test(String(row.name ?? row.businessName ?? '')),
+        );
+        if (binduRaw) {
+          logDiscoveryImageStage('rawAppointmentDiscoveryApiRow', {
+            vendorName: binduRaw.name ?? binduRaw.businessName,
+            fullRow: binduRaw,
+            imageFields: extractImageFieldsFromRow(binduRaw),
+          });
+        }
+        if (!binduRaw && batch.length > 0) {
+          const first = batch[0];
+          logDiscoveryImageStage('rawAppointmentDiscoveryApiRow.firstProvider', {
+            vendorName: first.name ?? first.businessName,
+            fullRow: first,
+            imageFields: extractImageFieldsFromRow(first),
+          });
+        }
         const nc = discoveryNextCursor(data);
         cursorRef.current = nc;
         setNextCursor(nc);

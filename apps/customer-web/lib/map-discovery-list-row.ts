@@ -3,6 +3,10 @@
  */
 import { normalizeProviderListPhoto } from './resolve-display-image-url';
 import { resolveNextAvailableLabel } from './available-slots-response';
+import {
+  extractImageFieldsFromRow,
+  logDiscoveryImageStage,
+} from '@/lib/warmpawz-pay/debug-log-discovery-image';
 
 export type DiscoveryListRow = Record<string, unknown>;
 
@@ -32,6 +36,17 @@ export function mapDiscoveryRowBaseFields(row: DiscoveryListRow) {
 
   const nextAvailableSlot = resolveNextAvailableLabel(row) ?? undefined;
 
+  const photo = normalizeProviderListPhoto(row);
+
+  if (/bindu vet clinic/i.test(name)) {
+    logDiscoveryImageStage('mapDiscoveryRowBaseFields', {
+      vendorName: name,
+      rawImageFields: extractImageFieldsFromRow(row),
+      normalizedPhoto: photo ?? null,
+      photoLostAt: photo ? null : 'normalizeProviderListPhoto returned undefined',
+    });
+  }
+
   return {
     id,
     providerId: id,
@@ -41,9 +56,16 @@ export function mapDiscoveryRowBaseFields(row: DiscoveryListRow) {
     businessName: row.businessName
       ? cleanDiscoveryProviderName(String(row.businessName))
       : undefined,
-    photo: normalizeProviderListPhoto(row),
-    address: row.address as string | undefined,
+    photo,
+    address:
+      (typeof row.address === 'string' && row.address.trim()) ||
+      (typeof row.shortAddress === 'string' && row.shortAddress.trim()) ||
+      undefined,
     city: row.city as string | undefined,
+    distanceText:
+      typeof row.distanceText === 'string' && row.distanceText.trim()
+        ? row.distanceText.trim()
+        : undefined,
     phone: row.phone as string | undefined,
     role: (row.role ?? row.roleDisplayName ?? row.roleName) as string | undefined,
     roleDisplayName: (row.roleDisplayName ?? row.roleName ?? row.role) as string | undefined,
