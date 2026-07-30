@@ -68,7 +68,7 @@ export function ECommerceDashboard({
       setAnalytics(analyticsResponse?.data ?? {});
       
       // Load recent orders
-      const ordersData = await apiClient.get<any>('/admin/orders?limit=5').catch(() => ({ orders: [] }));
+      const ordersData = await apiClient.get<any>('/admin/ecommerce/orders?limit=5&period=all').catch(() => ({ orders: [] }));
       setRecentOrders((ordersData as any)?.orders || []);
       
       // Pending catalog items (matches vendor submit_for_approval / pending statuses)

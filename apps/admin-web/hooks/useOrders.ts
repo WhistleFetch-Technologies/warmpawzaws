@@ -23,21 +23,45 @@ export interface Order {
   cancelled_at?: string;
 }
 
+export interface OrderListFilters {
+  status?: string;
+  period?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface OrderListResult {
+  orders: Order[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 // ============================================================================
 // QUERIES
 // ============================================================================
 
-export function useOrders(filters?: { status?: string; vendorId?: string; customerId?: string }) {
+export function useOrders(filters?: OrderListFilters) {
   return useQuery({
     queryKey: ['orders', filters],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (filters?.status) params.append('status', filters.status);
-      if (filters?.vendorId) params.append('vendor_id', filters.vendorId);
-      if (filters?.customerId) params.append('customer_id', filters.customerId);
-      
-      const response = await apiClient.get<any>(`/admin/orders?${params.toString()}`);
-      return (response.orders || response || []) as Order[];
+      if (filters?.period) params.append('period', filters.period);
+      if (filters?.search) params.append('search', filters.search);
+      if (filters?.limit != null) params.append('limit', String(filters.limit));
+      if (filters?.offset != null) params.append('offset', String(filters.offset));
+
+      const response = await apiClient.get<OrderListResult>(
+        `/admin/ecommerce/orders?${params.toString()}`,
+      );
+      return {
+        orders: (response.orders || []) as Order[],
+        total: response.total ?? 0,
+        limit: response.limit ?? filters?.limit ?? 25,
+        offset: response.offset ?? filters?.offset ?? 0,
+      };
     },
     staleTime: 30000,
   });
@@ -47,8 +71,10 @@ export function useOrder(orderId: string) {
   return useQuery({
     queryKey: ['order', orderId],
     queryFn: async () => {
-      const response = await apiClient.get<any>(`/admin/orders/${orderId}`);
-      return response.order || response as Order;
+      const response = await apiClient.get<{ order?: Order }>(
+        `/admin/ecommerce/orders/${orderId}`,
+      );
+      return (response.order || response) as Order;
     },
     enabled: !!orderId,
   });
@@ -62,10 +88,10 @@ export function useUpdateOrderStatus() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ orderId, status, trackingNumber, notes }: { 
-      orderId: string; 
-      status: string; 
-      trackingNumber?: string; 
+    mutationFn: async ({ orderId, status, trackingNumber, notes }: {
+      orderId: string;
+      status: string;
+      trackingNumber?: string;
       notes?: string;
     }) => {
       return await apiClient.put(`/orders/${orderId}/status`, { status, trackingNumber, notes });
@@ -75,7 +101,7 @@ export function useUpdateOrderStatus() {
       queryClient.invalidateQueries({ queryKey: ['order', variables.orderId] });
       toast.success('Order status updated');
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || 'Failed to update order status');
     },
   });
@@ -93,7 +119,7 @@ export function useCancelOrder() {
       queryClient.invalidateQueries({ queryKey: ['order', variables.orderId] });
       toast.success('Order cancelled');
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || 'Failed to cancel order');
     },
   });
