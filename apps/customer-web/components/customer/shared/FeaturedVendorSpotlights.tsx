@@ -29,7 +29,7 @@ export function FeaturedVendorSpotlights({
   phone,
   onNavigate,
   className = '',
-  limit = 6,
+  limit = 3,
 }: FeaturedVendorSpotlightsProps) {
   const router = useRouter();
   const [vendors, setVendors] = useState<any[]>([]);

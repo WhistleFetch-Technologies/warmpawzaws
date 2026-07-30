@@ -58,6 +58,9 @@ import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
 import { roleIdToSharePersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from './ServiceStyleLaunchBlocked';
+import { applyWapptHubDiscoveryToProviders } from '@/lib/filter-hub-services';
+import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
+import { buildWapptDiscoveryVendorCardProps } from '@/lib/wappt-discovery-vendor-card';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -238,6 +241,9 @@ export function UniversalServicesByStyle({
       return;
     }
     let mapped = feedRows.map(mapRowToProvider);
+    if (appointmentsMode && category) {
+      mapped = applyWapptHubDiscoveryToProviders(mapped, category);
+    }
     if (vendorId) {
       const want = String(vendorId).trim();
       mapped = mapped.filter(
@@ -255,6 +261,8 @@ export function UniversalServicesByStyle({
     mapRowToProvider,
     launchGate.ready,
     launchGate.blocked,
+    appointmentsMode,
+    category,
   ]);
 
   const { showProfileLoading, profileResolveFailed } = useDiscoveryProfileVendorResolve({
@@ -1370,6 +1378,38 @@ export function UniversalServicesByStyle({
         ) : (
           <div className="space-y-4  ">
             {providers.map((provider) => {
+              if (appointmentsMode) {
+                const providerAddress = getProviderAddress(provider);
+                return (
+                  <WarmpawzPayVendorCard
+                    key={provider.providerId}
+                    {...buildWapptDiscoveryVendorCardProps({
+                      provider: {
+                        name: provider.name,
+                        photo: provider.photo,
+                        isVerified: provider.isVerified,
+                        rating: provider.rating,
+                        reviewCount: provider.reviewCount,
+                        distance: provider.distance,
+                        distanceText: (provider as { distanceText?: string }).distanceText,
+                        nextAvailableSlot: provider.nextAvailableSlot,
+                        experienceYears: provider.experienceYears,
+                        providerType: provider.providerType,
+                        city: provider.city,
+                        providerId: provider.providerId,
+                        vendorId: provider.vendorId,
+                      },
+                      subtitle: getProviderTypeLabel(provider),
+                      address: providerAddress,
+                      category: finalCategory,
+                      serviceKey: finalCategory,
+                      onPrimary: (e) => openProviderProfileForChevron(e, provider),
+                      router,
+                    })}
+                  />
+                );
+              }
+
               const expanded = selectedProvider === provider.providerId;
               const headerInteractive = expanded;
               const providerAddress = getProviderAddress(provider);

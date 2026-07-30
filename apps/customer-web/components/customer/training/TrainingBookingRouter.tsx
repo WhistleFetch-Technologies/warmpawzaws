@@ -21,6 +21,12 @@ import {
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
+import {
+  WAPPT_APPOINTMENT_SERVICE_ID,
+  WAPPT_BOOKING_MODE,
+  WAPPT_DEFAULT_SLOT_DURATION_MIN,
+} from '@/lib/warmpawz-appointments-customer';
 
 interface TrainingBookingRouterProps {
   phone: string;
@@ -42,6 +48,7 @@ interface TrainingBookingRouterProps {
   petBreed?: string;
   notes?: string;
   skipToPayment?: boolean; // Flag to skip directly to payment
+  appointmentsMode?: boolean;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -83,6 +90,7 @@ export function TrainingBookingRouter({
   petBreed: preFilledPetBreed, // ✅ NEW: Pre-filled pet breed
   notes: preFilledNotes, // ✅ NEW: Pre-filled notes
   skipToPayment, // ✅ NEW: Flag to skip to payment
+  appointmentsMode = false,
   onBack, 
   onNavigate, 
   onViewBooking,
@@ -90,7 +98,9 @@ export function TrainingBookingRouter({
 }: TrainingBookingRouterProps) {
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to datetime
   // ✅ NEW: Also skip if multiple services are already selected from center profile
-  const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService || vendorId || (selectedServices && selectedServices.length > 0));
+  const hasServiceContext = appointmentsMode && vendorId
+    ? true
+    : (serviceType || serviceStyle) && (serviceId || selectedService || vendorId || (selectedServices && selectedServices.length > 0));
   
   // ✅ NEW: Check if we have complete booking data (from provider profile, etc.) - skip directly to payment
   const hasCompleteBookingData = skipToPayment && preFilledDate && preFilledTime && preFilledPetId && serviceId;
@@ -364,12 +374,25 @@ export function TrainingBookingRouter({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadTimeSlots uses latest slotDurationMinutes / selectedVendorService
   }, [selectedDate, vendorId, selectedServiceType, slotDurationMinutes, selectedVendorService?.id, serviceId]);
 
+  const wapptBooking = useWapptAppointmentBooking({
+    appointmentsMode,
+    vendorId,
+    category: 'training',
+    serviceStyle: serviceStyle || serviceType || 'at_center',
+    initialPrice: price,
+  });
+
+  useEffect(() => {
+    if (!appointmentsMode || !wapptBooking.selectedVendorService) return;
+    setSelectedVendorService(wapptBooking.selectedVendorService);
+  }, [appointmentsMode, wapptBooking.selectedVendorService]);
+
   useEffect(() => {
     loadCustomerData();
-    if (vendorId) {
+    if (vendorId && !appointmentsMode) {
       loadVendorServices();
     }
-  }, [phone, vendorId]);
+  }, [phone, vendorId, appointmentsMode]);
 
   // ✅ NEW: Auto-proceed to payment when skipping with complete data
   const autoProceedRef = useRef(false);
@@ -694,7 +717,9 @@ export function TrainingBookingRouter({
   const reviewTotal =
     allSelectedServices?.length
       ? allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0)
-      : selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
+      : appointmentsMode
+        ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0
+        : selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
 
   const renderStepIndicator = () => {
     // ✅ FIX: Only show steps that are relevant - skip 'Service' if already selected from profile
@@ -780,10 +805,12 @@ export function TrainingBookingRouter({
       <UniversalPaymentPage
         type="booking"
         serviceId={
-          selectedVendorService?.service_id ||
-          selectedVendorService?.serviceId ||
-          selectedVendorService?.id ||
-          serviceId
+          appointmentsMode
+            ? WAPPT_APPOINTMENT_SERVICE_ID
+            : selectedVendorService?.service_id ||
+              selectedVendorService?.serviceId ||
+              selectedVendorService?.id ||
+              serviceId
         }
         serviceName={selectedServiceOption?.name || serviceName || 'Training Session'}
         serviceDescription={`Training session with ${trainer?.name || 'trainer'}`}
@@ -803,10 +830,15 @@ export function TrainingBookingRouter({
         showAddressSelection={selectedServiceType === 'at_home'}
         baseAmount={reviewTotal || 499}
         priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
-        duration={selectedServiceOption?.duration || duration || 30}
+        duration={
+          appointmentsMode
+            ? WAPPT_DEFAULT_SLOT_DURATION_MIN
+            : selectedServiceOption?.duration || duration || 30
+        }
         quantity={1}
         customerPhone={phone}
         customerId={customerId || undefined}
+        bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
         onBack={() => setShowPaymentPage(false)}
         onPaymentAbandoned={() => {
           if (selectedDate) void loadTimeSlots(selectedDate);

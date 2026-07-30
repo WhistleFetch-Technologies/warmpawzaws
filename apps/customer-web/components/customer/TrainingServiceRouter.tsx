@@ -18,6 +18,7 @@ import {
   ArrowRight,
   Award,
   BookOpen,
+  Heart,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -35,7 +36,6 @@ import {
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
-import { DiscoveryVendorFeedSentinel } from './shared/DiscoveryVendorFeedSentinel';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_TRAINING } from '@/lib/service-hub-discovery-config';
@@ -44,7 +44,8 @@ import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
-import { Calendar } from 'lucide-react';
+import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
+import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 
 interface TrainingServiceRouterProps {
   phone: string;
@@ -93,6 +94,8 @@ function TrainingHeaderBackground() {
 }
 
 export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: TrainingServiceRouterProps) {
+  const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('training');
+  const wapptTile = buildWapptHubTile('training');
   const { problems: bootstrapProblems } = useCategoryBootstrap({
     category: 'training',
     roleId: 'trainer',
@@ -108,18 +111,21 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     }
     return trainingGoalsLegacy;
   }, [bootstrapProblems, trainingGoalsLegacy]);
-  const {
-    loading: vendorsLoading,
-    loadingMore: vendorsLoadingMore,
-    hasMore: vendorsHasMore,
-    loadMore: loadMoreVendors,
-    vendors,
-    relaxedFilter,
-    selectedVendorId,
-    setSelectedVendorId,
-    toggleVendor,
-    fetchingPlansFor,
-  } = useHubVendorDiscovery(phone, HUB_DISCOVERY_TRAINING);
+  const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_TRAINING);
+  const wapptDiscovery = useWapptHubFeaturedVendors('training', wapptHubEnabled);
+  const [wapptSelectedVendorId, setWapptSelectedVendorId] = useState<string | null>(null);
+
+  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const selectedVendorId = wapptHubEnabled ? wapptSelectedVendorId : marketplaceDiscovery.selectedVendorId;
+  const setSelectedVendorId = wapptHubEnabled
+    ? setWapptSelectedVendorId
+    : marketplaceDiscovery.setSelectedVendorId;
+  const toggleVendor = wapptHubEnabled
+    ? (vendorId: string) => setWapptSelectedVendorId((prev) => (prev === vendorId ? null : vendorId))
+    : marketplaceDiscovery.toggleVendor;
+  const fetchingPlansFor = wapptHubEnabled ? null : marketplaceDiscovery.fetchingPlansFor;
   const {
     data: trainingCenterCount = 0,
     isLoading: trainingCenterLoading,
@@ -204,7 +210,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const handleWarmpawzBookAppointment = useCallback(
     (v: BoardingListVendor) => {
       onNavigate?.(
-        'grooming-booking',
+        'training-booking',
         buildHubWarmpawzBookingNav(v, { category: 'training', serviceStyle: 'at_center' })
       );
     },
@@ -244,23 +250,6 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     if (shouldHideMarketplaceStyleTiles()) return [];
     return base;
   }, [trainingCenterBadgeText]);
-
-  const serviceTypesWithWappt = useMemo(() => {
-    if (!isWarmpawzAppointmentsHubEnabled('training')) return serviceTypes;
-    const wapptCard = {
-      id: 'wappt_training',
-      name: 'Book Appointment',
-      description: 'Fixed fee · pick a slot',
-      image: TRAINING_TYPE_CARDS[0].image,
-      Icon: Calendar,
-      iconColor: 'text-white',
-      iconBg: 'bg-[#FF8C42]',
-      badge: 'WARMPAWZ',
-      badgeClass: 'bg-[#FF8C42] text-white',
-      arrowClass: 'bg-[#FF8C42] hover:bg-orange-600',
-    };
-    return [wapptCard, ...serviceTypes];
-  }, [serviceTypes]);
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
@@ -459,7 +448,45 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             <FeaturedVendorSpotlights service="training" phone={phone} onNavigate={onNavigate} />
           </div>
 
+          {wapptHubEnabled && wapptTile ? (
+            <div>
+              <h2 className="mb-3 text-lg font-bold text-slate-900">Choose Service Type</h2>
+              <button
+                type="button"
+                onClick={() => onNavigate?.('wappt-discovery', { category: 'training' })}
+                className="group relative w-full overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
+              >
+                <div className="relative h-28 w-full sm:h-32">
+                  {wapptTile.image ? (
+                    <CachedImage
+                      src={wapptTile.image}
+                      alt={wapptTile.name}
+                      fill
+                      className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
+                      sizes="(max-width: 640px) 90vw, 400px"
+                    />
+                  ) : null}
+                  <span className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${wapptTile.badgeClass}`}>
+                    {wapptTile.badge}
+                  </span>
+                </div>
+                <div className="relative p-3 pb-10">
+                  <h3 className="text-sm font-bold text-slate-900">{wapptTile.name}</h3>
+                  <p className="mt-0.5 text-[11px] text-slate-500">{wapptTile.description}</p>
+                  <div className="mt-2 flex items-center gap-1 text-[10px] text-slate-500">
+                    <Heart className="h-3 w-3 text-orange-400" />
+                    <span>{wapptTile.trustedBy}</span>
+                  </div>
+                  <div className={`absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full text-white shadow-md transition-transform group-hover:scale-110 ${wapptTile.arrowClass}`}>
+                    <ChevronRight className="h-4 w-4" />
+                  </div>
+                </div>
+              </button>
+            </div>
+          ) : null}
+
           {/* Choose Training Type */}
+          {serviceTypes.length > 0 ? (
           <div>
             <div className="mb-3 flex items-center gap-2">
               <div className="rounded-lg bg-orange-50 p-1.5">
@@ -469,17 +496,11 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               <PawPrint className="h-3.5 w-3.5 text-[#FF8C42]" aria-hidden />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {serviceTypesWithWappt.map((service) => (
+              {serviceTypes.map((service) => (
                 <button
                   key={service.id}
                   type="button"
-                  onClick={() => {
-                    if (service.id === 'wappt_training') {
-                      onNavigate?.('wappt-discovery', { category: 'training' });
-                      return;
-                    }
-                    onNavigate?.(service.id);
-                  }}
+                  onClick={() => onNavigate?.(service.id)}
                   className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
                 >
                   <div className="relative h-28 w-full sm:h-32">
@@ -514,23 +535,16 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               ))}
             </div>
           </div>
+          ) : null}
 
           <TrainingGoalGrid
             problems={trainingGoals}
             onNavigate={(screen, navData) => onNavigate?.(screen, navData)}
           />
 
-          {/* Top Trainers — expandable cards aligned with training_center list */}
+          {/* Top Trainers — top 3 on hub */}
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-900">Top Trainers</h2>
-              <button 
-                className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                onClick={() => onNavigate?.('training_center')}
-              >
-                View All <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Top Trainers</h2>
             {relaxedFilter && (
               <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
                 Showing all training providers we could match — expand for services and prices.
@@ -571,12 +585,6 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   );
                 })
               )}
-              <DiscoveryVendorFeedSentinel
-                hasMore={vendorsHasMore}
-                loading={vendorsLoading}
-                loadingMore={vendorsLoadingMore}
-                onLoadMore={() => void loadMoreVendors()}
-              />
             </div>
           </div>
         </div>

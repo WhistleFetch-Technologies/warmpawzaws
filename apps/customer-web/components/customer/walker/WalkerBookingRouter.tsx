@@ -24,6 +24,12 @@ import {
 import { WalkerWalkServicePicker } from './WalkerWalkServicePicker';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
+import {
+  WAPPT_APPOINTMENT_SERVICE_ID,
+  WAPPT_BOOKING_MODE,
+  WAPPT_DEFAULT_SLOT_DURATION_MIN,
+} from '@/lib/warmpawz-appointments-customer';
 
 interface WalkerBookingRouterProps {
   phone: string;
@@ -36,6 +42,7 @@ interface WalkerBookingRouterProps {
   serviceStyle?: string; // ✅ FIX: Add serviceStyle to preserve context
   price?: number; // ✅ FIX: Add price
   duration?: number; // ✅ FIX: Add duration
+  appointmentsMode?: boolean;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -96,6 +103,7 @@ export function WalkerBookingRouter({
   serviceStyle,
   price,
   duration,
+  appointmentsMode = false,
   onBack, 
   onNavigate, 
   onViewBooking,
@@ -103,7 +111,9 @@ export function WalkerBookingRouter({
 }: WalkerBookingRouterProps) {
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to datetime
   // This preserves the service-style context when coming from service listing
-  const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService);
+  const hasServiceContext = appointmentsMode && vendorId
+    ? true
+    : (serviceType || serviceStyle) && (serviceId || selectedService);
   const enteredWithServiceRef = useRef(Boolean(hasServiceContext));
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
@@ -296,12 +306,26 @@ export function WalkerBookingRouter({
 
   const [dates] = useState(generateDates());
 
+  const wapptBooking = useWapptAppointmentBooking({
+    appointmentsMode,
+    vendorId,
+    category: 'walker',
+    serviceStyle: serviceStyle || serviceType || 'at_home',
+    initialPrice: price,
+  });
+
+  useEffect(() => {
+    if (!appointmentsMode || !wapptBooking.selectedVendorService) return;
+    setSelectedVendorService(wapptBooking.selectedVendorService);
+    setSelectedVendorServiceId(WAPPT_APPOINTMENT_SERVICE_ID);
+  }, [appointmentsMode, wapptBooking.selectedVendorService]);
+
   useEffect(() => {
     loadCustomerData();
-    if (vendorId) {
+    if (vendorId && !appointmentsMode) {
       loadVendorServices();
     }
-  }, [phone, vendorId]);
+  }, [phone, vendorId, appointmentsMode]);
 
   useEffect(() => {
     if (!vendorCatalog || !(serviceId || selectedService)) return;
@@ -623,7 +647,9 @@ export function WalkerBookingRouter({
       <UniversalPaymentPage
         type="booking"
         serviceId={
-          selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId
+          appointmentsMode
+            ? WAPPT_APPOINTMENT_SERVICE_ID
+            : selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId
         }
         serviceName={selectedServiceOption?.name || serviceName || 'Pet Walking'}
         serviceDescription={`Walk by ${walker?.name || 'professional walker'}`}
@@ -648,12 +674,21 @@ export function WalkerBookingRouter({
         addressId={selectedAddress?.id}
         address={selectedAddress}
         showAddressSelection={true}
-        baseAmount={selectedServiceOption?.price || price || 299}
+        baseAmount={
+          appointmentsMode
+            ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 299
+            : selectedServiceOption?.price || price || 299
+        }
         priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
-        duration={selectedServiceOption?.duration || duration || 30}
+        duration={
+          appointmentsMode
+            ? WAPPT_DEFAULT_SLOT_DURATION_MIN
+            : selectedServiceOption?.duration || duration || 30
+        }
         quantity={1}
         customerPhone={phone}
         customerId={customerId || undefined}
+        bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
         onBack={() => setShowPaymentPage(false)}
         onPaymentAbandoned={() => {
           if (selectedDate) void loadTimeSlots(selectedDate);

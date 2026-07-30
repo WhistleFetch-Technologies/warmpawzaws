@@ -21,12 +21,23 @@ export function mapServiceKeyToWpayCategory(
     training: 'training',
     trainer: 'training',
     pet_trainer: 'training',
+    behaviorist: 'training',
+    behaviourist: 'training',
+    pet_behaviorist: 'training',
+    'pet-behaviorist': 'training',
     walker: 'walking',
     walking: 'walking',
     dog_walker: 'walking',
     boarding: 'boarding',
     pet_boarding: 'boarding',
     petboarding: 'boarding',
+    sitting: 'sitting',
+    pet_sitter: 'sitting',
+    'pet-sitter': 'sitting',
+    pet_sitting: 'sitting',
+    nutrition: 'nutrition',
+    nutritionist: 'nutrition',
+    pet_nutritionist: 'nutrition',
   };
 
   return map[token] ?? 'all';

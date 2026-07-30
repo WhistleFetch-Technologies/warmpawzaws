@@ -5,7 +5,6 @@ import { CachedImage } from "@/components/shared/CachedImage";
 import {
   Home,
   Star,
-  ChevronRight,
   RefreshCw,
   Moon,
   Sun,
@@ -27,6 +26,9 @@ import { BoardingVendorExpandableCard } from "./boarding/BoardingVendorExpandabl
 import { useHubVendorDiscovery } from "@/hooks/useHubVendorDiscovery";
 import { HUB_DISCOVERY_SITTING } from "@/lib/service-hub-discovery-config";
 import { buildHubWarmpawzBookingNav } from "@/lib/wappt-hub-booking-nav";
+import { isWarmpawzAppointmentsHubEnabled } from "@/lib/warmpawz-appointments-customer";
+import { buildWapptHubTile } from "@/lib/wappt-hub-registry";
+import { useWapptHubFeaturedVendors } from "@/hooks/useWapptHubFeaturedVendors";
 import { fetchPetSitterHubRows } from "@/lib/pet-sitter-hub-fetch";
 import { pickCustomerVendorAccountId } from "@warmpawz/shared-types";
 import { minPriceForVendor } from "@/lib/boarding-vendor-booking-utils";
@@ -213,16 +215,24 @@ export function PetSitterServiceRouter({
   hubMode = true,
   initialSittingOptionId,
 }: PetSitterServiceRouterProps) {
+  const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('sitting');
+  const wapptTile = buildWapptHubTile('sitting');
   const loadSitterRows = useCallback(() => fetchPetSitterHubRows(phone), [phone]);
-  const {
-    loading: vendorsLoading,
-    vendors,
-    relaxedFilter,
-    selectedVendorId,
-    setSelectedVendorId,
-    toggleVendor,
-    fetchingPlansFor,
-  } = useHubVendorDiscovery(phone, HUB_DISCOVERY_SITTING, loadSitterRows);
+  const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_SITTING, loadSitterRows);
+  const wapptDiscovery = useWapptHubFeaturedVendors('sitting', wapptHubEnabled);
+  const [wapptSelectedVendorId, setWapptSelectedVendorId] = useState<string | null>(null);
+
+  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const selectedVendorId = wapptHubEnabled ? wapptSelectedVendorId : marketplaceDiscovery.selectedVendorId;
+  const setSelectedVendorId = wapptHubEnabled
+    ? setWapptSelectedVendorId
+    : marketplaceDiscovery.setSelectedVendorId;
+  const toggleVendor = wapptHubEnabled
+    ? (vendorId: string) => setWapptSelectedVendorId((prev) => (prev === vendorId ? null : vendorId))
+    : marketplaceDiscovery.toggleVendor;
+  const fetchingPlansFor = wapptHubEnabled ? null : marketplaceDiscovery.fetchingPlansFor;
   const [previousSitter, setPreviousSitter] = useState<any>(null);
   /** Carried into `pet-sitter-booking` so the sitting flow can pre-match the vendor’s service row. */
   const [selectedSittingOption, setSelectedSittingOption] = useState<string | null>(null);
@@ -290,8 +300,8 @@ export function PetSitterServiceRouter({
   const handleWarmpawzBookAppointment = useCallback(
     (v: BoardingListVendor) => {
       onNavigate?.(
-        'grooming-booking',
-        buildHubWarmpawzBookingNav(v, { category: 'sitting', serviceStyle: 'at_center' })
+        'pet-sitter-booking',
+        buildHubWarmpawzBookingNav(v, { category: 'sitting', serviceStyle: 'at_home' })
       );
     },
     [onNavigate]
@@ -494,6 +504,43 @@ export function PetSitterServiceRouter({
               </div>
             )}
 
+            {wapptHubEnabled && wapptTile ? (
+              <div>
+                <h2 className="mb-3 text-lg font-bold text-slate-900">Choose Service Type</h2>
+                <button
+                  type="button"
+                  onClick={() => onNavigate?.('wappt-discovery', { category: 'sitting' })}
+                  className="group relative w-full overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
+                >
+                  <div className="relative h-28 w-full sm:h-32">
+                    {wapptTile.image ? (
+                      <CachedImage
+                        src={wapptTile.image}
+                        alt={wapptTile.name}
+                        fill
+                        className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
+                        sizes="(max-width: 640px) 90vw, 400px"
+                      />
+                    ) : null}
+                    <span className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${wapptTile.badgeClass}`}>
+                      {wapptTile.badge}
+                    </span>
+                  </div>
+                  <div className="relative p-3 pb-10">
+                    <h3 className="text-sm font-bold text-slate-900">{wapptTile.name}</h3>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{wapptTile.description}</p>
+                    <div className="mt-2 flex items-center gap-1 text-[10px] text-slate-500">
+                      <Heart className="h-3 w-3 text-orange-400" />
+                      <span>{wapptTile.trustedBy}</span>
+                    </div>
+                    <div className={`absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full text-white shadow-md transition-transform group-hover:scale-110 ${wapptTile.arrowClass}`}>
+                      <ArrowRight className="h-4 w-4" />
+                    </div>
+                  </div>
+                </button>
+              </div>
+            ) : null}
+
             <div className="relative z-[1]">
               <div className="mb-4 flex items-center gap-2">
                 <div className="rounded-lg bg-orange-50 p-1.5">
@@ -553,19 +600,11 @@ export function PetSitterServiceRouter({
             </div>
 
             <div ref={featuredRef}>
-              <div className="mb-4 flex items-center justify-between">
+              <div className="mb-4">
                 <h2 className="text-lg font-bold text-slate-900">
                   {hubMode ? "Featured sitters" : "All sitters"}
                 </h2>
-                {hubMode ? (
-                  <button
-                    type="button"
-                    className="flex items-center gap-1 text-sm font-medium text-[#FF8C42]"
-                    onClick={() => onNavigate?.("pet-sitter-vendors")}
-                  >
-                    View all <ChevronRight className="h-4 w-4" />
-                  </button>
-                ) : (
+                {!hubMode && (
                   <span className="text-xs text-slate-400">
                     {vendors.length} nearby
                   </span>

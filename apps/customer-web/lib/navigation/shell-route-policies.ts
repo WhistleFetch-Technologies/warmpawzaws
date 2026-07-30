@@ -99,7 +99,6 @@ const ENTITY_SCREENS: Record<string, ShellRoutePolicyDef> = {
   'meal-order-tracking': { forward: 'push', requiresKey: true },
   'meal-plan-orders': { forward: 'push' },
   'nutritionist-booking': { forward: 'push' },
-  'expert-nutritionists': { forward: 'push' },
   'nutritionist-tele': { forward: 'push' },
   'create-booking': { forward: 'push' },
   'universal-home-booking': { forward: 'push' },

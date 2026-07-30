@@ -45,6 +45,7 @@ import {
 } from '@/lib/vendor-services-page';
 import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
 import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
+import { filterGroomingHubProviderRows } from '@/lib/filter-hub-services';
 import type { WapptStyleFilter } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
 import {
   buildWarmpawzAppointmentsBookingNav,
@@ -209,6 +210,9 @@ export function GroomingServicesByStyle({
       return;
     }
     let mapped = feedRows.map(mapRowToGroomingProvider);
+    if (appointmentsMode) {
+      mapped = filterGroomingHubProviderRows(mapped);
+    }
     if (vendorId) {
       const want = String(vendorId);
       mapped = mapped.filter(
@@ -500,6 +504,14 @@ export function GroomingServicesByStyle({
   };
 
   const getProviderTypeLabel = (provider: Provider) => {
+    if (appointmentsMode) {
+      const roleLabel = String(
+        (provider as Provider & { roleDisplayName?: string }).roleDisplayName ??
+          provider.role ??
+          ''
+      ).trim();
+      if (roleLabel) return roleLabel;
+    }
     if (provider.providerType === 'individual') {
       return 'Independent Groomer';
     }

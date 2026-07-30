@@ -20,6 +20,22 @@ export type WapptDiscoveryVendorRow = {
 
 const CLINIC_HOME_STYLES = ['at_center', 'at_vendor', 'at_clinic', 'at_home', 'home_visit'];
 
+/** Role-negative SQL — mirrors client hub filters for mis-tagged catalogue rows. */
+function wapptRoleNegativeFilterSql(category: string): string | null {
+  const hub = String(category ?? '').trim().toLowerCase();
+  const roleBlob = `LOWER(COALESCE(r.name, '') || ' ' || COALESCE(r.display_name, ''))`;
+  if (hub === 'grooming') {
+    return `NOT (${roleBlob} ~ '(veterinar|vet[_ ]|trainer|walker|boarding|nutrition|sitter)')`;
+  }
+  if (hub === 'training') {
+    return `NOT (${roleBlob} ~ '(veterinar|vet[_ ]|groomer|walker|boarding|nutrition|sitter|behaviorist|behaviourist)')`;
+  }
+  if (hub === 'behaviorist' || hub === 'behaviourist' || hub === 'pet_behaviorist') {
+    return `NOT (${roleBlob} ~ '(veterinar|vet[_ ]|groomer|walker|boarding|nutrition|sitter|trainer|train[_ ])')`;
+  }
+  return null;
+}
+
 export async function dbListWapptDiscoveryByCategory(opts: {
   category: string;
   serviceStyle: 'all' | 'at_center' | 'at_home';
@@ -36,6 +52,11 @@ export async function dbListWapptDiscoveryByCategory(opts: {
   if (categoryTokens.length > 0) {
     params.push(categoryTokens.map((t) => t.toLowerCase()));
     conditions.push(merchantServiceCategoryFilterSql(`$${params.length}`));
+  }
+
+  const roleNegative = wapptRoleNegativeFilterSql(opts.category);
+  if (roleNegative) {
+    conditions.push(roleNegative);
   }
 
   const styleFilter =

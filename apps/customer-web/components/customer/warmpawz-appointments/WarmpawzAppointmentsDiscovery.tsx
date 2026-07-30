@@ -5,27 +5,16 @@ import { ChevronLeft } from 'lucide-react';
 import { UniversalServicesByStyle } from '@/components/customer/shared/UniversalServicesByStyle';
 import { VetServicesByStyle } from '@/components/customer/vet/VetServicesByStyle';
 import { GroomingServicesByStyle } from '@/components/customer/grooming/GroomingServicesByStyle';
-import type { RoleId, ServiceStyle } from '@/components/customer/shared/roleConfig';
+import type { ServiceStyle } from '@/components/customer/shared/roleConfig';
 import type { WapptStyleFilter } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
 import { getWarmpawzAppointmentBookingTitle } from '@/lib/warmpawz-appointments-customer';
+import { getWapptHubConfig, normalizeWapptHubCategory } from '@/lib/wappt-hub-registry';
 
 const STYLE_FILTERS: { id: WapptStyleFilter; label: string }[] = [
   { id: 'all', label: 'View all' },
   { id: 'at_center', label: 'At centre' },
   { id: 'at_home', label: 'At home' },
 ];
-
-const CATEGORY_ROLE: Record<string, RoleId> = {
-  vet: 'veterinarian',
-  grooming: 'groomer',
-  training: 'trainer',
-};
-
-const CATEGORY_BOOKING_SCREEN: Record<string, string> = {
-  vet: 'vet-booking',
-  grooming: 'grooming-booking',
-  training: 'training-booking',
-};
 
 type WarmpawzAppointmentsDiscoveryProps = {
   category: string;
@@ -41,14 +30,17 @@ export function WarmpawzAppointmentsDiscovery({
   onNavigate,
 }: WarmpawzAppointmentsDiscoveryProps) {
   const [styleFilter, setStyleFilter] = useState<WapptStyleFilter>('all');
-  const roleId = CATEGORY_ROLE[category] ?? 'veterinarian';
-  const { title, subtitle } = getWarmpawzAppointmentBookingTitle(category);
+  const hubCategory = normalizeWapptHubCategory(category) ?? 'vet';
+  const hubConfig = getWapptHubConfig(hubCategory);
+  const roleId = hubConfig?.roleId ?? 'veterinarian';
+  const bookingScreen = hubConfig?.bookingScreen ?? 'vet-booking';
+  const { title, subtitle } = getWarmpawzAppointmentBookingTitle(hubCategory);
   const listServiceStyle: ServiceStyle = styleFilter === 'at_home' ? 'at_home' : 'at_center';
 
   const sharedListProps = {
     phone,
     serviceStyle: listServiceStyle,
-    category,
+    category: hubCategory,
     appointmentsMode: true as const,
     wapptStyleFilter: styleFilter,
     hideDashboardHeader: true,
@@ -88,18 +80,18 @@ export function WarmpawzAppointmentsDiscovery({
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {category === 'vet' ? (
+        {hubCategory === 'vet' ? (
           <VetServicesByStyle
             {...sharedListProps}
             discoveryProfileBackScreen="wappt-discovery"
           />
-        ) : category === 'grooming' ? (
+        ) : hubCategory === 'grooming' ? (
           <GroomingServicesByStyle {...sharedListProps} />
         ) : (
           <UniversalServicesByStyle
             {...sharedListProps}
             roleId={roleId}
-            bookingScreen={CATEGORY_BOOKING_SCREEN[category] ?? 'grooming-booking'}
+            bookingScreen={bookingScreen}
           />
         )}
       </div>

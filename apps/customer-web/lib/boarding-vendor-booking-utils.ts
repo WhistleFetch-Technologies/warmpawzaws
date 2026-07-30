@@ -17,7 +17,7 @@ export function minPriceForVendor(v: BoardingListVendor): number | null {
       .filter((p): p is number => p != null && p > 0);
     return prices.length > 0 ? Math.min(...prices) : null;
   }
-  if (shouldHideDiscoveryPricing(v)) return null;
+  if (shouldHideDiscoveryPricing(v as unknown as Record<string, unknown>)) return null;
   // Slim discover cards: use aggregated priceMin until expand fetches planRows
   const raw = (v.raw || {}) as Record<string, unknown>;
   const fromCard = Number(raw.priceMin ?? raw.price_min ?? raw.price ?? 0);

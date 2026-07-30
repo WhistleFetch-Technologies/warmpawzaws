@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, type MouseEvent } from 'react';
 import { CachedImage } from '@/components/shared/CachedImage';
-import { Stethoscope, Star, ChevronRight, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2, Calendar } from 'lucide-react';
+import { Stethoscope, Star, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -18,7 +18,6 @@ import { StandardizedFooter } from './shared/StandardizedFooter';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
-import { DiscoveryVendorFeedSentinel } from './shared/DiscoveryVendorFeedSentinel';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
@@ -113,9 +112,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const legacyProblems = useProblemGridByRole('vet');
   const {
     loading: vendorsLoading,
-    loadingMore: vendorsLoadingMore,
-    hasMore: vendorsHasMore,
-    loadMore: loadMoreVendors,
     vendors,
     relaxedFilter,
     selectedVendorId,
@@ -704,18 +700,9 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           </div>
         )}
 
-        {/* Featured Vets — same expandable pattern as vet-all-doctors */}
+        {/* Featured Vets — top 3 on hub */}
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">Featured Vets</h2>
-            <button 
-              className="text-sm text-[#FF8C42] flex items-center gap-1"
-              onClick={() => handleNavigate('vet-all-doctors')}
-            >
-              View All
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+          <h2 className="text-lg font-semibold mb-3">Featured Vets</h2>
           {relaxedFilter && (
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
               Showing all veterinary providers we could match — expand for services and prices.
@@ -755,12 +742,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 <p className="text-gray-400 text-xs mt-1">Check back soon!</p>
               </Card>
             )}
-            <DiscoveryVendorFeedSentinel
-              hasMore={vendorsHasMore}
-              loading={vendorsLoading}
-              loadingMore={vendorsLoadingMore}
-              onLoadMore={() => void loadMoreVendors()}
-            />
           </div>
         </div>
 

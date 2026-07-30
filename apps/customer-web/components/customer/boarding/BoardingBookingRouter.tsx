@@ -37,6 +37,11 @@ import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { serviceOptionColorChipClass } from '@/lib/hub-service-option-styles';
+import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
+import {
+  WAPPT_APPOINTMENT_SERVICE_ID,
+  WAPPT_BOOKING_MODE,
+} from '@/lib/warmpawz-appointments-customer';
 import {
   boardingSlugMatchesText,
   serviceNameLooksLikeSwimming,
@@ -59,6 +64,7 @@ interface BoardingBookingRouterProps {
   presetSittingOptionId?: string;
   /** Boarding hub sub-type (`swimming`, `overnight`, …) for keyword match after vendor services load. */
   presetServiceSlug?: string;
+  appointmentsMode?: boolean;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
@@ -519,6 +525,7 @@ export function BoardingBookingRouter({
   flowVariant = "boarding",
   presetSittingOptionId,
   presetServiceSlug,
+  appointmentsMode = false,
   onBack, 
   onNavigate, 
   onViewBooking,
@@ -539,7 +546,9 @@ export function BoardingBookingRouter({
   const priceSuffix = isPetSitting || isSwimmingSession ? "/session" : "/night";
 
   // Service context logic
-  const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService);
+  const hasServiceContext = appointmentsMode && vendorId
+    ? true
+    : (serviceType || serviceStyle) && (serviceId || selectedService);
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
   /** Plan chosen on vendor card/profile — no in-router service step; back must leave the flow, not a fake "service" screen. */
@@ -806,12 +815,26 @@ export function BoardingBookingRouter({
   };
   const allHalfHourSlots = generateHalfHourSlots();
 
+  const wapptCategory = isPetSitting ? 'sitting' : 'boarding';
+  const wapptBooking = useWapptAppointmentBooking({
+    appointmentsMode,
+    vendorId,
+    category: wapptCategory,
+    serviceStyle: serviceStyle || (isPetSitting ? 'at_home' : 'at_center'),
+    initialPrice: price,
+  });
+
+  useEffect(() => {
+    if (!appointmentsMode || !wapptBooking.selectedVendorService) return;
+    setSelectedVendorService(wapptBooking.selectedVendorService);
+  }, [appointmentsMode, wapptBooking.selectedVendorService]);
+
   useEffect(() => {
     loadCustomerData();
-    if (vendorId) {
+    if (vendorId && !appointmentsMode) {
       loadVendorServices();
     }
-  }, [phone, vendorId, apiCategory]);
+  }, [phone, vendorId, apiCategory, appointmentsMode]);
 
   useEffect(() => {
     if (vendorServices.length === 0) return;
@@ -1549,8 +1572,9 @@ export function BoardingBookingRouter({
   if (step === 'payment' && paymentBookingId) {
     const opt = selectedServiceOption as { id?: string } | undefined;
     const vsId = opt?.id;
-    const paymentVendorServiceId =
-      vsId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(vsId))
+    const paymentVendorServiceId = appointmentsMode
+      ? WAPPT_APPOINTMENT_SERVICE_ID
+      : vsId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(vsId))
         ? String(vsId)
         : undefined;
 
@@ -1564,11 +1588,16 @@ export function BoardingBookingRouter({
         customerId={customerId ?? undefined}
         bookingId={paymentBookingId}
         serviceId={paymentVendorServiceId}
-        baseAmount={calculateTotalPrice()}
+        baseAmount={
+          appointmentsMode
+            ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? calculateTotalPrice()
+            : calculateTotalPrice()
+        }
         priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
         serviceName={selectedServiceOption?.name || (isPetSitting ? 'Pet Sitting' : 'Boarding Service')}
         vendorId={vendorId || ''}
         vendorName={isPetSitting ? 'Pet sitter' : 'Boarding Provider'}
+        bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
         onBack={handleBack}
         onSuccess={handlePaymentSuccess}
       />

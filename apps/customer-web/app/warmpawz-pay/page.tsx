@@ -15,6 +15,8 @@ const CATEGORIES = [
   { id: 'training', label: 'Training' },
   { id: 'walking', label: 'Walking' },
   { id: 'boarding', label: 'Boarding' },
+  { id: 'sitting', label: 'Pet Sitting' },
+  { id: 'nutrition', label: 'Nutrition' },
 ];
 
 function matchesVendorSearch(name: string, query: string): boolean {

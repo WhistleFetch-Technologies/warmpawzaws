@@ -1,5 +1,7 @@
 import { isWarmpawzPay } from '@/lib/commerce-switch-client';
 import { resolveServiceBookingCommerceRouteForNavigation } from '@/lib/commerce-switch-routing';
+import { isWarmpawzPayModuleCapable } from '@/lib/commerce-switch-routing/warmpawz-pay-feature';
+import { getWapptHubConfig, normalizeWapptHubCategory } from '@/lib/wappt-hub-registry';
 
 export const WAPPT_APPOINTMENT_SERVICE_ID = 'warmpawz_appointments';
 export const WAPPT_BOOKING_MODE = 'warmpawz_appointments' as const;
@@ -18,6 +20,14 @@ export function isWarmpawzAppointmentsHubEnabled(category: string): boolean {
     serviceKey: category,
     category,
   });
+  const hub = normalizeWapptHubCategory(category);
+  // Nutrition: general commerce is excluded, but WAPPT Book Appointment hub is allowed when Pay is active.
+  if (route.excludedDomain && hub === 'nutrition' && isWarmpawzPayModuleCapable()) {
+    return !route.useMarketplaceFlow;
+  }
+  if (hub && getWapptHubConfig(hub)) {
+    return !route.useMarketplaceFlow && (!route.excludedDomain || hub === 'nutrition');
+  }
   return !route.useMarketplaceFlow && !route.excludedDomain;
 }
 
@@ -60,16 +70,25 @@ export function resolveWarmpawzBookingCategory(serviceType?: string): string {
   const raw = String(serviceType || 'grooming').trim().toLowerCase();
   if (raw === 'vet' || raw === 'veterinarian') return 'vet';
   if (raw === 'training' || raw === 'trainer') return 'training';
-  if (raw === 'sitting' || raw === 'walker' || raw === 'pet_sitter') return 'sitting';
+  if (raw === 'behaviorist' || raw === 'behaviourist' || raw === 'pet_behaviorist') return 'behaviorist';
+  if (raw === 'sitting' || raw === 'sitter' || raw === 'pet_sitter' || raw === 'pet-sitter') return 'sitting';
+  if (raw === 'walker' || raw === 'walking') return 'walker';
   if (raw === 'boarding') return 'boarding';
+  if (raw === 'nutrition' || raw === 'nutritionist') return 'nutrition';
   return raw || 'grooming';
 }
 
 export function resolveWarmpawzBookingScreen(category?: string): string {
+  const hub = normalizeWapptHubCategory(resolveWarmpawzBookingCategory(category));
+  const config = hub ? getWapptHubConfig(hub) : null;
+  if (config) return config.bookingScreen;
   const cat = resolveWarmpawzBookingCategory(category);
   if (cat === 'vet') return 'vet-booking';
   if (cat === 'training') return 'training-booking';
-  if (cat === 'sitting') return 'sitting-booking';
+  if (cat === 'sitting') return 'pet-sitter-booking';
+  if (cat === 'walker') return 'walker-booking';
+  if (cat === 'boarding') return 'boarding-booking';
+  if (cat === 'nutrition') return 'nutritionist-booking';
   return 'grooming-booking';
 }
 

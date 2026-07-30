@@ -18,6 +18,12 @@ import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { normalizeAvailableSlotsResponse, buildDefaultSlotsWithPastGuard } from '@/lib/available-slots-response';
 import { SERVICE_DESC_VIEW_MORE_MIN_LEN } from '@/lib/service-description-preview';
 import { cn } from '@/components/ui/utils';
+import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
+import {
+  WAPPT_APPOINTMENT_SERVICE_ID,
+  WAPPT_BOOKING_MODE,
+  WAPPT_DEFAULT_SLOT_DURATION_MIN,
+} from '@/lib/warmpawz-appointments-customer';
 
 /** Real catalog service UUID (not role/category slugs like pet_nutritionist). */
 function looksLikeCatalogServiceId(id: string | undefined | null): id is string {
@@ -71,6 +77,7 @@ export function NutritionistBookingRouter({
   serviceStyle,
   price,
   duration,
+  appointmentsMode = false,
   onBack,
   onNavigate,
   onViewBooking,
@@ -79,7 +86,7 @@ export function NutritionistBookingRouter({
   console.log('NutritionistBookingRouter--------------------->', phone, vendorId, nutritionist, selectedService, serviceType, serviceId, serviceName, serviceStyle, price, duration, onBack, onNavigate, onViewBooking);
 
   const catalogServiceId = [serviceId, selectedService].find(looksLikeCatalogServiceId);
-  const hasServiceContext = Boolean(catalogServiceId);
+  const hasServiceContext = appointmentsMode && vendorId ? true : Boolean(catalogServiceId);
   const initialBookingStyle = deriveInitialBookingStyle(serviceStyle, serviceType);
 
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
@@ -254,12 +261,25 @@ export function NutritionistBookingRouter({
 
   const [dates] = useState(generateDates());
 
+  const wapptBooking = useWapptAppointmentBooking({
+    appointmentsMode,
+    vendorId: effectiveVendorId,
+    category: 'nutrition',
+    serviceStyle: serviceStyle || serviceType || 'at_center',
+    initialPrice: price,
+  });
+
+  useEffect(() => {
+    if (!appointmentsMode || !wapptBooking.selectedVendorService) return;
+    setSelectedVendorService(wapptBooking.selectedVendorService);
+  }, [appointmentsMode, wapptBooking.selectedVendorService]);
+
   useEffect(() => {
     loadCustomerData();
-    if (effectiveVendorId) {
+    if (effectiveVendorId && !appointmentsMode) {
       loadVendorServices();
     }
-  }, [phone, effectiveVendorId, selectedServiceType]);
+  }, [phone, effectiveVendorId, selectedServiceType, appointmentsMode]);
 
   const loadVendorServices = async () => {
     if (!effectiveVendorId) return;
@@ -627,7 +647,7 @@ export function NutritionistBookingRouter({
             }
           }
 
-          if (finalServiceId && uuidRegex.test(finalServiceId)) {
+          if ((finalServiceId && uuidRegex.test(finalServiceId)) || appointmentsMode) {
             const displayVendorName = nutritionist?.businessName || nutritionist?.name || 'Nutritionist';
             return (
               <UniversalPaymentPage
@@ -635,7 +655,7 @@ export function NutritionistBookingRouter({
                 layoutVariant="appShell"
                 vendorId={vendorId || ''}
                 vendorName={displayVendorName}
-                serviceId={finalServiceId}
+                serviceId={appointmentsMode ? WAPPT_APPOINTMENT_SERVICE_ID : finalServiceId}
                 serviceName={selectedVendorService.name || selectedServiceOption?.name || 'Diet Consultation'}
                 serviceDescription={`${selectedVendorService.name || 'Diet Consultation'} for ${selectedPet.name}`}
                 serviceStyle={
@@ -659,14 +679,23 @@ export function NutritionistBookingRouter({
                       }
                     : undefined
                 }
-                baseAmount={selectedVendorService.price || selectedServiceOption?.price || 0}
+                baseAmount={
+                  appointmentsMode
+                    ? wapptBooking.appointmentFee ?? selectedVendorService.price ?? price ?? 0
+                    : selectedVendorService.price || selectedServiceOption?.price || 0
+                }
                 priceIncludesTax={
                   catalogPriceIncludesTax(selectedVendorService) || catalogPriceIncludesTax(selectedServiceOption)
                 }
-                duration={selectedVendorService.duration || selectedServiceOption?.duration || 30}
+                duration={
+                  appointmentsMode
+                    ? WAPPT_DEFAULT_SLOT_DURATION_MIN
+                    : selectedVendorService.duration || selectedServiceOption?.duration || 30
+                }
                 customerPhone={phone}
                 customerId={customerId || undefined}
                 flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
+                bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
                 onBack={() => setShowPaymentPage(false)}
                 onSuccess={(bookingId) => {
                   setBookingId(bookingId);

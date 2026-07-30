@@ -95,7 +95,7 @@ export function BoardingVendorExpandableCard({
     raw.roleDisplayName || raw.roleName || raw.vendorType || ''
   ).trim();
   const nextSlot = resolveNextAvailableLabel(raw);
-  const appointmentsMode = shouldHideDiscoveryPricing(v);
+  const appointmentsMode = shouldHideDiscoveryPricing(v as unknown as Record<string, unknown>);
   const showPricing = !appointmentsMode;
 
   return (
@@ -391,6 +391,20 @@ export function BoardingVendorExpandableCard({
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {appointmentsMode && onBookAppointment ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onBookAppointment(v);
+                }}
+              >
+                Book Appointment
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"

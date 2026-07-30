@@ -29,7 +29,6 @@ import { toast } from 'sonner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
-import { DiscoveryVendorFeedSentinel } from './shared/DiscoveryVendorFeedSentinel';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
@@ -42,6 +41,8 @@ import {
   findBoardingListVendorByProfileKey,
 } from '@/lib/boarding-vendor-discovery-map';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
+import { mergeWapptServiceTypes } from '@/lib/wappt-hub-registry';
+import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
@@ -133,6 +134,7 @@ function firstGroomingServiceUuid(services: any[]): string | undefined {
 }
 
 export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: GroomingServiceRouterProps) {
+  const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('grooming');
   const { problems: bootstrapProblems } = useCategoryBootstrap({
     category: 'grooming',
     roleId: 'groomer',
@@ -152,18 +154,21 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     });
   }, [bootstrapProblems]);
 
-  const {
-    loading: vendorsLoading,
-    loadingMore: vendorsLoadingMore,
-    hasMore: vendorsHasMore,
-    loadMore: loadMoreVendors,
-    vendors,
-    relaxedFilter,
-    selectedVendorId,
-    setSelectedVendorId,
-    toggleVendor,
-    fetchingPlansFor,
-  } = useHubVendorDiscovery(phone, HUB_DISCOVERY_GROOMING);
+  const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_GROOMING);
+  const wapptDiscovery = useWapptHubFeaturedVendors('grooming', wapptHubEnabled);
+  const [wapptSelectedVendorId, setWapptSelectedVendorId] = useState<string | null>(null);
+
+  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const selectedVendorId = wapptHubEnabled ? wapptSelectedVendorId : marketplaceDiscovery.selectedVendorId;
+  const setSelectedVendorId = wapptHubEnabled
+    ? setWapptSelectedVendorId
+    : marketplaceDiscovery.setSelectedVendorId;
+  const toggleVendor = wapptHubEnabled
+    ? (vendorId: string) => setWapptSelectedVendorId((prev) => (prev === vendorId ? null : vendorId))
+    : marketplaceDiscovery.toggleVendor;
+  const fetchingPlansFor = wapptHubEnabled ? null : marketplaceDiscovery.fetchingPlansFor;
 
   const {
     data: groomingCenterCount = 0,
@@ -383,20 +388,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   );
 
   const serviceTypesWithWappt = useMemo(() => {
-    if (!isWarmpawzAppointmentsHubEnabled('grooming')) return serviceTypes;
-    return [
-      {
-        id: 'wappt_grooming',
-        name: 'Book Appointment',
-        description: 'Fixed fee · pick a slot',
-        image: `${GROOMING_IMG}/grooming-center.webp`,
-        badge: 'WARMPAWZ',
-        badgeClass: 'bg-[#FF8C42] text-white',
-        trustedBy: 'Admin-curated providers',
-        arrowClass: 'bg-[#FF8C42] hover:bg-orange-600',
-      },
-      ...serviceTypes,
-    ];
+    return mergeWapptServiceTypes(serviceTypes, 'grooming');
   }, [serviceTypes]);
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
@@ -635,17 +627,9 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </div>
           )}
 
-          {/* Top Groomers — same expandable cards as View All (grooming_center) */}
+          {/* Top Groomers — top 3 on hub */}
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-900">Top Groomers</h2>
-              <button 
-                className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                onClick={() => void navigateGroomingStyle('grooming_center')}
-              >
-                View All <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Top Groomers</h2>
             {relaxedFilter && (
               <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
                 Showing all grooming providers we could match — expand a card for services and prices.
@@ -686,12 +670,6 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   );
                 })
               )}
-              <DiscoveryVendorFeedSentinel
-                hasMore={vendorsHasMore}
-                loading={vendorsLoading}
-                loadingMore={vendorsLoadingMore}
-                onLoadMore={() => void loadMoreVendors()}
-              />
             </div>
           </div>
         </div>

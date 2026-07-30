@@ -29,6 +29,7 @@ export type RoleId =
   | 'walker'
   | 'nutritionist'
   | 'boarding'
+  | 'pet_sitter'
   | 'behaviorist';
 export type ServiceStyle = 'tele' | 'at_home' | 'at_center';
 
@@ -152,6 +153,22 @@ export const ROLE_CONFIG: Record<RoleId, RoleConfig> = {
     styleDescriptions: {
       at_home: 'Pet sitter at your location',
       at_center: 'Visit a boarding facility near you',
+    },
+  },
+  pet_sitter: {
+    roleId: 'pet_sitter',
+    category: 'sitting',
+    allowedStyles: ['at_home'],
+    icon: Hotel,
+    roleName: 'Pet Sitter',
+    displayName: 'Pet Sitting Services',
+    styleLabels: {
+      at_home: 'In-Home Sitting',
+      at_center: 'Sitting Center',
+    },
+    styleDescriptions: {
+      at_home: 'Trusted care at your home',
+      at_center: 'Visit a sitting provider near you',
     },
   },
   behaviorist: {
