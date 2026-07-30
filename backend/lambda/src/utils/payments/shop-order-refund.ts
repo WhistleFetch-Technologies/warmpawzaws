@@ -10,7 +10,9 @@ import { discardUnpaidShopOrder } from '../shop-payment-hold';
 import {
   ACTIVE_REFUND_STATUS_FILTER,
   CUSTOMER_CANCEL_STATUSES,
+  mapRazorpayRefundEventStatus,
   VENDOR_CANCEL_STATUSES,
+  type DbRefundLifecycleStatus,
 } from './refund-status';
 
 export type ShopCancelledBy = 'pet_parent' | 'provider' | 'system';
@@ -296,6 +298,98 @@ function mapDbRefundStatus(status: string): ShopRefundStatus {
   return 'skipped';
 }
 
+/** SQL fragment: cancelled paid shop orders with Razorpay payment but no active refund row. */
+export const SHOP_MISSING_REFUND_FROM = `
+  FROM orders o
+  JOIN payments p ON p.order_id = o.id
+  LEFT JOIN customers c ON c.id = o.customer_id
+  LEFT JOIN vendors v ON v.id = o.vendor_id`;
+
+export const SHOP_MISSING_REFUND_WHERE = `
+  WHERE o.order_status = 'cancelled'
+    AND LOWER(COALESCE(o.order_type, 'ecommerce')) IN ('ecommerce', 'shop', 'shop_order')
+    AND LOWER(COALESCE(o.payment_status, '')) IN ('paid', 'completed')
+    AND p.razorpay_payment_id IS NOT NULL
+    AND LOWER(COALESCE(p.payment_status, '')) IN ('completed', 'paid')
+    AND NOT EXISTS (
+      SELECT 1 FROM refunds r
+      WHERE r.order_id = o.id
+        AND r.refund_status NOT IN ('failed', 'rejected')
+    )`;
+
+export async function applyShopRefundDbState(params: {
+  refundRowId: string;
+  orderId: string;
+  paymentId: string;
+  razorpayRefundId: string;
+  razorpayStatus: string;
+  refundAmountInr: number;
+  paymentAmountInr: number;
+  customerId?: string;
+  client?: PoolClient;
+}): Promise<DbRefundLifecycleStatus> {
+  const dbStatus = mapRazorpayRefundEventStatus(params.razorpayStatus);
+  const isFullRefund = params.refundAmountInr >= params.paymentAmountInr - 0.009;
+  const newPaymentStatus = isFullRefund ? 'refunded' : 'partially_refunded';
+
+  await runQuery(
+    params.client,
+    `UPDATE refunds
+     SET refund_status = $1,
+         razorpay_refund_id = COALESCE(razorpay_refund_id, $2),
+         processed_at = COALESCE(processed_at, NOW()),
+         completed_at = CASE WHEN $1 = 'completed' THEN COALESCE(completed_at, NOW()) ELSE completed_at END,
+         retry_count = CASE WHEN $1 = 'failed' THEN retry_count + 1 ELSE retry_count END
+     WHERE id = $3::uuid`,
+    [dbStatus, params.razorpayRefundId, params.refundRowId],
+  );
+
+  await runQuery(
+    params.client,
+    `UPDATE payments SET payment_status = $1, updated_at = NOW() WHERE id = $2::uuid`,
+    [newPaymentStatus, params.paymentId],
+  );
+
+  if (isFullRefund) {
+    await markShopOrderPaymentRefundedIfFull(params.orderId, params.client);
+  }
+
+  if (dbStatus === 'completed') {
+    void notifyShopRefundLifecycle({
+      orderId: params.orderId,
+      refundId: params.refundRowId,
+      event: 'completed',
+      amount: params.refundAmountInr,
+      customerId: params.customerId,
+    }).catch(() => {});
+  }
+
+  return dbStatus;
+}
+
+async function resolveShopRefundAmount(
+  client: PoolClient,
+  orderId: string,
+  row: LockedOrderRow,
+): Promise<{
+  payment: NonNullable<Awaited<ReturnType<typeof fetchLatestCompletedPayment>>>;
+  refundAmount: number;
+  existing: Awaited<ReturnType<typeof findExistingShopRefund>>;
+} | null> {
+  const payment = await fetchLatestCompletedPayment(client, orderId);
+  if (!payment?.razorpay_payment_id) return null;
+
+  const alreadyRefunded = await sumActiveRefundsForPayment(client, payment.id);
+  const available = round2(Math.max(0, payment.amount - alreadyRefunded));
+  const refundAmount = round2(
+    Math.min(available, parseFloat(String(payment.amount)) || parseFloat(String(row.total_amount ?? 0))),
+  );
+  if (refundAmount <= 0.009) return null;
+
+  const existing = await findExistingShopRefund(client, orderId, refundAmount);
+  return { payment, refundAmount, existing };
+}
+
 export async function initiateShopOrderRazorpayRefund(
   input: InitiateShopOrderRazorpayRefundInput,
 ): Promise<InitiateShopOrderRazorpayRefundResult> {
@@ -305,6 +399,7 @@ export async function initiateShopOrderRazorpayRefund(
   }
 
   let refundRowId: string | undefined;
+  let paymentRowId: string | undefined;
   let razorpayPaymentId: string | null = null;
   let existingRzRefundId: string | null = null;
   let existingStatus = '';
@@ -317,6 +412,7 @@ export async function initiateShopOrderRazorpayRefund(
     if (!payment?.razorpay_payment_id) return;
 
     razorpayPaymentId = payment.razorpay_payment_id;
+    paymentRowId = payment.id;
     paymentAmountForCap = payment.amount;
     const alreadyRefunded = await sumActiveRefundsForPayment(client, payment.id);
     const available = round2(Math.max(0, payment.amount - alreadyRefunded));
@@ -396,6 +492,38 @@ export async function initiateShopOrderRazorpayRefund(
       amount: Math.round(razorpayAmount * 100),
     });
     const rzRefundId = String((rzRefund as { id?: string }).id ?? '');
+    const rzStatus = String((rzRefund as { status?: string }).status ?? 'processing');
+
+    if (paymentRowId) {
+      const dbStatus = await applyShopRefundDbState({
+        refundRowId,
+        orderId: input.orderId,
+        paymentId: paymentRowId,
+        razorpayRefundId: rzRefundId,
+        razorpayStatus: rzStatus,
+        refundAmountInr: razorpayAmount,
+        paymentAmountInr: paymentAmountForCap,
+        customerId: input.customerId,
+      });
+
+      if (dbStatus === 'processing') {
+        void notifyShopRefundLifecycle({
+          orderId: input.orderId,
+          refundId: refundRowId,
+          event: 'initiated',
+          amount: razorpayAmount,
+          customerId: input.customerId,
+        }).catch(() => {});
+      }
+
+      return {
+        success: dbStatus !== 'failed',
+        refundStatus: mapDbRefundStatus(dbStatus),
+        refundId: refundRowId,
+        razorpayRefundId: rzRefundId || undefined,
+        error: dbStatus === 'failed' ? 'Razorpay refund failed' : undefined,
+      };
+    }
 
     await query(
       `UPDATE refunds
@@ -492,16 +620,20 @@ export async function cancelPaidShopOrder(
 
       if (String(row.order_status).toLowerCase() === 'cancelled') {
         alreadyCancelled = true;
-        const existing = isPaidOrder(row)
-          ? await findExistingShopRefund(
-              client,
-              input.orderId,
-              round2(parseFloat(String(row.total_amount ?? 0))),
-            )
-          : null;
-        if (existing) {
-          refundId = existing.id;
-          refundStatus = mapDbRefundStatus(existing.refund_status);
+        const refundCtx = await resolveShopRefundAmount(client, input.orderId, row);
+        if (refundCtx) {
+          paymentAmount = refundCtx.payment.amount;
+          refundAmount = refundCtx.refundAmount;
+          if (refundCtx.existing) {
+            refundId = refundCtx.existing.id;
+            refundStatus = mapDbRefundStatus(refundCtx.existing.refund_status);
+            needsRazorpay =
+              !refundCtx.existing.razorpay_refund_id &&
+              !['completed', 'processing', 'approved'].includes(refundCtx.existing.refund_status);
+          } else {
+            refundStatus = 'pending_retry';
+            needsRazorpay = true;
+          }
         }
         return;
       }
@@ -528,45 +660,44 @@ export async function cancelPaidShopOrder(
         stockRestored = await restoreShopOrderStockIfNeeded(input.orderId, meta, client);
       }
 
-      if (isPaidOrder(row)) {
-        const payment = await fetchLatestCompletedPayment(client, input.orderId);
-        if (payment) {
-          paymentAmount = payment.amount;
-          const alreadyRefunded = await sumActiveRefundsForPayment(client, payment.id);
-          const available = round2(Math.max(0, payment.amount - alreadyRefunded));
-          refundAmount = round2(
-            Math.min(
-              available,
-              parseFloat(String(payment.amount)) || parseFloat(String(row.total_amount ?? 0)),
-            ),
+      const refundCtx = await resolveShopRefundAmount(client, input.orderId, row);
+      if (refundCtx) {
+        paymentAmount = refundCtx.payment.amount;
+        refundAmount = refundCtx.refundAmount;
+        if (refundCtx.existing) {
+          refundId = refundCtx.existing.id;
+          refundStatus = mapDbRefundStatus(refundCtx.existing.refund_status);
+          needsRazorpay =
+            !refundCtx.existing.razorpay_refund_id &&
+            !['completed', 'processing', 'approved'].includes(refundCtx.existing.refund_status);
+        } else {
+          const ins = await client.query(
+            `INSERT INTO refunds (
+               payment_id, order_id, customer_id, vendor_id, refund_amount, refund_reason,
+               refund_status, refund_method, requested_at
+             ) VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, 'pending', 'original', NOW())
+             RETURNING id::text`,
+            [refundCtx.payment.id, input.orderId, customerId, vendorId, refundAmount, reason],
           );
-          if (refundAmount > 0.009) {
-            const existing = await findExistingShopRefund(client, input.orderId, refundAmount);
-            if (existing) {
-              refundId = existing.id;
-              refundStatus = mapDbRefundStatus(existing.refund_status);
-              needsRazorpay =
-                !existing.razorpay_refund_id &&
-                !['completed', 'processing', 'approved'].includes(existing.refund_status);
-            } else {
-              const ins = await client.query(
-                `INSERT INTO refunds (
-                   payment_id, order_id, customer_id, vendor_id, refund_amount, refund_reason,
-                   refund_status, refund_method, requested_at
-                 ) VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, 'pending', 'original', NOW())
-                 RETURNING id::text`,
-                [payment.id, input.orderId, customerId, vendorId, refundAmount, reason],
-              );
-              refundId = ins.rows[0]?.id;
-              refundStatus = 'pending_retry';
-              needsRazorpay = true;
-            }
-          }
+          refundId = ins.rows[0]?.id;
+          refundStatus = 'pending_retry';
+          needsRazorpay = true;
         }
       }
     });
 
     if (alreadyCancelled) {
+      if (needsRazorpay && refundAmount > 0.009) {
+        const rz = await initiateShopOrderRazorpayRefund({
+          orderId: input.orderId,
+          amount: refundAmount,
+          reason,
+          customerId,
+          vendorId: vendorId || undefined,
+        });
+        refundStatus = rz.refundStatus;
+        refundId = rz.refundId || refundId;
+      }
       return {
         success: true,
         orderId: input.orderId,
@@ -719,6 +850,86 @@ export async function retryPendingShopRefunds(options?: {
     }
   }
   return { retried, errors };
+}
+
+export async function reconcileShopRefundById(
+  refundId: string,
+): Promise<{ success: boolean; refundStatus?: ShopRefundStatus; error?: string }> {
+  const rowRes = await query(
+    `SELECT r.id::text, r.order_id::text, r.payment_id::text, r.refund_amount::text,
+            r.razorpay_refund_id, r.refund_status, r.customer_id::text,
+            p.amount::text AS payment_amount
+     FROM refunds r
+     JOIN payments p ON p.id = r.payment_id
+     WHERE r.id = $1::uuid AND r.order_id IS NOT NULL
+     LIMIT 1`,
+    [refundId],
+  );
+  const row = rowRes.rows[0];
+  if (!row) {
+    return { success: false, error: 'Shop refund not found' };
+  }
+  if (!row.razorpay_refund_id) {
+    return { success: false, error: 'No Razorpay refund id — use retry instead' };
+  }
+  if (row.refund_status === 'completed') {
+    return { success: true, refundStatus: 'completed' };
+  }
+
+  try {
+    const razorpay = getRazorpayClient();
+    const rzRefund = (await razorpay.refunds.fetch(String(row.razorpay_refund_id))) as {
+      status?: string;
+    };
+    const dbStatus = await applyShopRefundDbState({
+      refundRowId: String(row.id),
+      orderId: String(row.order_id),
+      paymentId: String(row.payment_id),
+      razorpayRefundId: String(row.razorpay_refund_id),
+      razorpayStatus: String(rzRefund.status ?? 'processing'),
+      refundAmountInr: parseFloat(String(row.refund_amount)) || 0,
+      paymentAmountInr: parseFloat(String(row.payment_amount)) || 0,
+      customerId: row.customer_id ? String(row.customer_id) : undefined,
+    });
+    return { success: dbStatus !== 'failed', refundStatus: mapDbRefundStatus(dbStatus) };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[shop-order-refund] reconcileShopRefundById failed:', refundId, msg);
+    return { success: false, error: msg };
+  }
+}
+
+export async function reconcileStuckShopRefunds(options?: {
+  limit?: number;
+  minAgeMinutes?: number;
+}): Promise<{ reconciled: number; errors: string[] }> {
+  const limit = Math.min(Math.max(options?.limit ?? 10, 1), 20);
+  const minAgeMinutes = Math.max(options?.minAgeMinutes ?? 60, 1);
+
+  const { rows } = await query(
+    `SELECT r.id::text
+     FROM refunds r
+     WHERE r.order_id IS NOT NULL
+       AND r.refund_status = 'processing'
+       AND r.razorpay_refund_id IS NOT NULL
+       AND r.completed_at IS NULL
+       AND r.processed_at < NOW() - ($2::int * INTERVAL '1 minute')
+     ORDER BY r.processed_at ASC NULLS LAST
+     LIMIT $1`,
+    [limit, minAgeMinutes],
+  );
+
+  let reconciled = 0;
+  const errors: string[] = [];
+  for (const row of rows) {
+    const result = await reconcileShopRefundById(String(row.id));
+    if (result.success && result.refundStatus === 'completed') {
+      reconciled += 1;
+    } else if (result.error) {
+      errors.push(`${row.id}: ${result.error}`);
+    }
+  }
+  return { reconciled, errors };
 }
 
 const refundNotifyDedupe = new Set<string>();

@@ -379,9 +379,14 @@ export class GetCustomerOrdersHandler extends BaseHandler {
       const now = Date.now();
       if (!(global as any).__shopRefundRetryLastRun || now - (global as any).__shopRefundRetryLastRun > 60_000) {
         (global as any).__shopRefundRetryLastRun = now;
-        const { retryPendingShopRefunds } = await import('../../../../utils/payments/shop-order-refund');
+        const { retryPendingShopRefunds, reconcileStuckShopRefunds } = await import(
+          '../../../../utils/payments/shop-order-refund'
+        );
         void retryPendingShopRefunds({ limit: 20 }).catch((e) =>
           console.warn('[customer/orders] retryPendingShopRefunds failed:', e)
+        );
+        void reconcileStuckShopRefunds({ limit: 10 }).catch((e) =>
+          console.warn('[customer/orders] reconcileStuckShopRefunds failed:', e)
         );
       }
 
