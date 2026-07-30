@@ -12,31 +12,15 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  formatCommissionRateDisplay,
+  formatCommissionRateSource,
+  parseVendorCommissionAnalytics,
+  type VendorCommissionAnalytics,
+} from '@/lib/vendor-commission-analytics';
 
 interface CommissionCalculatorProps {
   sellerId: string;
-}
-
-interface CommissionTier {
-  name: string;
-  level: number;
-  commissionRate: number;
-  minMonthlyRevenue: number;
-  maxMonthlyRevenue: number | null;
-  isCurrent: boolean;
-}
-
-interface CommissionAnalytics {
-  commissionRate: number;
-  commissionRateSource?: string;
-  gstRate: number;
-  totalRevenue: number;
-  totalCommission: number;
-  netEarnings: number;
-  pendingPayout: number;
-  monthlyRevenue?: number;
-  currentTier?: { name: string; level: number; commissionRate: number } | null;
-  tiers: CommissionTier[];
 }
 
 const TIER_MEDALS = ['🥉', '🥈', '🥇', '🏆'];
@@ -55,7 +39,7 @@ function formatRevenueRange(min: number, max: number | null): string {
 }
 
 export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
-  const [analytics, setAnalytics] = useState<CommissionAnalytics | null>(null);
+  const [analytics, setAnalytics] = useState<VendorCommissionAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [simulatedSale, setSimulatedSale] = useState('1000');
@@ -64,16 +48,14 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
     try {
       setLoading(true);
       setError(null);
-      const data = await apiClient.get<CommissionAnalytics>(
+      const data = await apiClient.get<Record<string, unknown>>(
         `/vendor/${sellerId}/commission-analytics`
       );
-      if (!data || typeof data.commissionRate !== 'number') {
+      const parsed = parseVendorCommissionAnalytics(data);
+      if (!parsed) {
         throw new Error('Invalid commission analytics response');
       }
-      setAnalytics({
-        ...data,
-        tiers: Array.isArray(data.tiers) ? data.tiers : [],
-      });
+      setAnalytics(parsed);
     } catch (err) {
       console.error('Error loading commission data:', err);
       setAnalytics(null);
@@ -87,10 +69,21 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
     loadCommissionData();
   }, [loadCommissionData]);
 
-  const commissionRate = safeNum(analytics?.commissionRate, 0);
+  const commissionConfigured = analytics?.commissionConfigured === true;
+  const commissionRate = commissionConfigured ? safeNum(analytics?.commissionRate, 0) : 0;
   const gstRate = safeNum(analytics?.gstRate, 0);
+  const rateSourceLabel = formatCommissionRateSource(analytics?.commissionRateSource ?? null);
 
   const calculateBreakdown = (saleAmount: number) => {
+    if (!commissionConfigured || commissionRate <= 0) {
+      return {
+        saleAmount,
+        gstAmount: 0,
+        baseAmount: saleAmount,
+        commission: 0,
+        netEarnings: saleAmount,
+      };
+    }
     if (gstRate <= 0) {
       const commission = saleAmount * (commissionRate / 100);
       return {
@@ -156,8 +149,17 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
               </div>
               <div>
                 <p className="text-orange-100 text-sm">Your Commission Rate</p>
-                <p className="text-5xl font-bold mt-1">{commissionRate}%</p>
-                <p className="text-orange-100 text-sm mt-2">Platform fee on each sale</p>
+                <p className="text-5xl font-bold mt-1">
+                  {formatCommissionRateDisplay(
+                    analytics.commissionRate,
+                    analytics.commissionConfigured
+                  )}
+                </p>
+                <p className="text-orange-100 text-sm mt-2">
+                  {commissionConfigured
+                    ? rateSourceLabel ?? 'Platform fee on each shop sale'
+                    : 'Shop commission is not configured yet'}
+                </p>
               </div>
             </div>
           </div>
@@ -177,6 +179,19 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
           </div>
         </div>
       </div>
+
+      {!commissionConfigured && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium text-amber-900">Commission not configured</p>
+            <p className="text-sm text-amber-800 mt-1">
+              Your shop commission rate has not been set up yet. Order earnings and the calculator
+              below will update once WarmPawz configures your commission model.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
@@ -284,9 +299,14 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
               </span>
             </div>
             <div className="flex items-center justify-between py-2 border-b border-slate-200">
-              <span className="text-slate-600">Platform Commission ({commissionRate}%)</span>
+              <span className="text-slate-600">
+                Platform Commission
+                {commissionConfigured && commissionRate > 0 ? ` (${commissionRate}%)` : ''}
+              </span>
               <span className="font-medium text-orange-600">
-                - ₹{breakdown.commission.toFixed(2)}
+                {commissionConfigured && commissionRate > 0
+                  ? `- ₹${breakdown.commission.toFixed(2)}`
+                  : '—'}
               </span>
             </div>
             <div className="flex items-center justify-between py-3 bg-emerald-100 rounded-xl px-4 -mx-2">

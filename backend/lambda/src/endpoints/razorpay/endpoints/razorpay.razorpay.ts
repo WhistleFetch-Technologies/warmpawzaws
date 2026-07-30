@@ -898,8 +898,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           },
         ];
       } else if (isEcommerceOrder && ecommerceOrderId && vendorIdFinal) {
-        // Snapshot commission now so the settlement job has it even though no Route
-        // transfer happens here.
+        // Backfill snapshot only when order-create did not already lock commission.
         try {
           const resolved = await resolveOrderCommissionByOrderId(
             vendorIdFinal,
@@ -907,8 +906,18 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           );
           const snapshot = buildCommissionSnapshot(resolved);
           await query(
-            `UPDATE orders SET commission_snapshot = $2::jsonb, updated_at = NOW() WHERE id = $1::uuid`,
-            [ecommerceOrderId, JSON.stringify(snapshot)]
+            `UPDATE orders SET
+               commission_rate = COALESCE(commission_rate, $2),
+               commission_amount = COALESCE(commission_amount, $3),
+               commission_snapshot = COALESCE(commission_snapshot, $4::jsonb),
+               updated_at = NOW()
+             WHERE id = $1::uuid`,
+            [
+              ecommerceOrderId,
+              snapshot.effectiveRate,
+              snapshot.commissionAmount,
+              JSON.stringify(snapshot),
+            ]
           );
         } catch (snapErr) {
           console.warn('[RAZORPAY-CREATE-ORDER] commission_snapshot update skipped:', snapErr);

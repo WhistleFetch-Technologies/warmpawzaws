@@ -17,6 +17,11 @@ import {
   RefreshCcw,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  formatCommissionRateDisplay,
+  formatCommissionRateSource,
+  parseVendorCommissionAnalytics,
+} from '@/lib/vendor-commission-analytics';
 import { formatInrAmount, resolveVendorOrderMoney } from '@/lib/vendor-order-money';
 
 interface SellerDashboardProps {
@@ -33,7 +38,9 @@ export interface SellerDashboardMetrics {
   totalRevenue: number;
   monthRevenue: number;
   netEarnings: number;
-  commissionRate: number;
+  commissionRate: number | null;
+  commissionConfigured: boolean;
+  commissionRateSource: string | null;
   totalOrders: number;
   pendingOrders: number;
   activeProducts: number;
@@ -81,12 +88,14 @@ function revenueTrendFromDaily(
   return ((last7 - prev7) / prev7) * 100;
 }
 
-function emptyMetrics(commissionRate = 15): SellerDashboardMetrics {
+function emptyMetrics(): SellerDashboardMetrics {
   return {
     totalRevenue: 0,
     monthRevenue: 0,
     netEarnings: 0,
-    commissionRate,
+    commissionRate: null,
+    commissionConfigured: false,
+    commissionRateSource: null,
     totalOrders: 0,
     pendingOrders: 0,
     activeProducts: 0,
@@ -130,26 +139,14 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
         apiClient.get<Record<string, unknown>>(`${base}/analytics/sales?period=today`),
         apiClient.get<{ stats?: Record<string, unknown> }>(`${base}/orders/stats?dateFilter=all`),
         apiClient.get<{ stats?: Record<string, unknown> }>(`${base}/orders/stats?dateFilter=month`),
-        apiClient.get<{
-          pendingPayout?: unknown;
-          netEarnings?: unknown;
-          totalCommission?: unknown;
-        }>(`${base}/commission-analytics`),
+        apiClient.get<Record<string, unknown>>(`${base}/commission-analytics`),
         apiClient.get<{ total?: unknown }>(`${base}/products?status=active&limit=1`),
         apiClient.get<{ count?: unknown }>(`${base}/products/low-stock?threshold=10`),
         apiClient.get<{ vendor?: Record<string, unknown> }>(`${base}/profile`),
         apiClient.get<{ orders?: any[] }>(`${base}/orders?limit=5`),
       ]);
 
-      let commissionRate = 15;
-      if (profileRes.status === 'fulfilled') {
-        const v = profileRes.value?.vendor;
-        const raw = v?.commission_percentage ?? v?.commissionPercentage;
-        const r = safeNum(raw, NaN);
-        if (Number.isFinite(r) && r >= 0 && r <= 100) commissionRate = r;
-      }
-
-      const m = emptyMetrics(commissionRate);
+      const m = emptyMetrics();
 
       if (statsAllRes.status === 'fulfilled' && statsAllRes.value?.stats) {
         const s = statsAllRes.value.stats;
@@ -210,13 +207,21 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
       }
 
       if (commissionRes.status === 'fulfilled' && commissionRes.value) {
-        const c = commissionRes.value;
-        const pending = safeNum(c.pendingPayout, 0);
-        if (pending > 0) m.pendingPayout = pending;
-        const net = safeNum(c.netEarnings, 0);
-        if (m.netEarnings <= 0 && net > 0) m.netEarnings = net;
-        const comm = safeNum(c.totalCommission, 0);
-        if (m.totalCommission <= 0 && comm > 0) m.totalCommission = comm;
+        const commissionAnalytics = parseVendorCommissionAnalytics(commissionRes.value);
+        if (commissionAnalytics) {
+          m.commissionConfigured = commissionAnalytics.commissionConfigured;
+          m.commissionRate = commissionAnalytics.commissionRate;
+          m.commissionRateSource = commissionAnalytics.commissionRateSource;
+          if (commissionAnalytics.pendingPayout > 0) {
+            m.pendingPayout = commissionAnalytics.pendingPayout;
+          }
+          if (m.netEarnings <= 0 && commissionAnalytics.netEarnings > 0) {
+            m.netEarnings = commissionAnalytics.netEarnings;
+          }
+          if (m.totalCommission <= 0 && commissionAnalytics.totalCommission > 0) {
+            m.totalCommission = commissionAnalytics.totalCommission;
+          }
+        }
       }
 
       setMetrics(m);
@@ -228,7 +233,7 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
       }
     } catch (error) {
       console.error('Error loading dashboard:', error);
-      setMetrics(emptyMetrics(15));
+      setMetrics(emptyMetrics());
       setRecentOrders([]);
     } finally {
       setLoading(false);
@@ -236,7 +241,7 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
   };
 
   const statCards = useMemo(() => {
-    const a = metrics ?? emptyMetrics(15);
+    const a = metrics ?? emptyMetrics();
     const trend = a.revenueTrendPercent;
     const hasTrend = trend !== null && Number.isFinite(trend);
     const revenueSub = hasTrend
@@ -387,13 +392,23 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
               </div>
               <div>
                 <h3 className="text-xl font-semibold">Commission Rate</h3>
-                <p className="text-slate-400 text-sm mt-1">Your current commission rate on all sales</p>
+                <p className="text-slate-400 text-sm mt-1">
+                  {analytics.commissionConfigured
+                    ? 'Your shop commission rate on catalog sales'
+                    : 'Shop commission is not configured yet'}
+                </p>
               </div>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-5xl font-bold text-orange-400">{analytics.commissionRate}%</p>
-            <p className="text-slate-400 text-sm mt-1">Platform Fee</p>
+            <p className="text-5xl font-bold text-orange-400">
+              {formatCommissionRateDisplay(analytics.commissionRate, analytics.commissionConfigured)}
+            </p>
+            <p className="text-slate-400 text-sm mt-1">
+              {analytics.commissionConfigured
+                ? formatCommissionRateSource(analytics.commissionRateSource) ?? 'Platform fee'
+                : 'Contact support to set up'}
+            </p>
           </div>
         </div>
         <div className="mt-6 pt-6 border-t border-white/10 grid grid-cols-3 gap-4">

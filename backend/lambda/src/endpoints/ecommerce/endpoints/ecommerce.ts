@@ -79,18 +79,23 @@ import {
 import {
   getVendorCommissionConfigResponse,
   upsertVendorCommissionConfig,
+  countProductsWithoutListingOwnership,
 } from '../../../utils/ecommerce-commission-admin';
 import {
   resolveOrderCommission,
   buildCommissionSnapshot,
   persistOrderItemCommission,
   loadOrderItemIds,
+  forceApplyOrderCommissionAudit,
 } from '../../../utils/resolve-ecommerce-commission-rate';
 import { paymentHoldExpiresAt, expireShopPaymentHolds } from '../../../utils/shop-payment-hold';
 import { reconcilePendingShopPayments } from '../../../utils/payments/shop-payment-reconciliation';
 import { assertShopCheckoutPaymentAllowed } from '../../../utils/shop-checkout-payment-flags';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
-import { writeEcommerceOrderSettlementLedgerRow } from '../../../utils/write-ecommerce-order-settlement';
+import {
+  writeEcommerceOrderSettlementLedgerRow,
+  syncEcommerceOrderSettlementLedgerRow,
+} from '../../../utils/write-ecommerce-order-settlement';
 import {
   productIdIsExcludedFromEcommerceStorefront,
   storefrontExcludeMealProductsSql,
@@ -1253,6 +1258,14 @@ export function registerEcommerceEndpoints(app: Hono) {
           }));
           const commResult = await resolveOrderCommission(firstVendorId, lineItemsForCommission);
           const snap = buildCommissionSnapshot(commResult);
+          const platformDefaultLines = snap.lineBreakdown.filter(
+            (line) => line.source === 'platform_default'
+          );
+          if (platformDefaultLines.length > 0) {
+            console.warn(
+              `[COMMISSION] Order ${orderId}: ${platformDefaultLines.length} line(s) used platform default — check vendor commission config and product listing_ownership`
+            );
+          }
           await query(
             `UPDATE orders SET
                commission_rate = $2,
@@ -2835,6 +2848,67 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
       console.error('Error updating vendor commission:', error);
       const status = error.message?.includes('commissionModel') ? 400 : 500;
       return c.json({ error: error.message }, status);
+    }
+  });
+
+  /**
+   * GET /admin/ecommerce/commission/vendors/:vendorId/products-without-ownership
+   * Guardrail: products missing listing_ownership for ownership commission model.
+   */
+  app.get('/admin/ecommerce/commission/vendors/:vendorId/products-without-ownership', async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID' }, 400);
+      }
+      const count = await countProductsWithoutListingOwnership(vendorId);
+      return c.json({ success: true, vendorId, count });
+    } catch (error: any) {
+      console.error('Error counting products without ownership:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/ecommerce/commission/orders/:orderId/re-resolve
+   * Force re-resolve commission using current vendor/product config.
+   */
+  app.post('/admin/ecommerce/commission/orders/:orderId/re-resolve', async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      if (!isValidUUID(orderId)) {
+        return c.json({ error: 'Invalid order ID' }, 400);
+      }
+
+      const body = await c.req.json().catch(() => ({}));
+      const force = Boolean(body?.force);
+
+      const orderRes = await query(
+        `SELECT vendor_id::text FROM orders WHERE id = $1::uuid LIMIT 1`,
+        [orderId]
+      );
+      const vendorId = orderRes.rows?.[0]?.vendor_id;
+      if (!vendorId) {
+        return c.json({ error: 'Order not found or missing vendor' }, 404);
+      }
+
+      const result = await forceApplyOrderCommissionAudit(orderId, String(vendorId));
+      if (!result) {
+        return c.json({ error: 'Commission re-resolve failed' }, 500);
+      }
+
+      const ledger = await syncEcommerceOrderSettlementLedgerRow(orderId, { force });
+
+      return c.json({
+        success: true,
+        orderId,
+        previous: result.previous,
+        current: result.current,
+        ledger,
+      });
+    } catch (error: any) {
+      console.error('Error re-resolving order commission:', error);
+      return c.json({ error: error.message }, 500);
     }
   });
 
