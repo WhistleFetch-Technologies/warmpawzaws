@@ -52,6 +52,11 @@ import {
   isShopOrderPaymentHoldActive,
   isShopOrderPaymentHoldExpired,
 } from '../../../utils/shop-payment-hold';
+import {
+  reconcileShopOrderPayment,
+  SHOP_HOLD_EXPIRY_CANCEL_REASON,
+} from '../../../utils/payments/shop-payment-reconciliation';
+import { isPaymentAbandonCancellationReason } from '../../../utils/shop-vendor-visibility';
 import { assertShopCheckoutPaymentAllowed } from '../../../utils/shop-checkout-payment-flags';
 import { PaymentTransactionStatus, BookingPaymentStatus } from '../../constants';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
@@ -1326,7 +1331,7 @@ class VerifyPaymentHandler extends BaseHandler {
           });
 
           const { rows: shopRows } = await client.query(
-            `SELECT id, order_status, payment_status, payment_method, payment_hold_expires_at, created_at
+            `SELECT id, order_status, payment_status, payment_method, payment_hold_expires_at, created_at, cancellation_reason
              FROM orders WHERE id = $1::uuid FOR UPDATE`,
             [ecommerceOrderId]
           );
@@ -1337,30 +1342,59 @@ class VerifyPaymentHandler extends BaseHandler {
           const shopRow = shopRows[0];
           const shopPs = String(shopRow.payment_status || '').toLowerCase();
           const shopSt = String(shopRow.order_status || '').toLowerCase();
-          if (shopSt === 'cancelled' || ['failed', 'expired'].includes(shopPs)) {
+          const holdCancelReconfirm =
+            shopSt === 'cancelled' &&
+            isPaymentAbandonCancellationReason(shopRow.cancellation_reason);
+          if (shopSt === 'cancelled' && !holdCancelReconfirm) {
             throw new Error('Order payment window has expired or order was cancelled');
           }
-          if (isShopOrderPaymentHoldExpired(shopRow) && shopPs !== 'paid' && shopPs !== 'completed') {
+          if (['failed', 'expired'].includes(shopPs) && !holdCancelReconfirm) {
+            throw new Error('Order payment window has expired or order was cancelled');
+          }
+          if (
+            isShopOrderPaymentHoldExpired(shopRow) &&
+            shopPs !== 'paid' &&
+            shopPs !== 'completed' &&
+            !holdCancelReconfirm
+          ) {
             throw new Error('PAYMENT_HOLD_EXPIRED');
           }
 
-          // Mark paid inside this transaction only. Do NOT call applyOrderCommissionAudit
-          // (or other pool-based writers on orders/items) while FOR UPDATE holds this row —
-          // that second connection deadlocks until Lambda times out.
           const updateResult = await client.query(
             `UPDATE orders SET
               payment_status = 'paid',
               order_status = CASE
-                WHEN order_status = 'pending_payment' THEN 'pending'
+                WHEN order_status IN ('pending_payment', 'pending') THEN 'pending'
+                WHEN order_status = 'cancelled'
+                  AND COALESCE(cancellation_reason, '') = $4
+                THEN 'pending'
                 ELSE order_status
               END,
               payment_method = COALESCE($3, payment_method),
               payment_id = COALESCE(payment_id, $2),
               payment_hold_expires_at = NULL,
+              cancellation_reason = CASE
+                WHEN order_status = 'cancelled'
+                  AND COALESCE(cancellation_reason, '') = $4
+                THEN NULL
+                ELSE cancellation_reason
+              END,
+              cancelled_at = CASE
+                WHEN order_status = 'cancelled'
+                  AND COALESCE(cancellation_reason, '') = $4
+                THEN NULL
+                ELSE cancelled_at
+              END,
+              cancelled_by = CASE
+                WHEN order_status = 'cancelled'
+                  AND COALESCE(cancellation_reason, '') = $4
+                THEN NULL
+                ELSE cancelled_by
+              END,
               updated_at = NOW()
             WHERE id = $1::uuid
             RETURNING id, payment_status, order_status`,
-            [ecommerceOrderId, payment.id, resolvedPaymentMethod]
+            [ecommerceOrderId, payment.id, resolvedPaymentMethod, SHOP_HOLD_EXPIRY_CANCEL_REASON]
           );
 
           if (updateResult.rows.length === 0) {
@@ -1728,7 +1762,22 @@ class VerifyPaymentHandler extends BaseHandler {
             [body?.razorpay_order_id]
           );
           if (paymentRows[0]?.order_id) {
-            await discardUnpaidShopOrder(String(paymentRows[0].order_id), 'payment_window_expired', {
+            const orderId = String(paymentRows[0].order_id);
+            if (body?.razorpay_payment_id) {
+              const reconciled = await reconcileShopOrderPayment(orderId, {
+                source: 'verify-hold-expired',
+              }).catch(() => false);
+              if (reconciled) {
+                return this.success({
+                  success: true,
+                  message: 'Payment verified successfully',
+                  paymentId: body.razorpay_payment_id,
+                  orderId: body.razorpay_order_id,
+                  ecommerceOrderId: orderId,
+                });
+              }
+            }
+            await discardUnpaidShopOrder(orderId, 'payment_window_expired', {
               paymentStatus: 'expired',
             });
           }
@@ -1769,20 +1818,46 @@ class VerifyPaymentHandler extends BaseHandler {
             [orderId]
           );
           if (paymentRows.length > 0 && paymentRows[0].order_id && !paymentRows[0].booking_id) {
-            await query(
-              `UPDATE orders SET
-                payment_status = 'paid',
-                order_status = CASE
-                  WHEN order_status = 'pending_payment' THEN 'pending'
-                  ELSE order_status
-                END,
-                payment_hold_expires_at = NULL,
-                updated_at = NOW()
-              WHERE id = $1::uuid
-                AND payment_status != 'paid'
-                AND LOWER(COALESCE(order_status, '')) NOT IN ('cancelled', 'returned')`,
-              [paymentRows[0].order_id]
-            );
+            const reconciled = await reconcileShopOrderPayment(String(paymentRows[0].order_id), {
+              source: 'verify-recovery',
+            }).catch(() => false);
+            if (!reconciled) {
+              await query(
+                `UPDATE orders SET
+                  payment_status = 'paid',
+                  order_status = CASE
+                    WHEN order_status IN ('pending_payment', 'pending') THEN 'pending'
+                    WHEN order_status = 'cancelled'
+                      AND COALESCE(cancellation_reason, '') = $2
+                    THEN 'pending'
+                    ELSE order_status
+                  END,
+                  payment_hold_expires_at = NULL,
+                  cancellation_reason = CASE
+                    WHEN order_status = 'cancelled'
+                      AND COALESCE(cancellation_reason, '') = $2
+                    THEN NULL
+                    ELSE cancellation_reason
+                  END,
+                  cancelled_at = CASE
+                    WHEN order_status = 'cancelled'
+                      AND COALESCE(cancellation_reason, '') = $2
+                    THEN NULL
+                    ELSE cancelled_at
+                  END,
+                  cancelled_by = CASE
+                    WHEN order_status = 'cancelled'
+                      AND COALESCE(cancellation_reason, '') = $2
+                    THEN NULL
+                    ELSE cancelled_by
+                  END,
+                  updated_at = NOW()
+                WHERE id = $1::uuid
+                  AND payment_status != 'paid'
+                  AND LOWER(COALESCE(order_status, '')) NOT IN ('returned')`,
+                [paymentRows[0].order_id, SHOP_HOLD_EXPIRY_CANCEL_REASON]
+              );
+            }
             console.log('[PAYMENT-VERIFY] ⚠️ Best-effort ecommerce payment update:', paymentRows[0].order_id);
           } else if (paymentRows.length > 0 && paymentRows[0].booking_id) {
             await query(
@@ -1959,17 +2034,44 @@ class RazorpayWebhookHandler extends BaseHandler {
             `UPDATE orders SET
               payment_status = 'paid',
               order_status = CASE
-                WHEN order_status = 'pending_payment' THEN 'pending'
+                WHEN order_status IN ('pending_payment', 'pending') THEN 'pending'
+                WHEN order_status = 'cancelled'
+                  AND COALESCE(cancellation_reason, '') = $3
+                THEN 'pending'
                 ELSE order_status
               END,
               payment_id = COALESCE(payment_id, $2),
               payment_hold_expires_at = NULL,
+              cancellation_reason = CASE
+                WHEN order_status = 'cancelled'
+                  AND COALESCE(cancellation_reason, '') = $3
+                THEN NULL
+                ELSE cancellation_reason
+              END,
+              cancelled_at = CASE
+                WHEN order_status = 'cancelled'
+                  AND COALESCE(cancellation_reason, '') = $3
+                THEN NULL
+                ELSE cancelled_at
+              END,
+              cancelled_by = CASE
+                WHEN order_status = 'cancelled'
+                  AND COALESCE(cancellation_reason, '') = $3
+                THEN NULL
+                ELSE cancelled_by
+              END,
               updated_at = NOW()
             WHERE id = $1::uuid
               AND payment_status != 'paid'
-              AND LOWER(COALESCE(order_status, '')) NOT IN ('cancelled', 'returned')
+              AND (
+                LOWER(COALESCE(order_status, '')) NOT IN ('cancelled', 'returned')
+                OR (
+                  order_status = 'cancelled'
+                  AND COALESCE(cancellation_reason, '') = $3
+                )
+              )
             RETURNING id, vendor_id, order_status`,
-            [paymentRecord.order_id, paymentRecord.id]
+            [paymentRecord.order_id, paymentRecord.id, SHOP_HOLD_EXPIRY_CANCEL_REASON]
           );
           if (orderUpdate.rows.length > 0) {
             const orderId = String(paymentRecord.order_id);
@@ -1983,7 +2085,8 @@ class RazorpayWebhookHandler extends BaseHandler {
             }
           } else {
             const { rows: lateCancelRows } = await client.query(
-              `SELECT o.id::text, o.customer_id::text, o.vendor_id::text, p.amount::text
+              `SELECT o.id::text, o.customer_id::text, o.vendor_id::text, p.amount::text,
+                      o.cancellation_reason
                FROM orders o
                JOIN payments p ON p.id = $2::uuid
                WHERE o.id = $1::uuid
@@ -1999,7 +2102,10 @@ class RazorpayWebhookHandler extends BaseHandler {
               [paymentRecord.order_id, paymentRecord.id],
             );
             const lateRow = lateCancelRows[0];
-            if (lateRow) {
+            if (
+              lateRow &&
+              !isPaymentAbandonCancellationReason(lateRow.cancellation_reason)
+            ) {
               cancelledShopOrderLateRefund = {
                 orderId: String(lateRow.id),
                 amount: parseFloat(String(lateRow.amount)) || 0,
@@ -2086,6 +2192,20 @@ class RazorpayWebhookHandler extends BaseHandler {
       if (ecommerceOrderToNotify) {
         void notifyShopOrderPaid(ecommerceOrderToNotify).catch((e) =>
           console.error('[RAZORPAY-WEBHOOK] Shop order notification failed:', e)
+        );
+      }
+
+      if (
+        paymentRecord?.order_id &&
+        !paymentRecord.booking_id &&
+        !paymentRecord.pharmacy_order_id &&
+        !ecommerceOrderForShipment &&
+        !cancelledShopOrderLateRefund
+      ) {
+        await reconcileShopOrderPayment(String(paymentRecord.order_id), {
+          source: 'webhook-capture-fallback',
+        }).catch((e) =>
+          console.warn('[RAZORPAY-WEBHOOK] Shop reconcile fallback failed:', e)
         );
       }
 

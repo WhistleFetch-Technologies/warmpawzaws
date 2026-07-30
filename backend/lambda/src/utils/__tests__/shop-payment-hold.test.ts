@@ -1,4 +1,6 @@
 import { describe, expect, test } from '@jest/globals';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
   isShopOrderPaymentHoldActive,
   isShopOrderPaymentHoldExpired,
@@ -51,5 +53,12 @@ describe('shop payment hold helpers', () => {
         payment_hold_expires_at: future,
       })
     ).toBe(false);
+  });
+
+  test('expire hold sweeper reconciles Razorpay before discard', () => {
+    const file = readFileSync(join(__dirname, '../shop-payment-hold.ts'), 'utf8');
+    expect(file).toContain('reconcileShopOrderPayment');
+    expect(file).toContain('expire-hold-sweep');
+    expect(file).toContain('Paid on Razorpay — skipped expiry discard');
   });
 });

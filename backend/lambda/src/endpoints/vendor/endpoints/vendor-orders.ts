@@ -26,9 +26,27 @@ import {
 } from '../../../utils/shop-order-notifications';
 import { SQL_SHOP_ORDER_VENDOR_VISIBLE } from '../../../utils/shop-vendor-visibility';
 import {
+  SQL_VENDOR_COMMISSION_AMOUNT,
+  SQL_VENDOR_GOODS_AMOUNT,
+  SQL_VENDOR_NET_AMOUNT,
+} from '../../../utils/vendor-ecommerce-money-sql';
+import {
   cancelPaidShopOrder,
   VENDOR_ALLOWED_STATUSES,
 } from '../../../utils/payments/shop-order-refund';
+
+const EMPTY_VENDOR_ORDER_STATS = {
+  total: 0,
+  pending: 0,
+  confirmed: 0,
+  processing: 0,
+  shipped: 0,
+  delivered: 0,
+  cancelled: 0,
+  total_revenue: 0,
+  net_earnings: 0,
+  total_commission: 0,
+};
 
 function triggerOrderInvoiceOnDelivered(orderId: string, status: string, previousStatus: string) {
   if (status === 'delivered' && previousStatus !== 'delivered') {
@@ -357,27 +375,18 @@ class GetVendorOrderStatsHandler extends BaseHandler {
       // Handle test IDs - return empty stats
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         return this.success({
-          stats: {
-            total: 0,
-            pending: 0,
-            confirmed: 0,
-            processing: 0,
-            shipped: 0,
-            delivered: 0,
-            cancelled: 0,
-            total_revenue: 0,
-          },
+          stats: { ...EMPTY_VENDOR_ORDER_STATS },
         });
       }
 
       // Build date filter
       let dateFilterClause = '';
       if (dateFilter === 'today') {
-        dateFilterClause = `AND DATE(created_at) = CURRENT_DATE`;
+        dateFilterClause = `AND DATE(o.created_at) = CURRENT_DATE`;
       } else if (dateFilter === 'week') {
-        dateFilterClause = `AND created_at >= CURRENT_DATE - INTERVAL '7 days'`;
+        dateFilterClause = `AND o.created_at >= CURRENT_DATE - INTERVAL '7 days'`;
       } else if (dateFilter === 'month') {
-        dateFilterClause = `AND created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
+        dateFilterClause = `AND o.created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
       }
 
       // Get statistics
@@ -386,20 +395,19 @@ class GetVendorOrderStatsHandler extends BaseHandler {
         const statsQuery = `
           SELECT 
             COUNT(*) as total,
-            COUNT(*) FILTER (WHERE order_status = 'pending') as pending,
-            COUNT(*) FILTER (WHERE order_status = 'confirmed') as confirmed,
-            COUNT(*) FILTER (WHERE order_status = 'processing') as processing,
-            COUNT(*) FILTER (WHERE order_status = 'shipped') as shipped,
-            COUNT(*) FILTER (WHERE order_status = 'delivered') as delivered,
-            COUNT(*) FILTER (WHERE order_status = 'cancelled') as cancelled,
-            COALESCE(SUM(total_amount) FILTER (WHERE order_status != 'cancelled'), 0) as total_revenue
-          FROM orders
-          WHERE vendor_id = $1
-            AND order_status != 'pending_payment'
-            AND (
-              LOWER(COALESCE(payment_status, '')) IN ('paid', 'completed')
-              OR LOWER(COALESCE(payment_method, 'online')) IN ('cod', 'cash_on_delivery')
-            )
+            COUNT(*) FILTER (WHERE o.order_status = 'pending') as pending,
+            COUNT(*) FILTER (WHERE o.order_status = 'confirmed') as confirmed,
+            COUNT(*) FILTER (WHERE o.order_status = 'processing') as processing,
+            COUNT(*) FILTER (WHERE o.order_status = 'shipped') as shipped,
+            COUNT(*) FILTER (WHERE o.order_status = 'delivered') as delivered,
+            COUNT(*) FILTER (WHERE o.order_status = 'cancelled') as cancelled,
+            COALESCE(SUM((${SQL_VENDOR_GOODS_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) as total_revenue,
+            COALESCE(SUM((${SQL_VENDOR_NET_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) as net_earnings,
+            COALESCE(SUM((${SQL_VENDOR_COMMISSION_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) as total_commission
+          FROM orders o
+          WHERE o.vendor_id = $1
+            AND o.order_status != 'pending_payment'
+            AND ${SQL_SHOP_ORDER_VENDOR_VISIBLE}
             ${dateFilterClause}
         `;
 
@@ -408,48 +416,21 @@ class GetVendorOrderStatsHandler extends BaseHandler {
         // If UUID validation fails, return empty stats
         if (error.message?.includes('invalid input syntax for type uuid')) {
           return this.success({
-            stats: {
-              total: 0,
-              pending: 0,
-              confirmed: 0,
-              processing: 0,
-              shipped: 0,
-              delivered: 0,
-              cancelled: 0,
-              total_revenue: 0,
-            },
+            stats: { ...EMPTY_VENDOR_ORDER_STATS },
           });
         }
         throw error;
       }
 
       return this.success({
-        stats: stats?.rows[0] || {
-          total: 0,
-          pending: 0,
-          confirmed: 0,
-          processing: 0,
-          shipped: 0,
-          delivered: 0,
-          cancelled: 0,
-          total_revenue: 0,
-        },
+        stats: stats?.rows[0] || { ...EMPTY_VENDOR_ORDER_STATS },
       });
     } catch (error: any) {
       console.error('Error fetching order statistics:', error);
       // If UUID validation fails, return empty stats
       if (error.message?.includes('invalid input syntax for type uuid')) {
         return this.success({
-          stats: {
-            total: 0,
-            pending: 0,
-            confirmed: 0,
-            processing: 0,
-            shipped: 0,
-            delivered: 0,
-            cancelled: 0,
-            total_revenue: 0,
-          },
+          stats: { ...EMPTY_VENDOR_ORDER_STATS },
         });
       }
       return this.error(error.message || 'Failed to fetch statistics', 500);
@@ -525,16 +506,7 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       console.error('Error in vendor orders stats endpoint:', error);
       // Return empty stats for any error
       return c.json({
-        stats: {
-          total: 0,
-          pending: 0,
-          confirmed: 0,
-          processing: 0,
-          shipped: 0,
-          delivered: 0,
-          cancelled: 0,
-          total_revenue: 0,
-        },
+        stats: { ...EMPTY_VENDOR_ORDER_STATS },
       }, 200);
     }
   });
