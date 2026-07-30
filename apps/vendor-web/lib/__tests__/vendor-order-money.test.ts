@@ -73,4 +73,35 @@ describe('resolveVendorOrderMoney', () => {
     expect(money.vendorPayoutAmount).toBe(232.5);
     expect(money.vendorGoodsAmount).not.toBe(money.customerPaid);
   });
+
+  it('parses mixed commission snapshot lines', () => {
+    const money = resolveVendorOrderMoney({
+      subtotal: 310,
+      commission_rate: 8.6,
+      commission_amount: 26.65,
+      commission_snapshot: {
+        lineBreakdown: [
+          {
+            productId: 'p1',
+            rate: 7,
+            commission: 14.77,
+            source: 'vendor_own_brand',
+            listingOwnership: 'own_brand',
+          },
+          {
+            productId: 'p2',
+            rate: 12,
+            commission: 11.88,
+            source: 'vendor_third_party',
+            listingOwnership: 'third_party',
+          },
+        ],
+      },
+      items: [{ product_id: 'p1', name: 'Whiskas' }],
+    });
+
+    expect(money.hasMixedCommissionRates).toBe(true);
+    expect(money.commissionLines).toHaveLength(2);
+    expect(money.commissionLines[0]?.label).toContain('Whiskas');
+  });
 });
