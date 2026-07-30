@@ -8,6 +8,7 @@ import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { OrderDetailsModal } from '@/components/vendor/orders/OrderDetailsModal';
 import { OrderStatusUpdateModal } from '@/components/vendor/orders/OrderStatusUpdateModal';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { formatInrAmount, resolveVendorOrderMoney } from '@/lib/vendor-order-money';
 
 // ============================================================================
 // TYPES
@@ -287,7 +288,7 @@ export default function VendorOrdersPage() {
             <p className="text-2xl font-bold text-red-700">{stats.cancelled}</p>
           </div>
           <div className="bg-orange-50 rounded-xl p-4">
-            <p className="text-xs text-orange-600">Revenue</p>
+            <p className="text-xs text-orange-600">Goods revenue</p>
             <p className="text-lg font-bold text-orange-700">₹{stats.totalRevenue.toLocaleString()}</p>
           </div>
         </div>
@@ -375,8 +376,10 @@ export default function VendorOrdersPage() {
                         <p className="text-gray-400 text-xs">{order.customer_phone || ''}</p>
                       </div>
                       <div>
-                        <p className="text-gray-500">Amount</p>
-                        <p className="font-semibold text-orange-600">₹{order.total_amount.toLocaleString()}</p>
+                        <p className="text-gray-500">Your goods</p>
+                        <p className="font-semibold text-orange-600 tabular-nums">
+                          {formatInrAmount(resolveVendorOrderMoney(order).vendorGoodsAmount)}
+                        </p>
                       </div>
                       <div>
                         <p className="text-gray-500">Payment</p>

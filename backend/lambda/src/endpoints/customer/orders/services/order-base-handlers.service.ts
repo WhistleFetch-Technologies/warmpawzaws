@@ -36,6 +36,7 @@ import {
   discardUnpaidShopOrder,
   expireShopPaymentHolds,
 } from '../../../../utils/shop-payment-hold';
+import { reconcilePendingShopPayments, reconcileShopOrderPayment } from '../../../../utils/payments/shop-payment-reconciliation';
 import { assertShopCheckoutPaymentAllowed } from '../../../../utils/shop-checkout-payment-flags';
 
 /** Module helpers (move-only). */
@@ -371,6 +372,14 @@ export class GetCustomerOrdersHandler extends BaseHandler {
       if (!customerId) {
         return this.error('Customer ID is required', 401);
       }
+
+      await reconcilePendingShopPayments({
+        customerId: String(customerId),
+        limit: 30,
+        source: 'customer-orders-list',
+      }).catch((e) =>
+        console.warn('[customer/orders] reconcilePendingShopPayments failed:', e)
+      );
 
       await expireShopPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
         console.warn('[customer/orders] expireShopPaymentHolds failed:', e)
@@ -945,12 +954,41 @@ export class ShopOrderPaymentResumeHandler extends BaseHandler {
         return this.error('Order not found', 404);
       }
 
+      const reconciled = await reconcileShopOrderPayment(orderId, {
+        source: 'payment-resume',
+      }).catch((e) => {
+        console.warn('[customer/orders/payment-resume] reconcile failed:', e);
+        return false;
+      });
+      if (reconciled) {
+        return this.success({
+          success: true,
+          paid: true,
+          canResume: false,
+          orderId,
+          message: 'Payment confirmed — order placed',
+        });
+      }
+
       const ctx = await buildShopOrderPaymentResumeContext(orderId);
       if (!ctx) {
         return this.error('Order is not awaiting payment', 404);
       }
 
       if (!ctx.canResume) {
+        const lateReconcile = await reconcileShopOrderPayment(orderId, {
+          source: 'payment-resume-expired',
+        }).catch(() => false);
+        if (lateReconcile) {
+          return this.success({
+            success: true,
+            paid: true,
+            canResume: false,
+            orderId,
+            message: 'Payment confirmed — order placed',
+          });
+        }
+
         await discardUnpaidShopOrder(orderId, 'payment_window_expired', {
           requestId: randomUUID(),
           paymentStatus: 'expired',
@@ -968,6 +1006,52 @@ export class ShopOrderPaymentResumeHandler extends BaseHandler {
     } catch (error: any) {
       console.error('[customer/orders/payment-resume] failed:', error);
       return this.error(error.message || 'Failed to load payment resume context', 500);
+    }
+  }
+}
+
+// ============================================================================
+// POST /customer/orders/:orderId/reconcile-payment - Razorpay reconcile for shop order
+// ============================================================================
+
+export class ShopOrderPaymentReconcileHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      const orderId =
+        context.event.pathParameters?.orderId ||
+        context.event.pathParameters?.id;
+      const customerId =
+        context.event.pathParameters?.customerId ||
+        context.event.queryStringParameters?.customerId ||
+        context.userId;
+
+      if (!orderId) {
+        return this.error('Order ID is required', 400);
+      }
+      if (!customerId) {
+        return this.error('Customer ID is required', 401);
+      }
+
+      const ownerCheck = await order_base_handlersRepo.dbOrderBaseHandlers20(orderId, customerId);
+      if (ownerCheck.rows.length === 0) {
+        return this.error('Order not found', 404);
+      }
+
+      const reconciled = await reconcileShopOrderPayment(orderId, {
+        source: 'reconcile-payment',
+      });
+
+      return this.success({
+        success: true,
+        paid: reconciled,
+        orderId,
+        message: reconciled
+          ? 'Payment confirmed — order placed'
+          : 'No captured payment found yet',
+      });
+    } catch (error: any) {
+      console.error('[customer/orders/reconcile-payment] failed:', error);
+      return this.error(error.message || 'Failed to reconcile payment', 500);
     }
   }
 }

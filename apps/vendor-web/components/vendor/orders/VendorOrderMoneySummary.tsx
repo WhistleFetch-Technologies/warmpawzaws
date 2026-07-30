@@ -46,24 +46,12 @@ export function VendorOrderMoneySummary({
         </div>
       )}
 
-      {money.shipping > 0 && (
-        <div className="flex justify-between text-slate-600">
-          <span>Shipping (customer paid)</span>
-          <span className="tabular-nums">{formatInrAmount(money.shipping)}</span>
-        </div>
-      )}
-
       {money.taxIncluded > 0 && (
         <div className="flex justify-between text-slate-500 text-sm">
           <span>GST (included in catalog price)</span>
           <span className="tabular-nums">{formatInrAmount(money.taxIncluded)}</span>
         </div>
       )}
-
-      <div className="flex justify-between text-slate-600 pt-1 border-t border-slate-200">
-        <span>Customer paid</span>
-        <span className="tabular-nums">{formatInrAmount(money.customerPaid)}</span>
-      </div>
 
       <div className="rounded-lg bg-white border border-slate-200 px-3 py-2 space-y-1.5 mt-1">
         <div className="flex justify-between text-sm font-semibold text-slate-900">

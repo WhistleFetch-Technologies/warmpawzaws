@@ -87,6 +87,7 @@ import {
   loadOrderItemIds,
 } from '../../../utils/resolve-ecommerce-commission-rate';
 import { paymentHoldExpiresAt, expireShopPaymentHolds } from '../../../utils/shop-payment-hold';
+import { reconcilePendingShopPayments } from '../../../utils/payments/shop-payment-reconciliation';
 import { assertShopCheckoutPaymentAllowed } from '../../../utils/shop-checkout-payment-flags';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
 import { writeEcommerceOrderSettlementLedgerRow } from '../../../utils/write-ecommerce-order-settlement';
@@ -1907,6 +1908,14 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
   app.get("/orders/customer/:customerId", async (c) => {
     try {
       const { customerId } = c.req.param();
+
+      await reconcilePendingShopPayments({
+        customerId,
+        limit: 30,
+        source: 'orders-customer-list',
+      }).catch((e) =>
+        console.warn('[orders/customer] reconcilePendingShopPayments failed:', e)
+      );
 
       await expireShopPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
         console.warn('[orders/customer] expireShopPaymentHolds failed:', e)

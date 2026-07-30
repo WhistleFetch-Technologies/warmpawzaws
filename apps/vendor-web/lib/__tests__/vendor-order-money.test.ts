@@ -51,4 +51,26 @@ describe('resolveVendorOrderMoney', () => {
     expect(money.promotionSource).toBe('admin');
     expect(money.vendorGoodsAmount).toBe(162);
   });
+
+  it('Glenand example: admin promo and shipping do not reduce vendor goods or payout base', () => {
+    const money = resolveVendorOrderMoney({
+      subtotal: 310,
+      shipping_amount: 150,
+      total_amount: 444.5,
+      discount_amount: 15.5,
+      promotion_source: 'admin',
+      admin_promotion_amount: 15.5,
+      vendor_promotion_amount: 0,
+      commission_rate: 25,
+      commission_amount: 77.5,
+      vendor_payout_amount: 232.5,
+    });
+
+    expect(money.vendorGoodsAmount).toBe(310);
+    expect(money.customerPaid).toBe(444.5);
+    expect(money.shipping).toBe(150);
+    expect(money.isPlatformFunded).toBe(true);
+    expect(money.vendorPayoutAmount).toBe(232.5);
+    expect(money.vendorGoodsAmount).not.toBe(money.customerPaid);
+  });
 });

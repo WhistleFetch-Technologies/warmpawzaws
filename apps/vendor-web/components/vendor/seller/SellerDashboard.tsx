@@ -17,6 +17,7 @@ import {
   RefreshCcw,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { formatInrAmount, resolveVendorOrderMoney } from '@/lib/vendor-order-money';
 
 interface SellerDashboardProps {
   sellerId: string;
@@ -119,6 +120,7 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
         salesTodayRes,
         statsAllRes,
         statsMonthRes,
+        commissionRes,
         productsRes,
         lowStockRes,
         profileRes,
@@ -128,6 +130,11 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
         apiClient.get<Record<string, unknown>>(`${base}/analytics/sales?period=today`),
         apiClient.get<{ stats?: Record<string, unknown> }>(`${base}/orders/stats?dateFilter=all`),
         apiClient.get<{ stats?: Record<string, unknown> }>(`${base}/orders/stats?dateFilter=month`),
+        apiClient.get<{
+          pendingPayout?: unknown;
+          netEarnings?: unknown;
+          totalCommission?: unknown;
+        }>(`${base}/commission-analytics`),
         apiClient.get<{ total?: unknown }>(`${base}/products?status=active&limit=1`),
         apiClient.get<{ count?: unknown }>(`${base}/products/low-stock?threshold=10`),
         apiClient.get<{ vendor?: Record<string, unknown> }>(`${base}/profile`),
@@ -149,10 +156,15 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
         m.totalOrders = safeNum(s.total, 0);
         m.pendingOrders = safeNum(s.pending, 0);
         m.totalRevenue = safeNum(s.total_revenue, 0);
+        m.netEarnings = safeNum(s.net_earnings, 0);
+        m.totalCommission = safeNum(s.total_commission, 0);
       }
 
       if (statsMonthRes.status === 'fulfilled' && statsMonthRes.value?.stats) {
-        m.monthRevenue = safeNum(statsMonthRes.value.stats.total_revenue, 0);
+        const s = statsMonthRes.value.stats;
+        m.monthRevenue = safeNum(s.total_revenue, 0);
+        m.monthlyCommission = safeNum(s.total_commission, 0);
+        m.pendingPayout = safeNum(s.net_earnings, 0);
       }
 
       let revenueByDay: Array<{ date?: string; revenue?: unknown }> | undefined;
@@ -162,6 +174,8 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
         if (sm) {
           const mr = safeNum(sm.total_revenue, 0);
           if (m.monthRevenue <= 0 && mr > 0) m.monthRevenue = mr;
+          const mc = safeNum(sm.total_commission, 0);
+          if (m.monthlyCommission <= 0 && mc > 0) m.monthlyCommission = mc;
         }
         const rbd = (body as { revenueByDay?: typeof revenueByDay }).revenueByDay;
         if (Array.isArray(rbd)) revenueByDay = rbd;
@@ -195,11 +209,15 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
         if (Number.isFinite(rating) && rating > 0) m.avgRating = rating;
       }
 
-      const rateFrac = commissionRate / 100;
-      m.totalCommission = m.totalRevenue * rateFrac;
-      m.monthlyCommission = m.monthRevenue * rateFrac;
-      m.netEarnings = Math.max(0, m.totalRevenue * (1 - rateFrac));
-      m.pendingPayout = Math.max(0, m.monthRevenue * (1 - rateFrac));
+      if (commissionRes.status === 'fulfilled' && commissionRes.value) {
+        const c = commissionRes.value;
+        const pending = safeNum(c.pendingPayout, 0);
+        if (pending > 0) m.pendingPayout = pending;
+        const net = safeNum(c.netEarnings, 0);
+        if (m.netEarnings <= 0 && net > 0) m.netEarnings = net;
+        const comm = safeNum(c.totalCommission, 0);
+        if (m.totalCommission <= 0 && comm > 0) m.totalCommission = comm;
+      }
 
       setMetrics(m);
 
@@ -240,7 +258,7 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
       {
         title: 'Net Earnings',
         value: `₹${a.netEarnings.toLocaleString()}`,
-        change: `${a.commissionRate}% commission`,
+        change: 'Your payout after commission',
         trend: 'neutral' as const,
         icon: TrendingUp,
         gradient: 'from-blue-500 to-indigo-500',
@@ -382,19 +400,19 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
           <div>
             <p className="text-slate-400 text-sm">Total Commission Paid</p>
             <p className="text-xl font-semibold mt-1">₹{Math.round(analytics.totalCommission).toLocaleString()}</p>
-            <p className="text-xs text-slate-500 mt-1">Estimated (all-time × rate)</p>
+            <p className="text-xs text-slate-500 mt-1">From your catalog goods sold</p>
           </div>
           <div>
             <p className="text-slate-400 text-sm">This Month</p>
             <p className="text-xl font-semibold mt-1">₹{Math.round(analytics.monthlyCommission).toLocaleString()}</p>
-            <p className="text-xs text-slate-500 mt-1">Platform fee on month sales</p>
+            <p className="text-xs text-slate-500 mt-1">Platform fee this month</p>
           </div>
           <div>
             <p className="text-slate-400 text-sm">Next Payout</p>
             <p className="text-xl font-semibold mt-1 text-emerald-400">
               ₹{Math.round(analytics.pendingPayout).toLocaleString()}
             </p>
-            <p className="text-xs text-slate-500 mt-1">Est. seller share (this month)</p>
+            <p className="text-xs text-slate-500 mt-1">Pending seller share</p>
           </div>
         </div>
       </div>
@@ -442,8 +460,8 @@ export function SellerDashboard({ sellerId, sellerName, onViewAllOrders, onNavig
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-slate-900 text-lg">
-                      ₹{(order.totalAmount || order.total_amount || 0).toLocaleString()}
+                    <p className="font-bold text-slate-900 text-lg tabular-nums">
+                      {formatInrAmount(resolveVendorOrderMoney(order).vendorGoodsAmount)}
                     </p>
                     <span
                       className={`inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-full font-medium ${
