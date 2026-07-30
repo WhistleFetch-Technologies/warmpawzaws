@@ -933,14 +933,33 @@ export function GroomingBookingRouter({
     }));
   };
 
-  const reviewTotal =
-    (allSelectedServices && allSelectedServices.length > 0
+  const reviewTotal = appointmentsMode
+    ? appointmentFee ?? selectedVendorService?.price ?? price ?? 0
+    : (allSelectedServices && allSelectedServices.length > 0
       ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
       : selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0) ?? 0;
 
   const groomingPrePaymentSummary = (
     <>
-      {allSelectedServices && allSelectedServices.length > 0 ? (
+      {appointmentsMode ? (
+        <div className="flex items-center gap-3 border-b pb-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
+            <Building2 className="h-6 w-6" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold">
+              {getWarmpawzAppointmentServiceLabel({
+                category: 'grooming',
+                serviceStyle: selectedServiceType,
+              })}
+            </h3>
+            <p className="text-sm text-gray-500">Flat appointment fee</p>
+          </div>
+          <p className="font-bold text-orange-600">
+            ₹{Number(reviewTotal).toLocaleString('en-IN')}
+          </p>
+        </div>
+      ) : allSelectedServices && allSelectedServices.length > 0 ? (
         <div className="space-y-3 pb-4 border-b">
           {allSelectedServices.map((service, index) => {
             const serviceIdValue = service.id || service.serviceId || '';
@@ -1067,7 +1086,7 @@ export function GroomingBookingRouter({
         quantity={1}
         customerPhone={phone}
         customerId={customerId || undefined}
-        selectedServices={allSelectedServices}
+        selectedServices={appointmentsMode ? undefined : allSelectedServices}
         onBack={() => setShowPaymentPage(false)}
         onPaymentAbandoned={() => {
           if (selectedDate) void loadTimeSlots(selectedDate);

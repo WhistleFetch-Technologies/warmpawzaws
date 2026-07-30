@@ -15,7 +15,6 @@ import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
-import { buildHubWarmpawzBookingNav } from '@/lib/wappt-hub-booking-nav';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
@@ -59,13 +58,10 @@ export function BehavioristServiceRouter({
   const behavioralConcerns = BEHAVIORAL_ISSUES.filter((issue) => issue.id !== 'view_all');
 
   const handleWarmpawzBookAppointment = useCallback(
-    (v: BoardingListVendor) => {
-      onNavigate?.(
-        'training-booking',
-        buildHubWarmpawzBookingNav(v, { category: 'behaviorist', serviceStyle: 'at_home' })
-      );
+    (_v: BoardingListVendor) => {
+      onNavigate?.('wappt-discovery', { category: 'behaviorist' });
     },
-    [onNavigate]
+    [onNavigate],
   );
 
   const handleBookPlan = useCallback(

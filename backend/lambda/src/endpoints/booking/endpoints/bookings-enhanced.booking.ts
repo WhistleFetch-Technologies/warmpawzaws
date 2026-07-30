@@ -86,6 +86,7 @@ import {
   isWarmpawzAppointmentsBooking,
   resolveWarmpawzAppointmentsBookingPreflight,
   WAPPT_BOOKING_MODE,
+  WAPPT_DISPLAY_SERVICE_NAME,
 } from '../../warmpawz-appointments/shared/wappt-booking-preflight';
 import {
   boardingBilled24hUnits,
@@ -1701,9 +1702,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         // ✅ FIX: Optional columns that may or may not exist in prod DB
         // These are added to a separate list and attempted; if INSERT fails due to
         // missing column, we retry without them
-        const persistedServiceLabel = String(
-          service?.service_name || service?.name || serviceName || ''
-        ).trim();
+        const persistedServiceLabel = isWapptBooking
+          ? WAPPT_DISPLAY_SERVICE_NAME
+          : String(
+              service?.service_name || service?.name || serviceName || ''
+            ).trim();
         const optionalColumns: Record<string, any> = {
           payment_status: paymentStatus,
           subscription_id: subscriptionId,
@@ -2445,7 +2448,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           : service?.duration_minutes != null
             ? Number(service.duration_minutes)
             : null;
-      const summaryServiceName = (service?.service_name ?? service?.name ?? serviceName) as string | null | undefined;
+      const summaryServiceName = isWapptBooking
+        ? WAPPT_DISPLAY_SERVICE_NAME
+        : ((service?.service_name ?? service?.name ?? serviceName) as string | null | undefined);
       const summaryDescription = (service?.custom_description as string | null | undefined) ?? null;
       const summaryCatalogServiceId = (service?.service_id as string | undefined) || lookupServiceId;
 

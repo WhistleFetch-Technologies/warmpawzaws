@@ -8,6 +8,7 @@
 
 | Document | Role |
 |----------|------|
+| [WARMPAWZ_REUSABLE_UI.md](./WAPPT_REUSABLE_UI.md) | **Reusable list + profile UI** — how to map new WAPPT categories |
 | [WARMPAWZ_APPOINTMENTS_IMPLEMENTATION_PLAN.md](./WARMPAWZ_APPOINTMENTS_IMPLEMENTATION_PLAN.md) | MVP technical spec (Phase A detail) |
 | [ARCHITECTURE_ANALYSIS_MERCHANT_PROGRAMME.md](./ARCHITECTURE_ANALYSIS_MERCHANT_PROGRAMME.md) | Long-term platform direction (Phase C north star) |
 

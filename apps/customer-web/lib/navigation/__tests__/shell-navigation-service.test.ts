@@ -80,6 +80,10 @@ describe('shell-route-policies', () => {
     expect(getShellForwardPolicy('vet').forward).toBe('focus-root');
   });
 
+  it('wappt discovery hub uses focus-root', () => {
+    expect(getShellForwardPolicy('wappt-discovery').forward).toBe('focus-root');
+  });
+
   it('clinic profile uses push with key requirement', () => {
     const p = getShellForwardPolicy('vet-clinic-profile');
     expect(p.forward).toBe('push');

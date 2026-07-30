@@ -25,7 +25,6 @@ import { ServiceDashboardHeader } from "./shared/ServiceDashboardHeader";
 import { BoardingVendorExpandableCard } from "./boarding/BoardingVendorExpandableCard";
 import { useHubVendorDiscovery } from "@/hooks/useHubVendorDiscovery";
 import { HUB_DISCOVERY_SITTING } from "@/lib/service-hub-discovery-config";
-import { buildHubWarmpawzBookingNav } from "@/lib/wappt-hub-booking-nav";
 import { isWarmpawzAppointmentsHubEnabled } from "@/lib/warmpawz-appointments-customer";
 import { buildWapptHubTile } from "@/lib/wappt-hub-registry";
 import { useWapptHubFeaturedVendors } from "@/hooks/useWapptHubFeaturedVendors";
@@ -298,13 +297,10 @@ export function PetSitterServiceRouter({
   };
 
   const handleWarmpawzBookAppointment = useCallback(
-    (v: BoardingListVendor) => {
-      onNavigate?.(
-        'pet-sitter-booking',
-        buildHubWarmpawzBookingNav(v, { category: 'sitting', serviceStyle: 'at_home' })
-      );
+    (_v: BoardingListVendor) => {
+      onNavigate?.('wappt-discovery', { category: 'sitting' });
     },
-    [onNavigate]
+    [onNavigate],
   );
 
   const handleBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {

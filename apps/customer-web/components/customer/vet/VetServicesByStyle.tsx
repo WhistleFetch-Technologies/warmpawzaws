@@ -45,11 +45,14 @@ import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppoin
 import type { WapptStyleFilter } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
 import {
   buildWarmpawzAppointmentsBookingNav,
+  buildWarmpawzAppointmentsProfileNav,
   resolveWarmpawzBookingScreen,
+  WAPPT_VENDOR_PROFILE_SCREEN,
 } from '@/lib/warmpawz-appointments-customer';
 import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { mapDiscoveryProviderToVendorCardProps } from '@/lib/warmpawz-pay/map-discovery-provider-to-vendor-card-props';
+import { WarmpawzAppointmentsVendorProfile } from '../warmpawz-appointments/WarmpawzAppointmentsVendorProfile';
 import { logDiscoveryImageStage } from '@/lib/warmpawz-pay/debug-log-discovery-image';
 
 interface VetServicesByStyleProps {
@@ -396,16 +399,14 @@ export function VetServicesByStyle({
       const vid = String(provider.vendorId || provider.providerId || '');
       const style =
         wapptStyleFilter === 'all' ? serviceStyle : wapptStyleFilter;
-      const nav = buildWarmpawzAppointmentsBookingNav({
-        vendorId: vid,
-        vendorName: provider.name,
-        serviceStyle: style,
-        category,
-      });
-      onNavigate('vet-clinic-profile', {
-        ...nav,
-        appointmentsMode: true,
-        clinicProfileBackScreen: profileBackScreen || discoveryProfileBackScreen || 'wappt-discovery',
+      onNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId: vid,
+          vendorName: provider.name,
+          serviceStyle: style,
+          category,
+          profileBackScreen: profileBackScreen || discoveryProfileBackScreen || 'wappt-discovery',
+        }),
       });
       return;
     }
@@ -657,6 +658,21 @@ export function VetServicesByStyle({
   }
 
   // Profile View Mode - Zomato-style for vet provider (tele/at_home/at_center)
+  if (isProfileView && profileProvider && appointmentsMode && vendorId) {
+    return (
+      <WarmpawzAppointmentsVendorProfile
+        phone={phone}
+        vendorId={String(vendorId)}
+        vendorName={profileProvider.name}
+        category={category || 'vet'}
+        serviceStyle={serviceStyle}
+        profileBackScreen={profileBackScreen || discoveryProfileBackScreen || 'wappt-discovery'}
+        onBack={onBack}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
   if (isProfileView && profileProvider) {
     const providerName = vendor?.business_name || vendor?.name || profileProvider.name;
     const photos = resolveVendorProfileHeroGallery({ facility, vendor, profileProvider });
@@ -1183,7 +1199,7 @@ export function VetServicesByStyle({
               className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] disabled:cursor-not-allowed disabled:bg-gray-300 sm:text-lg"
             >
               {appointmentsMode
-                ? 'Book Appointment'
+                ? 'Select Slot for Appointment'
                 : selectedServices.size === 0 
                 ? (profileProvider.services.length === 0 ? 'No Services Available' : 'Select Services to Book')
                 : serviceStyle === 'tele'
@@ -1324,7 +1340,7 @@ export function VetServicesByStyle({
                   verifiedAriaLabel: 'Verified provider',
                   primaryActionClassName:
                     'text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10',
-                  primaryLabel: 'Book Appointment',
+                  primaryLabel: 'Select Slot for Appointment',
                   onPrimary: (e) => openVetProviderProfile(e, provider),
                   onProfileClick: (e) => openVetProviderProfile(e, provider),
                   secondaryLabel: 'Pay with Warmpawz',
@@ -1619,7 +1635,7 @@ export function VetServicesByStyle({
                         void fetchProviderServices(provider.providerId);
                       }}
                     >
-                      {appointmentsMode ? 'Book Appointment' : 'View Services'}
+                      {appointmentsMode ? 'Select Slot for Appointment' : 'View Services'}
                     </Button>
                   </div>
                 )}

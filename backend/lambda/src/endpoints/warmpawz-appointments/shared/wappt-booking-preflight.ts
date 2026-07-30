@@ -3,6 +3,7 @@ import { wapptCatalogueCustomerVisibleSql } from './catalogue-eligibility-sql';
 
 export const WAPPT_BOOKING_MODE = 'warmpawz_appointments' as const;
 export const WAPPT_SERVICE_SLUG = 'warmpawz_appointments' as const;
+export const WAPPT_DISPLAY_SERVICE_NAME = 'Appointment' as const;
 
 export function isWarmpawzAppointmentsBooking(body: Record<string, unknown>): boolean {
   const meta = body.metadata;

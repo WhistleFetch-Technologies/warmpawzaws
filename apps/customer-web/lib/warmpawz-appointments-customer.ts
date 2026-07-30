@@ -120,3 +120,29 @@ export function getWarmpawzAppointmentBookingTitle(category: string): {
   const label = category.charAt(0).toUpperCase() + category.slice(1);
   return { title: 'Book Appointment', subtitle: `${label} · schedule & pay flat fee` };
 }
+
+export const WAPPT_VENDOR_PROFILE_SCREEN = 'wappt-vendor-profile' as const;
+
+export type WarmpawzAppointmentsProfileNav = {
+  vendorId: string;
+  vendorName?: string;
+  category: string;
+  serviceStyle: string;
+  profileBackScreen?: string;
+};
+
+export function buildWarmpawzAppointmentsProfileNav(opts: {
+  vendorId: string;
+  vendorName?: string;
+  category: string;
+  serviceStyle: string;
+  profileBackScreen?: string;
+}): WarmpawzAppointmentsProfileNav {
+  return {
+    vendorId: opts.vendorId,
+    vendorName: opts.vendorName,
+    category: opts.category,
+    serviceStyle: opts.serviceStyle,
+    profileBackScreen: opts.profileBackScreen ?? 'wappt-discovery',
+  };
+}

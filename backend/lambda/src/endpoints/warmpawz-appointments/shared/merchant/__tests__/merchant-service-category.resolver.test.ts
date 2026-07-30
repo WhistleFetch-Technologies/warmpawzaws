@@ -65,6 +65,16 @@ describe('merchant-service-category.resolver', () => {
     expect(tokens).toContain('nutritionist');
   });
 
+  it('expands behaviorist chip to behaviorist role tokens', () => {
+    const tokens = expandServiceCategoryFilterTokens('behaviorist');
+    expect(tokens).toContain('behaviorist');
+  });
+
+  it('expands boarding chip to boarding role tokens', () => {
+    const tokens = expandServiceCategoryFilterTokens('boarding');
+    expect(tokens).toContain('boarding');
+  });
+
   it('labels unknown launch ids using title case', () => {
     expect(launchServiceLabel('custom_service')).toBe('Custom Service');
   });

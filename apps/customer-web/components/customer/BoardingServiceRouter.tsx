@@ -41,7 +41,6 @@ import { HUB_SERVICE_ICON_WRAP } from '@/lib/hub-service-option-styles';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
-import { buildHubWarmpawzBookingNav } from '@/lib/wappt-hub-booking-nav';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 
 const BOARDING_IMG = '/images/home/Boarding';
@@ -350,13 +349,10 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   );
 
   const handleWarmpawzBookAppointment = useCallback(
-    (v: BoardingListVendor) => {
-      onNavigate?.(
-        'boarding-booking',
-        buildHubWarmpawzBookingNav(v, { category: 'boarding', serviceStyle: 'at_center' })
-      );
+    (_v: BoardingListVendor) => {
+      onNavigate?.('wappt-discovery', { category: 'boarding' });
     },
-    [onNavigate]
+    [onNavigate],
   );
 
   const openVendorProfile = useCallback(

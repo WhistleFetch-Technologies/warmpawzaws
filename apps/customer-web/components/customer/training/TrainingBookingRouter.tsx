@@ -15,6 +15,12 @@ import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHead
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import {
+  getWarmpawzAppointmentServiceLabel,
+  WAPPT_APPOINTMENT_SERVICE_ID,
+  WAPPT_DEFAULT_SLOT_DURATION_MIN,
+  WAPPT_BOOKING_MODE,
+} from '@/lib/warmpawz-appointments-customer';
+import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
@@ -22,11 +28,6 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
-import {
-  WAPPT_APPOINTMENT_SERVICE_ID,
-  WAPPT_BOOKING_MODE,
-  WAPPT_DEFAULT_SLOT_DURATION_MIN,
-} from '@/lib/warmpawz-appointments-customer';
 
 interface TrainingBookingRouterProps {
   phone: string;
@@ -139,15 +140,67 @@ export function TrainingBookingRouter({
   // ✅ FIX: Initialize selectedVendorService with passed service data if available
   // ✅ NEW: If selectedServices array is provided, use the first one (for single service display)
   const [selectedVendorService, setSelectedVendorService] = useState<any>(
-    serviceId ? {
-      id: serviceId,
-      serviceId: serviceId,
-      name: serviceName,
-      price: price,
-      duration: duration,
-      serviceStyle: serviceStyle || serviceType
-    } : (selectedServices && selectedServices.length > 0 ? selectedServices[0] : null)
+    appointmentsMode
+      ? {
+          id: WAPPT_APPOINTMENT_SERVICE_ID,
+          serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
+          service_id: WAPPT_APPOINTMENT_SERVICE_ID,
+          name: getWarmpawzAppointmentServiceLabel({
+            category: 'training',
+            serviceStyle: serviceStyle || serviceType || 'at_center',
+          }),
+          price: price ?? 0,
+          duration: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+          serviceStyle: serviceStyle || serviceType,
+        }
+      : serviceId
+        ? {
+            id: serviceId,
+            serviceId: serviceId,
+            name: serviceName,
+            price: price,
+            duration: duration,
+            serviceStyle: serviceStyle || serviceType,
+          }
+        : selectedServices && selectedServices.length > 0
+          ? selectedServices[0]
+          : null,
   );
+  const [appointmentFee, setAppointmentFee] = useState<number | null>(
+    appointmentsMode && price != null ? Number(price) : null,
+  );
+
+  useEffect(() => {
+    if (!appointmentsMode || !vendorId) return;
+    let cancelled = false;
+    void apiClient
+      .get<{ appointmentFee?: number }>(
+        `/customer/warmpawz-appointments/vendors/${encodeURIComponent(String(vendorId))}/fee`,
+      )
+      .then((res) => {
+        if (cancelled) return;
+        const fee = Number(res?.appointmentFee ?? 0);
+        setAppointmentFee(fee > 0 ? fee : null);
+        setSelectedVendorService({
+          id: WAPPT_APPOINTMENT_SERVICE_ID,
+          serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
+          service_id: WAPPT_APPOINTMENT_SERVICE_ID,
+          name: getWarmpawzAppointmentServiceLabel({
+            category: 'training',
+            serviceStyle: serviceStyle || serviceType || 'at_center',
+          }),
+          price: fee > 0 ? fee : price ?? 0,
+          duration: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+          serviceStyle: serviceStyle || serviceType,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setAppointmentFee(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [appointmentsMode, vendorId, serviceStyle, serviceType, price]);
 
   const trainingProvidersDiscovery = useDiscoveryCount({
     phone,
@@ -714,8 +767,9 @@ export function TrainingBookingRouter({
 
   const selectedServiceOption = getSelectedServiceOption();
 
-  const reviewTotal =
-    allSelectedServices?.length
+  const reviewTotal = appointmentsMode
+    ? appointmentFee ?? selectedVendorService?.price ?? price ?? 0
+    : allSelectedServices?.length
       ? allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0)
       : appointmentsMode
         ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0
@@ -812,7 +866,15 @@ export function TrainingBookingRouter({
               selectedVendorService?.id ||
               serviceId
         }
-        serviceName={selectedServiceOption?.name || serviceName || 'Training Session'}
+        serviceName={
+          appointmentsMode
+            ? getWarmpawzAppointmentServiceLabel({
+                category: 'training',
+                serviceStyle: selectedServiceType,
+              })
+            : selectedServiceOption?.name || serviceName || 'Training Session'
+        }
+        bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
         serviceDescription={`Training session with ${trainer?.name || 'trainer'}`}
         serviceStyle={
           selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'

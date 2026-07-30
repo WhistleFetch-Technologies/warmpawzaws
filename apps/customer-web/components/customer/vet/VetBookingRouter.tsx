@@ -1213,7 +1213,11 @@ export function VetBookingRouter({
                 }
                 duration={totalDuration}
                 selectedServices={
-                  allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined
+                  appointmentsMode
+                    ? undefined
+                    : allSelectedServices && allSelectedServices.length > 0
+                      ? allSelectedServices
+                      : undefined
                 }
                 customerPhone={phone}
                 customerId={customerId || undefined}
@@ -1678,7 +1682,7 @@ export function VetBookingRouter({
               <div className="flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-gray-400" /><span>{selectedDate && new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {formatTime12Hour(selectedTime)}</span></div>
               <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-gray-400" /><span>{selectedPet?.name} ({selectedPet?.breed})</span></div>
               {selectedServiceType === 'at_home' && selectedAddress && <div className="flex items-center gap-2 text-sm"><MapPin className="w-4 h-4 text-gray-400" /><span>{selectedAddress.street || selectedAddress.address || 'Address'}</span></div>}
-              <div className="pt-2 flex justify-between font-semibold"><span>Subtotal</span><span className="text-orange-600">{formatPriceWithSymbol(selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0) : (selectedServiceOption?.price ?? 0)))}</span></div>
+              <div className="pt-2 flex justify-between font-semibold"><span>Subtotal</span><span className="text-orange-600">{formatPriceWithSymbol(appointmentsMode ? bookingSummaryBaseAmount : (selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0) : (selectedServiceOption?.price ?? 0))))}</span></div>
               {!appointmentsMode && !selectedPackageForSwitch && (vendorId || doctorId) ? (
                 <ServiceBookingPromoSummary
                   vendorId={vendorId || doctorId}

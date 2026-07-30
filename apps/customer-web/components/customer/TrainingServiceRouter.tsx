@@ -39,7 +39,6 @@ import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_TRAINING } from '@/lib/service-hub-discovery-config';
-import { buildHubWarmpawzBookingNav } from '@/lib/wappt-hub-booking-nav';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
@@ -208,13 +207,10 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   };
 
   const handleWarmpawzBookAppointment = useCallback(
-    (v: BoardingListVendor) => {
-      onNavigate?.(
-        'training-booking',
-        buildHubWarmpawzBookingNav(v, { category: 'training', serviceStyle: 'at_center' })
-      );
+    (_v: BoardingListVendor) => {
+      onNavigate?.('wappt-discovery', { category: 'training' });
     },
-    [onNavigate]
+    [onNavigate],
   );
 
   const handleBookPlan = useCallback(
