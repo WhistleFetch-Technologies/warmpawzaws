@@ -10,9 +10,8 @@ function gatewayBase(): string {
 }
 
 /**
- * Proxies POST /api/auth/refresh → Lambda POST /auth/refresh.
- * Keeps the refresh token opaque to the browser — the raw token is forwarded to
- * the backend for cryptographic verification; only new access/id tokens are returned.
+ * Proxies POST /api/auth/refresh → Lambda POST /auth/refresh (local Next dev only).
+ * Production static export calls `${getApiBaseUrl()}/auth/refresh` directly — see cognito-auth.ts.
  */
 export async function POST(request: NextRequest) {
   let body: string;

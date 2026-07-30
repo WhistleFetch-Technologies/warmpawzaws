@@ -151,13 +151,64 @@ export type RefreshOutcome = {
   tokens?: CognitoTokens | null;
 };
 
+function parseRefreshResponseFields(data: Record<string, unknown>): {
+  accessToken?: string;
+  idToken?: string;
+  expiresIn?: number;
+} {
+  const accessToken =
+    typeof data.accessToken === 'string'
+      ? data.accessToken
+      : typeof data.access_token === 'string'
+        ? data.access_token
+        : undefined;
+  const idToken =
+    typeof data.idToken === 'string'
+      ? data.idToken
+      : typeof data.id_token === 'string'
+        ? data.id_token
+        : undefined;
+  const rawExpires = data.expiresIn ?? data.expires_in;
+  const expiresIn =
+    typeof rawExpires === 'number'
+      ? rawExpires
+      : typeof rawExpires === 'string' && rawExpires.trim() !== ''
+        ? Number(rawExpires)
+        : undefined;
+  return {
+    accessToken,
+    idToken,
+    expiresIn: Number.isFinite(expiresIn) ? expiresIn : undefined,
+  };
+}
+
+/** Backfill 90-day refresh window for legacy sessions missing customerRefreshTokenExpiry. */
+function ensureRefreshWindowBackfill(tokens: CognitoTokens): void {
+  if (typeof window === 'undefined' || !tokens.refreshToken) return;
+  if (!localStorage.getItem('customerRefreshTokenExpiry')) {
+    localStorage.setItem(
+      'customerRefreshTokenExpiry',
+      String(computeRefreshExpiryAtLogin(tokens.refreshToken))
+    );
+  }
+}
+
 async function postRefreshToken(refreshToken: string, priorTokens: CognitoTokens): Promise<RefreshOutcome> {
   if (typeof window === 'undefined') {
     return { kind: 'failed_network', tokens: null };
   }
 
   try {
-    const res = await fetch('/api/auth/refresh', {
+    const { getApiBaseUrl } = await import('./api-client');
+    const base = getApiBaseUrl().replace(/\/+$/, '');
+    if (!base) {
+      if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+        console.warn('[customer-auth] refresh skipped: API base URL not configured');
+      }
+      return { kind: 'failed_network', tokens: null };
+    }
+
+    const res = await fetch(`${base}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
@@ -180,10 +231,9 @@ async function postRefreshToken(refreshToken: string, priorTokens: CognitoTokens
         console.warn('[customer-auth] refresh failed:', res.status, reason);
       }
       // Only drop credentials when the server CONCLUSIVELY rejects the refresh
-      // token (4xx auth failure). For 5xx / 429 / proxy errors keep the session
-      // so backend deploys, restarts and transient outages don't log the user
-      // out — the next API call will retry refresh transparently.
-      const isAuthFailure = res.status === 400 || res.status === 401 || res.status === 403;
+      // token (400/401). 403 is often CloudFront/static-host infra — keep session.
+      // 5xx / 429 / proxy errors also keep the session so deploys don't log users out.
+      const isAuthFailure = res.status === 400 || res.status === 401;
       if (isAuthFailure) {
         clearCognitoTokens();
         return { kind: 'failed_refresh', tokens: null };
@@ -191,9 +241,7 @@ async function postRefreshToken(refreshToken: string, priorTokens: CognitoTokens
       return { kind: 'failed_network', tokens: null };
     }
 
-    const newAccess = data.accessToken;
-    const newId = data.idToken;
-    const newExpires = data.expiresIn;
+    const { accessToken: newAccess, idToken: newId, expiresIn: newExpires } = parseRefreshResponseFields(data);
     if (typeof newAccess !== 'string' || typeof newId !== 'string' || typeof newExpires !== 'number') {
       clearCognitoTokens();
       return { kind: 'failed_refresh', tokens: null };
@@ -244,6 +292,8 @@ async function refreshCognitoTokensWithOutcomeInner(): Promise<RefreshOutcome> {
     return { kind: 'unchanged', tokens };
   }
 
+  ensureRefreshWindowBackfill(tokens);
+
   const refreshExpiry = localStorage.getItem('customerRefreshTokenExpiry');
   if (!refreshExpiry || Date.now() > parseInt(refreshExpiry, 10)) {
     clearCognitoTokens();
@@ -280,6 +330,8 @@ export async function refreshCognitoAfterUnauthorized401(): Promise<RefreshOutco
   } catch {
     return { kind: 'failed_refresh', tokens: null };
   }
+
+  ensureRefreshWindowBackfill(tokens);
 
   const refreshExpiry = localStorage.getItem('customerRefreshTokenExpiry');
   if (!refreshExpiry || Date.now() > parseInt(refreshExpiry, 10)) {

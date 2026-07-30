@@ -91,7 +91,7 @@ export function GlobalSearch({ className = '' }: GlobalSearchProps) {
       // Search across multiple endpoints in parallel
       const [vendorsRes, ordersRes, bookingsRes] = await Promise.allSettled([
         apiClient.get<any>(`/admin/vendors?search=${encodeURIComponent(searchQuery)}`),
-        apiClient.get<any>(`/admin/orders?search=${encodeURIComponent(searchQuery)}`),
+        apiClient.get<any>(`/admin/ecommerce/orders?search=${encodeURIComponent(searchQuery)}&limit=5&period=all`),
         apiClient.get<any>(`/admin/bookings?search=${encodeURIComponent(searchQuery)}`),
       ]);
 
@@ -119,8 +119,8 @@ export function GlobalSearch({ className = '' }: GlobalSearchProps) {
             id: order.id,
             type: 'order',
             title: `Order ${order.order_number || order.id}`,
-            subtitle: `₹${order.total_amount || 0} • ${order.order_status}`,
-            href: `/orders?id=${order.id}`,
+            subtitle: `₹${order.total_amount || 0} • ${order.status || order.order_status}`,
+            href: `/ecommerce/orders/${order.id}`,
           });
         });
       }
