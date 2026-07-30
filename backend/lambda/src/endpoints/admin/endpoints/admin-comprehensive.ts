@@ -27,6 +27,10 @@ import {
 	sqlExcludeSuppressedBookingRows,
 	sqlExcludeSuppressedSettlementRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
+import {
+	buildAdminEcommerceOrderCountSql,
+	buildAdminEcommerceOrderListSql,
+} from '../../../utils/admin-ecommerce-orders-sql';
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -5054,58 +5058,30 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
   // MISSING E-COMMERCE ENDPOINTS
   // ============================================================================
 
-  // Admin Orders endpoint
+  // Admin Orders endpoint (delegates to shared lean shop-order query)
   app.get('/admin/orders', async (c) => {
     try {
       const limit = parseInt(c.req.query('limit') || '10', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
       const status = c.req.query('status');
+      const period = c.req.query('period');
+      const search = c.req.query('search');
 
-      let orders;
-      try {
-        // COALESCE normalises legacy `status` column vs canonical `order_status` column so
-        // the vendor update (which writes order_status) is always reflected correctly here.
-        const baseSelect = `
-          SELECT o.*,
-                 COALESCE(o.order_status, o.status) AS status,
-                 c.full_name  AS customer_name,
-                 c.email      AS customer_email,
-                 v.business_name AS vendor_name
-          FROM orders o
-          LEFT JOIN customers c ON o.customer_id = c.id
-          LEFT JOIN vendors  v ON o.vendor_id   = v.id
-        `;
-        if (status) {
-          orders = await query(
-            `${baseSelect} WHERE COALESCE(o.order_status, o.status) = $1 ORDER BY o.created_at DESC LIMIT $2 OFFSET $3`,
-            [status, limit, offset]
-          );
-        } else {
-          orders = await query(
-            `${baseSelect} ORDER BY o.created_at DESC LIMIT $1 OFFSET $2`,
-            [limit, offset]
-          );
-        }
-      } catch {
-        // Try simpler query if joins fail
-        try {
-          orders = await query(
-            `SELECT *, COALESCE(order_status, status) AS status FROM orders ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-            [limit, offset]
-          );
-        } catch {
-          orders = { rows: [] };
-        }
-      }
+      const filters = { status, period, search };
+      const listQuery = buildAdminEcommerceOrderListSql(filters, limit, offset);
+      const countQuery = buildAdminEcommerceOrderCountSql(filters);
 
-      const countResult = await query(`SELECT COUNT(*) as count FROM orders`).catch(() => ({ rows: [{ count: '0' }] }));
+      const [ordersResult, countResult] = await Promise.all([
+        query(listQuery.sql, listQuery.params),
+        query(countQuery.sql, countQuery.params),
+      ]);
 
       return c.json({
         success: true,
-        orders: orders.rows || [],
-        total: parseInt(countResult.rows[0]?.count || '0', 10),
+        orders: ordersResult.rows || [],
+        total: countResult.rows[0]?.total ?? 0,
         limit,
-        offset
+        offset,
       });
     } catch (error: any) {
       console.error('Error fetching orders:', error);

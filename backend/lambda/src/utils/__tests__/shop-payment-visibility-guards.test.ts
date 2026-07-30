@@ -56,6 +56,9 @@ describe('shop/payment visibility guards', () => {
     expect(file).toContain('PAYMENT_HOLD_EXPIRED');
     expect(file).toContain('isShopOrderPaymentHoldActive');
     expect(file).toContain('hold still active');
+    expect(file).toContain('SHOP_HOLD_EXPIRY_CANCEL_REASON');
+    expect(file).toContain('reconcileShopOrderPayment');
+    expect(file).toContain('isPaymentAbandonCancellationReason');
   });
 
   test('meal vendor fetch uses payment-confirmed visibility only', () => {
@@ -73,8 +76,10 @@ describe('shop/payment visibility guards', () => {
   test('customer order list exposes pending_payment and payment-resume', () => {
     const file = read('src/endpoints/customer/orders/services/order-base-handlers.service.ts');
     expect(file).toContain('expireShopPaymentHolds');
+    expect(file).toContain('reconcilePendingShopPayments');
     expect(file).toContain('buildShopOrderPaymentResumeContext');
     expect(file).toContain('retryPendingShopRefunds');
+    expect(file).toContain('ShopOrderPaymentReconcileHandler');
   });
 
   test('shop cancel/refund orchestrator wired in order-management and vendor-orders', () => {

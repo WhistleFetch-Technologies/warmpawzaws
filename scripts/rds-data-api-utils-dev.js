@@ -320,7 +320,7 @@ async function executeSQL(sql, expectResult = false) {
         secretArn: clusterInfo.secretArn,
         database: DATABASE_NAME,
         sql,
-        // Do not set formatRecordsAs: 'JSON' — that omits records/columnMetadata and breaks parseRecords().
+        includeResultMetadata: expectResult,
       })
     );
 

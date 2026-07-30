@@ -12,6 +12,7 @@ import {
   PAYMENT_HOLD_TTL_SECONDS,
 } from './payment-hold';
 import { incrementSkuStock } from './product-sku-order';
+import { reconcileShopOrderPayment } from './payments/shop-payment-reconciliation';
 
 export { paymentHoldExpiresAt, secondsRemainingUntilHoldExpiry, PAYMENT_HOLD_TTL_SECONDS };
 
@@ -257,6 +258,17 @@ export async function expireShopPaymentHolds(options?: {
   for (const row of rows) {
     const id = String(row.id);
     try {
+      const reconciled = await reconcileShopOrderPayment(id, {
+        source: 'expire-hold-sweep',
+      }).catch((err) => {
+        console.warn('[shop-payment-hold] reconcile before expiry failed:', id, err);
+        return false;
+      });
+      if (reconciled) {
+        console.log('[shop-payment-hold] Paid on Razorpay — skipped expiry discard:', id);
+        continue;
+      }
+
       const result = await discardUnpaidShopOrder(id, 'payment_window_expired', {
         requestId,
         paymentStatus: 'expired',
