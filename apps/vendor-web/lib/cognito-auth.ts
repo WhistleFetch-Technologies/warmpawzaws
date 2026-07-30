@@ -140,7 +140,16 @@ export async function refreshVendorTokensIfNeeded(
   }
 
   try {
-    const res = await fetch('/api/auth/refresh', {
+    const { getApiBaseUrl } = await import('./api-client');
+    const base = getApiBaseUrl().replace(/\/+$/, '');
+    if (!base) {
+      if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+        console.warn('[vendor-auth] refresh skipped: API base URL not configured');
+      }
+      return null;
+    }
+
+    const res = await fetch(`${base}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken: tokens.refreshToken }),
@@ -148,10 +157,8 @@ export async function refreshVendorTokensIfNeeded(
 
     if (!res.ok) {
       // Only drop credentials when the server CONCLUSIVELY rejects the
-      // refresh token (4xx auth failure). 5xx, 429 and proxy errors keep the
-      // session intact so backend deploys / restarts / transient outages do
-      // not log the vendor out — the next API call will retry refresh.
-      const isAuthFailure = res.status === 400 || res.status === 401 || res.status === 403;
+      // refresh token (400/401). 403 is often CloudFront/static-host infra.
+      const isAuthFailure = res.status === 400 || res.status === 401;
       if (isAuthFailure) {
         clearCognitoTokens();
       } else if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
@@ -161,15 +168,40 @@ export async function refreshVendorTokensIfNeeded(
     }
 
     const newData = await res.json();
+    const newAccess =
+      typeof newData.accessToken === 'string'
+        ? newData.accessToken
+        : typeof newData.access_token === 'string'
+          ? newData.access_token
+          : undefined;
+    const newId =
+      typeof newData.idToken === 'string'
+        ? newData.idToken
+        : typeof newData.id_token === 'string'
+          ? newData.id_token
+          : undefined;
+    const rawExpires = newData.expiresIn ?? newData.expires_in;
+    const newExpires =
+      typeof rawExpires === 'number'
+        ? rawExpires
+        : typeof rawExpires === 'string' && rawExpires.trim() !== ''
+          ? Number(rawExpires)
+          : undefined;
+
+    if (typeof newAccess !== 'string' || typeof newId !== 'string' || !Number.isFinite(newExpires)) {
+      clearCognitoTokens();
+      return null;
+    }
+
     const updated: CognitoTokens = {
       ...tokens,
-      accessToken: newData.accessToken,
-      idToken: newData.idToken,
-      expiresIn: newData.expiresIn,
+      accessToken: newAccess,
+      idToken: newId,
+      expiresIn: newExpires as number,
     };
 
     localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(updated));
-    const newExpiry = Date.now() + (newData.expiresIn * 1000);
+    const newExpiry = Date.now() + (newExpires as number) * 1000;
     localStorage.setItem('vendorTokenExpiry', newExpiry.toString());
     // Do NOT touch vendorRefreshTokenExpiry — the 90-day clock must not reset on silent refresh.
 
