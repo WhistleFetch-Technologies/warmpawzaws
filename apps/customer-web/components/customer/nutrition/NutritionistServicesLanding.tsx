@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { CachedImage } from '@/components/shared/CachedImage';
 import {
   Apple,
@@ -37,8 +37,10 @@ import {
   NUTRITION_SERVICE_CARDS,
 } from './constants/nutrition-hub-assets';
 import { NutritionServiceCardBackground } from './NutritionServiceCardBackground';
-import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
+import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 
 const NUTRITION_HEADER_ICON =
   'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none';
@@ -70,6 +72,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   const mealPlansLive = isCustomerMealPlansEnabled();
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('nutrition');
   const wapptTile = buildWapptHubTile('nutrition');
+  const wapptDiscovery = useWapptHubFeaturedVendors('nutrition', wapptHubEnabled);
   //---------------------------states----------------------------------//
   const nutritionistNeeds = useProblemGridByRole('nutritionist');
   const [loading, setLoading] = useState(true);
@@ -118,6 +121,45 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     }
   };
 
+  const featuredNutritionists = useMemo(() => {
+    if (!wapptHubEnabled) return nutritionists;
+    if (wapptDiscovery.vendors.length === 0) return nutritionists;
+    return wapptDiscovery.vendors.map((v) => {
+      const raw = (v.raw ?? {}) as Record<string, unknown>;
+      const vendorId = pickCustomerVendorAccountId(raw) || v.id;
+      return nutritionVendorFromDiscoveryRow({
+        ...raw,
+        id: vendorId,
+        vendorId,
+        name: v.name,
+        businessName: v.name,
+        photo: v.photo,
+        profile_image: v.photo,
+        rating: v.rating,
+        review_count: v.review_count,
+        address: v.address,
+      });
+    });
+  }, [wapptHubEnabled, nutritionists, wapptDiscovery.vendors]);
+
+  const openNutritionistProfile = (nutritionist: ReturnType<typeof nutritionVendorFromDiscoveryRow>) => {
+    const vendorId = String(nutritionist.vendorId ?? nutritionist.id ?? '').trim();
+    if (!vendorId) return;
+    if (wapptHubEnabled) {
+      onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId,
+          category: 'nutrition',
+          serviceStyle: 'at_center',
+          vendorName: nutritionist.businessName || nutritionist.name || 'Nutritionist',
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
+      return;
+    }
+    onNavigate?.('nutritionist-profile', { vendorId });
+  };
+
   const handleNutritionistSelect = (nutritionist: any) => {
     // ✅ FIX: Validate pet context before navigation
     if (!hasPets || pets.length === 0) {
@@ -159,7 +201,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
 
 
   //---------------------------render----------------------------------//
-  if (loading) {
+  if (loading || (wapptHubEnabled && wapptDiscovery.loading)) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center max-w-md mx-auto">
         <div className="text-center">
@@ -329,16 +371,16 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
             <h2 className="text-lg font-bold text-slate-900 mb-4">Expert Nutritionists</h2>
 
             <div className="space-y-3">
-              {nutritionists.length === 0 ? (
+              {featuredNutritionists.length === 0 ? (
                 <Card className="p-8 text-center">
                   <div className="text-4xl mb-3">🥗</div>
                   <p className="text-gray-600 mb-2">No nutritionists available yet</p>
                   <p className="text-gray-500 text-sm">Check back soon for expert pet nutrition consultants!</p>
                 </Card>
               ) : (
-                nutritionists.slice(0, 3).map((nutritionist: any, index: number) => {
+                featuredNutritionists.slice(0, 3).map((nutritionist, index) => {
                   const vendorId = String(nutritionist.id ?? nutritionist.vendorId ?? '').trim();
-                  const snapshot = nutritionVendorFromDiscoveryRow(nutritionist as Record<string, unknown>);
+                  const snapshot = nutritionist;
                   return (
                     <NutritionVendorDetailsCard
                       key={vendorId || index}
@@ -357,6 +399,9 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                       }}
                       showBookConsultation
                       onBookConsultation={() => handleNutritionistSelect(nutritionist)}
+                      onViewProfile={
+                        wapptHubEnabled ? () => openNutritionistProfile(snapshot) : undefined
+                      }
                     />
                   );
                 })

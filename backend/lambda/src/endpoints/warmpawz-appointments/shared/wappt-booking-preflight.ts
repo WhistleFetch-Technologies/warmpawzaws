@@ -54,16 +54,32 @@ export async function resolveWarmpawzAppointmentsBookingPreflight(params: {
   }
 
   const style = params.serviceStyle || 'at_center';
+  const styleAliases: Record<string, string[]> = {
+    at_center: ['at_center', 'at_vendor', 'at_clinic', 'boarding', 'checkin_checkout', 'center'],
+    at_home: ['at_home', 'home_visit', 'home', 'sitting', 'pet_sitting'],
+  };
+  const acceptableStyles = styleAliases[style] ?? [style];
+
   const svcRes = await query(
-    `SELECT COALESCE(vs.service_id, vs.id) AS service_id
+    `SELECT COALESCE(vs.service_id, vs.id) AS service_id, vs.service_style
      FROM vendor_services vs
      WHERE vs.vendor_id = $1::uuid
        AND (vs.is_enabled = true OR vs.is_enabled IS NULL)
-       AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
-       AND (vs.service_style = $2 OR vs.service_style IS NULL)
-     ORDER BY CASE WHEN vs.service_style = $2 THEN 0 ELSE 1 END, vs.created_at ASC
+       AND (vs.publish_status = 'published' OR vs.publish_status IS NULL OR vs.publish_status = 'auto_published')
+       AND (
+         vs.service_style = ANY($2::text[])
+         OR vs.service_style IS NULL
+       )
+     ORDER BY
+       CASE
+         WHEN vs.service_style = $3 THEN 0
+         WHEN vs.service_style = ANY($2::text[]) THEN 1
+         WHEN vs.service_style IS NULL THEN 2
+         ELSE 3
+       END,
+       vs.created_at ASC
      LIMIT 1`,
-    [params.vendorId, style],
+    [params.vendorId, acceptableStyles, style],
   );
   if (!svcRes.rows?.length) {
     return {

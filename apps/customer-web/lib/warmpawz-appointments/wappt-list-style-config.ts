@@ -2,6 +2,7 @@
 import {
   getWapptAllowedDiscoveryStyles,
   getWapptDefaultDiscoveryStyle,
+  getWapptDiscoveryCategory,
   type WapptDiscoveryStyle,
 } from '@/lib/wappt-hub-registry';
 
@@ -33,7 +34,36 @@ export function resolveWapptDiscoveryInitialStyle(
   initialStyle?: WapptDiscoveryListStyle,
 ): WapptDiscoveryListStyle {
   if (initialStyle === 'tele') return 'tele';
-  return initialStyle ?? resolveWapptDiscoveryDefaultStyle(category);
+  const defaultStyle = resolveWapptDiscoveryDefaultStyle(category);
+  if (!initialStyle) return defaultStyle;
+  const allowed = getWapptAllowedDiscoveryStyles(category);
+  if (allowed.includes(initialStyle as WapptDiscoveryStyle)) {
+    return initialStyle;
+  }
+  return defaultStyle;
+}
+
+/** Shell navigation: category + clamped style + lock flag for wappt-discovery. */
+export function resolveWapptDiscoveryShellNav(
+  category: string,
+  data?: Record<string, unknown> | null,
+): {
+  category: string;
+  serviceStyle: WapptDiscoveryListStyle;
+  lockStyleFilter: boolean;
+} {
+  const discoveryCategory = getWapptDiscoveryCategory(
+    String(data?.category || category || 'vet'),
+  );
+  const rawStyle = data?.serviceStyle ?? data?.service_style;
+  const styleInput =
+    typeof rawStyle === 'string'
+      ? (rawStyle.toLowerCase() as WapptDiscoveryListStyle)
+      : undefined;
+  const serviceStyle = resolveWapptDiscoveryInitialStyle(discoveryCategory, styleInput);
+  const lockStyleFilter =
+    styleInput === 'tele' || data?.lockStyleFilter === true;
+  return { category: discoveryCategory, serviceStyle, lockStyleFilter };
 }
 
 export function resolveWapptDiscoveryDefaultStyle(category: string): WapptDiscoveryListStyle {

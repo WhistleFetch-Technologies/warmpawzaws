@@ -745,6 +745,7 @@ export function VetBookingRouter({
   // Skip duplicate pre-payment review — go straight to UniversalPaymentPage for marketplace only
   useEffect(() => {
     if (useWapptUnifiedUi) return;
+    if (step === 'confirmation') return;
     if (step === 'payment' && !showPaymentPage) {
       const serviceOption = getSelectedServiceOption();
       if (!selectedVendorService && serviceOption) {
@@ -928,6 +929,10 @@ export function VetBookingRouter({
   };
 
   const handleBack = useCallback(() => {
+    if (step === 'confirmation') {
+      onBack();
+      return;
+    }
     if (step === 'payment' && showPaymentPage) {
       setShowPaymentPage(false);
       setStep('summary');
@@ -1161,6 +1166,8 @@ export function VetBookingRouter({
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
   const getServiceTitle = () => {
+    if (step === 'confirmation') return 'Booking Confirmed';
+    if (appointmentsMode || useWapptUnifiedUi) return 'Book Appointment';
     if (selectedServiceType === 'at_center') return 'Clinic Visit Booking';
     if (selectedServiceType === 'at_home') return 'Home Visit Booking';
     if (selectedServiceType === 'tele') return 'Tele Consultation Booking';
@@ -1168,6 +1175,8 @@ export function VetBookingRouter({
   };
   
   const getServiceSubtitle = () => {
+    if (step === 'confirmation') return 'Your appointment is scheduled';
+    if (appointmentsMode || useWapptUnifiedUi) return 'Schedule, pet & location';
     if (selectedServiceType === 'at_center') return 'Book a clinic appointment';
     if (selectedServiceType === 'at_home') return 'Book a home visit';
     if (selectedServiceType === 'tele') return 'Book a video consultation';

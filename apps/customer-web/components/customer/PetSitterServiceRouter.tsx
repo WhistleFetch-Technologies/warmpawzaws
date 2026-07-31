@@ -25,13 +25,18 @@ import { ServiceDashboardHeader } from "./shared/ServiceDashboardHeader";
 import { BoardingVendorExpandableCard } from "./boarding/BoardingVendorExpandableCard";
 import { useHubVendorDiscovery } from "@/hooks/useHubVendorDiscovery";
 import { HUB_DISCOVERY_SITTING } from "@/lib/service-hub-discovery-config";
-import { isWarmpawzAppointmentsHubEnabled } from "@/lib/warmpawz-appointments-customer";
+import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from "@/lib/warmpawz-appointments-customer";
+import { shouldHideDiscoveryPricing } from "@/lib/wappt-discovery-ui";
 import { buildWapptHubTile } from "@/lib/wappt-hub-registry";
 import { useWapptHubFeaturedVendors } from "@/hooks/useWapptHubFeaturedVendors";
 import { fetchPetSitterHubRows } from "@/lib/pet-sitter-hub-fetch";
 import { pickCustomerVendorAccountId } from "@warmpawz/shared-types";
 import { minPriceForVendor } from "@/lib/boarding-vendor-booking-utils";
-import type { BoardingListVendor, BoardingPlanRow } from "@/lib/boarding-vendor-discovery-map";
+import {
+  findBoardingListVendorByProfileKey,
+  type BoardingListVendor,
+  type BoardingPlanRow,
+} from "@/lib/boarding-vendor-discovery-map";
 import { EMPTY_SERVICE_HEADER_STATS } from "@/lib/service-header-stats";
 import type { BoardingServiceSlug } from "@/lib/boarding-service-types";
 import { HUB_SERVICE_ICON_WRAP } from "@/lib/hub-service-option-styles";
@@ -297,15 +302,39 @@ export function PetSitterServiceRouter({
   };
 
   const handleWarmpawzBookAppointment = useCallback(
-    (_v: BoardingListVendor) => {
-      onNavigate?.('wappt-discovery', { category: 'sitting' });
+    (v: BoardingListVendor) => {
+      const rawObj = (v.raw ?? {}) as Record<string, unknown>;
+      const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
+      onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId,
+          category: 'sitting',
+          serviceStyle: 'at_home',
+          vendorName: v.name,
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
     },
     [onNavigate],
   );
 
   const handleBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    const rawObj = (v.raw ?? {}) as Record<string, unknown>;
+    const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
+    if (shouldHideDiscoveryPricing(rawObj)) {
+      onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId,
+          category: 'sitting',
+          serviceStyle: String(plan.serviceStyle || 'at_home'),
+          vendorName: v.name,
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
+      return;
+    }
     onNavigate?.("pet-sitter-booking", {
-      vendorId: v.id,
+      vendorId,
       serviceType: "sitting",
       serviceId: plan.rowId,
       serviceName: plan.name,
@@ -315,14 +344,31 @@ export function PetSitterServiceRouter({
   };
 
   /** Chevron / “Details” → vendor profile (not the booking stepper). */
-  const openSitterVendorProfile = (e: MouseEvent, v: BoardingListVendor) => {
+  const openSitterVendorProfile = (e: MouseEvent, profileKey: string) => {
     e.stopPropagation();
+    const v = findBoardingListVendorByProfileKey(vendors, profileKey);
+    if (!v) {
+      toast.error('Could not open this profile. Try View Services or refresh.');
+      return;
+    }
     const row: Record<string, unknown> = {
       ...(v.raw && typeof v.raw === "object" ? (v.raw as Record<string, unknown>) : {}),
       id: v.id,
       type: "vendor",
     };
     const vid = pickCustomerVendorAccountId(row) || v.id;
+    if (shouldHideDiscoveryPricing(row)) {
+      onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId: vid,
+          category: 'sitting',
+          serviceStyle: 'at_home',
+          vendorName: v.name,
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
+      return;
+    }
     onNavigate?.("pet-sitter-provider-profile", { vendorId: vid });
   };
 
@@ -640,9 +686,9 @@ export function PetSitterServiceRouter({
                           e.stopPropagation();
                           setSelectedVendorId(v.id);
                         }}
-                        onDetails={(e) => openSitterVendorProfile(e, v)}
+                        onDetails={(e) => openSitterVendorProfile(e, v.id)}
                         onBookPlan={handleBookPlan}
-                        onOpenCenterDetails={(e) => openSitterVendorProfile(e, v)}
+                        onOpenCenterDetails={(e) => openSitterVendorProfile(e, v.id)}
                         customerId={phone}
                         serviceCategory="pet_sitting"
                         onBookAppointment={handleWarmpawzBookAppointment}

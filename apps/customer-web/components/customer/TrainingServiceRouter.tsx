@@ -40,7 +40,11 @@ import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_TRAINING } from '@/lib/service-hub-discovery-config';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
-import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
+import {
+  findBoardingListVendorByProfileKey,
+  type BoardingListVendor,
+  type BoardingPlanRow,
+} from '@/lib/boarding-vendor-discovery-map';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
@@ -209,8 +213,18 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   };
 
   const handleWarmpawzBookAppointment = useCallback(
-    (_v: BoardingListVendor) => {
-      onNavigate?.('wappt-discovery', { category: 'training' });
+    (v: BoardingListVendor) => {
+      const rawObj = (v.raw ?? {}) as Record<string, unknown>;
+      const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
+      onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId,
+          category: 'training',
+          serviceStyle: 'at_center',
+          vendorName: v.name,
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
     },
     [onNavigate],
   );
@@ -246,11 +260,30 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   );
 
   const openTrainerDetails = useCallback(
-    (e: MouseEvent, vendorId: string) => {
+    (e: MouseEvent, profileKey: string) => {
       e.stopPropagation();
+      const v = findBoardingListVendorByProfileKey(vendors, profileKey);
+      if (!v) {
+        toast.error('Could not open this profile. Try View Services or refresh.');
+        return;
+      }
+      const rawObj = (v.raw ?? {}) as Record<string, unknown>;
+      const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
+      if (shouldHideDiscoveryPricing(rawObj)) {
+        onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
+          ...buildWarmpawzAppointmentsProfileNav({
+            vendorId,
+            category: 'training',
+            serviceStyle: 'at_center',
+            vendorName: v.name,
+          }),
+          profileBackScreen: 'wappt-discovery',
+        });
+        return;
+      }
       onNavigate?.('training_center', { embedVendorId: vendorId });
     },
-    [onNavigate]
+    [onNavigate, vendors]
   );
 
   const serviceTypes = useMemo(() => {

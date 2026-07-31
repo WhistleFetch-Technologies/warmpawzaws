@@ -13,6 +13,7 @@ import { pickProviderDistanceKm } from '@/lib/distance-display';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
 import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
 import { resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 
 export interface BoardingPlanRow {
   rowId: string;
@@ -401,7 +402,13 @@ export function buildBoardingVendorListFromRows(
             : service.isAvailableToday !== undefined
               ? service.isAvailableToday
               : true,
-        photo: service.vendorPhoto || service.photo || service.photoUrl || service.vendorProfileImage || service.businessPhoto,
+        photo:
+          normalizeProviderListPhoto(service) ||
+          service.vendorPhoto ||
+          service.photo ||
+          service.photoUrl ||
+          service.vendorProfileImage ||
+          service.businessPhoto,
         raw: { ...service },
         planRows: fromNested,
         needsServiceFetch: fromNested.length === 0,

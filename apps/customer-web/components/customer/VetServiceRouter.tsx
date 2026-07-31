@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, type MouseEvent } from 'react';
+import { useState, useEffect, useMemo, type MouseEvent, useCallback } from 'react';
 import { CachedImage } from '@/components/shared/CachedImage';
 import { Stethoscope, Star, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from './shared/StandardizedFooter';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
@@ -110,17 +111,24 @@ function VetHeaderBackground() {
 }
 
 export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
+  const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('vet');
   const { problems: bootstrapProblems } = useCategoryBootstrap({ category: 'vet', roleId: 'vet' });
   const legacyProblems = useProblemGridByRole('vet');
-  const {
-    loading: vendorsLoading,
-    vendors,
-    relaxedFilter,
-    selectedVendorId,
-    setSelectedVendorId,
-    toggleVendor,
-    fetchingPlansFor,
-  } = useHubVendorDiscovery(phone, HUB_DISCOVERY_VET);
+  const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_VET);
+  const wapptDiscovery = useWapptHubFeaturedVendors('vet', wapptHubEnabled);
+  const [wapptSelectedVendorId, setWapptSelectedVendorId] = useState<string | null>(null);
+
+  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const selectedVendorId = wapptHubEnabled ? wapptSelectedVendorId : marketplaceDiscovery.selectedVendorId;
+  const setSelectedVendorId = wapptHubEnabled
+    ? setWapptSelectedVendorId
+    : marketplaceDiscovery.setSelectedVendorId;
+  const toggleVendor = wapptHubEnabled
+    ? (vendorId: string) => setWapptSelectedVendorId((prev) => (prev === vendorId ? null : vendorId))
+    : marketplaceDiscovery.toggleVendor;
+  const fetchingPlansFor = wapptHubEnabled ? null : marketplaceDiscovery.fetchingPlansFor;
   const [spotlightDeals, setSpotlightDeals] = useState<any[]>([]);
   const [allowedServiceStyles, setAllowedServiceStyles] = useState<string[]>([]);
   const [pets, setPets] = useState<any[]>([]);
@@ -521,6 +529,23 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
   const openVetCenterProfile = openVetProviderProfile;
 
+  const handleWarmpawzBookAppointment = useCallback(
+    (v: BoardingListVendor) => {
+      const raw = (v.raw || {}) as Record<string, unknown>;
+      const vendorId = pickCustomerVendorAccountId(raw) || v.id;
+      handleNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId,
+          category: 'vet',
+          serviceStyle: 'at_center',
+          vendorName: v.name,
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
+    },
+    [handleNavigate],
+  );
+
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   if (vendorsLoading) {
@@ -763,9 +788,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     onBookPlan={handleVetBookPlan}
                     onOpenCenterDetails={openVetCenterProfile}
                     onBookAppointment={
-                      isWarmpawzAppointmentsHubEnabled('vet')
-                        ? () => handleNavigate('wappt-discovery', { category: 'vet' })
-                        : undefined
+                      wapptHubEnabled ? handleWarmpawzBookAppointment : undefined
                     }
                     customerId={phone}
                     serviceCategory="vet"

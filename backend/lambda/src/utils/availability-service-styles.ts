@@ -35,7 +35,17 @@ export function acceptableAvailabilityStylesForSlot(serviceStyle: string): strin
   const normalized = normalizeAvailabilityServiceStyle(serviceStyle);
   if (!normalized) return [];
   if (normalized === 'at_center') {
-    return ['at_center', 'at_vendor', 'at_clinic', 'training', 'trainer', 'pet_training'];
+    return [
+      'at_center',
+      'at_vendor',
+      'at_clinic',
+      'boarding',
+      'checkin_checkout',
+      'center',
+      'training',
+      'trainer',
+      'pet_training',
+    ];
   }
   if (normalized === 'at_home') {
     return ['at_home', 'home_visit', 'home', 'at_home_visit', 'training', 'trainer', 'pet_training'];

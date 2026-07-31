@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   Award,
   Building2,
@@ -139,6 +139,17 @@ export function WarmpawzAppointmentsVendorProfile({
   const handleBookAppointment = () => {
     const vid = String(provider?.vendorId || provider?.providerId || vendorId).trim();
     if (!vid) return;
+    if (category === 'nutrition') {
+      onNavigate('nutritionist-booking', {
+        vendorId: vid,
+        vendorName: providerName,
+        nutritionist: { id: vid, name: providerName },
+        serviceStyle,
+        serviceType: serviceStyle,
+        returnScreen: 'wappt-vendor-profile',
+      });
+      return;
+    }
     onNavigate(resolveWarmpawzBookingScreen(category), {
       ...buildWarmpawzAppointmentsBookingNav({
         vendorId: vid,
@@ -151,6 +162,18 @@ export function WarmpawzAppointmentsVendorProfile({
   };
 
   const isTeleMarketplace = serviceStyle === 'tele';
+
+  const visibleTabs = useMemo((): TabId[] => {
+    const tabs: TabId[] = ['overview', 'services'];
+    if (reviews.length > 0) tabs.push('reviews');
+    return tabs;
+  }, [reviews.length]);
+
+  useEffect(() => {
+    if (activeTab === 'reviews' && reviews.length === 0) {
+      setActiveTab('overview');
+    }
+  }, [activeTab, reviews.length]);
 
   const handleBookTeleService = (service: {
     id?: string;
@@ -364,7 +387,7 @@ export function WarmpawzAppointmentsVendorProfile({
           </div>
 
           <div className="sticky top-0 z-40 flex overflow-hidden rounded-t-2xl border-b-2 border-gray-200 bg-white shadow-sm">
-            {(['overview', 'services', 'reviews'] as TabId[]).map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -393,29 +416,9 @@ export function WarmpawzAppointmentsVendorProfile({
                   </h3>
                   <p className="text-sm leading-relaxed text-gray-700">{description}</p>
                 </div>
-                <div className="grid grid-cols-3 gap-3 rounded-xl bg-gray-50 p-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-gray-900">{provider.services.length}</div>
-                    <div className="mt-1 text-xs text-gray-500">Services</div>
-                  </div>
-                  <div className="border-x border-gray-200 text-center">
-                    <div className="text-2xl font-bold text-gray-900">
-                      {provider.experienceYears != null
-                        ? provider.experienceYears
-                        : '5+'}
-                    </div>
-                    <div className="mt-1 text-xs text-gray-500">Years Experience</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-gray-900">
-                      {rating?.totalReviews != null
-                        ? rating.totalReviews
-                        : provider.reviewCount != null
-                          ? provider.reviewCount
-                          : '10+'}
-                    </div>
-                    <div className="mt-1 text-xs text-gray-500">Reviews</div>
-                  </div>
+                <div className="rounded-xl bg-gray-50 p-4 text-center">
+                  <div className="text-2xl font-bold text-gray-900">{provider.services.length}</div>
+                  <div className="mt-1 text-xs text-gray-500">Services</div>
                 </div>
                 {provider.qualifications ? (
                   <div>

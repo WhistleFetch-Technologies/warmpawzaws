@@ -9,6 +9,7 @@ import { resolveWapptVendorListConfig } from '@/lib/warmpawz-appointments/wappt-
 import {
   WAPPT_DISCOVERY_DEFAULT_STYLE,
   WAPPT_DISCOVERY_STYLE_FILTERS,
+  resolveWapptDiscoveryInitialStyle,
 } from '@/lib/warmpawz-appointments/wappt-list-style-config';
 
 describe('warmpawz appointments profile nav', () => {
@@ -94,14 +95,13 @@ describe('WAPPT discovery list style filters', () => {
   });
 });
 
-describe('WAPPT profile provider stats fallbacks', () => {
-  it('uses API experience when present including zero', () => {
-    const years = 0;
-    expect(years != null ? years : '5+').toBe(0);
+describe('resolveWapptDiscoveryInitialStyle', () => {
+  it('clamps stale at_center to at_home for walker', () => {
+    expect(resolveWapptDiscoveryInitialStyle('walker', 'at_center')).toBe('at_home');
+    expect(resolveWapptDiscoveryInitialStyle('walker', 'at_home')).toBe('at_home');
   });
 
-  it('falls back to 5+ when experience is missing', () => {
-    const years: number | null | undefined = undefined;
-    expect(years != null ? years : '5+').toBe('5+');
+  it('keeps at_center for vet when allowed', () => {
+    expect(resolveWapptDiscoveryInitialStyle('vet', 'at_center')).toBe('at_center');
   });
 });

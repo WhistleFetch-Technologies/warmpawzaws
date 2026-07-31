@@ -52,6 +52,8 @@ import {
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import { isWarmpawzPayCommerceActive } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptShellBookingPayload, handleWapptShellScreenNavigate } from '@/lib/wappt-shell-navigation';
+import { resolveWapptDiscoveryShellNav } from '@/lib/warmpawz-appointments/wappt-list-style-config';
+import { getWapptDefaultDiscoveryStyle } from '@/lib/wappt-hub-registry';
 import {
   navigateToArticleFromHome,
   navigateToArticlesList,
@@ -1804,11 +1806,7 @@ export function CustomerHomeWrapper({
       navigateToScreen('vet-clinic-list');
     }
     else if (screen === 'wappt-discovery') {
-      setWapptDiscoveryCategory(String((data as any)?.category || 'vet'));
-      const style = String((data as any)?.serviceStyle || (data as any)?.service_style || 'at_center').toLowerCase();
-      setWapptDiscoveryServiceStyle(style === 'tele' ? 'tele' : style === 'at_home' ? 'at_home' : 'at_center');
-      setWapptDiscoveryLockStyle(style === 'tele' || (data as any)?.lockStyleFilter === true);
-      navigateToScreen('wappt-discovery');
+      openWapptDiscovery(String((data as any)?.category || 'vet'), data as Record<string, unknown>);
     }
     else if (screen === 'wappt-vendor-profile') {
       setWapptProfileData({
@@ -1911,6 +1909,17 @@ export function CustomerHomeWrapper({
       navigateToScreen(screen as ScreenType);
     }
   };
+
+  const openWapptDiscovery = useCallback(
+    (category: string, data?: Record<string, unknown> | null) => {
+      const nav = resolveWapptDiscoveryShellNav(category, data);
+      setWapptDiscoveryCategory(nav.category);
+      setWapptDiscoveryServiceStyle(nav.serviceStyle);
+      setWapptDiscoveryLockStyle(nav.lockStyleFilter);
+      navigateToScreen('wappt-discovery');
+    },
+    [navigateToScreen],
+  );
 
   const handleWapptShellNavigate = useCallback(
     (screen: string, data?: Record<string, unknown>, discoveryCategory?: string) => {
@@ -2084,8 +2093,7 @@ export function CustomerHomeWrapper({
       return;
     }
     if (screen === 'wappt-discovery') {
-      setWapptDiscoveryCategory(String(data?.category || 'walker'));
-      navigateToScreen('wappt-discovery');
+      openWapptDiscovery(String(data?.category || 'walker'), data);
       return;
     }
     const walkerPayload =
@@ -3226,11 +3234,16 @@ export function CustomerHomeWrapper({
       <WarmpawzAppointmentsDiscovery
         category={wapptDiscoveryCategory}
         initialServiceStyle={
-          wapptDiscoveryServiceStyle === 'tele'
+          (wapptDiscoveryServiceStyle === 'tele'
             ? 'tele'
             : wapptDiscoveryServiceStyle === 'at_home'
               ? 'at_home'
-              : 'at_center'
+              : wapptDiscoveryServiceStyle === 'at_center'
+                ? 'at_center'
+                : getWapptDefaultDiscoveryStyle(wapptDiscoveryCategory)) as
+            | 'at_center'
+            | 'at_home'
+            | 'tele'
         }
         lockStyleFilter={wapptDiscoveryLockStyle}
         phone={phone}
@@ -3833,8 +3846,7 @@ export function CustomerHomeWrapper({
           setProblemGridSpecialization(data?.problemId || undefined);
           navigateToScreen('problem_grid_flow');
         } else if (screen === 'wappt-discovery') {
-          setWapptDiscoveryCategory(String(data?.category || 'grooming'));
-          navigateToScreen('wappt-discovery');
+          openWapptDiscovery(String(data?.category || 'grooming'), data);
         } else if (screen === 'grooming_center' || screen === 'at_center') {
           if (process.env.NODE_ENV === 'development') {
             console.log('🟢 [CustomerHomeWrapper] Setting grooming_center screen');
@@ -3907,8 +3919,7 @@ export function CustomerHomeWrapper({
           setVetServiceData(mergeBannerNavigationPayload(vetServiceData, trainingPayload));
           navigateToScreen('training-booking');
         } else if (screen === 'wappt-discovery') {
-          setWapptDiscoveryCategory(String(data?.category || 'training'));
-          navigateToScreen('wappt-discovery');
+          openWapptDiscovery(String(data?.category || 'training'), data);
         } else if (screen === 'problem_grid') {
           setCurrentServiceType('trainer');
           navigateToScreen('problem_grid');
@@ -3974,8 +3985,7 @@ export function CustomerHomeWrapper({
             setVetServiceData(mergeBannerNavigationPayload(vetServiceData, payload ?? {}));
             navigateToScreen('training-booking');
           } else if (screen === 'wappt-discovery') {
-            setWapptDiscoveryCategory(String(navData.category || 'behaviorist'));
-            navigateToScreen('wappt-discovery');
+            openWapptDiscovery(String(navData.category || 'behaviorist'), navData);
           } else if (screen === 'problem_selected') {
             setSelectedProblem({
               id: String(navData.problemId ?? ''),
@@ -4021,8 +4031,7 @@ export function CustomerHomeWrapper({
             openBoardingBookingScreen(data);
           }
         } else if (screen === 'wappt-discovery') {
-          setWapptDiscoveryCategory(String(data?.category || 'boarding'));
-          navigateToScreen('wappt-discovery');
+          openWapptDiscovery(String(data?.category || 'boarding'), data);
         } else if (screen === 'create-booking') {
           setSelectedVendorId(data?.vendorId);
           setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
@@ -4075,8 +4084,7 @@ export function CustomerHomeWrapper({
             openBoardingBookingScreen(data);
           }
         } else if (screen === 'wappt-discovery') {
-          setWapptDiscoveryCategory(String(data?.category || 'boarding'));
-          navigateToScreen('wappt-discovery');
+          openWapptDiscovery(String(data?.category || 'boarding'), data);
         } else if (screen === 'create-booking') {
           setSelectedVendorId(data?.vendorId);
           setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
@@ -4132,8 +4140,7 @@ export function CustomerHomeWrapper({
             setVetServiceData(mergeBannerNavigationPayload(null, sittingPayload));
             navigateToScreen('pet-sitter-booking');
           } else if (screen === 'wappt-discovery') {
-            setWapptDiscoveryCategory(String(data?.category || 'sitting'));
-            navigateToScreen('wappt-discovery');
+            openWapptDiscovery(String(data?.category || 'sitting'), data);
           } else if (screen === 'create-booking') {
             setSelectedVendorId(data?.vendorId);
             setVetServiceData({
@@ -4470,8 +4477,7 @@ export function CustomerHomeWrapper({
               setVetServiceData(mergeBannerNavigationPayload(null, nutritionPayload));
               navigateToScreen('nutritionist-booking');
             } else if (screen === 'wappt-discovery') {
-              setWapptDiscoveryCategory(String(data?.category || 'nutrition'));
-              navigateToScreen('wappt-discovery');
+              openWapptDiscovery(String(data?.category || 'nutrition'), data);
             } else if (screen === 'create-booking') {
               setSelectedVendorId(data?.vendorId);
               setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });

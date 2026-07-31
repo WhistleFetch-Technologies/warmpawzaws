@@ -232,8 +232,18 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   }, [phone]);
 
   const handleWarmpawzBookAppointment = useCallback(
-    (_v: BoardingListVendor) => {
-      onNavigate?.('wappt-discovery', { category: 'grooming' });
+    (v: BoardingListVendor) => {
+      const rawObj = (v.raw ?? {}) as Record<string, unknown>;
+      const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
+      onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId,
+          category: 'grooming',
+          serviceStyle: 'at_center',
+          vendorName: v.name,
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
     },
     [onNavigate],
   );

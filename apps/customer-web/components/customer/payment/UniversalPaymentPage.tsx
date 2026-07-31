@@ -2352,8 +2352,26 @@ export function UniversalPaymentPage({
       } else if (type === 'booking' && flowType === 'payment-resume' && currentBookingId) {
         console.log('[PAYMENT] Payment resume: using existing bookingId:', currentBookingId);
       } else if (type === 'booking' && !currentBookingId && !isDiagnosticsPrepaid) {
-        // Validate required fields
-        if (!customerId) {
+        let resolvedCustomerIdForBooking = customerId;
+        if (!resolvedCustomerIdForBooking && customerPhone) {
+          try {
+            const byPhoneRes = (await apiClient.get(
+              `/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`,
+            )) as { customer?: { id?: string }; id?: string };
+            resolvedCustomerIdForBooking = byPhoneRes?.customer?.id ?? byPhoneRes?.id;
+            if (!resolvedCustomerIdForBooking) {
+              const profileRes = (await apiClient.get(
+                `/customer/profile?phone=${encodeURIComponent(customerPhone)}`,
+              )) as { profile?: { id?: string; customerId?: string }; id?: string; customerId?: string };
+              const profile = profileRes?.profile ?? profileRes;
+              resolvedCustomerIdForBooking = profile?.id ?? profile?.customerId;
+            }
+          } catch (e) {
+            console.warn('Could not resolve customerId from customerPhone (early):', e);
+          }
+        }
+
+        if (!resolvedCustomerIdForBooking) {
           toast.error('Customer ID is required. Please try again.');
           setProcessing(false);
           return;
@@ -2641,8 +2659,8 @@ export function UniversalPaymentPage({
         }
 
         // Create booking with correct API format
-        // âœ… CRITICAL: CreateBookingRequestSchema requires customerId (UUID). Resolve from customerPhone if missing.
-        let resolvedCustomerId = customerId;
+        // customerId resolved above (or from customerPhone)
+        let resolvedCustomerId = resolvedCustomerIdForBooking;
         if (!resolvedCustomerId && customerPhone) {
           try {
             const byPhoneRes = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`) as any;

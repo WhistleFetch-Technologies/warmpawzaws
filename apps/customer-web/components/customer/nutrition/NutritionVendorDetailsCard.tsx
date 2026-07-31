@@ -107,6 +107,8 @@ export interface NutritionVendorDetailsCardProps {
   /** Optional: tele / consultation booking */
   showBookConsultation?: boolean;
   onBookConsultation?: () => void;
+  /** Optional: open vendor profile (WAPPT discovery) */
+  onViewProfile?: () => void;
   /** Drill-down header: no “View Meal Plans”; optional line under title */
   subtitle?: string;
   className?: string;
@@ -121,6 +123,7 @@ export function NutritionVendorDetailsCard({
   onViewMealPlans,
   showBookConsultation = false,
   onBookConsultation,
+  onViewProfile,
   subtitle,
   className = '',
 }: NutritionVendorDetailsCardProps) {
@@ -150,7 +153,19 @@ export function NutritionVendorDetailsCard({
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate font-bold text-slate-900">{title}</h3>
+            <h3
+              className={`truncate font-bold text-slate-900${onViewProfile ? ' cursor-pointer hover:text-[#FF8C42]' : ''}`}
+              onClick={
+                onViewProfile
+                  ? (e) => {
+                      e.stopPropagation();
+                      onViewProfile();
+                    }
+                  : undefined
+              }
+            >
+              {title}
+            </h3>
             <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-100">
               Nutritionist
             </span>

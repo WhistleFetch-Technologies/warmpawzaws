@@ -1774,7 +1774,7 @@ export function BoardingBookingRouter({
         checkOutDate={checkOutDate}
         checkOutTime={checkOutTime}
         petName={selectedPet?.name || ''}
-        totalAmount={calculateTotalPrice()}
+        totalAmount={appointmentsMode ? wapptReviewTotal : calculateTotalPrice()}
         onViewDetails={() => onViewBooking?.(bookingId)}
         onBackToHome={onBack}
       />

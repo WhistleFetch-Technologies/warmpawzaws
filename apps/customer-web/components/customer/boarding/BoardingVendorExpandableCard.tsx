@@ -261,7 +261,26 @@ export function BoardingVendorExpandableCard({
               <span className="text-sm">Loading services…</span>
             </div>
           ) : v.planRows.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-4">No services listed for this center.</p>
+            appointmentsMode && onBookAppointment ? (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <p className="text-sm text-gray-500 text-center">
+                  Book an appointment with this provider.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="bg-[#FF8C42] hover:bg-[#E67A35] text-white"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onBookAppointment(v);
+                  }}
+                >
+                  Book Appointment
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 text-center py-4">No services listed for this center.</p>
+            )
           ) : (
             <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1 space-y-3">
               {v.planRows.map((plan) => {

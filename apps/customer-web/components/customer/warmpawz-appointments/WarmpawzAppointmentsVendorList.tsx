@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search } from 'lucide-react';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
@@ -21,7 +21,7 @@ import {
   resolveWapptDiscoveryStyleFilters,
   type WapptDiscoveryListStyle,
 } from '@/lib/warmpawz-appointments/wappt-list-style-config';
-import { getWapptDiscoveryCategory } from '@/lib/wappt-hub-registry';
+import { getWapptAllowedDiscoveryStyles, getWapptDiscoveryCategory } from '@/lib/wappt-hub-registry';
 import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
 
 type WarmpawzAppointmentsVendorListProps = {
@@ -61,6 +61,15 @@ export function WarmpawzAppointmentsVendorList({
   const [styleFilter, setStyleFilter] = useState<WapptDiscoveryListStyle>(() =>
     resolveWapptDiscoveryInitialStyle(discoveryCategory, initialServiceStyle),
   );
+
+  useEffect(() => {
+    const allowed = getWapptAllowedDiscoveryStyles(discoveryCategory);
+    if (styleFilter === 'tele') return;
+    if (!allowed.includes(styleFilter as 'at_center' | 'at_home')) {
+      setStyleFilter(resolveWapptDiscoveryInitialStyle(discoveryCategory, initialServiceStyle));
+    }
+  }, [discoveryCategory, initialServiceStyle, styleFilter]);
+
   const listConfig = resolveWapptVendorListConfig(category, styleFilter);
   const isTeleDiscovery = styleFilter === 'tele';
   const styleFilters = useMemo(
@@ -204,7 +213,6 @@ export function WarmpawzAppointmentsVendorList({
                   distance: row.distance != null ? Number(row.distance) : null,
                   distanceText: row.distanceText,
                   nextAvailableSlot: row.nextAvailableSlot,
-                  experienceYears: row.experienceYears,
                   providerType: 'vendor',
                   city: row.city,
                 },

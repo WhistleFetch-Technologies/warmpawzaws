@@ -88,12 +88,16 @@ export function NutritionistBookingRouter({
   serviceStyle,
   price,
   duration,
-  appointmentsMode = false,
+  appointmentsMode: _appointmentsMode = false,
   onBack,
   onNavigate,
   onViewBooking,
   onInternalBackReady,
 }: NutritionistBookingRouterProps) {
+  // Nutrition booking stays marketplace-only (no WAPPT wizard), even from WAPPT discovery profile.
+  void _appointmentsMode;
+  const appointmentsMode = false;
+
   console.log('NutritionistBookingRouter--------------------->', phone, vendorId, nutritionist, selectedService, serviceType, serviceId, serviceName, serviceStyle, price, duration, onBack, onNavigate, onViewBooking);
 
   const catalogServiceId = [serviceId, selectedService].find(looksLikeCatalogServiceId);

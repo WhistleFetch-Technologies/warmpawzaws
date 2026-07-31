@@ -51,8 +51,11 @@ import {
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
-import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
+import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
+import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
+import { normalizeProviderListPhoto } from '@/lib/resolve-display-image-url';
 
 const WALKING_IMG = '/images/home/Walking';
 
@@ -239,11 +242,7 @@ function walkerRowMatchesQuery(w: Record<string, unknown>, rawQuery: string): bo
 }
 
 function walkerProfilePhotoUrl(w: Record<string, unknown>): string | undefined {
-  for (const key of ['photoUrl', 'photo', 'profilePhotoUrl', 'profile_photo_url'] as const) {
-    const v = w[key];
-    if (typeof v === 'string' && v.trim()) return v.trim();
-  }
-  return undefined;
+  return normalizeProviderListPhoto(w);
 }
 
 /** Discover-services list card: show profile photo when API provides a URL; Dog placeholder on miss or load error. */
@@ -294,6 +293,43 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
   const [packagesLoading, setPackagesLoading] = useState(false);
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('walker');
   const wapptTile = useMemo(() => buildWapptHubTile('walker'), []);
+  const wapptDiscovery = useWapptHubFeaturedVendors('walker', wapptHubEnabled);
+
+  const wapptWalkerCards = useMemo(() => {
+    if (!wapptHubEnabled) return [];
+    return wapptDiscovery.vendors.map((v) => {
+      const raw = (v.raw ?? {}) as Record<string, unknown>;
+      const vendorId = pickWalkerVendorId(raw) || v.id;
+      return {
+        ...raw,
+        id: v.id,
+        vendorId,
+        name: v.name,
+        businessName: v.name,
+        photo: v.photo,
+        photoUrl: v.photo,
+        profile_image: v.photo,
+        rating: v.rating,
+        reviewCount: v.review_count,
+        totalReviews: v.review_count,
+        address: v.address,
+        location: { address: v.address },
+        _wapptFeatured: true,
+      };
+    });
+  }, [wapptHubEnabled, wapptDiscovery.vendors]);
+
+  const walkersForList = useMemo(() => {
+    if (searchQuery.trim()) return walkers;
+    if (wapptHubEnabled && wapptWalkerCards.length > 0) return wapptWalkerCards;
+    return walkers;
+  }, [searchQuery, walkers, wapptHubEnabled, wapptWalkerCards]);
+
+  const walkersListLoading = searchQuery.trim()
+    ? loading
+    : wapptHubEnabled
+      ? wapptDiscovery.loading
+      : loading;
 
   const walkerDiscovery = useDiscoveryCount({
     phone,
@@ -514,6 +550,18 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
       toast.error('Profile unavailable for this walker.');
       return;
     }
+    if (wapptHubEnabled || walker._wapptFeatured || shouldHideDiscoveryPricing(walker as Record<string, unknown>)) {
+      onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId: vid,
+          category: 'walker',
+          serviceStyle: 'at_home',
+          vendorName: walker.name || walker.businessName || 'Walker',
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
+      return;
+    }
     onNavigate?.('walker-provider-profile', {
       vendorId: vid,
       walker: buildWalkerPayload(walker),
@@ -665,6 +713,18 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
       toast.error('Booking unavailable for this walker.');
       return;
     }
+    if (!pendingWalkSession && (wapptHubEnabled || walker._wapptFeatured)) {
+      onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId: vid,
+          category: 'walker',
+          serviceStyle: 'at_home',
+          vendorName: walker.name || walker.businessName || 'Walker',
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
+      return;
+    }
     const walkerPayload = buildWalkerPayload(walker);
     const base = {
       vendorId: vid,
@@ -812,7 +872,9 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
             <h2 className="mb-3 text-lg font-bold text-slate-900">Choose Service Type</h2>
             <button
               type="button"
-              onClick={() => onNavigate?.('wappt-discovery', { category: 'walker' })}
+              onClick={() =>
+                onNavigate?.('wappt-discovery', { category: 'walker', serviceStyle: 'at_home' })
+              }
               className="group relative w-full overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
             >
               <div className="relative h-28 w-full sm:h-32">
@@ -1026,11 +1088,11 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
             <h2 className="font-bold text-gray-900">Available Walkers</h2>
           </div>
 
-          {loading ? (
+          {walkersListLoading ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
             </div>
-          ) : walkers.length === 0 ? (
+          ) : walkersForList.length === 0 ? (
             <Card className="p-8 text-center">
               <Dog className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="font-semibold text-gray-900 mb-2">No Walkers Found</h3>
@@ -1038,7 +1100,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
             </Card>
           ) : (
             <div className="space-y-4">
-              {(searchQuery.trim() ? walkers : walkers.slice(0, 3)).map((walker, index) => (
+              {(searchQuery.trim() ? walkersForList : walkersForList.slice(0, 3)).map((walker, index) => (
                 <Card 
                   key={walker.id || walker.vendorId || index} 
                   className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
@@ -1079,9 +1141,6 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                         <span className="text-gray-600">{walker.reviewsCount || walker.reviewCount || 0} reviews</span>
                         {walker.priceRange && (
                           <span className="text-orange-500 font-semibold">{walker.priceRange}</span>
-                        )}
-                        {walker.experience && (
-                          <span className="text-gray-500">• {walker.experience}</span>
                         )}
                       </div>
                     </div>
