@@ -95,7 +95,7 @@ export function BoardingVendorExpandableCard({
     raw.roleDisplayName || raw.roleName || raw.vendorType || ''
   ).trim();
   const nextSlot = resolveNextAvailableLabel(raw);
-  const appointmentsMode = shouldHideDiscoveryPricing(v);
+  const appointmentsMode = shouldHideDiscoveryPricing(raw as Record<string, unknown>);
   const showPricing = !appointmentsMode;
 
   return (

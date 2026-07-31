@@ -1,11 +1,12 @@
 "use client";
 
 import type { ReactNode } from 'react';
-import { Home, ShoppingBag, Calendar, User, QrCode } from 'lucide-react';
+import { Home, ShoppingBag, Calendar, User } from 'lucide-react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { isAppReviewDemoAccount, readStoredCustomerPhone } from '@/lib/app-review-demo-account';
 import { useProfileMenuOpen } from '@/lib/profile-menu-open-context';
 import { isWarmpawzPayEnabled } from '@/lib/warmpawz-pay/wpay-feature-flag';
+import { ScanToPayPawButton } from './ScanToPayPawButton';
 
 interface BottomNavigationProps {
   currentScreen: string;
@@ -86,9 +87,9 @@ export function BottomNavigation({
   const wpayEnabled = isWarmpawzPayEnabled();
 
   return (
-    <div className="cw-customer-tabbar-fixed fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-customer border-t border-gray-200 bg-white">
+    <div className="cw-customer-tabbar-fixed fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-customer overflow-visible border-t border-gray-200 bg-white">
       <div
-        className={`grid items-end px-1 pb-2 pt-2 sm:px-2 ${wpayEnabled ? 'grid-cols-5' : 'grid-cols-4'}`}
+        className={`grid items-end overflow-visible px-1 pb-2 pt-2 sm:px-2 ${wpayEnabled ? 'grid-cols-5' : 'grid-cols-4'}`}
       >
         <TabIconButton label="Home" active={isActive('home')} onClick={() => handleNavClick('home')}>
           <Home className={`h-6 w-6 ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
@@ -105,27 +106,10 @@ export function BottomNavigation({
         )}
 
         {wpayEnabled ? (
-          <button
-            type="button"
+          <ScanToPayPawButton
+            active={isActive('warmpawz-pay')}
             onClick={() => handleNavClick('warmpawz-pay')}
-            className="-mt-6 flex flex-col items-center justify-end gap-0.5"
-            aria-label="Warmpawz Pay"
-          >
-            <div
-              className={`flex h-14 w-14 items-center justify-center rounded-full shadow-lg ${
-                isActive('warmpawz-pay') ? 'bg-[#FF6B00] ring-4 ring-orange-100' : 'bg-[#FF8C42]'
-              }`}
-            >
-              <QrCode className="h-7 w-7 text-white" />
-            </div>
-            <span
-              className={`text-[10px] font-semibold ${
-                isActive('warmpawz-pay') ? 'text-[#FF6B00]' : 'text-[#FF8C42]'
-              }`}
-            >
-              SCAN TO PAY
-            </span>
-          </button>
+          />
         ) : null}
 
         <TabIconButton
