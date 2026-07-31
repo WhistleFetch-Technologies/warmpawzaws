@@ -30,19 +30,25 @@ const NAV: ECommerceNavItem[] = [
   { id: 'sellers', label: 'Sellers', href: '/ecommerce?tab=sellers', icon: Store },
   { id: 'products', label: 'Product Approval', href: '/ecommerce?tab=products', icon: Package },
   { id: 'orders', label: 'Orders', href: '/ecommerce?tab=orders', icon: ShoppingCart },
+  { id: 'marketplace-analytics', label: 'Marketplace Analytics', href: '/ecommerce?tab=analytics', icon: BarChart3 },
   { id: 'categories', label: 'Categories', href: '/ecommerce?tab=categories', icon: FileText },
   { id: 'promotions', label: 'Promotions & Coupons', href: '/ecommerce/promotions', icon: Tag, matchPrefix: '/ecommerce/promotions' },
   { id: 'seller-promotions', label: 'Seller Promotions', href: '/ecommerce/seller-promotions', icon: Store, matchPrefix: '/ecommerce/seller-promotions' },
   { id: 'campaigns', label: 'Campaigns', href: '/ecommerce/campaigns', icon: Megaphone, matchPrefix: '/ecommerce/campaigns' },
-  { id: 'promotion-analytics', label: 'Analytics', href: '/ecommerce/analytics', icon: LineChart, matchPrefix: '/ecommerce/analytics' },
+  { id: 'promotion-analytics', label: 'Promotion Analytics', href: '/ecommerce/analytics', icon: LineChart, matchPrefix: '/ecommerce/analytics' },
   { id: 'commission', label: 'Commission', href: '/ecommerce?tab=commission', icon: Percent },
-  { id: 'marketplace-analytics', label: 'Marketplace Analytics', href: '/ecommerce?tab=analytics', icon: BarChart3 },
   { id: 'policies', label: 'Policies', href: '/ecommerce/policy', icon: Settings, matchPrefix: '/ecommerce/policy' },
 ];
 
+function tabFromHref(href: string): string | null {
+  const q = href.indexOf('?');
+  if (q === -1) return null;
+  return new URLSearchParams(href.slice(q + 1)).get('tab');
+}
+
 function isActive(
   pathname: string | null,
-  _searchParams: ReturnType<typeof useSearchParams>,
+  searchParams: ReturnType<typeof useSearchParams>,
   item: ECommerceNavItem
 ): boolean {
   if (!pathname) return false;
@@ -57,8 +63,15 @@ function isActive(
     const baseHref = item.href.split('?')[0];
     return pathname === baseHref || pathname.startsWith(`${baseHref}/`);
   }
-  if (item.href === '/ecommerce') {
-    return pathname === '/ecommerce';
+  if (pathname === '/ecommerce') {
+    const currentTab = searchParams.get('tab');
+    const itemTab = tabFromHref(item.href);
+    if (itemTab) {
+      return currentTab === itemTab;
+    }
+    if (item.id === 'dashboard') {
+      return !currentTab || currentTab === 'dashboard';
+    }
   }
   return false;
 }

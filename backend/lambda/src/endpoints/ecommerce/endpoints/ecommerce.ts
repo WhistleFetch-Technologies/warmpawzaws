@@ -85,9 +85,25 @@ import {
   buildAdminEcommerceOrderCountSql,
   buildAdminEcommerceOrderListSql,
   buildAdminEcommerceOrderStatusCountsSql,
+  buildAdminEcommerceOrderStatusCountsSqlForDays,
   enrichAdminEcommerceOrderDetail,
   normalizeAdminOrderStatusCounts,
+  SQL_ADMIN_SHOP_ORDER_TYPE,
 } from '../../../utils/admin-ecommerce-orders-sql';
+import {
+  buildDailyRevenueSql,
+  buildEcommerceSellerStatsSql,
+  buildPeriodStartDates,
+  buildPeriodTotalsSql,
+  buildPlatformPeriodGrowthSql,
+  buildProductStatsSql,
+  buildSellersWithOrdersSql,
+  buildTopProductsSql,
+  buildTopSellersSql,
+  calcPeriodGrowthPercent,
+  clampAnalyticsDays,
+  stripAllStatusKey,
+} from '../../../utils/admin-ecommerce-analytics-sql';
 import {
   resolveOrderCommission,
   buildCommissionSnapshot,
@@ -1992,6 +2008,8 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
       const settlementSuppressionParams =
         suppression && suppression.vendorIds?.length ? [suppression.vendorIds, suppression.cutoffDateIst] : [];
 
+      const platformGrowth = buildPlatformPeriodGrowthSql();
+
       const [
         revenueStats,
         sellerStats,
@@ -1999,42 +2017,18 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
         pendingApprovalsRow,
         processingOrdersRow,
         settlementAggRow,
+        platformGrowthRow,
       ] = await Promise.all([
         query(
           `SELECT 
            COUNT(*) as total_orders,
-           COALESCE(SUM(total_amount) FILTER (WHERE order_status = 'delivered'), 0) as total_revenue,
-           COALESCE(SUM(total_amount) FILTER (WHERE order_status = 'delivered' AND created_at >= DATE_TRUNC('month', CURRENT_DATE)), 0) as this_month_revenue
-         FROM orders`
+           COALESCE(SUM(o.total_amount), 0) as total_gmv,
+           COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered'), 0) as total_revenue,
+           COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered' AND o.created_at >= DATE_TRUNC('month', CURRENT_DATE)), 0) as this_month_revenue
+         FROM orders o
+         WHERE ${SQL_ADMIN_SHOP_ORDER_TYPE}`
         ).catch(() => ({ rows: [{}] })),
-        query(
-          `SELECT 
-           COUNT(DISTINCT v.id) FILTER (WHERE 
-             v.is_active = true 
-             AND (v.is_deleted IS NULL OR v.is_deleted = false)
-             AND (
-               r.name = 'pet_product' OR 
-               r.name = 'pet_products_store' OR 
-               r.name = 'product_seller' OR 
-               r.name = 'pet_product_seller' OR
-               r.name = 'seller' OR
-               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
-             )
-           ) as active_sellers,
-           COUNT(DISTINCT v.id) FILTER (WHERE 
-             (v.is_deleted IS NULL OR v.is_deleted = false)
-             AND (
-               r.name = 'pet_product' OR 
-               r.name = 'pet_products_store' OR 
-               r.name = 'product_seller' OR 
-               r.name = 'pet_product_seller' OR
-               r.name = 'seller' OR
-               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
-             )
-           ) as total_sellers
-         FROM vendors v
-         LEFT JOIN roles r ON v.role_id = r.id`
-        ).catch(() => ({ rows: [{}] })),
+        query(buildEcommerceSellerStatsSql().sql).catch(() => ({ rows: [{}] })),
         query(
           `SELECT COUNT(*)::int AS c FROM products p
            WHERE p.is_active = true
@@ -2049,7 +2043,8 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
         ).catch(() => ({ rows: [{ c: 0 }] })),
         query(
           `SELECT COUNT(*)::int AS c FROM orders o
-           WHERE o.order_status IN ('confirmed', 'processing', 'shipped')`
+           WHERE o.order_status IN ('confirmed', 'processing', 'shipped')
+             AND ${SQL_ADMIN_SHOP_ORDER_TYPE}`
         ).catch(() => ({ rows: [{ c: 0 }] })),
         (async () => {
           try {
@@ -2076,6 +2071,7 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
             }
           }
         })(),
+        query(platformGrowth.sql, platformGrowth.params).catch(() => ({ rows: [{}] })),
       ]);
 
       // Aggregate commission from paid orders (fallback to platform default when column absent)
@@ -2096,18 +2092,26 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
         totalCommission = totalRevenue * (fallbackRate / 100);
       }
       const totalRevenue = parseFloat(revenueStats.rows[0]?.total_revenue || '0');
+      const totalGMV = parseFloat(revenueStats.rows[0]?.total_gmv || '0') || totalRevenue;
       const activeProducts = parseInt(String(activeProductsRow.rows[0]?.c ?? '0'), 10) || 0;
       const pendingApprovals = parseInt(String(pendingApprovalsRow.rows[0]?.c ?? '0'), 10) || 0;
       const processingOrders = parseInt(String(processingOrdersRow.rows[0]?.c ?? '0'), 10) || 0;
       const settlementRow = settlementAggRow.rows[0] || {};
       const pendingSettlements = parseInt(String(settlementRow.pending_count ?? '0'), 10) || 0;
       const pendingSettlementAmount = parseFloat(String(settlementRow.pending_amount ?? '0')) || 0;
+      const growthRow = platformGrowthRow.rows[0] || {};
+      const currentGmv = parseFloat(String(growthRow.current_gmv ?? 0)) || 0;
+      const previousGmv = parseFloat(String(growthRow.previous_gmv ?? 0)) || 0;
+      const currentOrders = parseInt(String(growthRow.current_orders ?? 0), 10) || 0;
+      const previousOrders = parseInt(String(growthRow.previous_orders ?? 0), 10) || 0;
+      const currentCommission = parseFloat(String(growthRow.current_commission ?? 0)) || 0;
+      const previousCommission = parseFloat(String(growthRow.previous_commission ?? 0)) || 0;
 
       return c.json({
         success: true,
         data: {
           totalRevenue,
-          totalGMV: totalRevenue,
+          totalGMV,
           totalCommission,
           totalOrders: parseInt(revenueStats.rows[0]?.total_orders || '0', 10),
           activeSellers: parseInt(sellerStats.rows[0]?.active_sellers || '0', 10),
@@ -2118,6 +2122,11 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
           processingOrders,
           pendingSettlements,
           pendingSettlementAmount,
+          growth: {
+            gmv: calcPeriodGrowthPercent(currentGmv, previousGmv),
+            commission: calcPeriodGrowthPercent(currentCommission, previousCommission),
+            orders: calcPeriodGrowthPercent(currentOrders, previousOrders),
+          },
         },
       });
     } catch (error: any) {
@@ -2132,108 +2141,96 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
    */
   app.get("/admin/ecommerce/analytics", async (c) => {
     try {
-      const days = parseInt(c.req.query('days') || '30', 10);
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
+      const days = clampAnalyticsDays(c.req.query('days'));
+      const { currentStart, previousStart } = buildPeriodStartDates(days);
+      const currentStartIso = currentStart.toISOString();
+      const previousStartIso = previousStart.toISOString();
+      const nowIso = new Date().toISOString();
 
-      // Get revenue analytics
-      const revenueStats = await query(
-        `SELECT 
-           DATE(created_at) as date,
-           COUNT(*) as order_count,
-           COALESCE(SUM(total_amount) FILTER (WHERE order_status = 'delivered'), 0) as revenue
-         FROM orders
-         WHERE created_at >= $1
-         GROUP BY DATE(created_at)
-         ORDER BY date DESC`,
-        [startDate.toISOString()]
-      );
+      const dailyRevenue = buildDailyRevenueSql();
+      const periodTotals = buildPeriodTotalsSql();
+      const sellersWithOrders = buildSellersWithOrdersSql();
+      const productStats = buildProductStatsSql();
+      const sellerStats = buildEcommerceSellerStatsSql();
+      const topProducts = buildTopProductsSql();
+      const topSellers = buildTopSellersSql();
+      const orderStatusCounts = buildAdminEcommerceOrderStatusCountsSqlForDays(days);
 
-      // Get top products
-      const topProducts = await query(
-        `SELECT 
-           p.name,
-           COUNT(oi.id) as sales,
-           COALESCE(SUM(oi.total_price), 0) as revenue
-         FROM order_items oi
-         INNER JOIN products p ON oi.product_id = p.id
-         INNER JOIN orders o ON oi.order_id = o.id
-         WHERE o.created_at >= $1 AND o.order_status = 'delivered'
-         GROUP BY p.id, p.name
-         ORDER BY sales DESC
-         LIMIT 10`,
-        [startDate.toISOString()]
-      );
+      const [
+        revenueStats,
+        totalsResult,
+        currentSellersResult,
+        previousSellersResult,
+        productStatsResult,
+        sellerStatsResult,
+        topProductsResult,
+        topSellersResult,
+        orderStatusResult,
+      ] = await Promise.all([
+        query(dailyRevenue.sql, [currentStartIso]),
+        query(periodTotals.sql, [currentStartIso, previousStartIso]),
+        query(sellersWithOrders.sql, [currentStartIso, nowIso]),
+        query(sellersWithOrders.sql, [previousStartIso, currentStartIso]),
+        query(productStats.sql, productStats.params),
+        query(sellerStats.sql, sellerStats.params),
+        query(topProducts.sql, [currentStartIso]),
+        query(topSellers.sql, [currentStartIso]),
+        query(orderStatusCounts.sql, orderStatusCounts.params),
+      ]);
 
-      // Get e-commerce seller stats
-      const sellerStats = await query(
-        `SELECT 
-           COUNT(DISTINCT v.id) FILTER (WHERE 
-             v.is_active = true 
-             AND (v.is_deleted IS NULL OR v.is_deleted = false)
-             AND (
-               r.name = 'pet_product' OR 
-               r.name = 'pet_products_store' OR 
-               r.name = 'product_seller' OR 
-               r.name = 'pet_product_seller' OR
-               r.name = 'seller' OR
-               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
-             )
-           ) as active_sellers,
-           COUNT(DISTINCT v.id) FILTER (WHERE 
-             (v.is_deleted IS NULL OR v.is_deleted = false)
-             AND (
-               r.name = 'pet_product' OR 
-               r.name = 'pet_products_store' OR 
-               r.name = 'product_seller' OR 
-               r.name = 'pet_product_seller' OR
-               r.name = 'seller' OR
-               (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
-             )
-           ) as total_sellers
-         FROM vendors v
-         LEFT JOIN roles r ON v.role_id = r.id`
-      );
+      const totals = totalsResult.rows[0] || {};
+      const currentGmv = parseFloat(String(totals.current_gmv ?? 0)) || 0;
+      const previousGmv = parseFloat(String(totals.previous_gmv ?? 0)) || 0;
+      const currentDeliveredRevenue =
+        parseFloat(String(totals.current_delivered_revenue ?? 0)) || 0;
+      const previousDeliveredRevenue =
+        parseFloat(String(totals.previous_delivered_revenue ?? 0)) || 0;
+      const totalOrders = parseInt(String(totals.current_orders ?? 0), 10) || 0;
+      const previousOrders = parseInt(String(totals.previous_orders ?? 0), 10) || 0;
+      const currentSellersWithOrders =
+        parseInt(String(currentSellersResult.rows[0]?.seller_count ?? 0), 10) || 0;
+      const previousSellersWithOrders =
+        parseInt(String(previousSellersResult.rows[0]?.seller_count ?? 0), 10) || 0;
 
-      // Get top sellers by revenue (only vendors with actual sales)
-      const topSellers = await query(
-        `SELECT 
-           v.id,
-           v.business_name as name,
-           COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered' AND o.created_at >= $1), 0) as revenue,
-           COUNT(o.id) FILTER (WHERE o.order_status = 'delivered' AND o.created_at >= $1) as orders
-         FROM vendors v
-         INNER JOIN roles r ON v.role_id = r.id
-         INNER JOIN orders o ON v.id = o.vendor_id AND o.order_status = 'delivered' AND o.created_at >= $1
-         WHERE (v.is_deleted IS NULL OR v.is_deleted = false)
-           AND (
-             r.name = 'pet_product' OR 
-             r.name = 'pet_products_store' OR 
-             r.name = 'product_seller' OR 
-             r.name = 'pet_product_seller' OR
-             r.name = 'seller' OR
-             (v.seller_status IS NOT NULL AND v.seller_status != 'not_applied')
-           )
-         GROUP BY v.id, v.business_name
-         HAVING SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered' AND o.created_at >= $1) > 0
-         ORDER BY revenue DESC
-         LIMIT 10`,
-        [startDate.toISOString()]
-      );
+      const productRow = productStatsResult.rows[0] || {};
+      const ordersByStatus = stripAllStatusKey(normalizeAdminOrderStatusCounts(orderStatusResult.rows));
 
-      const totalRevenue = revenueStats.rows.reduce((sum: number, row: any) => sum + parseFloat(row.revenue || '0'), 0);
-      const totalOrders = revenueStats.rows.reduce((sum: number, row: any) => sum + parseInt(row.order_count || '0', 10), 0);
+      const revenue = (revenueStats.rows || []).map((row: any) => ({
+        date: row.date,
+        order_count: parseInt(String(row.order_count ?? 0), 10) || 0,
+        gmv: parseFloat(String(row.gmv ?? 0)) || 0,
+        delivered_revenue: parseFloat(String(row.delivered_revenue ?? 0)) || 0,
+        // Backward compatibility for older clients
+        revenue: parseFloat(String(row.delivered_revenue ?? 0)) || 0,
+      }));
 
       return c.json({
         success: true,
         data: {
-          revenue: revenueStats.rows,
-          topProducts: topProducts.rows,
-          topSellers: topSellers.rows,
-          totalRevenue,
+          revenue,
+          topProducts: topProductsResult.rows,
+          topSellers: topSellersResult.rows,
+          totalRevenue: currentDeliveredRevenue,
+          totalGMV: currentGmv,
           totalOrders,
-          activeSellers: parseInt(sellerStats.rows[0]?.active_sellers || '0', 10),
-          totalSellers: parseInt(sellerStats.rows[0]?.total_sellers || '0', 10),
+          activeSellers: parseInt(String(sellerStatsResult.rows[0]?.active_sellers ?? 0), 10) || 0,
+          totalSellers: parseInt(String(sellerStatsResult.rows[0]?.total_sellers ?? 0), 10) || 0,
+          growth: {
+            gmv: calcPeriodGrowthPercent(currentGmv, previousGmv),
+            deliveredRevenue: calcPeriodGrowthPercent(currentDeliveredRevenue, previousDeliveredRevenue),
+            orders: calcPeriodGrowthPercent(totalOrders, previousOrders),
+            sellersWithOrders: calcPeriodGrowthPercent(
+              currentSellersWithOrders,
+              previousSellersWithOrders,
+            ),
+          },
+          ordersByStatus,
+          products: {
+            total: parseInt(String(productRow.total ?? 0), 10) || 0,
+            active: parseInt(String(productRow.active ?? 0), 10) || 0,
+            lowStock: parseInt(String(productRow.low_stock ?? 0), 10) || 0,
+          },
+          periodDays: days,
         },
       });
     } catch (error: any) {
@@ -2274,7 +2271,7 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
       const orders = await query(
         `SELECT
            o.*,
-           COALESCE(o.order_status, o.status) AS status,
+           o.order_status AS status,
            c.full_name AS customer_name,
            c.phone AS customer_phone,
            c.email AS customer_email,
