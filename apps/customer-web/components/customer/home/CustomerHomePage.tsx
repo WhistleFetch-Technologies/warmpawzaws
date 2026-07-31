@@ -20,6 +20,7 @@ import { TrustFeatureBar } from './sections/TrustFeatureBar';
 import { ActiveBookingsSection } from './sections/ActiveBookingsSection';
 import type { ActiveBookingItem } from './sections/ActiveBookingsSection';
 import { PopularServicesSection } from './sections/PopularServicesSection';
+import { WalkInNearYouSection } from './sections/WalkInNearYouSection';
 import type { ShopHotDeal } from './sections/ShopProductsSection';
 import type { FeaturedLowerBanner } from './sections/FeaturedOfferSection';
 import { OffersForYouSection } from './sections/OffersForYouSection';
@@ -188,6 +189,9 @@ function CustomerHomePageContentComponent({
         onNavigate={onNavigate}
         reviewDemoAccount={reviewDemoAccount}
       />
+      <ViewportSection placeholderMinHeight={280}>
+        <WalkInNearYouSection phone={phone} onNavigate={onNavigate} />
+      </ViewportSection>
       <ServiceCategoryRow
         services={services}
         onNavigate={onNavigate}
@@ -208,9 +212,7 @@ function CustomerHomePageContentComponent({
       <ViewportSection placeholderMinHeight={260}>
         <PopularServicesSection phone={phone} onNavigate={onNavigate} />
       </ViewportSection>
-      <ViewportSection placeholderMinHeight={320}>
-        <OffersForYouSection lowerBanners={featuredLowerBanners} onNavigate={onNavigate} />
-      </ViewportSection>
+      <OffersForYouSection lowerBanners={featuredLowerBanners} onNavigate={onNavigate} />
       <ViewportSection placeholderMinHeight={480}>
         <HelpWaysSection
           services={services}

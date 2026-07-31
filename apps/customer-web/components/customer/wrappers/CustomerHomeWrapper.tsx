@@ -1408,7 +1408,7 @@ export function CustomerHomeWrapper({
       navigateToScreen('vet-services-by-style');
       return;
     }
-    if (vid && service === 'grooming') {
+    if (vid && (service === 'grooming' || service === 'grooming-vendor-profile')) {
       const st = String(data?.serviceStyle || data?.service_style || 'at_center').toLowerCase();
       if (st === 'at_home' || st === 'home') {
         setGroomingHomeProfileVendorId(vid);
@@ -1713,6 +1713,8 @@ export function CustomerHomeWrapper({
         })
       );
       navigateToScreen('pet-sitter-booking');
+    } else if (service === 'vet-clinic-profile' || service === 'vet-doctor-details') {
+      handleVetNavigate(service, data);
     } else {
       if (process.env.NODE_ENV === 'development') {
         console.warn('[CustomerHomeWrapper] Unhandled navigate service:', service);
