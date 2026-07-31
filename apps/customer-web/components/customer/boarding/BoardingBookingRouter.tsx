@@ -38,10 +38,22 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { serviceOptionColorChipClass } from '@/lib/hub-service-option-styles';
 import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
+import { useWapptBookingSlots } from '@/hooks/useWapptBookingSlots';
 import {
+  getWarmpawzAppointmentServiceLabel,
   WAPPT_APPOINTMENT_SERVICE_ID,
   WAPPT_BOOKING_MODE,
+  WAPPT_DEFAULT_SLOT_DURATION_MIN,
 } from '@/lib/warmpawz-appointments-customer';
+import { WapptBookingDetailsStep } from '../warmpawz-appointments/WapptBookingDetailsStep';
+import { WapptBookingSummaryStep } from '../warmpawz-appointments/WapptBookingSummaryStep';
+import { WapptBookingAddressStep } from '../warmpawz-appointments/WapptBookingAddressStep';
+import {
+  formatWapptAddressLine,
+  getWapptBookingPreviousStep,
+  getWapptBookingStepIndex,
+  getWapptBookingSteps,
+} from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 import {
   boardingSlugMatchesText,
   serviceNameLooksLikeSwimming,
@@ -136,6 +148,8 @@ function matchPresetToVendorServiceRowId(
 type BookingStep =
   | 'service'
   | 'datetime'
+  | 'address'
+  | 'summary'
   | 'pet'
   | 'boarding_form'
   | 'payment'
@@ -585,6 +599,9 @@ export function BoardingBookingRouter({
   const [checkOutTime, setCheckOutTime] = useState('10:00');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
+  const [addresses, setAddresses] = useState<any[]>([]);
+  const [selectedAddress, setSelectedAddress] = useState<any>(null);
+  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const customerProfileRef = useRef<CustomerProfileSnapshot | null>(null);
   const [boardingIntake, setBoardingIntake] = useState<BoardingIntakeState>(() => emptyBoardingIntake());
   const [processing, setProcessing] = useState(false);
@@ -611,6 +628,7 @@ export function BoardingBookingRouter({
   
   // Modal states
   const [showAddPetModal, setShowAddPetModal] = useState(false);
+  const [showPaymentPage, setShowPaymentPage] = useState(false);
 
   const [vendorApiDisclaimerPoints, setVendorApiDisclaimerPoints] = useState<string[]>([]);
 
@@ -820,7 +838,7 @@ export function BoardingBookingRouter({
     appointmentsMode,
     vendorId,
     category: wapptCategory,
-    serviceStyle: serviceStyle || (isPetSitting ? 'at_home' : 'at_center'),
+    serviceStyle: wapptServiceStyle,
     initialPrice: price,
   });
 
@@ -828,6 +846,26 @@ export function BoardingBookingRouter({
     if (!appointmentsMode || !wapptBooking.selectedVendorService) return;
     setSelectedVendorService(wapptBooking.selectedVendorService);
   }, [appointmentsMode, wapptBooking.selectedVendorService]);
+
+  const wapptServiceStyle = useMemo(() => {
+    if (serviceStyle === 'at_home' || serviceStyle === 'at_center') {
+      return serviceStyle;
+    }
+    return isPetSitting ? 'at_home' : 'at_center';
+  }, [serviceStyle, isPetSitting]);
+  const wapptFlowSteps = useMemo(
+    () => (appointmentsMode ? getWapptBookingSteps(wapptServiceStyle) : []),
+    [appointmentsMode, wapptServiceStyle],
+  );
+  const wapptSlots = useWapptBookingSlots({
+    vendorId,
+    serviceStyle: wapptServiceStyle,
+    totalDurationMinutes: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+    selectedDate: checkInDate,
+    enabled: appointmentsMode && !!vendorId,
+  });
+  const wapptReviewTotal =
+    wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0;
 
   useEffect(() => {
     loadCustomerData();
@@ -977,6 +1015,21 @@ export function BoardingBookingRouter({
       };
       if (petsResponse.pets && petsResponse.pets.length > 0) {
         setPets(petsResponse.pets.map((p) => mapPhoneListPet(p)));
+      }
+
+      if (appointmentsMode) {
+        try {
+          const addressResponse = (await apiClient.get(
+            `/customer/addresses?phone=${encodeURIComponent(phone)}`,
+          )) as { addresses?: any[] };
+          if (addressResponse.addresses?.length) {
+            setAddresses(addressResponse.addresses);
+            const defaultAddr = addressResponse.addresses.find((a) => a.isDefault);
+            setSelectedAddress(defaultAddr ?? addressResponse.addresses[0]);
+          }
+        } catch {
+          setAddresses([]);
+        }
       }
 
       try {
@@ -1179,6 +1232,48 @@ export function BoardingBookingRouter({
     return Math.round(units * unitPrice);
   };
 
+  const handleContinueFromWapptDetails = () => {
+    if (!checkInDate || !checkInTime) {
+      toast.error('Please select date and time');
+      return;
+    }
+    const selectedSlot = wapptSlots.timeSlots.find((s) => s.time === checkInTime);
+    if (selectedSlot && !selectedSlot.available) {
+      toast.error('This time slot is already booked. Please select a different time.');
+      return;
+    }
+    if (!selectedPet) {
+      toast.error('Please select a pet');
+      return;
+    }
+    setCheckOutDate(checkInDate);
+    setCheckOutTime(checkInTime);
+    if (wapptServiceStyle === 'at_center') {
+      setSelectedAddress({ id: 'clinic' });
+      setStep('summary');
+    } else {
+      setStep('address');
+    }
+  };
+
+  const handleContinueFromWapptAddress = () => {
+    if (!selectedAddress) {
+      toast.error('Please select a delivery address');
+      return;
+    }
+    setStep('summary');
+  };
+
+  const handleProceedToWapptPayment = () => {
+    if (!selectedPet || !checkInDate || !checkInTime) {
+      toast.error('Please complete date, time, and pet selection');
+      return;
+    }
+    setPaymentBookingId('wappt-pending');
+    setStep('payment');
+    setShowPaymentPage(true);
+  };
+
   const handleNext = () => {
     const steps = getBookingSteps(skipBoardingIntake);
     const currentIdx = steps.indexOf(step);
@@ -1236,6 +1331,17 @@ export function BoardingBookingRouter({
 
   const handleCreateBookingForPayment = async () => {
     if (processing) return;
+
+    if (appointmentsMode) {
+      if (!selectedPet || !checkInDate || !checkInTime) {
+        toast.error('Please complete date, time, and pet selection');
+        return;
+      }
+      setPaymentBookingId('wappt-pending');
+      setStep('payment');
+      setShowPaymentPage(true);
+      return;
+    }
     
     if (!selectedPet || !checkInDate || !checkOutDate) {
       toast.error('Please complete all required fields');
@@ -1501,6 +1607,31 @@ export function BoardingBookingRouter({
       onBack();
       return;
     }
+    if (appointmentsMode && step === 'payment') {
+      setShowPaymentPage(false);
+      setStep('summary');
+      return;
+    }
+    if (appointmentsMode && wapptFlowSteps.length > 0) {
+      const prev = getWapptBookingPreviousStep(
+        wapptFlowSteps,
+        step as 'datetime' | 'address' | 'summary' | 'payment',
+      );
+      if (prev) {
+        setStep(prev);
+        return;
+      }
+      if (
+        step === 'datetime' &&
+        beganWithPreselectedVendorServiceRef.current
+      ) {
+        if (vendorId && serviceId) {
+          clearSkipPackageAutoRedirect(String(vendorId), String(serviceId));
+        }
+        onBack();
+        return;
+      }
+    }
     if (
       beganWithPreselectedVendorServiceRef.current &&
       (step === 'datetime' || step === 'service')
@@ -1523,7 +1654,7 @@ export function BoardingBookingRouter({
     }
 
     setStep(steps[currentIdx - 1]);
-  }, [step, skipBoardingIntake, onBack, vendorId, serviceId]);
+  }, [step, skipBoardingIntake, onBack, vendorId, serviceId, appointmentsMode, wapptFlowSteps]);
 
   useEffect(() => {
     onInternalBackReady?.(handleBack);
@@ -1546,8 +1677,8 @@ export function BoardingBookingRouter({
       ? ['Service', 'Dates', 'Pet', 'Payment']
       : ['Service', 'Dates', 'Pet', 'Intake', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = skipBoardingIntake
-      ? { service: 0, datetime: 1, pet: 2, boarding_form: 2, payment: 3, confirmation: 4 }
-      : { service: 0, datetime: 1, pet: 2, boarding_form: 3, payment: 4, confirmation: 5 };
+      ? { service: 0, datetime: 1, pet: 2, address: 2, summary: 2, boarding_form: 2, payment: 3, confirmation: 4 }
+      : { service: 0, datetime: 1, pet: 2, address: 2, summary: 2, boarding_form: 3, payment: 4, confirmation: 5 };
     const currentIdx = currentStepMap[step];
 
     return (
@@ -1569,7 +1700,7 @@ export function BoardingBookingRouter({
   };
 
   // Payment step - use UniversalPaymentPage
-  if (step === 'payment' && paymentBookingId) {
+  if (step === 'payment' && showPaymentPage && (paymentBookingId || appointmentsMode)) {
     const opt = selectedServiceOption as { id?: string } | undefined;
     const vsId = opt?.id;
     const paymentVendorServiceId = appointmentsMode
@@ -1582,23 +1713,41 @@ export function BoardingBookingRouter({
       <UniversalPaymentPage
         type="booking"
         category="boarding"
-        serviceStyle={isPetSitting ? 'at_home' : 'at_center'}
+        serviceStyle={wapptServiceStyle}
         layoutVariant="appShell"
         customerPhone={phone}
         customerId={customerId ?? undefined}
-        bookingId={paymentBookingId}
+        bookingId={appointmentsMode ? undefined : paymentBookingId ?? undefined}
         serviceId={paymentVendorServiceId}
         baseAmount={
           appointmentsMode
-            ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? calculateTotalPrice()
+            ? wapptReviewTotal
             : calculateTotalPrice()
         }
         priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
-        serviceName={selectedServiceOption?.name || (isPetSitting ? 'Pet Sitting' : 'Boarding Service')}
+        serviceName={
+          appointmentsMode
+            ? getWarmpawzAppointmentServiceLabel({
+                category: wapptCategory,
+                serviceStyle: wapptServiceStyle,
+              })
+            : selectedServiceOption?.name || (isPetSitting ? 'Pet Sitting' : 'Boarding Service')
+        }
         vendorId={vendorId || ''}
         vendorName={isPetSitting ? 'Pet sitter' : 'Boarding Provider'}
         bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
-        onBack={handleBack}
+        bookingDate={checkInDate}
+        bookingTime={checkInTime}
+        petId={selectedPet?.id}
+        petName={selectedPet?.name}
+        addressId={wapptServiceStyle === 'at_home' ? selectedAddress?.id : undefined}
+        address={wapptServiceStyle === 'at_home' ? selectedAddress : undefined}
+        onBack={() => {
+          setShowPaymentPage(false);
+          if (appointmentsMode) {
+            setStep('summary');
+          }
+        }}
         onSuccess={handlePaymentSuccess}
       />
     );
@@ -1610,9 +1759,16 @@ export function BoardingBookingRouter({
       <BookingConfirmationPage
         bookingId={bookingId}
         type="booking"
-        serviceName={selectedServiceOption?.name || (isPetSitting ? 'Pet Sitting' : 'Boarding')}
+        serviceName={
+          appointmentsMode
+            ? getWarmpawzAppointmentServiceLabel({
+                category: wapptCategory,
+                serviceStyle: wapptServiceStyle,
+              })
+            : selectedServiceOption?.name || (isPetSitting ? 'Pet Sitting' : 'Boarding')
+        }
         vendorName={isPetSitting ? 'Pet sitter' : 'Boarding Provider'}
-        serviceStyle={selectedServiceType as 'at_home' | 'at_center' | 'tele'}
+        serviceStyle={wapptServiceStyle}
         bookingDate={checkInDate}
         bookingTime={checkInTime}
         checkOutDate={checkOutDate}
@@ -1621,24 +1777,41 @@ export function BoardingBookingRouter({
         totalAmount={calculateTotalPrice()}
         onViewDetails={() => onViewBooking?.(bookingId)}
         onBackToHome={onBack}
-        onBack={handleBack}
       />
     );
   }
 
   const boardingStats = EMPTY_SERVICE_HEADER_STATS;
-  const stepLabels = skipBoardingIntake
-    ? ['Service', 'Dates', 'Pet', 'Payment']
-    : ['Service', 'Dates', 'Pet', 'Intake', 'Payment'];
-  const stepSequenceForHeader = skipBoardingIntake
-    ? (['service', 'datetime', 'pet', 'payment'] as const)
-    : (['service', 'datetime', 'pet', 'boarding_form', 'payment'] as const);
-  const stepIdx = stepSequenceForHeader.findIndex((s) => s === step);
-  const stepIndicators = stepLabels.map((label, idx) => ({
-    label,
-    isCompleted: stepIdx >= 0 && idx < stepIdx,
-    isCurrent: stepIdx >= 0 && idx === stepIdx,
-  }));
+  const stepIndicators = useMemo(() => {
+    if (appointmentsMode && wapptFlowSteps.length > 0) {
+      if (step === 'payment' || step === 'confirmation') return undefined;
+      const flowStep =
+        step === 'address' || step === 'datetime' || step === 'summary' ? step : 'datetime';
+      const currentIdx = getWapptBookingStepIndex(wapptFlowSteps, flowStep);
+      if (currentIdx >= 0) {
+        return wapptFlowSteps.map((s, idx) => ({
+          label: s.label,
+          isCompleted: idx < currentIdx,
+          isCurrent: idx === currentIdx,
+        }));
+      }
+    }
+    const stepLabels = skipBoardingIntake
+      ? ['Service', 'Dates', 'Pet', 'Payment']
+      : ['Service', 'Dates', 'Pet', 'Intake', 'Payment'];
+    const stepSequenceForHeader = skipBoardingIntake
+      ? (['service', 'datetime', 'pet', 'payment'] as const)
+      : (['service', 'datetime', 'pet', 'boarding_form', 'payment'] as const);
+    const stepIdx = stepSequenceForHeader.findIndex((s) => s === step);
+    return stepLabels.map((label, idx) => ({
+      label,
+      isCompleted: stepIdx >= 0 && idx < stepIdx,
+      isCurrent: stepIdx >= 0 && idx === stepIdx,
+    }));
+  }, [appointmentsMode, wapptFlowSteps, step, skipBoardingIntake]);
+
+  const showWapptPaymentSummary =
+    step === 'payment' && !showPaymentPage && appointmentsMode;
 
   return (
     <div className="min-h-[calc(100dvh-6rem-env(safe-area-inset-bottom,0px))] max-h-[calc(100dvh-6rem-env(safe-area-inset-bottom,0px))] bg-gray-50 flex flex-col overflow-hidden">
@@ -1655,6 +1828,23 @@ export function BoardingBookingRouter({
       />
       <div className="flex-1 overflow-y-auto bg-gray-50">
         <div className="max-w-md mx-auto px-4 py-4">
+        {showWapptPaymentSummary ? (
+          <WapptBookingSummaryStep
+            category={wapptCategory}
+            serviceStyle={wapptServiceStyle}
+            amount={wapptReviewTotal}
+            selectedDate={checkInDate}
+            selectedTime={checkInTime}
+            petName={selectedPet?.name}
+            petBreed={selectedPet?.breed}
+            addressLine={
+              wapptServiceStyle === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
+            }
+            onBack={() => setStep(wapptServiceStyle === 'at_home' ? 'address' : 'datetime')}
+            onContinue={handleProceedToWapptPayment}
+            loading={processing}
+          />
+        ) : null}
         {/* Service Selection */}
         {step === 'service' && (
           <div className="space-y-4">
@@ -1740,7 +1930,53 @@ export function BoardingBookingRouter({
         )}
 
         {/* Date Selection */}
-        {step === 'datetime' && (
+        {step === 'datetime' && appointmentsMode ? (
+          <WapptBookingDetailsStep
+            dates={wapptSlots.dates}
+            selectedDate={checkInDate}
+            selectedTime={checkInTime}
+            timeSlots={wapptSlots.timeSlots}
+            loadingSlots={wapptSlots.loadingSlots}
+            pets={pets}
+            selectedPet={selectedPet}
+            onDateSelect={setCheckInDate}
+            onTimeSelect={setCheckInTime}
+            onPetSelect={(pet) => setSelectedPet(pet as Pet)}
+            onAddPet={() => setShowAddPetModal(true)}
+            onContinue={handleContinueFromWapptDetails}
+          />
+        ) : null}
+
+        {step === 'address' && appointmentsMode && wapptServiceStyle === 'at_home' ? (
+          <WapptBookingAddressStep
+            addresses={addresses}
+            selectedAddress={selectedAddress}
+            onSelect={setSelectedAddress}
+            onAddAddress={() => setShowAddAddressModal(true)}
+            onContinue={handleContinueFromWapptAddress}
+            hint="An address is required for home pet sitting visit."
+          />
+        ) : null}
+
+        {step === 'summary' && appointmentsMode ? (
+          <WapptBookingSummaryStep
+            category={wapptCategory}
+            serviceStyle={wapptServiceStyle}
+            amount={wapptReviewTotal}
+            selectedDate={checkInDate}
+            selectedTime={checkInTime}
+            petName={selectedPet?.name}
+            petBreed={selectedPet?.breed}
+            addressLine={
+              wapptServiceStyle === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
+            }
+            onBack={() => setStep(wapptServiceStyle === 'at_home' ? 'address' : 'datetime')}
+            onContinue={handleProceedToWapptPayment}
+            loading={processing}
+          />
+        ) : null}
+
+        {step === 'datetime' && !appointmentsMode && (
           <div className="space-y-6">
             {sameDayTimedSession ? (
               <>
@@ -1997,7 +2233,7 @@ export function BoardingBookingRouter({
                   </div>
                 )}
 
-                {isPetSitting && !sittingSameDay && checkInDate && checkOutDate && getBilledMinutes() >= 15 && (
+                {!appointmentsMode && isPetSitting && !sittingSameDay && checkInDate && checkOutDate && getBilledMinutes() >= 15 && (
                   <div className="rounded-xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-red-50 p-4">
                     <div className="flex items-center justify-between">
                       <div>
@@ -2018,7 +2254,7 @@ export function BoardingBookingRouter({
                   </div>
                 )}
 
-                {!isPetSitting && checkInDate && checkOutDate && getBilledMinutes() >= 1 && (
+                {!appointmentsMode && !isPetSitting && checkInDate && checkOutDate && getBilledMinutes() >= 1 && (
                   <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
                     <div className="flex items-center justify-between">
                       <div>
@@ -2055,7 +2291,7 @@ export function BoardingBookingRouter({
         )}
 
         {/* Pet Selection */}
-        {step === 'pet' && (
+        {step === 'pet' && !appointmentsMode && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>

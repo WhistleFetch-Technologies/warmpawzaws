@@ -222,7 +222,17 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
         })();
 
         if (vendorData && typeof vendorData === 'object') {
-          setVendor(vendorData);
+          const seeded =
+            bootstrapRow &&
+            (bootstrapRow as Record<string, unknown>).profile_image &&
+            !(vendorData as Record<string, unknown>).profile_image
+              ? {
+                  ...vendorData,
+                  profile_image: (bootstrapRow as Record<string, unknown>).profile_image,
+                  photoUrl: (bootstrapRow as Record<string, unknown>).photoUrl,
+                }
+              : vendorData;
+          setVendor(seeded);
         }
 
         const facilityPayload = facilityRes as {
@@ -233,7 +243,28 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
         };
         if (facilityPayload?.success) {
           setFacility(facilityPayload.facility ?? null);
-          setRating(facilityPayload.rating ?? null);
+          const rawRating = facilityPayload.rating as
+            | (WapptFacilityRating & { average?: number; count?: number })
+            | null
+            | undefined;
+          setRating(
+            rawRating
+              ? {
+                  averageRating:
+                    rawRating.averageRating ??
+                    rawRating.average ??
+                    (typeof rawRating === 'object' && 'average' in rawRating
+                      ? Number((rawRating as { average?: number }).average)
+                      : undefined),
+                  totalReviews:
+                    rawRating.totalReviews ??
+                    rawRating.count ??
+                    (typeof rawRating === 'object' && 'count' in rawRating
+                      ? Number((rawRating as { count?: number }).count)
+                      : undefined),
+                }
+              : null,
+          );
           setReviews(
             Array.isArray(facilityPayload.recentReviews) ? facilityPayload.recentReviews : [],
           );

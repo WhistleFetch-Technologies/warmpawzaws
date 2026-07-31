@@ -16,6 +16,7 @@ import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import {
   getWarmpawzAppointmentServiceLabel,
+  resolveWarmpawzBookingCategory,
   WAPPT_APPOINTMENT_SERVICE_ID,
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
   WAPPT_BOOKING_MODE,
@@ -28,6 +29,16 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
+import { useWapptBookingSlots } from '@/hooks/useWapptBookingSlots';
+import { WapptBookingDetailsStep } from '../warmpawz-appointments/WapptBookingDetailsStep';
+import { WapptBookingSummaryStep } from '../warmpawz-appointments/WapptBookingSummaryStep';
+import { WapptBookingAddressStep } from '../warmpawz-appointments/WapptBookingAddressStep';
+import {
+  formatWapptAddressLine,
+  getWapptBookingPreviousStep,
+  getWapptBookingStepIndex,
+  getWapptBookingSteps,
+} from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 
 interface TrainingBookingRouterProps {
   phone: string;
@@ -50,13 +61,15 @@ interface TrainingBookingRouterProps {
   notes?: string;
   skipToPayment?: boolean; // Flag to skip directly to payment
   appointmentsMode?: boolean;
+  /** WAPPT hub category from shell nav (training | behaviorist). Defaults to training. */
+  category?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
   onInternalBackReady?: (handleBack: () => void) => void; // ✅ NEW: Expose internal handleBack to parent
 }
 
-type BookingStep = 'service' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmation';
+type BookingStep = 'service' | 'datetime' | 'address' | 'summary' | 'pet' | 'payment' | 'confirmation';
 
 interface TimeSlot {
   time: string;
@@ -92,11 +105,14 @@ export function TrainingBookingRouter({
   notes: preFilledNotes, // ✅ NEW: Pre-filled notes
   skipToPayment, // ✅ NEW: Flag to skip to payment
   appointmentsMode = false,
+  category: categoryProp,
   onBack, 
   onNavigate, 
   onViewBooking,
   onInternalBackReady // ✅ NEW: Callback to expose internal handleBack
 }: TrainingBookingRouterProps) {
+  const wapptHubCategory = resolveWarmpawzBookingCategory(categoryProp || 'training');
+
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to datetime
   // ✅ NEW: Also skip if multiple services are already selected from center profile
   const hasServiceContext = appointmentsMode && vendorId
@@ -146,7 +162,7 @@ export function TrainingBookingRouter({
           serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
           service_id: WAPPT_APPOINTMENT_SERVICE_ID,
           name: getWarmpawzAppointmentServiceLabel({
-            category: 'training',
+            category: wapptHubCategory,
             serviceStyle: serviceStyle || serviceType || 'at_center',
           }),
           price: price ?? 0,
@@ -166,46 +182,51 @@ export function TrainingBookingRouter({
           ? selectedServices[0]
           : null,
   );
-  const [appointmentFee, setAppointmentFee] = useState<number | null>(
-    appointmentsMode && price != null ? Number(price) : null,
+  const wapptBooking = useWapptAppointmentBooking({
+    appointmentsMode,
+    vendorId,
+    category: wapptHubCategory,
+    serviceStyle: selectedServiceType || serviceStyle || serviceType || 'at_center',
+    serviceType: selectedServiceType || serviceStyle || serviceType,
+    initialPrice: price,
+  });
+
+  const wapptFlowSteps = useMemo(
+    () =>
+      appointmentsMode
+        ? getWapptBookingSteps(
+            selectedServiceType === 'at_home'
+              ? 'at_home'
+              : selectedServiceType === 'tele'
+                ? 'at_center'
+                : 'at_center',
+          )
+        : [],
+    [appointmentsMode, selectedServiceType],
   );
 
+  const wapptSlots = useWapptBookingSlots({
+    vendorId,
+    serviceStyle:
+      selectedServiceType === 'at_home'
+        ? 'at_home'
+        : selectedServiceType === 'tele'
+          ? 'tele'
+          : 'at_center',
+    totalDurationMinutes: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+    selectedDate,
+    enabled: appointmentsMode && !!vendorId,
+  });
+
   useEffect(() => {
-    if (!appointmentsMode || !vendorId) return;
-    let cancelled = false;
-    void apiClient
-      .get<{ appointmentFee?: number }>(
-        `/customer/warmpawz-appointments/vendors/${encodeURIComponent(String(vendorId))}/fee`,
-      )
-      .then((res) => {
-        if (cancelled) return;
-        const fee = Number(res?.appointmentFee ?? 0);
-        setAppointmentFee(fee > 0 ? fee : null);
-        setSelectedVendorService({
-          id: WAPPT_APPOINTMENT_SERVICE_ID,
-          serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
-          service_id: WAPPT_APPOINTMENT_SERVICE_ID,
-          name: getWarmpawzAppointmentServiceLabel({
-            category: 'training',
-            serviceStyle: serviceStyle || serviceType || 'at_center',
-          }),
-          price: fee > 0 ? fee : price ?? 0,
-          duration: WAPPT_DEFAULT_SLOT_DURATION_MIN,
-          serviceStyle: serviceStyle || serviceType,
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setAppointmentFee(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [appointmentsMode, vendorId, serviceStyle, serviceType, price]);
+    if (!appointmentsMode || !wapptBooking.selectedVendorService) return;
+    setSelectedVendorService(wapptBooking.selectedVendorService);
+  }, [appointmentsMode, wapptBooking.selectedVendorService]);
 
   const trainingProvidersDiscovery = useDiscoveryCount({
     phone,
     serviceStyle: selectedServiceType === 'at_center' ? 'at_center' : 'at_home',
-    category: 'training',
+    category: wapptHubCategory === 'behaviorist' ? 'behaviorist' : 'training',
   });
 
   const trainingProviderStatValue = useMemo(() => {
@@ -259,7 +280,7 @@ export function TrainingBookingRouter({
       vendorId: String(vid),
       vendorName: trainer?.name,
       serviceRow: pkgRow,
-      serviceTypeCategory: 'training',
+      serviceTypeCategory: wapptHubCategory === 'behaviorist' ? 'behaviorist' : 'training',
       serviceStyle: styleFromRow,
     });
     if (nav) onNavigate('purchase-package', nav);
@@ -426,19 +447,6 @@ export function TrainingBookingRouter({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadTimeSlots uses latest slotDurationMinutes / selectedVendorService
   }, [selectedDate, vendorId, selectedServiceType, slotDurationMinutes, selectedVendorService?.id, serviceId]);
-
-  const wapptBooking = useWapptAppointmentBooking({
-    appointmentsMode,
-    vendorId,
-    category: 'training',
-    serviceStyle: serviceStyle || serviceType || 'at_center',
-    initialPrice: price,
-  });
-
-  useEffect(() => {
-    if (!appointmentsMode || !wapptBooking.selectedVendorService) return;
-    setSelectedVendorService(wapptBooking.selectedVendorService);
-  }, [appointmentsMode, wapptBooking.selectedVendorService]);
 
   useEffect(() => {
     loadCustomerData();
@@ -610,6 +618,40 @@ export function TrainingBookingRouter({
     // Proceed with normal booking
   };
 
+  const handleContinueFromBookingDetails = () => {
+    if (!selectedDate || !selectedTime) {
+      toast.error('Please select date and time');
+      return;
+    }
+    const selectedSlot = wapptSlots.timeSlots.find((s) => s.time === selectedTime);
+    if (selectedSlot && !selectedSlot.available) {
+      toast.error('This time slot is already booked. Please select a different time.');
+      return;
+    }
+    if (!selectedPet) {
+      toast.error('Please select a pet');
+      return;
+    }
+    if (appointmentsMode) {
+      if (selectedServiceType === 'at_home') {
+        setStep('address');
+      } else {
+        setSelectedAddress({ id: 'clinic' });
+        setStep('summary');
+      }
+      return;
+    }
+    handleNext();
+  };
+
+  const handleContinueFromAddress = () => {
+    if (!selectedAddress) {
+      toast.error('Please select a delivery address');
+      return;
+    }
+    setStep('summary');
+  };
+
   const handleNext = () => {
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
@@ -625,7 +667,7 @@ export function TrainingBookingRouter({
           vendorId: String(vendorId),
           vendorName: trainer?.name,
           serviceRow: row as Record<string, unknown>,
-          serviceTypeCategory: 'training',
+          serviceTypeCategory: wapptHubCategory === 'behaviorist' ? 'behaviorist' : 'training',
           serviceStyle: String(row.serviceStyle ?? row.service_style ?? serviceStyle ?? serviceType ?? 'at_center'),
         });
         if (nav) {
@@ -647,17 +689,40 @@ export function TrainingBookingRouter({
   };
 
   const handleBack = useCallback(() => {
+    if (step === 'confirmation') {
+      onBack();
+      return;
+    }
+    if (step === 'payment') {
+      setShowPaymentPage(false);
+      if (appointmentsMode) {
+        setStep('summary');
+        return;
+      }
+    }
+    if (appointmentsMode && wapptFlowSteps.length > 0) {
+      const prev = getWapptBookingPreviousStep(
+        wapptFlowSteps,
+        step as 'datetime' | 'address' | 'summary' | 'payment',
+      );
+      if (prev) {
+        setStep(prev);
+        return;
+      }
+      if (step === 'datetime' && hasServiceContext) {
+        onBack();
+        return;
+      }
+    }
+
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
 
-    // When we skipped the in-flow service step (hasServiceContext → start at datetime), Date/Time is the
-    // first visible step — back must leave the booking flow, not navigate to the hidden `service` step.
     if (step === 'datetime' && hasServiceContext) {
       onBack();
       return;
     }
     
-    // ✅ FIX: Handle back from payment for tele and at_center (both skip address - customer goes to center)
     if (step === 'payment' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
       setStep('pet');
       return;
@@ -668,7 +733,7 @@ export function TrainingBookingRouter({
     } else {
       onBack();
     }
-  }, [step, selectedServiceType, onBack, hasServiceContext]);
+  }, [step, selectedServiceType, onBack, hasServiceContext, appointmentsMode, wapptFlowSteps]);
 
   // ✅ NEW: Expose handleBack to parent for header navigation
   useEffect(() => {
@@ -715,7 +780,7 @@ export function TrainingBookingRouter({
 
   // ✅ Proceed to UniversalPaymentPage
   const handleProceedToPayment = () => {
-    // Show the integrated payment page
+    setStep('payment');
     setShowPaymentPage(true);
   };
 
@@ -768,12 +833,10 @@ export function TrainingBookingRouter({
   const selectedServiceOption = getSelectedServiceOption();
 
   const reviewTotal = appointmentsMode
-    ? appointmentFee ?? selectedVendorService?.price ?? price ?? 0
+    ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0
     : allSelectedServices?.length
       ? allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0)
-      : appointmentsMode
-        ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0
-        : selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
+      : selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
 
   const renderStepIndicator = () => {
     // ✅ FIX: Only show steps that are relevant - skip 'Service' if already selected from profile
@@ -827,6 +890,18 @@ export function TrainingBookingRouter({
 
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
+
+    if (appointmentsMode && wapptFlowSteps.length > 0) {
+      const flowStep = step === 'address' || step === 'datetime' || step === 'summary' ? step : 'datetime';
+      const currentIdx = getWapptBookingStepIndex(wapptFlowSteps, flowStep);
+      if (currentIdx >= 0) {
+        return wapptFlowSteps.map((s, idx) => ({
+          label: s.label,
+          isCompleted: idx < currentIdx,
+          isCurrent: idx === currentIdx,
+        }));
+      }
+    }
     
     const skipServiceStep = hasServiceContext && selectedVendorService;
     const baseSteps = selectedServiceType === 'tele' 
@@ -869,7 +944,7 @@ export function TrainingBookingRouter({
         serviceName={
           appointmentsMode
             ? getWarmpawzAppointmentServiceLabel({
-                category: 'training',
+                category: wapptHubCategory,
                 serviceStyle: selectedServiceType,
               })
             : selectedServiceOption?.name || serviceName || 'Training Session'
@@ -879,7 +954,7 @@ export function TrainingBookingRouter({
         serviceStyle={
           selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'
         }
-        category="training"
+        category={wapptHubCategory}
         vendorId={vendorId || ''}
         vendorName={trainer?.name || 'Training Professional'}
         bookingDate={selectedDate}
@@ -900,10 +975,18 @@ export function TrainingBookingRouter({
         quantity={1}
         customerPhone={phone}
         customerId={customerId || undefined}
-        bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
-        onBack={() => setShowPaymentPage(false)}
+        onBack={() => {
+          setShowPaymentPage(false);
+          if (appointmentsMode && step === 'payment') {
+            setStep('summary');
+          }
+        }}
         onPaymentAbandoned={() => {
-          if (selectedDate) void loadTimeSlots(selectedDate);
+          if (appointmentsMode && selectedDate) {
+            void wapptSlots.loadTimeSlots(selectedDate);
+          } else if (selectedDate) {
+            void loadTimeSlots(selectedDate);
+          }
         }}
         onSuccess={handlePaymentSuccess}
       />
@@ -912,7 +995,7 @@ export function TrainingBookingRouter({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {step !== 'payment' && (
+      {(step !== 'payment' || (appointmentsMode && !showPaymentPage)) && (
         <ServiceDashboardHeader
           serviceName="Training Booking"
           serviceSubtitle={getHeaderSubtitle()}
@@ -926,7 +1009,26 @@ export function TrainingBookingRouter({
         />
       )}
 
-      {step === 'payment' && !showPaymentPage && (
+      {step === 'payment' && !showPaymentPage && appointmentsMode && (
+        <div className="max-w-md mx-auto px-4 py-6">
+          <WapptBookingSummaryStep
+            category={wapptHubCategory}
+            serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
+            amount={reviewTotal}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            petName={selectedPet?.name}
+            petBreed={selectedPet?.breed}
+            addressLine={
+              selectedServiceType === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
+            }
+            onBack={() => setStep(selectedServiceType === 'at_home' ? 'address' : 'datetime')}
+            onContinue={handleProceedToPayment}
+          />
+        </div>
+      )}
+
+      {step === 'payment' && !showPaymentPage && !appointmentsMode && (
         <PrePaymentBookingReview
           title="Booking Summary"
           subtitle="Review before payment"
@@ -1043,7 +1145,52 @@ export function TrainingBookingRouter({
         )}
 
         {/* Date & Time Selection */}
-        {step === 'datetime' && (
+        {step === 'datetime' && appointmentsMode ? (
+          <WapptBookingDetailsStep
+            dates={wapptSlots.dates}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            timeSlots={wapptSlots.timeSlots}
+            loadingSlots={wapptSlots.loadingSlots}
+            pets={pets}
+            selectedPet={selectedPet}
+            onDateSelect={setSelectedDate}
+            onTimeSelect={setSelectedTime}
+            onPetSelect={setSelectedPet}
+            onAddPet={() => setShowAddPetModal(true)}
+            onContinue={handleContinueFromBookingDetails}
+          />
+        ) : null}
+
+        {step === 'address' && appointmentsMode && selectedServiceType === 'at_home' ? (
+          <WapptBookingAddressStep
+            addresses={addresses}
+            selectedAddress={selectedAddress}
+            onSelect={setSelectedAddress}
+            onAddAddress={() => setShowAddAddressModal(true)}
+            onContinue={handleContinueFromAddress}
+            hint="An address is required for home training visit."
+          />
+        ) : null}
+
+        {step === 'summary' && appointmentsMode ? (
+          <WapptBookingSummaryStep
+            category={wapptHubCategory}
+            serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
+            amount={reviewTotal}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            petName={selectedPet?.name}
+            petBreed={selectedPet?.breed}
+            addressLine={
+              selectedServiceType === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
+            }
+            onBack={() => setStep(selectedServiceType === 'at_home' ? 'address' : 'datetime')}
+            onContinue={handleProceedToPayment}
+          />
+        ) : null}
+
+        {step === 'datetime' && !appointmentsMode ? (
           <div className="space-y-6">
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-3">Select Date</h2>
@@ -1116,10 +1263,10 @@ export function TrainingBookingRouter({
               Continue
             </Button>
           </div>
-        )}
+        ) : null}
 
         {/* Pet Selection */}
-        {step === 'pet' && (
+        {step === 'pet' && !appointmentsMode && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
@@ -1197,7 +1344,7 @@ export function TrainingBookingRouter({
         )}
 
         {/* Address Selection (not for tele) */}
-        {step === 'address' && selectedServiceType !== 'tele' && (
+        {step === 'address' && !appointmentsMode && selectedServiceType !== 'tele' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">

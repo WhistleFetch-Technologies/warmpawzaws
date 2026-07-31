@@ -987,7 +987,17 @@ export function UniversalPaymentPage({
     // Resume: keep create-time tax/fee snapshot; still allow Razorpay bank offers + policies.
     if (!isPaymentResume) {
       calculateTax();
-      loadPlatformFees();
+      if (!isWapptAppointmentPayment) {
+        loadPlatformFees();
+      } else {
+        setPlatformFees({
+          platformFee: 0,
+          convenienceFee: 0,
+          deliveryFee: 0,
+          packagingFee: 0,
+          total: 0,
+        });
+      }
     }
     loadRazorpayOffers();
     loadPaymentAndRefundPolicies();

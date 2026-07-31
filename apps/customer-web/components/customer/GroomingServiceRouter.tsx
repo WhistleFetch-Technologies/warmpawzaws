@@ -39,7 +39,8 @@ import {
   type BoardingPlanRow,
   findBoardingListVendorByProfileKey,
 } from '@/lib/boarding-vendor-discovery-map';
-import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
+import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { mergeWapptServiceTypes } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
@@ -270,6 +271,18 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         type: 'vendor',
       };
       const accountId = pickCustomerVendorAccountId(row) || v.id;
+      if (shouldHideDiscoveryPricing(rawObj)) {
+        onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
+          ...buildWarmpawzAppointmentsProfileNav({
+            vendorId: accountId,
+            category: 'grooming',
+            serviceStyle: 'at_center',
+            vendorName: v.name,
+          }),
+          profileBackScreen: 'wappt-discovery',
+        });
+        return;
+      }
       onNavigate?.('grooming-vendor-profile', {
         vendorId: accountId,
         vendorType: 'vendor' as const,
@@ -445,7 +458,13 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 </div>
                 <button
                   type="button"
-                  onClick={() => void navigateGroomingStyle('grooming_center')}
+                  onClick={() => {
+                    if (wapptHubEnabled) {
+                      onNavigate?.('wappt-discovery', { category: 'grooming' });
+                    } else {
+                      void navigateGroomingStyle('grooming_center');
+                    }
+                  }}
                   className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-[#FF8C42] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#FF7A35]"
                 >
                   {GROOMING_BANNER.cta}

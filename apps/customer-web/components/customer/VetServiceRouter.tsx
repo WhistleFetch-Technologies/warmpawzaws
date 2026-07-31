@@ -731,6 +731,11 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     onDetails={openVetDetails}
                     onBookPlan={handleVetBookPlan}
                     onOpenCenterDetails={openVetCenterProfile}
+                    onBookAppointment={
+                      isWarmpawzAppointmentsHubEnabled('vet')
+                        ? () => handleNavigate('wappt-discovery', { category: 'vet' })
+                        : undefined
+                    }
                     customerId={phone}
                     serviceCategory="vet"
                   />

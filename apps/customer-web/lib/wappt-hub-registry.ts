@@ -11,11 +11,16 @@ export type WapptHubCategory =
   | 'sitting'
   | 'nutrition';
 
+export type WapptDiscoveryStyle = 'at_center' | 'at_home';
+
 export type WapptHubConfig = {
   wapptCategory: WapptHubCategory;
   roleId: RoleId;
   bookingScreen: string;
   defaultServiceStyle: 'at_center' | 'at_home' | 'tele';
+  /** Styles shown on WAPPT discovery list toggles */
+  allowedDiscoveryStyles: WapptDiscoveryStyle[];
+  defaultDiscoveryStyle: WapptDiscoveryStyle;
   wapptTileId: string;
   tileImage?: string;
 };
@@ -26,6 +31,8 @@ const WAPPT_HUB_REGISTRY: Record<WapptHubCategory, WapptHubConfig> = {
     roleId: 'veterinarian',
     bookingScreen: 'vet-booking',
     defaultServiceStyle: 'at_center',
+    allowedDiscoveryStyles: ['at_center', 'at_home'],
+    defaultDiscoveryStyle: 'at_center',
     wapptTileId: 'wappt_vet',
     tileImage: '/images/home/Vet/clinic-visit.webp',
   },
@@ -34,6 +41,8 @@ const WAPPT_HUB_REGISTRY: Record<WapptHubCategory, WapptHubConfig> = {
     roleId: 'groomer',
     bookingScreen: 'grooming-booking',
     defaultServiceStyle: 'at_center',
+    allowedDiscoveryStyles: ['at_center', 'at_home'],
+    defaultDiscoveryStyle: 'at_center',
     wapptTileId: 'wappt_grooming',
     tileImage: '/images/home/Grooming/grooming-center.webp',
   },
@@ -42,6 +51,8 @@ const WAPPT_HUB_REGISTRY: Record<WapptHubCategory, WapptHubConfig> = {
     roleId: 'trainer',
     bookingScreen: 'training-booking',
     defaultServiceStyle: 'at_center',
+    allowedDiscoveryStyles: ['at_center', 'at_home'],
+    defaultDiscoveryStyle: 'at_center',
     wapptTileId: 'wappt_training',
     tileImage: '/images/home/Training/training-center.webp',
   },
@@ -50,6 +61,8 @@ const WAPPT_HUB_REGISTRY: Record<WapptHubCategory, WapptHubConfig> = {
     roleId: 'behaviorist',
     bookingScreen: 'training-booking',
     defaultServiceStyle: 'at_home',
+    allowedDiscoveryStyles: ['at_center', 'at_home'],
+    defaultDiscoveryStyle: 'at_home',
     wapptTileId: 'wappt_behaviorist',
     tileImage: '/images/home/Training/separation-anxiety.webp',
   },
@@ -58,6 +71,8 @@ const WAPPT_HUB_REGISTRY: Record<WapptHubCategory, WapptHubConfig> = {
     roleId: 'walker',
     bookingScreen: 'walker-booking',
     defaultServiceStyle: 'at_home',
+    allowedDiscoveryStyles: ['at_center', 'at_home'],
+    defaultDiscoveryStyle: 'at_home',
     wapptTileId: 'wappt_walker',
     tileImage: '/images/home/Walking/walking-banner.webp',
   },
@@ -66,6 +81,8 @@ const WAPPT_HUB_REGISTRY: Record<WapptHubCategory, WapptHubConfig> = {
     roleId: 'boarding',
     bookingScreen: 'boarding-booking',
     defaultServiceStyle: 'at_center',
+    allowedDiscoveryStyles: ['at_center', 'at_home'],
+    defaultDiscoveryStyle: 'at_center',
     wapptTileId: 'wappt_boarding',
     tileImage: '/images/home/Boarding/overnight.webp',
   },
@@ -74,6 +91,8 @@ const WAPPT_HUB_REGISTRY: Record<WapptHubCategory, WapptHubConfig> = {
     roleId: 'pet_sitter',
     bookingScreen: 'pet-sitter-booking',
     defaultServiceStyle: 'at_home',
+    allowedDiscoveryStyles: ['at_center', 'at_home'],
+    defaultDiscoveryStyle: 'at_home',
     wapptTileId: 'wappt_sitting',
     tileImage: '/images/home/Sitting/day-sitting.webp',
   },
@@ -82,6 +101,8 @@ const WAPPT_HUB_REGISTRY: Record<WapptHubCategory, WapptHubConfig> = {
     roleId: 'nutritionist',
     bookingScreen: 'nutritionist-booking',
     defaultServiceStyle: 'at_center',
+    allowedDiscoveryStyles: ['at_center', 'at_home'],
+    defaultDiscoveryStyle: 'at_center',
     wapptTileId: 'wappt_nutrition',
     tileImage: '/images/home/Nutrition/diet-consultation.webp',
   },
@@ -178,4 +199,20 @@ export function getWapptDiscoveryCategory(category: string): string {
 
 export function listWapptHubCategories(): WapptHubCategory[] {
   return Object.keys(WAPPT_HUB_REGISTRY) as WapptHubCategory[];
+}
+
+export function getWapptAllowedDiscoveryStyles(category: string): WapptDiscoveryStyle[] {
+  const config = getWapptHubConfig(category);
+  return config?.allowedDiscoveryStyles ?? ['at_center', 'at_home'];
+}
+
+export function getWapptDefaultDiscoveryStyle(category: string): WapptDiscoveryStyle {
+  const config = getWapptHubConfig(category);
+  return config?.defaultDiscoveryStyle ?? 'at_center';
+}
+
+/** True when vendor is enrolled in Warmpawz Appointments flat-fee flow */
+export function isWapptVendor(row: Record<string, unknown> | null | undefined): boolean {
+  if (!row) return false;
+  return row.warmpawzAppointments === true || row.appointmentsMode === true;
 }
