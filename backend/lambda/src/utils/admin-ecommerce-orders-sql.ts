@@ -53,7 +53,7 @@ export function buildAdminEcommerceOrderFilterSql(
 
   const status = filters.status?.trim();
   if (status && status !== 'all') {
-    whereClauses.push(`COALESCE(o.order_status, o.status) = $${paramIndex}`);
+    whereClauses.push(`o.order_status = $${paramIndex}`);
     params.push(status);
     paramIndex++;
   }
@@ -83,7 +83,7 @@ export function buildAdminEcommerceOrderListSql(
     SELECT
       o.id,
       o.order_number,
-      COALESCE(o.order_status, o.status) AS status,
+      o.order_status AS status,
       o.customer_id,
       o.vendor_id,
       c.full_name AS customer_name,
@@ -130,19 +130,36 @@ export function buildAdminEcommerceOrderStatusCountsSql(period?: string | null):
   sql: string;
   params: unknown[];
 } {
-  const whereClauses = [SQL_ADMIN_SHOP_ORDER_TYPE];
   const periodDays = resolveAdminOrderPeriodDays(period);
   if (periodDays != null) {
-    whereClauses.push(`o.created_at >= NOW() - INTERVAL '${periodDays} days'`);
+    return buildAdminEcommerceOrderStatusCountsSqlForDays(periodDays);
   }
 
   const sql = `
     SELECT
-      COALESCE(o.order_status, o.status) AS status,
+      o.order_status AS status,
       COUNT(*)::int AS count
     FROM orders o
-    WHERE ${whereClauses.join(' AND ')}
-    GROUP BY COALESCE(o.order_status, o.status)
+    WHERE ${SQL_ADMIN_SHOP_ORDER_TYPE}
+    GROUP BY o.order_status
+  `;
+
+  return { sql, params: [] };
+}
+
+export function buildAdminEcommerceOrderStatusCountsSqlForDays(days: number): {
+  sql: string;
+  params: unknown[];
+} {
+  const safeDays = Number.isFinite(days) && days > 0 ? Math.min(Math.floor(days), 365) : 30;
+  const sql = `
+    SELECT
+      o.order_status AS status,
+      COUNT(*)::int AS count
+    FROM orders o
+    WHERE ${SQL_ADMIN_SHOP_ORDER_TYPE}
+      AND o.created_at >= NOW() - INTERVAL '${safeDays} days'
+    GROUP BY o.order_status
   `;
 
   return { sql, params: [] };
