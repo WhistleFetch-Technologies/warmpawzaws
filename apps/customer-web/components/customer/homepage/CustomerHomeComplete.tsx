@@ -51,6 +51,10 @@ import {
 import { navigateBannerCta } from '@/lib/banner-cta-navigation';
 import { isVendorBannerCta } from '@/lib/banner-cta-parse';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
+import {
+  fetchWapptTeleMinPrice,
+  resolveTeleConsultShellNavigation,
+} from '@/lib/warmpawz-appointments/wappt-tele-catalogue';
 import { mapCatalogSlugToLaunchServiceId } from '@warmpawz/service-launch-mappings';
 import { buildCustomerLaunchTiles } from '@/lib/customer-launch-tiles';
 import {
@@ -438,8 +442,9 @@ export function CustomerHomeComplete({
         }
       };
       void (async () => {
+        const wapptTeleMin = await fetchWapptTeleMinPrice();
         const [tele, atHome, atCenter] = await Promise.all([
-          fetchMinPrice('tele'),
+          wapptTeleMin != null ? Promise.resolve(wapptTeleMin) : fetchMinPrice('tele'),
           fetchMinPrice('at_home'),
           fetchMinPrice('at_center'),
         ]);
@@ -2938,7 +2943,8 @@ export function CustomerHomeComplete({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                handleNavigation('vet-tele-consultation', { startStep: 'scheduled' });
+                const nav = resolveTeleConsultShellNavigation();
+                handleNavigation(nav.screen, nav.data);
               }}
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -3140,7 +3146,8 @@ export function CustomerHomeComplete({
                           router.push(url);
                           return;
                         }
-                        handleNavigation('vet-tele-consultation', { startStep: 'scheduled' });
+                        const nav = resolveTeleConsultShellNavigation();
+                        handleNavigation(nav.screen, nav.data);
                       }}
                       className="bg-white text-purple-600 px-4 py-2 rounded-full text-sm font-semibold"
                     >

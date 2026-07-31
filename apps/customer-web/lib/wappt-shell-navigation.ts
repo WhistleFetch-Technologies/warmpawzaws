@@ -62,15 +62,18 @@ export function buildWapptShellBookingPayload(
 ): Record<string, unknown> {
   const hub = normalizeWapptHubCategory(category);
   const config = hub ? getWapptHubConfig(hub) : null;
+  const serviceStyle = String(
+    payload?.serviceStyle ?? config?.defaultServiceStyle ?? 'at_center',
+  ).toLowerCase();
+  const teleMarketplace =
+    serviceStyle === 'tele' &&
+    (payload?.appointmentsMode === false || payload?.serviceId != null);
   return {
     ...(payload || {}),
-    appointmentsMode: true,
+    appointmentsMode: teleMarketplace ? false : payload?.appointmentsMode !== false,
     category: hub ?? category,
-    serviceType: hub ?? category,
-    serviceStyle:
-      payload?.serviceStyle ??
-      config?.defaultServiceStyle ??
-      'at_center',
+    serviceType: payload?.serviceType ?? hub ?? category,
+    serviceStyle: payload?.serviceStyle ?? config?.defaultServiceStyle ?? 'at_center',
     returnScreen: payload?.returnScreen ?? 'wappt-discovery',
   };
 }

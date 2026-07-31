@@ -1509,7 +1509,12 @@ export function VetBookingRouter({
             onDateSelect={setSelectedDate}
             onTimeSelect={setSelectedTime}
             onPetSelect={(pet) => {
-              setSelectedPet(pet);
+              setSelectedPet({
+                id: pet.id,
+                name: pet.name,
+                species: pet.species ?? '',
+                breed: pet.breed ?? '',
+              });
               try {
                 sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id));
               } catch {

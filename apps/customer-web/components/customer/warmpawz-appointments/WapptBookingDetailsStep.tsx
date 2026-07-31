@@ -200,7 +200,7 @@ export function WapptBookingDetailsStep({
           type="button"
           onClick={onContinue}
           className="min-h-12 w-full rounded-full bg-orange-500 px-4 py-2.5 text-center text-sm shadow-md hover:bg-orange-600 sm:h-12 sm:py-0 sm:text-base"
-          disabled={disabled ?? !selectedDate || !selectedTime || !selectedPet}
+          disabled={disabled ?? (!selectedDate || !selectedTime || !selectedPet)}
         >
           {continueLabel ?? defaultContinueLabel}
         </Button>

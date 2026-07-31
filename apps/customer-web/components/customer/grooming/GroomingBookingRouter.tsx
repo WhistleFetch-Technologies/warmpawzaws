@@ -161,7 +161,6 @@ export function GroomingBookingRouter({
       'address': 'address_selection',
       'summary': 'booking_summary',
       'pet': 'pet_selection',
-      'address': 'address_selection',
       'payment': 'payment_initiated',
       'confirmation': 'booking_confirmed',
     };
@@ -1361,7 +1360,12 @@ export function GroomingBookingRouter({
             onDateSelect={setSelectedDate}
             onTimeSelect={setSelectedTime}
             onPetSelect={(pet) => {
-              setSelectedPet(pet);
+              setSelectedPet({
+                id: pet.id,
+                name: pet.name,
+                species: pet.species ?? '',
+                breed: pet.breed ?? '',
+              });
               try {
                 sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id));
               } catch {

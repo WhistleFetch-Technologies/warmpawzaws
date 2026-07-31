@@ -850,6 +850,7 @@ export function TrainingBookingRouter({
       datetime: skipServiceStep ? 0 : 1, 
       pet: skipServiceStep ? 1 : 2, 
       address: skipServiceStep ? 2 : 3, 
+      summary: skipServiceStep ? (selectedServiceType === 'tele' ? 2 : 3) : (selectedServiceType === 'tele' ? 3 : 4),
       payment: skipServiceStep ? (selectedServiceType === 'tele' ? 2 : 3) : (selectedServiceType === 'tele' ? 3 : 4), 
       confirmation: skipServiceStep ? (selectedServiceType === 'tele' ? 3 : 4) : 5
     };
@@ -914,6 +915,7 @@ export function TrainingBookingRouter({
       datetime: skipServiceStep ? 0 : 1, 
       pet: skipServiceStep ? 1 : 2, 
       address: skipServiceStep ? 2 : 3, 
+      summary: skipServiceStep ? (selectedServiceType === 'tele' ? 2 : 3) : (selectedServiceType === 'tele' ? 3 : 4),
       payment: skipServiceStep ? (selectedServiceType === 'tele' ? 2 : 3) : (selectedServiceType === 'tele' ? 3 : 4), 
       confirmation: skipServiceStep ? (selectedServiceType === 'tele' ? 3 : 4) : 5
     };
@@ -1156,7 +1158,14 @@ export function TrainingBookingRouter({
             selectedPet={selectedPet}
             onDateSelect={setSelectedDate}
             onTimeSelect={setSelectedTime}
-            onPetSelect={setSelectedPet}
+            onPetSelect={(pet) =>
+              setSelectedPet({
+                id: pet.id,
+                name: pet.name,
+                species: pet.species ?? '',
+                breed: pet.breed ?? '',
+              })
+            }
             onAddPet={() => setShowAddPetModal(true)}
             onContinue={handleContinueFromBookingDetails}
           />

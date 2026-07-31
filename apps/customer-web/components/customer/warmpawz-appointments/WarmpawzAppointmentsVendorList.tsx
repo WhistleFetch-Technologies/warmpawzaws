@@ -17,7 +17,7 @@ import {
 } from '@/lib/warmpawz-appointments-customer';
 import { resolveWapptVendorListConfig } from '@/lib/warmpawz-appointments/wappt-vendor-list-config';
 import {
-  resolveWapptDiscoveryDefaultStyle,
+  resolveWapptDiscoveryInitialStyle,
   resolveWapptDiscoveryStyleFilters,
   type WapptDiscoveryListStyle,
 } from '@/lib/warmpawz-appointments/wappt-list-style-config';
@@ -26,6 +26,8 @@ import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppoin
 
 type WarmpawzAppointmentsVendorListProps = {
   category: string;
+  initialServiceStyle?: WapptDiscoveryListStyle;
+  lockStyleFilter?: boolean;
   onBack: () => void;
   onGoHome: () => void;
   onNavigate: (screen: string, data?: Record<string, unknown>) => void;
@@ -48,25 +50,29 @@ function resolveCardSubtitle(
 
 export function WarmpawzAppointmentsVendorList({
   category,
+  initialServiceStyle,
+  lockStyleFilter = false,
   onBack,
   onGoHome,
   onNavigate,
 }: WarmpawzAppointmentsVendorListProps) {
   const router = useRouter();
-  const listConfig = resolveWapptVendorListConfig(category);
   const discoveryCategory = getWapptDiscoveryCategory(category);
-  const styleFilters = useMemo(
-    () => resolveWapptDiscoveryStyleFilters(discoveryCategory),
-    [discoveryCategory],
-  );
   const [styleFilter, setStyleFilter] = useState<WapptDiscoveryListStyle>(() =>
-    resolveWapptDiscoveryDefaultStyle(discoveryCategory),
+    resolveWapptDiscoveryInitialStyle(discoveryCategory, initialServiceStyle),
+  );
+  const listConfig = resolveWapptVendorListConfig(category, styleFilter);
+  const isTeleDiscovery = styleFilter === 'tele';
+  const styleFilters = useMemo(
+    () => resolveWapptDiscoveryStyleFilters(discoveryCategory, lockStyleFilter ? styleFilter : undefined),
+    [discoveryCategory, lockStyleFilter, styleFilter],
   );
   const [searchQuery, setSearchQuery] = useState('');
 
+  const feedServiceStyle = styleFilter === 'tele' ? 'tele' : styleFilter;
   const feed = useWarmpawzAppointmentsByCategoryFeed({
     category: discoveryCategory,
-    serviceStyle: styleFilter,
+    serviceStyle: feedServiceStyle,
     enabled: true,
   });
 
@@ -150,20 +156,21 @@ export function WarmpawzAppointmentsVendorList({
         </div>
 
         <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-          {styleFilters.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              onClick={() => setStyleFilter(filter.id)}
-              className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                styleFilter === filter.id
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-slate-600 hover:bg-gray-200'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
+          {!lockStyleFilter &&
+            styleFilters.map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                onClick={() => setStyleFilter(filter.id)}
+                className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                  styleFilter === filter.id
+                    ? 'bg-[#FF8C42] text-white'
+                    : 'bg-gray-100 text-slate-600 hover:bg-gray-200'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
         </div>
 
         {feed.loading ? (
@@ -210,11 +217,11 @@ export function WarmpawzAppointmentsVendorList({
                 verifiedAriaLabel: 'Verified provider',
                 primaryActionClassName:
                   'text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10',
-                primaryLabel: 'Select Slot for Appointment',
+                primaryLabel: isTeleDiscovery ? 'View Services' : 'Select Slot for Appointment',
                 onPrimary: (e) => openVendorProfile(e, row),
                 onProfileClick: (e) => openVendorProfile(e, row),
-                secondaryLabel: 'Pay with Warmpawz',
-                onSecondary: (e) => openWarmpawzPay(e, row),
+                secondaryLabel: isTeleDiscovery ? undefined : 'Pay with Warmpawz',
+                onSecondary: isTeleDiscovery ? undefined : (e) => openWarmpawzPay(e, row),
               });
 
               return (

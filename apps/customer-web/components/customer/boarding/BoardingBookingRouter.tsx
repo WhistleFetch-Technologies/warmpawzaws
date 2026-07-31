@@ -834,6 +834,12 @@ export function BoardingBookingRouter({
   const allHalfHourSlots = generateHalfHourSlots();
 
   const wapptCategory = isPetSitting ? 'sitting' : 'boarding';
+  const wapptServiceStyle = useMemo(() => {
+    if (serviceStyle === 'at_home' || serviceStyle === 'at_center') {
+      return serviceStyle;
+    }
+    return isPetSitting ? 'at_home' : 'at_center';
+  }, [serviceStyle, isPetSitting]);
   const wapptBooking = useWapptAppointmentBooking({
     appointmentsMode,
     vendorId,
@@ -847,12 +853,6 @@ export function BoardingBookingRouter({
     setSelectedVendorService(wapptBooking.selectedVendorService);
   }, [appointmentsMode, wapptBooking.selectedVendorService]);
 
-  const wapptServiceStyle = useMemo(() => {
-    if (serviceStyle === 'at_home' || serviceStyle === 'at_center') {
-      return serviceStyle;
-    }
-    return isPetSitting ? 'at_home' : 'at_center';
-  }, [serviceStyle, isPetSitting]);
   const wapptFlowSteps = useMemo(
     () => (appointmentsMode ? getWapptBookingSteps(wapptServiceStyle) : []),
     [appointmentsMode, wapptServiceStyle],

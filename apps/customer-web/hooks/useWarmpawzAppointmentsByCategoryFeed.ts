@@ -4,7 +4,7 @@ import { useCallback, useEffect } from 'react';
 import { useDiscoveryVendorFeed } from '@/hooks/useDiscoveryVendorFeed';
 import { discoveryNextCursor, discoveryVendorList } from '@/lib/discovery-list';
 
-export type WapptStyleFilter = 'all' | 'at_center' | 'at_home';
+export type WapptStyleFilter = 'all' | 'at_center' | 'at_home' | 'tele';
 
 export function useWarmpawzAppointmentsByCategoryFeed(opts: {
   category: string;

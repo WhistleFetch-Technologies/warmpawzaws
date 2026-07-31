@@ -43,6 +43,7 @@ import {
 } from '@/lib/customer-service-style-launch';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
+import { resolveTeleConsultShellNavigation } from '@/lib/warmpawz-appointments/wappt-tele-catalogue';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -573,7 +574,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   } else if (service.id === 'clinic') {
                     handleNavigate('vet-clinic-list');
                   } else if (service.id === 'tele') {
-                    handleNavigate('vet-tele-consultation');
+                    const nav = resolveTeleConsultShellNavigation();
+                    handleNavigate(nav.screen, nav.data);
                   } else if (service.id === 'home') {
                     handleNavigate('vet-home-visit');
                   } else if (service.id === 'medicine') {
@@ -762,11 +764,15 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
               role="button"
               tabIndex={0}
               className="p-4 bg-white border border-gray-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
-              onClick={() => handleNavigate('vet-tele-consultation')}
+              onClick={() => {
+                const nav = resolveTeleConsultShellNavigation();
+                handleNavigate(nav.screen, nav.data);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  handleNavigate('vet-tele-consultation');
+                  const nav = resolveTeleConsultShellNavigation();
+                  handleNavigate(nav.screen, nav.data);
                 }
               }}
             >

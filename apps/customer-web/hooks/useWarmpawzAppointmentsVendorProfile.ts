@@ -19,6 +19,7 @@ export type WapptProfileService = {
   description?: string;
   duration?: number;
   category?: string;
+  price?: number;
 };
 
 export type WapptProfileProvider = {
@@ -156,8 +157,16 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
                 description: s.description,
                 duration: s.duration,
                 category: s.category,
+                ...(serviceStyle === 'tele' && s.price != null ? { price: Number(s.price) } : {}),
               }))
-            : rows.map((row) => mapGenericServiceRow(row as Record<string, unknown>));
+            : rows.map((row) => {
+                const record = row as Record<string, unknown>;
+                const mapped = mapGenericServiceRow(record);
+                if (serviceStyle === 'tele' && record.price != null) {
+                  return { ...mapped, price: Number(record.price) };
+                }
+                return mapped;
+              });
         const nextCursor = vendorServicesNextCursor(res);
 
         setProvider((prev) => {

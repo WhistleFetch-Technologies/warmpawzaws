@@ -26,6 +26,7 @@ import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDi
 import { ServiceDescriptionInline } from '@/components/customer/shared/ServiceDescriptionInline';
 import { DiscoveryVendorFeedSentinel } from '@/components/customer/shared/DiscoveryVendorFeedSentinel';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
@@ -144,6 +145,33 @@ export function WarmpawzAppointmentsVendorProfile({
         category,
       }),
       appointmentsMode: true,
+    });
+  };
+
+  const isTeleMarketplace = serviceStyle === 'tele';
+
+  const handleBookTeleService = (service: {
+    id?: string;
+    serviceId?: string;
+    name?: string;
+    price?: number;
+    duration?: number;
+  }) => {
+    const vid = String(provider?.vendorId || provider?.providerId || vendorId).trim();
+    const sid = String(service.serviceId || service.id || '').trim();
+    if (!vid || !sid) return;
+    onNavigate('vet-booking', {
+      vendorId: vid,
+      vendorName: providerName,
+      serviceType: 'tele',
+      serviceStyle: 'tele',
+      serviceId: sid,
+      serviceName: service.name,
+      price: service.price,
+      duration: service.duration,
+      appointmentsMode: false,
+      category,
+      returnScreen: 'wappt-vendor-profile',
     });
   };
 
@@ -370,7 +398,7 @@ export function WarmpawzAppointmentsVendorProfile({
                   </div>
                   <div className="border-x border-gray-200 text-center">
                     <div className="text-2xl font-bold text-gray-900">
-                      {provider.experienceYears != null && provider.experienceYears !== ''
+                      {provider.experienceYears != null && provider.experienceYears !== 0
                         ? provider.experienceYears
                         : '5+'}
                     </div>
@@ -440,7 +468,14 @@ export function WarmpawzAppointmentsVendorProfile({
                         key={service.id || service.serviceId}
                         className="rounded-xl border border-gray-200 bg-white p-4"
                       >
-                        <h4 className="mb-2 text-base font-bold text-gray-900">{service.name}</h4>
+                        <div className="mb-2 flex items-start justify-between gap-3">
+                          <h4 className="text-base font-bold text-gray-900">{service.name}</h4>
+                          {isTeleMarketplace && service.price != null ? (
+                            <span className="shrink-0 font-bold text-[#FF8C42]">
+                              {formatPriceWithSymbol(service.price)}
+                            </span>
+                          ) : null}
+                        </div>
                         {service.description?.trim() ? (
                           <ServiceDescriptionInline
                             description={service.description}
@@ -448,12 +483,24 @@ export function WarmpawzAppointmentsVendorProfile({
                             className="m-0 mb-3 text-sm leading-5 text-gray-600"
                           />
                         ) : null}
-                        {service.duration ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-2.5 py-1 text-xs text-gray-500">
-                            <Clock className="h-3.5 w-3.5 text-gray-600" />
-                            {service.duration} mins
-                          </span>
-                        ) : null}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {service.duration ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 px-2.5 py-1 text-xs text-gray-500">
+                              <Clock className="h-3.5 w-3.5 text-gray-600" />
+                              {service.duration} mins
+                            </span>
+                          ) : null}
+                          {isTeleMarketplace ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="ml-auto bg-[#FF8C42] hover:bg-[#E67A35]"
+                              onClick={() => handleBookTeleService(service)}
+                            >
+                              Book
+                            </Button>
+                          ) : null}
+                        </div>
                       </div>
                     ))}
                     <DiscoveryVendorFeedSentinel
@@ -544,19 +591,21 @@ export function WarmpawzAppointmentsVendorProfile({
         </div>
       </div>
 
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center">
-        <div className="pointer-events-auto w-full max-w-customer border-t border-gray-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] shadow-lg">
-          <div className="p-4">
-            <Button
-              onClick={handleBookAppointment}
-              className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] sm:text-lg"
-            >
-              <Calendar className="mr-2 h-5 w-5" />
-              Select Slot for Appointment
-            </Button>
+      {!isTeleMarketplace ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center">
+          <div className="pointer-events-auto w-full max-w-customer border-t border-gray-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] shadow-lg">
+            <div className="p-4">
+              <Button
+                onClick={handleBookAppointment}
+                className="h-12 w-full bg-[#FF8C42] text-base text-white hover:bg-[#E67A35] sm:text-lg"
+              >
+                <Calendar className="mr-2 h-5 w-5" />
+                Select Slot for Appointment
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

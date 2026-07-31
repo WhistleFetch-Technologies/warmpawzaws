@@ -119,9 +119,32 @@ const CATEGORY_LIST_CONFIG: Record<WapptHubCategory, Omit<WapptVendorListConfig,
   },
 };
 
-export function resolveWapptVendorListConfig(category: string): WapptVendorListConfig {
+const VET_TELE_LIST_CONFIG: Omit<WapptVendorListConfig, 'category'> = {
+  serviceName: 'Tele Consultation',
+  serviceSubtitle: 'Video consult with verified vets',
+  headerIcon: Stethoscope,
+  searchPlaceholder: 'Search vets...',
+  loadingMessage: 'Finding vets...',
+  emptyTitle: 'No tele vets found',
+  emptySubtitle: 'Try adjusting your search',
+  cardCategoryLabel: 'Veterinarian',
+  resultsCountLabel: (count) => `${count} vet${count === 1 ? '' : 's'} available for tele consult`,
+};
+
+export function resolveWapptVendorListConfig(
+  category: string,
+  serviceStyle?: string,
+): WapptVendorListConfig {
   const hub = normalizeWapptHubCategory(category);
   const profile = resolveWapptVendorProfileConfig(category);
+  if (hub === 'vet' && String(serviceStyle ?? '').toLowerCase() === 'tele') {
+    return {
+      category: hub,
+      ...VET_TELE_LIST_CONFIG,
+      headerIcon: profile.headerIcon,
+      cardCategoryLabel: profile.styleBadgeLabel('tele'),
+    };
+  }
   const list = hub ? CATEGORY_LIST_CONFIG[hub] : undefined;
   if (!list) {
     if (process.env.NODE_ENV === 'development') {
@@ -135,7 +158,7 @@ export function resolveWapptVendorListConfig(category: string): WapptVendorListC
     };
   }
   return {
-    category: hub,
+    category: hub ?? category,
     ...list,
     headerIcon: profile.headerIcon,
     cardCategoryLabel: profile.styleBadgeLabel('at_center'),

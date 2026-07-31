@@ -31,6 +31,23 @@ export function isWarmpawzAppointmentsHubEnabled(category: string): boolean {
   return !route.useMarketplaceFlow && !route.excludedDomain;
 }
 
+/** Vet tele catalogue discovery when Warmpawz Pay is active (tele is commerce-excluded but uses WAPPT vendor list). */
+export function isWarmpawzTeleCatalogueEnabled(): boolean {
+  if (!isWarmpawzPayModuleCapable()) return false;
+  return isWarmpawzPayCommerceActive();
+}
+
+export function buildWarmpawzTeleDiscoveryNav(opts?: {
+  profileBackScreen?: string;
+}): { screen: 'wappt-discovery'; category: string; serviceStyle: 'tele' } {
+  return {
+    screen: 'wappt-discovery',
+    category: 'vet',
+    serviceStyle: 'tele',
+    ...(opts?.profileBackScreen ? { profileBackScreen: opts.profileBackScreen } : {}),
+  };
+}
+
 export type WarmpawzAppointmentsBookingNav = {
   vendorId: string;
   vendorName?: string;

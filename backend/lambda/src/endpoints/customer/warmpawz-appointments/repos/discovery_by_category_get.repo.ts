@@ -19,6 +19,9 @@ export type WapptDiscoveryVendorRow = {
 };
 
 const CLINIC_HOME_STYLES = ['at_center', 'at_vendor', 'at_clinic', 'at_home', 'home_visit'];
+const TELE_STYLES = ['tele', 'online', 'video_consultation'];
+
+export type WapptDiscoveryServiceStyle = 'all' | 'at_center' | 'at_home' | 'tele';
 
 /** Role-negative SQL — mirrors client hub filters for mis-tagged catalogue rows. */
 function wapptRoleNegativeFilterSql(category: string): string | null {
@@ -38,7 +41,7 @@ function wapptRoleNegativeFilterSql(category: string): string | null {
 
 export async function dbListWapptDiscoveryByCategory(opts: {
   category: string;
-  serviceStyle: 'all' | 'at_center' | 'at_home';
+  serviceStyle: WapptDiscoveryServiceStyle;
   limit: number;
   offset: number;
 }): Promise<{ rows: WapptDiscoveryVendorRow[]; hasMore: boolean }> {
@@ -59,14 +62,26 @@ export async function dbListWapptDiscoveryByCategory(opts: {
     conditions.push(roleNegative);
   }
 
-  const styleFilter =
-    opts.serviceStyle === 'all'
-      ? CLINIC_HOME_STYLES
-      : acceptableStylesForService(opts.serviceStyle);
+  if (opts.serviceStyle === 'tele') {
+    params.push(TELE_STYLES);
+    const teleStylesParam = `$${params.length}`;
+    conditions.push(`
+    EXISTS (
+      SELECT 1 FROM vendor_services vs
+      WHERE vs.vendor_id = v.id
+        AND vs.is_enabled = true
+        AND vs.service_style = ANY(${teleStylesParam}::text[])
+    )
+  `);
+  } else {
+    const styleFilter =
+      opts.serviceStyle === 'all'
+        ? CLINIC_HOME_STYLES
+        : acceptableStylesForService(opts.serviceStyle);
 
-  params.push(styleFilter);
-  const stylesParam = `$${params.length}`;
-  conditions.push(`
+    params.push(styleFilter);
+    const stylesParam = `$${params.length}`;
+    conditions.push(`
     EXISTS (
       SELECT 1 FROM vendor_services vs
       WHERE vs.vendor_id = v.id
@@ -75,6 +90,7 @@ export async function dbListWapptDiscoveryByCategory(opts: {
         AND vs.service_style NOT IN ('tele', 'online', 'video_consultation')
     )
   `);
+  }
 
   params.push(opts.limit + 1);
   const limitParam = `$${params.length}`;

@@ -728,7 +728,7 @@ export function WalkerBookingRouter({
       ? ['Service', 'Date/Time', 'Pet', 'Payment']
       : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = {
-      service: 0, datetime: 1, pet: 2, address: 3, payment: bookingServiceStyle === 'tele' ? 3 : 4, confirmation: 5
+      service: 0, datetime: 1, pet: 2, address: 3, summary: bookingServiceStyle === 'tele' ? 3 : 4, payment: bookingServiceStyle === 'tele' ? 3 : 4, confirmation: 5
     };
     const currentIdx = currentStepMap[step];
     
@@ -951,7 +951,14 @@ export function WalkerBookingRouter({
             selectedPet={selectedPet}
             onDateSelect={setSelectedDate}
             onTimeSelect={setSelectedTime}
-            onPetSelect={setSelectedPet}
+            onPetSelect={(pet) =>
+              setSelectedPet({
+                id: pet.id,
+                name: pet.name,
+                species: pet.species ?? '',
+                breed: pet.breed ?? '',
+              })
+            }
             onAddPet={() => setShowAddPetModal(true)}
             onContinue={handleContinueFromBookingDetails}
           />

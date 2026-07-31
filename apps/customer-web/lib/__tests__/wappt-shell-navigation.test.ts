@@ -88,4 +88,18 @@ describe('handleWapptShellScreenNavigate', () => {
     expect(payload.category).toBe('nutrition');
     expect(payload.returnScreen).toBe('wappt-discovery');
   });
+
+  it('buildWapptShellBookingPayload keeps marketplace tele bookings off flat-fee mode', () => {
+    const payload = buildWapptShellBookingPayload('vet', {
+      vendorId: 'v-1',
+      serviceStyle: 'tele',
+      serviceId: 'svc-1',
+      serviceName: 'Tele consult',
+      price: 499,
+      appointmentsMode: false,
+    });
+    expect(payload.appointmentsMode).toBe(false);
+    expect(payload.serviceStyle).toBe('tele');
+    expect(payload.serviceId).toBe('svc-1');
+  });
 });

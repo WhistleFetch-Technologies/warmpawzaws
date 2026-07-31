@@ -88,6 +88,12 @@ describe('wappt hub category matrix', () => {
   it('profile screen constant', () => {
     expect(WAPPT_VENDOR_PROFILE_SCREEN).toBe('wappt-vendor-profile');
   });
+
+  it('vet tele list config uses tele discovery copy', () => {
+    const list = resolveWapptVendorListConfig('vet', 'tele');
+    expect(list.serviceName).toBe('Tele Consultation');
+    expect(list.resultsCountLabel(2)).toMatch(/vet/);
+  });
 });
 
 describe('wappt discovery API url contract', () => {
@@ -103,5 +109,16 @@ describe('wappt discovery API url contract', () => {
     expect(url).toContain('serviceStyle=at_center');
     expect(url).toContain('limit=3');
     expect(url).toContain('cursor=abc');
+  });
+
+  it('builds vet tele discovery URL', () => {
+    const qs = new URLSearchParams({
+      category: 'vet',
+      serviceStyle: 'tele',
+      limit: '3',
+    });
+    const url = `/customer/warmpawz-appointments/discovery/by-category?${qs}`;
+    expect(url).toContain('category=vet');
+    expect(url).toContain('serviceStyle=tele');
   });
 });

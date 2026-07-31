@@ -550,6 +550,8 @@ export function CustomerHomeWrapper({
   const [selectedService, setSelectedService] = useState<string>('');
   const [vetServiceData, setVetServiceData] = useState<any>(null);
   const [wapptDiscoveryCategory, setWapptDiscoveryCategory] = useState<string>('vet');
+  const [wapptDiscoveryServiceStyle, setWapptDiscoveryServiceStyle] = useState<string>('at_center');
+  const [wapptDiscoveryLockStyle, setWapptDiscoveryLockStyle] = useState(false);
   const [wapptProfileData, setWapptProfileData] = useState<{
     vendorId: string;
     vendorName?: string;
@@ -1801,6 +1803,9 @@ export function CustomerHomeWrapper({
     }
     else if (screen === 'wappt-discovery') {
       setWapptDiscoveryCategory(String((data as any)?.category || 'vet'));
+      const style = String((data as any)?.serviceStyle || (data as any)?.service_style || 'at_center').toLowerCase();
+      setWapptDiscoveryServiceStyle(style === 'tele' ? 'tele' : style === 'at_home' ? 'at_home' : 'at_center');
+      setWapptDiscoveryLockStyle(style === 'tele' || (data as any)?.lockStyleFilter === true);
       navigateToScreen('wappt-discovery');
     }
     else if (screen === 'wappt-vendor-profile') {
@@ -3218,6 +3223,14 @@ export function CustomerHomeWrapper({
     return (
       <WarmpawzAppointmentsDiscovery
         category={wapptDiscoveryCategory}
+        initialServiceStyle={
+          wapptDiscoveryServiceStyle === 'tele'
+            ? 'tele'
+            : wapptDiscoveryServiceStyle === 'at_home'
+              ? 'at_home'
+              : 'at_center'
+        }
+        lockStyleFilter={wapptDiscoveryLockStyle}
         phone={phone}
         onBack={handleBack}
         onGoHome={goToHome}
