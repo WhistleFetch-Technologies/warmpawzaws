@@ -22,7 +22,7 @@ describe('admin-ecommerce-orders-sql', () => {
       search: 'abc',
     });
 
-    expect(parts.whereClauses.join(' ')).toContain('COALESCE(o.order_status, o.status)');
+    expect(parts.whereClauses.join(' ')).toContain('o.order_status =');
     expect(parts.whereClauses.join(' ')).toContain('ILIKE');
     expect(parts.params).toEqual(['confirmed', '%abc%']);
   });

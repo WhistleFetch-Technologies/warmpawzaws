@@ -4815,11 +4815,10 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
 
       let orders;
       try {
-        // COALESCE normalises legacy `status` column vs canonical `order_status` column so
-        // the vendor update (which writes order_status) is always reflected correctly here.
+        // Canonical shop order status column is order_status (prod has no legacy status column).
         const baseSelect = `
           SELECT o.*,
-                 COALESCE(o.order_status, o.status) AS status,
+                 o.order_status AS status,
                  c.full_name  AS customer_name,
                  c.email      AS customer_email,
                  v.business_name AS vendor_name
@@ -4829,7 +4828,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         `;
         if (status) {
           orders = await query(
-            `${baseSelect} WHERE COALESCE(o.order_status, o.status) = $1 ORDER BY o.created_at DESC LIMIT $2 OFFSET $3`,
+            `${baseSelect} WHERE o.order_status = $1 ORDER BY o.created_at DESC LIMIT $2 OFFSET $3`,
             [status, limit, offset]
           );
         } else {
