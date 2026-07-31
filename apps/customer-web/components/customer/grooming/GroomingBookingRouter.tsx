@@ -34,6 +34,18 @@ import {
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
   WAPPT_BOOKING_MODE,
 } from '@/lib/warmpawz-appointments-customer';
+import { WapptBookingDetailsStep } from '../warmpawz-appointments/WapptBookingDetailsStep';
+import { WapptBookingSummaryStep } from '../warmpawz-appointments/WapptBookingSummaryStep';
+import { WapptBookingAddressStep } from '../warmpawz-appointments/WapptBookingAddressStep';
+import { useWapptBookingSlots } from '@/hooks/useWapptBookingSlots';
+import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
+import { formatTime12Hour } from '@/lib/wappt-booking-time';
+import {
+  formatWapptAddressLine,
+  getWapptBookingPreviousStep,
+  getWapptBookingStepIndex,
+  getWapptBookingSteps,
+} from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -63,7 +75,7 @@ interface GroomingBookingRouterProps {
   onInternalBackReady?: (handleBack: () => void) => void; // ✅ NEW: Expose internal handleBack to parent
 }
 
-type BookingStep = 'service' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmation';
+type BookingStep = 'service' | 'datetime' | 'address' | 'summary' | 'pet' | 'payment' | 'confirmation';
 
 interface TimeSlot {
   time: string;
@@ -146,8 +158,9 @@ export function GroomingBookingRouter({
     const stepToAnalyticsMap: Record<BookingStep, string> = {
       'service': 'service_selection',
       'datetime': 'schedule_selection',
-      'pet': 'pet_selection',
       'address': 'address_selection',
+      'summary': 'booking_summary',
+      'pet': 'pet_selection',
       'payment': 'payment_initiated',
       'confirmation': 'booking_confirmed',
     };
@@ -209,37 +222,33 @@ export function GroomingBookingRouter({
     appointmentsMode && price != null ? Number(price) : null,
   );
 
+  const wapptBooking = useWapptAppointmentBooking({
+    appointmentsMode,
+    vendorId,
+    category: 'grooming',
+    serviceStyle: selectedServiceType,
+    serviceType: selectedServiceType,
+    initialPrice: price,
+  });
+
   useEffect(() => {
-    if (!appointmentsMode || !vendorId) return;
-    let cancelled = false;
-    void apiClient
-      .get<{ appointmentFee?: number }>(
-        `/customer/warmpawz-appointments/vendors/${encodeURIComponent(String(vendorId))}/fee`,
-      )
-      .then((res) => {
-        if (cancelled) return;
-        const fee = Number(res?.appointmentFee ?? 0);
-        setAppointmentFee(fee > 0 ? fee : null);
-        setSelectedVendorService({
-          id: WAPPT_APPOINTMENT_SERVICE_ID,
-          serviceId: WAPPT_APPOINTMENT_SERVICE_ID,
-          service_id: WAPPT_APPOINTMENT_SERVICE_ID,
-          name: getWarmpawzAppointmentServiceLabel({
-            category: 'grooming',
-            serviceStyle: serviceStyle || serviceType || 'at_center',
-          }),
-          price: fee > 0 ? fee : price ?? 0,
-          duration: WAPPT_DEFAULT_SLOT_DURATION_MIN,
-          serviceStyle: serviceStyle || serviceType,
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setAppointmentFee(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [appointmentsMode, vendorId, serviceStyle, serviceType, price]);
+    if (!appointmentsMode || !wapptBooking.selectedVendorService) return;
+    setSelectedVendorService(wapptBooking.selectedVendorService);
+    setAppointmentFee(wapptBooking.appointmentFee);
+  }, [appointmentsMode, wapptBooking.selectedVendorService, wapptBooking.appointmentFee]);
+
+  const wapptFlowSteps = useMemo(
+    () => (appointmentsMode ? getWapptBookingSteps(selectedServiceType) : []),
+    [appointmentsMode, selectedServiceType],
+  );
+
+  const wapptSlots = useWapptBookingSlots({
+    vendorId,
+    serviceStyle: selectedServiceType,
+    totalDurationMinutes: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+    selectedDate,
+    enabled: appointmentsMode && !!vendorId,
+  });
   
   // ✅ NEW: Store all selected services for passing to booking API
   const [allSelectedServices, setAllSelectedServices] = useState<any[]>(selectedServices || []);
@@ -719,16 +728,14 @@ export function GroomingBookingRouter({
       toast.error('Please select date and time');
       return;
     }
+    const selectedSlot = wapptSlots.timeSlots.find((s) => s.time === selectedTime);
+    if (selectedSlot && !selectedSlot.available) {
+      toast.error('This time slot is already booked. Please select a different time.');
+      return;
+    }
     if (!selectedPet) {
       toast.error('Please select a pet');
       return;
-    }
-    if (selectedServiceType === 'at_home' && !selectedAddress) {
-      toast.error('Please select a delivery address');
-      return;
-    }
-    if (selectedServiceType === 'at_center') {
-      setSelectedAddress({ id: 'clinic' });
     }
 
     trackBookingStep({
@@ -738,8 +745,26 @@ export function GroomingBookingRouter({
       vendorId,
       petId: selectedPet?.id,
       phone,
-      metadata: { source: 'grooming_consolidated_form' },
+      metadata: { source: appointmentsMode ? 'wappt_details' : 'grooming_consolidated_form' },
     });
+
+    if (appointmentsMode) {
+      if (selectedServiceType === 'at_center') {
+        setSelectedAddress({ id: 'clinic' });
+        setStep('summary');
+      } else {
+        setStep('address');
+      }
+      return;
+    }
+
+    if (selectedServiceType === 'at_home' && !selectedAddress) {
+      toast.error('Please select a delivery address');
+      return;
+    }
+    if (selectedServiceType === 'at_center') {
+      setSelectedAddress({ id: 'clinic' });
+    }
     if (selectedServiceType === 'at_home') {
       trackBookingStep({
         step: 'address_selection',
@@ -751,8 +776,15 @@ export function GroomingBookingRouter({
         metadata: { source: 'grooming_consolidated_form' },
       });
     }
-
     setStep('payment');
+  };
+
+  const handleContinueFromAddress = () => {
+    if (!selectedAddress) {
+      toast.error('Please select a delivery address');
+      return;
+    }
+    setStep('summary');
   };
 
   const handleBack = useCallback(() => {
@@ -762,6 +794,25 @@ export function GroomingBookingRouter({
     }
     if (step === 'payment') {
       setShowPaymentPage(false);
+      setStep(appointmentsMode ? 'summary' : 'datetime');
+      return;
+    }
+    if (appointmentsMode && wapptFlowSteps.length > 0) {
+      const prev = getWapptBookingPreviousStep(wapptFlowSteps, step as 'datetime' | 'address' | 'summary' | 'payment');
+      if (prev) {
+        setStep(prev);
+        return;
+      }
+      if (step === 'datetime') {
+        onBack();
+        return;
+      }
+    }
+    if (step === 'summary') {
+      setStep(selectedServiceType === 'at_home' ? 'address' : 'datetime');
+      return;
+    }
+    if (step === 'address') {
       setStep('datetime');
       return;
     }
@@ -778,7 +829,7 @@ export function GroomingBookingRouter({
       return;
     }
     onBack();
-  }, [step, hasServiceContext, onBack]);
+  }, [step, hasServiceContext, onBack, appointmentsMode, wapptFlowSteps, selectedServiceType]);
 
   // ✅ NEW: Expose handleBack to parent for header navigation
   useEffect(() => {
@@ -789,6 +840,7 @@ export function GroomingBookingRouter({
 
   // ✅ Proceed to UniversalPaymentPage
   const handleProceedToPayment = () => {
+    setStep('payment');
     setShowPaymentPage(true);
   };
 
@@ -920,11 +972,38 @@ export function GroomingBookingRouter({
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
 
+    if (appointmentsMode && wapptFlowSteps.length > 0) {
+      const flowStep = step === 'address' || step === 'datetime' || step === 'summary' ? step : 'datetime';
+      const currentIdx = getWapptBookingStepIndex(wapptFlowSteps, flowStep);
+      if (currentIdx >= 0) {
+        return wapptFlowSteps.map((s, idx) => ({
+          label: s.label,
+          isCompleted: idx < currentIdx,
+          isCurrent: idx === currentIdx,
+        }));
+      }
+    }
+
     const skipServiceStep = hasServiceContext && selectedVendorService;
-    const stepLabels = skipServiceStep ? ['Details', 'Payment'] : ['Service', 'Details', 'Payment'];
+    const stepLabels =
+      appointmentsMode && skipServiceStep
+        ? ['Details', 'Summary', 'Payment']
+        : skipServiceStep
+          ? ['Details', 'Payment']
+          : ['Service', 'Details', 'Payment'];
 
     const currentIdx =
-      step === 'service' ? 0 : step === 'datetime' ? (skipServiceStep ? 0 : 1) : 0;
+      step === 'service'
+        ? 0
+        : step === 'datetime'
+          ? skipServiceStep
+            ? 0
+            : 1
+          : step === 'summary'
+            ? appointmentsMode && skipServiceStep
+              ? 1
+              : 0
+            : 0;
 
     return stepLabels.map((label, idx) => ({
       label,
@@ -933,14 +1012,33 @@ export function GroomingBookingRouter({
     }));
   };
 
-  const reviewTotal =
-    (allSelectedServices && allSelectedServices.length > 0
+  const reviewTotal = appointmentsMode
+    ? appointmentFee ?? selectedVendorService?.price ?? price ?? 0
+    : (allSelectedServices && allSelectedServices.length > 0
       ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
       : selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0) ?? 0;
 
   const groomingPrePaymentSummary = (
     <>
-      {allSelectedServices && allSelectedServices.length > 0 ? (
+      {appointmentsMode ? (
+        <div className="flex items-center gap-3 border-b pb-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
+            <Building2 className="h-6 w-6" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold">
+              {getWarmpawzAppointmentServiceLabel({
+                category: 'grooming',
+                serviceStyle: selectedServiceType,
+              })}
+            </h3>
+            <p className="text-sm text-gray-500">Flat appointment fee</p>
+          </div>
+          <p className="font-bold text-orange-600">
+            ₹{Number(reviewTotal).toLocaleString('en-IN')}
+          </p>
+        </div>
+      ) : allSelectedServices && allSelectedServices.length > 0 ? (
         <div className="space-y-3 pb-4 border-b">
           {allSelectedServices.map((service, index) => {
             const serviceIdValue = service.id || service.serviceId || '';
@@ -1067,8 +1165,13 @@ export function GroomingBookingRouter({
         quantity={1}
         customerPhone={phone}
         customerId={customerId || undefined}
-        selectedServices={allSelectedServices}
-        onBack={() => setShowPaymentPage(false)}
+        selectedServices={appointmentsMode ? undefined : allSelectedServices}
+        onBack={() => {
+          setShowPaymentPage(false);
+          if (step === 'payment') {
+            setStep('summary');
+          }
+        }}
         onPaymentAbandoned={() => {
           if (selectedDate) void loadTimeSlots(selectedDate);
         }}
@@ -1079,7 +1182,7 @@ export function GroomingBookingRouter({
 
   return (
     <div className="min-h-screen bg-gray-50 relative overflow-hidden">
-      {step !== 'payment' && (
+      {(step !== 'payment' || (appointmentsMode && !showPaymentPage)) && (
         <ServiceDashboardHeader
           serviceName={headerInfo.title}
           serviceSubtitle={headerInfo.subtitle}
@@ -1093,7 +1196,26 @@ export function GroomingBookingRouter({
         />
       )}
 
-      {step === 'payment' && !showPaymentPage && (
+      {step === 'payment' && !showPaymentPage && appointmentsMode && (
+        <div className="max-w-md mx-auto px-4 pt-6 min-h-[calc(82vh)] pb-24 relative z-10">
+          <WapptBookingSummaryStep
+            category="grooming"
+            serviceStyle={selectedServiceType}
+            amount={reviewTotal}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            petName={selectedPet?.name}
+            petBreed={selectedPet?.breed}
+            addressLine={
+              selectedServiceType === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
+            }
+            onBack={() => setStep(selectedServiceType === 'at_home' ? 'address' : 'datetime')}
+            onContinue={handleProceedToPayment}
+          />
+        </div>
+      )}
+
+      {step === 'payment' && !showPaymentPage && !appointmentsMode && (
         <PrePaymentBookingReview
           title="Booking Summary"
           subtitle="Review before payment"
@@ -1226,8 +1348,65 @@ export function GroomingBookingRouter({
           </div>
         )}
 
-        {/* Schedule, pet, address & notes — single scrollable page */}
-        {step === 'datetime' && (
+        {step === 'datetime' && appointmentsMode ? (
+          <WapptBookingDetailsStep
+            dates={wapptSlots.dates}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            timeSlots={wapptSlots.timeSlots}
+            loadingSlots={wapptSlots.loadingSlots}
+            pets={pets}
+            selectedPet={selectedPet}
+            onDateSelect={setSelectedDate}
+            onTimeSelect={setSelectedTime}
+            onPetSelect={(pet) => {
+              setSelectedPet({
+                id: pet.id,
+                name: pet.name,
+                species: pet.species ?? '',
+                breed: pet.breed ?? '',
+              });
+              try {
+                sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id));
+              } catch {
+                /* ignore */
+              }
+            }}
+            onAddPet={() => setShowAddPetModal(true)}
+            onContinue={handleContinueFromBookingDetails}
+          />
+        ) : null}
+
+        {step === 'address' && appointmentsMode && selectedServiceType === 'at_home' ? (
+          <WapptBookingAddressStep
+            addresses={addresses}
+            selectedAddress={selectedAddress}
+            onSelect={setSelectedAddress}
+            onAddAddress={() => setShowAddAddressModal(true)}
+            onContinue={handleContinueFromAddress}
+            hint="An address is required for home grooming visit."
+          />
+        ) : null}
+
+        {step === 'summary' && appointmentsMode ? (
+          <WapptBookingSummaryStep
+            category="grooming"
+            serviceStyle={selectedServiceType}
+            amount={reviewTotal}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            petName={selectedPet?.name}
+            petBreed={selectedPet?.breed}
+            addressLine={
+              selectedServiceType === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
+            }
+            onBack={() => setStep(selectedServiceType === 'at_home' ? 'address' : 'datetime')}
+            onContinue={handleProceedToPayment}
+          />
+        ) : null}
+
+        {/* Schedule, pet, address & notes — single scrollable page (marketplace) */}
+        {step === 'datetime' && !appointmentsMode ? (
           <div className="space-y-8 pb-4">
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-3">Select Date</h2>
@@ -1488,7 +1667,7 @@ export function GroomingBookingRouter({
               Review booking and pay
             </Button>
           </div>
-        )}
+        ) : null}
 
         {/* Confirmation */}
         {step === 'confirmation' && (
@@ -1507,7 +1686,14 @@ export function GroomingBookingRouter({
               <div className="space-y-3 pt-4 border-t">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Service</span>
-                  <span className="font-medium">{selectedServiceOption?.name}</span>
+                  <span className="font-medium">
+                    {appointmentsMode
+                      ? getWarmpawzAppointmentServiceLabel({
+                          category: 'grooming',
+                          serviceStyle: selectedServiceType,
+                        })
+                      : selectedServiceOption?.name}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Date</span>
@@ -1515,7 +1701,9 @@ export function GroomingBookingRouter({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Time</span>
-                  <span className="font-medium">{selectedTime}</span>
+                  <span className="font-medium">
+                    {appointmentsMode ? formatTime12Hour(selectedTime) : selectedTime}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Pet</span>

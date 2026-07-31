@@ -39,7 +39,9 @@ import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppoin
 import type { WapptStyleFilter } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
 import {
   buildWarmpawzAppointmentsBookingNav,
+  buildWarmpawzAppointmentsProfileNav,
   resolveWarmpawzBookingScreen,
+  WAPPT_VENDOR_PROFILE_SCREEN,
 } from '@/lib/warmpawz-appointments-customer';
 import { useDiscoveryProfileVendorResolve } from '@/hooks/useDiscoveryProfileVendorResolve';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
@@ -49,6 +51,7 @@ import {
   vendorServicesRowsFromResponse,
 } from '@/lib/vendor-services-page';
 import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
+import { WarmpawzAppointmentsVendorProfile } from '../warmpawz-appointments/WarmpawzAppointmentsVendorProfile';
 import {
   getAverageRatingLabel,
   hasRatings,
@@ -58,6 +61,9 @@ import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
 import { roleIdToSharePersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from './ServiceStyleLaunchBlocked';
+import { applyWapptHubDiscoveryToProviders } from '@/lib/filter-hub-services';
+import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
+import { buildWapptDiscoveryVendorCardProps } from '@/lib/wappt-discovery-vendor-card';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -238,6 +244,9 @@ export function UniversalServicesByStyle({
       return;
     }
     let mapped = feedRows.map(mapRowToProvider);
+    if (appointmentsMode && category) {
+      mapped = applyWapptHubDiscoveryToProviders(mapped, category);
+    }
     if (vendorId) {
       const want = String(vendorId).trim();
       mapped = mapped.filter(
@@ -255,6 +264,8 @@ export function UniversalServicesByStyle({
     mapRowToProvider,
     launchGate.ready,
     launchGate.blocked,
+    appointmentsMode,
+    category,
   ]);
 
   const { showProfileLoading, profileResolveFailed } = useDiscoveryProfileVendorResolve({
@@ -446,25 +457,15 @@ export function UniversalServicesByStyle({
         wapptStyleFilter === 'all'
           ? serviceStyle
           : wapptStyleFilter;
-      const nav = buildWarmpawzAppointmentsBookingNav({
-        vendorId: vid,
-        vendorName: provider.name,
-        serviceStyle: style,
-        category: finalCategory,
+      onNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId: vid,
+          vendorName: provider.name,
+          serviceStyle: style,
+          category: finalCategory,
+          profileBackScreen: profileBackScreen || 'wappt-discovery',
+        }),
       });
-      if (roleId === 'veterinarian') {
-        onNavigate('vet-clinic-profile', {
-          ...nav,
-          clinicProfileBackScreen: profileBackScreen || 'wappt-discovery',
-        });
-        return;
-      }
-      if (roleId === 'groomer') {
-        const screen = style === 'at_home' ? 'grooming_home' : 'grooming_center';
-        onNavigate(screen, { ...nav, vendorId: vid });
-        return;
-      }
-      onNavigate(resolveWarmpawzBookingScreen(finalCategory), nav);
       return;
     }
     const row = provider as unknown as Record<string, unknown>;
@@ -620,6 +621,20 @@ export function UniversalServicesByStyle({
 
   // ✅ FIX: Pass all selected services to booking (matches vet/grooming flow)
   const handleBookServices = () => {
+    if (appointmentsMode && profileProvider) {
+      const vid = String(profileProvider.vendorId || profileProvider.providerId || '');
+      const style = wapptStyleFilter === 'all' ? serviceStyle : wapptStyleFilter;
+      onNavigate(resolveWarmpawzBookingScreen(finalCategory), {
+        ...buildWarmpawzAppointmentsBookingNav({
+          vendorId: vid,
+          vendorName: profileProvider.name,
+          serviceStyle: style,
+          category: finalCategory,
+        }),
+        appointmentsMode: true,
+      });
+      return;
+    }
     if (selectedServices.size === 0) {
       if (profileProvider?.services && profileProvider.services.length > 0) {
         handleSelectService(profileProvider, profileProvider.services[0]);
@@ -739,6 +754,21 @@ export function UniversalServicesByStyle({
   }
 
   // Profile View Mode - Zomato-style for vet provider (tele/at_home/at_center)
+  if (isProfileView && profileProvider && appointmentsMode && vendorId) {
+    return (
+      <WarmpawzAppointmentsVendorProfile
+        phone={phone}
+        vendorId={String(vendorId)}
+        vendorName={profileProvider.name}
+        category={finalCategory}
+        serviceStyle={String(serviceStyle)}
+        profileBackScreen={profileBackScreen || 'wappt-discovery'}
+        onBack={onBack}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
   if (isProfileView && profileProvider) {
     const providerName = vendor?.business_name || vendor?.name || profileProvider.name;
     const photos = resolveVendorProfileHeroGallery({ facility, vendor, profileProvider });
@@ -1257,10 +1287,12 @@ export function UniversalServicesByStyle({
           <div className="p-4">
             <Button 
               onClick={handleBookServices}
-              disabled={profileProvider.services.length === 0}
+              disabled={!appointmentsMode && profileProvider.services.length === 0}
               className="w-full bg-[#FF8C42] hover:bg-[#E67A35] h-12 text-lg text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              {selectedServices.size === 0 
+              {appointmentsMode
+                ? 'Select Slot for Appointment'
+                : selectedServices.size === 0 
                 ? (profileProvider.services.length === 0 ? 'No Services Available' : 'Select Services to Book')
                 : isSingleServiceSelection
                   ? `Continue • ${formatPriceWithSymbol(totalPrice)}`
@@ -1370,6 +1402,38 @@ export function UniversalServicesByStyle({
         ) : (
           <div className="space-y-4  ">
             {providers.map((provider) => {
+              if (appointmentsMode) {
+                const providerAddress = getProviderAddress(provider);
+                return (
+                  <WarmpawzPayVendorCard
+                    key={provider.providerId}
+                    {...buildWapptDiscoveryVendorCardProps({
+                      provider: {
+                        name: provider.name,
+                        photo: provider.photo,
+                        isVerified: provider.isVerified,
+                        rating: provider.rating,
+                        reviewCount: provider.reviewCount,
+                        distance: provider.distance,
+                        distanceText: (provider as { distanceText?: string }).distanceText,
+                        nextAvailableSlot: provider.nextAvailableSlot,
+                        experienceYears: provider.experienceYears,
+                        providerType: provider.providerType,
+                        city: provider.city,
+                        providerId: provider.providerId,
+                        vendorId: provider.vendorId,
+                      },
+                      subtitle: getProviderTypeLabel(provider),
+                      address: providerAddress,
+                      category: finalCategory,
+                      serviceKey: finalCategory,
+                      onPrimary: (e) => openProviderProfileForChevron(e, provider),
+                      router,
+                    })}
+                  />
+                );
+              }
+
               const expanded = selectedProvider === provider.providerId;
               const headerInteractive = expanded;
               const providerAddress = getProviderAddress(provider);
@@ -1637,7 +1701,7 @@ export function UniversalServicesByStyle({
                         void fetchProviderServices(provider.providerId);
                       }}
                     >
-                      {appointmentsMode ? 'Book Appointment' : 'View Services'}
+                      {appointmentsMode ? 'Select Slot for Appointment' : 'View Services'}
                     </Button>
                   </div>
                 )}

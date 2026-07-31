@@ -459,3 +459,70 @@ export async function applyOrderCommissionAudit(
 
   return snap;
 }
+
+export interface ForceCommissionAuditResult {
+  previous: CommissionSnapshot | null;
+  current: CommissionSnapshot;
+}
+
+async function loadStoredCommissionSnapshot(orderId: string): Promise<CommissionSnapshot | null> {
+  try {
+    const snapRes = await query(
+      `SELECT commission_snapshot FROM orders WHERE id = $1::uuid LIMIT 1`,
+      [orderId]
+    );
+    const raw = snapRes.rows?.[0]?.commission_snapshot;
+    if (!raw) return null;
+    return typeof raw === 'string' ? (JSON.parse(raw) as CommissionSnapshot) : (raw as CommissionSnapshot);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Force re-resolve commission using current vendor/product config and overwrite
+ * snapshotted order audit columns (admin correction path).
+ */
+export async function forceApplyOrderCommissionAudit(
+  orderId: string,
+  vendorId: string
+): Promise<ForceCommissionAuditResult | null> {
+  const previous = await loadStoredCommissionSnapshot(orderId);
+
+  let resolved: OrderCommissionResult;
+  try {
+    resolved = await resolveOrderCommissionByOrderId(vendorId, orderId);
+  } catch {
+    return null;
+  }
+
+  const snap = buildCommissionSnapshot(resolved);
+
+  try {
+    await query(
+      `UPDATE orders SET
+         commission_rate = $2,
+         commission_amount = $3,
+         vendor_payout_amount = GREATEST(
+           COALESCE(subtotal, 0)
+           - COALESCE(vendor_promotion_amount, 0)
+           - $3,
+           0
+         ),
+         commission_snapshot = $4::jsonb,
+         updated_at = NOW()
+       WHERE id = $1::uuid`,
+      [orderId, snap.effectiveRate, snap.commissionAmount, JSON.stringify(snap)]
+    );
+  } catch (err) {
+    console.warn('[COMMISSION] forceApplyOrderCommissionAudit orders update skipped:', err);
+    return null;
+  }
+
+  if (snap.lineBreakdown?.length) {
+    const orderItemIds = await loadOrderItemIds(orderId);
+    await persistOrderItemCommission(orderId, snap.lineBreakdown, orderItemIds);
+  }
+
+  return { previous, current: snap };
+}

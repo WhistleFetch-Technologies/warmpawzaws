@@ -10,16 +10,19 @@ import { enrichWapptDiscoveryCards } from '../shared/wappt-discovery-enrich';
 const DEFAULT_LIMIT = 3;
 const MAX_LIMIT = 20;
 
-function parseServiceStyle(raw: string | undefined): 'all' | 'at_center' | 'at_home' {
+import type { WapptDiscoveryServiceStyle } from '../repos/discovery_by_category_get.repo';
+
+function parseServiceStyle(raw: string | undefined): WapptDiscoveryServiceStyle {
   const style = String(raw || 'all').toLowerCase().trim();
   if (style === 'at_center' || style === 'at_clinic' || style === 'at_vendor') return 'at_center';
   if (style === 'at_home' || style === 'home_visit') return 'at_home';
+  if (style === 'tele' || style === 'online' || style === 'video_consultation') return 'tele';
   return 'all';
 }
 
 function mapRowToCard(
   row: Awaited<ReturnType<typeof dbListWapptDiscoveryByCategory>>['rows'][number],
-  serviceStyle: 'all' | 'at_center' | 'at_home',
+  serviceStyle: WapptDiscoveryServiceStyle,
 ) {
   const name =
     String(row.business_name || '').trim() ||

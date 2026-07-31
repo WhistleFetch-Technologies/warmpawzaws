@@ -10,63 +10,118 @@
  */
 
 import { query } from '../database/rds-connection';
-import { calculateEcommerceSettlement, type PromotionSource } from './ecommerce-settlement-calculator';
+import {
+  calculateEcommerceSettlement,
+  type EcommerceSettlementResult,
+  type PromotionSource,
+} from './ecommerce-settlement-calculator';
+
+type OrderSettlementRow = {
+  id: string;
+  vendor_id: string;
+  subtotal: number | string;
+  tax_amount: number | string | null;
+  shipping_amount: number | string | null;
+  promotion_source: string | null;
+  vendor_promotion_amount: number | string | null;
+  admin_promotion_amount: number | string | null;
+  commission_rate: number | string | null;
+  commission_amount: number | string | null;
+  metadata: unknown;
+};
+
+export type SettlementLedgerPayload = {
+  vendorId: string;
+  promotionId: string | null;
+  promotionSource: PromotionSource;
+  commissionRate: number;
+  finalCommissionAmount: number;
+  result: EcommerceSettlementResult;
+};
+
+export type SyncSettlementLedgerResult = {
+  updated: boolean;
+  skipped: boolean;
+  reason?: string;
+};
+
+function buildSettlementFromOrderRow(order: OrderSettlementRow): SettlementLedgerPayload | null {
+  if (!order?.vendor_id) return null;
+
+  const metadata =
+    typeof order.metadata === 'string'
+      ? JSON.parse(order.metadata || '{}')
+      : (order.metadata as Record<string, unknown>) || {};
+  const promotionId = (metadata?.promotionId as string | undefined) || null;
+
+  const promotionSource: PromotionSource =
+    order.promotion_source === 'vendor' || order.promotion_source === 'admin'
+      ? order.promotion_source
+      : null;
+  const discountAmount =
+    promotionSource === 'vendor'
+      ? Number(order.vendor_promotion_amount) || 0
+      : promotionSource === 'admin'
+        ? Number(order.admin_promotion_amount) || 0
+        : 0;
+
+  const merchandiseValue = Number(order.subtotal) || 0;
+  const gstAmount = Number(order.tax_amount) || 0;
+  const taxableValue = Math.max(0, merchandiseValue - gstAmount);
+  const commissionRate = Number(order.commission_rate) || 0;
+  const commissionAmount =
+    order.commission_amount != null ? Number(order.commission_amount) : undefined;
+
+  const result = calculateEcommerceSettlement({
+    merchandiseValue,
+    taxableValue,
+    commissionRate,
+    promotionSource,
+    discountAmount,
+  });
+
+  const finalCommissionAmount =
+    promotionSource === 'vendor'
+      ? result.commissionAmount
+      : commissionAmount != null
+        ? commissionAmount
+        : result.commissionAmount;
+
+  return {
+    vendorId: String(order.vendor_id),
+    promotionId,
+    promotionSource,
+    commissionRate,
+    finalCommissionAmount,
+    result,
+  };
+}
+
+async function loadOrderForSettlement(orderId: string): Promise<OrderSettlementRow | null> {
+  const { rows } = await query(
+    `SELECT
+       o.id, o.vendor_id, o.subtotal, o.tax_amount, o.shipping_amount,
+       o.discount_amount, o.promotion_source, o.vendor_promotion_amount,
+       o.admin_promotion_amount, o.commission_rate, o.commission_amount,
+       o.metadata
+     FROM orders o
+     WHERE o.id = $1::uuid
+     LIMIT 1`,
+    [orderId]
+  );
+  return (rows?.[0] as OrderSettlementRow | undefined) ?? null;
+}
 
 export async function writeEcommerceOrderSettlementLedgerRow(orderId: string): Promise<void> {
   try {
-    const { rows } = await query(
-      `SELECT
-         o.id, o.vendor_id, o.subtotal, o.tax_amount, o.shipping_amount,
-         o.discount_amount, o.promotion_source, o.vendor_promotion_amount,
-         o.admin_promotion_amount, o.commission_rate, o.commission_amount,
-         o.metadata
-       FROM orders o
-       WHERE o.id = $1::uuid
-       LIMIT 1`,
-      [orderId]
-    );
-    const order = rows?.[0];
-    if (!order || !order.vendor_id) return;
+    const order = await loadOrderForSettlement(orderId);
+    if (!order) return;
 
-    const metadata =
-      typeof order.metadata === 'string'
-        ? JSON.parse(order.metadata || '{}')
-        : order.metadata || {};
-    const promotionId = metadata?.promotionId || null;
+    const payload = buildSettlementFromOrderRow(order);
+    if (!payload) return;
 
-    const promotionSource: PromotionSource =
-      order.promotion_source === 'vendor' || order.promotion_source === 'admin'
-        ? order.promotion_source
-        : null;
-    const discountAmount =
-      promotionSource === 'vendor'
-        ? Number(order.vendor_promotion_amount) || 0
-        : promotionSource === 'admin'
-          ? Number(order.admin_promotion_amount) || 0
-          : 0;
-
-    const merchandiseValue = Number(order.subtotal) || 0;
-    const gstAmount = Number(order.tax_amount) || 0;
-    const taxableValue = Math.max(0, merchandiseValue - gstAmount);
-    const commissionRate = Number(order.commission_rate) || 0;
-    const commissionAmount = order.commission_amount != null ? Number(order.commission_amount) : undefined;
-
-    const result = calculateEcommerceSettlement({
-      merchandiseValue,
-      taxableValue,
-      commissionRate,
-      promotionSource,
-      discountAmount,
-    });
-
-    // Prefer stored commission for admin/no-promo (order-create audit). For vendor-funded,
-    // always use calculator so commission is based on discounted taxable (P − D).
-    const finalCommissionAmount =
-      promotionSource === 'vendor'
-        ? result.commissionAmount
-        : commissionAmount != null
-          ? commissionAmount
-          : result.commissionAmount;
+    const { vendorId, promotionId, promotionSource, commissionRate, finalCommissionAmount, result } =
+      payload;
 
     await query(
       `INSERT INTO ecommerce_order_settlements (
@@ -79,7 +134,7 @@ export async function writeEcommerceOrderSettlementLedgerRow(orderId: string): P
        ON CONFLICT (order_id) DO NOTHING`,
       [
         orderId,
-        order.vendor_id,
+        vendorId,
         result.merchandiseValue,
         result.taxableValue,
         result.gstAmount,
@@ -94,8 +149,79 @@ export async function writeEcommerceOrderSettlementLedgerRow(orderId: string): P
       ]
     );
   } catch (err) {
-    // Never fail payment verification because of ledger bookkeeping — the batch job can
-    // backfill from the orders table if a row is missing (see ecommerce-settlement-processor.ts).
     console.warn('[SETTLEMENT-LEDGER] writeEcommerceOrderSettlementLedgerRow skipped:', err);
+  }
+}
+
+/** Update an existing ledger row after admin commission re-resolve. */
+export async function syncEcommerceOrderSettlementLedgerRow(
+  orderId: string,
+  options?: { force?: boolean }
+): Promise<SyncSettlementLedgerResult> {
+  const force = options?.force ?? false;
+
+  try {
+    const ledgerRes = await query(
+      `SELECT id, status FROM ecommerce_order_settlements WHERE order_id = $1::uuid LIMIT 1`,
+      [orderId]
+    );
+    const ledger = ledgerRes.rows?.[0] as { id: string; status: string } | undefined;
+    if (!ledger) {
+      return { updated: false, skipped: true, reason: 'no_ledger_row' };
+    }
+
+    const status = String(ledger.status || '');
+    if (status !== 'pending_batch' && !force) {
+      return { updated: false, skipped: true, reason: `ledger_status_${status}` };
+    }
+
+    const order = await loadOrderForSettlement(orderId);
+    if (!order) {
+      return { updated: false, skipped: true, reason: 'order_not_found' };
+    }
+
+    const payload = buildSettlementFromOrderRow(order);
+    if (!payload) {
+      return { updated: false, skipped: true, reason: 'settlement_build_failed' };
+    }
+
+    const { commissionRate, finalCommissionAmount, result, promotionSource } = payload;
+
+    let vendorPayoutAmount = result.vendorPayoutAmount;
+    let platformNetAmount = result.platformNetAmount;
+    if (finalCommissionAmount !== result.commissionAmount) {
+      if (promotionSource === 'vendor') {
+        vendorPayoutAmount = Math.max(0, result.customerPayableGoods - finalCommissionAmount);
+        platformNetAmount = finalCommissionAmount;
+      } else if (promotionSource === 'admin') {
+        vendorPayoutAmount = Math.max(0, result.merchandiseValue - finalCommissionAmount);
+        platformNetAmount = finalCommissionAmount - result.discountAmount;
+      } else {
+        vendorPayoutAmount = Math.max(0, result.merchandiseValue - finalCommissionAmount);
+        platformNetAmount = finalCommissionAmount;
+      }
+    }
+
+    await query(
+      `UPDATE ecommerce_order_settlements SET
+         commission_rate = $2,
+         commission_amount = $3,
+         vendor_payout_amount = $4,
+         platform_net_amount = $5,
+         updated_at = NOW()
+       WHERE order_id = $1::uuid`,
+      [
+        orderId,
+        commissionRate,
+        finalCommissionAmount,
+        vendorPayoutAmount,
+        platformNetAmount,
+      ]
+    );
+
+    return { updated: true, skipped: false };
+  } catch (err) {
+    console.warn('[SETTLEMENT-LEDGER] syncEcommerceOrderSettlementLedgerRow failed:', err);
+    return { updated: false, skipped: true, reason: 'error' };
   }
 }

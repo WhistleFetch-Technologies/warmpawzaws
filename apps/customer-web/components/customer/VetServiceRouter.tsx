@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, type MouseEvent } from 'react';
 import { CachedImage } from '@/components/shared/CachedImage';
-import { Stethoscope, Star, ChevronRight, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2, Calendar } from 'lucide-react';
+import { Stethoscope, Star, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -18,7 +18,6 @@ import { StandardizedFooter } from './shared/StandardizedFooter';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
-import { DiscoveryVendorFeedSentinel } from './shared/DiscoveryVendorFeedSentinel';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
@@ -43,7 +42,9 @@ import {
   resolveServiceStyleLaunchFromCatalog,
 } from '@/lib/customer-service-style-launch';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
-import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
+import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
+import { resolveTeleConsultShellNavigation } from '@/lib/warmpawz-appointments/wappt-tele-catalogue';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -113,9 +114,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const legacyProblems = useProblemGridByRole('vet');
   const {
     loading: vendorsLoading,
-    loadingMore: vendorsLoadingMore,
-    hasMore: vendorsHasMore,
-    loadMore: loadMoreVendors,
     vendors,
     relaxedFilter,
     selectedVendorId,
@@ -376,6 +374,20 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
   const handleVetBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
     const raw = (v.raw || {}) as Record<string, unknown>;
+    if (shouldHideDiscoveryPricing(raw)) {
+      const vendorId =
+        pickCustomerVendorAccountId(raw) || String(raw.vendorId || raw.vendor_id || v.id || '').trim();
+      handleNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId,
+          category: 'vet',
+          serviceStyle: String(plan.serviceStyle || 'at_center'),
+          vendorName: v.name,
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
+      return;
+    }
     const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
 
     const serviceObj: Record<string, unknown> = {
@@ -469,6 +481,20 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
     const rawVendorId = String(raw.vendorId || raw.vendor_id || '').trim();
     const rawProviderId = String(raw.providerId || raw.provider_id || '').trim();
+
+    if (shouldHideDiscoveryPricing(raw)) {
+      const vendorId = pickCustomerVendorAccountId(raw) || rawVendorId || v.id;
+      handleNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId,
+          category: 'vet',
+          serviceStyle: 'at_center',
+          vendorName: v.name,
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
+      return;
+    }
 
     if (providerType === 'staff' || providerType === 'individual') {
       const doctorId =
@@ -577,7 +603,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   } else if (service.id === 'clinic') {
                     handleNavigate('vet-clinic-list');
                   } else if (service.id === 'tele') {
-                    handleNavigate('vet-tele-consultation');
+                    const nav = resolveTeleConsultShellNavigation();
+                    handleNavigate(nav.screen, nav.data);
                   } else if (service.id === 'home') {
                     handleNavigate('vet-home-visit');
                   } else if (service.id === 'medicine') {
@@ -704,18 +731,9 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           </div>
         )}
 
-        {/* Featured Vets — same expandable pattern as vet-all-doctors */}
+        {/* Featured Vets — top 3 on hub */}
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">Featured Vets</h2>
-            <button 
-              className="text-sm text-[#FF8C42] flex items-center gap-1"
-              onClick={() => handleNavigate('vet-all-doctors')}
-            >
-              View All
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+          <h2 className="text-lg font-semibold mb-3">Featured Vets</h2>
           {relaxedFilter && (
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
               Showing all veterinary providers we could match — expand for services and prices.
@@ -744,6 +762,11 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     onDetails={openVetDetails}
                     onBookPlan={handleVetBookPlan}
                     onOpenCenterDetails={openVetCenterProfile}
+                    onBookAppointment={
+                      isWarmpawzAppointmentsHubEnabled('vet')
+                        ? () => handleNavigate('wappt-discovery', { category: 'vet' })
+                        : undefined
+                    }
                     customerId={phone}
                     serviceCategory="vet"
                   />
@@ -755,12 +778,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 <p className="text-gray-400 text-xs mt-1">Check back soon!</p>
               </Card>
             )}
-            <DiscoveryVendorFeedSentinel
-              hasMore={vendorsHasMore}
-              loading={vendorsLoading}
-              loadingMore={vendorsLoadingMore}
-              onLoadMore={() => void loadMoreVendors()}
-            />
           </div>
         </div>
 
@@ -776,11 +793,15 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
               role="button"
               tabIndex={0}
               className="p-4 bg-white border border-gray-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
-              onClick={() => handleNavigate('vet-tele-consultation')}
+              onClick={() => {
+                const nav = resolveTeleConsultShellNavigation();
+                handleNavigate(nav.screen, nav.data);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  handleNavigate('vet-tele-consultation');
+                  const nav = resolveTeleConsultShellNavigation();
+                  handleNavigate(nav.screen, nav.data);
                 }
               }}
             >

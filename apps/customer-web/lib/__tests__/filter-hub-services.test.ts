@@ -5,6 +5,10 @@ import {
   isGroomingServiceForVetHub,
   resolveServiceCategoryDisplayLabel,
   applyVetHubDiscoveryToProviders,
+  filterGroomingHubProviderRows,
+  filterTrainingHubProviderRows,
+  filterBehavioristHubProviderRows,
+  applyWapptHubDiscoveryToProviders,
 } from '../filter-hub-services';
 
 describe('resolveServiceCategoryDisplayLabel', () => {
@@ -156,5 +160,53 @@ describe('filterProvidersServicesForVetHub', () => {
     ];
     const out = filterProvidersServicesForVetHub(providers);
     expect(out.map((p) => p.id)).toEqual(['vet-a']);
+  });
+});
+
+describe('filterGroomingHubProviderRows', () => {
+  it('drops vet clinics from grooming WAPPT hub rows', () => {
+    const rows = [
+      { id: 'vet-1', roleDisplayName: 'Veterinary Clinic' },
+      { id: 'g-1', roleDisplayName: 'Groomer (Center)' },
+    ];
+    expect(filterGroomingHubProviderRows(rows).map((r) => r.id)).toEqual(['g-1']);
+  });
+});
+
+describe('filterTrainingHubProviderRows', () => {
+  it('drops groomers from training WAPPT hub rows', () => {
+    const rows = [
+      { id: 'g-1', roleDisplayName: 'Groomer (Center)' },
+      { id: 't-1', roleDisplayName: 'Trainer (Solo)' },
+    ];
+    expect(filterTrainingHubProviderRows(rows).map((r) => r.id)).toEqual(['t-1']);
+  });
+
+  it('drops behaviorists from training WAPPT hub rows', () => {
+    const rows = [
+      { id: 'b-1', roleDisplayName: 'Pet Behaviorist (Solo)' },
+      { id: 't-1', roleDisplayName: 'Trainer (Solo)' },
+    ];
+    expect(filterTrainingHubProviderRows(rows).map((r) => r.id)).toEqual(['t-1']);
+  });
+});
+
+describe('filterBehavioristHubProviderRows', () => {
+  it('keeps behaviorists and drops trainers', () => {
+    const rows = [
+      { id: 'b-1', roleDisplayName: 'Pet Behaviorist (Solo)' },
+      { id: 't-1', roleDisplayName: 'Trainer (Solo)' },
+    ];
+    expect(filterBehavioristHubProviderRows(rows).map((r) => r.id)).toEqual(['b-1']);
+  });
+});
+
+describe('applyWapptHubDiscoveryToProviders', () => {
+  it('filters behaviorist hub rows', () => {
+    const rows = [
+      { id: 'b-1', roleDisplayName: 'Behaviorist Center' },
+      { id: 'vet-1', roleDisplayName: 'Veterinary Clinic' },
+    ];
+    expect(applyWapptHubDiscoveryToProviders(rows, 'behaviorist').map((r) => r.id)).toEqual(['b-1']);
   });
 });

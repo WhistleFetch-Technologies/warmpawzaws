@@ -71,4 +71,22 @@ describe('WarmpawzPayPage loading UX', () => {
 
     expect(screen.getByRole('button', { name: 'View Happy Tails' })).toBeTruthy();
   });
+
+  it('renders Pet Sitting and Nutrition category filters', () => {
+    mockUseWpayVendorFeed.mockReturnValue({
+      vendors: [],
+      loading: false,
+      loadingMore: false,
+      hasMore: false,
+      error: null,
+      loadMore: jest.fn(),
+      reload: jest.fn(),
+    });
+
+    render(createElement(WarmpawzPayPage));
+
+    expect(screen.getByRole('button', { name: 'Pet Sitting' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Nutrition' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Walking' })).toBeTruthy();
+  });
 });

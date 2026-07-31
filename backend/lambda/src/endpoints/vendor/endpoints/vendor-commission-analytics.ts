@@ -7,6 +7,12 @@ import { Hono } from 'hono';
 import { query } from '../../../database/rds-connection';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { resolveSellerCommissionRate } from '../../../utils/seller-commission-rate';
+import { SQL_SHOP_ORDER_VENDOR_VISIBLE } from '../../../utils/shop-vendor-visibility';
+import {
+  SQL_VENDOR_COMMISSION_AMOUNT,
+  SQL_VENDOR_GOODS_AMOUNT,
+  SQL_VENDOR_NET_AMOUNT,
+} from '../../../utils/vendor-ecommerce-money-sql';
 
 const EMPTY_RESPONSE = {
   commissionRate: 0,
@@ -142,28 +148,21 @@ class GetVendorCommissionAnalyticsHandler extends BaseHandler {
       const { rate: commissionRate, source: commissionRateSource, monthlyRevenue, configured, missing } =
         await resolveSellerCommissionRate(vendorId);
 
-      const effectiveRate = configured && commissionRate != null ? commissionRate : 0;
-      const rateFrac = effectiveRate / 100;
-
       const [statsRes, gstRate, vendorRes] = await Promise.all([
         query(
           `SELECT
-             COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status != 'cancelled'), 0) AS total_revenue,
-             COALESCE(SUM(
-               COALESCE(o.subtotal, o.total_amount - COALESCE(o.tax_amount, 0))
-             ) FILTER (WHERE o.order_status != 'cancelled'), 0) AS total_base,
-             COALESCE(SUM(
-               (COALESCE(o.subtotal, o.total_amount - COALESCE(o.tax_amount, 0))
-                - COALESCE(o.vendor_promotion_amount, 0))
-               * (1 - $2::numeric / 100)
-             ) FILTER (
+             COALESCE(SUM((${SQL_VENDOR_GOODS_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) AS total_revenue,
+             COALESCE(SUM((${SQL_VENDOR_COMMISSION_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) AS total_commission,
+             COALESCE(SUM((${SQL_VENDOR_NET_AMOUNT})) FILTER (WHERE o.order_status != 'cancelled'), 0) AS net_earnings,
+             COALESCE(SUM((${SQL_VENDOR_NET_AMOUNT})) FILTER (
                WHERE o.order_status NOT IN ('cancelled', 'delivered', 'returned')
-                 AND o.payment_status = 'completed'
              ), 0) AS pending_payout,
-             COALESCE(SUM(o.vendor_payout_amount) FILTER (WHERE o.order_status = 'delivered'), 0) AS settled_payout
+             COALESCE(SUM((${SQL_VENDOR_NET_AMOUNT})) FILTER (WHERE o.order_status = 'delivered'), 0) AS settled_payout
            FROM orders o
-           WHERE o.vendor_id = $1`,
-          [vendorId, effectiveRate]
+           WHERE o.vendor_id = $1
+             AND o.order_status != 'pending_payment'
+             AND ${SQL_SHOP_ORDER_VENDOR_VISIBLE}`,
+          [vendorId]
         ),
         resolveSellerGstRate(vendorId),
         query(`SELECT commission_tier_id FROM vendors WHERE id = $1 LIMIT 1`, [vendorId]).catch(
@@ -173,11 +172,10 @@ class GetVendorCommissionAnalyticsHandler extends BaseHandler {
 
       const stats = statsRes.rows?.[0] || {};
       const totalRevenue = parseFloat(String(stats.total_revenue ?? 0));
-      const totalBase = parseFloat(String(stats.total_base ?? 0));
+      const totalCommission = parseFloat(String(stats.total_commission ?? 0));
+      const netEarnings = parseFloat(String(stats.net_earnings ?? 0));
       const pendingPayout = parseFloat(String(stats.pending_payout ?? 0));
       const settledPayout = parseFloat(String(stats.settled_payout ?? 0));
-      const totalCommission = totalBase * rateFrac;
-      const netEarnings = totalBase * (1 - rateFrac);
 
       const commissionTierId = vendorRes.rows?.[0]?.commission_tier_id
         ? String(vendorRes.rows[0].commission_tier_id)

@@ -84,6 +84,9 @@ const BASE_SEARCH_CATEGORY_ALIASES: Record<string, string[]> = {
   ],
   nutritionist: ['nutrition', 'nutritionist', 'pet_nutritionist', 'nutritionist_center', 'nutritionist_solo'],
   nutrition: ['nutrition', 'nutritionist', 'pet_nutritionist', 'nutritionist_center', 'nutritionist_solo'],
+  sitting: ['sitting', 'sitter', 'pet_sitter', 'pet_sitting', 'pet-sitter', 'pet sitter'],
+  sitter: ['sitting', 'sitter', 'pet_sitter', 'pet_sitting', 'pet-sitter', 'pet sitter'],
+  pet_sitter: ['sitting', 'sitter', 'pet_sitter', 'pet_sitting', 'pet-sitter', 'pet sitter'],
   shop: ['shop', 'pet_shop', 'pet_store', 'marketplace', 'ecommerce', 'seller', 'store', 'retail'],
 };
 
@@ -157,6 +160,9 @@ export function hubChipToLaunchIdsForCatalogInversion(chip: string | null | unde
   if (n === 'vet') return ['vet', 'diagnostics'];
   if (n === 'cafe') return ['cafes'];
   if (n === 'resort') return ['resort', 'holiday'];
+  if (n === 'walking') return ['walker'];
+  if (n === 'sitting' || n === 'sitter' || n === 'pet_sitter') return ['pet-sitter'];
+  if (n === 'nutrition') return ['nutritionist'];
   return [n];
 }
 

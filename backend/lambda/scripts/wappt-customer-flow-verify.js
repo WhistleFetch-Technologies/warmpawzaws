@@ -39,6 +39,7 @@ const JSON_OUT = argValue('--json-out', '');
 const FLOWS = [
   { key: 'vet_clinic', category: 'vet', serviceStyle: 'at_center', roleId: 'veterinarian' },
   { key: 'vet_home', category: 'vet', serviceStyle: 'at_home', roleId: 'veterinarian' },
+  { key: 'vet_tele', category: 'vet', serviceStyle: 'tele', roleId: 'veterinarian' },
   { key: 'grooming_center', category: 'grooming', serviceStyle: 'at_center', roleId: 'groomer' },
   { key: 'grooming_home', category: 'grooming', serviceStyle: 'at_home', roleId: 'groomer' },
 ];

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { UtensilsCrossed, Apple, Heart, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Video, Home, Building2, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -18,6 +18,23 @@ import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { normalizeAvailableSlotsResponse, buildDefaultSlotsWithPastGuard } from '@/lib/available-slots-response';
 import { SERVICE_DESC_VIEW_MORE_MIN_LEN } from '@/lib/service-description-preview';
 import { cn } from '@/components/ui/utils';
+import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
+import { useWapptBookingSlots } from '@/hooks/useWapptBookingSlots';
+import {
+  WAPPT_APPOINTMENT_SERVICE_ID,
+  WAPPT_BOOKING_MODE,
+  WAPPT_DEFAULT_SLOT_DURATION_MIN,
+  getWarmpawzAppointmentServiceLabel,
+} from '@/lib/warmpawz-appointments-customer';
+import { WapptBookingDetailsStep } from '../warmpawz-appointments/WapptBookingDetailsStep';
+import { WapptBookingSummaryStep } from '../warmpawz-appointments/WapptBookingSummaryStep';
+import { WapptBookingAddressStep } from '../warmpawz-appointments/WapptBookingAddressStep';
+import {
+  formatWapptAddressLine,
+  getWapptBookingPreviousStep,
+  getWapptBookingStepIndex,
+  getWapptBookingSteps,
+} from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 
 /** Real catalog service UUID (not role/category slugs like pet_nutritionist). */
 function looksLikeCatalogServiceId(id: string | undefined | null): id is string {
@@ -56,7 +73,7 @@ function deriveInitialBookingStyle(
   return normalizeToBookingStyle(serviceStyle) ?? normalizeToBookingStyle(serviceType) ?? 'tele';
 }
 
-type BookingStep = 'service' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmation';
+type BookingStep = 'service' | 'datetime' | 'address' | 'summary' | 'pet' | 'payment' | 'confirmation';
 
 
 
@@ -71,6 +88,7 @@ export function NutritionistBookingRouter({
   serviceStyle,
   price,
   duration,
+  appointmentsMode = false,
   onBack,
   onNavigate,
   onViewBooking,
@@ -79,7 +97,7 @@ export function NutritionistBookingRouter({
   console.log('NutritionistBookingRouter--------------------->', phone, vendorId, nutritionist, selectedService, serviceType, serviceId, serviceName, serviceStyle, price, duration, onBack, onNavigate, onViewBooking);
 
   const catalogServiceId = [serviceId, selectedService].find(looksLikeCatalogServiceId);
-  const hasServiceContext = Boolean(catalogServiceId);
+  const hasServiceContext = appointmentsMode && vendorId ? true : Boolean(catalogServiceId);
   const initialBookingStyle = deriveInitialBookingStyle(serviceStyle, serviceType);
 
   const initialStep: BookingStep = hasServiceContext ? 'datetime' : 'service';
@@ -254,12 +272,44 @@ export function NutritionistBookingRouter({
 
   const [dates] = useState(generateDates());
 
+  const wapptBooking = useWapptAppointmentBooking({
+    appointmentsMode,
+    vendorId: effectiveVendorId,
+    category: 'nutrition',
+    serviceStyle: serviceStyle || serviceType || 'at_center',
+    initialPrice: price,
+  });
+
+  useEffect(() => {
+    if (!appointmentsMode || !wapptBooking.selectedVendorService) return;
+    setSelectedVendorService(wapptBooking.selectedVendorService);
+  }, [appointmentsMode, wapptBooking.selectedVendorService]);
+
+  const wapptFlowSteps = useMemo(
+    () =>
+      appointmentsMode
+        ? getWapptBookingSteps(selectedServiceType === 'at_home' ? 'at_home' : 'at_center')
+        : [],
+    [appointmentsMode, selectedServiceType],
+  );
+
+  const wapptSlots = useWapptBookingSlots({
+    vendorId: effectiveVendorId,
+    serviceStyle: selectedServiceType === 'at_home' ? 'at_home' : selectedServiceType === 'tele' ? 'tele' : 'at_center',
+    totalDurationMinutes: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+    selectedDate,
+    enabled: appointmentsMode && !!effectiveVendorId,
+  });
+
+  const wapptReviewTotal =
+    wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0;
+
   useEffect(() => {
     loadCustomerData();
-    if (effectiveVendorId) {
+    if (effectiveVendorId && !appointmentsMode) {
       loadVendorServices();
     }
-  }, [phone, effectiveVendorId, selectedServiceType]);
+  }, [phone, effectiveVendorId, selectedServiceType, appointmentsMode]);
 
   const loadVendorServices = async () => {
     if (!effectiveVendorId) return;
@@ -387,10 +437,10 @@ export function NutritionistBookingRouter({
   };
 
   useEffect(() => {
-    if (customerId && effectiveVendorId && step === 'service') {
-      checkForActivePackages();
+    if (!appointmentsMode && customerId && effectiveVendorId) {
+      void checkForActivePackages();
     }
-  }, [customerId, effectiveVendorId, step]);
+  }, [customerId, effectiveVendorId, appointmentsMode, selectedServiceType]);
 
   // Handle using a package session
   const handleUsePackageSession = async () => {
@@ -408,6 +458,36 @@ export function NutritionistBookingRouter({
     setShowPackageModal(false);
     setUsePackageSession(false);
     // Proceed with normal booking
+  };
+
+  const handleContinueFromBookingDetails = () => {
+    if (!selectedDate || !selectedTime) {
+      toast.error('Please select date and time');
+      return;
+    }
+    const selectedSlot = wapptSlots.timeSlots.find((s) => s.time === selectedTime);
+    if (selectedSlot && !selectedSlot.available) {
+      toast.error('This time slot is already booked. Please select a different time.');
+      return;
+    }
+    if (!selectedPet) {
+      toast.error('Please select a pet');
+      return;
+    }
+    if (selectedServiceType === 'at_home') {
+      setStep('address');
+    } else {
+      setSelectedAddress({ id: 'clinic' });
+      setStep('summary');
+    }
+  };
+
+  const handleContinueFromAddress = () => {
+    if (!selectedAddress) {
+      toast.error('Please select a delivery address');
+      return;
+    }
+    setStep('summary');
   };
 
   const handleNext = () => {
@@ -428,7 +508,25 @@ export function NutritionistBookingRouter({
   const handleBack = useCallback(() => {
     if (showPaymentPage) {
       setShowPaymentPage(false);
+      if (appointmentsMode) {
+        setStep('summary');
+        return;
+      }
       return;
+    }
+    if (appointmentsMode && wapptFlowSteps.length > 0) {
+      const prev = getWapptBookingPreviousStep(
+        wapptFlowSteps,
+        step as 'datetime' | 'address' | 'summary' | 'payment',
+      );
+      if (prev) {
+        setStep(prev);
+        return;
+      }
+      if (step === 'datetime' && hasServiceContext) {
+        onBack();
+        return;
+      }
     }
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
@@ -453,7 +551,7 @@ export function NutritionistBookingRouter({
     } else {
       onBack();
     }
-  }, [showPaymentPage, step, selectedServiceType, onBack, hasServiceContext]);
+  }, [showPaymentPage, step, selectedServiceType, onBack, hasServiceContext, appointmentsMode, wapptFlowSteps]);
 
   useEffect(() => {
     if (onInternalBackReady) {
@@ -578,11 +676,23 @@ export function NutritionistBookingRouter({
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
 
+    if (appointmentsMode && wapptFlowSteps.length > 0) {
+      const flowStep = step === 'address' || step === 'datetime' || step === 'summary' ? step : 'datetime';
+      const currentIdx = getWapptBookingStepIndex(wapptFlowSteps, flowStep);
+      if (currentIdx >= 0) {
+        return wapptFlowSteps.map((s, idx) => ({
+          label: s.label,
+          isCompleted: idx < currentIdx,
+          isCurrent: idx === currentIdx,
+        }));
+      }
+    }
+
     const stepLabels = selectedServiceType === 'tele'
       ? ['Service', 'Date/Time', 'Pet', 'Payment']
       : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = {
-      service: 0, datetime: 1, pet: 2, address: 3, payment: selectedServiceType === 'tele' ? 3 : 4, confirmation: 5
+      service: 0, datetime: 1, pet: 2, address: 3, summary: selectedServiceType === 'tele' ? 3 : 4, payment: selectedServiceType === 'tele' ? 3 : 4, confirmation: 5
     };
     const currentIdx = currentStepMap[step];
 
@@ -601,6 +711,7 @@ export function NutritionistBookingRouter({
     if (!selectedVendorService && selectedServiceOption) {
       setSelectedVendorService(selectedServiceOption);
     }
+    setStep('payment');
     setShowPaymentPage(true);
   };
 
@@ -627,7 +738,7 @@ export function NutritionistBookingRouter({
             }
           }
 
-          if (finalServiceId && uuidRegex.test(finalServiceId)) {
+          if ((finalServiceId && uuidRegex.test(finalServiceId)) || appointmentsMode) {
             const displayVendorName = nutritionist?.businessName || nutritionist?.name || 'Nutritionist';
             return (
               <UniversalPaymentPage
@@ -635,8 +746,15 @@ export function NutritionistBookingRouter({
                 layoutVariant="appShell"
                 vendorId={vendorId || ''}
                 vendorName={displayVendorName}
-                serviceId={finalServiceId}
-                serviceName={selectedVendorService.name || selectedServiceOption?.name || 'Diet Consultation'}
+                serviceId={appointmentsMode ? WAPPT_APPOINTMENT_SERVICE_ID : finalServiceId}
+                serviceName={
+                  appointmentsMode
+                    ? getWarmpawzAppointmentServiceLabel({
+                        category: 'nutrition',
+                        serviceStyle: selectedServiceType === 'at_home' ? 'at_home' : 'at_center',
+                      })
+                    : selectedVendorService.name || selectedServiceOption?.name || 'Diet Consultation'
+                }
                 serviceDescription={`${selectedVendorService.name || 'Diet Consultation'} for ${selectedPet.name}`}
                 serviceStyle={
                   selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'
@@ -659,15 +777,29 @@ export function NutritionistBookingRouter({
                       }
                     : undefined
                 }
-                baseAmount={selectedVendorService.price || selectedServiceOption?.price || 0}
+                baseAmount={
+                  appointmentsMode
+                    ? wapptBooking.appointmentFee ?? selectedVendorService.price ?? price ?? 0
+                    : selectedVendorService.price || selectedServiceOption?.price || 0
+                }
                 priceIncludesTax={
                   catalogPriceIncludesTax(selectedVendorService) || catalogPriceIncludesTax(selectedServiceOption)
                 }
-                duration={selectedVendorService.duration || selectedServiceOption?.duration || 30}
+                duration={
+                  appointmentsMode
+                    ? WAPPT_DEFAULT_SLOT_DURATION_MIN
+                    : selectedVendorService.duration || selectedServiceOption?.duration || 30
+                }
                 customerPhone={phone}
                 customerId={customerId || undefined}
                 flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
-                onBack={() => setShowPaymentPage(false)}
+                bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
+                onBack={() => {
+                  setShowPaymentPage(false);
+                  if (appointmentsMode) {
+                    setStep('summary');
+                  }
+                }}
                 onSuccess={(bookingId) => {
                   setBookingId(bookingId);
                   setShowPaymentPage(false);
@@ -695,7 +827,7 @@ export function NutritionistBookingRouter({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {step !== 'payment' && (
+      {(step !== 'payment' || (appointmentsMode && !showPaymentPage)) && (
         <ServiceDashboardHeader
           serviceName={getServiceTitle()}
           serviceSubtitle={getServiceSubtitle()}
@@ -709,7 +841,26 @@ export function NutritionistBookingRouter({
         />
       )}
 
-      {step === 'payment' && !showPaymentPage && (
+      {step === 'payment' && !showPaymentPage && appointmentsMode && (
+        <div className="max-w-md mx-auto px-4 py-6">
+          <WapptBookingSummaryStep
+            category="nutrition"
+            serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
+            amount={wapptReviewTotal}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            petName={selectedPet?.name}
+            petBreed={selectedPet?.breed}
+            addressLine={
+              selectedServiceType === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
+            }
+            onBack={() => setStep(selectedServiceType === 'at_home' ? 'address' : 'datetime')}
+            onContinue={proceedToPaymentOrPackage}
+          />
+        </div>
+      )}
+
+      {step === 'payment' && !showPaymentPage && !appointmentsMode && (
         <PrePaymentBookingReview
           title="Booking Summary"
           subtitle="Review before payment"
@@ -865,7 +1016,59 @@ export function NutritionistBookingRouter({
         )}
 
         {/* Date & Time Selection */}
-        {step === 'datetime' && (
+        {step === 'datetime' && appointmentsMode ? (
+          <WapptBookingDetailsStep
+            dates={wapptSlots.dates}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            timeSlots={wapptSlots.timeSlots}
+            loadingSlots={wapptSlots.loadingSlots}
+            pets={pets}
+            selectedPet={selectedPet}
+            onDateSelect={setSelectedDate}
+            onTimeSelect={setSelectedTime}
+            onPetSelect={(pet) =>
+              setSelectedPet({
+                id: pet.id,
+                name: pet.name,
+                species: pet.species ?? '',
+                breed: pet.breed ?? '',
+              })
+            }
+            onAddPet={() => setShowAddPetModal(true)}
+            onContinue={handleContinueFromBookingDetails}
+          />
+        ) : null}
+
+        {step === 'address' && appointmentsMode && selectedServiceType === 'at_home' ? (
+          <WapptBookingAddressStep
+            addresses={addresses}
+            selectedAddress={selectedAddress}
+            onSelect={setSelectedAddress}
+            onAddAddress={() => setShowAddAddressModal(true)}
+            onContinue={handleContinueFromAddress}
+            hint="An address is required for home nutrition visit."
+          />
+        ) : null}
+
+        {step === 'summary' && appointmentsMode ? (
+          <WapptBookingSummaryStep
+            category="nutrition"
+            serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
+            amount={wapptReviewTotal}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            petName={selectedPet?.name}
+            petBreed={selectedPet?.breed}
+            addressLine={
+              selectedServiceType === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
+            }
+            onBack={() => setStep(selectedServiceType === 'at_home' ? 'address' : 'datetime')}
+            onContinue={proceedToPaymentOrPackage}
+          />
+        ) : null}
+
+        {step === 'datetime' && !appointmentsMode ? (
           <div className="space-y-6">
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-3">Select Date</h2>
@@ -933,10 +1136,10 @@ export function NutritionistBookingRouter({
               Continue
             </Button>
           </div>
-        )}
+        ) : null}
 
         {/* Pet Selection */}
-        {step === 'pet' && (
+        {step === 'pet' && !appointmentsMode && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
@@ -1005,7 +1208,7 @@ export function NutritionistBookingRouter({
         )}
 
         {/* Address Selection (not for tele) */}
-        {step === 'address' && selectedServiceType !== 'tele' && (
+        {step === 'address' && !appointmentsMode && selectedServiceType !== 'tele' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">
@@ -1236,7 +1439,7 @@ export function NutritionistBookingRouter({
         )}
 
         {/* Package Selection Modal */}
-        {showPackageModal && activePackage && (
+        {showPackageModal && activePackage && !appointmentsMode && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl w-full max-w-md p-6">
               <div className="flex items-center gap-3 mb-6">

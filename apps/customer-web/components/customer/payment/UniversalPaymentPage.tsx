@@ -61,6 +61,7 @@ import {
 } from '@/lib/razorpay/razorpay-utils';
 import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
 import { confirmMealSubscriptionPayment } from '@/lib/meal-subscriptions-api';
+import { isWarmpawzAppointmentsPaymentRequest, WAPPT_APPOINTMENT_SERVICE_ID } from '@/lib/warmpawz-appointments-customer';
 import { MealSubscriptionPaymentSummary, type MealSubscriptionSummaryLine } from './MealSubscriptionPaymentSummary';
 import {
   isWarmpawzCustomerNativeWebView,
@@ -484,6 +485,14 @@ export function UniversalPaymentPage({
   // âœ… CRITICAL: Resolved serviceId (UUID) - resolved early to avoid issues
   const [resolvedServiceId, setResolvedServiceId] = useState<string | undefined>(serviceId);
   const [serviceIdResolving, setServiceIdResolving] = useState(false);
+  const isWapptAppointmentPayment = useMemo(
+    () =>
+      isWarmpawzAppointmentsPaymentRequest({
+        bookingMode,
+        serviceId: resolvedServiceId || serviceId,
+      }),
+    [bookingMode, resolvedServiceId, serviceId],
+  );
 
   // Coupon state — resume freezes create-time coupon; do not re-apply live.
   const [appliedCoupon, setAppliedCoupon] = useState<CouponResult | null>(() => {
@@ -825,6 +834,20 @@ export function UniversalPaymentPage({
   ]);
 
   const calculateTax = useCallback(async () => {
+    if (isWapptAppointmentPayment) {
+      setTaxBreakdown({
+        subtotal: baseAmount,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
+        totalTax: 0,
+        total: baseAmount,
+        taxRate: 0,
+        isInterState: false,
+      });
+      setPayableGst(null);
+      return;
+    }
     const taxServiceId =
       resolvedServiceId || selectedServices?.[0]?.id || serviceId;
     const addr = selectedAddress || address;
@@ -926,6 +949,7 @@ export function UniversalPaymentPage({
     type,
     vendorId,
     priceIncludesTax,
+    isWapptAppointmentPayment,
   ]);
 
   /** Re-quote promos after tax subtotal is known (must match financialMeta.servicePrice at booking create). */
@@ -963,7 +987,17 @@ export function UniversalPaymentPage({
     // Resume: keep create-time tax/fee snapshot; still allow Razorpay bank offers + policies.
     if (!isPaymentResume) {
       calculateTax();
-      loadPlatformFees();
+      if (!isWapptAppointmentPayment) {
+        loadPlatformFees();
+      } else {
+        setPlatformFees({
+          platformFee: 0,
+          convenienceFee: 0,
+          deliveryFee: 0,
+          packagingFee: 0,
+          total: 0,
+        });
+      }
     }
     loadRazorpayOffers();
     loadPaymentAndRefundPolicies();
@@ -1044,6 +1078,15 @@ export function UniversalPaymentPage({
         return; // Only resolve for bookings with serviceId
       }
 
+      if (
+        isWarmpawzAppointmentsPaymentRequest({
+          bookingMode,
+          serviceId: resolvedServiceId || serviceId,
+        })
+      ) {
+        return;
+      }
+
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
       if (selectedServices?.[0]?.id && uuidRegex.test(String(selectedServices[0].id))) {
@@ -1103,7 +1146,7 @@ export function UniversalPaymentPage({
     };
 
     resolveServiceId();
-  }, [serviceId, vendorId, type, selectedServices]);
+  }, [serviceId, vendorId, type, selectedServices, bookingMode, resolvedServiceId]);
 
 
   //  Pre-load Razorpay script on component mount so it's ready when user clicks payment
@@ -1749,6 +1792,10 @@ export function UniversalPaymentPage({
       setPayableGst(null);
       return;
     }
+    if (isWapptAppointmentPayment) {
+      setPayableGst(null);
+      return;
+    }
     if (type !== 'booking') {
       setPayableGst(null);
       return;
@@ -1860,6 +1907,7 @@ export function UniversalPaymentPage({
     customerPhone,
     selectedAddress,
     address,
+    isWapptAppointmentPayment,
   ]);
 
   // promotionDiscount / couponDiscount / bookingDiscountTotal defined above (best-offer-only)
@@ -1904,14 +1952,26 @@ export function UniversalPaymentPage({
     : Math.max(0, taxBreakdown.subtotal - promotionDiscount - couponDiscount);
 
   // GST on discounted taxable for bookings; resume/locked and e-comm keep list tax.
-  const finalTax =
-    type === 'booking' && payableGst != null ? payableGst.totalTax : taxBreakdown.totalTax;
-  const finalCgst =
-    type === 'booking' && payableGst != null ? payableGst.cgst : taxBreakdown.cgst;
-  const finalSgst =
-    type === 'booking' && payableGst != null ? payableGst.sgst : taxBreakdown.sgst;
-  const finalIgst =
-    type === 'booking' && payableGst != null ? payableGst.igst : taxBreakdown.igst;
+  const finalTax = isWapptAppointmentPayment
+    ? 0
+    : type === 'booking' && payableGst != null
+      ? payableGst.totalTax
+      : taxBreakdown.totalTax;
+  const finalCgst = isWapptAppointmentPayment
+    ? 0
+    : type === 'booking' && payableGst != null
+      ? payableGst.cgst
+      : taxBreakdown.cgst;
+  const finalSgst = isWapptAppointmentPayment
+    ? 0
+    : type === 'booking' && payableGst != null
+      ? payableGst.sgst
+      : taxBreakdown.sgst;
+  const finalIgst = isWapptAppointmentPayment
+    ? 0
+    : type === 'booking' && payableGst != null
+      ? payableGst.igst
+      : taxBreakdown.igst;
   const totalAfterDiscounts = lockedSnapshot
     ? Math.max(
         0,
@@ -2315,13 +2375,17 @@ export function UniversalPaymentPage({
         // This MUST happen synchronously here to ensure we have the UUID
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         let finalServiceId = resolvedServiceId || serviceId;
+        const wapptPayment = isWapptAppointmentPayment;
+        if (wapptPayment) {
+          finalServiceId = WAPPT_APPOINTMENT_SERVICE_ID;
+        }
 
         // âœ… FIX: If selectedServices is provided, use the first service's id (vendor_services.id)
         // This ensures we use vendor_services.id instead of services.id to match the foreign key constraint
         console.log(`ðŸ” [SERVICE-ID-RESOLUTION] Initial serviceId: "${serviceId}", resolvedServiceId: "${resolvedServiceId}", finalServiceId: "${finalServiceId}"`);
         console.log(`ðŸ” [SERVICE-ID-RESOLUTION] selectedServices:`, selectedServices);
         
-        if (selectedServices && selectedServices.length > 0) {
+        if (!wapptPayment && selectedServices && selectedServices.length > 0) {
           const firstSelectedService = selectedServices[0];
           console.log(`ðŸ” [SERVICE-ID-RESOLUTION] First selected service:`, {
             id: firstSelectedService.id,
@@ -2363,7 +2427,8 @@ export function UniversalPaymentPage({
 
         // If not a UUID, resolve it NOW (synchronously)
         // BUT skip if we already got a valid UUID from selectedServices
-        if (!uuidRegex.test(finalServiceId) && !hasValidServiceIdFromSelectedServices) {
+        // WAPPT: server preflight resolves slug → vendor_services UUID; do not scan vendor catalog here
+        if (!wapptPayment && !uuidRegex.test(finalServiceId) && !hasValidServiceIdFromSelectedServices) {
           console.log(`ðŸ”„ Resolving serviceId "${finalServiceId}" to UUID synchronously...`);
 
           try {
@@ -2475,8 +2540,8 @@ export function UniversalPaymentPage({
           }
         }
 
-        // Final validation - MUST be UUID at this point
-        if (!uuidRegex.test(finalServiceId)) {
+        // Final validation - MUST be UUID at this point (WAPPT slug is validated on API)
+        if (!wapptPayment && !uuidRegex.test(finalServiceId)) {
           toast.error(
             `Invalid service ID format. Please go back and select the service again. ` +
             `Received: ${serviceId}, Resolved: ${finalServiceId}`
@@ -2621,7 +2686,7 @@ export function UniversalPaymentPage({
 
         // âœ… FINAL CHECK: If selectedServices is provided, ensure we use vendor_services.id
         // This is a last-ditch check to prevent using services.id instead of vendor_services.id
-        if (selectedServices && selectedServices.length > 0) {
+        if (!wapptPayment && selectedServices && selectedServices.length > 0) {
           const firstSelectedService = selectedServices[0];
           if (firstSelectedService.id && uuidRegex.test(String(firstSelectedService.id))) {
             // Only override if current finalServiceId doesn't match the vendor_services.id
@@ -2679,17 +2744,20 @@ export function UniversalPaymentPage({
           customerName: customerNameValue, // âœ… Customer name
           address: addressValue, // âœ… Optional string
           notes: '', // âœ… Optional string
-          // âœ… NEW: Pass selected services for multi-service bookings
-          selectedServices: selectedServices && selectedServices.length > 0
-            ? selectedServices.map(s => ({
-              id: s.id || s.serviceId,
-              serviceId: s.service_id || s.serviceId || s.id,
-              name: s.name || s.serviceName,
-              price: Number(s.price) || Number(s.custom_price) || 0,
-              duration: Number(s.duration) || Number(s.duration_minutes) || 30,
-              quantity: Number(s.quantity) || 1,
-            }))
-            : undefined,
+          // âœ… NEW: Pass selected services for multi-service bookings (omit for WAPPT — server uses flat fee)
+          selectedServices:
+            wapptPayment
+              ? undefined
+              : selectedServices && selectedServices.length > 0
+                ? selectedServices.map((s) => ({
+                    id: s.id || s.serviceId,
+                    serviceId: s.service_id || s.serviceId || s.id,
+                    name: s.name || s.serviceName,
+                    price: Number(s.price) || Number(s.custom_price) || 0,
+                    duration: Number(s.duration) || Number(s.duration_minutes) || 30,
+                    quantity: Number(s.quantity) || 1,
+                  }))
+                : undefined,
         };
         // âœ… at_home: pass city, state, pincode, latitude, longitude for commute and backend (CreateBookingRequestSchema)
         if (addressCity !== undefined) bookingPayload.city = addressCity;

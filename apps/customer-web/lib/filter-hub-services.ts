@@ -197,6 +197,264 @@ export function filterVetHubProviderRows<T extends ProviderRoleRow>(rows: T[]): 
   return rows.filter((row) => !isNonVetProviderRow(row));
 }
 
+function normalizeProviderRoleHaystack(row: ProviderRoleRow): { role: string; category: string } {
+  const role = String(
+    row.roleDisplayName ?? row.roleName ?? row.role ?? row.providerType ?? ''
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
+  const category = String(row.category ?? row.serviceCategory ?? row.service_category ?? '')
+    .trim()
+    .toLowerCase();
+  return { role, category };
+}
+
+function roleMatchesAny(haystack: string, tokens: string[]): boolean {
+  return tokens.some((t) => haystack.includes(t) || haystack === t);
+}
+
+const GROOMING_ROLE_TOKENS = [
+  'groomer',
+  'grooming',
+  'pet groomer',
+  'grooming salon',
+  'pet spa',
+  'groomer center',
+  'groomer solo',
+];
+
+const VET_ROLE_TOKENS = [
+  'vet',
+  'veterinar',
+  'veterinary',
+  'clinic',
+  'animal hosp',
+  'pet clinic',
+  'doctor',
+];
+
+const TRAINING_ROLE_TOKENS = ['train', 'trainer', 'obedi', 'agility'];
+
+const BEHAVIORIST_ROLE_TOKENS = [
+  'behaviorist',
+  'behaviourist',
+  'pet behaviorist',
+  'behavior correction',
+  'behavioral specialist',
+];
+
+const WALKER_ROLE_TOKENS = ['walk', 'walker', 'dog walk', 'pet walk'];
+
+const BOARDING_ROLE_TOKENS = ['board', 'kennel', 'daycare', 'pet board'];
+
+const SITTING_ROLE_TOKENS = ['sitter', 'sitting', 'pet sitter', 'in-home care'];
+
+const NUTRITION_ROLE_TOKENS = ['nutrition', 'nutritionist', 'diet'];
+
+function isGroomingProviderRow(row: ProviderRoleRow): boolean {
+  const { role, category } = normalizeProviderRoleHaystack(row);
+  return (
+    roleMatchesAny(role, GROOMING_ROLE_TOKENS) ||
+    roleMatchesAny(category, GROOMING_ROLE_TOKENS) ||
+    category.includes('groom')
+  );
+}
+
+function isVetProviderRow(row: ProviderRoleRow): boolean {
+  const { role, category } = normalizeProviderRoleHaystack(row);
+  return roleMatchesAny(role, VET_ROLE_TOKENS) || roleMatchesAny(category, VET_ROLE_TOKENS);
+}
+
+function isBehavioristProviderRow(row: ProviderRoleRow): boolean {
+  const { role, category } = normalizeProviderRoleHaystack(row);
+  return (
+    roleMatchesAny(role, BEHAVIORIST_ROLE_TOKENS) ||
+    roleMatchesAny(category, BEHAVIORIST_ROLE_TOKENS)
+  );
+}
+
+function isTrainingProviderRow(row: ProviderRoleRow): boolean {
+  if (isBehavioristProviderRow(row)) return false;
+  const { role, category } = normalizeProviderRoleHaystack(row);
+  return roleMatchesAny(role, TRAINING_ROLE_TOKENS) || roleMatchesAny(category, TRAINING_ROLE_TOKENS);
+}
+
+function isWalkerProviderRow(row: ProviderRoleRow): boolean {
+  const { role, category } = normalizeProviderRoleHaystack(row);
+  if (role.includes('walk-in') || category.includes('walk-in')) return false;
+  return roleMatchesAny(role, WALKER_ROLE_TOKENS) || roleMatchesAny(category, WALKER_ROLE_TOKENS);
+}
+
+function isBoardingProviderRow(row: ProviderRoleRow): boolean {
+  const { role, category } = normalizeProviderRoleHaystack(row);
+  return roleMatchesAny(role, BOARDING_ROLE_TOKENS) || roleMatchesAny(category, BOARDING_ROLE_TOKENS);
+}
+
+function isSittingProviderRow(row: ProviderRoleRow): boolean {
+  const { role, category } = normalizeProviderRoleHaystack(row);
+  return roleMatchesAny(role, SITTING_ROLE_TOKENS) || roleMatchesAny(category, SITTING_ROLE_TOKENS);
+}
+
+function isNutritionProviderRow(row: ProviderRoleRow): boolean {
+  const { role, category } = normalizeProviderRoleHaystack(row);
+  return roleMatchesAny(role, NUTRITION_ROLE_TOKENS) || roleMatchesAny(category, NUTRITION_ROLE_TOKENS);
+}
+
+/** Non-grooming personas must not appear on grooming WAPPT hub lists. */
+export function isNonGroomingProviderRow(row: ProviderRoleRow): boolean {
+  if (isGroomingProviderRow(row)) return false;
+  return (
+    isVetProviderRow(row) ||
+    isTrainingProviderRow(row) ||
+    isWalkerProviderRow(row) ||
+    isBoardingProviderRow(row) ||
+    isSittingProviderRow(row) ||
+    isNutritionProviderRow(row)
+  );
+}
+
+export function filterGroomingHubProviderRows<T extends ProviderRoleRow>(rows: T[]): T[] {
+  return rows.filter((row) => !isNonGroomingProviderRow(row));
+}
+
+/** Non-training personas must not appear on training WAPPT hub lists. */
+export function isNonTrainingProviderRow(row: ProviderRoleRow): boolean {
+  if (isTrainingProviderRow(row)) return false;
+  return (
+    isVetProviderRow(row) ||
+    isGroomingProviderRow(row) ||
+    isWalkerProviderRow(row) ||
+    isBoardingProviderRow(row) ||
+    isSittingProviderRow(row) ||
+    isNutritionProviderRow(row)
+  );
+}
+
+export function filterTrainingHubProviderRows<T extends ProviderRoleRow>(rows: T[]): T[] {
+  return rows.filter((row) => isTrainingProviderRow(row));
+}
+
+/** Non-behaviorist personas must not appear on behaviorist WAPPT hub lists. */
+export function isNonBehavioristProviderRow(row: ProviderRoleRow): boolean {
+  if (isBehavioristProviderRow(row)) return false;
+  return (
+    isVetProviderRow(row) ||
+    isGroomingProviderRow(row) ||
+    isTrainingProviderRow(row) ||
+    isWalkerProviderRow(row) ||
+    isBoardingProviderRow(row) ||
+    isSittingProviderRow(row) ||
+    isNutritionProviderRow(row)
+  );
+}
+
+export function filterBehavioristHubProviderRows<T extends ProviderRoleRow>(rows: T[]): T[] {
+  return rows.filter((row) => !isNonBehavioristProviderRow(row));
+}
+
+/** Non-walker personas on walker WAPPT lists. */
+export function isNonWalkerProviderRow(row: ProviderRoleRow): boolean {
+  if (isWalkerProviderRow(row)) return false;
+  return (
+    isVetProviderRow(row) ||
+    isGroomingProviderRow(row) ||
+    isTrainingProviderRow(row) ||
+    isBoardingProviderRow(row) ||
+    isSittingProviderRow(row) ||
+    isNutritionProviderRow(row)
+  );
+}
+
+export function filterWalkerHubProviderRows<T extends ProviderRoleRow>(rows: T[]): T[] {
+  return rows.filter((row) => !isNonWalkerProviderRow(row));
+}
+
+export function isNonBoardingProviderRow(row: ProviderRoleRow): boolean {
+  if (isBoardingProviderRow(row)) return false;
+  return (
+    isVetProviderRow(row) ||
+    isGroomingProviderRow(row) ||
+    isTrainingProviderRow(row) ||
+    isWalkerProviderRow(row) ||
+    isSittingProviderRow(row) ||
+    isNutritionProviderRow(row)
+  );
+}
+
+export function filterBoardingHubProviderRows<T extends ProviderRoleRow>(rows: T[]): T[] {
+  return rows.filter((row) => !isNonBoardingProviderRow(row));
+}
+
+export function isNonSittingProviderRow(row: ProviderRoleRow): boolean {
+  if (isSittingProviderRow(row)) return false;
+  return (
+    isVetProviderRow(row) ||
+    isGroomingProviderRow(row) ||
+    isTrainingProviderRow(row) ||
+    isWalkerProviderRow(row) ||
+    isBoardingProviderRow(row) ||
+    isNutritionProviderRow(row)
+  );
+}
+
+export function filterSittingHubProviderRows<T extends ProviderRoleRow>(rows: T[]): T[] {
+  return rows.filter((row) => !isNonSittingProviderRow(row));
+}
+
+export function isNonNutritionProviderRow(row: ProviderRoleRow): boolean {
+  if (isNutritionProviderRow(row)) return false;
+  return (
+    isVetProviderRow(row) ||
+    isGroomingProviderRow(row) ||
+    isTrainingProviderRow(row) ||
+    isWalkerProviderRow(row) ||
+    isBoardingProviderRow(row) ||
+    isSittingProviderRow(row)
+  );
+}
+
+export function filterNutritionHubProviderRows<T extends ProviderRoleRow>(rows: T[]): T[] {
+  return rows.filter((row) => !isNonNutritionProviderRow(row));
+}
+
+/** Apply hub-specific provider filter for WAPPT discovery / featured lists. */
+export function applyWapptHubDiscoveryToProviders<T extends ProviderRoleRow>(
+  rows: T[],
+  hubCategory: string,
+): T[] {
+  const hub = String(hubCategory).trim().toLowerCase();
+  switch (hub) {
+    case 'vet':
+    case 'veterinary':
+    case 'veterinarian':
+      return filterVetHubProviderRows(rows);
+    case 'grooming':
+      return filterGroomingHubProviderRows(rows);
+    case 'training':
+      return filterTrainingHubProviderRows(rows);
+    case 'behaviorist':
+    case 'behaviourist':
+    case 'pet_behaviorist':
+      return filterBehavioristHubProviderRows(rows);
+    case 'walker':
+    case 'walking':
+      return filterWalkerHubProviderRows(rows);
+    case 'boarding':
+      return filterBoardingHubProviderRows(rows);
+    case 'sitting':
+    case 'sitter':
+    case 'pet_sitter':
+    case 'pet-sitter':
+      return filterSittingHubProviderRows(rows);
+    case 'nutrition':
+    case 'nutritionist':
+      return filterNutritionHubProviderRows(rows);
+    default:
+      return rows;
+  }
+}
+
 export function isVetHubDiscoveryConfig(config: {
   discoverCategory?: string;
   servicesApiCategory?: string;

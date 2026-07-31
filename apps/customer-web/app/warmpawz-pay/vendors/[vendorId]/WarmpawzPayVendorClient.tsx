@@ -14,7 +14,8 @@ import { StarRating } from '@/components/customer/shared/StarRating';
 const QUICK_AMOUNTS = [500, 1000, 1500, 2000];
 
 function formatInr(n: number): string {
-  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fractionDigits = Number.isInteger(n) ? 0 : 2;
+  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })}`;
 }
 
 export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
@@ -124,8 +125,8 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         serviceSubtitle="Make a payment & get exclusive discounts"
         serviceIcon={QrCode}
         iconColor="text-white"
+        showBackButton={true}
         onBack={() => router.back()}
-        showBackButton
         bottomEdge="flat"
       />
 

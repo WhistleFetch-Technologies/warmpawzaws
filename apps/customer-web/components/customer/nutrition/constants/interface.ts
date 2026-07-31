@@ -9,6 +9,7 @@ export interface NutritionistBookingRouterProps {
     serviceStyle?: string;
     price?: number;
     duration?: number;
+    appointmentsMode?: boolean;
     onBack: () => void;
     onNavigate: (screen: string, data?: any) => void;
     onViewBooking?: (bookingId: string) => void;

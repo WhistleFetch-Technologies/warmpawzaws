@@ -5,6 +5,10 @@ import { sendVendorAppointmentScheduledSms } from '../lib/vendor-appointment-sms
 import { sendEventNotification } from '../aws/aws-sns-notification-service';
 import { dispatchNotification } from './notification-dispatch';
 import {
+  WAPPT_BOOKING_MODE,
+  WAPPT_DISPLAY_SERVICE_NAME,
+} from '../endpoints/warmpawz-appointments/shared/wappt-booking-preflight';
+import {
   formatIstBookingWhen,
   enrichTemplateDataWithIstDisplay,
 } from './notification-display-format';
@@ -20,18 +24,34 @@ function buildServiceTypeLabel(serviceType?: string): string {
   return 'At center';
 }
 
+/** Display label for booking notifications (WAPPT uses "Appointment", not catalog service name). */
+export function resolveBookingNotificationServiceName(
+  booking: Record<string, unknown>,
+  joinedServiceName?: string | null,
+): string {
+  const isWapptBooking =
+    String(booking.commerce_mode || '').toLowerCase() === WAPPT_BOOKING_MODE;
+  if (isWapptBooking) {
+    return String(booking.service_name || '').trim() || WAPPT_DISPLAY_SERVICE_NAME;
+  }
+  return joinedServiceName || String(booking.service_name || '').trim() || 'Service';
+}
+
 async function loadBookingContext(bookingId: string) {
   const bookings = await select('bookings', { id: bookingId });
   if (bookings.length === 0) return null;
 
   const booking = bookings[0];
+  const isWapptBooking =
+    String(booking.commerce_mode || '').toLowerCase() === WAPPT_BOOKING_MODE;
+
   const [customers, vendors] = await Promise.all([
     booking.customer_id ? select('customers', { id: booking.customer_id }).catch(() => []) : Promise.resolve([]),
     booking.vendor_id ? select('vendors', { id: booking.vendor_id }).catch(() => []) : Promise.resolve([]),
   ]);
 
   let service: { name?: string } | null = null;
-  if (booking.service_id) {
+  if (!isWapptBooking && booking.service_id) {
     const serviceResult = await query(
       `SELECT COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as name
        FROM (SELECT $1::uuid as id) x
@@ -50,7 +70,10 @@ async function loadBookingContext(bookingId: string) {
   const vendor = vendors[0] || null;
   const customerName = (customer as any)?.name || (customer as any)?.full_name || 'Customer';
   const vendorName = (vendor as any)?.business_name || (vendor as any)?.name || 'Provider';
-  const serviceName = service?.name || 'Service';
+  const serviceName = resolveBookingNotificationServiceName(
+    booking as Record<string, unknown>,
+    service?.name,
+  );
   const serviceTypeLabel = buildServiceTypeLabel(booking.service_type);
 
   return {

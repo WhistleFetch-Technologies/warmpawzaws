@@ -4,6 +4,9 @@ import { mapWithConcurrency } from '../../../../services/image';
 import { DISCOVERY_LIST_SLOT_TIMEOUT_MS } from '../../../../utils/discovery-list-enrich';
 
 const CLINIC_HOME_STYLES = ['at_center', 'at_vendor', 'at_clinic', 'at_home', 'home_visit'];
+const TELE_STYLES = ['tele', 'online', 'video_consultation'];
+
+export type WapptDiscoveryEnrichStyle = 'all' | 'at_center' | 'at_home' | 'tele';
 
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -19,14 +22,15 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null
   }
 }
 
-export function wapptAcceptableStyles(serviceStyle: 'all' | 'at_center' | 'at_home'): string[] {
+export function wapptAcceptableStyles(serviceStyle: WapptDiscoveryEnrichStyle): string[] {
+  if (serviceStyle === 'tele') return TELE_STYLES;
   if (serviceStyle === 'all') return CLINIC_HOME_STYLES;
   return acceptableStylesForService(serviceStyle);
 }
 
 export async function enrichWapptDiscoveryCards(
   cards: Record<string, unknown>[],
-  serviceStyle: 'all' | 'at_center' | 'at_home',
+  serviceStyle: WapptDiscoveryEnrichStyle,
 ): Promise<Record<string, unknown>[]> {
   const styles = wapptAcceptableStyles(serviceStyle);
   return mapWithConcurrency(cards, 3, async (card) => {

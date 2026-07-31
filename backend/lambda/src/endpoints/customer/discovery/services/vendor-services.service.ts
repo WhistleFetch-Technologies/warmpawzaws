@@ -47,7 +47,13 @@ export async function executevendorServices(c: Context) {
       inclusions.includedVendorServiceIds.size > 0 ||
       inclusions.includedLegacyServiceIds.size > 0;
 
-    const omitPricing = await shouldOmitVendorServicePricing(resolvedVendorId);
+    const normalizedStyle = String(serviceStyle ?? '').toLowerCase().trim();
+    const isTeleStyle =
+      normalizedStyle === 'tele' ||
+      normalizedStyle === 'online' ||
+      normalizedStyle === 'video_consultation';
+    const omitPricing =
+      !isTeleStyle && (await shouldOmitVendorServicePricing(resolvedVendorId));
 
     const servicePage = resolveServiceListPage(c.req.query('limit'), c.req.query('cursor'));
     if (servicePage.cardMode) {

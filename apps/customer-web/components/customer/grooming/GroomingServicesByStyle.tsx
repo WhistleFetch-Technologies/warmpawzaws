@@ -45,14 +45,18 @@ import {
 } from '@/lib/vendor-services-page';
 import { mergeDiscoveryProvidersPreservingServices } from '@/lib/merge-discovery-provider-feed';
 import { useWarmpawzAppointmentsByCategoryFeed } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
+import { filterGroomingHubProviderRows } from '@/lib/filter-hub-services';
 import type { WapptStyleFilter } from '@/hooks/useWarmpawzAppointmentsByCategoryFeed';
 import {
   buildWarmpawzAppointmentsBookingNav,
+  buildWarmpawzAppointmentsProfileNav,
   resolveWarmpawzBookingScreen,
+  WAPPT_VENDOR_PROFILE_SCREEN,
 } from '@/lib/warmpawz-appointments-customer';
 import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
 import { mapDiscoveryProviderToVendorCardProps } from '@/lib/warmpawz-pay/map-discovery-provider-to-vendor-card-props';
+import { WarmpawzAppointmentsVendorProfile } from '../warmpawz-appointments/WarmpawzAppointmentsVendorProfile';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -209,6 +213,9 @@ export function GroomingServicesByStyle({
       return;
     }
     let mapped = feedRows.map(mapRowToGroomingProvider);
+    if (appointmentsMode) {
+      mapped = filterGroomingHubProviderRows(mapped);
+    }
     if (vendorId) {
       const want = String(vendorId);
       mapped = mapped.filter(
@@ -500,6 +507,14 @@ export function GroomingServicesByStyle({
   };
 
   const getProviderTypeLabel = (provider: Provider) => {
+    if (appointmentsMode) {
+      const roleLabel = String(
+        (provider as Provider & { roleDisplayName?: string }).roleDisplayName ??
+          provider.role ??
+          ''
+      ).trim();
+      if (roleLabel) return roleLabel;
+    }
     if (provider.providerType === 'individual') {
       return 'Independent Groomer';
     }
@@ -527,14 +542,15 @@ export function GroomingServicesByStyle({
       const vid = String(provider.vendorId || provider.providerId || '');
       const style =
         wapptStyleFilter === 'all' ? serviceStyle : wapptStyleFilter;
-      const nav = buildWarmpawzAppointmentsBookingNav({
-        vendorId: vid,
-        vendorName: provider.name,
-        serviceStyle: style,
-        category,
+      onNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId: vid,
+          vendorName: provider.name,
+          serviceStyle: style,
+          category,
+          profileBackScreen: profileBackScreen || 'wappt-discovery',
+        }),
       });
-      const screen = style === 'at_home' ? 'grooming_home' : 'grooming_center';
-      onNavigate(screen, { ...nav, vendorId: vid, appointmentsMode: true });
       return;
     }
     const vid = getWebGroomingTrainingEmbedVendorId(provider as unknown as Record<string, unknown>);
@@ -781,6 +797,21 @@ export function GroomingServicesByStyle({
   }
 
   // Profile View Mode - Zomato-style for grooming salon
+  if (isProfileView && profileProvider && appointmentsMode && vendorId) {
+    return (
+      <WarmpawzAppointmentsVendorProfile
+        phone={phone}
+        vendorId={String(vendorId)}
+        vendorName={profileProvider.name}
+        category={category || 'grooming'}
+        serviceStyle={serviceStyle}
+        profileBackScreen={profileBackScreen || 'wappt-discovery'}
+        onBack={onBack}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
   if (isProfileView && profileProvider) {
     const salonName = vendor?.business_name || vendor?.name || profileProvider.name;
     const photos = resolveVendorProfileHeroGallery({ facility, vendor, profileProvider });
@@ -1264,7 +1295,7 @@ export function GroomingServicesByStyle({
               className="w-full bg-[#FF8C42] hover:bg-[#E67A35] h-12 text-lg text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
               {appointmentsMode
-                ? 'Book Appointment'
+                ? 'Select Slot for Appointment'
                 : selectedServices.size === 0 
                 ? (profileProvider.services.length === 0 ? 'No Services Available' : 'Select Services to Book')
                 : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
@@ -1406,7 +1437,7 @@ export function GroomingServicesByStyle({
                       verifiedAriaLabel: 'Verified provider',
                       primaryActionClassName:
                         'text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10',
-                      primaryLabel: 'Book Appointment',
+                      primaryLabel: 'Select Slot for Appointment',
                       onPrimary: (e) => openGroomingProviderProfile(e, provider),
                       onProfileClick: (e) => openGroomingProviderProfile(e, provider),
                       secondaryLabel: 'Pay with Warmpawz',
@@ -1688,7 +1719,7 @@ export function GroomingServicesByStyle({
                         void fetchProviderServices(provider.providerId);
                       }}
                     >
-                      {appointmentsMode ? 'Book Appointment' : 'View Services'}
+                      {appointmentsMode ? 'Select Slot for Appointment' : 'View Services'}
                     </Button>
                   </div>
                 )}

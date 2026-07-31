@@ -19,10 +19,29 @@ export type WapptDiscoveryVendorRow = {
 };
 
 const CLINIC_HOME_STYLES = ['at_center', 'at_vendor', 'at_clinic', 'at_home', 'home_visit'];
+const TELE_STYLES = ['tele', 'online', 'video_consultation'];
+
+export type WapptDiscoveryServiceStyle = 'all' | 'at_center' | 'at_home' | 'tele';
+
+/** Role-negative SQL — mirrors client hub filters for mis-tagged catalogue rows. */
+function wapptRoleNegativeFilterSql(category: string): string | null {
+  const hub = String(category ?? '').trim().toLowerCase();
+  const roleBlob = `LOWER(COALESCE(r.name, '') || ' ' || COALESCE(r.display_name, ''))`;
+  if (hub === 'grooming') {
+    return `NOT (${roleBlob} ~ '(veterinar|vet[_ ]|trainer|walker|boarding|nutrition|sitter)')`;
+  }
+  if (hub === 'training') {
+    return `NOT (${roleBlob} ~ '(veterinar|vet[_ ]|groomer|walker|boarding|nutrition|sitter|behaviorist|behaviourist)')`;
+  }
+  if (hub === 'behaviorist' || hub === 'behaviourist' || hub === 'pet_behaviorist') {
+    return `NOT (${roleBlob} ~ '(veterinar|vet[_ ]|groomer|walker|boarding|nutrition|sitter|trainer|train[_ ])')`;
+  }
+  return null;
+}
 
 export async function dbListWapptDiscoveryByCategory(opts: {
   category: string;
-  serviceStyle: 'all' | 'at_center' | 'at_home';
+  serviceStyle: WapptDiscoveryServiceStyle;
   limit: number;
   offset: number;
 }): Promise<{ rows: WapptDiscoveryVendorRow[]; hasMore: boolean }> {
@@ -38,14 +57,31 @@ export async function dbListWapptDiscoveryByCategory(opts: {
     conditions.push(merchantServiceCategoryFilterSql(`$${params.length}`));
   }
 
-  const styleFilter =
-    opts.serviceStyle === 'all'
-      ? CLINIC_HOME_STYLES
-      : acceptableStylesForService(opts.serviceStyle);
+  const roleNegative = wapptRoleNegativeFilterSql(opts.category);
+  if (roleNegative) {
+    conditions.push(roleNegative);
+  }
 
-  params.push(styleFilter);
-  const stylesParam = `$${params.length}`;
-  conditions.push(`
+  if (opts.serviceStyle === 'tele') {
+    params.push(TELE_STYLES);
+    const teleStylesParam = `$${params.length}`;
+    conditions.push(`
+    EXISTS (
+      SELECT 1 FROM vendor_services vs
+      WHERE vs.vendor_id = v.id
+        AND vs.is_enabled = true
+        AND vs.service_style = ANY(${teleStylesParam}::text[])
+    )
+  `);
+  } else {
+    const styleFilter =
+      opts.serviceStyle === 'all'
+        ? CLINIC_HOME_STYLES
+        : acceptableStylesForService(opts.serviceStyle);
+
+    params.push(styleFilter);
+    const stylesParam = `$${params.length}`;
+    conditions.push(`
     EXISTS (
       SELECT 1 FROM vendor_services vs
       WHERE vs.vendor_id = v.id
@@ -54,6 +90,7 @@ export async function dbListWapptDiscoveryByCategory(opts: {
         AND vs.service_style NOT IN ('tele', 'online', 'video_consultation')
     )
   `);
+  }
 
   params.push(opts.limit + 1);
   const limitParam = `$${params.length}`;

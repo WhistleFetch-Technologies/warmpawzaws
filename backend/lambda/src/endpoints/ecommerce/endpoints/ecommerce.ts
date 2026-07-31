@@ -79,17 +79,30 @@ import {
 import {
   getVendorCommissionConfigResponse,
   upsertVendorCommissionConfig,
+  countProductsWithoutListingOwnership,
 } from '../../../utils/ecommerce-commission-admin';
+import {
+  buildAdminEcommerceOrderCountSql,
+  buildAdminEcommerceOrderListSql,
+  buildAdminEcommerceOrderStatusCountsSql,
+  enrichAdminEcommerceOrderDetail,
+  normalizeAdminOrderStatusCounts,
+} from '../../../utils/admin-ecommerce-orders-sql';
 import {
   resolveOrderCommission,
   buildCommissionSnapshot,
   persistOrderItemCommission,
   loadOrderItemIds,
+  forceApplyOrderCommissionAudit,
 } from '../../../utils/resolve-ecommerce-commission-rate';
 import { paymentHoldExpiresAt, expireShopPaymentHolds } from '../../../utils/shop-payment-hold';
+import { reconcilePendingShopPayments } from '../../../utils/payments/shop-payment-reconciliation';
 import { assertShopCheckoutPaymentAllowed } from '../../../utils/shop-checkout-payment-flags';
 import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
-import { writeEcommerceOrderSettlementLedgerRow } from '../../../utils/write-ecommerce-order-settlement';
+import {
+  writeEcommerceOrderSettlementLedgerRow,
+  syncEcommerceOrderSettlementLedgerRow,
+} from '../../../utils/write-ecommerce-order-settlement';
 import {
   productIdIsExcludedFromEcommerceStorefront,
   storefrontExcludeMealProductsSql,
@@ -1252,6 +1265,14 @@ export function registerEcommerceEndpoints(app: Hono) {
           }));
           const commResult = await resolveOrderCommission(firstVendorId, lineItemsForCommission);
           const snap = buildCommissionSnapshot(commResult);
+          const platformDefaultLines = snap.lineBreakdown.filter(
+            (line) => line.source === 'platform_default'
+          );
+          if (platformDefaultLines.length > 0) {
+            console.warn(
+              `[COMMISSION] Order ${orderId}: ${platformDefaultLines.length} line(s) used platform default — check vendor commission config and product listing_ownership`
+            );
+          }
           await query(
             `UPDATE orders SET
                commission_rate = $2,
@@ -1908,6 +1929,14 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
     try {
       const { customerId } = c.req.param();
 
+      await reconcilePendingShopPayments({
+        customerId,
+        limit: 30,
+        source: 'orders-customer-list',
+      }).catch((e) =>
+        console.warn('[orders/customer] reconcilePendingShopPayments failed:', e)
+      );
+
       await expireShopPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
         console.warn('[orders/customer] expireShopPaymentHolds failed:', e)
       );
@@ -2214,49 +2243,119 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
   });
 
   /**
-   * GET /admin/ecommerce/orders
-   * Get all marketplace orders (admin)
+   * GET /admin/ecommerce/orders/counts
+   * Status badge counts for admin marketplace orders
    */
-  app.get("/admin/ecommerce/orders", async (c) => {
+  app.get('/admin/ecommerce/orders/counts', async (c) => {
     try {
-      const status = c.req.query('status');
-      const limit = parseInt(c.req.query('limit') || '50', 10);
-      const offset = parseInt(c.req.query('offset') || '0', 10);
-
-      let ordersQuery = `
-        SELECT 
-          o.*,
-          c.full_name as customer_name,
-          c.phone as customer_phone,
-          v.business_name as vendor_name
-        FROM orders o
-        LEFT JOIN customers c ON o.customer_id = c.id
-        LEFT JOIN vendors v ON o.vendor_id = v.id
-        WHERE 1=1
-      `;
-
-      const params: any[] = [];
-      let paramIndex = 1;
-
-      if (status) {
-        ordersQuery += ` AND o.order_status = $${paramIndex}`;
-        params.push(status);
-        paramIndex++;
-      }
-
-      ordersQuery += ` ORDER BY o.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit, offset);
-
-      const orders = await query(ordersQuery, params);
+      const period = c.req.query('period');
+      const { sql, params } = buildAdminEcommerceOrderStatusCountsSql(period);
+      const result = await query(sql, params);
+      const counts = normalizeAdminOrderStatusCounts(result.rows);
 
       return c.json({
         success: true,
-        orders: orders.rows,
-        total: orders.rows.length,
+        counts,
+      });
+    } catch (error: any) {
+      console.error('Error fetching admin order counts:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/ecommerce/orders/:orderId
+   * Full marketplace order detail for admin
+   */
+  app.get('/admin/ecommerce/orders/:orderId', async (c) => {
+    try {
+      const { orderId } = c.req.param();
+
+      const orders = await query(
+        `SELECT
+           o.*,
+           COALESCE(o.order_status, o.status) AS status,
+           c.full_name AS customer_name,
+           c.phone AS customer_phone,
+           c.email AS customer_email,
+           v.business_name AS vendor_name,
+           v.phone AS vendor_phone,
+           s.awb_code AS shipment_tracking_number,
+           s.tracking_url AS shipment_tracking_url,
+           s.courier_name AS shipment_carrier_name,
+           s.logistics_partner AS shipment_carrier_id
+         FROM orders o
+         LEFT JOIN customers c ON o.customer_id = c.id
+         LEFT JOIN vendors v ON o.vendor_id = v.id
+         LEFT JOIN LATERAL (
+           SELECT awb_code, tracking_url, courier_name, logistics_partner
+           FROM shipments
+           WHERE order_id = o.id
+           ORDER BY created_at DESC
+           LIMIT 1
+         ) s ON true
+         WHERE o.id = $1`,
+        [orderId],
+      );
+
+      if (orders.rows.length === 0) {
+        return c.json({ success: false, error: 'Order not found' }, 404);
+      }
+
+      const items = await query(
+        `SELECT oi.*, p.name AS product_name, p.images
+         FROM order_items oi
+         LEFT JOIN products p ON oi.product_id = p.id
+         WHERE oi.order_id = $1`,
+        [orderId],
+      );
+
+      const order = enrichAdminEcommerceOrderDetail({
+        ...orders.rows[0],
+        items: items.rows,
+      });
+
+      return c.json({
+        success: true,
+        order,
+      });
+    } catch (error: any) {
+      console.error('Error fetching admin order detail:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/ecommerce/orders
+   * Lean marketplace order list for admin (filters + pagination)
+   */
+  app.get('/admin/ecommerce/orders', async (c) => {
+    try {
+      const status = c.req.query('status');
+      const period = c.req.query('period');
+      const search = c.req.query('search');
+      const limit = parseInt(c.req.query('limit') || '25', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      const filters = { status, period, search };
+      const listQuery = buildAdminEcommerceOrderListSql(filters, limit, offset);
+      const countQuery = buildAdminEcommerceOrderCountSql(filters);
+
+      const [ordersResult, countResult] = await Promise.all([
+        query(listQuery.sql, listQuery.params),
+        query(countQuery.sql, countQuery.params),
+      ]);
+
+      return c.json({
+        success: true,
+        orders: ordersResult.rows,
+        total: countResult.rows[0]?.total ?? 0,
+        limit,
+        offset,
       });
     } catch (error: any) {
       console.error('Error fetching orders:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 
@@ -2826,6 +2925,67 @@ async function storefrontCategoryProductCountLateral(): Promise<string> {
       console.error('Error updating vendor commission:', error);
       const status = error.message?.includes('commissionModel') ? 400 : 500;
       return c.json({ error: error.message }, status);
+    }
+  });
+
+  /**
+   * GET /admin/ecommerce/commission/vendors/:vendorId/products-without-ownership
+   * Guardrail: products missing listing_ownership for ownership commission model.
+   */
+  app.get('/admin/ecommerce/commission/vendors/:vendorId/products-without-ownership', async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID' }, 400);
+      }
+      const count = await countProductsWithoutListingOwnership(vendorId);
+      return c.json({ success: true, vendorId, count });
+    } catch (error: any) {
+      console.error('Error counting products without ownership:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/ecommerce/commission/orders/:orderId/re-resolve
+   * Force re-resolve commission using current vendor/product config.
+   */
+  app.post('/admin/ecommerce/commission/orders/:orderId/re-resolve', async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      if (!isValidUUID(orderId)) {
+        return c.json({ error: 'Invalid order ID' }, 400);
+      }
+
+      const body = await c.req.json().catch(() => ({}));
+      const force = Boolean(body?.force);
+
+      const orderRes = await query(
+        `SELECT vendor_id::text FROM orders WHERE id = $1::uuid LIMIT 1`,
+        [orderId]
+      );
+      const vendorId = orderRes.rows?.[0]?.vendor_id;
+      if (!vendorId) {
+        return c.json({ error: 'Order not found or missing vendor' }, 404);
+      }
+
+      const result = await forceApplyOrderCommissionAudit(orderId, String(vendorId));
+      if (!result) {
+        return c.json({ error: 'Commission re-resolve failed' }, 500);
+      }
+
+      const ledger = await syncEcommerceOrderSettlementLedgerRow(orderId, { force });
+
+      return c.json({
+        success: true,
+        orderId,
+        previous: result.previous,
+        current: result.current,
+        ledger,
+      });
+    } catch (error: any) {
+      console.error('Error re-resolving order commission:', error);
+      return c.json({ error: error.message }, 500);
     }
   });
 

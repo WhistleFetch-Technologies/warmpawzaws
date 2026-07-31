@@ -1,6 +1,5 @@
 /**
  * Discovery + vendor-services API config for service hubs (grooming, training, vet, sitting).
- * Aligns hub “featured” lists with View All / discover-services.
  */
 
 export type HubPhoneQueryParam = 'customerPhone' | 'phone';

@@ -329,6 +329,21 @@ export function CommissionSettings() {
         removedCategoryIds,
       });
       toast.success(`Commission saved for ${selectedSeller?.name ?? 'vendor'}`);
+      if (commissionModel === 'ownership') {
+        try {
+          const ownershipCheck = await apiClient.get<{
+            count?: number;
+          }>(`/admin/ecommerce/commission/vendors/${selectedVendorId}/products-without-ownership`);
+          const missingCount = ownershipCheck?.count ?? 0;
+          if (missingCount > 0) {
+            toast.warning(
+              `${missingCount} active product(s) missing ownership — those lines will use platform default commission until ownership is set on each product.`
+            );
+          }
+        } catch {
+          // non-blocking guardrail
+        }
+      }
       await loadVendorCommission(selectedVendorId);
     } catch {
       toast.error('Failed to save vendor commission');

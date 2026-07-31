@@ -29,4 +29,17 @@ describe('razorpay refund webhook reconciliation', () => {
     expect(file).toContain('mapRazorpayRefundEventStatus');
     expect(file).toContain('ACTIVE_REFUND_STATUS_FILTER');
   });
+
+  test('payment.captured auto-refunds cancelled shop orders with no active refund', () => {
+    const file = read('src/endpoints/razorpay/endpoints/razorpay.razorpay.ts');
+    expect(file).toContain('cancelledShopOrderLateRefund');
+    expect(file).toContain('initiateShopOrderRazorpayRefund');
+    expect(file).toContain('Late payment capture on cancelled shop order');
+  });
+
+  test('reconcile helper is idempotent when refund already completed', () => {
+    const file = read('src/utils/payments/shop-order-refund.ts');
+    expect(file).toContain("if (row.refund_status === 'completed')");
+    expect(file).toContain('applyShopRefundDbState');
+  });
 });

@@ -64,11 +64,13 @@ const HUB_SCREENS = new Set<string>([
   'vet-home-visit',
   'vet-clinic-list',
   'vet-services-by-style',
+  'wappt-discovery',
 ]);
 
 /** Entity / detail screens — always push (use routeKey.* for dedup of same entity). */
 const ENTITY_SCREENS: Record<string, ShellRoutePolicyDef> = {
   'vet-clinic-profile': { forward: 'push', requiresKey: true },
+  'wappt-vendor-profile': { forward: 'push', requiresKey: true },
   'vet-doctor-details': { forward: 'push', requiresKey: true },
   'vet-booking': { forward: 'push' },
   'vet-clinic-booking': { forward: 'push' },
@@ -99,7 +101,6 @@ const ENTITY_SCREENS: Record<string, ShellRoutePolicyDef> = {
   'meal-order-tracking': { forward: 'push', requiresKey: true },
   'meal-plan-orders': { forward: 'push' },
   'nutritionist-booking': { forward: 'push' },
-  'expert-nutritionists': { forward: 'push' },
   'nutritionist-tele': { forward: 'push' },
   'create-booking': { forward: 'push' },
   'universal-home-booking': { forward: 'push' },

@@ -39,6 +39,9 @@ import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { HUB_SERVICE_ICON_WRAP } from '@/lib/hub-service-option-styles';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
+import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
+import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
+import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 
 const BOARDING_IMG = '/images/home/Boarding';
 
@@ -257,7 +260,7 @@ function BoardingOptionCardBackground({ slug }: { slug: Exclude<BoardingServiceS
   );
 }
 
-/** Hub uses the same discovery + cards as View All (`service=all`). */
+/** Hub featured stays list (top 3 on landing). */
 const HUB_SERVICE_SLUG: BoardingServiceSlug = 'all';
 
 function navigateToBoardingVendorList(
@@ -274,15 +277,23 @@ function navigateToBoardingVendorList(
 
 export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: BoardingServiceRouterProps) {
   const router = useRouter();
-  const {
-    loading: vendorsLoading,
-    vendors,
-    relaxedFilter,
-    selectedVendorId,
-    setSelectedVendorId,
-    toggleVendor,
-    fetchingPlansFor,
-  } = useBoardingVendorDiscovery(phone, HUB_SERVICE_SLUG);
+  const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('boarding');
+  const wapptTile = buildWapptHubTile('boarding');
+  const marketplaceDiscovery = useBoardingVendorDiscovery(phone, HUB_SERVICE_SLUG);
+  const wapptDiscovery = useWapptHubFeaturedVendors('boarding', wapptHubEnabled);
+  const [wapptSelectedVendorId, setWapptSelectedVendorId] = useState<string | null>(null);
+
+  const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
+  const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
+  const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
+  const selectedVendorId = wapptHubEnabled ? wapptSelectedVendorId : marketplaceDiscovery.selectedVendorId;
+  const setSelectedVendorId = wapptHubEnabled
+    ? setWapptSelectedVendorId
+    : marketplaceDiscovery.setSelectedVendorId;
+  const toggleVendor = wapptHubEnabled
+    ? (vendorId: string) => setWapptSelectedVendorId((prev) => (prev === vendorId ? null : vendorId))
+    : marketplaceDiscovery.toggleVendor;
+  const fetchingPlansFor = wapptHubEnabled ? null : marketplaceDiscovery.fetchingPlansFor;
 
   const [previousFacility, setPreviousFacility] = useState<any>(null);
 
@@ -335,6 +346,13 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       navigateBoardingPlanBooking(onNavigate, v, plan);
     },
     [onNavigate, router]
+  );
+
+  const handleWarmpawzBookAppointment = useCallback(
+    (_v: BoardingListVendor) => {
+      onNavigate?.('wappt-discovery', { category: 'boarding' });
+    },
+    [onNavigate],
   );
 
   const openVendorProfile = useCallback(
@@ -422,6 +440,43 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </span>
           ))}
         </div>
+
+        {wapptHubEnabled && wapptTile ? (
+          <div className="mb-6">
+            <h2 className="mb-3 text-lg font-bold text-slate-900">Choose Service Type</h2>
+            <button
+              type="button"
+              onClick={() => onNavigate?.('wappt-discovery', { category: 'boarding' })}
+              className="group relative w-full overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
+            >
+              <div className="relative h-28 w-full sm:h-32">
+                {wapptTile.image ? (
+                  <CachedImage
+                    src={wapptTile.image}
+                    alt={wapptTile.name}
+                    fill
+                    className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
+                    sizes="(max-width: 640px) 90vw, 400px"
+                  />
+                ) : null}
+                <span className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${wapptTile.badgeClass}`}>
+                  {wapptTile.badge}
+                </span>
+              </div>
+              <div className="relative p-3 pb-10">
+                <h3 className="text-sm font-bold text-slate-900">{wapptTile.name}</h3>
+                <p className="mt-0.5 text-[11px] text-slate-500">{wapptTile.description}</p>
+                <div className="mt-2 flex items-center gap-1 text-[10px] text-slate-500">
+                  <Heart className="h-3 w-3 text-orange-400" />
+                  <span>{wapptTile.trustedBy}</span>
+                </div>
+                <div className={`absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full text-white shadow-md transition-transform group-hover:scale-110 ${wapptTile.arrowClass}`}>
+                  <ChevronRight className="h-4 w-4" />
+                </div>
+              </div>
+            </button>
+          </div>
+        ) : null}
 
         <div className="mb-6">
           <div className="mb-1 flex items-center gap-2">
@@ -528,20 +583,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             )}
 
             <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-slate-900">Featured Stays</h2>
-                <button
-                  type="button"
-                  className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    navigateToBoardingVendorList(onNavigate, router, 'all');
-                  }}
-                >
-                  View All <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
+              <h2 className="text-lg font-bold text-slate-900 mb-4">Featured Stays</h2>
 
               {relaxedFilter && (
                 <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
@@ -579,6 +621,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                         onOpenCenterDetails={openVendorProfile}
                         customerId={phone}
                         serviceCategory="boarding"
+                        onBookAppointment={handleWarmpawzBookAppointment}
                       />
                     );
                   })

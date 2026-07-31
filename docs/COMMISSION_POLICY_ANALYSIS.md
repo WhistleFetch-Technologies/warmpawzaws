@@ -136,6 +136,14 @@ Priority: vendor model branch (category vs ownership) → vendor default → cat
 
 Persisted at order time in `order_item_commission`.
 
+### Track C addendum (e-commerce snapshot policy)
+
+- **Lock at order creation:** `POST /ecommerce/orders` resolves commission and stores `orders.commission_snapshot` (immutable via `COALESCE` on payment verify and Razorpay create-order backfill).
+- **Changing vendor model** (`category` ↔ `ownership`) or rates in Admin **does not** retroactively update existing orders.
+- **Admin correction:** `POST /admin/ecommerce/commission/orders/:orderId/re-resolve` or `scripts/re-resolve-order-commission.js` force-overwrites snapshot using **current** vendor/product config; syncs `ecommerce_order_settlements` when `status = pending_batch`.
+- **Mixed carts:** `resolveOrderCommission()` applies per-line rates from `products.listing_ownership` under the ownership model; order header stores a **blended** `effectiveRate`; vendor UI shows per-line breakdown when rates differ.
+- **Missing `listing_ownership`:** under ownership model, resolver falls through to vendor default → category default → **platform default** (does not block checkout).
+
 ---
 
 ## Answers to Commission Analysis Questions

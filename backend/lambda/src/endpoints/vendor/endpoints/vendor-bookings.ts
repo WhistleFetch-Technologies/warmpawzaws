@@ -27,6 +27,10 @@ import {
   resolveVendorVisibleBookingAmount,
 } from '../../../utils/entity-extractor';
 import { loadBookingServiceSnapshot, snapshotToNestedService } from '../../../utils/booking-service-snapshot';
+import {
+  WAPPT_BOOKING_MODE,
+  WAPPT_DISPLAY_SERVICE_NAME,
+} from '../../warmpawz-appointments/shared/wappt-booking-preflight';
 import { isValidUUID } from '../../../types/entities';
 import { checkVendorCapability } from '../../../middleware/capability-enforcement';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
@@ -1332,6 +1336,12 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
             : null,
       });
 
+      const isWapptBooking =
+        String((booking as { commerce_mode?: string }).commerce_mode || '').toLowerCase() ===
+        WAPPT_BOOKING_MODE;
+      const wapptServiceDisplayName =
+        String(booking.service_name || '').trim() || WAPPT_DISPLAY_SERVICE_NAME;
+
       // Build enriched booking response
       const enrichedBooking = {
         id: booking.id,
@@ -1420,13 +1430,14 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
         } : null),
         
         // Service details: align with customer booking details (vendor_services.id → catalog via snapshot)
-        serviceName:
-          (serviceSnap?.displayName || serviceSnap?.serviceName) ||
-          (catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : null) ||
-          vendorSvc?.service_name ||
-          (service.length > 0 ? service[0].name : null) ||
-          booking.service_name ||
-          'Unknown Service',
+        serviceName: isWapptBooking
+          ? wapptServiceDisplayName
+          : (serviceSnap?.displayName || serviceSnap?.serviceName) ||
+            (catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : null) ||
+            vendorSvc?.service_name ||
+            (service.length > 0 ? service[0].name : null) ||
+            booking.service_name ||
+            'Unknown Service',
         serviceCategory:
           serviceSnap?.category ||
           (catalogService.length > 0
@@ -1461,18 +1472,17 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
             };
           }
           if (catalogService.length > 0 || service.length > 0 || vendorSvc) {
+            const resolvedServiceLabel = isWapptBooking
+              ? wapptServiceDisplayName
+              : catalogService.length > 0
+                ? (catalogService[0].display_name || catalogService[0].service_name)
+                : (vendorSvc?.service_name || (service.length > 0 ? service[0].name : null) || booking.service_name || 'Unknown Service');
             return {
               id: (catalogService[0] || service[0])?.id || vendorSvc?.service_id || booking.service_id,
               serviceId: booking.service_id,
-              name: catalogService.length > 0
-                ? (catalogService[0].display_name || catalogService[0].service_name)
-                : (vendorSvc?.service_name || (service.length > 0 ? service[0].name : null) || booking.service_name || 'Unknown Service'),
-              serviceName: catalogService.length > 0
-                ? (catalogService[0].display_name || catalogService[0].service_name)
-                : (vendorSvc?.service_name || (service.length > 0 ? service[0].name : null) || booking.service_name || 'Unknown Service'),
-              displayName: catalogService.length > 0
-                ? (catalogService[0].display_name || catalogService[0].service_name)
-                : (vendorSvc?.service_name || (service.length > 0 ? service[0].name : null) || booking.service_name || 'Unknown Service'),
+              name: resolvedServiceLabel,
+              serviceName: resolvedServiceLabel,
+              displayName: resolvedServiceLabel,
               category: catalogService.length > 0
                 ? (catalogService[0].category_name || catalogService[0].category_id)
                 : (service.length > 0 ? service[0].category : vendorSvc?.category),

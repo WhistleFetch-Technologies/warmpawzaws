@@ -14,6 +14,7 @@ import {
   PawPrint,
   Scale,
   Pill,
+  ArrowRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -36,6 +37,8 @@ import {
   NUTRITION_SERVICE_CARDS,
 } from './constants/nutrition-hub-assets';
 import { NutritionServiceCardBackground } from './NutritionServiceCardBackground';
+import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
+import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 
 const NUTRITION_HEADER_ICON =
   'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none';
@@ -65,6 +68,8 @@ function NutritionHeaderBackground() {
  */
 export function NutritionistServicesLanding({ phone, onBack, onNavigate }: NutritionistServicesLandingProps) {
   const mealPlansLive = isCustomerMealPlansEnabled();
+  const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('nutrition');
+  const wapptTile = buildWapptHubTile('nutrition');
   //---------------------------states----------------------------------//
   const nutritionistNeeds = useProblemGridByRole('nutritionist');
   const [loading, setLoading] = useState(true);
@@ -224,6 +229,43 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
 
           <NutritionTeleConsultBanner onClick={() => onNavigate?.('nutritionist-tele')} />
 
+          {wapptHubEnabled && wapptTile ? (
+            <div>
+              <h2 className="mb-3 text-lg font-bold text-slate-900">Choose Service Type</h2>
+              <button
+                type="button"
+                onClick={() => onNavigate?.('wappt-discovery', { category: 'nutrition' })}
+                className="group relative w-full overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
+              >
+                <div className="relative h-28 w-full sm:h-32">
+                  {wapptTile.image ? (
+                    <CachedImage
+                      src={wapptTile.image}
+                      alt={wapptTile.name}
+                      fill
+                      className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
+                      sizes="(max-width: 640px) 90vw, 400px"
+                    />
+                  ) : null}
+                  <span className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${wapptTile.badgeClass}`}>
+                    {wapptTile.badge}
+                  </span>
+                </div>
+                <div className="relative p-3 pb-10">
+                  <h3 className="text-sm font-bold text-slate-900">{wapptTile.name}</h3>
+                  <p className="mt-0.5 text-[11px] text-slate-500">{wapptTile.description}</p>
+                  <div className="mt-2 flex items-center gap-1 text-[10px] text-slate-500">
+                    <Heart className="h-3 w-3 text-orange-400" />
+                    <span>{wapptTile.trustedBy}</span>
+                  </div>
+                  <div className={`absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full text-white shadow-md transition-transform group-hover:scale-110 ${wapptTile.arrowClass}`}>
+                    <ArrowRight className="h-4 w-4" />
+                  </div>
+                </div>
+              </button>
+            </div>
+          ) : null}
+
           {/* Our Services */}
           <div>
             <h2 className="mb-4 text-lg font-bold text-slate-900">Our Services</h2>
@@ -282,17 +324,9 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
             </div>
           </div>
 
-          {/* Featured Nutritionists */}
+          {/* Featured Nutritionists — top 3 on hub */}
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-900">Expert Nutritionists</h2>
-              <button
-                className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                onClick={() => onNavigate?.('expert-nutritionists')}
-              >
-                View All <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Expert Nutritionists</h2>
 
             <div className="space-y-3">
               {nutritionists.length === 0 ? (
@@ -302,7 +336,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                   <p className="text-gray-500 text-sm">Check back soon for expert pet nutrition consultants!</p>
                 </Card>
               ) : (
-                nutritionists.slice(0, 5).map((nutritionist: any, index: number) => {
+                nutritionists.slice(0, 3).map((nutritionist: any, index: number) => {
                   const vendorId = String(nutritionist.id ?? nutritionist.vendorId ?? '').trim();
                   const snapshot = nutritionVendorFromDiscoveryRow(nutritionist as Record<string, unknown>);
                   return (

@@ -51,6 +51,7 @@ import {
 } from '@/lib/go-back-or-replace';
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import { isWarmpawzPayCommerceActive } from '@/lib/warmpawz-appointments-customer';
+import { buildWapptShellBookingPayload, handleWapptShellScreenNavigate } from '@/lib/wappt-shell-navigation';
 import {
   navigateToArticleFromHome,
   navigateToArticlesList,
@@ -181,11 +182,19 @@ const UniversalPaymentPage = dynamic(() => import('../payment/UniversalPaymentPa
 const GroomingServiceRouter = dynamic(() => import('../GroomingServiceRouter').then((m) => ({ default: m.GroomingServiceRouter })), { loading: LoadingSpinner });
 const GroomingServicesByStyle = dynamic(() => import('../grooming/GroomingServicesByStyle').then((m) => ({ default: m.GroomingServicesByStyle })), { loading: LoadingSpinner });
 const TrainingServiceRouter = dynamic(() => import('../TrainingServiceRouter').then((m) => ({ default: m.TrainingServiceRouter })), { loading: LoadingSpinner });
+const BehavioristServiceRouter = dynamic(() => import('../BehavioristServiceRouter').then((m) => ({ default: m.BehavioristServiceRouter })), { loading: LoadingSpinner });
 const GroomingBookingRouter = dynamic(() => import('../grooming/GroomingBookingRouter').then((m) => ({ default: m.GroomingBookingRouter })), { loading: LoadingSpinner });
 const WarmpawzAppointmentsDiscovery = dynamic(
   () =>
     import('../warmpawz-appointments/WarmpawzAppointmentsDiscovery').then((m) => ({
       default: m.WarmpawzAppointmentsDiscovery,
+    })),
+  { loading: LoadingSpinner },
+);
+const WarmpawzAppointmentsVendorProfile = dynamic(
+  () =>
+    import('../warmpawz-appointments/WarmpawzAppointmentsVendorProfile').then((m) => ({
+      default: m.WarmpawzAppointmentsVendorProfile,
     })),
   { loading: LoadingSpinner },
 );
@@ -257,7 +266,6 @@ const CustomerPlacementBanners = dynamic(() => import('../shared/CustomerPlaceme
 const ServicesByProblem = dynamic(() => import('../ServicesByProblem').then((m) => ({ default: m.ServicesByProblem })), { loading: LoadingSpinner });
 const ProblemGridFlowRouter = dynamic(() => import('../ProblemGridFlowRouter').then((m) => ({ default: m.ProblemGridFlowRouter })), { loading: LoadingSpinner });
 const MealPlansList = dynamic(() => import('../nutrition/MealPlansList').then((m) => ({ default: m.MealPlansList })), { loading: LoadingSpinner });
-const ExpertNutritionistsList = dynamic(() => import('../nutrition/ExpertNutritionistsList').then((m) => ({ default: m.ExpertNutritionistsList })), { loading: LoadingSpinner });
 const MealOrderCheckout = dynamic(() => import('../nutrition/MealOrderCheckout').then((m) => ({ default: m.MealOrderCheckout })), { loading: LoadingSpinner });
 const MealPlanOrdersPanel = dynamic(() => import('../meal-plans/MealPlanOrdersPanel').then((m) => ({ default: m.MealPlanOrdersPanel })), { loading: LoadingSpinner });
 const NutritionistTeleRouter = dynamic(() => import('../nutrition/NutritionistTeleRouter').then((m) => ({ default: m.NutritionistTeleRouter })), { loading: LoadingSpinner });
@@ -296,6 +304,7 @@ type ScreenType =
   | 'vet-doctor-details'
   | 'vet-clinic-list'
   | 'wappt-discovery'
+  | 'wappt-vendor-profile'
   | 'vet-clinic-profile'
   | 'vet-clinic-booking'
   | 'vet-services-by-style'
@@ -403,7 +412,6 @@ type ScreenType =
   | 'nutritionist-tele'
   | 'nutritionist-booking'
   | 'diet-consultation-services'
-  | 'expert-nutritionists'
   | 'pharmacy_order_flow'
   | 'pharmacy_order_status'
   | 'behaviorist'
@@ -542,6 +550,15 @@ export function CustomerHomeWrapper({
   const [selectedService, setSelectedService] = useState<string>('');
   const [vetServiceData, setVetServiceData] = useState<any>(null);
   const [wapptDiscoveryCategory, setWapptDiscoveryCategory] = useState<string>('vet');
+  const [wapptDiscoveryServiceStyle, setWapptDiscoveryServiceStyle] = useState<string>('at_center');
+  const [wapptDiscoveryLockStyle, setWapptDiscoveryLockStyle] = useState(false);
+  const [wapptProfileData, setWapptProfileData] = useState<{
+    vendorId: string;
+    vendorName?: string;
+    category: string;
+    serviceStyle: string;
+    profileBackScreen?: string;
+  } | null>(null);
   const [walkerServiceData, setWalkerServiceData] = useState<any>(null);
   const [selectedPetData, setSelectedPetData] = useState<any>(null);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
@@ -1772,19 +1789,10 @@ export function CustomerHomeWrapper({
       navigateToScreen('vet-clinic-list');
       return;
     }
-    // Merge listing context when opening profiles or drilling into the same style browser (chevron / View All).
+    // Merge listing context when opening profiles or drilling into the same style browser.
     if (screen === 'vet-clinic-profile' || screen === 'vet-doctor-details' || screen === 'vet-services-by-style') {
       setVetServiceData((prev: any) => mergeBannerNavigationPayload(prev, data || {}));
       navigateToScreen(screen as ScreenType);
-      return;
-    }
-    if (screen === 'vet-all-doctors') {
-      setVetServiceData({
-        serviceStyle: 'tele',
-        serviceTypeName: 'All veterinarians',
-        category: 'vet',
-      });
-      navigateToScreen('vet-services-by-style');
       return;
     }
     setVetServiceData((prev: any) => mergeBannerNavigationPayload(prev, data || {}));
@@ -1797,7 +1805,21 @@ export function CustomerHomeWrapper({
     }
     else if (screen === 'wappt-discovery') {
       setWapptDiscoveryCategory(String((data as any)?.category || 'vet'));
+      const style = String((data as any)?.serviceStyle || (data as any)?.service_style || 'at_center').toLowerCase();
+      setWapptDiscoveryServiceStyle(style === 'tele' ? 'tele' : style === 'at_home' ? 'at_home' : 'at_center');
+      setWapptDiscoveryLockStyle(style === 'tele' || (data as any)?.lockStyleFilter === true);
       navigateToScreen('wappt-discovery');
+    }
+    else if (screen === 'wappt-vendor-profile') {
+      setWapptProfileData({
+        vendorId: String(data?.vendorId || ''),
+        vendorName: data?.vendorName,
+        category: String(data?.category || 'vet'),
+        serviceStyle: String(data?.serviceStyle || 'at_center'),
+        profileBackScreen:
+          data?.profileBackScreen || data?.clinicProfileBackScreen || 'wappt-discovery',
+      });
+      navigateToScreen('wappt-vendor-profile', routeKey.vendor(String(data?.vendorId || '')));
     }
     else if (screen === 'vet-clinic-booking') navigateToScreen('vet-clinic-booking');
     else if (screen === 'vet-tele-consultation') {
@@ -1889,6 +1911,36 @@ export function CustomerHomeWrapper({
       navigateToScreen(screen as ScreenType);
     }
   };
+
+  const handleWapptShellNavigate = useCallback(
+    (screen: string, data?: Record<string, unknown>, discoveryCategory?: string) => {
+      handleWapptShellScreenNavigate(discoveryCategory ?? wapptDiscoveryCategory, screen, data, {
+        setWapptProfileData,
+        navigateToScreen: (target, key) => navigateToScreen(target as ScreenType, key),
+        routeKeyVendor: routeKey.vendor,
+        handleVetNavigate,
+        mergeVetBookingState: (payload) => {
+          setVetServiceData((prev: Record<string, unknown> | null) =>
+            mergeBannerNavigationPayload(prev, payload),
+          );
+        },
+        setWalkerBookingState: (payload) => {
+          setWalkerServiceData((prev: Record<string, unknown> | null) => ({
+            ...(prev || {}),
+            ...payload,
+          }));
+        },
+        openBoardingBooking: (payload) => {
+          openBoardingBookingScreen(payload);
+        },
+        openSittingBooking: (payload) => {
+          setVetServiceData(mergeBannerNavigationPayload(null, payload));
+          navigateToScreen('pet-sitter-booking');
+        },
+      });
+    },
+    [wapptDiscoveryCategory, navigateToScreen, openBoardingBookingScreen],
+  );
 
   const handleProblemGridVendorProfile = (ctx: VendorProfileFromProblemContext) => {
     const { vendorId, vendorName, serviceStyle } = ctx;
@@ -2031,7 +2083,14 @@ export function CustomerHomeWrapper({
       openPurchasePackageScreen(normalized);
       return;
     }
-    setWalkerServiceData(data);
+    if (screen === 'wappt-discovery') {
+      setWapptDiscoveryCategory(String(data?.category || 'walker'));
+      navigateToScreen('wappt-discovery');
+      return;
+    }
+    const walkerPayload =
+      data?.appointmentsMode === true ? buildWapptShellBookingPayload('walker', data) : data;
+    setWalkerServiceData(walkerPayload);
     if (screen === 'walker-booking') {
       navigateToScreen('walker-booking');
     } else if (screen === 'create-booking') {
@@ -2933,6 +2992,7 @@ export function CustomerHomeWrapper({
         serviceType={walkerServiceData?.serviceType || 'walking'}
         price={walkerServiceData?.price}
         duration={walkerServiceData?.duration}
+        appointmentsMode={walkerServiceData?.appointmentsMode === true}
         onBack={() => backFromBannerOr(handleBack, walkerServiceData, vetServiceData)}
         onInternalBackReady={(fn) => { walkerBookingInternalBackRef.current = fn; }}
         onNavigate={(screen, data) => {
@@ -3165,52 +3225,35 @@ export function CustomerHomeWrapper({
     return (
       <WarmpawzAppointmentsDiscovery
         category={wapptDiscoveryCategory}
+        initialServiceStyle={
+          wapptDiscoveryServiceStyle === 'tele'
+            ? 'tele'
+            : wapptDiscoveryServiceStyle === 'at_home'
+              ? 'at_home'
+              : 'at_center'
+        }
+        lockStyleFilter={wapptDiscoveryLockStyle}
         phone={phone}
         onBack={handleBack}
+        onGoHome={goToHome}
         onNavigate={(screen, data) => {
-          const payload = {
-            ...(data || {}),
-            appointmentsMode: true,
-            returnScreen: 'wappt-discovery',
-          } as Record<string, unknown>;
-          if (wapptDiscoveryCategory === 'vet') {
-            setVetServiceData((prev: Record<string, unknown> | null) => ({
-              ...(prev || {}),
-              ...payload,
-              id: payload.vendorId || payload.id,
-              vendorId: payload.vendorId,
-            }));
-            handleVetNavigate(screen, payload);
-            return;
-          }
-          if (wapptDiscoveryCategory === 'grooming') {
-            if (screen === 'grooming_home' && payload.vendorId) {
-              setGroomingHomeProfileVendorId(String(payload.vendorId));
-            } else if (payload.vendorId) {
-              setGroomingCenterProfileVendorId(String(payload.vendorId));
-            }
-            if (screen === 'grooming_center' || screen === 'grooming_home') {
-              navigateToScreen(screen as ScreenType);
-              return;
-            }
-            if (screen === 'grooming-booking') {
-              navigateToScreen('grooming-booking');
-              return;
-            }
-          }
-          if (wapptDiscoveryCategory === 'training' && screen === 'training-booking') {
-            navigateToScreen('training-booking');
-            return;
-          }
-          if (screen === 'grooming_center' || screen === 'grooming_home') {
-            navigateToScreen(screen as ScreenType);
-            return;
-          }
-          if (screen === 'vet-booking' || screen === 'grooming-booking' || screen === 'training-booking') {
-            navigateToScreen(screen as ScreenType);
-            return;
-          }
-          navigateToScreen(screen as ScreenType);
+          handleWapptShellNavigate(screen, data);
+        }}
+      />
+    );
+  }
+  if (currentScreen === 'wappt-vendor-profile' && wapptProfileData?.vendorId) {
+    return (
+      <WarmpawzAppointmentsVendorProfile
+        phone={phone}
+        vendorId={wapptProfileData.vendorId}
+        vendorName={wapptProfileData.vendorName}
+        category={wapptProfileData.category}
+        serviceStyle={wapptProfileData.serviceStyle}
+        profileBackScreen={wapptProfileData.profileBackScreen || 'wappt-discovery'}
+        onBack={handleBack}
+        onNavigate={(screen, navData) => {
+          handleWapptShellNavigate(screen, navData, wapptProfileData.category);
         }}
       />
     );
@@ -3752,23 +3795,25 @@ export function CustomerHomeWrapper({
         if (screen === 'appointment-details') { 
           setSelectedAppointmentId(data?.appointmentId); 
           navigateToScreen('appointment-details'); 
-        } else if (screen === 'create-booking') {
+        } else if (screen === 'create-booking' || screen === 'grooming-booking') {
           setSelectedVendorId(data?.vendorId);
           setSelectedService(data?.serviceId ?? '');
-          setVetServiceData(
-            mergeBannerNavigationPayload(vetServiceData, {
-              vendorId: data?.vendorId,
-              serviceType: 'grooming',
-              serviceStyle: data?.serviceStyle || 'at_center',
-              groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
-              service: data?.service ?? (data?.serviceName ? { name: data.serviceName } : undefined),
-              serviceId: data?.serviceId,
-              selectedServices: data?.selectedServices,
-              vendorName: data?.vendorName,
-              price: data?.price,
-              duration: data?.duration,
-            })
-          );
+          const groomingPayload =
+            data?.appointmentsMode === true
+              ? buildWapptShellBookingPayload('grooming', data)
+              : {
+                  vendorId: data?.vendorId,
+                  serviceType: 'grooming',
+                  serviceStyle: data?.serviceStyle || 'at_center',
+                  groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
+                  service: data?.service ?? (data?.serviceName ? { name: data.serviceName } : undefined),
+                  serviceId: data?.serviceId,
+                  selectedServices: data?.selectedServices,
+                  vendorName: data?.vendorName,
+                  price: data?.price,
+                  duration: data?.duration,
+                };
+          setVetServiceData(mergeBannerNavigationPayload(vetServiceData, groomingPayload));
           navigateToScreen('grooming-booking');
         } else if (screen === 'problem_grid') {
           if (process.env.NODE_ENV === 'development') {
@@ -3846,8 +3891,24 @@ export function CustomerHomeWrapper({
         }
         if (screen === 'create-booking' || screen === 'training-booking' || screen === 'booking') {
           setSelectedVendorId(data?.vendorId);
-          setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'training', trainer: data?.trainer, service: data?.service, serviceId: data?.serviceId, vendorName: data?.vendorName, price: data?.price, duration: data?.duration });
+          const trainingPayload =
+            data?.appointmentsMode === true
+              ? buildWapptShellBookingPayload('training', data)
+              : {
+                  vendorId: data?.vendorId,
+                  serviceType: data?.serviceType || 'training',
+                  trainer: data?.trainer,
+                  service: data?.service,
+                  serviceId: data?.serviceId,
+                  vendorName: data?.vendorName,
+                  price: data?.price,
+                  duration: data?.duration,
+                };
+          setVetServiceData(mergeBannerNavigationPayload(vetServiceData, trainingPayload));
           navigateToScreen('training-booking');
+        } else if (screen === 'wappt-discovery') {
+          setWapptDiscoveryCategory(String(data?.category || 'training'));
+          navigateToScreen('wappt-discovery');
         } else if (screen === 'problem_grid') {
           setCurrentServiceType('trainer');
           navigateToScreen('problem_grid');
@@ -3896,31 +3957,55 @@ export function CustomerHomeWrapper({
       { title: 'Training', subtitle: 'Professional pet training', showBackButton: true, skipHeader: true }
     );
   }
-  // ✅ Behaviorist: Problem-grid–driven flow (same pattern as vet/grooming/training; no separate dashboard router)
+  // ✅ Behaviorist: full hub with Book Appointment + behavioral concern grid
   if (currentScreen === 'behaviorist') {
-    return (
-      <ProblemGridSelector
-        roleId="behaviorist"
-        roleName="Behaviorist"
-        customerId={phone}
+    return renderScreenWithLayout(
+      'behaviorist',
+      <BehavioristServiceRouter
         phone={phone}
         onBack={handleBack}
-        onProblemSelect={(problem) => {
-          setSelectedProblem({
-            id: problem.id || problem.problemId,
-            title: problem.displayName || problem.name || problem.title,
-            roleId: 'behaviorist',
-            category: 'behavioral',
-            allowedServiceStyles: sanitizeCustomerAllowedServiceStyles((problem as any).allowedServiceStyles, {
+        onNavigate={(screen, data) => {
+          const navData = (data ?? {}) as Record<string, unknown>;
+          if (screen === 'training-booking') {
+            const payload =
+              navData.appointmentsMode === true
+                ? buildWapptShellBookingPayload('behaviorist', navData)
+                : navData;
+            setVetServiceData(mergeBannerNavigationPayload(vetServiceData, payload ?? {}));
+            navigateToScreen('training-booking');
+          } else if (screen === 'wappt-discovery') {
+            setWapptDiscoveryCategory(String(navData.category || 'behaviorist'));
+            navigateToScreen('wappt-discovery');
+          } else if (screen === 'problem_selected') {
+            setSelectedProblem({
+              id: String(navData.problemId ?? ''),
+              title: String(navData.problemTitle ?? 'Behavior Support'),
               roleId: 'behaviorist',
-              specializationId: problem.id || problem.problemId,
-              categoryHint: 'behavioral',
-            }),
-          });
-          setProblemGridSpecialization((problem.id || problem.problemId) || undefined);
-          navigateToScreen('problem_grid_flow');
+              category: 'behavioral',
+            });
+            setProblemGridSpecialization(String(navData.problemId ?? '') || undefined);
+            navigateToScreen('problem_grid_flow');
+          } else if (screen === 'behaviorist-provider-profile') {
+            const bid = String(navData.embedVendorId ?? navData.vendorId ?? '').trim();
+            if (!bid) {
+              toast.error('Profile unavailable — missing vendor id.');
+              return;
+            }
+            openBehavioristProviderProfile(bid);
+          } else if (screen === 'create-booking') {
+            const vendorId = String(navData.vendorId ?? '').trim() || undefined;
+            setSelectedVendorId(vendorId);
+            setVetServiceData({
+              vendorId,
+              serviceType: String(navData.serviceType ?? 'behaviorist'),
+            });
+            navigateToScreen('create-booking');
+          } else {
+            navigateToScreen(screen as ScreenType);
+          }
         }}
-      />
+      />,
+      { title: 'Pet Behavior', subtitle: 'Behavior correction', showBackButton: true, skipHeader: true }
     );
   }
   // ✅ FIX: Boarding Service with Frame UI (ServiceDashboardHeader – skipHeader to match vet/grooming/training)
@@ -3930,7 +4015,14 @@ export function CustomerHomeWrapper({
         if (screen === 'purchase-package') {
           handleNavigateToService(screen, data);
         } else if (screen === 'boarding-booking') {
-          openBoardingBookingScreen(data);
+          if (data?.appointmentsMode === true) {
+            openBoardingBookingScreen(buildWapptShellBookingPayload('boarding', data));
+          } else {
+            openBoardingBookingScreen(data);
+          }
+        } else if (screen === 'wappt-discovery') {
+          setWapptDiscoveryCategory(String(data?.category || 'boarding'));
+          navigateToScreen('wappt-discovery');
         } else if (screen === 'create-booking') {
           setSelectedVendorId(data?.vendorId);
           setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
@@ -3977,7 +4069,14 @@ export function CustomerHomeWrapper({
         if (screen === 'purchase-package') {
           handleNavigateToService(screen, data);
         } else if (screen === 'boarding-booking') {
-          openBoardingBookingScreen(data);
+          if (data?.appointmentsMode === true) {
+            openBoardingBookingScreen(buildWapptShellBookingPayload('boarding', data));
+          } else {
+            openBoardingBookingScreen(data);
+          }
+        } else if (screen === 'wappt-discovery') {
+          setWapptDiscoveryCategory(String(data?.category || 'boarding'));
+          navigateToScreen('wappt-discovery');
         } else if (screen === 'create-booking') {
           setSelectedVendorId(data?.vendorId);
           setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
@@ -4021,13 +4120,20 @@ export function CustomerHomeWrapper({
           if (screen === 'pet-sitter-provider-profile' && data?.vendorId) {
             openPetSitterProviderProfile(String(data.vendorId));
           } else if (screen === 'pet-sitter-booking') {
-            setVetServiceData({
-              vendorId: data?.vendorId,
-              serviceType: 'sitting',
-              facility: data?.facility,
-              sittingOptionId: data?.sittingOptionId,
-            });
+            const sittingPayload =
+              data?.appointmentsMode === true
+                ? { ...buildWapptShellBookingPayload('sitting', data), serviceType: 'sitting' }
+                : {
+                    vendorId: data?.vendorId,
+                    serviceType: 'sitting',
+                    facility: data?.facility,
+                    sittingOptionId: data?.sittingOptionId,
+                  };
+            setVetServiceData(mergeBannerNavigationPayload(null, sittingPayload));
             navigateToScreen('pet-sitter-booking');
+          } else if (screen === 'wappt-discovery') {
+            setWapptDiscoveryCategory(String(data?.category || 'sitting'));
+            navigateToScreen('wappt-discovery');
           } else if (screen === 'create-booking') {
             setSelectedVendorId(data?.vendorId);
             setVetServiceData({
@@ -4302,6 +4408,7 @@ export function CustomerHomeWrapper({
         serviceStyle={vetServiceData?.serviceStyle ?? 'tele'}
         price={vetServiceData?.price}
         duration={vetServiceData?.duration}
+        appointmentsMode={vetServiceData?.appointmentsMode === true}
         onBack={() => backFromBannerOr(handleBack, vetServiceData)}
         onInternalBackReady={(fn) => { nutritionistBookingInternalBackRef.current = fn; }}
         onNavigate={(screen, data) => {
@@ -4350,14 +4457,21 @@ export function CustomerHomeWrapper({
               navigateToScreen('nutritionist-tele');
             } else if (screen === 'nutritionist-booking') {
               setSelectedVendorId(data?.vendorId);
-              setVetServiceData({
-                vendorId: data?.vendorId,
-                serviceType: data?.serviceType || data?.category || 'pet_nutritionist',
-                serviceStyle: data?.serviceStyle || 'tele',
-                nutritionist: data?.nutritionist,
-                serviceId: data?.serviceId,
-              });
+              const nutritionPayload =
+                data?.appointmentsMode === true
+                  ? buildWapptShellBookingPayload('nutrition', data)
+                  : {
+                      vendorId: data?.vendorId,
+                      serviceType: data?.serviceType || data?.category || 'pet_nutritionist',
+                      serviceStyle: data?.serviceStyle || 'tele',
+                      nutritionist: data?.nutritionist,
+                      serviceId: data?.serviceId,
+                    };
+              setVetServiceData(mergeBannerNavigationPayload(null, nutritionPayload));
               navigateToScreen('nutritionist-booking');
+            } else if (screen === 'wappt-discovery') {
+              setWapptDiscoveryCategory(String(data?.category || 'nutrition'));
+              navigateToScreen('wappt-discovery');
             } else if (screen === 'create-booking') {
               setSelectedVendorId(data?.vendorId);
               setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
@@ -4370,69 +4484,12 @@ export function CustomerHomeWrapper({
             } else if (screen === 'problem_selected') {
               setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Nutrition', roleId: 'pet_nutritionist' });
               navigateToScreen('problem_grid_flow');
-            } else if (screen === 'expert-nutritionists') {
-              navigateToScreen('expert-nutritionists');
             } else if (screen) {
               navigateToScreen(screen as ScreenType);
             } else {
               handleBack();
             }
           }} 
-        />
-      </CustomerScreenWrapper>
-    );
-  }
-  if (currentScreen === 'expert-nutritionists') {
-    return (
-      <CustomerScreenWrapper customerPhone={phone}
-        currentScreen={currentScreen}
-        onNavigate={handleBottomNav}
-        onProfileClick={handleProfileClick}
-        accountSidebar={accountSidebarOverlay}
-      >
-        <ExpertNutritionistsList
-          phone={phone}
-          onBack={handleBack}
-          onNavigate={(screen, data) => {
-            if (screen === 'nutrition-meal-plans') {
-              if (!isCustomerMealPlansEnabled()) {
-                toast.info('Meal plans are coming soon.');
-                return;
-              }
-              if (data?.vendorId) {
-                setMealPlanVendorFocus({
-                  vendorId: String(data.vendorId),
-                  vendorSnapshot:
-                    data.vendorSnapshot && typeof data.vendorSnapshot === 'object'
-                      ? (data.vendorSnapshot as Record<string, unknown>)
-                      : undefined,
-                });
-              } else {
-                setMealPlanVendorFocus(null);
-              }
-              setCurrentScreen('nutrition-meal-plans');
-            } else if (screen === 'nutritionist-booking') {
-              setSelectedVendorId(data?.vendorId);
-              setVetServiceData({
-                vendorId: data?.vendorId,
-                serviceType: data?.serviceType || data?.category || 'pet_nutritionist',
-                serviceStyle: data?.serviceStyle || 'tele',
-                nutritionist: data?.nutritionist,
-                serviceId: data?.serviceId,
-              });
-              navigateToScreen('nutritionist-booking');
-            } else if (screen === 'create-booking') {
-              setSelectedVendorId(data?.vendorId);
-              setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'pet_nutritionist' });
-              setCurrentScreen('create-booking');
-            } else if (screen === 'pets') {
-              navigateToPets();
-            } else if (screen) {
-              setCurrentScreen(screen as ScreenType);
-            } else {
-              setCurrentScreen('nutritionist');
-            }
-          }}
         />
       </CustomerScreenWrapper>
     );
@@ -4937,10 +4994,11 @@ export function CustomerHomeWrapper({
         groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
         service: data?.service,
         serviceId: data?.serviceId,
-        selectedServices: data?.selectedServices, // ✅ FIX: Pass multiple selected services
+        selectedServices: data?.selectedServices,
         vendorName: data?.vendorName,
         price: data?.price,
         duration: data?.duration,
+        appointmentsMode: data?.appointmentsMode === true,
       });
       navigateToScreen('grooming-booking');
     } else {
@@ -4962,10 +5020,11 @@ export function CustomerHomeWrapper({
         groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
         service: data?.service,
         serviceId: data?.serviceId,
-        selectedServices: data?.selectedServices, // ✅ FIX: Pass multiple selected services
+        selectedServices: data?.selectedServices,
         vendorName: data?.vendorName,
         price: data?.price,
         duration: data?.duration,
+        appointmentsMode: data?.appointmentsMode === true,
       });
       navigateToScreen('grooming-booking');
     } else {
@@ -5203,6 +5262,8 @@ export function CustomerHomeWrapper({
     selectedServices={vetServiceData?.selectedServices}
     price={vetServiceData?.price}
     duration={vetServiceData?.duration}
+    appointmentsMode={vetServiceData?.appointmentsMode === true}
+    category={vetServiceData?.category || vetServiceData?.serviceType || 'training'}
     onBack={() => backFromBannerOr(handleBack, vetServiceData)} 
     onInternalBackReady={(fn) => {
       trainingBookingInternalBackRef.current = fn;
@@ -5254,6 +5315,7 @@ export function CustomerHomeWrapper({
                   ? 'swimming'
                   : undefined
             }
+            appointmentsMode={vetServiceData?.appointmentsMode === true}
             onBack={() => backFromBannerOr(handleBack, vetServiceData)}
             onInternalBackReady={(fn) => { boardingBookingInternalBackRef.current = fn; }}
             onNavigate={(screen, data) => {

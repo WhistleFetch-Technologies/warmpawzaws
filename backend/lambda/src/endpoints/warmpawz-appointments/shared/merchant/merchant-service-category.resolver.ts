@@ -1,5 +1,7 @@
 import {
+  getCatalogSlugAliasesForLaunchServiceIds,
   getSearchCategoryAliases,
+  hubChipToLaunchIdsForCatalogInversion,
   mapCatalogSlugToLaunchServiceId,
   normalizeCategoryToken,
 } from '@warmpawz/service-launch-mappings';
@@ -140,7 +142,22 @@ export function expandServiceCategoryFilterTokens(serviceCategoryId: string): re
     return [];
   }
 
-  const aliases = getSearchCategoryAliases(normalized);
-  const tokens = aliases.length > 0 ? aliases : [normalized];
-  return Array.from(new Set(tokens.map((token) => normalizeCategoryToken(token)).filter(Boolean)));
+  const mappedLaunchId = mapCatalogSlugToLaunchServiceId(normalized);
+  const launchSeeds =
+    mappedLaunchId !== 'unknown'
+      ? [mappedLaunchId]
+      : hubChipToLaunchIdsForCatalogInversion(normalized);
+
+  const out = new Set<string>([normalized]);
+
+  for (const seed of launchSeeds) {
+    for (const alias of getSearchCategoryAliases(seed)) {
+      out.add(alias);
+    }
+    for (const slug of getCatalogSlugAliasesForLaunchServiceIds([seed])) {
+      out.add(slug);
+    }
+  }
+
+  return Array.from(out).filter(Boolean);
 }
