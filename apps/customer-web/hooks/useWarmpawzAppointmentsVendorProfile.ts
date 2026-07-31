@@ -28,6 +28,8 @@ export type WapptProfileProvider = {
   name: string;
   address?: string;
   phone?: string;
+  photo?: string;
+  photoUrl?: string;
   rating: number;
   reviewCount: number;
   isVerified: boolean;
@@ -71,6 +73,8 @@ function mapProviderRow(row: Record<string, unknown>): WapptProfileProvider {
     name: base.name,
     address: base.address,
     phone: base.phone,
+    photo: base.photo,
+    photoUrl: base.photo,
     rating: base.rating,
     reviewCount: base.reviewCount,
     isVerified: base.isVerified,
@@ -292,6 +296,19 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
                   vendorData.name ??
                   initialVendorName ??
                   'Provider',
+                experienceYears:
+                  vendorData.experience_years ??
+                  vendorData.experienceYears ??
+                  (bootstrapRow as Record<string, unknown> | null)?.experienceYears,
+                photoUrl:
+                  vendorData.profile_photo_url ??
+                  vendorData.photoUrl ??
+                  vendorData.profile_image ??
+                  (bootstrapRow as Record<string, unknown> | null)?.photoUrl,
+                profile_image:
+                  vendorData.profile_image ??
+                  vendorData.profile_photo_url ??
+                  (bootstrapRow as Record<string, unknown> | null)?.profile_image,
               }
             : null);
 

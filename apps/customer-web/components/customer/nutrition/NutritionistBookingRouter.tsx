@@ -437,10 +437,10 @@ export function NutritionistBookingRouter({
   };
 
   useEffect(() => {
-    if (!appointmentsMode && customerId && effectiveVendorId && step === 'service') {
-      checkForActivePackages();
+    if (!appointmentsMode && customerId && effectiveVendorId) {
+      void checkForActivePackages();
     }
-  }, [customerId, effectiveVendorId, step, appointmentsMode]);
+  }, [customerId, effectiveVendorId, appointmentsMode, selectedServiceType]);
 
   // Handle using a package session
   const handleUsePackageSession = async () => {

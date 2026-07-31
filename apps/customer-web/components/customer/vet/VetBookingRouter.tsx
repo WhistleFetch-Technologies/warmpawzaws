@@ -1944,7 +1944,7 @@ export function VetBookingRouter({
                 <div className="flex justify-between items-center">
                   <span className="text-xs sm:text-sm text-gray-500">Service{allSelectedServices?.length > 1 ? 's' : ''}</span>
                   <span className="font-medium text-xs sm:text-sm text-right ml-2">
-                    {appointmentsMode
+                    {appointmentsMode || useWapptUnifiedUi
                       ? getWarmpawzAppointmentServiceLabel({
                           category: 'vet',
                           serviceStyle: selectedServiceType,

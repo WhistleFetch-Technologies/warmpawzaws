@@ -35,6 +35,7 @@ import {
   resolveWarmpawzBookingScreen,
 } from '@/lib/warmpawz-appointments-customer';
 import { resolveWapptStylePlaceholderIcon } from '@/lib/warmpawz-appointments/wappt-vendor-profile-config';
+import { getWapptHubConfig } from '@/lib/wappt-hub-registry';
 import { useWarmpawzAppointmentsVendorProfile } from '@/hooks/useWarmpawzAppointmentsVendorProfile';
 
 type TabId = 'overview' | 'services' | 'reviews';
@@ -89,15 +90,16 @@ export function WarmpawzAppointmentsVendorProfile({
     return String(fromVendor ?? provider?.name ?? vendorName ?? 'Provider').trim();
   }, [vendor, provider?.name, vendorName]);
 
-  const photos = useMemo(
-    () =>
-      resolveVendorProfileHeroGallery({
-        facility,
-        vendor,
-        profileProvider: provider ?? { name: providerName },
-      }),
-    [facility, vendor, provider, providerName],
-  );
+  const photos = useMemo(() => {
+    const resolved = resolveVendorProfileHeroGallery({
+      facility,
+      vendor,
+      profileProvider: provider ?? { name: providerName },
+    });
+    if (resolved.length > 0) return resolved;
+    const fallback = getWapptHubConfig(category)?.tileImage;
+    return fallback ? [fallback] : [];
+  }, [facility, vendor, provider, providerName, category]);
 
   const amenities = (facility?.amenities ?? vendor?.amenities ?? []) as string[];
   const address =
@@ -398,7 +400,7 @@ export function WarmpawzAppointmentsVendorProfile({
                   </div>
                   <div className="border-x border-gray-200 text-center">
                     <div className="text-2xl font-bold text-gray-900">
-                      {provider.experienceYears != null && provider.experienceYears !== 0
+                      {provider.experienceYears != null
                         ? provider.experienceYears
                         : '5+'}
                     </div>

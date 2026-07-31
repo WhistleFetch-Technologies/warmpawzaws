@@ -40,6 +40,12 @@ export async function fetchDiscoveryProfileVendorRow(
       rating: vendor.rating ?? vendor.avg_rating ?? 0,
       reviewCount: vendor.review_count ?? vendor.reviewCount ?? vendor.totalReviews ?? 0,
       totalReviews: vendor.review_count ?? vendor.reviewCount ?? vendor.totalReviews ?? 0,
+      experienceYears: vendor.experience_years ?? vendor.experienceYears,
+      profile_image:
+        vendor.profile_image ??
+        vendor.profile_photo_url ??
+        vendor.photoUrl ??
+        vendor.logo_url,
       roleDisplayName: vendor.role_display_name ?? vendor.roleDisplayName ?? vendor.role_name,
       roleName: vendor.role_name ?? vendor.roleName,
       role: vendor.role,

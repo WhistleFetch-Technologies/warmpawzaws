@@ -49,8 +49,16 @@ describe('wappt hub category matrix', () => {
 
   it.each(hubs)('discovery style allowlist for %s', (hub) => {
     const config = getWapptHubConfig(hub);
-    expect(config?.allowedDiscoveryStyles).toEqual(['at_center', 'at_home']);
-    expect(config?.allowedDiscoveryStyles).toContain(config?.defaultDiscoveryStyle);
+    if (hub === 'walker' || hub === 'sitting') {
+      expect(config?.allowedDiscoveryStyles).toEqual(['at_home']);
+      expect(config?.defaultDiscoveryStyle).toBe('at_home');
+    } else if (hub === 'boarding') {
+      expect(config?.allowedDiscoveryStyles).toEqual(['at_center']);
+      expect(config?.defaultDiscoveryStyle).toBe('at_center');
+    } else {
+      expect(config?.allowedDiscoveryStyles).toEqual(['at_center', 'at_home']);
+      expect(config?.allowedDiscoveryStyles).toContain(config?.defaultDiscoveryStyle);
+    }
   });
 
   it.each(hubs)('profile and booking nav for %s', (hub) => {

@@ -913,8 +913,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       console.warn('[Booking] Could not fetch vendor role, skipping availability check:', error);
     }
 
-    // Validate service availability (Dashboard UI config + role restrictions)
-    if (roleId) {
+    const isWapptBooking =
+      wapptAppointmentFee != null || isWarmpawzAppointmentsBooking(body as Record<string, unknown>);
+
+    // Validate service availability (Dashboard UI config + role restrictions).
+    // WAPPT flat-fee bookings resolve serviceId in preflight — skip marketplace dashboard gate.
+    if (roleId && !isWapptBooking) {
       const availabilityResult = await validateServiceAvailability(
         lookupServiceId,
         roleId,
@@ -940,9 +944,6 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         );
       }
     }
-
-    const isWapptBooking =
-      wapptAppointmentFee != null || isWarmpawzAppointmentsBooking(body as Record<string, unknown>);
     let bookingCommerceMode = 'marketplace';
     let bookingCommerceVersion = 1;
     if (isWapptBooking) {

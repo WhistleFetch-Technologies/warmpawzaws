@@ -42,7 +42,9 @@ import { HUB_DISCOVERY_TRAINING } from '@/lib/service-hub-discovery-config';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
-import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
+import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 
@@ -215,8 +217,22 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
 
   const handleBookPlan = useCallback(
     (v: BoardingListVendor, plan: BoardingPlanRow) => {
+      const rawObj = (v.raw ?? {}) as Record<string, unknown>;
+      const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
+      if (shouldHideDiscoveryPricing(rawObj)) {
+        onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
+          ...buildWarmpawzAppointmentsProfileNav({
+            vendorId,
+            category: 'training',
+            serviceStyle: String(plan.serviceStyle || 'at_center'),
+            vendorName: v.name,
+          }),
+          profileBackScreen: 'wappt-discovery',
+        });
+        return;
+      }
       onNavigate?.('create-booking', {
-        vendorId: v.id,
+        vendorId,
         serviceType: 'training',
         serviceId: plan.rowId,
         serviceName: plan.name,

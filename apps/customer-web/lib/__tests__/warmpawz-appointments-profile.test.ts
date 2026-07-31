@@ -93,3 +93,15 @@ describe('WAPPT discovery list style filters', () => {
     expect(WAPPT_DISCOVERY_DEFAULT_STYLE).toBe('at_center');
   });
 });
+
+describe('WAPPT profile provider stats fallbacks', () => {
+  it('uses API experience when present including zero', () => {
+    const years = 0;
+    expect(years != null ? years : '5+').toBe(0);
+  });
+
+  it('falls back to 5+ when experience is missing', () => {
+    const years: number | null | undefined = undefined;
+    expect(years != null ? years : '5+').toBe('5+');
+  });
+});

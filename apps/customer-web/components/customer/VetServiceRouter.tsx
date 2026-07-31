@@ -42,7 +42,8 @@ import {
   resolveServiceStyleLaunchFromCatalog,
 } from '@/lib/customer-service-style-launch';
 import type { LaunchStatusValue } from '@warmpawz/service-launch-mappings';
-import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles } from '@/lib/warmpawz-appointments-customer';
+import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
+import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { resolveTeleConsultShellNavigation } from '@/lib/warmpawz-appointments/wappt-tele-catalogue';
 
 interface VetServiceRouterProps {
@@ -373,6 +374,20 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
   const handleVetBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
     const raw = (v.raw || {}) as Record<string, unknown>;
+    if (shouldHideDiscoveryPricing(raw)) {
+      const vendorId =
+        pickCustomerVendorAccountId(raw) || String(raw.vendorId || raw.vendor_id || v.id || '').trim();
+      handleNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId,
+          category: 'vet',
+          serviceStyle: String(plan.serviceStyle || 'at_center'),
+          vendorName: v.name,
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
+      return;
+    }
     const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
 
     const serviceObj: Record<string, unknown> = {
@@ -466,6 +481,20 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
     const rawVendorId = String(raw.vendorId || raw.vendor_id || '').trim();
     const rawProviderId = String(raw.providerId || raw.provider_id || '').trim();
+
+    if (shouldHideDiscoveryPricing(raw)) {
+      const vendorId = pickCustomerVendorAccountId(raw) || rawVendorId || v.id;
+      handleNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
+        ...buildWarmpawzAppointmentsProfileNav({
+          vendorId,
+          category: 'vet',
+          serviceStyle: 'at_center',
+          vendorName: v.name,
+        }),
+        profileBackScreen: 'wappt-discovery',
+      });
+      return;
+    }
 
     if (providerType === 'staff' || providerType === 'individual') {
       const doctorId =
