@@ -47,6 +47,12 @@ describe('wappt hub category matrix', () => {
     expect(profile.category).toBe(hub);
   });
 
+  it.each(hubs)('discovery style allowlist for %s', (hub) => {
+    const config = getWapptHubConfig(hub);
+    expect(config?.allowedDiscoveryStyles).toEqual(['at_center', 'at_home']);
+    expect(config?.allowedDiscoveryStyles).toContain(config?.defaultDiscoveryStyle);
+  });
+
   it.each(hubs)('profile and booking nav for %s', (hub) => {
     const profileNav = buildWarmpawzAppointmentsProfileNav({
       vendorId: 'vendor-1',

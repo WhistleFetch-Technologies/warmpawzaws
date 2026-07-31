@@ -5248,6 +5248,7 @@ export function CustomerHomeWrapper({
     price={vetServiceData?.price}
     duration={vetServiceData?.duration}
     appointmentsMode={vetServiceData?.appointmentsMode === true}
+    category={vetServiceData?.category || vetServiceData?.serviceType || 'training'}
     onBack={() => backFromBannerOr(handleBack, vetServiceData)} 
     onInternalBackReady={(fn) => {
       trainingBookingInternalBackRef.current = fn;

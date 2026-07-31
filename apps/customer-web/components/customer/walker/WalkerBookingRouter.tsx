@@ -25,11 +25,22 @@ import { WalkerWalkServicePicker } from './WalkerWalkServicePicker';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
+import { useWapptBookingSlots } from '@/hooks/useWapptBookingSlots';
 import {
   WAPPT_APPOINTMENT_SERVICE_ID,
   WAPPT_BOOKING_MODE,
   WAPPT_DEFAULT_SLOT_DURATION_MIN,
+  getWarmpawzAppointmentServiceLabel,
 } from '@/lib/warmpawz-appointments-customer';
+import { WapptBookingDetailsStep } from '../warmpawz-appointments/WapptBookingDetailsStep';
+import { WapptBookingSummaryStep } from '../warmpawz-appointments/WapptBookingSummaryStep';
+import { WapptBookingAddressStep } from '../warmpawz-appointments/WapptBookingAddressStep';
+import {
+  formatWapptAddressLine,
+  getWapptBookingPreviousStep,
+  getWapptBookingStepIndex,
+  getWapptBookingSteps,
+} from '@/lib/warmpawz-appointments/wappt-booking-flow-steps';
 
 interface WalkerBookingRouterProps {
   phone: string;
@@ -49,7 +60,7 @@ interface WalkerBookingRouterProps {
   onInternalBackReady?: (handleBack: () => void) => void; // ✅ NEW: Expose internal handleBack to parent
 }
 
-type BookingStep = 'service' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmation';
+type BookingStep = 'service' | 'datetime' | 'address' | 'summary' | 'pet' | 'payment' | 'confirmation';
 
 interface TimeSlot {
   time: string;
@@ -310,8 +321,22 @@ export function WalkerBookingRouter({
     appointmentsMode,
     vendorId,
     category: 'walker',
-    serviceStyle: serviceStyle || serviceType || 'at_home',
+    serviceStyle: walkerDiscoveryStyle,
+    serviceType: serviceStyle || serviceType || 'at_home',
     initialPrice: price,
+  });
+
+  const wapptFlowSteps = useMemo(
+    () => (appointmentsMode ? getWapptBookingSteps(walkerDiscoveryStyle) : []),
+    [appointmentsMode, walkerDiscoveryStyle],
+  );
+
+  const wapptSlots = useWapptBookingSlots({
+    vendorId,
+    serviceStyle: walkerDiscoveryStyle,
+    totalDurationMinutes: WAPPT_DEFAULT_SLOT_DURATION_MIN,
+    selectedDate,
+    enabled: appointmentsMode && !!vendorId,
   });
 
   useEffect(() => {
@@ -494,6 +519,36 @@ export function WalkerBookingRouter({
     // Proceed with normal booking
   };
 
+  const handleContinueFromBookingDetails = () => {
+    if (!selectedDate || !selectedTime) {
+      toast.error('Please select date and time');
+      return;
+    }
+    const selectedSlot = wapptSlots.timeSlots.find((s) => s.time === selectedTime);
+    if (selectedSlot && !selectedSlot.available) {
+      toast.error('This time slot is already booked. Please select a different time.');
+      return;
+    }
+    if (!selectedPet) {
+      toast.error('Please select a pet');
+      return;
+    }
+    if (walkerDiscoveryStyle === 'at_center') {
+      setSelectedAddress({ id: 'clinic' });
+      setStep('summary');
+    } else {
+      setStep('address');
+    }
+  };
+
+  const handleContinueFromAddress = () => {
+    if (!selectedAddress) {
+      toast.error('Please select a delivery address');
+      return;
+    }
+    setStep('summary');
+  };
+
   const handleNext = () => {
     if (step === 'service') {
       const sel = serviceOptions.find((s) => s.id === selectedVendorServiceId);
@@ -529,6 +584,32 @@ export function WalkerBookingRouter({
   };
 
   const handleBack = useCallback(() => {
+    if (step === 'confirmation') {
+      onBack();
+      return;
+    }
+    if (step === 'payment') {
+      setShowPaymentPage(false);
+      if (appointmentsMode) {
+        setStep('summary');
+        return;
+      }
+    }
+    if (appointmentsMode && wapptFlowSteps.length > 0) {
+      const prev = getWapptBookingPreviousStep(
+        wapptFlowSteps,
+        step as 'datetime' | 'address' | 'summary' | 'payment',
+      );
+      if (prev) {
+        setStep(prev);
+        return;
+      }
+      if (step === 'datetime' && enteredWithServiceRef.current) {
+        onBack();
+        return;
+      }
+    }
+
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
 
@@ -537,7 +618,6 @@ export function WalkerBookingRouter({
       return;
     }
 
-    // Handle back from payment for tele
     if (step === 'payment' && bookingServiceStyle === 'tele') {
       setStep('pet');
       return;
@@ -548,7 +628,7 @@ export function WalkerBookingRouter({
     } else {
       onBack();
     }
-  }, [step, bookingServiceStyle, onBack]);
+  }, [step, bookingServiceStyle, onBack, appointmentsMode, wapptFlowSteps]);
 
   // ✅ NEW: Expose handleBack to parent for header navigation
   useEffect(() => {
@@ -559,6 +639,7 @@ export function WalkerBookingRouter({
 
   // ✅ Proceed to UniversalPaymentPage
   const handleProceedToPayment = () => {
+    setStep('payment');
     setShowPaymentPage(true);
   };
 
@@ -610,6 +691,10 @@ export function WalkerBookingRouter({
 
   const selectedServiceOption = serviceOptions.find((s) => s.id === selectedVendorServiceId);
 
+  const reviewTotal = appointmentsMode
+    ? wapptBooking.appointmentFee ?? selectedVendorService?.price ?? price ?? 0
+    : selectedServiceOption?.price ?? price ?? 0;
+
   const dashboardStats: Array<{ value: string; label: string }> = [];
 
   const getServiceTitle = () => {
@@ -626,6 +711,18 @@ export function WalkerBookingRouter({
 
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
+
+    if (appointmentsMode && wapptFlowSteps.length > 0) {
+      const flowStep = step === 'address' || step === 'datetime' || step === 'summary' ? step : 'datetime';
+      const currentIdx = getWapptBookingStepIndex(wapptFlowSteps, flowStep);
+      if (currentIdx >= 0) {
+        return wapptFlowSteps.map((s, idx) => ({
+          label: s.label,
+          isCompleted: idx < currentIdx,
+          isCurrent: idx === currentIdx,
+        }));
+      }
+    }
     
     const stepLabels = bookingServiceStyle === 'tele' 
       ? ['Service', 'Date/Time', 'Pet', 'Payment']
@@ -651,7 +748,14 @@ export function WalkerBookingRouter({
             ? WAPPT_APPOINTMENT_SERVICE_ID
             : selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId
         }
-        serviceName={selectedServiceOption?.name || serviceName || 'Pet Walking'}
+        serviceName={
+          appointmentsMode
+            ? getWarmpawzAppointmentServiceLabel({
+                category: 'walker',
+                serviceStyle: walkerDiscoveryStyle,
+              })
+            : selectedServiceOption?.name || serviceName || 'Pet Walking'
+        }
         serviceDescription={`Walk by ${walker?.name || 'professional walker'}`}
         serviceStyle={
           (bookingServiceStyle === 'outdoor' ? 'at_home' : bookingServiceStyle) as
@@ -689,9 +793,18 @@ export function WalkerBookingRouter({
         customerPhone={phone}
         customerId={customerId || undefined}
         bookingMode={appointmentsMode ? WAPPT_BOOKING_MODE : undefined}
-        onBack={() => setShowPaymentPage(false)}
+        onBack={() => {
+          setShowPaymentPage(false);
+          if (appointmentsMode && step === 'payment') {
+            setStep('summary');
+          }
+        }}
         onPaymentAbandoned={() => {
-          if (selectedDate) void loadTimeSlots(selectedDate);
+          if (appointmentsMode && selectedDate) {
+            void wapptSlots.loadTimeSlots(selectedDate);
+          } else if (selectedDate) {
+            void loadTimeSlots(selectedDate);
+          }
         }}
         onSuccess={handlePaymentSuccess}
       />
@@ -700,7 +813,7 @@ export function WalkerBookingRouter({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {step !== 'payment' && (
+      {(step !== 'payment' || (appointmentsMode && !showPaymentPage)) && (
         <ServiceDashboardHeader
           serviceName={getServiceTitle()}
           serviceSubtitle={getServiceSubtitle()}
@@ -714,7 +827,26 @@ export function WalkerBookingRouter({
         />
       )}
 
-      {step === 'payment' && !showPaymentPage && (
+      {step === 'payment' && !showPaymentPage && appointmentsMode && (
+        <div className="max-w-md mx-auto px-4 py-6">
+          <WapptBookingSummaryStep
+            category="walker"
+            serviceStyle={walkerDiscoveryStyle}
+            amount={reviewTotal}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            petName={selectedPet?.name}
+            petBreed={selectedPet?.breed}
+            addressLine={
+              walkerDiscoveryStyle === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
+            }
+            onBack={() => setStep(walkerDiscoveryStyle === 'at_home' ? 'address' : 'datetime')}
+            onContinue={handleProceedToPayment}
+          />
+        </div>
+      )}
+
+      {step === 'payment' && !showPaymentPage && !appointmentsMode && (
         <PrePaymentBookingReview
           title="Booking Summary"
           subtitle="Review before payment"
@@ -808,7 +940,52 @@ export function WalkerBookingRouter({
         )}
 
         {/* Date & Time Selection */}
-        {step === 'datetime' && (
+        {step === 'datetime' && appointmentsMode ? (
+          <WapptBookingDetailsStep
+            dates={wapptSlots.dates}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            timeSlots={wapptSlots.timeSlots}
+            loadingSlots={wapptSlots.loadingSlots}
+            pets={pets}
+            selectedPet={selectedPet}
+            onDateSelect={setSelectedDate}
+            onTimeSelect={setSelectedTime}
+            onPetSelect={setSelectedPet}
+            onAddPet={() => setShowAddPetModal(true)}
+            onContinue={handleContinueFromBookingDetails}
+          />
+        ) : null}
+
+        {step === 'address' && appointmentsMode && walkerDiscoveryStyle === 'at_home' ? (
+          <WapptBookingAddressStep
+            addresses={addresses}
+            selectedAddress={selectedAddress}
+            onSelect={setSelectedAddress}
+            onAddAddress={() => setShowAddAddressModal(true)}
+            onContinue={handleContinueFromAddress}
+            hint="An address is required for home walking visit."
+          />
+        ) : null}
+
+        {step === 'summary' && appointmentsMode ? (
+          <WapptBookingSummaryStep
+            category="walker"
+            serviceStyle={walkerDiscoveryStyle}
+            amount={reviewTotal}
+            selectedDate={selectedDate}
+            selectedTime={selectedTime}
+            petName={selectedPet?.name}
+            petBreed={selectedPet?.breed}
+            addressLine={
+              walkerDiscoveryStyle === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
+            }
+            onBack={() => setStep(walkerDiscoveryStyle === 'at_home' ? 'address' : 'datetime')}
+            onContinue={handleProceedToPayment}
+          />
+        ) : null}
+
+        {step === 'datetime' && !appointmentsMode ? (
           <div className="space-y-6">
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-3">Select Date</h2>
@@ -878,10 +1055,10 @@ export function WalkerBookingRouter({
               Continue
             </Button>
           </div>
-        )}
+        ) : null}
 
         {/* Pet Selection */}
-        {step === 'pet' && (
+        {step === 'pet' && !appointmentsMode && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
@@ -959,7 +1136,7 @@ export function WalkerBookingRouter({
         )}
 
         {/* Address Selection (not for tele) */}
-        {step === 'address' && bookingServiceStyle !== 'tele' && (
+        {step === 'address' && !appointmentsMode && bookingServiceStyle !== 'tele' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">

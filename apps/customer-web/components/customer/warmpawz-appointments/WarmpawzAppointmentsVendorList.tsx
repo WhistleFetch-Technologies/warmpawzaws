@@ -17,8 +17,8 @@ import {
 } from '@/lib/warmpawz-appointments-customer';
 import { resolveWapptVendorListConfig } from '@/lib/warmpawz-appointments/wappt-vendor-list-config';
 import {
-  WAPPT_DISCOVERY_DEFAULT_STYLE,
-  WAPPT_DISCOVERY_STYLE_FILTERS,
+  resolveWapptDiscoveryDefaultStyle,
+  resolveWapptDiscoveryStyleFilters,
   type WapptDiscoveryListStyle,
 } from '@/lib/warmpawz-appointments/wappt-list-style-config';
 import { getWapptDiscoveryCategory } from '@/lib/wappt-hub-registry';
@@ -55,8 +55,12 @@ export function WarmpawzAppointmentsVendorList({
   const router = useRouter();
   const listConfig = resolveWapptVendorListConfig(category);
   const discoveryCategory = getWapptDiscoveryCategory(category);
-  const [styleFilter, setStyleFilter] = useState<WapptDiscoveryListStyle>(
-    WAPPT_DISCOVERY_DEFAULT_STYLE,
+  const styleFilters = useMemo(
+    () => resolveWapptDiscoveryStyleFilters(discoveryCategory),
+    [discoveryCategory],
+  );
+  const [styleFilter, setStyleFilter] = useState<WapptDiscoveryListStyle>(() =>
+    resolveWapptDiscoveryDefaultStyle(discoveryCategory),
   );
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -146,7 +150,7 @@ export function WarmpawzAppointmentsVendorList({
         </div>
 
         <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-          {WAPPT_DISCOVERY_STYLE_FILTERS.map((filter) => (
+          {styleFilters.map((filter) => (
             <button
               key={filter.id}
               type="button"

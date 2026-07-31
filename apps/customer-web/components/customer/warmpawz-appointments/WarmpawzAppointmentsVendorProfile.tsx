@@ -103,7 +103,7 @@ export function WarmpawzAppointmentsVendorProfile({
     String(vendor?.address ?? facility?.address ?? provider?.address ?? '').trim() || '';
   const phoneNumber = String(vendor?.phone ?? facility?.phone ?? provider?.phone ?? '').trim();
   const description =
-    String(vendor?.description ?? facility?.description ?? '').trim() ||
+    String(vendor?.description || facility?.description || '').trim() ||
     config.aboutFallback(providerName);
 
   const profileVendorId = String(
@@ -370,13 +370,19 @@ export function WarmpawzAppointmentsVendorProfile({
                   </div>
                   <div className="border-x border-gray-200 text-center">
                     <div className="text-2xl font-bold text-gray-900">
-                      {provider.experienceYears || '5+'}
+                      {provider.experienceYears != null && provider.experienceYears !== ''
+                        ? provider.experienceYears
+                        : '5+'}
                     </div>
                     <div className="mt-1 text-xs text-gray-500">Years Experience</div>
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-gray-900">
-                      {rating?.totalReviews || provider.reviewCount || '10+'}
+                      {rating?.totalReviews != null
+                        ? rating.totalReviews
+                        : provider.reviewCount != null
+                          ? provider.reviewCount
+                          : '10+'}
                     </div>
                     <div className="mt-1 text-xs text-gray-500">Reviews</div>
                   </div>

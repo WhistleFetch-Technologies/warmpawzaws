@@ -125,7 +125,8 @@ export function WarmpawzPayVendorClient({ vendorId }: { vendorId?: string }) {
         serviceSubtitle="Make a payment & get exclusive discounts"
         serviceIcon={QrCode}
         iconColor="text-white"
-        showBackButton={false}
+        showBackButton={true}
+        onBack={() => router.back()}
         bottomEdge="flat"
       />
 
