@@ -9,10 +9,11 @@ export type WapptStyleFilter = 'all' | 'at_center' | 'at_home' | 'tele';
 export function useWarmpawzAppointmentsByCategoryFeed(opts: {
   category: string;
   serviceStyle: WapptStyleFilter;
+  specialization?: string;
   enabled?: boolean;
   pageSize?: number;
 }) {
-  const { category, serviceStyle, enabled = true, pageSize = 3 } = opts;
+  const { category, serviceStyle, specialization, enabled = true, pageSize = 3 } = opts;
 
   const buildUrl = useCallback(
     ({ limit, cursor }: { limit: number; cursor?: string }) => {
@@ -21,10 +22,11 @@ export function useWarmpawzAppointmentsByCategoryFeed(opts: {
         serviceStyle,
         limit: String(limit),
       });
+      if (specialization?.trim()) qs.set('specialization', specialization.trim());
       if (cursor) qs.set('cursor', cursor);
       return `/customer/warmpawz-appointments/discovery/by-category?${qs}`;
     },
-    [category, serviceStyle],
+    [category, serviceStyle, specialization],
   );
 
   const feed = useDiscoveryVendorFeed({ buildUrl, enabled, pageSize });
@@ -32,7 +34,7 @@ export function useWarmpawzAppointmentsByCategoryFeed(opts: {
   useEffect(() => {
     if (!enabled) return;
     void feed.reload();
-  }, [enabled, category, serviceStyle, feed.reload]);
+  }, [enabled, category, serviceStyle, specialization, feed.reload]);
 
   return {
     vendors: feed.vendors,

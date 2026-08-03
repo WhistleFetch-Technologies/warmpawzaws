@@ -95,7 +95,7 @@ export function PetProfile({
 
       if (data && data.success) {
         const rows = (data.bookings || []).map((raw: Record<string, unknown>) => ({
-          ...(raw as Booking),
+          ...(raw as unknown as Booking),
           serviceName: resolveCustomerBookingDisplayName(raw, String(raw.serviceName ?? 'Service')),
         }));
         setBookings(rows);
@@ -307,7 +307,9 @@ export function PetProfile({
                         <div className="flex items-center gap-2 text-gray-600">
                           <Clock className="w-4 h-4" />
                           <span>
-                            {shouldHideWarmpawzAppointmentDuration(booking)
+                            {shouldHideWarmpawzAppointmentDuration(
+                              booking as unknown as Record<string, unknown>,
+                            )
                               ? booking.scheduledTime
                               : `${booking.scheduledTime} (${booking.duration}m)`}
                           </span>

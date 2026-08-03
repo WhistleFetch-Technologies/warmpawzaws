@@ -18,6 +18,7 @@ import {
 } from '@/lib/navigation/wizard-session-state';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
+import { resolveHomeVisitVendorListNavigation } from '@/lib/home-visit-wappt-navigation';
 
 // ============================================================================
 // TYPES
@@ -63,6 +64,8 @@ interface HomeVisitRouterProps {
   onConsumeInitialAddress?: () => void;
   restoredSnapshot?: HomeVisitWizardSnapshot | null;
   onRestoredSnapshotConsumed?: () => void;
+  /** When true, redirect to WAPPT vendor list if Commerce Switch allows (safety net if shell intercept missed). */
+  fromHomeVisitLanding?: boolean;
   /** Expose step-aware back for shell header / hardware back. */
   onInternalBackReady?: (handleBack: () => void) => void;
 }
@@ -80,6 +83,7 @@ export function HomeVisitRouter({
   phone,
   onBack,
   onNavigate,
+  fromHomeVisitLanding = false,
   initialAddressFromBook,
   onConsumeInitialAddress,
   restoredSnapshot,
@@ -163,6 +167,16 @@ export function HomeVisitRouter({
   useEffect(() => {
     onInternalBackReady?.(handleBack);
   }, [handleBack, onInternalBackReady]);
+
+  useEffect(() => {
+    if (!fromHomeVisitLanding || step !== 'provider-list') return;
+    const nav = resolveHomeVisitVendorListNavigation('vet-home-visit', {
+      fromHomeVisitLanding: true,
+    });
+    if (nav) {
+      onNavigate('wappt-discovery', nav);
+    }
+  }, [fromHomeVisitLanding, step, onNavigate]);
 
   if (launchGate.ready && launchGate.blocked) {
     return (

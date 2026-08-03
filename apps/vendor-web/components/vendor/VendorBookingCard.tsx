@@ -17,10 +17,10 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import {
-  getVendorRoleId,
   hasVendorRole,
   isVendorTeleConsultationBooking,
   resolveVendorBookingId,
+  resolveVendorBookingServiceLabel,
 } from '@/lib/vendor-utils';
 
 interface BookingCardProps {
@@ -111,7 +111,7 @@ export function VendorBookingCard({
             <span>{booking.petName} - {booking.petType}</span>
           </div>
           <div className="flex items-center gap-1 text-xs font-medium text-[#FF8C42] mb-1">
-            <span>{booking.serviceName}</span>
+            <span>{resolveVendorBookingServiceLabel(booking)}</span>
           </div>
           {(booking.packagePurchaseId || booking.package_purchase_id) && (
             <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-purple-800">

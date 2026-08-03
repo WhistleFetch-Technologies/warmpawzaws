@@ -53,6 +53,7 @@ import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import { isWarmpawzPayCommerceActive } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptShellBookingPayload, handleWapptShellScreenNavigate } from '@/lib/wappt-shell-navigation';
 import { consumeWalkInShellNav } from '@/lib/walk-in-vendor-actions';
+import { resolveHomeVisitVendorListNavigation } from '@/lib/home-visit-wappt-navigation';
 import { resolveWapptDiscoveryShellNav } from '@/lib/warmpawz-appointments/wappt-list-style-config';
 import { getWapptDefaultDiscoveryStyle } from '@/lib/wappt-hub-registry';
 import {
@@ -555,6 +556,11 @@ export function CustomerHomeWrapper({
   const [wapptDiscoveryCategory, setWapptDiscoveryCategory] = useState<string>('vet');
   const [wapptDiscoveryServiceStyle, setWapptDiscoveryServiceStyle] = useState<string>('at_center');
   const [wapptDiscoveryLockStyle, setWapptDiscoveryLockStyle] = useState(false);
+  const [wapptDiscoveryProfileBackScreen, setWapptDiscoveryProfileBackScreen] =
+    useState<string>('wappt-discovery');
+  const [wapptDiscoverySpecialization, setWapptDiscoverySpecialization] = useState<
+    string | undefined
+  >(undefined);
   const [wapptProfileData, setWapptProfileData] = useState<{
     vendorId: string;
     vendorName?: string;
@@ -1381,6 +1387,13 @@ export function CustomerHomeWrapper({
       serviceType: typeof data?.serviceType === 'string' ? data.serviceType : undefined,
     });
     captureBannerNavigationOrigin(data);
+
+    const homeVisitWapptNav = resolveHomeVisitVendorListNavigation(service, data);
+    if (homeVisitWapptNav) {
+      openWapptDiscovery(homeVisitWapptNav.category, homeVisitWapptNav);
+      return;
+    }
+
     const vendorRow: Record<string, unknown> =
       data && typeof data === 'object' ? { ...(data as Record<string, unknown>) } : {};
     const featuredVendorId = pickCustomerVendorAccountId(vendorRow);
@@ -1930,6 +1943,15 @@ export function CustomerHomeWrapper({
       setWapptDiscoveryCategory(nav.category);
       setWapptDiscoveryServiceStyle(nav.serviceStyle);
       setWapptDiscoveryLockStyle(nav.lockStyleFilter);
+      setWapptDiscoveryProfileBackScreen(
+        String(data?.profileBackScreen || 'wappt-discovery'),
+      );
+      const specRaw = data?.specialization ?? data?.specializationId;
+      const spec =
+        specRaw != null && String(specRaw).trim() !== ''
+          ? String(specRaw).trim()
+          : undefined;
+      setWapptDiscoverySpecialization(spec);
       navigateToScreen('wappt-discovery');
     },
     [navigateToScreen],
@@ -3260,6 +3282,8 @@ export function CustomerHomeWrapper({
             | 'tele'
         }
         lockStyleFilter={wapptDiscoveryLockStyle}
+        profileBackScreen={wapptDiscoveryProfileBackScreen}
+        specialization={wapptDiscoverySpecialization}
         phone={phone}
         onBack={handleBack}
         onGoHome={goToHome}
@@ -3584,6 +3608,7 @@ export function CustomerHomeWrapper({
     return renderScreenWithLayout('vet-home-visit',
       <HomeVisitRouter 
         phone={phone} 
+        fromHomeVisitLanding={vetServiceData?.fromHomeVisitLanding === true}
         restoredSnapshot={homeVisitWizardRestore}
         onRestoredSnapshotConsumed={() => setHomeVisitWizardRestore(null)}
         onBack={handleBack}
@@ -5833,6 +5858,14 @@ export function CustomerHomeWrapper({
       const st = String(data?.serviceStyle || '').toLowerCase();
       if (st === 'at_center') trainingCenterNavigate(screen, data);
       else trainingHomeNavigate(screen, data);
+      return;
+    }
+
+    if (screen === 'wappt-vendor-profile' || screen === 'wappt-discovery') {
+      handleVetNavigate(screen, {
+        ...(data || {}),
+        profileBackScreen: data?.profileBackScreen ?? gridBack,
+      });
       return;
     }
 

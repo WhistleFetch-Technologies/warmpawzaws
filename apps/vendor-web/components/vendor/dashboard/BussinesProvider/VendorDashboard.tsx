@@ -17,6 +17,8 @@ import {
   getVendorAllowedServiceStyles,
   isVendorTeleConsultationBooking,
   resolveVendorBookingId,
+  resolveVendorBookingServiceLabel,
+  shouldShowVendorBookingPrice,
 } from '@/lib/vendor-utils';
 import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';
 import CapabilityHelper from '@/lib/capability-helper';
@@ -1756,7 +1758,7 @@ export function VendorDashboard({
                               <div className="text-sm font-medium text-gray-900 mb-1">{appointment.petName} {appointment.petBreed ? `(${appointment.petBreed})` : ''}</div>
                               <div className="flex items-center gap-1 mb-2">
                                 <span className="text-xs text-gray-500">Service:</span>
-                                <span className="text-xs font-medium text-[#FF8C42]">{appointment.serviceName}</span>
+                                <span className="text-xs font-medium text-[#FF8C42]">{resolveVendorBookingServiceLabel(appointment)}</span>
                               </div>
 
                               <div className="flex gap-2 flex-wrap">

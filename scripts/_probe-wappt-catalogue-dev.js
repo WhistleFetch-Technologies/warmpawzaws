@@ -52,8 +52,10 @@ async function main() {
   `);
   console.log(`\nCustomer-visible published catalogue (${published.length} shown):`);
   for (const row of published) {
-    const [vendorId, name, city, address, fee] = row;
-    console.log(`  - ${name} (${vendorId?.slice?.(0, 8)}…) fee=${fee} ${city || ''}`);
+    const id = String(row.vendor_id || '').slice(0, 8);
+    console.log(
+      `  - ${row.name} (${id}…) fee=${row.appointment_fee} ${row.city || ''}`,
+    );
   }
 }
 

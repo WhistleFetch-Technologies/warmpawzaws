@@ -1,5 +1,10 @@
 import { query } from '../../../../database/rds-connection';
 import { acceptableStylesForService } from '../../../../lib/search-discovery-parity';
+import {
+  resolveSpecializationDiscoveryKeys,
+  specializationDiscoveryIlikePatterns,
+  sqlVendorMatchesDeclaredSpecialization,
+} from '../../discovery/repos/legacy-helpers.repo';
 import { wapptCatalogueCustomerVisibleSql } from '../../../warmpawz-appointments/shared/catalogue-eligibility-sql';
 import { merchantServiceCategoryFilterSql } from '../../../warmpawz-appointments/shared/merchant/merchant-role-sql';
 import { expandServiceCategoryFilterTokens } from '../../../warmpawz-appointments/shared/merchant/merchant-service-category.resolver';
@@ -42,9 +47,10 @@ function wapptRoleNegativeFilterSql(category: string): string | null {
 export async function dbListWapptDiscoveryByCategory(opts: {
   category: string;
   serviceStyle: WapptDiscoveryServiceStyle;
+  specialization?: string | null;
   limit: number;
   offset: number;
-}): Promise<{ rows: WapptDiscoveryVendorRow[]; hasMore: boolean }> {
+}): Promise<{ rows: WapptDiscoveryVendorRow[]; hasMore: boolean; specializationApplied: string | null }> {
   const conditions: string[] = [
     '(v.is_deleted IS NOT TRUE)',
     wapptCatalogueCustomerVisibleSql('c'),
@@ -92,6 +98,24 @@ export async function dbListWapptDiscoveryByCategory(opts: {
   `);
   }
 
+  let specializationApplied: string | null = null;
+  const specializationFilter = String(opts.specialization ?? '').trim();
+  if (specializationFilter) {
+    const specKeys = await resolveSpecializationDiscoveryKeys(specializationFilter);
+    if (specKeys.length > 0) {
+      const paramBase = params.length + 1;
+      const specializationFragment = sqlVendorMatchesDeclaredSpecialization(paramBase)
+        .trim()
+        .replace(/^\s*AND\s+/i, '');
+      conditions.push(specializationFragment);
+      params.push(
+        specKeys.map((k) => k.trim().toLowerCase()),
+        specializationDiscoveryIlikePatterns(specKeys),
+      );
+      specializationApplied = specializationFilter;
+    }
+  }
+
   params.push(opts.limit + 1);
   const limitParam = `$${params.length}`;
   params.push(opts.offset);
@@ -127,5 +151,5 @@ export async function dbListWapptDiscoveryByCategory(opts: {
   const allRows = listResult.rows as WapptDiscoveryVendorRow[];
   const hasMore = allRows.length > opts.limit;
   const rows = hasMore ? allRows.slice(0, opts.limit) : allRows;
-  return { rows, hasMore };
+  return { rows, hasMore, specializationApplied };
 }

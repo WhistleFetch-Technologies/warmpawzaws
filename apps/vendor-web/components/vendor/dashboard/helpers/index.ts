@@ -37,8 +37,28 @@ export function matchesScheduleTypeFilter(
   return typeMap[serviceType.toLowerCase()] === filter;
 }
 
+import {
+  resolveVendorBookingServiceLabel,
+  shouldShowVendorBookingPrice,
+} from '@/lib/vendor-utils';
+
 export function mapDashboardBookingToScheduleItem(b: Record<string, unknown>, defaultServiceType = 'at_center') {
   const serviceType = resolveScheduleServiceType(b as Parameters<typeof resolveScheduleServiceType>[0]) || defaultServiceType;
+  const bookingLike = {
+    commerce_mode: b.commerce_mode as string | undefined,
+    commerceMode: b.commerceMode as string | undefined,
+    service_name: b.service_name as string | undefined,
+    serviceName: b.service_name as string | undefined,
+    service_type: b.service_type as string | undefined,
+    service_style: b.service_style as string | undefined,
+    serviceType,
+    serviceStyle: serviceType,
+  };
+  const rawAmount = b.total_amount;
+  const parsedPrice =
+    rawAmount == null || rawAmount === ''
+      ? 0
+      : parseFloat(String(rawAmount));
   return {
     id: (b.id || b.booking_id) as string,
     bookingId: (b.id || b.booking_id) as string,
@@ -49,10 +69,11 @@ export function mapDashboardBookingToScheduleItem(b: Record<string, unknown>, de
     customerName: (b.customer_name as string) || 'Customer',
     customerPhone: (b.customer_phone as string) || '',
     customerId: (b.customerId ?? b.customer_id) as string | undefined,
-    serviceName: (b.service_name as string) || 'Service',
+    serviceName: resolveVendorBookingServiceLabel(bookingLike),
     serviceType,
     status: (b.status as string) || 'pending',
-    price: parseFloat(String(b.total_amount || '0')),
+    price: shouldShowVendorBookingPrice(bookingLike) ? parsedPrice : 0,
+    commerce_mode: (b.commerce_mode ?? b.commerceMode) as string | undefined,
     address: (b.address as string) || '',
     specialInstructions: b.notes as string | undefined,
     hasPrescription: Boolean(b.hasPrescription),

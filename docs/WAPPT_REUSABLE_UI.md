@@ -293,11 +293,22 @@ node scripts/wappt-customer-flow-verify.js --base https://z0b3obweb6.execute-api
 
 ### Vendor-facing display
 
-Bookings, push notifications, and vendor booking detail all show **Appointment** (not the placeholder catalog service name) when `commerce_mode === warmpawz_appointments`:
+For **non-tele** WAPPT bookings (`commerce_mode === warmpawz_appointments`, home or at center):
 
-- [`bookings-enhanced.booking.ts`](../backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts)
+- Service label: **Appointment** (never the internal catalog service name joined via `service_id`)
+- Price: **hidden** from vendor schedule, list, and detail UI (slot fee / cover charge is customer-side only)
+
+**Tele exception:** tele bookings use the marketplace model — service name and price remain visible even if `commerce_mode` is WAPPT.
+
+Shared rules live in [`vendor-booking-display.ts`](../backend/lambda/src/endpoints/warmpawz-appointments/shared/vendor-booking-display.ts) and vendor-web [`vendor-utils.ts`](../apps/vendor-web/lib/vendor-utils.ts).
+
+Applied on:
+
+- [`bookings-enhanced.booking.ts`](../backend/lambda/src/endpoints/booking/endpoints/bookings-enhanced.booking.ts) (persist label on create)
 - [`booking-notifications.ts`](../backend/lambda/src/utils/booking-notifications.ts)
-- [`vendor-bookings.ts`](../backend/lambda/src/endpoints/vendor/endpoints/vendor-bookings.ts)
+- [`vendor-bookings.ts`](../backend/lambda/src/endpoints/vendor/endpoints/vendor-bookings.ts) (list, today, details)
+- [`vendor-dashboard-enhanced.ts`](../backend/lambda/src/endpoints/vendor-dashboard-enhanced.ts) (Today's Schedule)
+- Vendor UI: `AppointmentCard`, `AppointmentDetailModal`, `VendorDashboard` schedule
 
 ---
 

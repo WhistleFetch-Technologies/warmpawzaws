@@ -31,7 +31,7 @@ import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandabl
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
-import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
+import { useProblemGridByRole } from './useProblemGridByRole';
 import { HUB_DISCOVERY_GROOMING } from '@/lib/service-hub-discovery-config';
 import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import {
@@ -133,26 +133,49 @@ function firstGroomingServiceUuid(services: any[]): string | undefined {
   return undefined;
 }
 
+const GROOMING_CARD_VISUAL_BY_ID: Record<
+  string,
+  (typeof GROOMING_NEED_CARDS)[number]
+> = Object.fromEntries(GROOMING_NEED_CARDS.map((c) => [c.id, c]));
+
+for (const [alias, target] of [
+  ['bath_brush', 'bath_only'],
+  ['hair_trimming', 'hair_trim'],
+  ['nail_trimming', 'nail_care'],
+  ['shedding_control', 'deshedding'],
+  ['spa_wellness', 'spa_treatment'],
+  ['complete_grooming', 'full_grooming'],
+] as const) {
+  const card = GROOMING_CARD_VISUAL_BY_ID[target];
+  if (card) GROOMING_CARD_VISUAL_BY_ID[alias] = card;
+}
+
+function resolveGroomingNeedCardVisual(specId: string, index: number) {
+  const key = specId.trim().toLowerCase();
+  return (
+    GROOMING_CARD_VISUAL_BY_ID[key] ||
+    GROOMING_NEED_CARDS[index % GROOMING_NEED_CARDS.length]
+  );
+}
+
 export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: GroomingServiceRouterProps) {
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('grooming');
-  const { problems: bootstrapProblems } = useCategoryBootstrap({
-    category: 'grooming',
-    roleId: 'groomer',
-  });
+  const groomingProblems = useProblemGridByRole('groomer');
   const groomingNeedCards = useMemo(() => {
-    if (bootstrapProblems.length === 0) return GROOMING_NEED_CARDS;
-    return bootstrapProblems.map((p, i) => {
-      const fallback = GROOMING_NEED_CARDS[i % GROOMING_NEED_CARDS.length];
+    const tiles = groomingProblems.filter((p) => p.id !== 'view_all');
+    if (tiles.length === 0) return GROOMING_NEED_CARDS;
+    return tiles.map((p, i) => {
+      const fallback = resolveGroomingNeedCardVisual(p.id, i);
       return {
         id: p.id,
-        name: p.title,
+        name: p.name,
         image: fallback.image,
         Icon: fallback.Icon,
         iconColor: fallback.iconColor,
         iconBg: fallback.iconBg,
       };
     });
-  }, [bootstrapProblems]);
+  }, [groomingProblems]);
 
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_GROOMING);
   const wapptDiscovery = useWapptHubFeaturedVendors('grooming', wapptHubEnabled);

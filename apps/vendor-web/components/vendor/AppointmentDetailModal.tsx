@@ -23,7 +23,7 @@ import {
   type BoardingIntakeV1Payload,
 } from '@/lib/boarding-intake-notes';
 import { formatVendorFacingCustomerNotes } from '@/lib/vendor-facing-booking-notes';
-import { getVendorBookingVenuePillLabel } from '@/lib/vendor-utils';
+import { getVendorBookingVenuePillLabel, resolveVendorBookingServiceLabel, shouldShowVendorBookingPrice } from '@/lib/vendor-utils';
 
 // Dynamically import PrescriptionDocument for A4 view
 const PrescriptionDocument = dynamic(() => import('./PrescriptionDocument'), {
@@ -58,6 +58,8 @@ interface Booking {
   /** Where the service happens — at_home | at_center | tele (from API). */
   serviceStyle?: string;
   serviceName: string;
+  commerce_mode?: string;
+  commerceMode?: string;
   status: string;
   date: string;
   price: number;
@@ -359,6 +361,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           rawBooking.service?.serviceName ||
           rawBooking.service_name ||
           'Service',
+        commerce_mode: rawBooking.commerce_mode || rawBooking.commerceMode,
+        commerceMode: rawBooking.commerceMode || rawBooking.commerce_mode,
         serviceType: rawBooking.serviceStyle || rawBooking.serviceType || 'at_center',
         serviceStyle: String(
           rawBooking.serviceStyle ||
@@ -773,6 +777,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       ['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(serviceStyleFromService) ||
       (serviceStyleFromService && (serviceStyleFromService.includes('tele') || serviceStyleFromService.includes('video'))) ||
       (serviceName && (serviceName.includes('tele') || serviceName.includes('video'))));
+
+  const vendorServiceLabel = booking ? resolveVendorBookingServiceLabel(booking) : '';
+  const showVendorBookingPrice = booking ? shouldShowVendorBookingPrice(booking) : false;
 
   /** Package canonical parent row (purchase placeholder): no Complete-with-OTP here — each `isPackageSession` child owns completion. */
   const isPackageCanonicalParentRow = Boolean(
@@ -1798,7 +1805,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   
                   <div>
                     <p className="text-sm text-gray-500">Service</p>
-                    <p className="font-medium text-gray-900">{booking.serviceName}</p>
+                    <p className="font-medium text-gray-900">{vendorServiceLabel}</p>
                   </div>
 
                   {/* Package session: show package name, session X of Y, remaining (E2E Section 5 & 9) */}
@@ -1980,10 +1987,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     </>
                   )}
 
-                  <div>
-                    <p className="text-sm text-gray-500">Price</p>
-                    <p className="text-xl font-bold text-green-600">₹{booking.price}</p>
-                  </div>
+                  {showVendorBookingPrice && (
+                    <div>
+                      <p className="text-sm text-gray-500">Price</p>
+                      <p className="text-xl font-bold text-green-600">₹{booking.price}</p>
+                    </div>
+                  )}
                 </div>
 
               </div>

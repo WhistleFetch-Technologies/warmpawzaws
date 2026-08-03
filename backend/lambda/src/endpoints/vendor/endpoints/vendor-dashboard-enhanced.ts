@@ -39,6 +39,45 @@ import {
   sqlExcludeSuppressedVendorEarningsRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { resolveVendorDashboardTimeframeRange } from '../../../utils/vendor-dashboard-timeframe';
+import { applyVendorBookingDisplayFields } from '../../warmpawz-appointments/shared/vendor-booking-display';
+
+const DASHBOARD_SERVICE_NAME_SQL = `CASE
+  WHEN LOWER(COALESCE(b.commerce_mode, '')) = 'warmpawz_appointments'
+  THEN COALESCE(NULLIF(TRIM(b.service_name), ''), 'Appointment')
+  ELSE COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name)
+END AS service_name`;
+
+function mapDashboardBookingRow(b: Record<string, unknown>) {
+  const catalogName = String(b.service_name || 'Service');
+  const display = applyVendorBookingDisplayFields(b, {
+    catalogServiceName: catalogName,
+    vendorVisibleAmount: parseFloat(String(b.total_amount ?? '0')),
+  });
+  return {
+    id: b.id,
+    booking_id: b.id,
+    customer_id: b.customer_id,
+    customer_name: b.customer_name || 'Customer',
+    customer_phone: b.customer_phone,
+    service_id: b.service_id,
+    service_name: display.service_name,
+    service_category: b.service_category,
+    booking_date: b.booking_date,
+    booking_time: b.booking_time,
+    status: b.status,
+    payment_status: b.payment_status,
+    total_amount: display.total_amount,
+    otp_code: b.otp_code,
+    otp_verified: b.otp_verified,
+    service_type: b.service_type,
+    service_style: b.service_style,
+    commerce_mode: display.commerce_mode,
+    pet_name: b.pet_name,
+    pet_breed: b.pet_breed,
+    duration_minutes: b.duration_minutes,
+    notes: b.notes,
+  };
+}
 
 /** Last 7 local calendar days with summed vendor_earnings amounts (for vendor earnings chart). */
 /** Map delivery_settlements.status to vendor_earnings-like status for dashboard summaries. */
@@ -181,7 +220,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const bookings = vendorIds.length === 1
         ? await query(
             `SELECT b.*,
-                    COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                    ${DASHBOARD_SERVICE_NAME_SQL},
                     COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
                     c.full_name as customer_name,
                     c.phone as customer_phone
@@ -201,7 +240,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           ).catch(() => ({ rows: [] }))
         : await query(
             `SELECT b.*,
-                    COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                    ${DASHBOARD_SERVICE_NAME_SQL},
                     COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
                     c.full_name as customer_name,
                     c.phone as customer_phone
@@ -266,27 +305,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       stats.rating = statsRating;
       stats.totalReviews = totalReviewsDash;
 
-      // ✅ FIX: Include enriched bookings in response
-      const enrichedBookings = bookings.rows.map((b: any) => ({
-        id: b.id,
-        booking_id: b.id,
-        customer_id: b.customer_id,
-        customer_name: b.customer_name || 'Customer',
-        customer_phone: b.customer_phone,
-        service_id: b.service_id,
-        service_name: b.service_name || 'Service',
-        service_category: b.service_category,
-        booking_date: b.booking_date,
-        booking_time: b.booking_time,
-        status: b.status,
-        payment_status: b.payment_status,
-        total_amount: b.total_amount,
-        otp_code: b.otp_code,
-        otp_verified: b.otp_verified,
-        service_type: b.service_type,
-        service_style: b.service_style,
-        notes: b.notes,
-      }));
+      const enrichedBookings = bookings.rows.map((b: Record<string, unknown>) =>
+        mapDashboardBookingRow(b),
+      );
 
       return c.json({
         success: true,
@@ -479,7 +500,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const bookingsQuery = vendorIds.length === 1
         ? `SELECT b.*,
-                COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                ${DASHBOARD_SERVICE_NAME_SQL},
                 COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
                 c.full_name as customer_name,
                 c.phone as customer_phone
@@ -496,7 +517,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
            ${listSup1}
          ORDER BY b.booking_date ASC, b.booking_time ASC`
         : `SELECT b.*,
-                COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                ${DASHBOARD_SERVICE_NAME_SQL},
                 COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
                 c.full_name as customer_name,
                 c.phone as customer_phone
@@ -518,27 +539,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           : [vendorIds[0], vendorIds[1], startDateStr, endDateStr, ...supMainTail];
       const bookingsResult = await query(bookingsQuery, bookingsParams).catch(() => ({ rows: [] }));
 
-      // Transform bookings for frontend
-      const enrichedBookings = bookingsResult.rows.map((b: any) => ({
-        id: b.id,
-        booking_id: b.id,
-        customer_id: b.customer_id,
-        customer_name: b.customer_name || 'Customer',
-        customer_phone: b.customer_phone,
-        service_id: b.service_id,
-        service_name: b.service_name || 'Service',
-        service_category: b.service_category,
-        booking_date: b.booking_date,
-        booking_time: b.booking_time,
-        status: b.status,
-        payment_status: b.payment_status,
-        total_amount: b.total_amount,
-        otp_code: b.otp_code,
-        otp_verified: b.otp_verified,
-        service_type: b.service_type,
-        service_style: b.service_style,
-        notes: b.notes,
-      }));
+      const enrichedBookings = bookingsResult.rows.map((b: Record<string, unknown>) =>
+        mapDashboardBookingRow(b),
+      );
 
       console.log(`📊 [DASHBOARD] Returning ${enrichedBookings.length} bookings for vendor ${paramVendorId}`);
 

@@ -11,7 +11,7 @@ import { useRouter } from 'next/navigation';
 import { Clock, User, Phone, Home, Video, MapPin, MessageSquare, Navigation, CheckCircle2, Play, Radio, Map } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { isVendorTeleConsultationBooking } from '@/lib/vendor-utils';
+import { isVendorTeleConsultationBooking, resolveVendorBookingServiceLabel, shouldShowVendorBookingPrice } from '@/lib/vendor-utils';
 
 interface AppointmentCardProps {
   appointment: {
@@ -27,6 +27,8 @@ interface AppointmentCardProps {
     serviceType: string;
     status: string;
     price: number;
+    commerce_mode?: string;
+    commerceMode?: string;
     address?: string;
     customerLat?: string;
     customerLng?: string;
@@ -72,6 +74,8 @@ export function AppointmentCard({
   const router = useRouter();
   const serviceType = appointment.serviceType?.toLowerCase();
   const isTele = isVendorTeleConsultationBooking(appointment);
+  const serviceLabel = resolveVendorBookingServiceLabel(appointment);
+  const showPrice = shouldShowVendorBookingPrice(appointment);
   
   // Determine service style icon and colors
   let typeIcon = Home;
@@ -144,7 +148,7 @@ export function AppointmentCard({
 
           <div className="flex items-center gap-1 mb-2">
             <span className="text-xs text-gray-500">Service:</span>
-            <span className="text-xs font-medium text-[#FF8C42]">{appointment.serviceName}</span>
+            <span className="text-xs font-medium text-[#FF8C42]">{serviceLabel}</span>
           </div>
 
           {appointment.address && (
@@ -154,12 +158,20 @@ export function AppointmentCard({
             </div>
           )}
 
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm font-semibold text-gray-900">₹{appointment.price}</span>
-            {appointment.duration && (
-              <span className="text-xs text-gray-500">• {appointment.duration} min</span>
-            )}
-          </div>
+          {showPrice && (
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-semibold text-gray-900">₹{appointment.price}</span>
+              {appointment.duration && (
+                <span className="text-xs text-gray-500">• {appointment.duration} min</span>
+              )}
+            </div>
+          )}
+
+          {!showPrice && appointment.duration ? (
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-gray-500">{appointment.duration} min</span>
+            </div>
+          ) : null}
 
           {/* Action Buttons */}
           {showActions && (

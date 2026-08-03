@@ -17,6 +17,8 @@ import { apiClient } from '@/lib/api-client';
 import {
   isVendorTeleConsultationBooking,
   resolveVendorBookingId,
+  resolveVendorBookingServiceLabel,
+  shouldShowVendorBookingPrice,
 } from '@/lib/vendor-utils';
 import { Button } from '@/components/ui/button';
 import { 
@@ -341,6 +343,9 @@ export function UniversalAppointmentManagement({
           date: booking.scheduledDate || booking.booking_date || booking.date || selectedDate,
           price: booking.price || booking.total_amount || 0,
           serviceName: booking.serviceName || booking.service_name || 'Service',
+          commerce_mode: booking.commerce_mode || booking.commerceMode,
+          commerceMode: booking.commerceMode || booking.commerce_mode,
+          service_style: booking.service_style || booking.serviceStyle,
           duration: booking.duration || booking.duration_minutes || 30,
           hasUnreadMessages: booking.hasUnreadMessages || false,
           unreadMessageCount: booking.unreadMessageCount || 0,
@@ -913,7 +918,7 @@ export function UniversalAppointmentManagement({
                             </div>
                             <div className="flex items-center gap-2">
                               <Package className="w-4 h-4 text-gray-400" />
-                              <span className="text-sm font-medium text-[#FF8C42]">{booking.serviceName}</span>
+                              <span className="text-sm font-medium text-[#FF8C42]">{resolveVendorBookingServiceLabel(booking)}</span>
                             </div>
                             {booking.location && (
                               <div className="flex items-center gap-2">
@@ -926,9 +931,11 @@ export function UniversalAppointmentManagement({
                                 )}
                               </div>
                             )}
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-gray-900">₹{booking.price}</span>
-                            </div>
+                            {shouldShowVendorBookingPrice(booking) && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold text-gray-900">₹{booking.price}</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1169,7 +1176,7 @@ export function UniversalAppointmentManagement({
             {selectedBooking && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <p className="text-sm text-blue-800">
-                  <strong>Service:</strong> {selectedBooking.serviceName}
+                  <strong>Service:</strong> {resolveVendorBookingServiceLabel(selectedBooking)}
                 </p>
                 <p className="text-sm text-blue-800">
                   <strong>Customer:</strong> {selectedBooking.customerName}
