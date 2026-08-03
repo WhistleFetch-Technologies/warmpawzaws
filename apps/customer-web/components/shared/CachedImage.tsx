@@ -19,6 +19,7 @@ type CachedImageProps = {
   sizes?: string;
   loading?: 'lazy' | 'eager';
   onUnavailable?: () => void;
+  onLoad?: React.ReactEventHandler<HTMLImageElement>;
 };
 
 async function refreshSignedUrlIfNeeded(url: string): Promise<string | null> {
@@ -73,6 +74,7 @@ export function CachedImage({
   sizes,
   loading = 'lazy',
   onUnavailable,
+  onLoad,
 }: CachedImageProps) {
   const [displaySrc, setDisplaySrc] = useState<string>(src?.trim() || '');
   const [failed, setFailed] = useState(false);
@@ -161,6 +163,7 @@ export function CachedImage({
         height={height}
         loading={loading}
         decoding="async"
+        onLoad={onLoad}
         onError={() => {
           setFailed(true);
           onUnavailable?.();
@@ -191,6 +194,7 @@ export function CachedImage({
       sizes={sizes}
       loading={loading}
       decoding="async"
+      onLoad={onLoad}
       onError={() => {
         void handleError();
       }}
