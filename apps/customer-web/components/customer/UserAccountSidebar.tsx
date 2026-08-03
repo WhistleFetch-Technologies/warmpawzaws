@@ -24,6 +24,7 @@ import type { AddressFromGeolocationResult } from '@/lib/address-from-geolocatio
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { normalizeCustomerProfileFields } from '@/lib/normalize-customer-profile-api';
+import { resolveCustomerBookingDisplayName } from '@/lib/warmpawz-appointments-customer';
 import {
   inferCityStateFromCommaAddress,
   mergeStreetAddressLineOnly,
@@ -130,6 +131,7 @@ interface Booking {
   id: string;
   /** Normalized from API (may be camelCase or snake_case source). */
   serviceType: string;
+  serviceName?: string;
   petId: string;
   petName: string;
   petPhoto?: string;
@@ -486,6 +488,7 @@ function normalizeCustomerBookingRow(raw: Record<string, unknown>): Booking {
   return {
     id,
     serviceType,
+    serviceName: resolveCustomerBookingDisplayName(r, formatServiceTypeLabel(serviceType)),
     petId,
     petName,
     petPhoto: r.pet_photo ?? r.petPhoto,
@@ -1635,7 +1638,7 @@ export function UserAccountSidebar({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between mb-2">
                             <h4 className="font-bold text-gray-800">
-                              {formatServiceTypeLabel(booking.serviceType)}
+                              {booking.serviceName || formatServiceTypeLabel(booking.serviceType)}
                             </h4>
                             <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
                               {booking.status}

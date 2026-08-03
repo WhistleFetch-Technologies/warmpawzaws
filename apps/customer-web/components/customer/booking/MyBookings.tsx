@@ -61,6 +61,10 @@ import {
   type MyBookingsFilterId,
 } from './my-bookings-ui';
 import { UtensilsCrossed, CheckCircle2 } from 'lucide-react';
+import {
+  isWarmpawzAppointmentsBookingRow,
+  resolveCustomerBookingDisplayName,
+} from '@/lib/warmpawz-appointments-customer';
 /** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
 export const PHARMACY_ORDERS_ENABLED = false;
 
@@ -429,6 +433,10 @@ export function MyBookings({
           } catch (e) {
             console.warn('[MyBookings] Failed to parse diagnostic test names:', e);
           }
+        }
+
+        if (isWarmpawzAppointmentsBookingRow(b)) {
+          serviceName = resolveCustomerBookingDisplayName(b, 'Appointment');
         }
 
         return {

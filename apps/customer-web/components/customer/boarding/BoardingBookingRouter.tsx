@@ -34,7 +34,7 @@ import {
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
-import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { serviceOptionColorChipClass } from '@/lib/hub-service-option-styles';
 import { useWapptAppointmentBooking } from '@/hooks/useWapptAppointmentBooking';
@@ -1699,6 +1699,41 @@ export function BoardingBookingRouter({
     );
   };
 
+  const boardingStats = EMPTY_SERVICE_HEADER_STATS;
+
+  const getStepIndicators = (): StepInfo[] | undefined => {
+    if (appointmentsMode && wapptFlowSteps.length > 0) {
+      if (step === 'payment' || step === 'confirmation') return undefined;
+      const flowStep =
+        step === 'address' || step === 'datetime' || step === 'summary' ? step : 'datetime';
+      const currentIdx = getWapptBookingStepIndex(wapptFlowSteps, flowStep);
+      if (currentIdx >= 0) {
+        return wapptFlowSteps.map((s, idx) => ({
+          label: s.label,
+          isCompleted: idx < currentIdx,
+          isCurrent: idx === currentIdx,
+        }));
+      }
+    }
+    const stepLabels = skipBoardingIntake
+      ? ['Service', 'Dates', 'Pet', 'Payment']
+      : ['Service', 'Dates', 'Pet', 'Intake', 'Payment'];
+    const stepSequenceForHeader = skipBoardingIntake
+      ? (['service', 'datetime', 'pet', 'payment'] as const)
+      : (['service', 'datetime', 'pet', 'boarding_form', 'payment'] as const);
+    const stepIdx = stepSequenceForHeader.findIndex((s) => s === step);
+    return stepLabels.map((label, idx) => ({
+      label,
+      isCompleted: stepIdx >= 0 && idx < stepIdx,
+      isCurrent: stepIdx >= 0 && idx === stepIdx,
+    }));
+  };
+
+  const stepIndicators = getStepIndicators();
+
+  const showWapptPaymentSummary =
+    step === 'payment' && !showPaymentPage && appointmentsMode;
+
   // Payment step - use UniversalPaymentPage
   if (step === 'payment' && showPaymentPage && (paymentBookingId || appointmentsMode)) {
     const opt = selectedServiceOption as { id?: string } | undefined;
@@ -1780,38 +1815,6 @@ export function BoardingBookingRouter({
       />
     );
   }
-
-  const boardingStats = EMPTY_SERVICE_HEADER_STATS;
-  const stepIndicators = useMemo(() => {
-    if (appointmentsMode && wapptFlowSteps.length > 0) {
-      if (step === 'payment' || step === 'confirmation') return undefined;
-      const flowStep =
-        step === 'address' || step === 'datetime' || step === 'summary' ? step : 'datetime';
-      const currentIdx = getWapptBookingStepIndex(wapptFlowSteps, flowStep);
-      if (currentIdx >= 0) {
-        return wapptFlowSteps.map((s, idx) => ({
-          label: s.label,
-          isCompleted: idx < currentIdx,
-          isCurrent: idx === currentIdx,
-        }));
-      }
-    }
-    const stepLabels = skipBoardingIntake
-      ? ['Service', 'Dates', 'Pet', 'Payment']
-      : ['Service', 'Dates', 'Pet', 'Intake', 'Payment'];
-    const stepSequenceForHeader = skipBoardingIntake
-      ? (['service', 'datetime', 'pet', 'payment'] as const)
-      : (['service', 'datetime', 'pet', 'boarding_form', 'payment'] as const);
-    const stepIdx = stepSequenceForHeader.findIndex((s) => s === step);
-    return stepLabels.map((label, idx) => ({
-      label,
-      isCompleted: stepIdx >= 0 && idx < stepIdx,
-      isCurrent: stepIdx >= 0 && idx === stepIdx,
-    }));
-  }, [appointmentsMode, wapptFlowSteps, step, skipBoardingIntake]);
-
-  const showWapptPaymentSummary =
-    step === 'payment' && !showPaymentPage && appointmentsMode;
 
   return (
     <div className="min-h-[calc(100dvh-6rem-env(safe-area-inset-bottom,0px))] max-h-[calc(100dvh-6rem-env(safe-area-inset-bottom,0px))] bg-gray-50 flex flex-col overflow-hidden">

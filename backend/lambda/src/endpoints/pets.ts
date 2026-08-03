@@ -908,7 +908,10 @@ export function registerPetEndpoints(app: Hono) {
           const price = booking.total_amount ?? booking.base_price ?? booking.price ?? 0;
           return {
             id: booking.id,
-            serviceName: booking.service_name ?? booking.joinedServiceName ?? 'Service',
+            serviceName:
+              booking.commerce_mode === 'warmpawz_appointments'
+                ? booking.service_name || 'Appointment'
+                : booking.service_name ?? booking.joinedServiceName ?? 'Service',
             vendorName: booking.vendor_name ?? booking.vendorBusinessName ?? '',
             vendorType: booking.vendor_type ?? null,
             scheduledDate,
@@ -919,6 +922,8 @@ export function registerPetEndpoints(app: Hono) {
             createdAt: booking.created_at,
             duration: booking.duration,
             petId: booking.pet_id ?? petId,
+            commerceMode: booking.commerce_mode ?? 'marketplace',
+            commerce_mode: booking.commerce_mode ?? 'marketplace',
           };
         }),
         stats,

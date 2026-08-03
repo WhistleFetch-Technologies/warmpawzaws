@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Calendar, TrendingUp, Clock, Filter, Search, Package, ArrowLeft, Home } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { ApiError } from '@/lib/error-handling';
+import { resolveCustomerBookingDisplayName } from '@/lib/warmpawz-appointments-customer';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface Pet {
@@ -73,13 +74,15 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
       .join(' ');
 
   const deriveServiceLabel = (raw: any): string => {
-    const explicitName = String(raw?.serviceName ?? raw?.service_name ?? '').trim();
-    if (explicitName) return explicitName;
+    return resolveCustomerBookingDisplayName(raw, (() => {
+      const explicitName = String(raw?.serviceName ?? raw?.service_name ?? '').trim();
+      if (explicitName) return explicitName;
 
-    const type = String(raw?.serviceType ?? raw?.service_type ?? '').trim();
-    if (!type) return 'Service';
-    const normalized = toTitle(type);
-    return /\bservice\b/i.test(normalized) ? normalized : `${normalized} Service`;
+      const type = String(raw?.serviceType ?? raw?.service_type ?? '').trim();
+      if (!type) return 'Service';
+      const normalized = toTitle(type);
+      return /\bservice\b/i.test(normalized) ? normalized : `${normalized} Service`;
+    })());
   };
 
   const mapBooking = (raw: any): Booking => {

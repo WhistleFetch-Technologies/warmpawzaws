@@ -116,6 +116,36 @@ export function getWarmpawzAppointmentServiceLabel(_opts?: {
   return 'Appointment';
 }
 
+export function isWarmpawzAppointmentsBookingRow(
+  row: Record<string, unknown> | null | undefined,
+): boolean {
+  if (!row) return false;
+  const commerceMode = String(row.commerceMode ?? row.commerce_mode ?? '').trim();
+  if (commerceMode === WAPPT_BOOKING_MODE) return true;
+  const bookingMode = String(row.bookingMode ?? row.booking_mode ?? '').trim();
+  if (bookingMode === WAPPT_BOOKING_MODE) return true;
+  const serviceId = String(row.serviceId ?? row.service_id ?? '').trim();
+  return serviceId === WAPPT_APPOINTMENT_SERVICE_ID;
+}
+
+export function resolveCustomerBookingDisplayName(
+  row: Record<string, unknown> | null | undefined,
+  fallback = 'Service',
+): string {
+  if (isWarmpawzAppointmentsBookingRow(row)) {
+    return getWarmpawzAppointmentServiceLabel();
+  }
+  const explicit = String(row?.serviceName ?? row?.service_name ?? '').trim();
+  if (explicit) return explicit;
+  return fallback;
+}
+
+export function shouldHideWarmpawzAppointmentDuration(
+  row: Record<string, unknown> | null | undefined,
+): boolean {
+  return isWarmpawzAppointmentsBookingRow(row);
+}
+
 export function getWarmpawzBookingHeaderInfo(opts: {
   category: string;
   serviceStyle: string;

@@ -12,6 +12,14 @@ import {
 } from '@/lib/vendor-services-page';
 import { resolveWapptVendorProfileConfig } from '@/lib/warmpawz-appointments/wappt-vendor-profile-config';
 
+function formatFacilitySpecializations(
+  facility: Record<string, unknown> | null | undefined,
+): string {
+  const specs = facility?.specializations;
+  if (!Array.isArray(specs) || specs.length === 0) return '';
+  return specs.map((s) => String(s).trim()).filter(Boolean).join(', ');
+}
+
 export type WapptProfileService = {
   id: string;
   serviceId: string;
@@ -104,7 +112,11 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
   const [reviews, setReviews] = useState<WapptProfileReview[]>([]);
   const [provider, setProvider] = useState<WapptProfileProvider | null>(null);
   const [fetchingServices, setFetchingServices] = useState(false);
+  const [overviewSpecializations, setOverviewSpecializations] = useState<string | null>(null);
+  const [overviewEnrichmentLoading, setOverviewEnrichmentLoading] = useState(false);
   const providerRef = useRef<WapptProfileProvider | null>(null);
+  const overviewEnrichmentLoadedRef = useRef(false);
+  const overviewEnrichmentInflightRef = useRef(false);
 
   useEffect(() => {
     providerRef.current = provider;
@@ -123,6 +135,50 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
         : prev,
     );
   }, [serviceStyle, vendorId]);
+
+  useEffect(() => {
+    setOverviewSpecializations(null);
+    overviewEnrichmentLoadedRef.current = false;
+    overviewEnrichmentInflightRef.current = false;
+    setFacility(null);
+    setRating(null);
+    setReviews([]);
+  }, [vendorId]);
+
+  const loadOverviewSpecializations = useCallback(async () => {
+    const wantId = String(vendorId || '').trim();
+    if (!wantId || overviewEnrichmentLoadedRef.current || overviewEnrichmentInflightRef.current) {
+      return;
+    }
+
+    overviewEnrichmentInflightRef.current = true;
+    setOverviewEnrichmentLoading(true);
+    try {
+      const facilityRes = (await apiClient
+        .get(`/customer/facility/${encodeURIComponent(wantId)}`)
+        .catch(() => null)) as {
+        success?: boolean;
+        facility?: Record<string, unknown>;
+        rating?: WapptFacilityRating;
+      } | null;
+
+      if (facilityRes?.success) {
+        if (facilityRes.facility) {
+          setFacility(facilityRes.facility);
+          const specStr = formatFacilitySpecializations(facilityRes.facility);
+          if (specStr) {
+            setOverviewSpecializations(specStr);
+          }
+        }
+      }
+      overviewEnrichmentLoadedRef.current = true;
+    } catch (e) {
+      console.warn('[WAPPT profile] overview specializations fetch failed', e);
+    } finally {
+      overviewEnrichmentInflightRef.current = false;
+      setOverviewEnrichmentLoading(false);
+    }
+  }, [vendorId]);
 
   const fetchServices = useCallback(
     async (append = false) => {
@@ -221,10 +277,9 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
 
     void (async () => {
       try {
-        const [bootstrapRow, vendorRes, facilityRes] = await Promise.all([
+        const [bootstrapRow, vendorRes] = await Promise.all([
           fetchDiscoveryProfileVendorRow(wantId),
           apiClient.get(`/customer/vendor/${encodeURIComponent(wantId)}`).catch(() => null),
-          apiClient.get(`/customer/facility/${encodeURIComponent(wantId)}`).catch(() => null),
         ]);
 
         if (cancelled) return;
@@ -246,41 +301,6 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
                 }
               : vendorData;
           setVendor(seeded);
-        }
-
-        const facilityPayload = facilityRes as {
-          success?: boolean;
-          facility?: Record<string, unknown>;
-          rating?: WapptFacilityRating;
-          recentReviews?: WapptProfileReview[];
-        };
-        if (facilityPayload?.success) {
-          setFacility(facilityPayload.facility ?? null);
-          const rawRating = facilityPayload.rating as
-            | (WapptFacilityRating & { average?: number; count?: number })
-            | null
-            | undefined;
-          setRating(
-            rawRating
-              ? {
-                  averageRating:
-                    rawRating.averageRating ??
-                    rawRating.average ??
-                    (typeof rawRating === 'object' && 'average' in rawRating
-                      ? Number((rawRating as { average?: number }).average)
-                      : undefined),
-                  totalReviews:
-                    rawRating.totalReviews ??
-                    rawRating.count ??
-                    (typeof rawRating === 'object' && 'count' in rawRating
-                      ? Number((rawRating as { count?: number }).count)
-                      : undefined),
-                }
-              : null,
-          );
-          setReviews(
-            Array.isArray(facilityPayload.recentReviews) ? facilityPayload.recentReviews : [],
-          );
         }
 
         const row =
@@ -355,5 +375,8 @@ export function useWarmpawzAppointmentsVendorProfile(opts: {
     config,
     fetchingServices,
     loadMoreServices,
+    overviewSpecializations,
+    overviewEnrichmentLoading,
+    loadOverviewSpecializations,
   };
 }

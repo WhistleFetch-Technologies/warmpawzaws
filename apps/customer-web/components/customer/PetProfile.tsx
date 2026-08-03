@@ -6,6 +6,10 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiClient } from '@/lib/api-client';
+import {
+  resolveCustomerBookingDisplayName,
+  shouldHideWarmpawzAppointmentDuration,
+} from '@/lib/warmpawz-appointments-customer';
 
 interface PetProfileProps {
   phone: string;
@@ -31,6 +35,12 @@ interface Booking {
   serviceStyle: string;
   createdAt: string;
   duration: number;
+  commerceMode?: string;
+  commerce_mode?: string;
+  serviceId?: string;
+  service_id?: string;
+  bookingMode?: string;
+  booking_mode?: string;
 }
 
 interface BookingStats {
@@ -84,7 +94,11 @@ export function PetProfile({
       console.log('✅ [PET-PROFILE] Loaded bookings:', data);
 
       if (data && data.success) {
-        setBookings(data.bookings || []);
+        const rows = (data.bookings || []).map((raw: Record<string, unknown>) => ({
+          ...(raw as Booking),
+          serviceName: resolveCustomerBookingDisplayName(raw, String(raw.serviceName ?? 'Service')),
+        }));
+        setBookings(rows);
         setStats(data.stats || stats);
       } else {
         console.error('❌ [PET-PROFILE] Failed to load bookings:', data?.error);
@@ -292,7 +306,11 @@ export function PetProfile({
                         </div>
                         <div className="flex items-center gap-2 text-gray-600">
                           <Clock className="w-4 h-4" />
-                          <span>{booking.scheduledTime} ({booking.duration}m)</span>
+                          <span>
+                            {shouldHideWarmpawzAppointmentDuration(booking)
+                              ? booking.scheduledTime
+                              : `${booking.scheduledTime} (${booking.duration}m)`}
+                          </span>
                         </div>
                       </div>
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   Award,
   Building2,
@@ -65,6 +65,7 @@ export function WarmpawzAppointmentsVendorProfile({
 }: WarmpawzAppointmentsVendorProfileProps) {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [searchQuery, setSearchQuery] = useState('');
+  const previousTabRef = useRef<TabId>('overview');
 
   const {
     loading,
@@ -77,6 +78,9 @@ export function WarmpawzAppointmentsVendorProfile({
     config,
     fetchingServices,
     loadMoreServices,
+    overviewSpecializations,
+    overviewEnrichmentLoading,
+    loadOverviewSpecializations,
   } = useWarmpawzAppointmentsVendorProfile({
     vendorId,
     category,
@@ -174,6 +178,17 @@ export function WarmpawzAppointmentsVendorProfile({
       setActiveTab('overview');
     }
   }, [activeTab, reviews.length]);
+
+  const handleTabChange = useCallback(
+    (tab: TabId) => {
+      if (tab === 'overview' && previousTabRef.current === 'services') {
+        void loadOverviewSpecializations();
+      }
+      previousTabRef.current = tab;
+      setActiveTab(tab);
+    },
+    [loadOverviewSpecializations],
+  );
 
   const handleBookTeleService = (service: {
     id?: string;
@@ -391,7 +406,7 @@ export function WarmpawzAppointmentsVendorProfile({
               <button
                 key={tab}
                 type="button"
-                onClick={() => setActiveTab(tab)}
+                onClick={() => handleTabChange(tab)}
                 className={`relative flex-1 py-4 text-sm font-semibold capitalize transition-all ${
                   activeTab === tab ? 'text-[#FF8C42]' : 'text-gray-500 hover:text-gray-700'
                 }`}
@@ -425,6 +440,23 @@ export function WarmpawzAppointmentsVendorProfile({
                     <h3 className="mb-3 text-lg font-bold text-gray-900">Qualifications</h3>
                     <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
                       <p className="text-sm text-gray-600">{provider.qualifications}</p>
+                    </div>
+                  </div>
+                ) : null}
+                {overviewEnrichmentLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <Loader2 className="h-4 w-4 animate-spin text-[#FF8C42]" />
+                    Loading specializations…
+                  </div>
+                ) : null}
+                {overviewSpecializations ? (
+                  <div>
+                    <h3 className="mb-3 flex items-center gap-2 text-lg font-bold text-gray-900">
+                      <Award className="h-5 w-5 text-[#FF8C42]" />
+                      Specializations
+                    </h3>
+                    <div className="rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 p-4">
+                      <p className="text-sm text-gray-600">{overviewSpecializations}</p>
                     </div>
                   </div>
                 ) : null}
