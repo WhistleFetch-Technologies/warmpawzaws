@@ -20,6 +20,14 @@ export interface CognitoTokens {
 const TOKEN_STORAGE_KEY = 'vendorCognitoTokens';
 const USER_STORAGE_KEY = 'vendorUser';
 
+/** Keep legacy authToken keys in sync with Cognito id token (page bootstrap reads these). */
+export function syncVendorLegacyAuthTokens(idToken: string): void {
+  if (typeof window === 'undefined' || !idToken) return;
+  localStorage.setItem('authToken', idToken);
+  localStorage.setItem('vendorSessionToken', idToken);
+  localStorage.setItem('vendorAuthToken', idToken);
+}
+
 export function storeCognitoTokens(tokens: CognitoTokens): void {
   if (typeof window !== 'undefined') {
     localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
@@ -29,6 +37,7 @@ export function storeCognitoTokens(tokens: CognitoTokens): void {
     if (!localStorage.getItem('vendorRefreshTokenExpiry')) {
       localStorage.setItem('vendorRefreshTokenExpiry', (Date.now() + 90 * 24 * 60 * 60 * 1000).toString());
     }
+    syncVendorLegacyAuthTokens(tokens.idToken);
   }
 }
 
@@ -204,6 +213,7 @@ export async function refreshVendorTokensIfNeeded(
     const newExpiry = Date.now() + (newExpires as number) * 1000;
     localStorage.setItem('vendorTokenExpiry', newExpiry.toString());
     // Do NOT touch vendorRefreshTokenExpiry — the 90-day clock must not reset on silent refresh.
+    syncVendorLegacyAuthTokens(newId);
 
     return updated;
   } catch (e) {

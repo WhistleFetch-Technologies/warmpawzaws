@@ -49,13 +49,6 @@ export async function syncOrderStatusFromShipment(
 
   if (shipmentStatus === 'delivered') {
     orderUpdate.delivered_at = new Date().toISOString();
-    orderUpdate.delivery_status = 'completed';
-  } else if (shipmentStatus === 'out_for_delivery') {
-    orderUpdate.delivery_status = 'out_for_delivery';
-  } else if (['in_transit', 'shipped', 'picked_up'].includes(shipmentStatus)) {
-    orderUpdate.delivery_status = shipmentStatus === 'in_transit' ? 'in_transit' : 'shipped';
-  } else if (shipmentStatus === 'failed_delivery') {
-    orderUpdate.delivery_status = 'failed';
   } else if (shipmentStatus === 'returned') {
     orderUpdate.order_status = 'returned';
   }

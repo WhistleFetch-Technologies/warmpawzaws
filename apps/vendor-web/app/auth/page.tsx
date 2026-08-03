@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState, useRef } from 'react';
 import { VendorAuth } from '@/components/vendor/VendorAuth';
 import { VendorPublicAppShell } from '@/components/vendor/layout/VendorPublicChrome';
-import { isTokenExpired, clearVendorSession, isStaleTempVendorSession } from '@/lib/session-utils';
+import { isTokenExpired, clearVendorSession, isStaleTempVendorSession, restoreVendorSessionIfRefreshable } from '@/lib/session-utils';
 import {
   applyVendorPortalSessionFromVerifyPayload,
   guessCountryCodeFromPhone,
@@ -22,43 +22,47 @@ export default function AuthPage() {
 
     const finish = () => setIsCheckingSession(false);
 
-    const storedPhone = localStorage.getItem('vendorPhone');
-    const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
+    void (async () => {
+      const storedPhone = localStorage.getItem('vendorPhone');
+      let storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
 
-    if (!storedPhone || !storedToken || storedToken.length < 10) {
-      finish();
-      return;
-    }
+      if (!storedPhone || !storedToken || storedToken.length < 10) {
+        finish();
+        return;
+      }
 
-    if (isTokenExpired(storedToken)) {
-      clearVendorSession();
-      finish();
-      return;
-    }
+      const sessionRestored = await restoreVendorSessionIfRefreshable();
+      storedToken =
+        localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken') || storedToken;
 
-    if (isStaleTempVendorSession(storedToken)) {
-      clearVendorSession();
-      finish();
-      return;
-    }
+      if (!sessionRestored || isTokenExpired(storedToken)) {
+        clearVendorSession();
+        finish();
+        return;
+      }
 
-    let vendorData: Record<string, unknown> | null = null;
-    try {
-      const storedVendor = localStorage.getItem('vendorData');
-      vendorData = storedVendor ? (JSON.parse(storedVendor) as Record<string, unknown>) : null;
-    } catch {
-      vendorData = null;
-    }
+      if (isStaleTempVendorSession(storedToken)) {
+        clearVendorSession();
+        finish();
+        return;
+      }
 
-    const onboardingStatus =
-      (vendorData?.onboarding_status as string | undefined) ||
-      (vendorData?.onboardingStatus as string | undefined) ||
-      localStorage.getItem('vendorApplicationStatus');
+      let vendorData: Record<string, unknown> | null = null;
+      try {
+        const storedVendor = localStorage.getItem('vendorData');
+        vendorData = storedVendor ? (JSON.parse(storedVendor) as Record<string, unknown>) : null;
+      } catch {
+        vendorData = null;
+      }
 
-    const isActiveVendor = isVendorPortalActiveStatus(onboardingStatus);
-    // Do not use a "hasChecked" early-return: React Strict Mode runs effects twice; skipping the second
-    // run left isCheckingSession true forever ("Checking session..." with no redirect).
-    window.location.replace(isActiveVendor ? '/' : '/onboarding');
+      const onboardingStatus =
+        (vendorData?.onboarding_status as string | undefined) ||
+        (vendorData?.onboardingStatus as string | undefined) ||
+        localStorage.getItem('vendorApplicationStatus');
+
+      const isActiveVendor = isVendorPortalActiveStatus(onboardingStatus);
+      window.location.replace(isActiveVendor ? '/' : '/onboarding');
+    })();
   }, []);
 
   const handleAuthSuccess = (session: any) => {
@@ -77,6 +81,9 @@ export default function AuthPage() {
       applyVendorPortalSessionFromVerifyPayload({
         phone: session.phone,
         accessToken: session.accessToken,
+        idToken: session.idToken,
+        refreshToken: session.refreshToken,
+        expiresIn: session.expiresIn,
         user: session.user || {},
         profile: session.profile || {},
         vendorId: session.vendorId || '',

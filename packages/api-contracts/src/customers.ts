@@ -33,24 +33,36 @@ export const UpdateCustomerProfileRequestSchema = z.object({
   coordinates: ProfileCoordinatesSchema.nullish(),
 });
 
-export const AddPetRequestSchema = z.object({
-  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
-  pets: z.array(z.object({
+const AddPetItemSchema = z
+  .object({
     name: z.string().min(1, 'Pet name required').max(100, 'Pet name too long'),
-    type: z.enum(['Dog', 'Cat', 'Bird', 'Rabbit', 'Other'], {
-      errorMap: () => ({ message: 'Invalid pet type' }),
+    type: z.enum(['Dog', 'Cat'], {
+      errorMap: () => ({ message: 'Invalid pet type — Dog or Cat only' }),
     }),
-    breed: z.string().max(100, 'Breed name too long').optional(),
+    breed: z.string().min(1, 'Breed required').max(100, 'Breed name too long'),
+    /** ISO date string; age may also be sent but DOB is preferred */
+    dob: z.string().min(1, 'Date of birth required').max(50).optional(),
+    dateOfBirth: z.string().min(1).max(50).optional(),
     age: z.string().max(50, 'Age too long').optional(),
-    gender: z.enum(['Male', 'Female', 'Unknown']).optional(),
+    gender: z.enum(['Male', 'Female', 'male', 'female', 'neutered', 'spayed', 'Neutered', 'Spayed'], {
+      errorMap: () => ({ message: 'Gender required' }),
+    }),
+    photo: z.string().min(1, 'Profile photo required'),
     weight: z.string().max(50, 'Weight too long').optional(),
     color: z.string().max(100, 'Color too long').optional(),
-    photo: z.string().url('Invalid photo URL').optional(),
     microchipId: z.string().max(100, 'Microchip ID too long').optional(),
     medicalHistory: z.string().max(2000, 'Medical history too long').optional(),
     healthRecords: z.string().max(2000, 'Health records too long').optional(),
     vaccinations: z.string().max(2000, 'Vaccination info too long').optional(),
-  })).min(1, 'At least one pet required'),
+  })
+  .refine((pet) => !!(pet.dob?.trim() || pet.dateOfBirth?.trim() || pet.age?.trim()), {
+    message: 'Date of birth or age is required',
+    path: ['dob'],
+  });
+
+export const AddPetRequestSchema = z.object({
+  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
+  pets: z.array(AddPetItemSchema).min(1, 'At least one pet required'),
 });
 
 export const UpdatePetRequestSchema = z.object({
