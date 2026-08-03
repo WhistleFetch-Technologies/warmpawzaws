@@ -5,6 +5,7 @@
 import {
   CopyObjectCommand,
   DeleteObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -79,5 +80,39 @@ export async function deleteObjectKey(key: string, bucket: string = getUploadsBu
     );
   } catch (err: unknown) {
     console.warn('[image-repository] deleteObjectKey failed:', (err as Error)?.message || err);
+    throw err;
   }
+}
+
+/** List object keys under an S3 prefix (paginated). */
+export async function listObjectKeysUnderPrefix(
+  prefix: string,
+  bucket: string = getUploadsBucket(),
+): Promise<string[]> {
+  const normalizedPrefix = prefix.replace(/^\/+/, '');
+  const keys: string[] = [];
+  let continuationToken: string | undefined;
+
+  try {
+    do {
+      const res = await s3Client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: normalizedPrefix,
+          ContinuationToken: continuationToken,
+        }),
+      );
+      for (const obj of res.Contents || []) {
+        if (obj.Key) keys.push(obj.Key);
+      }
+      continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (continuationToken);
+  } catch (err: unknown) {
+    console.warn(
+      '[image-repository] listObjectKeysUnderPrefix failed:',
+      (err as Error)?.message || err,
+    );
+  }
+
+  return keys;
 }

@@ -1,11 +1,16 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { X, Camera, Upload } from 'lucide-react';
 // Uses apiClient (API Gateway)
 import { apiClient } from '@/lib/api-client';
 import { PetHealthVaccinationFormBody } from '@/components/customer/PetHealthVaccinationFormBody';
+import {
+  abandonPendingPetPhotoUploads,
+  collectUploadKeysFromResult,
+  keysToAbandon,
+} from '@/lib/pet-photo-upload';
 
 interface Pet {
   id: string;
@@ -74,6 +79,28 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
   });
   
   const [photoPreview, setPhotoPreview] = useState<string>('');
+  const pendingUploadKeysRef = useRef<string[]>([]);
+
+  const abandonUnsavedUploads = async () => {
+    const toAbandon = keysToAbandon(pendingUploadKeysRef.current, null);
+    if (toAbandon.length === 0) return;
+    if (!/^pet_\d{10,}$/.test(petData.id)) return;
+    await abandonPendingPetPhotoUploads(petData.id, toAbandon);
+    pendingUploadKeysRef.current = [];
+  };
+
+  const handleClose = async () => {
+    if (uploadingPhoto) return;
+    await abandonUnsavedUploads();
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      void abandonUnsavedUploads();
+      pendingUploadKeysRef.current = [];
+    }
+  }, [isOpen]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -95,6 +122,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
       try {
         setUploadingPhoto(true);
         setUploadProgress(0);
+        const previousPending = [...pendingUploadKeysRef.current];
+        const toAbandonBefore = keysToAbandon(previousPending, null);
+        if (toAbandonBefore.length > 0 && /^pet_\d{10,}$/.test(petData.id)) {
+          await abandonPendingPetPhotoUploads(petData.id, toAbandonBefore);
+          pendingUploadKeysRef.current = pendingUploadKeysRef.current.filter(
+            (k) => !toAbandonBefore.includes(k),
+          );
+        }
+
         const { uploadPetPhotoWithProgress } = await import('@/lib/photo-upload-enhanced');
         const result = await uploadPetPhotoWithProgress(file, petData.id, phone, {
           onProgress: (progress) => {
@@ -105,6 +141,11 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         });
         
         if (result.success && result.publicUrl) {
+          const newKeys = collectUploadKeysFromResult(result);
+          pendingUploadKeysRef.current = [
+            ...pendingUploadKeysRef.current.filter((k) => !newKeys.includes(k)),
+            ...newKeys,
+          ];
           setPetData({ ...petData, photo: result.publicUrl });
           console.log('✅ Pet photo uploaded to S3:', result.publicUrl);
         } else {
@@ -170,6 +211,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
       // Show success message
       alert(`${petData.name} added successfully! 🎉`);
       
+      pendingUploadKeysRef.current = [];
       // Call success callback to refresh data
       onSuccess();
       onClose();
@@ -373,7 +415,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
       {/* Action Buttons */}
       <div className="flex gap-2.5 pt-3">
         <Button
-          onClick={onClose}
+          onClick={() => void handleClose()}
           variant="outline"
           className="flex-1 h-11 border-2 border-gray-300 rounded-xl text-sm"
           disabled={loading}
@@ -467,7 +509,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
   return (
     <div 
       className="fixed inset-0 transition-opacity duration-300 z-50"
-      onClick={onClose}
+      onClick={() => void handleClose()}
     >
       <div 
         className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl transform transition-transform duration-300 ease-out flex flex-col translate-y-0 max-w-customer mx-auto"
@@ -482,7 +524,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
           <div className="flex items-center justify-between mb-3">
             <div className="w-10 h-10 bg-[#FF8C42] rounded-lg flex items-center justify-center text-white font-bold text-lg">W</div>
             <button
-              onClick={onClose}
+              onClick={() => void handleClose()}
               disabled={loading}
               className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform disabled:opacity-50"
             >

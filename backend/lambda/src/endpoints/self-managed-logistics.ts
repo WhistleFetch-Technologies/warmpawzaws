@@ -281,12 +281,8 @@ export function registerSelfManagedLogisticsEndpoints(app: Hono) {
       if (status === 'delivered') {
         orderUpdate.order_status = 'delivered';
         orderUpdate.delivered_at = actualDeliveryDate || new Date().toISOString();
-        orderUpdate.delivery_status = 'completed';
-      } else if (status === 'failed_delivery') {
-        orderUpdate.delivery_status = 'failed';
       } else if (['shipped', 'in_transit', 'out_for_delivery'].includes(status)) {
         orderUpdate.order_status = 'shipped';
-        orderUpdate.delivery_status = status;
       }
 
       await update('orders', { id: orderId }, orderUpdate);

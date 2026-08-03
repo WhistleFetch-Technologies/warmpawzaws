@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import nextDynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
-import { isTokenExpired, clearVendorSession, isStaleTempVendorSession } from '@/lib/session-utils';
+import { isTokenExpired, clearVendorSession, isStaleTempVendorSession, restoreVendorSessionIfRefreshable } from '@/lib/session-utils';
 
 const VendorApp = nextDynamic(
   () => import('@/components/vendor/landingPage/VendorApp').then((m) => ({ default: m.VendorApp })),
@@ -67,6 +67,7 @@ export default function VendorHomePage() {
     });
 
     const trySession = (attempt: number) => {
+      void (async () => {
       const { phone: storedPhone, token: storedToken } = readSession();
 
       // After /session/from-admin, storage is synchronous; retry briefly for Strict Mode / static shell edge cases
@@ -84,13 +85,17 @@ export default function VendorHomePage() {
         return;
       }
 
-      if (isTokenExpired(storedToken)) {
+      const sessionRestored = await restoreVendorSessionIfRefreshable();
+      const tokenAfterRefresh =
+        localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken') || storedToken;
+
+      if (!sessionRestored || isTokenExpired(tokenAfterRefresh)) {
         clearVendorSession();
         window.location.replace('/auth');
         return;
       }
 
-      if (isStaleTempVendorSession(storedToken)) {
+      if (isStaleTempVendorSession(tokenAfterRefresh)) {
         clearVendorSession();
         window.location.replace('/auth');
         return;
@@ -110,12 +115,13 @@ export default function VendorHomePage() {
 
       setSession({
         phone: storedPhone,
-        sessionToken: storedToken,
+        sessionToken: tokenAfterRefresh,
         verified: true,
         vendor: vendorData,
         vendorId: storedVendorId || (vendorData?.id as string | undefined),
       });
       setIsLoading(false);
+      })();
     };
 
     trySession(0);

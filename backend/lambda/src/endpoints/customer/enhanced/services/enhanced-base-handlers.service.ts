@@ -39,6 +39,7 @@ import {
   normalizeBloodTypeForStorage,
   resolveBloodTypeFromPayload,
 } from '../../../../lib/pet-blood-types';
+import { validatePetCreatePayload } from '../../../../utils/pet-create-validation';
 import { findCustomerByPhone } from '../../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../../lib/rule-engine';
 import {
@@ -263,10 +264,14 @@ export class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Customer ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
-    // Validate request with Zod schema
-    // Note: AddPetRequestSchema expects phone and pets array, but we're using customerId
-    // For now, validate required fields manually
-    this.validateRequired(body, ['name', 'species']);
+    // Validate required fields for pet creation
+    const createValidation = validatePetCreatePayload({
+      ...body,
+      customerId,
+    });
+    if (!createValidation.ok) {
+      return this.error(createValidation.error, 400, 'VALIDATION_ERROR', undefined, requestId);
+    }
 
     try {
       const ageUnit = body.ageUnit || body.age_unit;

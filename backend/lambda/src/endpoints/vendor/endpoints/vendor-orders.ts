@@ -143,6 +143,20 @@ async function insertVendorOrderStatusHistory(
   });
 }
 
+async function syncShipmentDeliveredForOrder(orderId: string): Promise<void> {
+  try {
+    await query(
+      `UPDATE shipments SET status = 'delivered', delivered_at = NOW(), updated_at = NOW() WHERE order_id = $1`,
+      [orderId]
+    );
+  } catch (e) {
+    console.warn(
+      '[VENDOR-ORDERS] Shipment delivered sync failed (non-fatal):',
+      e instanceof Error ? e.message : e
+    );
+  }
+}
+
 // ============================================================================
 // GET /vendor/:vendorId/orders - List vendor orders
 // ============================================================================
@@ -622,19 +636,20 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       // Build update query
       const updates: string[] = ['order_status = $1', 'updated_at = NOW()'];
       const params: any[] = [status, orderId, vendorId];
-      let paramIndex = 4;
 
       // Add tracking number for shipped status — blocked above; legacy branch removed
 
       // Add delivered timestamp
       if (status === 'delivered') {
         updates.push('delivered_at = NOW()');
-        updates.push('delivery_status = $4');
-        params.splice(3, 0, 'completed');
       }
 
       const updateQuery = `UPDATE orders SET ${updates.join(', ')} WHERE id = $2 AND vendor_id = $3`;
       await query(updateQuery, params);
+
+      if (status === 'delivered') {
+        await syncShipmentDeliveredForOrder(orderId);
+      }
 
       await insertVendorOrderStatusHistory(orderId, status, statusNotes);
       emitShopOrderStatusNotification(orderId, currentStatus, status, {
@@ -781,7 +796,6 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       // Add delivered timestamp
       if (status === 'delivered') {
         updateFields.delivered_at = new Date().toISOString();
-        updateFields.delivery_status = 'completed';
       }
 
       // Build SET clause
@@ -793,6 +807,10 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         `UPDATE orders SET ${setClauses.join(', ')} WHERE id = $${values.length - 1} AND vendor_id = $${values.length}`,
         values
       );
+
+      if (status === 'delivered') {
+        await syncShipmentDeliveredForOrder(orderId);
+      }
 
       await insertVendorOrderStatusHistory(orderId, status, statusNotes);
       emitShopOrderStatusNotification(orderId, currentStatus, status, {

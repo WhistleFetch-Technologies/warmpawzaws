@@ -31,6 +31,9 @@ export function isVendorPortalActiveStatus(status: string | null | undefined): b
 export type VendorVerifySessionInput = {
   phone: string;
   accessToken: string;
+  idToken?: string;
+  refreshToken?: string;
+  expiresIn?: number;
   user: Record<string, unknown>;
   profile: Record<string, unknown>;
   vendorId: string;
@@ -38,6 +41,56 @@ export type VendorVerifySessionInput = {
   /** E.g. "91" for India; defaults to "91" */
   countryCode?: string;
 };
+
+export type VendorAuthTokenBundle = {
+  accessToken: string;
+  idToken?: string;
+  refreshToken?: string;
+  expiresIn?: number;
+  userId?: string;
+  phone?: string;
+};
+
+/** Persist Cognito bundle so silent refresh works after OTP / portal bootstrap. */
+export function persistVendorCognitoTokens(bundle: VendorAuthTokenBundle): void {
+  if (typeof window === 'undefined') return;
+  const accessToken = bundle.accessToken?.trim();
+  if (!accessToken) return;
+
+  const idToken = (bundle.idToken || accessToken).trim();
+  let refreshToken = bundle.refreshToken?.trim() || '';
+  if (!refreshToken && typeof window !== 'undefined') {
+    try {
+      const existing = JSON.parse(localStorage.getItem('vendorCognitoTokens') || 'null');
+      if (existing?.refreshToken) refreshToken = String(existing.refreshToken);
+    } catch {
+      /* ignore */
+    }
+  }
+  const expiresIn =
+    typeof bundle.expiresIn === 'number' && Number.isFinite(bundle.expiresIn)
+      ? bundle.expiresIn
+      : 86400;
+
+  try {
+    const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
+    storeCognitoTokens({
+      accessToken,
+      idToken,
+      refreshToken,
+      expiresIn,
+    });
+    if (bundle.userId) {
+      storeUserInfo({
+        userId: String(bundle.userId),
+        phone: bundle.phone || '',
+        username: bundle.phone || String(bundle.userId),
+      });
+    }
+  } catch (err) {
+    console.warn('[vendor-session] persistVendorCognitoTokens skipped:', err);
+  }
+}
 
 /**
  * Writes localStorage / sessionStorage to match VendorAuth post-verify + auth page handleAuthSuccess.
@@ -51,6 +104,15 @@ export function applyVendorPortalSessionFromVerifyPayload(input: VendorVerifySes
   localStorage.setItem('authToken', input.accessToken);
   localStorage.setItem('vendorAuthToken', input.accessToken);
   localStorage.setItem('vendorCountryCode', countryCode);
+
+  persistVendorCognitoTokens({
+    accessToken: input.accessToken,
+    idToken: input.idToken || input.accessToken,
+    refreshToken: input.refreshToken,
+    expiresIn: input.expiresIn,
+    userId: input.vendorId || String((input.user as { id?: string }).id || ''),
+    phone: input.phone,
+  });
 
   if (input.vendorId) {
     localStorage.setItem('vendorId', input.vendorId);
@@ -114,6 +176,9 @@ export function guessCountryCodeFromPhone(phone: string): string {
 export function unwrapVerifyOtpResponseBody(verifyData: unknown): {
   phone: string;
   accessToken: string;
+  idToken: string;
+  refreshToken: string;
+  expiresIn: number;
   user: Record<string, unknown>;
   profile: Record<string, unknown>;
   vendorId: string;
@@ -142,6 +207,12 @@ export function unwrapVerifyOtpResponseBody(verifyData: unknown): {
     responseData?.token?.access_token ||
     responseData?.access_token;
 
+  const idToken = tokens.id_token || tokens.idToken || accessToken;
+  const refreshToken = tokens.refresh_token || tokens.refreshToken || '';
+  const expiresInRaw = tokens.expires_in ?? tokens.expiresIn;
+  const expiresIn =
+    typeof expiresInRaw === 'number' && Number.isFinite(expiresInRaw) ? expiresInRaw : 86400;
+
   const u = user as { phone?: string; phone_number?: string };
   const p = profile as { phone?: string; phone_number?: string };
   const phone =
@@ -163,6 +234,9 @@ export function unwrapVerifyOtpResponseBody(verifyData: unknown): {
   return {
     phone,
     accessToken,
+    idToken,
+    refreshToken,
+    expiresIn,
     user,
     profile,
     vendorId,

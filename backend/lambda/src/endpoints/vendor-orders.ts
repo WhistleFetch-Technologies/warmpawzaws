@@ -472,8 +472,6 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       // Add delivered timestamp
       if (status === 'delivered') {
         updates.push('delivered_at = NOW()');
-        updates.push('delivery_status = $4');
-        params.splice(3, 0, 'completed');
       }
 
       // Add cancelled timestamp
@@ -560,7 +558,6 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       // Add delivered timestamp
       if (status === 'delivered') {
         updateFields.delivered_at = new Date().toISOString();
-        updateFields.delivery_status = 'completed';
       }
 
       // Add cancelled timestamp
