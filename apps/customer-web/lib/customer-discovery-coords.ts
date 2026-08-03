@@ -14,8 +14,24 @@ export function resolveCustomerDiscoveryPhone(candidate?: string): string {
 
 export type CustomerDiscoveryCoordsSource = 'profile' | 'localStorage' | 'geolocation';
 
+/** Synchronous read of persisted discovery coordinates (no network). */
+export function readStoredCustomerDiscoveryCoords(): {
+  latitude?: string;
+  longitude?: string;
+} {
+  if (typeof window === 'undefined') return {};
+  try {
+    const lat = localStorage.getItem('customer_latitude');
+    const lng = localStorage.getItem('customer_longitude');
+    if (lat && lng) return { latitude: lat, longitude: lng };
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
 /**
- * Same resolution order as useHubVendorDiscovery: profile → localStorage → GPS.
+ * Discovery coordinates: localStorage → profile API → GPS.
  * When coords come from profile or geolocation, they are written to `customer_latitude` /
  * `customer_longitude` so other screens (by-style listings) reuse them without racing.
  */
@@ -32,8 +48,15 @@ export async function resolveCustomerDiscoveryCoords(
   let longitude: string | undefined;
   let source: CustomerDiscoveryCoordsSource | undefined;
 
+  const stored = readStoredCustomerDiscoveryCoords();
+  if (stored.latitude && stored.longitude) {
+    latitude = stored.latitude;
+    longitude = stored.longitude;
+    source = 'localStorage';
+  }
+
   const ph = (phone || '').trim();
-  if (ph.length >= 8) {
+  if (latitude == null && ph.length >= 8) {
     try {
       const profileRes = (await apiClient.get(
         `/customer/profile?phone=${encodeURIComponent(ph)}`
@@ -48,19 +71,7 @@ export async function resolveCustomerDiscoveryCoords(
       /* ignore */
     }
   }
-  if (latitude == null && typeof window !== 'undefined') {
-    try {
-      const lat = localStorage.getItem('customer_latitude');
-      const lng = localStorage.getItem('customer_longitude');
-      if (lat && lng) {
-        latitude = lat;
-        longitude = lng;
-        source = 'localStorage';
-      }
-    } catch {
-      /* ignore */
-    }
-  }
+
   if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {

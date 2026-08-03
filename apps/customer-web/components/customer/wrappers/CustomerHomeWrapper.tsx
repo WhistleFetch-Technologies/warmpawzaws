@@ -52,6 +52,7 @@ import {
 import { WPAY_HISTORY_PATH } from '@/lib/warmpawz-pay/wpay-api';
 import { isWarmpawzPayCommerceActive } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptShellBookingPayload, handleWapptShellScreenNavigate } from '@/lib/wappt-shell-navigation';
+import { consumeWalkInShellNav } from '@/lib/walk-in-vendor-actions';
 import { resolveWapptDiscoveryShellNav } from '@/lib/warmpawz-appointments/wappt-list-style-config';
 import { getWapptDefaultDiscoveryStyle } from '@/lib/wappt-hub-registry';
 import {
@@ -1316,7 +1317,12 @@ export function CustomerHomeWrapper({
       setSpaBoardingVendorsSlug(null);
       setBoardingVendorsReturnScreen(null);
       setLabDiagnosticsReturnScreen(null);
-      shellNav.resetTo(returnScreen as ScreenType);
+      if (returnScreen.startsWith('/')) {
+        router.push(returnScreen);
+        shellNav.resetTo('home');
+      } else {
+        shellNav.resetTo(returnScreen as ScreenType);
+      }
       setSelectedPetId(null);
       setSelectedBookingId(null);
       setVetServiceData(null);
@@ -1734,6 +1740,14 @@ export function CustomerHomeWrapper({
     handleNavigateToService(screen, data);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once for deep link entry
   }, [initialBannerNavigation]);
+
+  /** Walk-in listing page → home shell booking handoff (Book Now from /walk-in). */
+  useEffect(() => {
+    if (currentScreen !== 'home') return;
+    const pending = consumeWalkInShellNav();
+    if (!pending?.screen) return;
+    handleNavigateToService(pending.screen, pending.data);
+  }, [currentScreen, handleNavigateToService]);
 
   const handleSupportHelpChatbotNavigate = (dest: string, data?: any) => {
     const d = (dest || '').trim();

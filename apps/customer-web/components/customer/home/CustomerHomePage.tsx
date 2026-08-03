@@ -189,9 +189,7 @@ function CustomerHomePageContentComponent({
         onNavigate={onNavigate}
         reviewDemoAccount={reviewDemoAccount}
       />
-      <ViewportSection placeholderMinHeight={280}>
-        <WalkInNearYouSection phone={phone} onNavigate={onNavigate} />
-      </ViewportSection>
+      <WalkInNearYouSection phone={phone} onNavigate={onNavigate} />
       <ServiceCategoryRow
         services={services}
         onNavigate={onNavigate}

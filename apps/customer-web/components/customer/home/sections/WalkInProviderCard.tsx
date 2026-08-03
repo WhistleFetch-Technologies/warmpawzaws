@@ -1,43 +1,83 @@
 'use client';
 
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Heart, Star, Wallet } from 'lucide-react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
+import { Calendar, Star, Wallet } from 'lucide-react';
 import { CachedImage } from '@/components/shared/CachedImage';
 import type { FeaturedProviderCategory } from '@/lib/featured-provider';
 import type { WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
 
-/** Walk-in card — 128×228px; content overlaps image base so spacing polish fits without clipping. */
+/** Walk-in card — 128px wide; square API thumbs use a 128×128 image band. */
 export const CARD_WIDTH_PX = 128;
-export const CARD_IMAGE_HEIGHT_PX = 104;
+/** Image band before square slot fix. */
+export const CARD_IMAGE_HEIGHT_PREVIOUS_PX = 104;
+/** Home carousel: 1:1 slot at card width — matches 400×400 list thumbs. */
+export const CARD_IMAGE_HEIGHT_CAROUSEL_PX = 128;
+/** /walk-in stack: same band height as carousel for a consistent photo strip. */
+export const CARD_IMAGE_HEIGHT_STACK_PX = 128;
+/** @deprecated Prefer layout-specific height constants. */
+export const CARD_IMAGE_HEIGHT_PX = CARD_IMAGE_HEIGHT_CAROUSEL_PX;
 export const CARD_CONTENT_PADDING_Y_PX = 8;
 export const CARD_CONTENT_PADDING_X_PX = 11;
 export const CARD_DISTANCE_BUTTON_GAP_PX = 7;
-export const CARD_CONTENT_OVERLAP_PX = 25;
+export const CARD_CONTENT_OVERLAP_PX = 10;
+/** Tight gap between category/meta and distance row (reference layout). */
+export const CARD_META_TO_ACTIONS_GAP_PX = 6;
 
-/** Fixed content slots — declare before CARD_HEIGHT_PX / derived exports (avoids TDZ). */
+/** Fixed content slots — declare before derived height exports (avoids TDZ). */
 export const CARD_TITLE_HEIGHT_PX = 36;
 export const CARD_CATEGORY_HEIGHT_PX = 18;
 export const CARD_META_HEIGHT_PX = 14;
 export const CARD_DISTANCE_ROW_HEIGHT_PX = 18;
 export const CARD_PAY_BUTTON_HEIGHT_PX = 40;
+export const CARD_BOOK_BUTTON_HEIGHT_PX = 40;
+export const CARD_BUTTON_STACK_GAP_PX = 8;
 
-export const CARD_HEIGHT_PX = 228;
-export const CARD_CONTENT_MIN_HEIGHT_PX =
-  CARD_HEIGHT_PX - CARD_IMAGE_HEIGHT_PX + CARD_CONTENT_OVERLAP_PX;
-export const CARD_IMAGE_RATIO = CARD_IMAGE_HEIGHT_PX / CARD_HEIGHT_PX;
+/** Total card height before rebalancing (128px image squeezed into 276px). */
+export const CARD_HEIGHT_PREVIOUS_PX = 276;
+
+export function walkInCardImageHeightPx(layout: 'carousel' | 'stack' = 'carousel'): number {
+  return layout === 'stack' ? CARD_IMAGE_HEIGHT_STACK_PX : CARD_IMAGE_HEIGHT_CAROUSEL_PX;
+}
+
+/** White content panel height — fixed slots + meta→actions gap (meta row collapses when empty). */
+export function walkInCardContentMinHeightPx(_layout: 'carousel' | 'stack' = 'carousel'): number {
+  return (
+    CARD_CONTENT_PADDING_Y_PX * 2 +
+    CARD_TITLE_HEIGHT_PX +
+    CARD_CATEGORY_HEIGHT_PX +
+    CARD_META_TO_ACTIONS_GAP_PX +
+    CARD_DISTANCE_ROW_HEIGHT_PX +
+    CARD_DISTANCE_BUTTON_GAP_PX +
+    CARD_PAY_BUTTON_HEIGHT_PX +
+    CARD_BUTTON_STACK_GAP_PX +
+    CARD_BOOK_BUTTON_HEIGHT_PX
+  );
+}
+
+/** image + content − overlap; grows with image band instead of compressing actions. */
+export function walkInCardHeightPx(layout: 'carousel' | 'stack' = 'carousel'): number {
+  return (
+    walkInCardImageHeightPx(layout) +
+    walkInCardContentMinHeightPx(layout) -
+    CARD_CONTENT_OVERLAP_PX
+  );
+}
+
+export const CARD_HEIGHT_CAROUSEL_PX = walkInCardHeightPx('carousel');
+export const CARD_HEIGHT_STACK_PX = walkInCardHeightPx('stack');
+/** Carousel card height (128px image + full content stack). */
+export const CARD_HEIGHT_PX = CARD_HEIGHT_CAROUSEL_PX;
+export const CARD_IMAGE_RATIO = CARD_IMAGE_HEIGHT_CAROUSEL_PX / CARD_HEIGHT_PX;
+export const CARD_IMAGE_SLOT_ASPECT =
+  CARD_WIDTH_PX / CARD_IMAGE_HEIGHT_CAROUSEL_PX;
+
+/** @deprecated Use walkInCardContentMinHeightPx(layout). */
+export const CARD_CONTENT_MIN_HEIGHT_PX = walkInCardContentMinHeightPx('carousel');
 
 const CARD_WIDTH_CLASS = 'w-[128px]';
 const CARD_BUTTON_RADIUS = 'rounded-[14px]';
-const CARD_HEART_INSET_PX = 8;
 const CARD_RADIUS = 'rounded-[14px]';
 const CARD_SHADOW = 'shadow-[0_4px_16px_rgba(0,0,0,0.08)]';
-
-const CATEGORY_STOCK_IMAGE: Partial<Record<FeaturedProviderCategory, string>> = {
-  vet: '/images/home/Vet/clinic-visit.webp',
-  grooming: '/images/home/Grooming/grooming-center.webp',
-  training: '/images/home/Training/header.webp',
-  boarding: '/images/home/Boarding/header-img.webp',
-};
 
 export function walkInCategoryDisplayLabel(
   category: FeaturedProviderCategory,
@@ -66,10 +106,6 @@ export function walkInCategoryDisplayLabel(
     default:
       return trimmed || 'Walk-in Service';
   }
-}
-
-function categoryStockImage(category: FeaturedProviderCategory): string {
-  return CATEGORY_STOCK_IMAGE[category] || '/images/home/vet.webp';
 }
 
 function formatWalkInDistance(km: number | null | undefined): string | null {
@@ -123,6 +159,9 @@ export interface WalkInProviderCardProps {
   provider: WalkInProvider;
   badges?: string[];
   onSelect?: () => void;
+  onBook?: () => void;
+  onCardClick?: () => void;
+  layout?: 'carousel' | 'stack';
   className?: string;
 }
 
@@ -130,25 +169,24 @@ function WalkInProviderCardComponent({
   provider,
   badges,
   onSelect,
+  onBook,
+  onCardClick,
+  layout = 'carousel',
   className = '',
 }: WalkInProviderCardProps) {
   const photoUrl = provider.photoUrl?.trim() || null;
-  const stockImage = useMemo(
-    () => categoryStockImage(provider.category),
-    [provider.category]
-  );
-  const [imageSrc, setImageSrc] = useState<string | null>(photoUrl || stockImage);
+  const vendorInitial = provider.displayName?.charAt(0)?.toUpperCase() || 'P';
+  const [imageFailed, setImageFailed] = useState(false);
+  const showVendorPhoto = Boolean(photoUrl) && !imageFailed;
+  const imageHeightPx = walkInCardImageHeightPx(layout);
 
   useEffect(() => {
-    setImageSrc(photoUrl || stockImage);
-  }, [photoUrl, stockImage]);
+    setImageFailed(false);
+  }, [photoUrl]);
 
   const handleImageUnavailable = useCallback(() => {
-    setImageSrc((current) => {
-      if (photoUrl && current === photoUrl) return stockImage;
-      return null;
-    });
-  }, [photoUrl, stockImage]);
+    setImageFailed(true);
+  }, []);
 
   const categoryLabel = walkInCategoryDisplayLabel(
     provider.category,
@@ -159,48 +197,60 @@ function WalkInProviderCardComponent({
   const showRating = shouldShowRating(provider.rating, provider.reviewCount);
   const visibleBadges = (badges || []).filter((b) => String(b).trim().length > 0);
   const hasOptionalMeta = visibleBadges.length > 0 || Boolean(priceText);
+  const optionalMetaHeightPx = hasOptionalMeta ? CARD_META_HEIGHT_PX : 0;
+  const widthClass = layout === 'stack' ? 'w-full max-w-customer' : CARD_WIDTH_CLASS;
+  const layoutClass =
+    layout === 'stack' ? 'snap-none' : 'shrink-0 snap-start';
+  const contentMinHeightPx =
+    walkInCardContentMinHeightPx(layout) + optionalMetaHeightPx;
+  const cardHeightPx =
+    walkInCardHeightPx(layout) + optionalMetaHeightPx;
 
   return (
     <article
-      className={`${CARD_WIDTH_CLASS} flex shrink-0 snap-start flex-col overflow-hidden ${CARD_RADIUS} bg-white ${CARD_SHADOW} ${className}`}
-      style={{ height: CARD_HEIGHT_PX }}
+      className={`${widthClass} flex ${layoutClass} flex-col overflow-hidden ${CARD_RADIUS} bg-white ${CARD_SHADOW} ${onCardClick ? 'cursor-pointer' : ''} ${className}`}
+      style={{ height: cardHeightPx }}
+      onClick={onCardClick}
+      onKeyDown={
+        onCardClick
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onCardClick();
+              }
+            }
+          : undefined
+      }
+      role={onCardClick ? 'button' : undefined}
+      tabIndex={onCardClick ? 0 : undefined}
     >
       <div
-        className="relative w-full shrink-0 overflow-hidden"
-        style={{ height: CARD_IMAGE_HEIGHT_PX }}
+        className="relative w-full shrink-0 overflow-hidden bg-gradient-to-br from-orange-50/80 via-slate-50 to-slate-100"
+        style={{ height: imageHeightPx }}
       >
-        {imageSrc ? (
+        {showVendorPhoto ? (
           <CachedImage
-            src={imageSrc}
+            src={photoUrl}
             alt={provider.displayName}
             fill
             loading="eager"
-            className="object-cover object-center"
+            className="object-contain object-center"
             onUnavailable={handleImageUnavailable}
           />
-        ) : null}
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-black/12 to-transparent"
-          aria-hidden
-        />
-        <button
-          type="button"
-          aria-label="Save provider"
-          className="absolute z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-gray-500 shadow-[0_2px_6px_rgba(0,0,0,0.1)] active:scale-95"
-          style={{
-            top: CARD_HEART_INSET_PX,
-            right: CARD_HEART_INSET_PX,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Heart className="h-3 w-3" strokeWidth={1.75} />
-        </button>
+        ) : (
+          <div
+            className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#FF8C42] to-[#FF7029]"
+            aria-hidden
+          >
+            <span className="text-2xl font-bold text-white">{vendorInitial}</span>
+          </div>
+        )}
       </div>
 
       <div
-        className={`relative z-10 flex min-h-0 flex-1 flex-col bg-white ${CARD_RADIUS} rounded-t-none`}
+        className={`relative z-10 flex shrink-0 flex-col bg-white ${CARD_RADIUS} rounded-t-none`}
         style={{
-          minHeight: CARD_CONTENT_MIN_HEIGHT_PX,
+          minHeight: contentMinHeightPx,
           marginTop: -CARD_CONTENT_OVERLAP_PX,
           paddingTop: CARD_CONTENT_PADDING_Y_PX,
           paddingBottom: CARD_CONTENT_PADDING_Y_PX,
@@ -224,7 +274,7 @@ function WalkInProviderCardComponent({
 
         <div
           className="flex shrink-0 items-center overflow-hidden"
-          style={{ height: CARD_META_HEIGHT_PX }}
+          style={{ height: hasOptionalMeta ? CARD_META_HEIGHT_PX : 0 }}
         >
           {hasOptionalMeta ? (
             <div className="flex h-full min-w-0 flex-nowrap items-center gap-1 overflow-hidden">
@@ -237,16 +287,16 @@ function WalkInProviderCardComponent({
                 </p>
               ) : null}
             </div>
-          ) : (
-            <span className="invisible select-none" aria-hidden>
-              &nbsp;
-            </span>
-          )}
+          ) : null}
         </div>
 
-        <div className="min-h-0 flex-1" aria-hidden />
+        <div
+          className="shrink-0"
+          style={{ height: CARD_META_TO_ACTIONS_GAP_PX }}
+          aria-hidden
+        />
 
-        <div className="mt-auto shrink-0">
+        <div className="shrink-0">
           <div
             className="flex shrink-0 items-center overflow-hidden text-[12px] leading-[18px] text-gray-500"
             style={{
@@ -282,10 +332,30 @@ function WalkInProviderCardComponent({
             type="button"
             className={`inline-flex w-full shrink-0 items-center justify-center gap-1.5 ${CARD_BUTTON_RADIUS} bg-[#FF8C42] text-xs font-semibold leading-none text-white shadow-[0_2px_8px_rgba(255,140,66,0.32)] active:scale-[0.98]`}
             style={{ height: CARD_PAY_BUTTON_HEIGHT_PX, minHeight: CARD_PAY_BUTTON_HEIGHT_PX }}
-            onClick={onSelect}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelect?.();
+            }}
           >
             <Wallet className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} aria-hidden />
-            <span>Pay Now</span>
+            <span>Pay Bill</span>
+          </button>
+
+          <button
+            type="button"
+            className={`inline-flex w-full shrink-0 items-center justify-center gap-1.5 ${CARD_BUTTON_RADIUS} border border-[#FF8C42] bg-white text-xs font-semibold leading-none text-[#FF8C42] active:scale-[0.98]`}
+            style={{
+              height: CARD_BOOK_BUTTON_HEIGHT_PX,
+              minHeight: CARD_BOOK_BUTTON_HEIGHT_PX,
+              marginTop: CARD_BUTTON_STACK_GAP_PX,
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              onBook?.();
+            }}
+          >
+            <Calendar className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} aria-hidden />
+            <span>Book Now</span>
           </button>
         </div>
       </div>
@@ -295,18 +365,30 @@ function WalkInProviderCardComponent({
 
 export const WalkInProviderCard = memo(WalkInProviderCardComponent);
 
-export function WalkInProviderCardSkeleton({ className = '' }: { className?: string }) {
+export function WalkInProviderCardSkeleton({
+  className = '',
+  layout = 'carousel',
+}: {
+  className?: string;
+  layout?: 'carousel' | 'stack';
+}) {
+  const widthClass = layout === 'stack' ? 'w-full max-w-customer' : CARD_WIDTH_CLASS;
+  const layoutClass = layout === 'stack' ? 'snap-none' : 'shrink-0 snap-start';
+  const imageHeightPx = walkInCardImageHeightPx(layout);
+  const contentMinHeightPx = walkInCardContentMinHeightPx(layout);
+  const cardHeightPx = walkInCardHeightPx(layout);
+
   return (
     <div
-      className={`${CARD_WIDTH_CLASS} flex shrink-0 snap-start flex-col overflow-hidden ${CARD_RADIUS} bg-white ${CARD_SHADOW} ${className}`}
-      style={{ height: CARD_HEIGHT_PX }}
+      className={`${widthClass} flex ${layoutClass} flex-col overflow-hidden ${CARD_RADIUS} bg-white ${CARD_SHADOW} ${className}`}
+      style={{ height: cardHeightPx }}
       aria-hidden
     >
-      <div className="animate-pulse bg-gray-200" style={{ height: CARD_IMAGE_HEIGHT_PX }} />
+      <div className="animate-pulse bg-gray-200" style={{ height: imageHeightPx }} />
       <div
-        className={`relative z-10 flex min-h-0 flex-1 flex-col bg-white ${CARD_RADIUS} rounded-t-none`}
+        className={`relative z-10 flex shrink-0 flex-col bg-white ${CARD_RADIUS} rounded-t-none`}
         style={{
-          minHeight: CARD_CONTENT_MIN_HEIGHT_PX,
+          minHeight: contentMinHeightPx,
           marginTop: -CARD_CONTENT_OVERLAP_PX,
           paddingTop: CARD_CONTENT_PADDING_Y_PX,
           paddingBottom: CARD_CONTENT_PADDING_Y_PX,
@@ -323,11 +405,11 @@ export function WalkInProviderCardSkeleton({ className = '' }: { className?: str
           style={{ height: CARD_CATEGORY_HEIGHT_PX }}
         />
         <div
-          className="shrink-0 animate-pulse rounded bg-gray-100"
-          style={{ height: CARD_META_HEIGHT_PX }}
+          className="shrink-0"
+          style={{ height: CARD_META_TO_ACTIONS_GAP_PX }}
+          aria-hidden
         />
-        <div className="min-h-0 flex-1" aria-hidden />
-        <div className="mt-auto shrink-0">
+        <div className="shrink-0">
           <div
             className="animate-pulse rounded bg-gray-100"
             style={{
@@ -338,6 +420,13 @@ export function WalkInProviderCardSkeleton({ className = '' }: { className?: str
           <div
             className={`animate-pulse bg-gray-200 ${CARD_BUTTON_RADIUS}`}
             style={{ height: CARD_PAY_BUTTON_HEIGHT_PX }}
+          />
+          <div
+            className={`animate-pulse border border-gray-200 bg-gray-100 ${CARD_BUTTON_RADIUS}`}
+            style={{
+              height: CARD_BOOK_BUTTON_HEIGHT_PX,
+              marginTop: CARD_BUTTON_STACK_GAP_PX,
+            }}
           />
         </div>
       </div>

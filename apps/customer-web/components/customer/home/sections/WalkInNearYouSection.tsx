@@ -1,29 +1,24 @@
 'use client';
 
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { memo, useCallback, useMemo } from 'react';
 import { MapPin } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
-import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
-import {
-  adaptWpayNearbyVendorsToWalkInProviders,
-  buildWpayNearbyVendorsUrl,
-  type WpayNearbyVendorsResponse,
-} from '@/lib/adapt-wpay-nearby-vendors';
-import {
-  resolveCustomerDiscoveryCoords,
-  resolveCustomerDiscoveryPhone,
-} from '@/lib/customer-discovery-coords';
 import { type FeaturedProviderCategory } from '@/lib/featured-provider';
 import { type WalkInProvider } from '@/lib/mergeWalkInDiscoveryBatches';
+import {
+  useWalkInNearbyProviders,
+  WALK_IN_NEARBY_HOME_LIMIT,
+} from '@/hooks/useWalkInNearbyProviders';
+import { useWalkInVendorActions } from '@/lib/walk-in-vendor-actions';
+import {
+  WALK_IN_SECTION_SUBTITLE,
+  WALK_IN_SECTION_TITLE,
+  WALK_IN_VENDORS_PATH,
+} from '@/lib/walk-in-constants';
 import {
   WalkInProviderCard,
   WalkInProviderCardSkeleton,
 } from './WalkInProviderCard';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
-
-const WALK_IN_SECTION_SUBTITLE =
-  'Pay with Warmpawz and get a discount on your total bill.';
 
 function WalkInSectionHeader({ onViewAll }: { onViewAll: () => void }) {
   return (
@@ -31,9 +26,7 @@ function WalkInSectionHeader({ onViewAll }: { onViewAll: () => void }) {
       <div className="grid grid-cols-[1fr_auto] grid-rows-[auto_auto] gap-x-3">
         <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-2">
           <MapPin className="h-5 w-5 shrink-0 text-[#FF8C42]" aria-hidden />
-          <h2 className="truncate text-sm font-semibold text-gray-900">
-            Walk-in Services Near You
-          </h2>
+          <h2 className="truncate text-sm font-semibold text-gray-900">{WALK_IN_SECTION_TITLE}</h2>
         </div>
         <button
           type="button"
@@ -51,12 +44,7 @@ function WalkInSectionHeader({ onViewAll }: { onViewAll: () => void }) {
 }
 
 /** Phase 1 walk-in categories (vet + grooming). Training deferred to a later step. */
-export const WALK_IN_NEAR_YOU_CATEGORIES: FeaturedProviderCategory[] = [
-  'vet',
-  'grooming',
-];
-
-const NEARBY_LIMIT = 8;
+export const WALK_IN_NEAR_YOU_CATEGORIES: FeaturedProviderCategory[] = ['vet', 'grooming'];
 
 export interface WalkInNearYouSectionProps {
   phone?: string;
@@ -82,84 +70,20 @@ function WalkInNearYouSectionComponent({
   className = '',
   enabled = true,
 }: WalkInNearYouSectionProps) {
-  const router = useRouter();
-  const [loading, setLoading] = useState(enabled);
-  const [providers, setProviders] = useState<WalkInProvider[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const { data: providers = [], isLoading, isError } = useWalkInNearbyProviders({
+    phone,
+    enabled,
+  });
+  const { payBill, bookNow } = useWalkInVendorActions(onNavigate);
 
-  useEffect(() => {
-    if (!enabled) {
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const discoveryPhone = resolveCustomerDiscoveryPhone(phone);
-        const coords = await resolveCustomerDiscoveryCoords(discoveryPhone);
-        const { latitude, longitude } = coords;
-
-        if (!latitude || !longitude) {
-          if (cancelled) return;
-          setProviders([]);
-          setError(null);
-          return;
-        }
-
-        const response = await apiClient.get<WpayNearbyVendorsResponse>(
-          buildWpayNearbyVendorsUrl({
-            limit: NEARBY_LIMIT,
-            latitude,
-            longitude,
-            phone: discoveryPhone || undefined,
-          })
-        );
-
-        if (cancelled) return;
-
-        const mapped = adaptWpayNearbyVendorsToWalkInProviders(response, {
-          limit: NEARBY_LIMIT,
-        });
-        setProviders(mapped);
-        setError(null);
-      } catch (e: unknown) {
-        if (cancelled) return;
-        setProviders([]);
-        setError(e instanceof Error ? e.message : 'Failed to load walk-in services');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [phone, enabled]);
+  const carouselProviders = useMemo(
+    () => providers.slice(0, WALK_IN_NEARBY_HOME_LIMIT),
+    [providers]
+  );
 
   const handleViewAll = useCallback(() => {
-    onNavigate('/search');
+    onNavigate(WALK_IN_VENDORS_PATH);
   }, [onNavigate]);
-
-  const handlePayNow = useCallback(
-    (provider: WalkInProvider) => {
-      const vendorId = String(provider.id ?? '').trim();
-      if (!vendorId) return;
-      // nav-exception: WPay module uses URL routes (same entry as Pay Hub vendor list → Pay Bill)
-      launchWarmpawzPayServiceBooking({
-        router,
-        serviceKey: provider.category,
-        category: provider.category,
-        vendorId,
-      });
-    },
-    [router]
-  );
 
   const header = useMemo(
     () => <WalkInSectionHeader onViewAll={handleViewAll} />,
@@ -170,7 +94,7 @@ function WalkInNearYouSectionComponent({
     return null;
   }
 
-  if (loading) {
+  if (isLoading && carouselProviders.length === 0) {
     return (
       <section className={`mb-6 mt-6 ${className}`} aria-label="Walk-in services near you">
         {header}
@@ -179,11 +103,11 @@ function WalkInNearYouSectionComponent({
     );
   }
 
-  if (error && providers.length === 0) {
+  if (isError && carouselProviders.length === 0) {
     return null;
   }
 
-  if (providers.length === 0) {
+  if (carouselProviders.length === 0) {
     return null;
   }
 
@@ -191,11 +115,12 @@ function WalkInNearYouSectionComponent({
     <section className={`mb-6 mt-6 ${className}`} aria-label="Walk-in services near you">
       {header}
       <div className="flex min-w-0 snap-x snap-mandatory gap-2 overflow-x-auto scroll-smooth px-3 pb-1 scrollbar-hide [-webkit-overflow-scrolling:touch]">
-        {providers.map((provider) => (
+        {carouselProviders.map((provider) => (
           <WalkInProviderCard
             key={provider.id}
             provider={provider}
-            onSelect={() => handlePayNow(provider)}
+            onSelect={() => payBill(provider)}
+            onBook={() => bookNow(provider)}
           />
         ))}
       </div>
@@ -203,7 +128,5 @@ function WalkInNearYouSectionComponent({
   );
 }
 
-/**
- * Nearby walk-in (at_center) vendors — vet + grooming.
- */
+/** Nearby walk-in (at_center) vendors — vet + grooming. */
 export const WalkInNearYouSection = memo(WalkInNearYouSectionComponent);
