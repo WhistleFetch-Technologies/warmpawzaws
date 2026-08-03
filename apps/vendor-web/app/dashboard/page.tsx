@@ -7,22 +7,34 @@
  */
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { isTokenExpired, clearVendorSession } from '@/lib/session-utils';
+import { isTokenExpired, clearVendorSession, restoreVendorSessionIfRefreshable } from '@/lib/session-utils';
 
 export default function DashboardPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
-    const storedPhone = localStorage.getItem('vendorPhone');
+    void (async () => {
+      const storedPhone = localStorage.getItem('vendorPhone');
+      let storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
 
-    if (!storedToken || !storedPhone || isTokenExpired(storedToken)) {
-      clearVendorSession();
-      window.location.replace('/auth');
-      return;
-    }
+      if (!storedToken || !storedPhone) {
+        clearVendorSession();
+        window.location.replace('/auth');
+        return;
+      }
 
-    router.replace('/');
+      const sessionRestored = await restoreVendorSessionIfRefreshable();
+      storedToken =
+        localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken') || storedToken;
+
+      if (!sessionRestored || isTokenExpired(storedToken)) {
+        clearVendorSession();
+        window.location.replace('/auth');
+        return;
+      }
+
+      router.replace('/');
+    })();
   }, [router]);
 
   return (

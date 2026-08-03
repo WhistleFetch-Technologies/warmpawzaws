@@ -109,4 +109,12 @@ describe('shop/payment visibility guards', () => {
     expect(cancelDraft).toContain('resolveCustomerIdFromHonoContext');
     expect(read('src/utils/customer-id-from-auth.ts')).toContain('resolvePostgresCustomerIdFromAuthHeaders');
   });
+
+  test('shop order updates do not write delivery_status on orders table', () => {
+    const vendorOrders = read('src/endpoints/vendor/endpoints/vendor-orders.ts');
+    const shipmentSync = read('src/utils/logistics/shipment-order-sync.ts');
+    expect(vendorOrders).not.toContain('delivery_status');
+    expect(shipmentSync).not.toContain('delivery_status');
+    expect(vendorOrders).toContain('syncShipmentDeliveredForOrder');
+  });
 });

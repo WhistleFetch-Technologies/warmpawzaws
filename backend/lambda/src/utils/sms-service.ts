@@ -7,6 +7,7 @@
 
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { query } from '../database/rds-connection';
+import { isUATMode } from '../lib/utils/uat-mode';
 
 export interface SMSOptions {
   to: string;
@@ -135,6 +136,12 @@ function buildSmsAttributesFromSettings(
 export async function sendSMS(options: SMSOptions): Promise<{ success: boolean; messageId?: string }> {
   const { to, message, type = 'transactional', templateId, entityId, senderId } = options;
   const phone = normalizePhone(to);
+
+  if (isUATMode()) {
+    console.log(`[SMS] UAT_MODE=true: skipped send to ${phone} (mock)`);
+    return { success: true, messageId: `uat-mock-${Date.now()}` };
+  }
+
   const settings = await loadSnsSettings();
   const attrs = buildSmsAttributesFromSettings(type, settings, { templateId, entityId, senderId });
 

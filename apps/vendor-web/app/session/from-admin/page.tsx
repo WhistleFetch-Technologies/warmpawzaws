@@ -56,6 +56,9 @@ function exchangeVendorPortalCode(code: string): Promise<void> {
 
     applyVendorPortalSessionFromVerifyPayload({
       ...flat,
+      idToken: flat.idToken,
+      refreshToken: flat.refreshToken,
+      expiresIn: flat.expiresIn,
       countryCode: guessCountryCodeFromPhone(flat.phone),
     });
 

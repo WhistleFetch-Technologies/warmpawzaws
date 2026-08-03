@@ -23,6 +23,7 @@ import { VendorNotificationModal } from '@/components/vendor/modals/VendorNotifi
 import { VendorSupportDashboard } from '@/components/vendor/VendorSupportDashboard';
 import { vendorNotificationUnreadCount } from '@/components/vendor/dashboard/helpers';
 import { apiClient } from '@/lib/api-client';
+import { restoreVendorSessionIfRefreshable } from '@/lib/session-utils';
 import { isSellerStrict } from '@/components/vendor/landingPage/constants/helpers';
 import { Bell, HelpCircle, RefreshCcw } from 'lucide-react';
 
@@ -81,6 +82,12 @@ export default function SellerPage() {
 
   const loadVendorData = async () => {
     try {
+      const sessionOk = await restoreVendorSessionIfRefreshable();
+      if (!sessionOk) {
+        window.location.replace('/auth');
+        return;
+      }
+
       const persistVendorId = (v: Record<string, unknown> | null | undefined) => {
         const id = v && (v.id ?? v.vendorId);
         if (id != null && String(id).trim() !== '') {
@@ -210,19 +217,26 @@ export default function SellerPage() {
   }
 
   if (!vendorData) {
+    const hasPhone = typeof window !== 'undefined' && !!localStorage.getItem('vendorPhone');
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
         <div className="text-center max-w-md p-8 bg-white rounded-2xl shadow-lg">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">⚠️</span>
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Session Expired</h2>
-          <p className="text-gray-600 mb-6">Please log in again to access the Seller Hub.</p>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">
+            {hasPhone ? 'Could Not Load Seller Hub' : 'Session Expired'}
+          </h2>
+          <p className="text-gray-600 mb-6">
+            {hasPhone
+              ? 'Your session is active but vendor profile data could not be loaded. Please try again or sign in.'
+              : 'Please log in again to access the Seller Hub.'}
+          </p>
           <button
-            onClick={() => router.push('/')}
+            onClick={() => (hasPhone ? void loadVendorData() : router.push('/auth'))}
             className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all"
           >
-            Go to Login
+            {hasPhone ? 'Retry' : 'Go to Login'}
           </button>
         </div>
       </div>

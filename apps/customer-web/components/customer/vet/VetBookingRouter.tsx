@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Stethoscope, Star } from 'lucide-react';
+import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Stethoscope, Star } from 'lucide-react';
+import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import {
@@ -2126,17 +2127,16 @@ export function VetBookingRouter({
           </div>
         )}
         
-        {/* Add Pet Modal */}
-        {showAddPetModal && (
-          <AddPetModalInline 
-            phone={phone}
-            onClose={() => setShowAddPetModal(false)}
-            onSuccess={() => {
-              refreshPets();
-              setShowAddPetModal(false);
-            }}
-          />
-        )}
+        {/* Add Pet Modal - Enhanced with Photo & Vaccinations */}
+        <EnhancedAddPetModal
+          phone={phone}
+          isOpen={showAddPetModal}
+          onClose={() => setShowAddPetModal(false)}
+          onSuccess={() => {
+            refreshPets();
+            setShowAddPetModal(false);
+          }}
+        />
 
         {/* Add Address Modal - in-context for at_home booking step */}
         <AddAddressModal
@@ -2165,226 +2165,3 @@ export function VetBookingRouter({
     </div>
   );
 }
-
-// Inline Add Pet Modal Component
-function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClose: () => void; onSuccess: () => void }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [loading, setLoading] = useState(false);
-  const [photoPreview, setPhotoPreview] = useState<string>('');
-  
-  const [petData, setPetData] = useState({
-    id: `pet_${Date.now()}`,
-    name: '',
-    type: 'Dog',
-    breed: '',
-    age: '',
-    gender: '',
-    weight: '',
-    color: '',
-    photo: '',
-  });
-
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Image size should be less than 5MB');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreview(reader.result as string);
-        setPetData({ ...petData, photo: reader.result as string });
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSavePet = async () => {
-    if (!petData.name || !petData.type || !petData.breed || !petData.age) {
-      toast.error('Please fill in all required fields (Name, Type, Breed, Age)');
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      // Get existing pets
-      const getPetsData = await apiClient.get(`/customer/pets/${phone}`) as any;
-      let existingPets = [];
-      if (Array.isArray(getPetsData)) {
-        existingPets = getPetsData;
-      } else if (Array.isArray(getPetsData.pets)) {
-        existingPets = getPetsData.pets;
-      } else if (getPetsData.pets?.pets && Array.isArray(getPetsData.pets.pets)) {
-        existingPets = getPetsData.pets.pets;
-      }
-      
-      const updatedPets = [...existingPets, petData];
-      
-      await apiClient.post('/customer/pets', {
-        phone: phone,
-        pets: updatedPets
-      });
-      
-      toast.success(`${petData.name} added successfully! 🐾`);
-      onSuccess();
-    } catch (error) {
-      console.error('Error saving pet:', error);
-      toast.error(`Failed to save pet. Please try again.`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center" onClick={onClose}>
-      <div 
-        className="bg-white rounded-t-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-3 sm:p-4 rounded-t-3xl sticky top-0 z-10">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base sm:text-lg font-bold text-white">Add New Pet 🐾</h3>
-            <button onClick={onClose} className="w-7 h-7 sm:w-8 sm:h-8 bg-white/20 rounded-full flex items-center justify-center">
-              <X className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-            </button>
-          </div>
-        </div>
-        
-        <div className="p-4 sm:p-5 space-y-3 sm:space-y-4">
-          {/* Photo Upload */}
-          <div className="flex flex-col items-center">
-            <div 
-              onClick={() => fileInputRef.current?.click()}
-              className="w-16 h-16 sm:w-20 sm:h-20 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:opacity-80 border-4 border-white shadow-lg"
-            >
-              {photoPreview ? (
-                <img src={photoPreview} alt="Pet" className="w-full h-full object-cover" />
-              ) : (
-                <Upload className="w-6 h-6 sm:w-8 sm:h-8 text-orange-500" />
-              )}
-            </div>
-            <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-            <p className="text-xs text-gray-500 mt-1">Upload photo (Optional)</p>
-          </div>
-
-          {/* Pet Name */}
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Pet Name <span className="text-red-500">*</span></label>
-            <input
-              type="text"
-              value={petData.name}
-              onChange={(e) => setPetData({ ...petData, name: e.target.value })}
-              placeholder="e.g., Oreo, Max, Bella"
-              className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none text-sm sm:text-base"
-            />
-          </div>
-
-          {/* Pet Type */}
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Pet Type <span className="text-red-500">*</span></label>
-            <div className="grid grid-cols-3 gap-2">
-              {['Dog', 'Cat', 'Other'].map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => setPetData({ ...petData, type })}
-                  className={`py-2 sm:py-2.5 px-2 sm:px-3 border-2 rounded-xl transition font-medium text-xs sm:text-sm ${
-                    petData.type === type ? 'border-orange-500 bg-orange-50 text-orange-600' : 'border-gray-200 text-gray-700'
-                  }`}
-                >
-                  {type === 'Dog' ? '🐕' : type === 'Cat' ? '🐈' : '🐾'} {type}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Breed */}
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Breed <span className="text-red-500">*</span></label>
-            <input
-              type="text"
-              value={petData.breed}
-              onChange={(e) => setPetData({ ...petData, breed: e.target.value })}
-              placeholder="e.g., Golden Retriever, Persian"
-              className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none text-sm sm:text-base"
-            />
-          </div>
-
-          {/* Age and Gender */}
-          <div className="grid grid-cols-2 gap-2 sm:gap-3">
-            <div>
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Age (years) <span className="text-red-500">*</span></label>
-              <input
-                type="number"
-                value={petData.age}
-                onChange={(e) => setPetData({ ...petData, age: e.target.value })}
-                placeholder="e.g., 3"
-                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none text-sm sm:text-base"
-              />
-            </div>
-            <div>
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Gender</label>
-              <select
-                value={petData.gender}
-                onChange={(e) => setPetData({ ...petData, gender: e.target.value })}
-                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none text-sm sm:text-base"
-              >
-                <option value="">Select</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Weight and Color */}
-          <div className="grid grid-cols-2 gap-2 sm:gap-3">
-            <div>
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Weight (kg)</label>
-              <input
-                type="number"
-                step="0.1"
-                value={petData.weight}
-                onChange={(e) => setPetData({ ...petData, weight: e.target.value })}
-                placeholder="e.g., 12.5"
-                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none text-sm sm:text-base"
-              />
-            </div>
-            <div>
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Color</label>
-              <input
-                type="text"
-                value={petData.color}
-                onChange={(e) => setPetData({ ...petData, color: e.target.value })}
-                placeholder="e.g., Golden"
-                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none text-sm sm:text-base"
-              />
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex gap-2 sm:gap-3 pt-2">
-            <button
-              onClick={onClose}
-              className="flex-1 py-2.5 sm:py-3 border-2 border-gray-300 rounded-xl font-medium text-gray-700 text-sm sm:text-base"
-              disabled={loading}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSavePet}
-              disabled={loading}
-              className="flex-1 py-2.5 sm:py-3 bg-orange-500 hover:bg-orange-600 rounded-xl text-white font-medium disabled:opacity-50 text-sm sm:text-base"
-            >
-              {loading ? 'Saving...' : 'Add Pet'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Address modal removed - address is part of vendor profile
-// REMOVED: AddAddressModalInline function - address is part of vendor profile

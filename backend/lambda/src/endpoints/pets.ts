@@ -43,6 +43,8 @@ import {
   resolveBloodTypeFromPayload,
   wasBloodTypeInPayload,
 } from '../lib/pet-blood-types';
+import { validatePetCreatePayload } from '../utils/pet-create-validation';
+import { deletePetProfilePhotoAssets } from '../services/image/delete-pet-profile-photo.service';
 
 async function resolvePetPhotoForDisplay(
   raw: string | null | undefined,
@@ -289,19 +291,12 @@ export function registerPetEndpoints(app: Hono) {
         emergencyContact,
       } = petData;
 
-      if (!customerId || !name || !petType) {
-        return c.json({ error: 'customerId, name, and petType are required' }, 400);
+      const createValidation = validatePetCreatePayload(petData);
+      if (!createValidation.ok) {
+        return c.json({ error: createValidation.error }, 400);
       }
 
-      // ✅ PLATFORM RESTRICTION: Only allow Dog and Cat
-      const allowedPetTypes = ['Dog', 'Cat', 'dog', 'cat'];
       const petTypeToValidate = petType || petData.type || petData.species;
-      if (!allowedPetTypes.includes(petTypeToValidate)) {
-        return c.json({ 
-          error: 'Invalid pet type. Platform currently supports Dogs and Cats only.',
-          allowedTypes: ['Dog', 'Cat']
-        }, 400);
-      }
 
       const bloodTypeResult = resolveBloodTypeFromPayload(petData, petTypeToValidate);
       if (!bloodTypeResult.ok) {
@@ -568,6 +563,16 @@ export function registerPetEndpoints(app: Hono) {
       );
       await unlinkPetFromMealHistory(petId);
 
+      const photoCleanup = await deletePetProfilePhotoAssets(
+        petId,
+        pets[0]?.profile_photo_url as string | null | undefined,
+      );
+      if (photoCleanup.failed > 0) {
+        console.warn(
+          `[pets] S3 photo cleanup partial failure for pet ${petId}: deleted=${photoCleanup.deleted}, failed=${photoCleanup.failed}`,
+        );
+      }
+
       await query('DELETE FROM pets WHERE id = $1', [petId]);
 
       return c.json({
@@ -788,6 +793,16 @@ export function registerPetEndpoints(app: Hono) {
         [petId, customer.id]
       );
       await unlinkPetFromMealHistory(petId, String(customer.id));
+
+      const photoCleanup = await deletePetProfilePhotoAssets(
+        petId,
+        pets[0]?.profile_photo_url as string | null | undefined,
+      );
+      if (photoCleanup.failed > 0) {
+        console.warn(
+          `[pets] S3 photo cleanup partial failure for pet ${petId}: deleted=${photoCleanup.deleted}, failed=${photoCleanup.failed}`,
+        );
+      }
 
       await query('DELETE FROM pets WHERE id = $1 AND customer_id = $2', [petId, customer.id]);
 
