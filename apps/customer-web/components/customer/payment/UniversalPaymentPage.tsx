@@ -569,6 +569,7 @@ export function UniversalPaymentPage({
     };
   });
   const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [policyModalMode, setPolicyModalMode] = useState<'accept' | 'view'>('accept');
   const [policyAccepted, setPolicyAccepted] = useState(false);
   const [subscriptionCovered, setSubscriptionCovered] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
@@ -1557,8 +1558,12 @@ export function UniversalPaymentPage({
   };
 
   const loadPaymentAndRefundPolicies = async () => {
+    // Bookings: PolicyAcceptanceModal loads vendor refund policy on open — skip duplicate fetches.
+    if (type === 'booking') {
+      return;
+    }
     try {
-      const serviceType = type === 'booking' ? 'booking' : (category || 'default');
+      const serviceType = category || 'default';
       const policiesRes = await apiClient.get<{ success?: boolean; policies?: Record<string, { title: string; description: string; details?: string[] }> }>(
         `/config/policies?service_type=${encodeURIComponent(serviceType)}&policies=payment,cancellation,refund`
       );
@@ -2040,6 +2045,7 @@ export function UniversalPaymentPage({
     // Check if policies have been accepted (for bookings)
     // âœ… FIX: Allow skipping policy check when called from modal acceptance
     if (type === 'booking' && !skipPolicyCheck && !policyAccepted) {
+      setPolicyModalMode('accept');
       setShowPolicyModal(true);
       return;
     }
@@ -4098,8 +4104,9 @@ export function UniversalPaymentPage({
           )}
         </div>
 
-        {/* Payment & refund policy summary (dynamic from backend) */}
-        {(refundPolicySummary || (paymentPolicies && Object.keys(paymentPolicies).length > 0)) && (
+        {/* Payment & refund policy summary (orders/meals only — bookings use PolicyAcceptanceModal) */}
+        {type !== 'booking' &&
+          (refundPolicySummary || (paymentPolicies && Object.keys(paymentPolicies).length > 0)) && (
           <div className={paymentSecondaryCardClass}>
             {refundPolicySummary && (
               <p className="text-xs text-gray-600 mb-2">
@@ -4274,6 +4281,18 @@ export function UniversalPaymentPage({
               <Shield className="h-3 w-3 shrink-0 text-gray-400" aria-hidden />
               Secured by Razorpay • 100% Safe Payments
             </p>
+            {type === 'booking' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPolicyModalMode('view');
+                  setShowPolicyModal(true);
+                }}
+                className="w-full text-center text-xs font-medium text-[#FF8C42] hover:underline"
+              >
+                View booking policies
+              </button>
+            )}
           </div>
       </footer>
       </div>
@@ -4348,11 +4367,16 @@ export function UniversalPaymentPage({
       {/* Policy Acceptance Modal */}
       <PolicyAcceptanceModal
         isOpen={showPolicyModal}
-        onClose={() => setShowPolicyModal(false)}
+        mode={policyModalMode}
+        onClose={() => {
+          setShowPolicyModal(false);
+          setPolicyModalMode('accept');
+        }}
         onAccept={() => {
           // âœ… FIX: Close modal first, then set policy accepted and proceed with payment
           // This ensures the modal closes immediately and payment proceeds without double-click
           setShowPolicyModal(false);
+          setPolicyModalMode('accept');
           setPolicyAccepted(true);
           // Call handlePayment with skipPolicyCheck=true to bypass the policy check
           // since we just accepted it in the modal

@@ -26,6 +26,8 @@ interface PolicyAcceptanceModalProps {
   vendorId?: string;
   serviceId?: string;
   customerId?: string;
+  /** `accept`: checkbox + Accept & Continue (Pay gate). `view`: read-only, Close only. */
+  mode?: 'accept' | 'view';
 }
 
 interface CancellationBand {
@@ -81,6 +83,7 @@ export function PolicyAcceptanceModal({
   vendorId,
   serviceId,
   customerId,
+  mode = 'accept',
 }: PolicyAcceptanceModalProps) {
   const [loading, setLoading] = useState(true);
   const [policy, setPolicy] = useState<PolicyDetails | null>(null);
@@ -271,7 +274,9 @@ export function PolicyAcceptanceModal({
         {/* Content */}
         <div className="px-6 py-4">
           <p className="text-sm text-gray-600 mb-4">
-            Please review and accept our policies before proceeding
+            {mode === 'view'
+              ? 'Review cancellation, reschedule, no-show, and refund policies for this booking.'
+              : 'Please review and accept our policies before proceeding'}
           </p>
 
           {policy && (
@@ -464,40 +469,55 @@ export function PolicyAcceptanceModal({
                 )}
               </div>
 
-              <Separator className="my-4" />
+              {mode === 'accept' && (
+                <>
+                  <Separator className="my-4" />
 
-              {/* Acceptance Checkbox */}
-              <div className="flex items-start gap-3 p-4 bg-orange-100 rounded-xl border border-orange-300">
-                <Checkbox
-                  id="accept-policies"
-                  checked={accepted}
-                  onCheckedChange={(checked) => setAccepted(checked as boolean)}
-                  className="mt-0.5 bg-white"
-                />
-                <label htmlFor="accept-policies" className="text-sm text-gray-700 cursor-pointer leading-relaxed">
-                  I have read and agree to the cancellation, reschedule, no-show, and refund policies. 
-                  I understand these terms apply to my booking.
-                </label>
-              </div>
+                  {/* Acceptance Checkbox */}
+                  <div className="flex items-start gap-3 p-4 bg-orange-100 rounded-xl border border-orange-300">
+                    <Checkbox
+                      id="accept-policies"
+                      checked={accepted}
+                      onCheckedChange={(checked) => setAccepted(checked as boolean)}
+                      className="mt-0.5 bg-white"
+                    />
+                    <label htmlFor="accept-policies" className="text-sm text-gray-700 cursor-pointer leading-relaxed">
+                      I have read and agree to the cancellation, reschedule, no-show, and refund policies.
+                      I understand these terms apply to my booking.
+                    </label>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
           {/* Footer Buttons */}
           <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 mt-6 flex gap-3">
-            <Button 
-              variant="outline" 
-              onClick={onClose}
-              className="flex-1 h-12 border-gray-300 hover:bg-gray-50"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAccept}
-              disabled={!accepted}
-              className="flex-1 h-12 bg-[#FF8C42] hover:bg-[#E67A32] text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Accept & Continue
-            </Button>
+            {mode === 'view' ? (
+              <Button
+                onClick={onClose}
+                className="flex-1 h-12 bg-[#FF8C42] hover:bg-[#E67A32] text-white font-semibold"
+              >
+                Close
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={onClose}
+                  className="flex-1 h-12 border-gray-300 hover:bg-gray-50"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAccept}
+                  disabled={!accepted}
+                  className="flex-1 h-12 bg-[#FF8C42] hover:bg-[#E67A32] text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Accept & Continue
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
