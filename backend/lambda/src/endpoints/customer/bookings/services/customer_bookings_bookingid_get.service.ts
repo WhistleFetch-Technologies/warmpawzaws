@@ -21,6 +21,7 @@ import {
   SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../../utils/customer-booking-package-fields';
 import { loadCustomerPaymentFeeFields } from '../repos/module-helpers.repo';
+import { resolveCustomerBookingServiceDisplayName } from '../../../../utils/customer-booking-display-name';
 
 export async function executecustomerBookingsBookingidGet(c: Context) {
     try {
@@ -105,6 +106,10 @@ export async function executecustomerBookingsBookingidGet(c: Context) {
       const paymentSources = await resolveBookingPaymentSources(bookingId, totalAmountNum);
       const paymentFeeFields = await loadCustomerPaymentFeeFields(bookingId);
 
+      const displayServiceName = resolveCustomerBookingServiceDisplayName(
+        booking as Record<string, unknown>,
+      );
+
       return c.json({
         success: true,
         booking: {
@@ -133,7 +138,7 @@ export async function executecustomerBookingsBookingidGet(c: Context) {
           },
           service: {
             id: booking.service_id,
-            name: booking.service_name,
+            name: displayServiceName,
             description: booking.service_description,
             category: booking.service_category,
             duration: booking.service_duration,
@@ -189,6 +194,9 @@ export async function executecustomerBookingsBookingidGet(c: Context) {
           service_style: booking.service_style || null,
           serviceType: booking.service_type || null,
           service_type: booking.service_type || null,
+          serviceName: displayServiceName,
+          service_name: displayServiceName,
+          booking_service_name: booking.booking_service_name ?? null,
           prescription: prescriptions.rows.length > 0 ? prescriptions.rows[0] : null,
           review: reviews.rows.length > 0 ? reviews.rows[0] : null,
           // Multi-service: list of services and total duration

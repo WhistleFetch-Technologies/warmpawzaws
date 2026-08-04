@@ -19,6 +19,10 @@ import { PaymentSourcesDisplay } from './payment/PaymentSourcesDisplay';
 import { normalizePaymentSources } from '@/lib/payment-display-utils';
 import { downloadBookingInvoice, getBookingInvoiceDownloadMessage } from '@/lib/booking-invoice-download';
 import {
+  resolveCustomerBookingDisplayName,
+  shouldHideWarmpawzAppointmentDuration,
+} from '@/lib/warmpawz-appointments-customer';
+import {
   isBookingAwaitingPayment,
   isPaymentHoldActive,
   isPaymentHoldExpired,
@@ -465,8 +469,11 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         ...rawBooking,
         // Service fields - for diagnostics, use test names instead of service name
         serviceName: (isDiagnostic && diagnosticTestNames.length > 0)
-          ? diagnosticTestNames.join(', ') // Use test names for diagnostics
-          : (rawBooking.serviceName || rawBooking.service?.name || rawBooking.service_name || 'Service'),
+          ? diagnosticTestNames.join(', ')
+          : resolveCustomerBookingDisplayName(
+              rawBooking,
+              rawBooking.serviceName || rawBooking.service?.name || rawBooking.service_name || 'Service',
+            ),
         serviceType: rawBooking.serviceType || rawBooking.service?.category || rawBooking.service_type,
         serviceCategory: rawBooking.serviceCategory || rawBooking.service?.category || rawBooking.service_category,
         // ✅ Store diagnostics flags for prescription/medical records detection
@@ -1097,8 +1104,15 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                         })()}
                       </h4>
                       <p className="text-sm text-gray-600">
-                        {booking.duration ? `${booking.duration} min` : ''} 
-                        {booking.serviceStyle && ` • ${getServiceStyleLabel(booking.serviceStyle)}`}
+                        {!shouldHideWarmpawzAppointmentDuration(booking) && booking.duration
+                          ? `${booking.duration} min`
+                          : ''}
+                        {booking.serviceStyle && (
+                          <>
+                            {!shouldHideWarmpawzAppointmentDuration(booking) && booking.duration ? ' • ' : ''}
+                            {getServiceStyleLabel(booking.serviceStyle)}
+                          </>
+                        )}
                       </p>
                     </div>
                     <div className="text-right">

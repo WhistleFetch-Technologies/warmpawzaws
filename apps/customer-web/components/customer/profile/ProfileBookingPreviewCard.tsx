@@ -5,6 +5,7 @@ import { ChevronRight, Clock } from 'lucide-react';
 export interface ProfileBookingPreviewData {
   id: string;
   serviceType: string;
+  serviceName?: string;
   vendorName: string;
   startDate: string;
   scheduledDate?: string;
@@ -23,9 +24,12 @@ interface ProfileBookingPreviewCardProps {
 }
 
 export function ProfileBookingPreviewCard({ booking, onClick }: ProfileBookingPreviewCardProps) {
-  const serviceLabel =
-    booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1);
-  const displayService = /\bservice\b/i.test(serviceLabel) ? serviceLabel : `${serviceLabel} Service`;
+  const serviceLabel = (booking.serviceName ?? booking.serviceType).trim();
+  const displayService =
+    serviceLabel.charAt(0).toUpperCase() + serviceLabel.slice(1);
+  const displayTitle = /\bservice\b/i.test(displayService) || displayService === 'Appointment'
+    ? displayService
+    : `${displayService} Service`;
 
   const statusClass =
     booking.status === 'active'
@@ -44,7 +48,7 @@ export function ProfileBookingPreviewCard({ booking, onClick }: ProfileBookingPr
     >
       <div className="mb-3 flex items-start justify-between">
         <div>
-          <h4 className="mb-1 font-semibold text-gray-800">{displayService}</h4>
+          <h4 className="mb-1 font-semibold text-gray-800">{displayTitle}</h4>
           <p className="text-sm text-gray-600">{booking.vendorName}</p>
         </div>
         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass}`}>

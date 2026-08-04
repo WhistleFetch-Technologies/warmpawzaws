@@ -61,7 +61,7 @@ export async function executecustomerBookingsGet(c: Context) {
                v.business_name as vendor_name,
                v.phone as vendor_phone,
                v.city as vendor_city,
-               s.name as service_name,
+               s.name as joined_service_name,
                s.category as service_category
         FROM bookings b
         LEFT JOIN vendors v ON b.vendor_id = v.id
@@ -136,6 +136,16 @@ export async function executecustomerBookingsGet(c: Context) {
             completion_otp,
             paymentSources: paymentSourcesByBooking.get(b.id) || [],
             ...packageFieldsFromBookingRow(b),
+            serviceName:
+              b.commerce_mode === 'warmpawz_appointments'
+                ? b.service_name || 'Appointment'
+                : b.service_name ?? b.joined_service_name ?? null,
+            service_name:
+              b.commerce_mode === 'warmpawz_appointments'
+                ? b.service_name || 'Appointment'
+                : b.service_name ?? b.joined_service_name ?? null,
+            commerceMode: b.commerce_mode ?? 'marketplace',
+            commerce_mode: b.commerce_mode ?? 'marketplace',
           };
         })
       );

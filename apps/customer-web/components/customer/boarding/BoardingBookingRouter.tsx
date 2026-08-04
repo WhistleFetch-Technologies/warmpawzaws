@@ -1256,6 +1256,28 @@ export function BoardingBookingRouter({
     }
   };
 
+  const handleContinueFromWapptBoardingDetails = () => {
+    if (!checkInDate || !checkOutDate || !checkInTime || !checkOutTime) {
+      toast.error('Please select check-in and check-out dates and times');
+      return;
+    }
+    if (!selectedPet) {
+      toast.error('Please select a pet');
+      return;
+    }
+    if (getBilledMinutes() < 1) {
+      toast.error('Check-out must be after check-in');
+      return;
+    }
+    setSelectedAddress({ id: 'clinic' });
+    setVendorDisclaimerAcknowledged(false);
+    void prefillBoardingIntake(selectedPet);
+    // #region agent log
+    fetch('http://127.0.0.1:7284/ingest/8a051ee5-5764-433a-b7be-541c81de6d03',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f40ec1'},body:JSON.stringify({sessionId:'f40ec1',location:'BoardingBookingRouter.tsx:handleContinueFromWapptBoardingDetails',message:'boarding wappt -> intake',data:{checkInDate,checkOutDate,petId:selectedPet?.id},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+    // #endregion
+    setStep('boarding_form');
+  };
+
   const handleContinueFromWapptAddress = () => {
     if (!selectedAddress) {
       toast.error('Please select a delivery address');
@@ -1294,6 +1316,14 @@ export function BoardingBookingRouter({
     }
 
     if (step === 'boarding_form') {
+      if (appointmentsMode && !isPetSitting) {
+        if (facilityDisclaimerPoints.length > 0 && !vendorDisclaimerAcknowledged) {
+          toast.error('Please acknowledge the facility disclaimer');
+          return;
+        }
+        setStep('summary');
+        return;
+      }
       handleCreateBookingForPayment();
       return;
     }
@@ -1612,6 +1642,16 @@ export function BoardingBookingRouter({
       setStep('summary');
       return;
     }
+    if (appointmentsMode && !isPetSitting) {
+      if (step === 'summary') {
+        setStep('boarding_form');
+        return;
+      }
+      if (step === 'boarding_form') {
+        setStep('datetime');
+        return;
+      }
+    }
     if (appointmentsMode && wapptFlowSteps.length > 0) {
       const prev = getWapptBookingPreviousStep(
         wapptFlowSteps,
@@ -1654,7 +1694,7 @@ export function BoardingBookingRouter({
     }
 
     setStep(steps[currentIdx - 1]);
-  }, [step, skipBoardingIntake, onBack, vendorId, serviceId, appointmentsMode, wapptFlowSteps]);
+  }, [step, skipBoardingIntake, onBack, vendorId, serviceId, appointmentsMode, wapptFlowSteps, isPetSitting]);
 
   useEffect(() => {
     onInternalBackReady?.(handleBack);
@@ -1702,6 +1742,19 @@ export function BoardingBookingRouter({
   const boardingStats = EMPTY_SERVICE_HEADER_STATS;
 
   const getStepIndicators = (): StepInfo[] | undefined => {
+    if (appointmentsMode && !isPetSitting) {
+      if (step === 'payment' || step === 'confirmation') return undefined;
+      const boardingWapptLabels = ['Stay', 'Intake', 'Summary', 'Payment'];
+      const boardingWapptKeys = ['datetime', 'boarding_form', 'summary', 'payment'] as const;
+      const idx = boardingWapptKeys.indexOf(step as (typeof boardingWapptKeys)[number]);
+      if (idx >= 0) {
+        return boardingWapptLabels.map((label, i) => ({
+          label,
+          isCompleted: i < idx,
+          isCurrent: i === idx,
+        }));
+      }
+    }
     if (appointmentsMode && wapptFlowSteps.length > 0) {
       if (step === 'payment' || step === 'confirmation') return undefined;
       const flowStep =
@@ -1933,7 +1986,7 @@ export function BoardingBookingRouter({
         )}
 
         {/* Date Selection */}
-        {step === 'datetime' && appointmentsMode ? (
+        {step === 'datetime' && appointmentsMode && isPetSitting ? (
           <WapptBookingDetailsStep
             dates={wapptSlots.dates}
             selectedDate={checkInDate}
@@ -1968,18 +2021,22 @@ export function BoardingBookingRouter({
             amount={wapptReviewTotal}
             selectedDate={checkInDate}
             selectedTime={checkInTime}
+            checkOutDate={checkOutDate}
+            checkOutTime={checkOutTime}
             petName={selectedPet?.name}
             petBreed={selectedPet?.breed}
+            petSpecies={selectedPet?.species}
+            variant={isPetSitting ? 'default' : 'boarding'}
             addressLine={
               wapptServiceStyle === 'at_home' ? formatWapptAddressLine(selectedAddress) : undefined
             }
-            onBack={() => setStep(wapptServiceStyle === 'at_home' ? 'address' : 'datetime')}
+            onBack={() => setStep(isPetSitting ? (wapptServiceStyle === 'at_home' ? 'address' : 'datetime') : 'boarding_form')}
             onContinue={handleProceedToWapptPayment}
             loading={processing}
           />
         ) : null}
 
-        {step === 'datetime' && !appointmentsMode && (
+        {step === 'datetime' && (!appointmentsMode || (appointmentsMode && !isPetSitting)) && (
           <div className="space-y-6">
             {sameDayTimedSession ? (
               <>
@@ -2278,17 +2335,59 @@ export function BoardingBookingRouter({
               </>
             )}
 
+            {appointmentsMode && !isPetSitting ? (
+              <div className="space-y-4 border-t border-gray-100 pt-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddPetModal(true)}
+                    className="flex items-center gap-1 rounded-lg bg-orange-100 px-3 py-1.5 text-sm font-medium text-orange-600 hover:bg-orange-200"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Pet
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {pets.map((pet) => (
+                    <button
+                      key={pet.id}
+                      type="button"
+                      onClick={() => setSelectedPet(pet)}
+                      className={`flex w-full items-center gap-4 rounded-xl border-2 p-4 transition-all ${
+                        selectedPet?.id === pet.id
+                          ? 'border-[#FF8C42] bg-orange-50'
+                          : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                      }`}
+                    >
+                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-orange-100">
+                        <User className="h-7 w-7 text-orange-600" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <h3 className="font-semibold text-gray-900">{pet.name}</h3>
+                        <p className="text-sm capitalize text-gray-500">{pet.breed}</p>
+                      </div>
+                      {selectedPet?.id === pet.id ? (
+                        <CheckCircle2 className="h-6 w-6 text-orange-500" />
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <Button
-              onClick={handleNext}
+              onClick={appointmentsMode && !isPetSitting ? handleContinueFromWapptBoardingDetails : handleNext}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={
                 !checkInDate ||
                 !checkOutDate ||
+                (appointmentsMode && !isPetSitting && !selectedPet) ||
                 (isPetSitting && getBilledMinutes() < 15) ||
                 (!isPetSitting && getBilledMinutes() < 1)
               }
             >
-              Continue
+              {appointmentsMode && !isPetSitting ? 'Continue to intake' : 'Continue'}
             </Button>
           </div>
         )}
@@ -2786,7 +2885,11 @@ export function BoardingBookingRouter({
                 (facilityDisclaimerPoints.length > 0 && !vendorDisclaimerAcknowledged)
               }
             >
-              {processing ? 'Creating booking…' : 'Continue to payment'}
+              {processing
+                ? 'Creating booking…'
+                : appointmentsMode && !isPetSitting
+                  ? 'Continue to summary'
+                  : 'Continue to payment'}
             </Button>
           </div>
         )}

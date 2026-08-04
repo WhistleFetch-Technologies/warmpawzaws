@@ -21,6 +21,7 @@ import {
   SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../../utils/customer-booking-package-fields';
 import { loadCustomerPaymentFeeFields } from '../repos/module-helpers.repo';
+import { resolveCustomerBookingServiceDisplayName } from '../../../../utils/customer-booking-display-name';
 
 export async function executecustomerCustomeridBookingsBookingidGet(c: Context) {
     try {
@@ -51,6 +52,10 @@ export async function executecustomerCustomeridBookingsBookingidGet(c: Context) 
 
       const paymentFeeFields = await loadCustomerPaymentFeeFields(bookingId);
 
+      const displayServiceName = resolveCustomerBookingServiceDisplayName(
+        booking as Record<string, unknown>,
+      );
+
       return c.json({
         success: true,
         booking: {
@@ -79,7 +84,7 @@ export async function executecustomerCustomeridBookingsBookingidGet(c: Context) 
           },
           service: {
             id: booking.service_id,
-            name: booking.service_name,
+            name: displayServiceName,
             description: booking.service_description,
             category: booking.service_category,
             duration: booking.service_duration,
@@ -116,6 +121,9 @@ export async function executecustomerCustomeridBookingsBookingidGet(c: Context) 
           schedule: booking.booking_time, // Alias for frontend compatibility
           startDate: booking.booking_date, // Alias for frontend compatibility
           serviceType: booking.service_type,
+          serviceName: displayServiceName,
+          service_name: displayServiceName,
+          booking_service_name: booking.booking_service_name ?? null,
           address: booking.address,
           city: booking.city,
           state: booking.state,
