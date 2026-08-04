@@ -315,7 +315,7 @@ flowchart LR
 | Step | Builder | Waits | Deliverable | Status | Commit | Date | Verifier / notes |
 | ---- | ------- | ----- | ----------- | ------ | ------ | ---- | ---------------- |
 | **S00** | Both | — | Align on branch; read this plan; confirm latest `git pull` | `pending` | | | |
-| **S01** | **Bindu** | Abhi | `1093_warmpawz_pay_platform_withhold.sql` + admin pricing API/UI for `platformWithholdPercent` | `pending` | | | Abhi: pull + confirm admin can save withhold % |
+| **S01** | **Bindu** | Abhi | `1093_warmpawz_pay_platform_withhold.sql` + admin pricing API/UI for `platformWithholdPercent` | `done` | `acc8e2ab5` | 2026-08-04 | Abhi: pull + confirm admin can save withhold % |
 | **S02** | **Abhi** | Bindu | Extend `computeWpayDiscountQuote(quoted, %, { appointmentFeeCredit })` + unit test in `wpay-discount` | `pending` | | | Bindu: pull + use helper in S03 |
 | **S03** | **Bindu** | Abhi | `accrue-wpay-settlement.ts`; wire `customer_warmpawz_pay_verify_post`; **apply 1093 on dev RDS**; deploy lambda dev | `pending` | | | Abhi: walk-in Pay Bill smoke — payment completes |
 | **S04** | **Bindu** | Abhi | Extend `GET /vendor/:vendorId/earnings` — UNION `settlements` where `order_type='warmpawz_pay'` (customer name, date, net) | `pending` | | | Abhi: confirm API shape for UI |
