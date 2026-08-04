@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog';
 import { EnhancedPackageCreationModal } from './EnhancedPackageCreationModal';
 import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
+import { canVendorEditServicePrice } from '@/lib/wappt-service-pricing-lock';
 
 interface VendorServiceConfigurationScreenProps {
   vendorId: string;
@@ -106,7 +107,7 @@ export function VendorServiceConfigurationScreen({
   const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
   const [showAddCustomDialog, setShowAddCustomDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState(''); // ✅ NEW: Search state
-  const [viewMode, setViewMode] = useState<'all' | 'enabled' | 'published'>('all'); // ✅ NEW: View mode filter
+  const [pricingLocked, setPricingLocked] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null); // ✅ Service being edited (opens Edit modal)
   const [editForm, setEditForm] = useState({ price: 0, duration: 30, description: '' }); // ✅ Edit modal form state
   const [savingEdit, setSavingEdit] = useState(false);
@@ -196,7 +197,7 @@ export function VendorServiceConfigurationScreen({
   // No platform price control — vendor-set price reflects immediately on customer web.
   const canControlPrice = roleConfig?.pricingControl?.canControlPrice ?? true;
   const canControlDuration = roleConfig?.pricingControl?.canControlDuration ?? true;
-  const canEditPricing = true; // Allow price edit for all services including catalog; no platform control
+  const canEditPricing = canVendorEditServicePrice(serviceStyle) && !pricingLocked;
 
   useEffect(() => {
     // Don't load services if solo provider trying to access at_center
@@ -278,6 +279,7 @@ export function VendorServiceConfigurationScreen({
         }
         if (styleServicesResponse?.services) {
           vendorServices = styleServicesResponse.services;
+          setPricingLocked(Boolean(styleServicesResponse.pricingLocked));
           console.log(`🏪 Vendor services loaded: ${vendorServices.length}`);
           // ✅ No need to filter here - backend endpoint /vendor/:vendorId/services/:serviceStyle
           // already validates that serviceStyle is allowed before returning services
@@ -702,7 +704,7 @@ export function VendorServiceConfigurationScreen({
   // ✅ Save edits from Edit modal (unpublished services only)
   const saveEditService = async () => {
     if (!editingService) return;
-    if (editForm.price <= 0) {
+    if (canEditPricing && editForm.price <= 0) {
       toast.error('Price must be greater than 0');
       return;
     }
@@ -712,11 +714,14 @@ export function VendorServiceConfigurationScreen({
     }
     try {
       setSavingEdit(true);
-      const data = await apiClient.put(`/vendor/${vendorId}/services/${editingService.id}`, {
-        customPrice: editForm.price,
+      const payload: Record<string, unknown> = {
         customDuration: editForm.duration,
         description: editForm.description,
-      }) as any;
+      };
+      if (canEditPricing) {
+        payload.customPrice = editForm.price;
+      }
+      const data = await apiClient.put(`/vendor/${vendorId}/services/${editingService.id}`, payload) as any;
       if (data && data.success) {
         toast.success('Service updated. You can publish when ready.');
         setEditingService(null);
@@ -783,9 +788,12 @@ export function VendorServiceConfigurationScreen({
       // ✅ Validate enabled services
       const invalidServices = servicesToSave.filter(s => {
         if (!s.isEnabled) return false;
-        const price = s.customPrice ?? s.price ?? 0;
         const duration = s.customDuration ?? 30;
-        return price <= 0 || duration < 5;
+        if (canEditPricing) {
+          const price = s.customPrice ?? s.price ?? 0;
+          return price <= 0 || duration < 5;
+        }
+        return duration < 5;
       });
 
       if (invalidServices.length > 0) {
@@ -796,22 +804,25 @@ export function VendorServiceConfigurationScreen({
       // ✅ FIX: Save ONLY dirty services (not ALL services) - each gets one PUT call
       for (let i = 0; i < servicesToSave.length; i++) {
         const service = servicesToSave[i];
-        const price = service.customPrice ?? service.price ?? 0;
         if (service.vendorServiceId === service.catalogServiceId) {
           console.error(`❌ CRITICAL: vendorServiceId matches catalogServiceId! Skipping ${service.serviceName}`);
           continue;
         }
         const durationMins = Math.max(5, Math.min(1440, Number(service.customDuration ?? 30) || 30));
+        const payload: Record<string, unknown> = {
+          is_enabled: service.isEnabled,
+          duration: durationMins,
+          customDuration: service.customDuration ?? durationMins,
+          description: service.customDescription,
+        };
+        if (canEditPricing) {
+          const price = service.customPrice ?? service.price ?? 0;
+          payload.price = price;
+          payload.customPrice = service.customPrice;
+        }
         console.log(`💾 Saving dirty service: vendorServiceId=${service.vendorServiceId}, serviceName=${service.serviceName}`);
         await putWithRetry(() =>
-          apiClient.put(`/vendor/${vendorId}/services/${service.vendorServiceId}`, {
-            is_enabled: service.isEnabled,
-            price,
-            customPrice: service.customPrice,
-            duration: durationMins,
-            customDuration: service.customDuration ?? durationMins,
-            description: service.customDescription,
-          })
+          apiClient.put(`/vendor/${vendorId}/services/${service.vendorServiceId}`, payload)
         );
         if (i < servicesToSave.length - 1) await delayMs(250);
       }
@@ -1298,7 +1309,17 @@ export function VendorServiceConfigurationScreen({
             <Info className="w-4 h-4 mt-0.5 flex-shrink-0 text-orange-500" />
             <div className="flex-1 text-xs">
               <p className="text-orange-700">
-                <strong>Your pricing:</strong> Set price and duration for any service (catalog or custom). Publish/unpublish to show or hide on customer booking. Changes reflect immediately on customer web.
+                {canEditPricing ? (
+                  <>
+                    <strong>Your pricing:</strong> Set price and duration for any service (catalog or custom).
+                    Publish/unpublish to show or hide on customer booking.
+                  </>
+                ) : (
+                  <>
+                    <strong>Warmpawz Appointments:</strong> Enable or disable services only. Appointment fees are
+                    set by the platform — per-service prices are not shown to customers for this style.
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -1375,9 +1396,11 @@ export function VendorServiceConfigurationScreen({
 
                             {/* Quick Info */}
                             <div className="flex items-center gap-3 text-xs text-gray-600 mb-2">
-                              <span className="flex items-center gap-1 font-semibold text-[#FF8C42]">
-                                ₹{Number(service.customPrice || service.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </span>
+                              {canEditPricing && (
+                                <span className="flex items-center gap-1 font-semibold text-[#FF8C42]">
+                                  ₹{Number(service.customPrice || service.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                </span>
+                              )}
                               <span className="flex items-center gap-1">
                                 <Clock className="w-3 h-3" />
                                 {service.customDuration || service.duration}m

@@ -18,6 +18,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { vendorNavigate, vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
+import { canVendorEditServicePrice } from '@/lib/wappt-service-pricing-lock';
 import { 
   Search, 
   Filter, 
@@ -301,13 +302,18 @@ export default function SoloProviderServiceManagePage() {
       
       // Save to backend
       const response = await apiClient.post<any>(`/vendor/${vendorId}/services/bulk-update`, {
-        services: enabledServices.map(s => ({
-          catalogServiceId: s.catalogId || s.id,
-          serviceStyle: s.serviceStyle,
-          isEnabled: s.isEnabled,
-          customPrice: s.price,
-          customDuration: s.duration,
-        })),
+        services: enabledServices.map(s => {
+          const row: Record<string, unknown> = {
+            catalogServiceId: s.catalogId || s.id,
+            serviceStyle: s.serviceStyle,
+            isEnabled: s.isEnabled,
+            customDuration: s.duration,
+          };
+          if (canVendorEditServicePrice(s.serviceStyle)) {
+            row.customPrice = s.price;
+          }
+          return row;
+        }),
         isSoloProvider: true,
       });
       

@@ -1,5 +1,5 @@
 import { WAPPT_APPOINTMENTS_ENV_KEY } from '../constants/wappt-catalogue';
-import { dbIsVendorWapptCataloguePublished } from '../repos/wappt-catalogue.repo';
+import { isWarmpawzPayActive } from '../../../../commerce-switch/helpers/is-warmpawz-pay-pricing-locked';
 import type { CatalogueDiscoveryOptions } from './shared/catalogue-discovery-options';
 
 const TRUTHY = new Set(['true', '1', 'yes', 'on']);
@@ -30,9 +30,6 @@ export function resolveWarmpawzByStyleDiscoveryOptions(): CatalogueDiscoveryOpti
   return resolveWarmpawzCatalogueDiscoveryOptions();
 }
 
-export async function shouldOmitVendorServicePricing(vendorId: string): Promise<boolean> {
-  if (!isWarmpawzAppointmentsDiscoveryEnabled()) {
-    return false;
-  }
-  return dbIsVendorWapptCataloguePublished(vendorId);
+export async function shouldOmitVendorServicePricing(_vendorId: string): Promise<boolean> {
+  return isWarmpawzPayActive();
 }

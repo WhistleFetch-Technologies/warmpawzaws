@@ -13,6 +13,8 @@ import { minPriceForVendor } from "@/lib/boarding-vendor-booking-utils";
 import type { BoardingListVendor, BoardingPlanRow } from "@/lib/boarding-vendor-discovery-map";
 import { EMPTY_SERVICE_HEADER_STATS } from "@/lib/service-header-stats";
 import { pickCustomerVendorAccountId } from "@warmpawz/shared-types";
+import { isWapptHubCategoryEnabled } from "@/lib/warmpawz-appointments-customer";
+import { WarmpawzAppointmentsVendorList } from "../warmpawz-appointments/WarmpawzAppointmentsVendorList";
 
 const HUB_SLUG = "all" as const;
 
@@ -131,6 +133,26 @@ export function PetSittingVendorListView({
     if (onBack) onBack();
     else router.push("/");
   };
+
+  const wapptEnabled = isWapptHubCategoryEnabled("sitting");
+  if (wapptEnabled && onNavigate) {
+    const listSubtitle =
+      sittingOptionId && OPTION_TITLES[sittingOptionId]
+        ? `${OPTION_TITLES[sittingOptionId]} — choose a sitter`
+        : "All sitters — choose a sitter";
+    return (
+      <WarmpawzAppointmentsVendorList
+        category="sitting"
+        initialServiceStyle="at_home"
+        lockStyleFilter
+        listSubtitleOverride={listSubtitle}
+        profileBackScreen="pet-sitter-vendors"
+        onBack={handleBack}
+        onGoHome={() => router.push("/")}
+        onNavigate={onNavigate}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

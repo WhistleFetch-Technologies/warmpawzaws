@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { IndianRupee, Save, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { CapabilityGate } from '../CapabilityGate';
+import { canVendorEditServicePrice } from '@/lib/wappt-service-pricing-lock';
+import { isWarmpawzPay } from '@/lib/commerce-switch-client';
 
 interface Service {
   id: string;
@@ -69,7 +71,17 @@ export function ServicePricing({ vendorId, serviceId, onBack }: ServicePricingPr
     });
   };
 
+  const editableServices = useMemo(
+    () => services.filter((service) => canVendorEditServicePrice(service.service_style)),
+    [services],
+  );
+
   const savePrice = async (serviceId: string) => {
+    const service = services.find((s) => s.id === serviceId);
+    if (service && !canVendorEditServicePrice(service.service_style)) {
+      toast.error('Pricing is managed by Warmpawz Appointments for this service style');
+      return;
+    }
     const priceData = prices[serviceId];
     if (!priceData) return;
 
@@ -97,7 +109,12 @@ export function ServicePricing({ vendorId, serviceId, onBack }: ServicePricingPr
   const saveAllPrices = async () => {
     try {
       setSaving('all');
-      const updates = Object.entries(prices).map(([id, data]) => ({
+      const updates = Object.entries(prices)
+        .filter(([id]) => {
+          const service = services.find((s) => s.id === id);
+          return service && canVendorEditServicePrice(service.service_style);
+        })
+        .map(([id, data]) => ({
         serviceId: id,
         price: data.price,
         duration: data.duration,
@@ -159,15 +176,24 @@ export function ServicePricing({ vendorId, serviceId, onBack }: ServicePricingPr
         </div>
 
         {/* Services List */}
-        {services.length === 0 ? (
+        {isWarmpawzPay() && editableServices.length < services.length && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            At-home and at-center service pricing is set by Warmpawz Appointments. You can enable or disable those services from service management.
+          </div>
+        )}
+        {editableServices.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
             <IndianRupee className="w-12 h-12 mx-auto text-gray-400 mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No services found</h3>
-            <p className="text-gray-500">Add services to manage their pricing</p>
+            <p className="text-gray-500">
+              {isWarmpawzPay()
+                ? 'Tele and other marketplace-priced services appear here when added'
+                : 'Add services to manage their pricing'}
+            </p>
           </div>
         ) : (
           <div className="space-y-4">
-            {services.map((service) => (
+            {editableServices.map((service) => (
               <div
                 key={service.id}
                 className="bg-white rounded-lg p-6 border border-gray-200"
