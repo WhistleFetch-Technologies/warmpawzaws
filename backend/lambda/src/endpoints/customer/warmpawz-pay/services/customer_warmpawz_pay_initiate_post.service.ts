@@ -40,7 +40,7 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     }
 
     const discountPercent = resolveWpayDiscountPercent(vendorRow);
-    const quote = computeWpayDiscountQuote(originalAmount, discountPercent, null);
+    const quote = computeWpayDiscountQuote(originalAmount, discountPercent, {});
 
     const order = await createWpayRazorpayOrder({
       customerId,

@@ -10,7 +10,7 @@ todos:
     status: done
   - id: s02-abhi-discount
     content: "S02 ABHI builds — extend wpay-discount (appointmentFeeCredit) + test → push"
-    status: pending
+    status: done
   - id: s03-bindu-accrual
     content: "S03 BINDU builds — accrue-wpay-settlement + verify wire + apply 1093 dev RDS + lambda deploy → push"
     status: pending
@@ -316,7 +316,7 @@ flowchart LR
 | ---- | ------- | ----- | ----------- | ------ | ------ | ---- | ---------------- |
 | **S00** | Both | — | Align on branch; read this plan; confirm latest `git pull` | `pending` | | | |
 | **S01** | **Bindu** | Abhi | `1093_warmpawz_pay_platform_withhold.sql` + admin pricing API/UI for `platformWithholdPercent` | `done` | `acc8e2ab5` | 2026-08-04 | Abhi: pull + confirm admin can save withhold % |
-| **S02** | **Abhi** | Bindu | Extend `computeWpayDiscountQuote(quoted, %, { appointmentFeeCredit })` + unit test in `wpay-discount` | `pending` | | | Bindu: pull + use helper in S03 |
+| **S02** | **Abhi** | Bindu | Extend `computeWpayDiscountQuote(quoted, %, { appointmentFeeCredit })` + unit test in `wpay-discount` | `done` | | 2026-08-04 | `billBase` + credit fields added; 5 tests pass — Bindu: pull for S03 |
 | **S03** | **Bindu** | Abhi | `accrue-wpay-settlement.ts`; wire `customer_warmpawz_pay_verify_post`; **apply 1093 on dev RDS**; deploy lambda dev | `pending` | | | Abhi: walk-in Pay Bill smoke — payment completes |
 | **S04** | **Bindu** | Abhi | Extend `GET /vendor/:vendorId/earnings` — UNION `settlements` where `order_type='warmpawz_pay'` (customer name, date, net) | `pending` | | | Abhi: confirm API shape for UI |
 | **S05** | **Bindu** | Abhi | `1094_warmpawz_pay_appointment_credits.sql` + **apply on dev RDS** | `pending` | | | Abhi: table exists before S07 |
