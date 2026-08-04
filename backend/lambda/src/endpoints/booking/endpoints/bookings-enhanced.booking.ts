@@ -88,6 +88,7 @@ import {
   WAPPT_BOOKING_MODE,
   WAPPT_DISPLAY_SERVICE_NAME,
 } from '../../warmpawz-appointments/shared/wappt-booking-preflight';
+import { normalizeWapptHubCategory } from '../../warmpawz-appointments/shared/wappt-policy.constants';
 import {
   boardingBilled24hUnits,
   computeBoardingStayPriceRupeesPublic,
@@ -1749,6 +1750,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             : {}),
           commerce_mode: bookingCommerceMode,
           commerce_version: bookingCommerceVersion,
+          ...(isWapptBooking && serviceCategory
+            ? {
+                service_category:
+                  normalizeWapptHubCategory(String(serviceCategory)) ?? String(serviceCategory),
+              }
+            : {}),
         };
         
         // Add optional columns to bookingData

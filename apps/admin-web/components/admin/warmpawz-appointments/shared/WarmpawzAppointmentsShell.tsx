@@ -15,6 +15,7 @@ export interface WarmpawzAppointmentsShellProps {
 const NAV_ITEMS = [
   { href: '/warmpawz-appointments', label: 'Dashboard' },
   { href: '/warmpawz-appointments/catalogue', label: 'Catalogue' },
+  { href: '/warmpawz-appointments/policies', label: 'Policies' },
 ] as const;
 
 export function WarmpawzAppointmentsShell({
