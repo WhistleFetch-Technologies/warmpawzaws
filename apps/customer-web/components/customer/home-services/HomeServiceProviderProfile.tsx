@@ -813,12 +813,14 @@ export function HomeServiceProviderProfile({
                           {service.name}
                         </h4>
                         {service.description ? (
-                          <ServiceDescriptionInline
-                            description={service.description}
-                            title={service.name}
-                            expandInDialog={false}
-                            className="m-0 mt-1 text-sm leading-5 text-gray-500"
-                          />
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <ServiceDescriptionInline
+                              description={service.description}
+                              title={service.name}
+                              className="m-0 mt-1 text-sm leading-5 text-gray-500"
+                              dialogHint="Full description (vendor-provided)"
+                            />
+                          </div>
                         ) : null}
                       </div>
                       <div className="shrink-0 text-right">

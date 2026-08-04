@@ -224,7 +224,7 @@ export function SearchVendorExpandableCard({
                             <ServiceDescriptionInline
                               description={descTrim}
                               title={service.name}
-                              className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
+                              className="m-0 text-sm leading-5 text-gray-500"
                               dialogHint="Full description from the provider (vendor-provided)"
                             />
                           </div>

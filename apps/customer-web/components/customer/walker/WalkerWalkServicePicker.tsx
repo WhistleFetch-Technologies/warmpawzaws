@@ -10,6 +10,7 @@ import {
   mapWalkerApiRowToOption,
   type WalkerServiceOption,
 } from '@/lib/walker-vendor-offerings';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 
 export type WalkerWalkPickerSelection = {
   option: WalkerServiceOption;
@@ -201,7 +202,16 @@ export function WalkerWalkServicePicker({
                             {service.isPackage ? 'Package' : 'Service'}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-500 line-clamp-2">{service.desc || ' '}</p>
+                        {(service.desc ?? '').trim() ? (
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <ServiceDescriptionInline
+                              description={service.desc!}
+                              title={service.name}
+                              className="m-0 text-sm leading-5 text-gray-500"
+                              dialogHint="Full description from the walker (vendor-provided)"
+                            />
+                          </div>
+                        ) : null}
                         {service.subPriceHint ? (
                           <p className="text-xs text-gray-500 mt-0.5">{service.subPriceHint}</p>
                         ) : null}
