@@ -1,0 +1,80 @@
+import {
+  mapWpayAppointmentContextBooking,
+  resolveWapptAppointmentFeeCredit,
+  resolveWapptAppointmentFeeFromBooking,
+} from '../wpay-appointment-credit';
+import type { WpayWapptBookingContextRow } from '../../repos/wpay-appointment-context.repo';
+
+jest.mock('../../../../../lib/services/refundable-base', () => ({
+  hasCustomerPaidCapture: jest.fn().mockResolvedValue(true),
+}));
+
+const { hasCustomerPaidCapture } = jest.requireMock('../../../../../lib/services/refundable-base');
+
+const baseRow: WpayWapptBookingContextRow = {
+  id: 'booking-1',
+  vendor_id: 'vendor-1',
+  customer_id: 'cust-1',
+  status: 'completed',
+  booking_date: '2026-08-04',
+  booking_time: '10:00',
+  booking_datetime: '2026-08-04T10:00:00.000Z',
+  service_type: 'at_center',
+  service_category: 'vet',
+  commerce_mode: 'warmpawz_appointments',
+  total_amount: 200,
+  payment_status: 'paid',
+  otp_code: '123456',
+  completion_otp: null,
+  otp_verified: true,
+  business_name: 'Happy Paws',
+  owner_name: 'Dr Vet',
+};
+
+describe('wpay-appointment-credit', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    hasCustomerPaidCapture.mockResolvedValue(true);
+  });
+
+  it('maps booking context for OTP display', () => {
+    const mapped = mapWpayAppointmentContextBooking({
+      ...baseRow,
+      status: 'confirmed',
+    });
+    expect(mapped.bookingId).toBe('booking-1');
+    expect(mapped.serviceName).toBe('Appointment');
+    expect(mapped.otpCode).toBe('123456');
+    expect(mapped.creditEligible).toBe(false);
+  });
+
+  it('resolves appointment fee from booking total', () => {
+    expect(resolveWapptAppointmentFeeFromBooking(baseRow)).toBe(200);
+  });
+
+  it('allows credit for completed paid booking', async () => {
+    const result = await resolveWapptAppointmentFeeCredit({
+      booking: baseRow,
+      creditAlreadyConsumed: false,
+    });
+    expect(result).toEqual({ credit: 200 });
+  });
+
+  it('rejects credit when booking not completed', async () => {
+    const result = await resolveWapptAppointmentFeeCredit({
+      booking: { ...baseRow, status: 'confirmed' },
+      creditAlreadyConsumed: false,
+    });
+    expect(result.credit).toBe(0);
+    expect(result.status).toBe(409);
+  });
+
+  it('rejects credit when already consumed', async () => {
+    const result = await resolveWapptAppointmentFeeCredit({
+      booking: baseRow,
+      creditAlreadyConsumed: true,
+    });
+    expect(result.credit).toBe(0);
+    expect(result.status).toBe(409);
+  });
+});

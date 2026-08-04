@@ -2,6 +2,11 @@ import type { Context } from 'hono';
 import { resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinates';
 import { createWpayRazorpayOrder } from '../../../../utils/wpay-razorpay-order';
 import { dbWpayVendorById } from '../repos/wpay-vendor-detail.repo';
+import {
+  dbIsAppointmentCreditConsumed,
+  dbLoadWapptBookingForPayCredit,
+} from '../repos/wpay-appointment-context.repo';
+import { resolveWapptAppointmentFeeCredit } from '../shared/wpay-appointment-credit';
 import { computeWpayDiscountQuote, resolveWpayDiscountPercent } from '../shared/wpay-discount';
 
 const UUID_RE =
@@ -13,11 +18,13 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       vendorId?: string;
       originalAmount?: number;
       phone?: string;
+      bookingId?: string;
     };
 
     const vendorId = String(body.vendorId ?? '').trim();
     const phone = String(body.phone ?? c.req.query('phone') ?? '').trim();
     const originalAmount = Number(body.originalAmount);
+    const bookingId = String(body.bookingId ?? '').trim();
 
     if (!UUID_RE.test(vendorId)) {
       return c.json({ success: false, error: 'Invalid vendor id' }, 400);
@@ -27,6 +34,9 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
     }
     if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
       return c.json({ success: false, error: 'Invalid bill amount' }, 400);
+    }
+    if (bookingId && !UUID_RE.test(bookingId)) {
+      return c.json({ success: false, error: 'Invalid booking id' }, 400);
     }
 
     const customerId = await resolveCustomerIdFromPhone(phone);
@@ -39,8 +49,29 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       return c.json({ success: false, error: 'Vendor not found or not available' }, 404);
     }
 
+    let appointmentFeeCredit = 0;
+    let appointmentFeeBookingId: string | null = null;
+
+    if (bookingId) {
+      const booking = await dbLoadWapptBookingForPayCredit(bookingId, customerId, vendorId);
+      if (!booking) {
+        return c.json({ success: false, error: 'Booking not found for this vendor' }, 404);
+      }
+
+      const consumed = await dbIsAppointmentCreditConsumed(bookingId);
+      const creditResult = await resolveWapptAppointmentFeeCredit({ booking, creditAlreadyConsumed: consumed });
+      if (creditResult.error) {
+        return c.json({ success: false, error: creditResult.error }, creditResult.status ?? 409);
+      }
+
+      appointmentFeeCredit = creditResult.credit;
+      appointmentFeeBookingId = bookingId;
+    }
+
     const discountPercent = resolveWpayDiscountPercent(vendorRow);
-    const quote = computeWpayDiscountQuote(originalAmount, discountPercent, {});
+    const quote = computeWpayDiscountQuote(originalAmount, discountPercent, {
+      appointmentFeeCredit,
+    });
 
     const order = await createWpayRazorpayOrder({
       customerId,
@@ -50,6 +81,9 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
         originalAmount: quote.originalAmount,
         discountAmount: quote.discountAmount,
         discountPercent: quote.discountPercent,
+        billBase: quote.billBase,
+        appointmentFeeCredit: quote.appointmentFeeCredit,
+        appointmentFeeBookingId,
       },
     });
 
@@ -61,8 +95,11 @@ export async function executeCustomerWarmpawzPayInitiatePost(c: Context) {
       amount: order.amount,
       currency: order.currency,
       originalAmount: quote.originalAmount,
+      appointmentFeeCredit: quote.appointmentFeeCredit,
+      billBase: quote.billBase,
       discountAmount: quote.discountAmount,
       payableAmount: quote.payableAmount,
+      bookingId: appointmentFeeBookingId,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to initiate payment';

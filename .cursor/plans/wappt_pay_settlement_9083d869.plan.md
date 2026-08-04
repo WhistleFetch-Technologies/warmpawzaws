@@ -13,19 +13,19 @@ todos:
     status: done
   - id: s03-bindu-accrual
     content: "S03 BINDU builds — accrue-wpay-settlement + verify wire + apply 1093 dev RDS + lambda deploy → push"
-    status: pending
+    status: done
   - id: s04-bindu-vendor-earnings-api
     content: "S04 BINDU builds — vendor earnings API UNION warmpawz_pay → push"
-    status: pending
+    status: done
   - id: s05-bindu-migration-credits
     content: "S05 BINDU builds — migration 1094 appointment_credits + apply dev RDS → push"
-    status: pending
+    status: done
   - id: s06-abhi-appointment-context
     content: "S06 ABHI builds — GET appointment-context API + resolver → push"
-    status: pending
+    status: done
   - id: s07-abhi-initiate-verify
     content: "S07 ABHI builds — initiate/verify credit gate + idempotency → push"
-    status: pending
+    status: done
   - id: s08-bindu-vendor-ui
     content: "S08 BINDU builds — vendor warmpawz-pay payments API + earnings UI → push"
     status: pending
@@ -320,8 +320,8 @@ flowchart LR
 | **S03** | **Bindu** | Abhi | `accrue-wpay-settlement.ts`; wire `customer_warmpawz_pay_verify_post`; **apply 1093 on dev RDS**; deploy lambda dev | `done` | | 2026-08-04 | accrue + verify wire + 4 unit tests; 1093 on dev — deploy lambda pending |
 | **S04** | **Bindu** | Abhi | Extend `GET /vendor/:vendorId/earnings` — UNION `settlements` where `order_type='warmpawz_pay'` (customer name, date, net) | `done` | | 2026-08-04 | `flowType: pay_bill`, quoted/paid/net on transactions |
 | **S05** | **Bindu** | Abhi | `1094_warmpawz_pay_appointment_credits.sql` + **apply on dev RDS** | `done` | | 2026-08-04 | 1094 applied dev via Data API — Abhi: ready for S07 |
-| **S06** | **Abhi** | Bindu | `GET /customer/warmpawz-pay/appointment-context?vendorId=` — open WAPPT booking + OTP fields | `pending` | | | Bindu: optional API smoke |
-| **S07** | **Abhi** | Bindu | Initiate/verify: optional `bookingId`, credit only if booking `completed`, idempotent insert into `warmpawz_pay_appointment_credits` | `pending` | | | Bindu: deploy lambda if handler changed |
+| **S06** | **Abhi** | Bindu | `GET /customer/warmpawz-pay/appointment-context?vendorId=` — open WAPPT booking + OTP fields | `done` | | 2026-08-04 | openAppointment + creditEligibleBooking — Bindu: S08 |
+| **S07** | **Abhi** | Bindu | Initiate/verify: optional `bookingId`, credit only if booking `completed`, idempotent insert into `warmpawz_pay_appointment_credits` | `done` | | 2026-08-04 | credit consumed post-payment; metadata on initiate — deploy lambda |
 | **S08** | **Bindu** | Abhi | `GET /vendor/warmpawz-pay/payments` + vendor-web earnings dashboard Pay Bill rows; deploy vendor-web dev | `pending` | | | Abhi: vendor UI shows walk-in Pay from S03 |
 | **S09** | **Abhi** | Bindu | Customer Pay UI: appointment card, OTP display, poll until completed, quote line items; deploy customer-web dev | `pending` | | | Bindu: full WAPPT→Pay counter flow |
 | **S10** | **Abhi** | Bindu | Audit WAPPT cancel: ≥1h wallet refund, <1h no refund; fix tiers/UI warning only if drift | `pending` | | | Bindu: cancel smoke on dev |
