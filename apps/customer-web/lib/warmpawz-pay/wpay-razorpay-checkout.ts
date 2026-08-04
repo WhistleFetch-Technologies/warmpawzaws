@@ -13,8 +13,11 @@ export type WpayInitiateResponse = {
   amount?: number;
   currency?: string;
   originalAmount?: number;
+  appointmentFeeCredit?: number;
+  billBase?: number;
   discountAmount?: number;
   payableAmount?: number;
+  bookingId?: string | null;
   error?: string;
 };
 
@@ -33,13 +36,15 @@ export async function runWpayRazorpayCheckout(params: {
   vendorName: string;
   originalAmount: number;
   customerPhone: string;
+  bookingId?: string | null;
 }): Promise<WpayVerifyResponse> {
-  const { vendorId, vendorName, originalAmount, customerPhone } = params;
+  const { vendorId, vendorName, originalAmount, customerPhone, bookingId } = params;
 
   const initiate = (await apiClient.post('/customer/warmpawz-pay/initiate', {
     vendorId,
     originalAmount,
     phone: customerPhone,
+    ...(bookingId ? { bookingId } : {}),
   })) as WpayInitiateResponse;
 
   if (!initiate?.success || !initiate.razorpayOrderId || !initiate.razorpayKeyId || !initiate.paymentId) {
