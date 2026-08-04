@@ -3,7 +3,7 @@
 import {
   ServiceHubVendorCard,
   resolveServiceHubVendorProfileKey,
-} from './shared/ServiceHubVendorCard';
+} from '../shared/ServiceHubVendorCard';
 import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 import type { MouseEvent } from 'react';
 
