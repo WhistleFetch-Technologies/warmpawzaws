@@ -34,7 +34,7 @@ todos:
     status: done
   - id: s10-abhi-cancel-audit
     content: "S10 ABHI builds — WAPPT 1h cancel policy audit/fix if drift → push"
-    status: pending
+    status: done
   - id: s11-joint-e2e
     content: "S11 Both — joint E2E sign-off using verification checklist below"
     status: pending
@@ -324,7 +324,7 @@ flowchart LR
 | **S07** | **Abhi** | Bindu | Initiate/verify: optional `bookingId`, credit only if booking `completed`, idempotent insert into `warmpawz_pay_appointment_credits` | `done` | | 2026-08-04 | credit consumed post-payment; metadata on initiate — deploy lambda |
 | **S08** | **Bindu** | Abhi | `GET /vendor/warmpawz-pay/payments` + vendor-web earnings dashboard Pay Bill rows; deploy vendor-web dev | `done` | | 2026-08-04 | Pay Bill tab + earnings API rows — deploy lambda + vendor-web pending |
 | **S09** | **Abhi** | Bindu | Customer Pay UI: appointment card, OTP display, poll until completed, quote line items; deploy customer-web dev | `done` | local | 2026-08-04 | **Not pushed** — OTP card, poll, quote lines, bookingId on checkout |
-| **S10** | **Abhi** | Bindu | Audit WAPPT cancel: ≥1h wallet refund, <1h no refund; fix tiers/UI warning only if drift | `pending` | | | Bindu: cancel smoke on dev |
+| **S10** | **Abhi** | Bindu | Audit WAPPT cancel: ≥1h wallet refund, <1h no refund; fix tiers/UI warning only if drift | `done` | `1091`/`1092` + Bindu WAPPT cancel | 2026-08-04 | No drift — policy tiers + CancelBookingModal + wallet refund path already shipped |
 | **S11** | **Both** | — | Joint E2E — all checks in **Verification checklist** below must pass | `pending` | | | Either marks blockers in notes column |
 | **S12** | **Bindu** | Abhi | Optional: backfill job for completed `warmpawz_pay` payments missing settlements | `pending` | | | Skip if S11 clean |
 
