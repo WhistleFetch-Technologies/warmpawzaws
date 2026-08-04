@@ -12,6 +12,12 @@ export function isTrainingHub(category: string | null | undefined): boolean {
   return c === 'training' || c === 'trainer' || c === 'trainers';
 }
 
+/** Hub chip slug for vet browse in /search. */
+export function isVetHub(category: string | null | undefined): boolean {
+  const c = (category || '').trim().toLowerCase();
+  return c === 'vet' || c === 'veterinary' || c === 'veterinarian';
+}
+
 /** Hub chip slug for grooming browse in /search. */
 export function isGroomingHub(category: string | null | undefined): boolean {
   const c = (category || '').trim().toLowerCase();
@@ -265,6 +271,21 @@ export function isSittingVendorResult(result: {
     n.includes('sitting') ||
     n.includes('in-home care') ||
     n.includes('pet sit')
+  );
+}
+
+export function isVetVendorResult(result: {
+  category?: string;
+  name?: string;
+}): boolean {
+  if (isVetLikeCategory(result.category)) return true;
+  const n = (result.name || '').toLowerCase();
+  return (
+    n.includes('vet') ||
+    n.includes('veterinar') ||
+    n.includes('clinic') ||
+    n.includes('animal hosp') ||
+    n.includes('pet hosp')
   );
 }
 

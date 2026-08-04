@@ -36,7 +36,7 @@ export function SearchHubVendorCard({
         category={category}
         serviceKey={serviceKey}
         categoryLabelFallback={categoryLabelFallback}
-        onSelectSlot={openProfile}
+        onSelectSlot={(v, e) => openProfile(e, v)}
         onOpenProfile={openProfile}
       />
     </div>

@@ -42,6 +42,7 @@ export const SEARCH_WALKER_BOOKING_INTENT_KEY = 'warmpawz_search_walker_booking_
 export const SEARCH_WALKER_CENTER_RETURN_KEY = 'warmpawz_search_walker_center_return';
 export const SEARCH_SITTING_BOOKING_INTENT_KEY = 'warmpawz_search_sitting_booking_intent';
 export const SEARCH_SITTING_CENTER_RETURN_KEY = 'warmpawz_search_sitting_center_return';
+export const SEARCH_VET_CENTER_RETURN_KEY = 'warmpawz_search_vet_center_return';
 
 export interface SearchVetBookingIntent {
   vendorId: string;
@@ -367,6 +368,28 @@ export function launchSearchGroomingCenterProfile({
     /* ignore */
   }
   router.push(`/grooming/center?vendorId=${encodeURIComponent(vendorId)}`);
+}
+
+export function launchSearchVetCenterProfile({
+  vendorId,
+  vendorName,
+  router,
+  returnSearchUrl,
+}: {
+  vendorId: string;
+  vendorName?: string;
+  router: AppRouterInstance;
+  returnSearchUrl?: string;
+}): void {
+  try {
+    sessionStorage.setItem(
+      SEARCH_VET_CENTER_RETURN_KEY,
+      JSON.stringify({ returnSearchUrl: returnSearchUrl || '/search?category=vet' })
+    );
+  } catch {
+    /* ignore */
+  }
+  router.push(buildSearchVendorDetailsUrl(vendorId, vendorName || 'Provider', 'vet'));
 }
 
 export function launchSearchBoardingBooking({

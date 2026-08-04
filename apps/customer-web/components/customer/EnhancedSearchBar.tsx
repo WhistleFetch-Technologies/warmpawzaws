@@ -26,6 +26,11 @@ import {
   loadCustomerServiceLaunchCatalog,
 } from '@/lib/customer-service-style-launch';
 import { filterSearchRowsByLaunch } from '@/lib/search-filter-by-launch';
+import {
+  fetchWapptSearchVendorResults,
+  resolveWapptHubsForSearch,
+  type SearchWapptVendorRow,
+} from '@/lib/search-wappt-vendors';
 
 interface SearchResult {
   id: string;
@@ -35,6 +40,26 @@ interface SearchResult {
   relevanceScore: number;
   distance?: number;
   matchedFields: string[];
+}
+
+function wapptRowToEnhancedSearchResult(row: SearchWapptVendorRow): SearchResult {
+  return {
+    id: row.id,
+    type: 'vendor',
+    category: row.category,
+    data: {
+      name: row.name,
+      businessName: row.name,
+      serviceType: row.category,
+      rating: row.rating,
+      photoUrl: row.imageUrl,
+      imageUrl: row.imageUrl,
+      city: row.city,
+    },
+    relevanceScore: row.rating * 20 || 50,
+    distance: row.distanceKm ?? undefined,
+    matchedFields: [],
+  };
 }
 
 interface SearchSuggestion {
@@ -338,7 +363,12 @@ export function EnhancedSearchBar({
       }
 
       // Parallel: universal search + symptom search (so e.g. "vomiting" shows vet options and drives to booking)
-      const [searchData, symptomData] = await Promise.all([
+      const wapptHubs = resolveWapptHubsForSearch({
+        category: inferredHub || '',
+        query: searchQuery,
+      });
+
+      const [searchData, symptomData, ...wapptBatches] = await Promise.all([
         apiClient.get<{ 
           data?: { vendors?: any[], services?: any[], results?: any[] }, 
           vendors?: any[], 
@@ -346,6 +376,9 @@ export function EnhancedSearchBar({
           results?: any[] 
         }>(`/search?${params.toString()}`),
         apiClient.get<{ success?: boolean; results?: any[] }>(`/public/search/symptoms?q=${encodeURIComponent(searchQuery)}`).catch(() => ({ success: false, results: [] })),
+        ...wapptHubs.map((hub) =>
+          fetchWapptSearchVendorResults(hub, { keyword: searchQuery, limit: 30 })
+        ),
       ]);
 
       if (reqId !== searchRequestSeqRef.current) {
@@ -438,6 +471,12 @@ export function EnhancedSearchBar({
         });
       });
       
+      const wapptFlat = (wapptBatches as SearchWapptVendorRow[][]).flat();
+      for (const row of wapptFlat) {
+        if (transformedResults.some((r) => r.type === 'vendor' && r.id === row.id)) continue;
+        transformedResults.push(wapptRowToEnhancedSearchResult(row));
+      }
+
       let finalResults = transformedResults;
       if (inferredHub && finalResults.length > 0) {
         finalResults = finalResults.filter((r) =>

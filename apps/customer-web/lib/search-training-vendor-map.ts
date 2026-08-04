@@ -18,9 +18,10 @@ export interface SearchVendorCardLike {
   distanceKm?: number | null;
   photo?: string;
   roleDisplayName?: string;
+  nextAvailableSlot?: string;
 }
 
-/** Map GET /search vendor row to BoardingListVendor for BoardingVendorExpandableCard. */
+/** Map GET /search vendor row to BoardingListVendor for SearchHubVendorCard. */
 export function searchCardToBoardingListVendor(
   card: SearchVendorCardLike,
   activeHubChip: string,
@@ -44,7 +45,9 @@ export function searchCardToBoardingListVendor(
           ? 'Grooming'
           : effectiveCategory === 'boarding'
             ? 'Boarding'
-            : effectiveCategory === 'walker' || isWalkerCategory(effectiveCategory)
+            : effectiveCategory === 'vet' || effectiveCategory === 'veterinary'
+              ? card.roleDisplayName || 'Veterinary'
+              : effectiveCategory === 'walker' || isWalkerCategory(effectiveCategory)
               ? 'Walker'
               : effectiveCategory === 'sitting' || isSittingCategory(effectiveCategory)
                 ? 'Sitting'
@@ -56,7 +59,9 @@ export function searchCardToBoardingListVendor(
                       ? 'Pharmacy'
                       : card.roleDisplayName || effectiveCategory,
     category: effectiveCategory,
-    timing: '9 AM - 8 PM',
+    timing: card.nextAvailableSlot ? `Next: ${card.nextAvailableSlot}` : '9 AM - 8 PM',
+    nextAvailableSlot: card.nextAvailableSlot,
+    availabilityText: card.nextAvailableSlot,
   };
 
   const { list } = buildBoardingVendorListFromRows([row], 'all');

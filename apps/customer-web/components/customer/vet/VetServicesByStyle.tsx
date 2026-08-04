@@ -2,10 +2,9 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp } from 'lucide-react';
+import { Star, MapPin, Clock, Video, Home, Building2, Filter, Loader2, Shield, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
@@ -15,7 +14,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { filterServicesByQuery } from '@/lib/filter-services-by-query';
-import { filterServicesForVetHub, resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
+import { resolveServiceCategoryDisplayLabel } from '@/lib/filter-hub-services';
 import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
@@ -33,7 +32,6 @@ import { useByStyleDiscoveryFeed } from '@/hooks/useByStyleDiscoveryFeed';
 import { useDiscoveryProfileVendorResolve } from '@/hooks/useDiscoveryProfileVendorResolve';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import { DiscoveryVendorFeedSentinel } from '../shared/DiscoveryVendorFeedSentinel';
-import { DiscoveryProviderAvatar } from '../shared/DiscoveryProviderAvatar';
 import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
 import {
   buildVendorServicesPageUrl,
@@ -49,11 +47,9 @@ import {
   resolveWarmpawzBookingScreen,
   WAPPT_VENDOR_PROFILE_SCREEN,
 } from '@/lib/warmpawz-appointments-customer';
-import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
-import { mapDiscoveryProviderToVendorCardProps } from '@/lib/warmpawz-pay/map-discovery-provider-to-vendor-card-props';
+import { buildWapptDiscoveryVendorCardProps } from '@/lib/wappt-discovery-vendor-card';
 import { WarmpawzAppointmentsVendorProfile } from '../warmpawz-appointments/WarmpawzAppointmentsVendorProfile';
-import { logDiscoveryImageStage } from '@/lib/warmpawz-pay/debug-log-discovery-image';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -134,7 +130,6 @@ export function VetServicesByStyle({
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   
   // Profile view state (when vendorId is provided)
   const [vendor, setVendor] = useState<any>(null);
@@ -308,14 +303,6 @@ export function VetServicesByStyle({
     },
     [fetchProviderServices]
   );
-
-  useEffect(() => {
-    if (!selectedProvider) return;
-    const p = providers.find((x) => x.providerId === selectedProvider);
-    if (!p || p.servicesHydrated) return;
-    if (fetchingServicesFor === selectedProvider) return;
-    void fetchProviderServices(selectedProvider);
-  }, [selectedProvider, providers, fetchingServicesFor, fetchProviderServices]);
 
   useEffect(() => {
     if (!vendorId || providers.length !== 1) return;
@@ -1314,10 +1301,10 @@ export function VetServicesByStyle({
           </Card>
         ) : (
           <div className="space-y-4">
-            {providers.map((provider) => {
-              if (appointmentsMode) {
-                const providerAddress = getProviderAddress(provider);
-                const cardProps = mapDiscoveryProviderToVendorCardProps({
+            {providers.map((provider) => (
+              <WarmpawzPayVendorCard
+                key={provider.providerId}
+                {...buildWapptDiscoveryVendorCardProps({
                   provider: {
                     name: provider.name,
                     photo: provider.photo,
@@ -1330,318 +1317,19 @@ export function VetServicesByStyle({
                     experienceYears: provider.experienceYears,
                     providerType: provider.providerType,
                     city: provider.city,
+                    vendorId: provider.vendorId,
+                    providerId: provider.providerId,
                   },
                   subtitle: getProviderTypeLabel(provider),
-                  address: providerAddress,
-                  footerHint: provider.nextAvailableSlot
-                    ? `Next: ${provider.nextAvailableSlot}`
-                    : 'Tap to view profile & book',
-                  profileAriaLabel: `View profile: ${provider.name}`,
-                  verifiedAriaLabel: 'Verified provider',
-                  primaryActionClassName:
-                    'text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10',
-                  primaryLabel: 'Select Slot for Appointment',
+                  address: getProviderAddress(provider) || 'Location on booking',
+                  category: 'vet',
+                  serviceKey: 'vet',
                   onPrimary: (e) => openVetProviderProfile(e, provider),
                   onProfileClick: (e) => openVetProviderProfile(e, provider),
-                  secondaryLabel: 'Pay with Warmpawz',
-                  onSecondary: (e) => {
-                    e.stopPropagation();
-                    const vendorId = String(
-                      provider.vendorId || provider.providerId || '',
-                    ).trim();
-                    if (!vendorId) return;
-                    // nav-exception: WPay module uses URL routes (same entry as Pay Hub)
-                    launchWarmpawzPayServiceBooking({
-                      router,
-                      serviceKey: 'vet',
-                      category: 'vet',
-                      vendorId,
-                    });
-                  },
-                });
-                if (/bindu vet clinic/i.test(provider.name || '')) {
-                  logDiscoveryImageStage('WarmpawzPayVendorCard.props', {
-                    vendorName: provider.name,
-                    providerPhoto: provider.photo ?? null,
-                    imageUrl: cardProps.imageUrl ?? null,
-                    imageLostAt:
-                      cardProps.imageUrl == null
-                        ? 'imageUrl is null/undefined when spreading into WarmpawzPayVendorCard (VetServicesByStyle.tsx)'
-                        : null,
-                  });
-                }
-                return (
-                  <WarmpawzPayVendorCard
-                    key={provider.providerId}
-                    {...cardProps}
-                  />
-                );
-              }
-
-              const expanded = selectedProvider === provider.providerId;
-              const headerInteractive = expanded;
-              const providerAddress = getProviderAddress(provider);
-              return (
-              <Card key={provider.providerId} className="bg-white overflow-hidden">
-                {/* Provider Header — tap collapses when expanded; chevron → profile; View Services → expand */}
-                <div
-                  role={headerInteractive ? 'button' : undefined}
-                  tabIndex={headerInteractive ? 0 : undefined}
-                  className={`p-4 border-b text-left w-full ${headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''}`}
-                  onClick={
-                    headerInteractive
-                      ? () =>
-                          setSelectedProvider(
-                            selectedProvider === provider.providerId ? null : provider.providerId
-                          )
-                      : undefined
-                  }
-                  onKeyDown={
-                    headerInteractive
-                      ? (e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setSelectedProvider(
-                              selectedProvider === provider.providerId ? null : provider.providerId
-                            );
-                          }
-                        }
-                      : undefined
-                  }
-                >
-                  <div className="flex min-w-0 w-full items-start justify-between gap-2">
-                    <div className="flex min-w-0 flex-1 items-start gap-3">
-                      {/* Provider Photo or Initial */}
-                      <DiscoveryProviderAvatar
-                        name={provider.name}
-                        photo={provider.photo}
-                        className="h-12 w-12 shrink-0 rounded-full border-2 border-[#FF8C42] object-cover"
-                        fallbackClassName="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#FF8C42] text-lg font-bold text-white"
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-gray-900">{provider.name}</h3>
-                          {provider.isVerified && (
-                            <Shield className="w-4 h-4 text-green-500" />
-                          )}
-                        </div>
-                        <p className="text-gray-500 text-sm">{getProviderTypeLabel(provider)}</p>
-                        <div className="flex items-center gap-3 mt-1">
-                          <div className="flex items-center gap-1">
-                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                            <span className="text-sm font-medium">{provider.rating}</span>
-                            <span className="text-gray-400 text-sm">({provider.reviewCount})</span>
-                          </div>
-                          {provider.city && (
-                            <div className="flex items-center gap-1 text-gray-500 text-sm">
-                              <MapPin className="w-3 h-3" />
-                              {provider.city}
-                            </div>
-                          )}
-                          {provider.distance != null && (
-                            <span className="text-xs text-blue-600 font-medium">
-                              {Number(provider.distance) < 1
-                                ? `${Math.round(Number(provider.distance) * 1000)} m away`
-                                : `${Math.round(Number(provider.distance))} km away`}
-                            </span>
-                          )}
-                        </div>
-                        {providerAddress && (
-                          <div className="mt-1 flex min-w-0 items-start gap-1 text-xs text-gray-500">
-                            <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-gray-400" />
-                            <span className="line-clamp-1">{providerAddress}</span>
-                          </div>
-                        )}
-                        {provider.nextAvailableSlot && (
-                          <div className="mt-1 flex items-center gap-1 text-xs text-green-700">
-                            <Clock className="h-3 w-3" />
-                            <span>Next: {provider.nextAvailableSlot}</span>
-                          </div>
-                        )}
-                        {/* Show experience for staff/individual */}
-                        {provider.experienceYears && provider.providerType !== 'vendor' && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            {provider.experienceYears} years experience
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={`View profile: ${provider.name}`}
-                      className="-m-1.5 p-1.5 rounded-full text-gray-400 hover:text-[#FF8C42] hover:bg-orange-50 flex-shrink-0 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
-                      onClick={(e) => openVetProviderProfile(e, provider)}
-                    >
-                      <ChevronRight
-                        className={`w-5 h-5 transition-transform ${expanded ? 'rotate-90' : ''}`}
-                        aria-hidden
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Services List - Expanded */}
-                {expanded && !appointmentsMode && (
-                  <div className="bg-gray-50 p-4 space-y-3">
-                    {/* Provider details for staff/individual */}
-                    {provider.qualifications && (
-                      <div className="bg-white rounded-lg p-3 mb-3 border border-blue-100">
-                        <div className="text-xs text-gray-500 mb-1">Qualifications</div>
-                        <div className="text-sm text-gray-700">{provider.qualifications}</div>
-                      </div>
-                    )}
-                    
-                    <h4 className="text-sm font-medium text-gray-600 mb-2">
-                      Available Services ({provider.services.length}{provider.servicesNextCursor ? '+' : ''})
-                    </h4>
-                    {fetchingServicesFor === provider.providerId && provider.services.length === 0 ? (
-                      <div className="flex justify-center py-6">
-                        <Loader2 className="h-8 w-8 animate-spin text-[#FF8C42]" />
-                      </div>
-                    ) : null}
-                    {provider.services.map((service) => (
-                      <div
-                        key={service.id}
-                        className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
-                      >
-                        {/* Row 1: name (left) | price (right). Row 2: meta | Book Now — matches ClinicListView */}
-                        <div className="space-y-3">
-                          <div className="flex min-w-0 items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h5 className="line-clamp-2 break-words font-medium leading-5 text-gray-900">
-                                  {service.name}
-                                </h5>
-                                {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
-                                  <span className="shrink-0 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
-                                    Package
-                                  </span>
-                                )}
-                              </div>
-                              {service.description?.trim() ? (
-                                <div className="mt-1" onClick={(e) => e.stopPropagation()}>
-                                  <ServiceDescriptionInline
-                                    description={service.description}
-                                    title={service.name}
-                                    className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
-                                  />
-                                </div>
-                              ) : null}
-                            </div>
-                            <div className="shrink-0 text-right">
-                              <ServicePricingDisplay
-                                basePrice={service.originalPrice || service.price}
-                                vendorDiscount={service.vendorDiscount}
-                                usePromoQuote
-                                vendorId={String(provider.vendorId || vendorId || '')}
-                                serviceId={String(service.id || service.serviceId || '')}
-                                customerId={phone}
-                                serviceStyle={serviceStyle}
-                                serviceCategory="vet"
-                              />
-                              <p className="mt-0.5 max-w-[9rem] text-[11px] leading-4 text-gray-500">
-                                {INDICATIVE_PRICING_NOTE}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex min-w-0 flex-wrap items-center gap-2">
-                              <Badge variant="outline" className="shrink-0 text-xs">
-                                <Clock className="mr-1 h-3 w-3" />
-                                {service.duration} mins
-                              </Badge>
-                              {resolveServiceCategoryDisplayLabel(service) && (
-                                <Badge variant="secondary" className="max-w-full shrink-0 text-xs">
-                                  {resolveServiceCategoryDisplayLabel(service)}
-                                </Badge>
-                              )}
-                            </div>
-                            <Button
-                              size="sm"
-                              className="h-8 shrink-0 rounded-full bg-[#FF8C42] px-5 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSelectService(provider, service);
-                              }}
-                            >
-                              Book Now
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <DiscoveryVendorFeedSentinel
-                      hasMore={!!provider.servicesNextCursor}
-                      loading={fetchingServicesFor === provider.providerId}
-                      loadingMore={!!provider.servicesLoadingMore}
-                      onLoadMore={() => loadMoreProviderServices(provider.providerId)}
-                    />
-                  </div>
-                )}
-
-                {!expanded && (
-                  <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
-                    <div className="text-sm text-gray-600">
-                      {appointmentsMode ? (
-                        <span>
-                          {provider.nextAvailableSlot
-                            ? `Next: ${provider.nextAvailableSlot}`
-                            : 'Tap to view profile & book'}
-                        </span>
-                      ) : provider.services.length > 0 ? (
-                        <>
-                          {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service
-                          {provider.services.length !== 1 ? 's' : ''} available
-                          <span className="text-gray-900 font-medium">
-                            {' '}
-                            from{' '}
-                            {formatPriceWithSymbol(
-                              Math.min(
-                                ...provider.services.map((s) => {
-                                  const basePrice = s.originalPrice || s.price;
-                                  const finalPrice = s.vendorDiscount
-                                    ? basePrice * (1 - s.vendorDiscount / 100)
-                                    : basePrice;
-                                  return finalPrice;
-                                })
-                              )
-                            )}
-                          </span>
-                          <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                        </>
-                      ) : provider.priceMin != null && provider.priceMin > 0 ? (
-                        <span>
-                          Services available{' '}
-                          <span className="text-gray-900 font-medium">
-                            from {formatPriceWithSymbol(provider.priceMin)}
-                          </span>
-                          <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                        </span>
-                      ) : (
-                        <span>Tap to view services</span>
-                      )}
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (appointmentsMode) {
-                          openVetProviderProfile(e, provider);
-                          return;
-                        }
-                        setSelectedProvider(provider.providerId);
-                        void fetchProviderServices(provider.providerId);
-                      }}
-                    >
-                      {appointmentsMode ? 'Select Slot for Appointment' : 'View Services'}
-                    </Button>
-                  </div>
-                )}
-              </Card>
-            );
-            })}
+                  router,
+                })}
+              />
+            ))}
             <DiscoveryVendorFeedSentinel
               hasMore={hasMore && !vendorId}
               loading={loading}

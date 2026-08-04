@@ -12,27 +12,23 @@
 "use client";
 
 import { useState, useEffect, useCallback, type MouseEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, 
   Search, 
-  MapPin, 
-  Clock, 
-  ChevronRight,
   X,
   SlidersHorizontal,
-  BadgeCheck,
   Star,
 } from 'lucide-react';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { mapDiscoveryRowBaseFields } from '@/lib/map-discovery-list-row';
 import { useDiscoverServicesFeed } from '@/hooks/useDiscoverServicesFeed';
 import { DiscoveryVendorFeedSentinel } from '@/components/customer/shared/DiscoveryVendorFeedSentinel';
+import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
+import { mapDiscoveryProviderToVendorCardProps } from '@/lib/warmpawz-pay/map-discovery-provider-to-vendor-card-props';
+import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
-import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 
 interface ServiceConfig {
   roleId: string;
@@ -73,34 +69,9 @@ interface Provider {
   previouslyUsed?: boolean;
 }
 
-function ProviderListAvatar({
-  photoUrl,
-  businessName,
-  icon,
-  bgGradient,
-}: {
-  photoUrl: string;
-  businessName: string;
-  icon: string;
-  bgGradient: string;
-}) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    setFailed(false);
-  }, [photoUrl]);
-  const show = Boolean(photoUrl && !failed);
-  return show ? (
-    <img
-      src={photoUrl}
-      alt={businessName}
-      className="h-full w-full object-cover"
-      onError={() => setFailed(true)}
-    />
-  ) : (
-    <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${bgGradient} text-3xl text-white`}>
-      {icon}
-    </div>
-  );
+function providerSubtitle(provider: Provider, fallback: string): string {
+  const spec = provider.specializations?.find((s) => s.trim());
+  return spec || fallback;
 }
 
 interface HomeServiceProviderListViewProps {
@@ -128,6 +99,7 @@ export function HomeServiceProviderListView({
   onViewProviderServices,
   onNavigate
 }: HomeServiceProviderListViewProps) {
+  const router = useRouter();
 
   // State
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -439,135 +411,73 @@ export function HomeServiceProviderListView({
           </div>
         ) : (
           // Provider cards
-          filteredProviders.map((provider, index) => (
-            <motion.div
-              key={provider.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
-            >
-              <div className="p-4">
-                <div className="flex gap-4">
-                  {/* Provider Photo */}
-                  <div className="relative">
-                    <div className="h-24 w-24 overflow-hidden rounded-xl bg-gray-100">
-                      <ProviderListAvatar
-                        photoUrl={provider.photo}
-                        businessName={provider.name}
-                        icon={config.icon}
-                        bgGradient={config.bgGradient}
-                      />
-                    </div>
-                    {provider.isVerified && (
-                      <div className="absolute -top-1 -right-1 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
-                        <BadgeCheck className="w-4 h-4 text-white" />
-                      </div>
-                    )}
-                    {provider.previouslyUsed && (
-                      <div
-                        className="absolute -bottom-1 -right-1 rounded-full px-1.5 py-0.5"
-                        style={{ backgroundColor: config.primaryColor }}
-                      >
-                        <span className="text-[10px] font-medium text-white">Used</span>
-                      </div>
-                    )}
-                  </div>
+          filteredProviders.map((provider, index) => {
+            const openProfile = (e: MouseEvent<HTMLButtonElement>) => {
+              e.stopPropagation();
+              onSelectProvider(provider);
+            };
+            const cardProps = mapDiscoveryProviderToVendorCardProps({
+              provider: {
+                name: provider.name,
+                photo: provider.photo,
+                isVerified: provider.isVerified,
+                rating: provider.rating,
+                reviewCount: provider.reviewCount,
+                distance: provider.distance < 999 ? provider.distance : undefined,
+                nextAvailableSlot: provider.nextAvailableSlot,
+                experienceYears: provider.experience > 0 ? provider.experience : undefined,
+                providerType: 'vendor',
+              },
+              subtitle: providerSubtitle(provider, config.displayName),
+              address: provider.address,
+              footerHint: provider.nextAvailableSlot
+                ? `Next: ${provider.nextAvailableSlot}`
+                : 'Tap to view profile & book',
+              profileAriaLabel: `View profile: ${provider.name}`,
+              verifiedAriaLabel: 'Verified provider',
+              primaryActionClassName: 'text-orange-700 border-orange-300 hover:bg-orange-50',
+              primaryLabel: onViewProviderServices ? 'View Services' : 'View Profile',
+              onPrimary: (e) => {
+                e.stopPropagation();
+                if (onViewProviderServices) {
+                  onViewProviderServices(provider);
+                  return;
+                }
+                onSelectProvider(provider);
+              },
+              onProfileClick: openProfile,
+              secondaryLabel: 'Pay with Warmpawz',
+              onSecondary: (e) => {
+                e.stopPropagation();
+                const vendorId = String(provider.vendorId || provider.id || '').trim();
+                if (!vendorId) return;
+                launchWarmpawzPayServiceBooking({
+                  router,
+                  serviceKey: category,
+                  category,
+                  vendorId,
+                });
+              },
+            });
 
-                  {/* Provider Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between mb-1 gap-2">
-                      <h3 className="font-semibold text-gray-800 truncate pr-2">
-                        {provider.name}
-                      </h3>
-                      <button
-                        type="button"
-                        aria-label={`View ${provider.name} profile`}
-                        className="flex-shrink-0 p-1 -m-1 rounded-lg text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-orange-300"
-                        onClick={(e: MouseEvent) => {
-                          e.stopPropagation();
-                          onSelectProvider(provider);
-                        }}
-                      >
-                        <ChevronRight className="w-5 h-5" aria-hidden />
-                      </button>
-                    </div>
-
-                    {/* Rating & Reviews */}
-                    <VendorRatingDisplay
-                      row={{
-                        vendorId: provider.vendorId ?? provider.id,
-                        vendorRating: provider.rating,
-                        vendorReviewCount: provider.reviewCount,
-                      }}
-                      vendorId={String(provider.vendorId ?? provider.id ?? '')}
-                      className="mb-2"
-                      textClassName="text-xs text-gray-500"
-                    />
-
-                    {/* Location & Distance */}
-                    <div className="flex items-center gap-1 text-sm text-gray-500 mb-2">
-                      <MapPin className="w-4 h-4" />
-                      <span className="truncate">{provider.address}</span>
-                      {provider.distance != null && provider.distance < 999 && (
-                        <span className="flex-shrink-0 text-orange-600 font-medium">
-                          • {Number(provider.distance) < 1
-                            ? `${Math.round(Number(provider.distance) * 1000)} m`
-                            : `${Math.round(Number(provider.distance))} km`}
-                        </span>
-                      )}
-                    </div>
-
-                  </div>
-                </div>
-
-                {/* Bottom Row: Price & Availability */}
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                  <div className="flex items-center gap-1 text-sm text-gray-500">
-                    <Clock className="w-4 h-4" />
-                    <span>Next: {provider.nextAvailableSlot}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-lg font-bold" style={{ color: config.primaryColor }}>
-                      ₹{provider.price}
-                    </span>
-                    <span className="text-xs text-gray-500 ml-1">{config.priceUnit}</span>
-                  </div>
-                </div>
-
-                {/* Amenities Row */}
-                {provider.amenities.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {provider.amenities.slice(0, 4).map((amenity, i) => (
-                      <span
-                        key={i}
-                        className="px-2 py-0.5 bg-blue-50 rounded-full text-xs text-blue-600"
-                      >
-                        {amenity}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {onViewProviderServices && provider.serviceCount > 0 && (
-                  <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="text-orange-700 border-orange-300 hover:bg-orange-50"
-                      onClick={(e: MouseEvent) => {
-                        e.stopPropagation();
-                        onViewProviderServices(provider);
-                      }}
-                    >
-                      View Services
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          ))
+            return (
+              <motion.div
+                key={provider.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+              >
+                <WarmpawzPayVendorCard
+                  {...cardProps}
+                  priceLabel={
+                    provider.price > 0
+                      ? `₹${provider.price}${config.priceUnit ? ` ${config.priceUnit}` : ''}`
+                      : undefined
+                  }
+                />
+              </motion.div>
+            );
+          })
         )}
         <DiscoveryVendorFeedSentinel
           hasMore={hasMore}

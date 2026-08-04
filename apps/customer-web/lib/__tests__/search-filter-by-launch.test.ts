@@ -50,12 +50,12 @@ describe('isSearchRowLaunchedForCustomer', () => {
     ).toBe(false);
   });
 
-  it('uses hub default style when serviceStyle omitted', () => {
+  it('keeps hub rows when any style is launched and serviceStyle omitted', () => {
     expect(
       isSearchRowLaunchedForCustomer(catalog, {
         category: 'grooming',
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('allows symptom rows when any allowed style is launched', () => {
