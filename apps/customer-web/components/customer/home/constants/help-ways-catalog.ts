@@ -11,14 +11,6 @@ export interface HelpWayCatalogEntry {
 
 export const HELP_WAYS_CATALOG: HelpWayCatalogEntry[] = [
   {
-    id: 'insurance',
-    title: 'Insurance',
-    description: 'Full coverage plans for complete peace of mind.',
-    screen: 'insurance',
-    categoryId: 'insurance',
-    imageUrl: HOME_CATEGORY_IMAGE_URLS.vet,
-  },
-  {
     id: 'nutrition',
     title: 'Nutrition',
     description: 'Personalized meal plans & expert diet advice.',
@@ -41,5 +33,13 @@ export const HELP_WAYS_CATALOG: HelpWayCatalogEntry[] = [
     screen: 'shop',
     categoryId: 'shop',
     imageUrl: HOME_CATEGORY_IMAGE_URLS.shop,
+  },
+  {
+    id: 'insurance',
+    title: 'Insurance',
+    description: 'Full coverage plans for complete peace of mind.',
+    screen: 'insurance',
+    categoryId: 'insurance',
+    imageUrl: HOME_CATEGORY_IMAGE_URLS.vet,
   },
 ];
