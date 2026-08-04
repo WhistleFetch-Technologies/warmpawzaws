@@ -289,14 +289,21 @@ export class ApiClient {
           // is still inside its 90-day window.
           if (!isRetry) {
             try {
-              const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
-              const renewed = await refreshVendorTokensIfNeeded({ force: true });
-              if (renewed?.idToken) {
-                // Silently retry the original request with the fresh token.
+              const { refreshVendorAfterUnauthorized401 } = await import('./cognito-auth');
+              const renewed = await refreshVendorAfterUnauthorized401();
+              if (renewed.kind === 'renewed' && renewed.tokens?.idToken) {
                 return this.request<T>(endpoint, options, true);
               }
-            } catch {
-              /* refresh failed for an unknown reason — fall through */
+              if (renewed.kind === 'failed_network') {
+                throw Object.assign(new Error('Session refresh temporarily unavailable'), {
+                  statusCode: 401,
+                });
+              }
+            } catch (err) {
+              if ((err as { statusCode?: number })?.statusCode === 401) {
+                throw err;
+              }
+              /* fall through */
             }
           }
 
@@ -305,11 +312,6 @@ export class ApiClient {
               console.warn('[API Client] 401 during post-login grace – skipping session clear');
             }
           } else {
-            // Final fallback: refresh attempt did not produce a new token AND
-            // we're outside the post-login grace. Only NOW do we clear the
-            // session and redirect — i.e. only when the refresh token itself
-            // was rejected (`refreshVendorTokensIfNeeded` already cleared
-            // storage on a confirmed 4xx in that case).
             const { clearVendorSession } = require('./session-utils');
             clearVendorSession();
             window.location.href = '/auth';

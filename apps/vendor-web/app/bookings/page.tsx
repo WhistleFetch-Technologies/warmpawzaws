@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { VendorBookingManagement } from '@/components/vendor/VendorBookingManagement';
 import { VendorRouteShell } from '@/components/vendor/layout/VendorRouteShell';
-import { isTokenExpired, clearVendorSession } from '@/lib/session-utils';
+import { requireVendorSessionOrRedirect } from '@/lib/session-utils';
 import { vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 
 function BookingsPageContent() {
@@ -17,27 +17,22 @@ function BookingsPageContent() {
 
   // Auth protection
   useEffect(() => {
-    const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
-    const storedPhone = localStorage.getItem('vendorPhone');
-    
-    if (!storedToken || !storedPhone || isTokenExpired(storedToken)) {
-      clearVendorSession();
-      window.location.replace('/auth');
-      return;
-    }
-    
-    // Get vendor data from localStorage
-    const storedVendorData = localStorage.getItem('vendorData');
-    if (storedVendorData) {
-      try {
-        setVendorData(JSON.parse(storedVendorData));
-      } catch (e) {
-        console.error('Error parsing vendor data:', e);
+    void (async () => {
+      const ok = await requireVendorSessionOrRedirect();
+      if (!ok) return;
+
+      const storedVendorData = localStorage.getItem('vendorData');
+      if (storedVendorData) {
+        try {
+          setVendorData(JSON.parse(storedVendorData));
+        } catch (e) {
+          console.error('Error parsing vendor data:', e);
+        }
       }
-    }
-    
-    setIsAuthenticated(true);
-    setIsChecking(false);
+
+      setIsAuthenticated(true);
+      setIsChecking(false);
+    })();
   }, []);
 
   const handleBack = () => {

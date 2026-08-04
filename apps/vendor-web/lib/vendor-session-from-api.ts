@@ -74,12 +74,15 @@ export function persistVendorCognitoTokens(bundle: VendorAuthTokenBundle): void 
 
   try {
     const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
-    storeCognitoTokens({
-      accessToken,
-      idToken,
-      refreshToken,
-      expiresIn,
-    });
+    storeCognitoTokens(
+      {
+        accessToken,
+        idToken,
+        refreshToken,
+        expiresIn,
+      },
+      { isNewLogin: true },
+    );
     if (bundle.userId) {
       storeUserInfo({
         userId: String(bundle.userId),
