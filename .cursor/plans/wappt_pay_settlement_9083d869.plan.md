@@ -2,32 +2,44 @@
 name: WAPPT Pay Settlement
 overview: Tie Warmpawz Appointments (flat-fee slots) and Warmpawz Pay (counter bill) into one commerce_mode=warmpawz_pay flow with appointment-fee credit, OTP closure gate, platform withhold settlement, and vendor earnings — while leaving marketplace endpoints and settlement paths untouched.
 todos:
-  - id: p0-withhold-migration
-    content: Add platform_withhold_percent to warmpawz_pay_merchant_pricing + admin pricing API/UI
+  - id: s00-kickoff
+    content: "S00 Both — branch sync kickoff on feature/warmpawz-pay-appointments-unified"
     status: pending
-  - id: p0-verify-accrual
-    content: Implement accrue-wpay-settlement.ts and call from customer_warmpawz_pay_verify_post (idempotent settlements insert)
+  - id: s01-bindu-withhold
+    content: "S01 BINDU builds — migration 1093 + admin withhold API/UI → push"
     status: pending
-  - id: p0-vendor-earnings
-    content: Extend vendor earnings/settlements GET to surface order_type=warmpawz_pay rows with customer name and net amount
+  - id: s02-abhi-discount
+    content: "S02 ABHI builds — extend wpay-discount (appointmentFeeCredit) + test → push"
     status: pending
-  - id: p1-appointment-context
-    content: New GET /customer/warmpawz-pay/appointment-context + credit idempotency table
+  - id: s03-bindu-accrual
+    content: "S03 BINDU builds — accrue-wpay-settlement + verify wire + apply 1093 dev RDS + lambda deploy → push"
     status: pending
-  - id: p1-initiate-credit
-    content: Gate appointment fee credit on completed booking in initiate/verify + metadata
+  - id: s04-bindu-vendor-earnings-api
+    content: "S04 BINDU builds — vendor earnings API UNION warmpawz_pay → push"
     status: pending
-  - id: p1-customer-pay-ui
-    content: "WarmpawzPayVendorClient: OTP booking card, poll completion, quote line items"
+  - id: s05-bindu-migration-credits
+    content: "S05 BINDU builds — migration 1094 appointment_credits + apply dev RDS → push"
     status: pending
-  - id: p1-vendor-pay-api-ui
-    content: GET /vendor/warmpawz-pay/payments + VendorEarningsSettlementDashboard pay_bill rows
+  - id: s06-abhi-appointment-context
+    content: "S06 ABHI builds — GET appointment-context API + resolver → push"
     status: pending
-  - id: p2-cancel-verify
-    content: Verify WAPPT 1h cancel/refund tiers match spec; fix only if drift
+  - id: s07-abhi-initiate-verify
+    content: "S07 ABHI builds — initiate/verify credit gate + idempotency → push"
     status: pending
-  - id: p3-backfill-job
-    content: "Optional reconciliation: completed warmpawz_pay payments missing settlements"
+  - id: s08-bindu-vendor-ui
+    content: "S08 BINDU builds — vendor warmpawz-pay payments API + earnings UI → push"
+    status: pending
+  - id: s09-abhi-customer-ui
+    content: "S09 ABHI builds — WarmpawzPayVendorClient OTP card + quote lines + customer-web deploy → push"
+    status: pending
+  - id: s10-abhi-cancel-audit
+    content: "S10 ABHI builds — WAPPT 1h cancel policy audit/fix if drift → push"
+    status: pending
+  - id: s11-joint-e2e
+    content: "S11 Both — joint E2E sign-off using verification checklist below"
+    status: pending
+  - id: s12-bindu-backfill
+    content: "S12 BINDU optional — reconciliation backfill job for missing settlements"
     status: pending
 isProject: false
 ---
@@ -266,26 +278,95 @@ flowchart LR
 
 ---
 
-## Suggested team split
+## Team roles & ground rules
+
+**Integration branch:** `feature/warmpawz-pay-appointments-unified` → single PR to `develop` when S11 passes.
+
+**Ping-pong rule:** Only one person **builds + pushes** at a time. The other **waits** (no overlapping commits on shared files). Before your step: `git fetch origin && git pull origin feature/warmpawz-pay-appointments-unified`. After push: paste commit hash in the changelog row + ping the other person.
+
+**Migrations & dev RDS:** **Bindu only.** Her machine does not time out on RDS. Abhi must not run `run-migration-rds-node.js` for this feature.
+
+**Deploys:** Whoever owns the step deploys the component they touched (lambda / customer-web / vendor-web / admin-web). Note deploy in changelog.
+
+### Responsibility map
 
 
-| Owner     | Scope                                                                                                                                                        |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Bindu** | Migration withhold %, admin pricing field, `accrue-wpay-settlement`, vendor earnings/settlements API extension, vendor Pay Bill list API, vendor earnings UI |
-| **Abhi**  | `appointment-context` resolver, initiate/verify pricing + credit idempotency, customer Pay UI (OTP card + quote lines), WAPPT cancel policy verification     |
-
-
-Integration branch: `feature/warmpawz-pay-appointments-unified` → PR to `develop`.
+| Area | Owner | Notes |
+| ---- | ----- | ----- |
+| All `db/migrations/` files + `ENVIRONMENT=dev node scripts/run-migration-rds-node.js …` | **Bindu** | 1093 withhold, 1094 appointment credits |
+| Admin withhold % field (`warmpawz-pay/admin/pricing`) | **Bindu** | API + admin-web UI |
+| `accrue-wpay-settlement.ts` + verify hook | **Bindu** | P0 money trail |
+| Vendor earnings API + `GET /vendor/warmpawz-pay/payments` | **Bindu** | `vendor-dashboard-enhanced.ts` |
+| Vendor earnings UI (`VendorEarningsSettlementDashboard`) | **Bindu** | `flowType: pay_bill` rows |
+| `wpay-discount.ts` extend (appointmentFeeCredit param) | **Abhi** | Shared helper; Bindu consumes in accrual |
+| `GET /customer/warmpawz-pay/appointment-context` | **Abhi** | New 4-layer route under warmpawz-pay |
+| Initiate/verify credit gate + metadata | **Abhi** | Uses 1094 table from Bindu |
+| `WarmpawzPayVendorClient` OTP card + quote lines | **Abhi** | Razorpay timing unchanged |
+| WAPPT cancel 1h policy audit | **Abhi** | Fix only if tiers drift |
+| Joint E2E sign-off | **Both** | S11 checklist below |
+| Optional backfill job | **Bindu** | S12, after E2E |
 
 ---
 
-## Test plan (smallest runnable checks)
+## Sequential execution & changelog
 
-1. **Walk-in Pay Bill:** quote ₹1000, 10% discount, 5% withhold → verify settlement `vendor_amount = 1000×0.9×0.95`
-2. **With WAPPT:** book ₹200 fee → complete OTP → Pay ₹800 quote → credit ₹200 → discount on ₹600 → settlement correct
-3. **No double credit:** second Pay Bill with same `bookingId` → 409 or credit=0
-4. **Marketplace regression:** create marketplace booking + settlement unchanged (smoke on `commerce_mode=marketplace`)
-5. **Cancel:** cancel at T-2h → wallet credit; cancel at T-30m → no refund
+**How to use this table:** Treat it as the living changelog. When you finish a step, set Status to `done`, fill Commit + Date, add Verifier notes. The **next row's owner** pulls, verifies the prior step if needed, then builds. Take over a blocked step only after pinging in Slack/chat.
+
+| Step | Builder | Waits | Deliverable | Status | Commit | Date | Verifier / notes |
+| ---- | ------- | ----- | ----------- | ------ | ------ | ---- | ---------------- |
+| **S00** | Both | — | Align on branch; read this plan; confirm latest `git pull` | `pending` | | | |
+| **S01** | **Bindu** | Abhi | `1093_warmpawz_pay_platform_withhold.sql` + admin pricing API/UI for `platformWithholdPercent` | `pending` | | | Abhi: pull + confirm admin can save withhold % |
+| **S02** | **Abhi** | Bindu | Extend `computeWpayDiscountQuote(quoted, %, { appointmentFeeCredit })` + unit test in `wpay-discount` | `pending` | | | Bindu: pull + use helper in S03 |
+| **S03** | **Bindu** | Abhi | `accrue-wpay-settlement.ts`; wire `customer_warmpawz_pay_verify_post`; **apply 1093 on dev RDS**; deploy lambda dev | `pending` | | | Abhi: walk-in Pay Bill smoke — payment completes |
+| **S04** | **Bindu** | Abhi | Extend `GET /vendor/:vendorId/earnings` — UNION `settlements` where `order_type='warmpawz_pay'` (customer name, date, net) | `pending` | | | Abhi: confirm API shape for UI |
+| **S05** | **Bindu** | Abhi | `1094_warmpawz_pay_appointment_credits.sql` + **apply on dev RDS** | `pending` | | | Abhi: table exists before S07 |
+| **S06** | **Abhi** | Bindu | `GET /customer/warmpawz-pay/appointment-context?vendorId=` — open WAPPT booking + OTP fields | `pending` | | | Bindu: optional API smoke |
+| **S07** | **Abhi** | Bindu | Initiate/verify: optional `bookingId`, credit only if booking `completed`, idempotent insert into `warmpawz_pay_appointment_credits` | `pending` | | | Bindu: deploy lambda if handler changed |
+| **S08** | **Bindu** | Abhi | `GET /vendor/warmpawz-pay/payments` + vendor-web earnings dashboard Pay Bill rows; deploy vendor-web dev | `pending` | | | Abhi: vendor UI shows walk-in Pay from S03 |
+| **S09** | **Abhi** | Bindu | Customer Pay UI: appointment card, OTP display, poll until completed, quote line items; deploy customer-web dev | `pending` | | | Bindu: full WAPPT→Pay counter flow |
+| **S10** | **Abhi** | Bindu | Audit WAPPT cancel: ≥1h wallet refund, <1h no refund; fix tiers/UI warning only if drift | `pending` | | | Bindu: cancel smoke on dev |
+| **S11** | **Both** | — | Joint E2E — all checks in **Verification checklist** below must pass | `pending` | | | Either marks blockers in notes column |
+| **S12** | **Bindu** | Abhi | Optional: backfill job for completed `warmpawz_pay` payments missing settlements | `pending` | | | Skip if S11 clean |
+
+### Handoff commands (copy-paste)
+
+```bash
+# Before your step
+git fetch origin
+git checkout feature/warmpawz-pay-appointments-unified
+git pull origin feature/warmpawz-pay-appointments-unified
+
+# After your step
+git push origin feature/warmpawz-pay-appointments-unified
+# Then update changelog row + ping teammate
+```
+
+```bash
+# Bindu only — after committing migration file
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1093_warmpawz_pay_platform_withhold.sql
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1094_warmpawz_pay_appointment_credits.sql
+```
+
+---
+
+## Verification checklist (S11 — sign-off)
+
+Run on **dev** with Commerce Switch = `warmpawz_pay`. Check each box in the changelog when done; all must pass before PR to `develop`.
+
+| # | Scenario | Expected | S11 done |
+| - | -------- | -------- | -------- |
+| V1 | Walk-in Pay Bill: quote ₹1000, 10% discount, 5% withhold | Payable ₹900; settlement `vendor_amount` = ₹855 (900 × 0.95) | [ ] |
+| V2 | Walk-in appears in vendor earnings / Pay Bill list | Customer name, date, quoted, paid, net earnings visible | [ ] |
+| V3 | WAPPT book (appointment fee only) → in-person → vendor OTP complete | Booking status `completed` | [ ] |
+| V4 | Same customer Pay Bill ₹800 quote with completed WAPPT | Fee credit ₹(appointment fee) deducted before discount; payable math correct | [ ] |
+| V5 | Second Pay Bill with same `bookingId` | Credit rejected or 0 (idempotent — no double credit) | [ ] |
+| V6 | Pay Bill with **open** (not completed) appointment | No fee credit; % discount only; UI shows OTP card until completed | [ ] |
+| V7 | Cancel WAPPT ≥1h before slot | Wallet refund of appointment fee | [ ] |
+| V8 | Cancel WAPPT <1h before slot | Warning shown; no refund | [ ] |
+| V9 | Marketplace booking (toggle = marketplace) | Unchanged create/settle/cancel — no regression | [ ] |
+| V10 | Admin: set discount %, appointment fee, withhold % | All three configurable from admin only (no vendor config) | [ ] |
+
+**Sign-off:** Abhi _____ / Bindu _____ / Date _____
 
 ---
 
