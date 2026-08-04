@@ -19,15 +19,30 @@ export type BuildWapptDiscoveryVendorCardPropsOpts = {
   onPrimary: (event: MouseEvent<HTMLButtonElement>) => void;
   onProfileClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   router: AppRouterInstance;
+  primaryLabel?: string;
+  secondaryLabel?: string;
+  showPayCta?: boolean;
 };
 
 /** Shared Book Appointment + Pay with Warmpawz card props for WAPPT discovery lists. */
 export function buildWapptDiscoveryVendorCardProps(opts: BuildWapptDiscoveryVendorCardPropsOpts) {
-  const { provider, subtitle, address, category, serviceKey, onPrimary, onProfileClick, router } = opts;
+  const {
+    provider,
+    subtitle,
+    address,
+    category,
+    serviceKey,
+    onPrimary,
+    onProfileClick,
+    router,
+    primaryLabel = 'Select Slot for Appointment',
+    secondaryLabel = 'Pay with Warmpawz',
+    showPayCta = true,
+  } = opts;
   const wpayCategory = mapServiceKeyToWpayCategory(serviceKey ?? category, category);
   const vendorId = String(provider.vendorId || provider.providerId || '').trim();
 
-  return mapDiscoveryProviderToVendorCardProps({
+  const base = mapDiscoveryProviderToVendorCardProps({
     provider: {
       name: provider.name,
       photo: provider.photo,
@@ -49,19 +64,26 @@ export function buildWapptDiscoveryVendorCardProps(opts: BuildWapptDiscoveryVend
     profileAriaLabel: `View profile: ${provider.name}`,
     verifiedAriaLabel: 'Verified provider',
     primaryActionClassName: 'text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10',
-    primaryLabel: 'Book Appointment',
+    primaryLabel,
     onPrimary,
     onProfileClick: onProfileClick ?? onPrimary,
-    secondaryLabel: 'Pay with Warmpawz',
-    onSecondary: (e) => {
-      e.stopPropagation();
-      if (!vendorId) return;
-      launchWarmpawzPayServiceBooking({
-        router,
-        serviceKey: serviceKey ?? category,
-        category: wpayCategory,
-        vendorId,
-      });
-    },
+    secondaryLabel,
+    onSecondary: showPayCta
+      ? (e) => {
+          e.stopPropagation();
+          if (!vendorId) return;
+          launchWarmpawzPayServiceBooking({
+            router,
+            serviceKey: serviceKey ?? category,
+            category: wpayCategory,
+            vendorId,
+          });
+        }
+      : undefined,
   });
+
+  if (!showPayCta) {
+    return { ...base, secondaryAction: undefined };
+  }
+  return base;
 }

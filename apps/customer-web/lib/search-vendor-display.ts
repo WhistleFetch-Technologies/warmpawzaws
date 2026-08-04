@@ -1,11 +1,8 @@
 /**
- * Helpers for GET /search vendor rows → UniversalVendorCard (photo, address, distance).
+ * Helpers for GET /search vendor rows (photo, address, distance).
  * Distance: prefer API `distanceKm` / `distance_km` when added server-side; else haversine
  * when vendor lat/lng and user coordinates are available.
  */
-
-import type { UniversalVendorCardVendor } from '@/components/customer/UniversalVendorCard';
-import { toUniversalVendorCardRating } from '@/lib/resolve-vendor-rating';
 
 const toNum = (v: unknown): number | null => {
   if (v == null || v === '') return null;
@@ -202,48 +199,4 @@ export function pickVendorLatLng(v: SearchApiVendorRow): { lat: number; lng: num
 
 export function pickDistanceKmFromApi(v: SearchApiVendorRow): number | null {
   return toNum(v.distanceKm) ?? toNum(v.distance_km);
-}
-
-/**
- * Map search listing row → UniversalVendorCard props.
- * - Vendor rows: headline = business name, vendorId required.
- * - Service rows: headline = owning vendor business name, serviceDisplayName = service title,
- *   vendorId = vendor UUID for analytics.
- */
-export function searchVendorToUniversalVendorCard(row: {
-  headline: string;
-  vendorId: string;
-  serviceDisplayName?: string;
-  rating: number;
-  reviewCount: number;
-  city: string;
-  imageUrl?: string;
-  addressDisplay: string;
-  latitude?: number | null;
-  longitude?: number | null;
-  distanceKm?: number | null;
-}): UniversalVendorCardVendor {
-  const distance = row.distanceKm != null && Number.isFinite(row.distanceKm) ? row.distanceKm : undefined;
-  const ratingFields = toUniversalVendorCardRating(
-    {
-      vendorId: row.vendorId,
-      vendorRating: row.rating,
-      vendorReviewCount: row.reviewCount,
-      review_count: row.reviewCount,
-    },
-    row.vendorId
-  );
-
-  return {
-    id: row.vendorId,
-    vendorId: row.vendorId,
-    vendorName: row.headline,
-    ...ratingFields,
-    vendorLocation: row.addressDisplay,
-    vendorProfileImage: row.imageUrl,
-    serviceName: row.serviceDisplayName,
-    completedBookings: undefined,
-    distance,
-    photos: row.imageUrl ? [row.imageUrl] : undefined,
-  };
 }

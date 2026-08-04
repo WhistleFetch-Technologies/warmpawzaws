@@ -104,24 +104,25 @@ Example (discovery appointments):
 
 | Consumer | File | Mapper | When |
 |----------|------|--------|------|
-| Vet appointment discovery | `components/customer/vet/VetServicesByStyle.tsx` | `mapDiscoveryProviderToVendorCardProps` | `appointmentsMode === true` |
-| Grooming appointment discovery | `components/customer/grooming/GroomingServicesByStyle.tsx` | `mapDiscoveryProviderToVendorCardProps` | `appointmentsMode === true` |
+| Vet style discovery | `components/customer/vet/VetServicesByStyle.tsx` | `buildWapptDiscoveryVendorCardProps` | All provider list rows |
+| Grooming style discovery | `components/customer/grooming/GroomingServicesByStyle.tsx` | `buildWapptDiscoveryVendorCardProps` | All provider list rows |
+| Universal style discovery | `components/customer/shared/UniversalServicesByStyle.tsx` | `buildWapptDiscoveryVendorCardProps` | All provider list rows |
+| Vet clinic list | `components/customer/vet/ClinicListView.tsx` | `buildWapptDiscoveryVendorCardProps` / `mapDiscoveryProviderToVendorCardProps` | Clinic discovery rows |
+| Home service providers | `components/customer/home-services/HomeServiceProviderListView.tsx` | `mapDiscoveryProviderToVendorCardProps` | Provider list rows |
 | Warmpawz Appointments list | `components/customer/warmpawz-appointments/WarmpawzAppointmentsVendorList.tsx` | `mapDiscoveryProviderToVendorCardProps` | Category vendor list |
 | Service hubs + list views | `ServiceHubVendorCard`, `WalkerHubVendorCard` | `map-boarding-list-vendor-to-vendor-card-props` | Featured vets/groomers/trainers/walkers/stays/sitters |
-| Search vendor cards | `SearchHubVendorCard`, `Search*VendorCard` | `map-boarding-list-vendor-to-vendor-card-props` | GET /search rows |
+| Search vendor cards | `SearchHubVendorCard` via `app/search/page.tsx` | `map-boarding-list-vendor-to-vendor-card-props` | GET /search + WAPPT merge rows |
 | Warmpawz Pay Hub | `app/warmpawz-pay/page.tsx` | `mapWpayVendorCardToProps` | Vendor list rows |
 
-**Not migrated (intentionally):** Marketplace discovery inline cards in `UniversalServicesByStyle` legacy branch, nutrition-specific cards, global search `UniversalVendorCard` — keep existing UI until a dedicated integration PR.
-
-**Migrated (service hub + search):** Featured Vets, Top Groomers, Top Trainers, Available Walkers, Featured Stays, Featured sitters, Behaviorist hub, boarding/sitting list views, and search `Search*VendorCard` wrappers — all use `WarmpawzPayVendorCard` via `ServiceHubVendorCard` / `WalkerHubVendorCard` and `map-boarding-list-vendor-to-vendor-card-props`.
+**Intentionally separate UX:** `NutritionVendorDetailsCard` (meal plans / nutrition flows), `EnhancedSearchBar` autocomplete dropdown rows.
 
 ## 6. How future services should integrate
 
-1. **Confirm scope** — WPay / appointment discovery only; do not replace Marketplace cards in the same PR unless explicitly requested.
+1. **Confirm scope** — reuse `WarmpawzPayVendorCard` for vendor list rows; wire navigation in the parent screen.
 2. **Reuse discovery mapper** — pass `DiscoveryProviderCardSource` fields from the existing list row; do not copy rating/address/meta logic.
 3. **Keep booking flow** — wire `onPrimary` to the service’s existing profile/book handler (`buildWarmpawzAppointmentsBookingNav` + shell screen).
 4. **Keep Pay CTA** — wire `onSecondary` to `launchWarmpawzPayServiceBooking({ serviceKey, category, vendorId })` with the correct service key.
-5. **Early return in list map** — when `appointmentsMode`, return `<WarmpawzPayVendorCard />` before the legacy inline `<Card>` branch.
+5. **List map** — return `<WarmpawzPayVendorCard />` via `buildWapptDiscoveryVendorCardProps` or `ServiceHubVendorCard`; do not add inline expandable vendor cards.
 6. **Add tests** — extend `vendor-card/__tests__` and `lib/warmpawz-pay/__tests__` if new meta or mapper options are introduced.
 7. **No card changes** unless the new surface needs a genuinely new visual element — prefer new optional props over service-specific forks.
 

@@ -1402,311 +1402,36 @@ export function UniversalServicesByStyle({
         ) : (
           <div className="space-y-4  ">
             {providers.map((provider) => {
-              if (appointmentsMode) {
-                const providerAddress = getProviderAddress(provider);
-                return (
-                  <WarmpawzPayVendorCard
-                    key={provider.providerId}
-                    {...buildWapptDiscoveryVendorCardProps({
-                      provider: {
-                        name: provider.name,
-                        photo: provider.photo,
-                        isVerified: provider.isVerified,
-                        rating: provider.rating,
-                        reviewCount: provider.reviewCount,
-                        distance: provider.distance,
-                        distanceText: (provider as { distanceText?: string }).distanceText,
-                        nextAvailableSlot: provider.nextAvailableSlot,
-                        experienceYears: provider.experienceYears,
-                        providerType: provider.providerType,
-                        city: provider.city,
-                        providerId: provider.providerId,
-                        vendorId: provider.vendorId,
-                      },
-                      subtitle: getProviderTypeLabel(provider),
-                      address: providerAddress,
-                      category: finalCategory,
-                      serviceKey: finalCategory,
-                      onPrimary: (e) => openProviderProfileForChevron(e, provider),
-                      router,
-                    })}
-                  />
-                );
-              }
-
-              const expanded = selectedProvider === provider.providerId;
-              const headerInteractive = expanded;
               const providerAddress = getProviderAddress(provider);
               return (
-              <Card key={provider.providerId} className="bg-white overflow-hidden">
-                <div
-                  role={headerInteractive ? 'button' : undefined}
-                  tabIndex={headerInteractive ? 0 : undefined}
-                  className={`p-4 border-b text-left w-full ${headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''}`}
-                  onClick={
-                    headerInteractive
-                      ? () =>
-                          setSelectedProvider(
-                            selectedProvider === provider.providerId ? null : provider.providerId
-                          )
-                      : undefined
-                  }
-                  onKeyDown={
-                    headerInteractive
-                      ? (e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setSelectedProvider(
-                              selectedProvider === provider.providerId ? null : provider.providerId
-                            );
-                          }
-                        }
-                      : undefined
-                  }
-                >
-                  <div className="flex min-w-0 w-full items-start justify-between gap-2">
-                    <div className="flex min-w-0 flex-1 items-start gap-3">
-                      {/* Provider Photo or Initial */}
-                      <DiscoveryProviderAvatar
-                        name={provider.name}
-                        photo={provider.photo}
-                        className="h-12 w-12 shrink-0 rounded-full border-2 border-[#FF8C42] object-cover"
-                        fallbackClassName="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#FF8C42] text-lg font-bold text-white"
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-gray-900">{provider.name}</h3>
-                          {provider.isVerified && (
-                            <Shield className="w-4 h-4 text-green-500" />
-                          )}
-                        </div>
-                        <p className="text-gray-500 text-sm">{getProviderTypeLabel(provider)}</p>
-                        <div className="flex items-center gap-3 mt-1">
-                          {provider.reviewCount > 0 && provider.rating > 0 ? (
-                          <div className="flex items-center gap-1">
-                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                            <span className="text-sm font-medium">{Number(provider.rating).toFixed(1)}</span>
-                            <span className="text-gray-400 text-sm">({provider.reviewCount})</span>
-                          </div>
-                          ) : (
-                          <span className="text-xs text-gray-400">No reviews yet</span>
-                          )}
-                          {provider.city && (
-                            <div className="flex items-center gap-1 text-gray-500 text-sm">
-                              <MapPin className="w-3 h-3" />
-                              {provider.city}
-                            </div>
-                          )}
-                          {provider.distance != null && (
-                            <span className="text-xs text-blue-600 font-medium">
-                              {Number(provider.distance) < 1
-                                ? `${Math.round(Number(provider.distance) * 1000)} m away`
-                                : `${Math.round(Number(provider.distance))} km away`}
-                            </span>
-                          )}
-                        </div>
-                        {providerAddress && (
-                          <div className="mt-1 flex min-w-0 items-start gap-1 text-xs text-gray-500">
-                            <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-gray-400" />
-                            <span className="line-clamp-1">{providerAddress}</span>
-                          </div>
-                        )}
-                        {/* Show experience for staff/individual */}
-                        {provider.experienceYears && provider.providerType !== 'vendor' && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            {provider.experienceYears} years experience
-                          </div>
-                        )}
-                        {provider.nextAvailableSlot && (
-                          <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
-                            <Clock className="w-3 h-3" />
-                            <span>Next: {provider.nextAvailableSlot}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={`View profile: ${provider.name}`}
-                      className="-m-1.5 p-1.5 rounded-full text-gray-400 hover:text-[#FF8C42] hover:bg-orange-50 flex-shrink-0 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
-                      onClick={(e) => openProviderProfileForChevron(e, provider)}
-                    >
-                      <ChevronRight
-                        className={`w-5 h-5 transition-transform ${expanded ? 'rotate-90' : ''}`}
-                        aria-hidden
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Services List - Expanded */}
-                {expanded && !appointmentsMode && (
-                  <div className="bg-gray-50 p-4 space-y-3">
-                    {/* Provider details for staff/individual */}
-                    {provider.qualifications && (
-                      <div className="bg-white rounded-lg p-3 mb-3 border border-blue-100">
-                        <div className="text-xs text-gray-500 mb-1">Qualifications</div>
-                        <div className="text-sm text-gray-700">{provider.qualifications}</div>
-                      </div>
-                    )}
-                    
-                    <h4 className="text-sm font-medium text-gray-600 mb-2">
-                      Available Services ({provider.services.length})
-                    </h4>
-                    {fetchingServicesFor === provider.providerId && !provider.servicesHydrated ? (
-                      <div className="bg-white rounded-lg p-6 text-center">
-                        <Loader2 className="w-8 h-8 animate-spin text-[#FF8C42] mx-auto mb-2" />
-                        <p className="text-sm text-gray-500">Loading services…</p>
-                      </div>
-                    ) : provider.services.length > 0 ? (
-                    provider.services.map((service) => (
-                      <div
-                        key={service.id}
-                        className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
-                      >
-                        {/* Row 1: name (left) | price (right). Row 2: meta | Book Now — matches ClinicListView */}
-                        <div className="space-y-3">
-                          <div className="flex min-w-0 items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h5 className="line-clamp-2 break-words font-medium leading-5 text-gray-900">
-                                  {service.name}
-                                </h5>
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
-                                    <span className="shrink-0 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
-                                      Package
-                                    </span>
-                                  )}
-                                  {(service as any).inActivePackage && (
-                                    <span className="shrink-0 rounded-full border border-orange-200 bg-orange-100 px-2 py-0.5 text-xs font-semibold text-[#FF8C42]">
-                                      In your package
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              {service.description?.trim() ? (
-                                <div className="mt-1" onClick={(e) => e.stopPropagation()}>
-                                  <ServiceDescriptionInline
-                                    description={service.description!}
-                                    title={service.name}
-                                    className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
-                                  />
-                                </div>
-                              ) : null}
-                            </div>
-                            <div className="shrink-0 text-right">
-                              <ServicePricingDisplay
-                                basePrice={service.originalPrice || service.price}
-                                vendorDiscount={service.vendorDiscount}
-                                usePromoQuote
-                                vendorId={String(provider.vendorId || vendorId || '')}
-                                serviceId={String(service.id || service.serviceId || '')}
-                                customerId={phone}
-                                serviceStyle={serviceStyle}
-                                serviceCategory={finalCategory}
-                              />
-                              <p className="mt-0.5 max-w-[9rem] text-[11px] leading-4 text-gray-500">
-                                {INDICATIVE_PRICING_NOTE}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex min-w-0 flex-wrap items-center gap-2">
-                              <Badge variant="outline" className="shrink-0 text-xs">
-                                <Clock className="mr-1 h-3 w-3" />
-                                {(service.duration ?? 0)} mins
-                              </Badge>
-                              {service.category && (
-                                <Badge variant="secondary" className="max-w-full shrink-0 text-xs">
-                                  {service.category}
-                                </Badge>
-                              )}
-                            </div>
-                            <Button
-                              size="sm"
-                              className="h-8 shrink-0 rounded-full bg-[#FF8C42] px-5 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSelectService(provider, service);
-                              }}
-                            >
-                              Book Now
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                    ) : provider.servicesHydrated ? (
-                      <div className="bg-white rounded-lg p-4 text-center text-gray-500 text-sm">
-                        No services available from this provider
-                      </div>
-                    ) : null}
-                    <DiscoveryVendorFeedSentinel
-                      hasMore={!!provider.servicesNextCursor}
-                      loading={fetchingServicesFor === provider.providerId}
-                      loadingMore={!!provider.servicesLoadingMore}
-                      onLoadMore={() => loadMoreProviderServices(provider.providerId)}
-                    />
-                  </div>
-                )}
-
-                {!expanded && (
-                  <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
-                    <div className="text-sm text-gray-600">
-                      {appointmentsMode ? (
-                        <span>Tap to view profile &amp; book</span>
-                      ) : provider.services.length > 0 ? (
-                        <>
-                          {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service
-                          {provider.services.length !== 1 ? 's' : ''} available
-                          <span className="text-gray-900 font-medium">
-                            {' '}
-                            from{' '}
-                            {formatPriceWithSymbol(
-                              Math.min(
-                                ...provider.services.map((s) => {
-                                  const basePrice = s.originalPrice || s.price;
-                                  const finalPrice = s.vendorDiscount
-                                    ? basePrice * (1 - s.vendorDiscount / 100)
-                                    : basePrice;
-                                  return finalPrice;
-                                })
-                              )
-                            )}
-                          </span>
-                        </>
-                      ) : provider.priceMin != null && provider.priceMin > 0 ? (
-                        <span>
-                          Services available{' '}
-                          <span className="text-gray-900 font-medium">
-                            from {formatPriceWithSymbol(provider.priceMin)}
-                          </span>
-                        </span>
-                      ) : (
-                        <span>Tap to view services</span>
-                      )}
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (appointmentsMode) {
-                          openProviderProfileForChevron(e, provider);
-                          return;
-                        }
-                        setSelectedProvider(provider.providerId);
-                        void fetchProviderServices(provider.providerId);
-                      }}
-                    >
-                      {appointmentsMode ? 'Select Slot for Appointment' : 'View Services'}
-                    </Button>
-                  </div>
-                )}
-              </Card>
-            );
+                <WarmpawzPayVendorCard
+                  key={provider.providerId}
+                  {...buildWapptDiscoveryVendorCardProps({
+                    provider: {
+                      name: provider.name,
+                      photo: provider.photo,
+                      isVerified: provider.isVerified,
+                      rating: provider.rating,
+                      reviewCount: provider.reviewCount,
+                      distance: provider.distance,
+                      distanceText: (provider as { distanceText?: string }).distanceText,
+                      nextAvailableSlot: provider.nextAvailableSlot,
+                      experienceYears: provider.experienceYears,
+                      providerType: provider.providerType,
+                      city: provider.city,
+                      providerId: provider.providerId,
+                      vendorId: provider.vendorId,
+                    },
+                    subtitle: getProviderTypeLabel(provider),
+                    address: providerAddress,
+                    category: finalCategory,
+                    serviceKey: finalCategory,
+                    onPrimary: (e) => openProviderProfileForChevron(e, provider),
+                    onProfileClick: (e) => openProviderProfileForChevron(e, provider),
+                    router,
+                  })}
+                />
+              );
             })}
             <DiscoveryVendorFeedSentinel
               hasMore={hasMore}

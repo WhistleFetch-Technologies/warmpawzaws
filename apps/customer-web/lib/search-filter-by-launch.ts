@@ -1,16 +1,12 @@
 import {
   launchServiceIdFromCategory,
+  getCatalogEntry,
+  hasAnyLaunchedStyle,
   isStyleLaunchedForCustomer,
   type ServiceLaunchCatalogEntry,
 } from '@/lib/customer-service-style-launch';
 import { normalizeServiceStyleLaunchKey } from '@warmpawz/service-launch-mappings';
-import { hubSlugToDiscoveryContext } from '@/lib/search-hub-style-defaults';
 import { resolveStyleLaunchTargetForScreen } from '@/lib/customer-style-screen-launch';
-
-function defaultStyleForCategory(category: string | undefined | null): string | null {
-  const hub = hubSlugToDiscoveryContext(category || '');
-  return hub?.serviceStyle ?? null;
-}
 
 function normalizeRowStyle(raw: unknown): string | null {
   if (raw == null || String(raw).trim() === '') return null;
@@ -63,12 +59,10 @@ export function isSearchRowLaunchedForCustomer(
     }
   }
 
-  const fallbackStyle = defaultStyleForCategory(category);
-  if (fallbackStyle) {
-    return isStyleLaunchedForCustomer(catalog, serviceId, fallbackStyle);
-  }
-
-  return true;
+  // Vendor rows from GET /search omit serviceStyle — keep when any style is launched for the hub
+  // (do not assume at_center; Services tiles use the same parent-level visibility rule).
+  if (!getCatalogEntry(catalog, serviceId)) return true;
+  return hasAnyLaunchedStyle(catalog, serviceId);
 }
 
 export function filterSearchRowsByLaunch<T extends Record<string, unknown>>(

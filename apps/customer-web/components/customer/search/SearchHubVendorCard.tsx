@@ -3,7 +3,7 @@
 import {
   ServiceHubVendorCard,
   resolveServiceHubVendorProfileKey,
-} from './shared/ServiceHubVendorCard';
+} from '../shared/ServiceHubVendorCard';
 import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 import type { MouseEvent } from 'react';
 
@@ -36,7 +36,7 @@ export function SearchHubVendorCard({
         category={category}
         serviceKey={serviceKey}
         categoryLabelFallback={categoryLabelFallback}
-        onSelectSlot={openProfile}
+        onSelectSlot={(v, e) => openProfile(e, v)}
         onOpenProfile={openProfile}
       />
     </div>

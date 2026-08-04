@@ -53,9 +53,8 @@ import {
   resolveWarmpawzBookingScreen,
   WAPPT_VENDOR_PROFILE_SCREEN,
 } from '@/lib/warmpawz-appointments-customer';
-import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
 import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
-import { mapDiscoveryProviderToVendorCardProps } from '@/lib/warmpawz-pay/map-discovery-provider-to-vendor-card-props';
+import { buildWapptDiscoveryVendorCardProps } from '@/lib/wappt-discovery-vendor-card';
 import { WarmpawzAppointmentsVendorProfile } from '../warmpawz-appointments/WarmpawzAppointmentsVendorProfile';
 
 interface GroomingServicesByStyleProps {
@@ -1409,322 +1408,36 @@ export function GroomingServicesByStyle({
             </Card>
             
             {filteredAndSortedProviders.map((provider) => {
-              if (appointmentsMode) {
-                const providerAddress = getProviderAddress(provider);
-                return (
-                  <WarmpawzPayVendorCard
-                    key={provider.providerId}
-                    {...mapDiscoveryProviderToVendorCardProps({
-                      provider: {
-                        name: provider.name,
-                        photo: provider.photo,
-                        isVerified: provider.isVerified,
-                        rating: provider.rating,
-                        reviewCount: provider.reviewCount,
-                        distance: provider.distance,
-                        distanceText: provider.distanceText,
-                        nextAvailableSlot: provider.nextAvailableSlot,
-                        experienceYears: provider.experienceYears,
-                        providerType: provider.providerType,
-                        city: provider.city,
-                      },
-                      subtitle: getProviderTypeLabel(provider),
-                      address: providerAddress,
-                      footerHint: provider.nextAvailableSlot
-                        ? `Next: ${provider.nextAvailableSlot}`
-                        : 'Tap to view profile & book',
-                      profileAriaLabel: `View profile: ${provider.name}`,
-                      verifiedAriaLabel: 'Verified provider',
-                      primaryActionClassName:
-                        'text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10',
-                      primaryLabel: 'Select Slot for Appointment',
-                      onPrimary: (e) => openGroomingProviderProfile(e, provider),
-                      onProfileClick: (e) => openGroomingProviderProfile(e, provider),
-                      secondaryLabel: 'Pay with Warmpawz',
-                      onSecondary: (e) => {
-                        e.stopPropagation();
-                        const vendorId = String(
-                          provider.vendorId || provider.providerId || '',
-                        ).trim();
-                        if (!vendorId) return;
-                        // nav-exception: WPay module uses URL routes (same entry as Pay Hub)
-                        launchWarmpawzPayServiceBooking({
-                          router,
-                          serviceKey: 'grooming',
-                          category: 'grooming',
-                          vendorId,
-                        });
-                      },
-                    })}
-                  />
-                );
-              }
-
-              const expanded = selectedProvider === provider.providerId;
-              const headerInteractive = expanded;
               const providerAddress = getProviderAddress(provider);
               return (
-              <Card key={provider.providerId} className="bg-white overflow-hidden">
-                <div
-                  role={headerInteractive ? 'button' : undefined}
-                  tabIndex={headerInteractive ? 0 : undefined}
-                  className={`p-4 border-b text-left w-full ${headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''}`}
-                  onClick={
-                    headerInteractive
-                      ? () =>
-                          setSelectedProvider(
-                            selectedProvider === provider.providerId ? null : provider.providerId
-                          )
-                      : undefined
-                  }
-                  onKeyDown={
-                    headerInteractive
-                      ? (e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setSelectedProvider(
-                              selectedProvider === provider.providerId ? null : provider.providerId
-                            );
-                          }
-                        }
-                      : undefined
-                  }
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <DiscoveryProviderAvatar name={provider.name} photo={provider.photo} />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-gray-900">{provider.name}</h3>
-                          {provider.isVerified && (
-                            <Shield className="w-4 h-4 text-green-500" />
-                          )}
-                        </div>
-                        <p className="text-gray-500 text-sm">{getProviderTypeLabel(provider)}</p>
-                        <div className="flex items-center gap-3 mt-1">
-                          <div className="flex items-center gap-1">
-                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                            <span className="text-sm font-medium">{provider.rating}</span>
-                            <span className="text-gray-400 text-sm">({provider.reviewCount} reviews)</span>
-                          </div>
-                          {provider.city && (
-                            <div className="flex items-center gap-1 text-gray-500 text-sm">
-                              <MapPin className="w-3 h-3" />
-                              {provider.city}
-                            </div>
-                          )}
-                          {provider.distance != null && (
-                            <span className="text-xs text-blue-600 font-medium">
-                              {Number(provider.distance) < 1
-                                ? `${Math.round(Number(provider.distance) * 1000)} m away`
-                                : `${Math.round(Number(provider.distance))} km away`}
-                            </span>
-                          )}
-                        </div>
-                        {providerAddress && (
-                          <div className="flex items-start gap-1 text-gray-500 text-xs mt-1 max-w-[240px]">
-                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                            <span className="line-clamp-1">{providerAddress}</span>
-                          </div>
-                        )}
-                        {provider.nextAvailableSlot && (
-                          <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
-                            <Clock className="w-3 h-3" />
-                            <span>Next: {provider.nextAvailableSlot}</span>
-                          </div>
-                        )}
-                        {/* ✅ NEW: Amenities display */}
-                        {shouldShowVendorAmenities(serviceStyle) && provider.amenities && provider.amenities.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {provider.amenities.slice(0, 3).map((amenity, idx) => (
-                              <span key={idx} className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
-                                {amenity}
-                              </span>
-                            ))}
-                            {provider.amenities.length > 3 && (
-                              <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
-                                +{provider.amenities.length - 3} more
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {/* Show experience for staff/individual */}
-                        {provider.experienceYears && provider.providerType !== 'vendor' && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            {provider.experienceYears} years experience
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={`View profile: ${provider.name}`}
-                      className="-m-1.5 p-1.5 rounded-full text-gray-400 hover:text-[#FF8C42] hover:bg-orange-50 flex-shrink-0 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
-                      onClick={(e) => openGroomingProviderProfile(e, provider)}
-                    >
-                      <ChevronRight
-                        className={`w-5 h-5 transition-transform ${expanded ? 'rotate-90' : ''}`}
-                        aria-hidden
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Services List - Expanded */}
-                {expanded && !appointmentsMode && (
-                  <div className="bg-gray-50 p-4 space-y-3">
-                    {/* Provider details for staff/individual */}
-                    {provider.qualifications && (
-                      <div className="bg-white rounded-lg p-3 mb-3 border border-orange-100">
-                        <div className="text-xs text-gray-500 mb-1">Qualifications</div>
-                        <div className="text-sm text-gray-700">{provider.qualifications}</div>
-                      </div>
-                    )}
-                    
-                    <h4 className="text-sm font-medium text-gray-600 mb-2">
-                      Available Services ({provider.services.length})
-                    </h4>
-                    {fetchingServicesFor === provider.providerId && !provider.servicesHydrated ? (
-                      <div className="bg-white rounded-lg p-6 text-center">
-                        <Loader2 className="w-8 h-8 animate-spin text-[#FF8C42] mx-auto mb-2" />
-                        <p className="text-sm text-gray-500">Loading services…</p>
-                      </div>
-                    ) : provider.services.length > 0 ? (
-                      provider.services.map((service) => {
-                        const descTrim = service.description?.trim() ?? '';
-                        return (
-                          <div
-                            key={service.id}
-                            className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
-                          >
-                            {/* Row 1: name + package badge (left) | price (right) */}
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex min-w-0 flex-1 items-center gap-2">
-                                <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
-                                  {service.name}
-                                </h5>
-                                {service.isPackage && (
-                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
-                                    Package
-                                  </span>
-                                )}
-                              </div>
-                              <div className="shrink-0 text-right">
-                                <ServicePricingDisplay
-                                  basePrice={service.originalPrice ?? service.price}
-                                  usePromoQuote
-                                  vendorId={String(provider.vendorId || provider.providerId || vendorId || '')}
-                                  serviceId={String(service.id || service.serviceId || '')}
-                                  customerId={phone}
-                                  serviceStyle={serviceStyle}
-                                  serviceCategory={category}
-                                  className="items-end"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Row 2: description full width */}
-                            {descTrim && (
-                              <ServiceDescriptionInline
-                                description={descTrim}
-                                title={service.name}
-                                className="m-0 text-sm leading-5 text-gray-500"
-                              />
-                            )}
-
-                            {/* Row 3: badges (left) | Book Now (right) */}
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant="outline" className="text-xs shrink-0">
-                                  <Clock className="w-3 h-3 mr-1" />
-                                  {service.duration} mins
-                                </Badge>
-                                {resolveServiceCategoryDisplayLabel(service) && (
-                                  <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
-                                    {resolveServiceCategoryDisplayLabel(service)}
-                                  </Badge>
-                                )}
-                              </div>
-                              <Button
-                                size="sm"
-                                className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleSelectService(provider, service);
-                                }}
-                              >
-                                Book Now
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : provider.servicesHydrated ? (
-                      <div className="bg-white rounded-lg p-4 text-center text-gray-500 text-sm">
-                        No services available from this provider
-                      </div>
-                    ) : null}
-                    <DiscoveryVendorFeedSentinel
-                      hasMore={!!provider.servicesNextCursor}
-                      loading={fetchingServicesFor === provider.providerId}
-                      loadingMore={!!provider.servicesLoadingMore}
-                      onLoadMore={() => loadMoreProviderServices(provider.providerId)}
-                    />
-                  </div>
-                )}
-
-                {!expanded && (
-                  <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
-                    <div className="text-sm text-gray-600">
-                      {appointmentsMode ? (
-                        <span>
-                          {provider.nextAvailableSlot
-                            ? `Next: ${provider.nextAvailableSlot}`
-                            : 'Tap to view profile & book'}
-                        </span>
-                      ) : provider.services.length > 0 ? (
-                        <>
-                          {provider.services.length}{provider.servicesNextCursor ? '+' : ''} service
-                          {provider.services.length !== 1 ? 's' : ''} available
-                          <span className="text-gray-900 font-medium">
-                            {' '}
-                            from{' '}
-                            {formatPriceWithSymbol(
-                              Math.min(...provider.services.map((s) => s.price))
-                            )}
-                          </span>
-                        </>
-                      ) : provider.priceMin != null && provider.priceMin > 0 ? (
-                        <span>
-                          Services available{' '}
-                          <span className="text-gray-900 font-medium">
-                            from {formatPriceWithSymbol(provider.priceMin)}
-                          </span>
-                        </span>
-                      ) : (
-                        <span>Tap to view services</span>
-                      )}
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (appointmentsMode) {
-                          openGroomingProviderProfile(e, provider);
-                          return;
-                        }
-                        setSelectedProvider(provider.providerId);
-                        void fetchProviderServices(provider.providerId);
-                      }}
-                    >
-                      {appointmentsMode ? 'Select Slot for Appointment' : 'View Services'}
-                    </Button>
-                  </div>
-                )}
-              </Card>
-            );
+                <WarmpawzPayVendorCard
+                  key={provider.providerId}
+                  {...buildWapptDiscoveryVendorCardProps({
+                    provider: {
+                      name: provider.name,
+                      photo: provider.photo,
+                      isVerified: provider.isVerified,
+                      rating: provider.rating,
+                      reviewCount: provider.reviewCount,
+                      distance: provider.distance,
+                      distanceText: provider.distanceText,
+                      nextAvailableSlot: provider.nextAvailableSlot,
+                      experienceYears: provider.experienceYears,
+                      providerType: provider.providerType,
+                      city: provider.city,
+                      providerId: provider.providerId,
+                      vendorId: provider.vendorId,
+                    },
+                    subtitle: getProviderTypeLabel(provider),
+                    address: providerAddress,
+                    category: category || 'grooming',
+                    serviceKey: 'grooming',
+                    onPrimary: (e) => openGroomingProviderProfile(e, provider),
+                    onProfileClick: (e) => openGroomingProviderProfile(e, provider),
+                    router,
+                  })}
+                />
+              );
             })}
             <DiscoveryVendorFeedSentinel
               hasMore={hasMore && !vendorId}

@@ -1,47 +1,23 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react';
-import {
-  Star,
-  MapPin,
-  Clock,
-  Search,
-  ChevronRight,
-  Building2,
-  Stethoscope,
-  Shield,
-  Loader2,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { useRouter } from 'next/navigation';
+import { Search, Stethoscope } from 'lucide-react';
 import { discoveryVendorList, discoveryNextCursor } from '@/lib/discovery-list';
 import { apiClient } from '@/lib/api-client';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
-import { mapVendorServicesForVetHub } from '@/lib/map-vendor-services-for-vet';
-import {
-  buildVendorServicesPageUrl,
-  vendorServicesNextCursor,
-  vendorServicesRowsFromResponse,
-} from '@/lib/vendor-services-page';
-import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
-import {
-  buildWalkerServiceDataForVendorPackagePurchase,
-  isVendorServicePackageRow,
-  normalizeVendorServiceRowForPackage,
-} from '@/lib/vendor-package-purchase-nav';
-import { toast } from 'sonner';
-import { filterServicesForVetHub, resolveServiceCategoryDisplayLabel, applyVetHubDiscoveryToProviders, isNonVetProviderRow } from '@/lib/filter-hub-services';
+import { isVendorServicePackageRow, normalizeVendorServiceRowForPackage } from '@/lib/vendor-package-purchase-nav';
+import { filterServicesForVetHub, applyVetHubDiscoveryToProviders, isNonVetProviderRow } from '@/lib/filter-hub-services';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
-import { ServicePricingDisplay } from '../ServicePricingDisplay';
 import { pickProviderDistanceKm } from '@/lib/distance-display';
-import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
-import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
-import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
+import { WarmpawzPayVendorCard } from '@/components/warmpawz-pay/vendor-card/WarmpawzPayVendorCard';
+import { mapDiscoveryProviderToVendorCardProps } from '@/lib/warmpawz-pay/map-discovery-provider-to-vendor-card-props';
+import { buildWapptDiscoveryVendorCardProps } from '@/lib/wappt-discovery-vendor-card';
+import { launchWarmpawzPayServiceBooking } from '@/lib/commerce-switch-routing/launch-warmpawz-pay-service-booking';
 import { resolveNextAvailableLabel } from '@/lib/available-slots-response';
 import { useServiceStyleLaunchGate } from '@/hooks/useServiceStyleLaunchGate';
 import { ServiceStyleLaunchBlocked } from '../shared/ServiceStyleLaunchBlocked';
@@ -268,98 +244,8 @@ export function ClinicListView({
   const [clinics, setClinics] = useState<ClinicProvider[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'rating' | 'distance' | 'price'>('all');
-  const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
-  const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
+  const router = useRouter();
   const launchGate = useServiceStyleLaunchGate(phone, 'vet', 'at_center');
-
-  const fetchVendorServicesForClinic = useCallback(
-    async (clinicId: string, append = false) => {
-      const clinic = clinics.find((c) => c.id === clinicId);
-      if (!clinic) return;
-      if (append) {
-        if (!clinic.servicesNextCursor || clinic.servicesLoadingMore) return;
-      } else if (clinic.servicesHydrated) {
-        return;
-      }
-      if (append) {
-        setClinics((prev) =>
-          prev.map((c) =>
-            c.id === clinicId ? { ...c, servicesLoadingMore: true } : c
-          )
-        );
-      } else {
-        setFetchingServicesFor(clinicId);
-      }
-      try {
-        const res = (await apiClient
-          .get(
-            buildVendorServicesPageUrl({
-              vendorId: clinicId,
-              serviceStyle: 'at_center',
-              category: HUB_DISCOVERY_VET.servicesApiCategory,
-              customerPhone: phone || undefined,
-              cursor: append ? clinic.servicesNextCursor : undefined,
-            })
-          )
-          .catch(() =>
-            apiClient.get(
-              buildVendorServicesPageUrl({
-                vendorId: clinicId,
-                customerPhone: phone || undefined,
-                cursor: append ? clinic.servicesNextCursor : undefined,
-              })
-            )
-          )) as any;
-        const rawRows = vendorServicesRowsFromResponse(res);
-        const vetRows = mapVendorServicesForVetHub(rawRows);
-        const rows = filterServicesForVetHub<ClinicServiceRow>(
-          vetRows.map((s, i) => mapApiServiceToRow(s, clinicId, i, clinic.warmpawzAppointments === true))
-        );
-        const nextCursor = vendorServicesNextCursor(res);
-        setClinics((prev) =>
-          prev.map((c) => {
-            if (c.id !== clinicId) return c;
-            const seen = new Set(
-              append ? c.services.map((s) => s.stableKey) : []
-            );
-            const merged = append ? [...c.services] : [];
-            for (const row of rows) {
-              if (seen.has(row.stableKey)) continue;
-              seen.add(row.stableKey);
-              merged.push(row);
-            }
-            return {
-              ...c,
-              services: merged,
-              needsServiceFetch: false,
-              servicesHydrated: true,
-              servicesNextCursor: nextCursor,
-              servicesLoadingMore: false,
-            };
-          })
-        );
-      } catch (e) {
-        console.error('[CLINIC-LIST] vendor services fetch failed', e);
-        setClinics((prev) =>
-          prev.map((c) =>
-            c.id === clinicId
-              ? { ...c, servicesHydrated: true, servicesLoadingMore: false }
-              : c
-          )
-        );
-      } finally {
-        setFetchingServicesFor(null);
-      }
-    },
-    [phone, clinics]
-  );
-
-  const loadMoreClinicServices = useCallback(
-    (clinicId: string) => {
-      void fetchVendorServicesForClinic(clinicId, true);
-    },
-    [fetchVendorServicesForClinic]
-  );
 
   useEffect(() => {
     if (!launchGate.ready || launchGate.blocked) {
@@ -572,69 +458,6 @@ export function ClinicListView({
     void loadClinics(true);
   }, [hasMore, loadingMore, loading]);
 
-  const toggleClinic = (clinicId: string) => {
-    setSelectedClinicId((prev) => (prev === clinicId ? null : clinicId));
-  };
-
-  useEffect(() => {
-    if (!selectedClinicId) return;
-    const c = clinics.find((x) => x.id === selectedClinicId);
-    if (!c || c.servicesHydrated) return;
-    if (fetchingServicesFor === selectedClinicId) return;
-    fetchVendorServicesForClinic(selectedClinicId);
-  }, [selectedClinicId, clinics, fetchingServicesFor, fetchVendorServicesForClinic]);
-
-  const handleBookService = (clinic: ClinicProvider, row: ClinicServiceRow) => {
-    const vendorId = clinic.id;
-    const serviceIdForBooking = row.catalogServiceId || String(row.vendorServiceId);
-    const serviceObj = normalizeVendorServiceRowForPackage({
-      id: String(row.vendorServiceId),
-      serviceId: row.catalogServiceId,
-      vendorServiceId: row.vendorServiceId,
-      name: row.name,
-      price: row.price,
-      duration: row.duration,
-      isPackage: row.isPackage,
-      packageDetails: row.packageDetails,
-      metadata: row.metadata,
-    });
-    if (isVendorServicePackageRow(serviceObj)) {
-      const nav = buildWalkerServiceDataForVendorPackagePurchase({
-        vendorId: String(vendorId),
-        vendorName: clinic.name,
-        serviceRow: serviceObj,
-        serviceTypeCategory: 'vet',
-        serviceStyle: 'at_center',
-      });
-      if (nav) {
-        onNavigate('purchase-package', nav);
-        return;
-      }
-      toast.error('Could not start package booking. Please try again or pick another service.');
-      return;
-    }
-    onNavigate('appointment', {
-      clinicId: vendorId,
-      vendorId,
-      vendorName: clinic.name,
-      service: serviceObj,
-      serviceId: serviceIdForBooking,
-      serviceName: row.name,
-      price: row.price,
-      duration: row.duration,
-      serviceStyle: 'at_center',
-      serviceType: 'at_center',
-      clinic: {
-        id: vendorId,
-        name: clinic.name,
-        address: clinic.address,
-        rating: clinic.rating,
-        review_count: clinic.review_count,
-        timing: clinic.timing,
-      },
-    });
-  };
-
   const openClinicDetails = (e: MouseEvent, clinicId: string) => {
     e.stopPropagation();
     onNavigate('vet-services-by-style', {
@@ -699,6 +522,18 @@ export function ClinicListView({
     );
   };
 
+  const clinicSubtitle = (clinic: ClinicProvider) =>
+    clinic.roleDisplayName || clinic.role || clinic.roleName || 'Vet Clinic';
+
+  const clinicFooterHint = (clinic: ClinicProvider) => {
+    if (clinic.nextAvailableSlot) return `Next: ${clinic.nextAvailableSlot}`;
+    if (clinic.services.length > 0) {
+      return `${clinic.services.length} service${clinic.services.length !== 1 ? 's' : ''} available`;
+    }
+    if (clinic.needsServiceFetch) return 'Tap to view services & prices';
+    return 'Tap to view profile & book';
+  };
+
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   if (launchGate.ready && launchGate.blocked) {
@@ -759,291 +594,82 @@ export function ClinicListView({
             <p className="text-sm font-medium text-gray-700">{sortedClinics.length} clinics found</p>
 
             {sortedClinics.map((clinic) => {
-              const expanded = selectedClinicId === clinic.id;
               const minP = minPriceForClinic(clinic);
               const appointmentsMode = clinic.warmpawzAppointments === true;
-              const showPricing = !appointmentsMode;
-              const headerActsAsCollapse = expanded;
-              const headerInteractive = headerActsAsCollapse;
+              const subtitle = clinicSubtitle(clinic);
+              const openProfile = (e: MouseEvent<HTMLButtonElement>) => openClinicDetails(e, clinic.id);
+
+              if (appointmentsMode) {
+                return (
+                  <WarmpawzPayVendorCard
+                    key={clinic.id}
+                    {...buildWapptDiscoveryVendorCardProps({
+                      provider: {
+                        name: clinic.name,
+                        photo: clinic.photo,
+                        isVerified: clinic.isVerified,
+                        rating: clinic.rating,
+                        reviewCount: clinic.review_count,
+                        distance: clinic.distanceKm,
+                        nextAvailableSlot: clinic.nextAvailableSlot,
+                        providerType: 'vendor',
+                        vendorId: clinic.id,
+                        providerId: clinic.id,
+                      },
+                      subtitle,
+                      address: clinic.address,
+                      category: 'vet',
+                      serviceKey: 'vet',
+                      onPrimary: (e) => {
+                        e.stopPropagation();
+                        handleBookAppointment(clinic);
+                      },
+                      onProfileClick: openProfile,
+                      router,
+                    })}
+                  />
+                );
+              }
+
+              const cardProps = mapDiscoveryProviderToVendorCardProps({
+                provider: {
+                  name: clinic.name,
+                  photo: clinic.photo,
+                  isVerified: clinic.isVerified,
+                  rating: clinic.rating,
+                  reviewCount: clinic.review_count,
+                  distance: clinic.distanceKm,
+                  nextAvailableSlot: clinic.nextAvailableSlot,
+                  providerType: 'vendor',
+                },
+                subtitle,
+                address: clinic.address,
+                footerHint: clinicFooterHint(clinic),
+                profileAriaLabel: `View profile: ${clinic.name}`,
+                verifiedAriaLabel: 'Verified clinic',
+                primaryActionClassName: 'text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10',
+                primaryLabel: 'View Services',
+                onPrimary: openProfile,
+                onProfileClick: openProfile,
+                secondaryLabel: 'Pay with Warmpawz',
+                onSecondary: (e) => {
+                  e.stopPropagation();
+                  if (!clinic.id) return;
+                  launchWarmpawzPayServiceBooking({
+                    router,
+                    serviceKey: 'vet',
+                    category: 'vet',
+                    vendorId: clinic.id,
+                  });
+                },
+              });
+
               return (
-                <Card key={clinic.id} className="bg-white rounded-xl border border-gray-100 shadow-sm">
-                  <div
-                    role={headerInteractive ? 'button' : undefined}
-                    tabIndex={headerInteractive ? 0 : undefined}
-                    onClick={headerInteractive ? () => toggleClinic(clinic.id) : undefined}
-                    onKeyDown={
-                      headerInteractive
-                        ? (e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              toggleClinic(clinic.id);
-                            }
-                          }
-                        : undefined
-                    }
-                    className={`p-4 border-b border-gray-100 text-left w-full ${
-                      headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''
-                    }`}
-                  >
-                    <div className="flex gap-3">
-                      {clinic.photo ? (
-                        <img
-                          src={clinic.photo}
-                          alt={clinic.name}
-                          className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center flex-shrink-0 border border-orange-100/50">
-                          <Building2 className="w-7 h-7 text-[#FF8C42]" />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <h3 className="font-bold text-gray-900 truncate">{clinic.name}</h3>
-                            {clinic.isVerified && (
-                              <Shield className="w-4 h-4 text-green-500 shrink-0" aria-hidden />
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => openClinicDetails(e, clinic.id)}
-                            onKeyDown={(e) => e.stopPropagation()}
-                            aria-label="View clinic profile"
-                            className="flex-shrink-0 p-1 -m-1 rounded-md text-gray-400 hover:text-[#FF8C42] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8C42]/40"
-                          >
-                            <ChevronRight className="w-5 h-5 pointer-events-none" aria-hidden />
-                          </button>
-                        </div>
-                        {(clinic.roleDisplayName || clinic.role || clinic.roleName) && (
-                          <div className="mt-0.5">
-                            <Badge variant="outline" className="text-[10px] px-2 py-0.5">
-                              {clinic.roleDisplayName || clinic.role || clinic.roleName}
-                            </Badge>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <VendorRatingDisplay
-                            row={{
-                              vendorId: clinic.id,
-                              id: clinic.id,
-                              rating: clinic.rating,
-                              vendorRating: clinic.rating,
-                              review_count: clinic.review_count,
-                              vendorReviewCount: clinic.review_count,
-                            }}
-                            vendorId={String(clinic.id ?? '')}
-                            textClassName="text-xs text-gray-500"
-                          />
-                          {clinic.distanceKm != null && (
-                            <>
-                              <span className="text-gray-300">•</span>
-                              <span className="text-sm text-gray-500">
-                                {clinic.distanceKm < 1
-                                  ? `${Math.round(clinic.distanceKm * 1000)} m`
-                                  : `${Math.round(clinic.distanceKm)} km`}
-                              </span>
-                            </>
-                          )}
-                          {showPricing && minP != null && clinic.services.length > 0 && (
-                            <>
-                              <span className="text-gray-300">•</span>
-                              <span className="text-sm font-semibold text-[#FF8C42]">
-                                from {formatPriceWithSymbol(minP)}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-1.5 text-sm text-gray-500">
-                          <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                          <span className="truncate">{clinic.address}</span>
-                        </div>
-                        {clinic.nextAvailableSlot && (
-                          <div className="flex items-center gap-1.5 mt-2">
-                            <Clock className="w-3.5 h-3.5 text-green-500" />
-                            <span className="text-sm font-medium text-green-600">
-                              Next: {clinic.nextAvailableSlot}
-                            </span>
-                          </div>
-                        )}
-                        {!clinic.nextAvailableSlot && (
-                          <div className="flex items-center gap-1 mt-1.5 text-sm text-gray-500">
-                            <Clock className="w-3.5 h-3.5 text-gray-400" />
-                            <span>{clinic.timing}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {expanded && (
-                    <div className="bg-gray-50 p-4 space-y-3">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <h4 className="text-sm font-semibold text-gray-700">
-                          Available Services ({clinic.services.length}{clinic.servicesNextCursor ? '+' : ''})
-                        </h4>
-                        <button
-                          type="button"
-                          onClick={(e) => openClinicDetails(e, clinic.id)}
-                          className="text-xs font-medium text-[#FF8C42] hover:underline"
-                        >
-                          Clinic details
-                        </button>
-                      </div>
-
-                      {fetchingServicesFor === clinic.id && clinic.services.length === 0 ? (
-                        <div className="flex items-center justify-center py-8 text-gray-500 gap-2">
-                          <Loader2 className="w-5 h-5 animate-spin text-[#FF8C42]" />
-                          <span className="text-sm">Loading services…</span>
-                        </div>
-                      ) : clinic.services.length === 0 ? (
-                        <p className="text-sm text-gray-500 text-center py-4">No services listed for this clinic.</p>
-                      ) : (
-                        <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1 space-y-3">
-                          {clinic.services.map((service) => {
-                            const descTrim = service.description?.trim() ?? '';
-                            const isPackage = Boolean((service as any).isPackage);
-                            return (
-                              <div
-                                key={service.stableKey}
-                                className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
-                              >
-                                {/* Row 1: name + package badge (left) | price + note (right) */}
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-start gap-2">
-                                      <h5 className="min-w-0 flex-1 font-semibold text-gray-900 text-[15px] leading-snug">
-                                        {service.name}
-                                      </h5>
-                                      {isPackage && (
-                                        <span className="mt-0.5 px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
-                                          Package
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    {/* Row 2: description */}
-                                    {descTrim ? (
-                                      <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
-                                        <ServiceDescriptionInline
-                                          description={descTrim}
-                                          title={service.name}
-                                          className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
-                                          dialogHint="Full description from the clinic (vendor-provided)"
-                                        />
-                                      </div>
-                                    ) : (
-                                      <p className="mt-1.5 text-gray-400 text-sm line-clamp-2 italic">
-                                        {appointmentsMode
-                                          ? 'Service menu — book an appointment to continue.'
-                                          : 'Professional in-clinic care — tap Book Now to continue.'}
-                                      </p>
-                                    )}
-                                  </div>
-
-                                  {showPricing ? (
-                                  <div className="shrink-0 text-right">
-                                    <ServicePricingDisplay
-                                      basePrice={service.price}
-                                      usePromoQuote
-                                      vendorId={String(clinic.id)}
-                                      serviceId={String(service.vendorServiceId)}
-                                      customerId={phone}
-                                      serviceStyle="at_center"
-                                      serviceCategory="vet"
-                                    />
-                                    <p className="mt-0.5 text-[11px] leading-4 text-gray-500 max-w-[9rem]">{INDICATIVE_PRICING_NOTE}</p>
-                                  </div>
-                                  ) : null}
-                                </div>
-
-                                {/* Row 3: badges (left) | Book Now (right) */}
-                                <div className="flex items-center justify-between gap-2 mt-3">
-                                  <div className="flex items-center gap-1.5 text-sm text-gray-500">
-                                    <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                                    <span>{service.duration} mins</span>
-                                    <span className="text-gray-300">·</span>
-                                    <span>{resolveServiceCategoryDisplayLabel(service) || 'Vet Care'}</span>
-                                  </div>
-                                  {!appointmentsMode ? (
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 rounded-full px-5"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleBookService(clinic, service);
-                                    }}
-                                  >
-                                    Book Now
-                                  </Button>
-                                  ) : null}
-                                </div>
-                              </div>
-                            );
-                          })}
-                          <DiscoveryVendorFeedSentinel
-                            hasMore={!!clinic.servicesNextCursor}
-                            loading={fetchingServicesFor === clinic.id}
-                            loadingMore={!!clinic.servicesLoadingMore}
-                            onLoadMore={() => loadMoreClinicServices(clinic.id)}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {!expanded && (
-                    <div className="px-4 py-3 bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div className="text-sm text-gray-600">
-                        {clinic.services.length > 0 ? (
-                          <>
-                            {clinic.services.length} service{clinic.services.length !== 1 ? 's' : ''}{' '}
-                            available
-                            {showPricing && minP != null && (
-                              <span className="text-gray-900 font-medium">
-                                {' '}
-                                from {formatPriceWithSymbol(minP)}
-                              </span>
-                            )}
-                          </>
-                        ) : clinic.needsServiceFetch ? (
-                          <span className="text-gray-500">
-                            {appointmentsMode ? 'Tap to view services' : 'Tap to load services & prices'}
-                          </span>
-                        ) : (
-                          <span className="text-gray-500">No services available</span>
-                        )}
-                        {showPricing && minP != null && (
-                          <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap justify-end">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedClinicId(clinic.id);
-                          }}
-                        >
-                          View Services
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="text-gray-600"
-                          onClick={(e) => openClinicDetails(e, clinic.id)}
-                        >
-                          Details
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </Card>
+                <WarmpawzPayVendorCard
+                  key={clinic.id}
+                  {...cardProps}
+                  priceLabel={minP != null ? `from ${formatPriceWithSymbol(minP)}` : undefined}
+                />
               );
             })}
             <DiscoveryVendorFeedSentinel
