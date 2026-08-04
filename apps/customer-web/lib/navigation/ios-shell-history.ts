@@ -11,7 +11,19 @@ export function isCapacitorIosPlatform(): boolean {
 }
 
 let popstateFromGesture = false;
+let programmaticHistorySyncInProgress = false;
 let installed = false;
+
+/** Reset module state between unit tests. */
+export function resetIosShellHistoryForTests(): void {
+  popstateFromGesture = false;
+  programmaticHistorySyncInProgress = false;
+  installed = false;
+}
+
+function replaceIosShellHistoryState(screen: string): void {
+  window.history.replaceState({ [SHELL_STATE_KEY]: screen }, '', '/');
+}
 
 /** Push a history entry so iOS edge-swipe maps to shell back on `/`. */
 export function pushIosShellHistoryEntry(screen: string): void {
@@ -19,6 +31,14 @@ export function pushIosShellHistoryEntry(screen: string): void {
   const path = window.location.pathname || '/';
   if (path !== '/' && path !== '') return;
   window.history.pushState({ [SHELL_STATE_KEY]: screen }, '', '/');
+}
+
+/** After replaceTop / overlay swap — same depth, new screen on `/`. */
+export function syncIosShellScreenReplace(currentScreen: string): void {
+  if (!isCapacitorIosPlatform()) return;
+  const path = window.location.pathname || '/';
+  if (path !== '/' && path !== '') return;
+  replaceIosShellHistoryState(currentScreen);
 }
 
 /**
@@ -31,8 +51,15 @@ export function syncIosHistoryAfterShellPop(steps = 1): void {
     popstateFromGesture = false;
     return;
   }
-  for (let i = 0; i < steps; i++) {
-    window.history.back();
+  programmaticHistorySyncInProgress = true;
+  try {
+    for (let i = 0; i < steps; i++) {
+      window.history.back();
+    }
+  } finally {
+    queueMicrotask(() => {
+      programmaticHistorySyncInProgress = false;
+    });
   }
 }
 
@@ -58,7 +85,7 @@ export function syncIosShellStackDepth(
   if (consumeIosPopstateGestureFlag()) return;
 
   if (nextDepth === 1) {
-    window.history.replaceState({ [SHELL_STATE_KEY]: currentScreen }, '', '/');
+    replaceIosShellHistoryState(currentScreen);
     return;
   }
 
@@ -83,12 +110,16 @@ export function initIosShellHistoryBridge(): () => void {
   installed = true;
 
   if (!window.history.state?.[SHELL_STATE_KEY]) {
-    window.history.replaceState({ [SHELL_STATE_KEY]: 'home' }, '', window.location.pathname || '/');
+    replaceIosShellHistoryState('home');
   }
 
   const onPopState = () => {
     const path = window.location.pathname || '/';
     if (path !== '/' && path !== '') return;
+    if (programmaticHistorySyncInProgress) {
+      programmaticHistorySyncInProgress = false;
+      return;
+    }
     popstateFromGesture = true;
     runBackHandlers();
   };
@@ -98,5 +129,7 @@ export function initIosShellHistoryBridge(): () => void {
   return () => {
     window.removeEventListener('popstate', onPopState);
     installed = false;
+    programmaticHistorySyncInProgress = false;
+    popstateFromGesture = false;
   };
 }

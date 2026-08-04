@@ -5,6 +5,11 @@ import { MapPin, Navigation, X, Loader2, Search, ChevronRight } from 'lucide-rea
 import { toast } from 'sonner';
 
 import { apiClient } from '@/lib/api-client';
+import {
+  fillAddressFromCurrentLocation,
+  geolocationErrorMessage,
+  geolocationResultToFormFields,
+} from '@/lib/address-from-geolocation';
 
 // Google Maps Script Loader
 declare global {
@@ -216,92 +221,28 @@ export function AddressSearchInput({
   };
 
   // Detect current location
-  const handleDetectLocation = () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser');
-      return;
-    }
-
+  const handleDetectLocation = async () => {
     setDetectingLocation(true);
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-
-        // Reverse geocode
-        if (geocoderRef.current) {
-          geocoderRef.current.geocode(
-            { location: { lat: latitude, lng: longitude } },
-            (results: any[], status: any) => {
-              setDetectingLocation(false);
-
-              if (status === 'OK' && results[0]) {
-                const result = results[0];
-                const address: Address = {
-                  address: result.formatted_address,
-                  lat: latitude,
-                  lng: longitude,
-                };
-
-                // Extract address components
-                result.address_components?.forEach((component: any) => {
-                  if (component.types.includes('postal_code')) {
-                    address.pincode = component.long_name;
-                  }
-                  if (component.types.includes('locality')) {
-                    address.city = component.long_name;
-                  }
-                  if (component.types.includes('administrative_area_level_1')) {
-                    address.state = component.long_name;
-                  }
-                });
-
-                setInputValue(result.formatted_address);
-                onAddressSelect(address);
-                toast.success('Location detected!');
-              } else {
-                // Fallback: Just use coordinates
-                const address: Address = {
-                  address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-                  lat: latitude,
-                  lng: longitude,
-                };
-                setInputValue(address.address);
-                onAddressSelect(address);
-              }
-            }
-          );
-        } else {
-          setDetectingLocation(false);
-          // Fallback without geocoding
-          const address: Address = {
-            address: 'Current Location',
-            lat: latitude,
-            lng: longitude,
-          };
-          setInputValue('Current Location');
-          onAddressSelect(address);
-          toast.success('Location detected!');
-        }
-      },
-      (error) => {
-        setDetectingLocation(false);
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            toast.error('Please allow location access');
-            break;
-          case error.POSITION_UNAVAILABLE:
-            toast.error('Location information unavailable');
-            break;
-          case error.TIMEOUT:
-            toast.error('Location request timed out');
-            break;
-          default:
-            toast.error('Could not detect location');
-        }
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+    try {
+      const result = await fillAddressFromCurrentLocation();
+      const fields = geolocationResultToFormFields(result);
+      const address: Address = {
+        address: fields.addressLine1 || 'Current Location',
+        lat: result.latitude,
+        lng: result.longitude,
+        pincode: fields.pincode,
+        city: fields.city,
+        state: fields.state,
+        landmark: fields.landmark,
+      };
+      setInputValue(address.address);
+      onAddressSelect(address);
+      toast.success('Location detected!');
+    } catch (error) {
+      toast.error(geolocationErrorMessage(error));
+    } finally {
+      setDetectingLocation(false);
+    }
   };
 
   return (

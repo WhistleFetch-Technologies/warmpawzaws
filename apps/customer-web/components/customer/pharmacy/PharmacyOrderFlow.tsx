@@ -29,7 +29,11 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
-import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
+import {
+  fillAddressFromCurrentLocation,
+  geolocationErrorMessage,
+  resolveCurrentGeolocationCoords,
+} from '@/lib/address-from-geolocation';
 import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
@@ -162,21 +166,17 @@ export function PharmacyOrderFlow({
 
   // Load saved address if available
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          // Auto-fill with current location
-          setAddress({
-            address: 'Current Location',
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        },
-        () => {
-          // Silent fail
-        }
-      );
-    }
+    void resolveCurrentGeolocationCoords()
+      .then((coords) => {
+        setAddress({
+          address: 'Current Location',
+          lat: coords.latitude,
+          lng: coords.longitude,
+        });
+      })
+      .catch(() => {
+        // Silent fail — user can enter address manually
+      });
   }, []);
 
   const handleAddItem = () => {
@@ -198,59 +198,22 @@ export function PharmacyOrderFlow({
     setItems(updated);
   };
 
-  const handleDetectLocation = () => {
-    if (navigator.geolocation) {
-      setLoading(true);
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          try {
-            // Reverse geocode to get address
-            const apiKey =
-              (await getGoogleMapsBrowserApiKey()) ||
-              process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
-              '';
-            if (apiKey) {
-              const response = await fetch(
-                `https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.coords.latitude},${position.coords.longitude}&key=${apiKey}`
-              );
-              const data = await response.json();
-              if (data.results && data.results.length > 0) {
-                const addr = data.results[0].formatted_address;
-                setAddressInput(addr);
-                setAddress({
-                  address: addr,
-                  lat: position.coords.latitude,
-                  lng: position.coords.longitude,
-                });
-                toast.success('Location detected!');
-              }
-            } else {
-              setAddress({
-                address: addressInput || 'Current Location',
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-              });
-              toast.success('Location detected!');
-            }
-          } catch (error) {
-            console.error('Geocoding error:', error);
-            setAddress({
-              address: addressInput || 'Current Location',
-              lat: position.coords.latitude,
-              lng: position.coords.longitude,
-            });
-            toast.success('Location detected!');
-          }
-          setLoading(false);
-        },
-        (error) => {
-          console.error('Geolocation error:', error);
-          toast.error('Could not detect location. Please enter manually.');
-          setLoading(false);
-        }
-      );
-    } else {
-      toast.error('Geolocation not supported');
+  const handleDetectLocation = async () => {
+    setLoading(true);
+    try {
+      const result = await fillAddressFromCurrentLocation();
+      const addr = result.addressLine1 || 'Current Location';
+      setAddressInput(addr);
+      setAddress({
+        address: addr,
+        lat: result.latitude,
+        lng: result.longitude,
+      });
+      toast.success('Location detected!');
+    } catch (error) {
+      toast.error(geolocationErrorMessage(error));
+    } finally {
+      setLoading(false);
     }
   };
 

@@ -57,6 +57,8 @@ public class MainActivity extends BridgeActivity {
     super.onResume();
     // Razorpay / payment sheets and some OEM skins reset the status bar after onCreate.
     applyBrandSystemBars();
+    // Bridge may not be ready in onStart — retry so WebView geolocation can prompt.
+    installBridgeWebChromeClient();
   }
 
   @Override

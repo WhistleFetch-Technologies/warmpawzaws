@@ -83,7 +83,10 @@ import {
   peekProviderProfileContext,
   rememberProviderProfileContext,
 } from '@/lib/provider-profile-nav';
-import { syncIosShellStackDepth } from '@/lib/navigation/ios-shell-history';
+import {
+  syncIosShellScreenReplace,
+  syncIosShellStackDepth,
+} from '@/lib/navigation/ios-shell-history';
 import { resolveServiceBookingCommerceRouteForNavigation } from '@/lib/commerce-switch-routing';
 import {
   BACK_HANDLER_PRIORITY,
@@ -493,14 +496,21 @@ export function CustomerHomeWrapper({
   } = useShellNavigationStack<ScreenType>(initialScreen || 'home');
 
   const shellStackDepthRef = useRef(navigationHistory.length);
+  const shellScreenRef = useRef(currentScreen);
   useEffect(() => {
-    const prev = shellStackDepthRef.current;
-    const next = navigationHistory.length;
-    if (prev !== next) {
-      syncIosShellStackDepth(prev, next, currentScreen);
-      shellStackDepthRef.current = next;
+    const prevDepth = shellStackDepthRef.current;
+    const nextDepth = navigationHistory.length;
+    const prevScreen = shellScreenRef.current;
+
+    if (prevDepth !== nextDepth) {
+      syncIosShellStackDepth(prevDepth, nextDepth, currentScreen);
+      shellStackDepthRef.current = nextDepth;
+    } else if (prevScreen !== currentScreen && pathname === '/') {
+      syncIosShellScreenReplace(currentScreen);
     }
-  }, [navigationHistory.length, currentScreen]);
+
+    shellScreenRef.current = currentScreen;
+  }, [navigationHistory.length, currentScreen, pathname]);
 
   /** Allyticas: URL + in-app `currentScreen` (e.g. `Home · Vet care` when path is still `/`). */
   useCustomerShellAnalytics(currentScreen, pathname, searchParams);
@@ -1443,7 +1453,7 @@ export function CustomerHomeWrapper({
         serviceType: 'pet_nutritionist',
         category: 'nutritionist',
       });
-      setCurrentScreen('nutritionist-tele');
+      navigateToScreen('nutritionist-tele');
       return;
     }
 
@@ -1490,7 +1500,7 @@ export function CustomerHomeWrapper({
       service === 'training_home' ||
       service === 'training_center'
     ) {
-      setCurrentScreen(service as ScreenType);
+      navigateToScreen(service as ScreenType);
       return;
     }
     else if (service === 'grooming') {
@@ -4326,7 +4336,7 @@ export function CustomerHomeWrapper({
               } else {
                 setMealPlanVendorFocus(null);
               }
-              setCurrentScreen('nutrition-meal-plans');
+              navigateToScreen('nutrition-meal-plans');
             } else if (screen === 'nutritionist-booking') {
               setSelectedVendorId(data?.vendorId);
               setVetServiceData({
@@ -4340,13 +4350,13 @@ export function CustomerHomeWrapper({
             } else if (screen === 'create-booking') {
               setSelectedVendorId(data?.vendorId);
               setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'pet_nutritionist' });
-              setCurrentScreen('create-booking');
+              navigateToScreen('create-booking');
             } else if (screen === 'pets') {
               navigateToPets();
             } else if (screen) {
-              setCurrentScreen(screen as ScreenType);
+              navigateToScreen(screen as ScreenType);
             } else {
-              setCurrentScreen('nutritionist');
+              navigateToScreen('nutritionist');
             }
           }}
         />
