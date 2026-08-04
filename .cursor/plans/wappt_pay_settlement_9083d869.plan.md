@@ -7,7 +7,7 @@ todos:
     status: pending
   - id: s01-bindu-withhold
     content: "S01 BINDU builds — migration 1093 + admin withhold API/UI → push"
-    status: pending
+    status: done
   - id: s02-abhi-discount
     content: "S02 ABHI builds — extend wpay-discount (appointmentFeeCredit) + test → push"
     status: pending
