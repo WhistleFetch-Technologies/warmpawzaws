@@ -3,6 +3,7 @@ import { resolveCustomerIdFromPhone } from '../../../../utils/customer-coordinat
 import { getRazorpayConfig } from '../../../../utils/payments/razorpay-client';
 import { verifyWpayRazorpaySignature } from '../../../../utils/wpay-razorpay-order';
 import { dbWpayCompletePayment, dbWpayPaymentByIdForCustomer } from '../repos/wpay-payment.repo';
+import { accrueWpaySettlement } from '../shared/accrue-wpay-settlement';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -12,6 +13,16 @@ function readMetadataNumber(meta: Record<string, unknown> | null, key: string): 
   const raw = meta[key];
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
+}
+
+async function tryAccrueWpaySettlement(
+  payment: NonNullable<Awaited<ReturnType<typeof dbWpayPaymentByIdForCustomer>>>,
+): Promise<void> {
+  try {
+    await accrueWpaySettlement(payment);
+  } catch (error) {
+    console.error('[customer/warmpawz-pay/verify] settlement accrual failed', error);
+  }
 }
 
 export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
@@ -51,6 +62,7 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
     }
 
     if (existing.payment_status === 'completed') {
+      await tryAccrueWpaySettlement(existing);
       return c.json({
         success: true,
         paymentId,
@@ -98,6 +110,8 @@ export async function executeCustomerWarmpawzPayVerifyPost(c: Context) {
     if (!completed) {
       return c.json({ success: false, error: 'Failed to complete payment' }, 500);
     }
+
+    await tryAccrueWpaySettlement(completed);
 
     return c.json({
       success: true,

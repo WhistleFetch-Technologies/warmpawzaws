@@ -40,6 +40,7 @@ import {
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { resolveVendorDashboardTimeframeRange } from '../../../utils/vendor-dashboard-timeframe';
 import { applyVendorBookingDisplayFields } from '../../warmpawz-appointments/shared/vendor-booking-display';
+import { mapWpaySettlementLedgerStatus } from '../../customer/warmpawz-pay/shared/accrue-wpay-settlement';
 
 const DASHBOARD_SERVICE_NAME_SQL = `CASE
   WHEN LOWER(COALESCE(b.commerce_mode, '')) = 'warmpawz_appointments'
@@ -838,6 +839,36 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const settlementRows = settlementsResult.rows || [];
 
+      const wpayRealizedCol = 'COALESCE(p.completed_at, s.settlement_date::timestamptz, s.created_at)';
+      const wpayPeriodSql = periodScoped
+        ? ` AND ${sqlTimestampInEarningsPeriod(period, wpayRealizedCol)}`
+        : '';
+      const wpaySettlementsSql = `SELECT s.id,
+                    s.vendor_id,
+                    s.payment_id,
+                    s.total_amount,
+                    s.commission_amount,
+                    s.net_amount,
+                    s.settlement_status,
+                    s.settlement_date,
+                    s.settlement_breakup,
+                    s.created_at,
+                    s.completed_at AS settlement_completed_at,
+                    p.original_amount,
+                    p.amount AS paid_amount,
+                    p.completed_at AS payment_completed_at,
+                    c.full_name AS customer_name
+             FROM settlements s
+             INNER JOIN payments p ON p.id = s.payment_id
+             LEFT JOIN customers c ON c.id = p.customer_id
+             WHERE s.vendor_id = ANY($1::uuid[])
+               AND s.order_type = 'warmpawz_pay'
+               AND s.payment_id IS NOT NULL${wpayPeriodSql}
+             ORDER BY ${wpayRealizedCol} DESC NULLS LAST`;
+
+      const wpaySettlementsResult = await query(wpaySettlementsSql, [vendorIdsForEarnings]).catch(() => ({ rows: [] }));
+      const wpaySettlementRows = wpaySettlementsResult.rows || [];
+
       // Calculate summary
       const summary = {
         totalEarnings: 0,
@@ -901,6 +932,34 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         }
       });
 
+      wpaySettlementRows.forEach((ws: any) => {
+        const ledgerStatus = mapWpaySettlementLedgerStatus(ws.settlement_status);
+        if (ledgerStatus === 'cancelled') return;
+
+        const amount = safeMoneyAmount(ws.net_amount);
+        const commission = safeMoneyAmount(ws.commission_amount);
+        const total = safeMoneyAmount(ws.total_amount);
+
+        summary.totalEarnings += amount;
+        summary.totalCommission += commission;
+        summary.totalRevenue += total;
+
+        if (ledgerStatus === 'pending') {
+          summary.pendingSettlement += amount;
+        } else if (ledgerStatus === 'settled') {
+          summary.settled += amount;
+        } else if (ledgerStatus === 'paid_out') {
+          summary.paidOut += amount;
+        }
+
+        if (period === 'lifetime') {
+          const realizedAt = ws.payment_completed_at || ws.settlement_date || ws.created_at;
+          if (realizedAt) summary.thisPeriod += amount;
+        } else {
+          summary.thisPeriod += amount;
+        }
+      });
+
       // Get vendor info for bank verification status
       const vendors = await select('vendors', { id: vendorId });
       const vendor = vendors[0] || {};
@@ -937,7 +996,39 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         settlementId: ds.id,
       }));
 
-      const transactions = [...bookingTransactions, ...settlementTransactions].sort(
+      const wpaySettlementTransactions = wpaySettlementRows.map((ws: any) => {
+        const breakup =
+          ws.settlement_breakup && typeof ws.settlement_breakup === 'object'
+            ? ws.settlement_breakup
+            : {};
+        const quotedAmount = safeMoneyAmount(
+          breakup.quotedAmount ?? ws.original_amount ?? ws.total_amount,
+        );
+        const realizedAt =
+          ws.payment_completed_at || ws.settlement_date || ws.created_at;
+        const withholdPercent = safeMoneyAmount(breakup.platformWithholdPercent);
+        return {
+          id: ws.id,
+          paymentId: ws.payment_id,
+          bookingId: null,
+          bookingDate: realizedAt,
+          serviceName: 'Pay Bill',
+          customerName: ws.customer_name || 'Customer',
+          flowType: 'pay_bill' as const,
+          quotedAmount,
+          paidAmount: safeMoneyAmount(ws.paid_amount ?? ws.total_amount),
+          amount: safeMoneyAmount(ws.net_amount),
+          commission: safeMoneyAmount(ws.commission_amount),
+          totalAmount: safeMoneyAmount(ws.total_amount),
+          commissionRate: withholdPercent,
+          status: mapWpaySettlementLedgerStatus(ws.settlement_status),
+          realizedAt,
+          paidOutAt: ws.settlement_completed_at || null,
+          settlementId: ws.id,
+        };
+      });
+
+      const transactions = [...bookingTransactions, ...settlementTransactions, ...wpaySettlementTransactions].sort(
         (a: any, b: any) =>
           new Date(b.realizedAt || 0).getTime() - new Date(a.realizedAt || 0).getTime(),
       );
@@ -971,6 +1062,10 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
               ...settlementRows.map((ds: any) => ({
                 realized_at: ds.order_delivered_at || ds.created_at,
                 amount: ds.net_payout,
+              })),
+              ...wpaySettlementRows.map((ws: any) => ({
+                realized_at: ws.payment_completed_at || ws.settlement_date || ws.created_at,
+                amount: ws.net_amount,
               })),
             ])
           : undefined;

@@ -317,9 +317,9 @@ flowchart LR
 | **S00** | Both | — | Align on branch; read this plan; confirm latest `git pull` | `pending` | | | |
 | **S01** | **Bindu** | Abhi | `1093_warmpawz_pay_platform_withhold.sql` + admin pricing API/UI for `platformWithholdPercent` | `done` | `acc8e2ab5` | 2026-08-04 | Abhi: pull + confirm admin can save withhold % |
 | **S02** | **Abhi** | Bindu | Extend `computeWpayDiscountQuote(quoted, %, { appointmentFeeCredit })` + unit test in `wpay-discount` | `done` | `5a0d65f37` | 2026-08-04 | `billBase` + credit fields added; 5 tests pass — Bindu: pull for S03 |
-| **S03** | **Bindu** | Abhi | `accrue-wpay-settlement.ts`; wire `customer_warmpawz_pay_verify_post`; **apply 1093 on dev RDS**; deploy lambda dev | `pending` | | | Abhi: walk-in Pay Bill smoke — payment completes |
-| **S04** | **Bindu** | Abhi | Extend `GET /vendor/:vendorId/earnings` — UNION `settlements` where `order_type='warmpawz_pay'` (customer name, date, net) | `pending` | | | Abhi: confirm API shape for UI |
-| **S05** | **Bindu** | Abhi | `1094_warmpawz_pay_appointment_credits.sql` + **apply on dev RDS** | `pending` | | | Abhi: table exists before S07 |
+| **S03** | **Bindu** | Abhi | `accrue-wpay-settlement.ts`; wire `customer_warmpawz_pay_verify_post`; **apply 1093 on dev RDS**; deploy lambda dev | `done` | | 2026-08-04 | accrue + verify wire + 4 unit tests; 1093 on dev — deploy lambda pending |
+| **S04** | **Bindu** | Abhi | Extend `GET /vendor/:vendorId/earnings` — UNION `settlements` where `order_type='warmpawz_pay'` (customer name, date, net) | `done` | | 2026-08-04 | `flowType: pay_bill`, quoted/paid/net on transactions |
+| **S05** | **Bindu** | Abhi | `1094_warmpawz_pay_appointment_credits.sql` + **apply on dev RDS** | `done` | | 2026-08-04 | 1094 applied dev via Data API — Abhi: ready for S07 |
 | **S06** | **Abhi** | Bindu | `GET /customer/warmpawz-pay/appointment-context?vendorId=` — open WAPPT booking + OTP fields | `pending` | | | Bindu: optional API smoke |
 | **S07** | **Abhi** | Bindu | Initiate/verify: optional `bookingId`, credit only if booking `completed`, idempotent insert into `warmpawz_pay_appointment_credits` | `pending` | | | Bindu: deploy lambda if handler changed |
 | **S08** | **Bindu** | Abhi | `GET /vendor/warmpawz-pay/payments` + vendor-web earnings dashboard Pay Bill rows; deploy vendor-web dev | `pending` | | | Abhi: vendor UI shows walk-in Pay from S03 |
