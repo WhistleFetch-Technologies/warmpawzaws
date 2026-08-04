@@ -4,6 +4,7 @@ import React, { memo } from 'react';
 import { CachedImage } from '@/components/shared/CachedImage';
 import { ChevronRight } from 'lucide-react';
 import type { HomeVisitServiceEntry } from './constants/home-visit-service-catalog';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 
 function CardImage({ src, alt }: { src: string; alt: string }) {
   return (
@@ -46,7 +47,16 @@ function HomeVisitServiceCardComponent({ service, index = 0, onPress }: HomeVisi
 
       <div className="min-w-0 flex-1">
         <h3 className="text-sm font-bold leading-tight text-gray-900">{service.title}</h3>
-        <p className="mt-0.5 line-clamp-2 text-xs leading-snug text-gray-500">{service.description}</p>
+        {service.description?.trim() ? (
+          <div onClick={(e) => e.stopPropagation()} className="mt-0.5">
+            <ServiceDescriptionInline
+              description={service.description}
+              title={service.title}
+              className="m-0 text-xs leading-snug text-gray-500"
+              dialogHint="Full description (vendor-provided)"
+            />
+          </div>
+        ) : null}
       </div>
 
       <span

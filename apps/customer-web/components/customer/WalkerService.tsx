@@ -51,6 +51,7 @@ import {
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 
 const WALKING_IMG = '/images/home/Walking';
 
@@ -1171,7 +1172,14 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                             {isPackage ? 'Package' : 'Service'}
                           </span>
                         </div>
-                        {desc ? <p className="text-sm text-gray-600 mt-1 line-clamp-3">{desc}</p> : null}
+                        {desc ? (
+                          <ServiceDescriptionInline
+                            description={String(desc)}
+                            title={name}
+                            className="m-0 text-sm leading-5 text-gray-600 mt-1"
+                            dialogHint="Full description from the walker (vendor-provided)"
+                          />
+                        ) : null}
                         <div className="flex flex-wrap items-center gap-2 mt-2 text-sm">
                           {price != null && price !== '' ? (
                             <span className="font-semibold text-orange-600">₹{Number(price).toLocaleString()}</span>

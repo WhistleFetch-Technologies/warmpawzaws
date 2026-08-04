@@ -22,6 +22,7 @@ import {
   type VendorShareNavigationParams,
 } from '@/lib/vendor-profile-share';
 import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
+import { ServiceDescriptionInline } from '@/components/customer/shared/ServiceDescriptionInline';
 
 export type GuestVendorShareProfileProps = {
   vendorId: string;
@@ -214,9 +215,14 @@ export function GuestVendorShareProfile({ vendorId, shareParams }: GuestVendorSh
                 >
                   <div className="min-w-0">
                     <p className="font-medium text-gray-900 truncate">{label}</p>
-                    {service.description && (
-                      <p className="text-sm text-gray-500 mt-1 line-clamp-2">{service.description}</p>
-                    )}
+                    {service.description?.trim() ? (
+                      <ServiceDescriptionInline
+                        description={service.description}
+                        title={label}
+                        className="m-0 text-sm leading-5 text-gray-500 mt-1"
+                        dialogHint="Full description (vendor-provided)"
+                      />
+                    ) : null}
                     <p className="text-sm font-medium text-primary mt-1">
                       {price > 0 ? formatPriceWithSymbol(price) : 'Price on request'}
                     </p>

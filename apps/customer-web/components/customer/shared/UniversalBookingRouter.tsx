@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { getRoleConfig, RoleId } from './roleConfig';
 import { ServiceDashboardHeader, StepInfo } from './ServiceDashboardHeader';
+import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-display-utils';
@@ -1286,7 +1287,16 @@ export function UniversalBookingRouter({
                       </div>
                       <div className="flex-1 text-left min-w-0">
                         <h3 className="font-semibold text-gray-900 text-sm sm:text-base">{service.name}</h3>
-                        <p className="text-xs sm:text-sm text-gray-500">{service.desc}</p>
+                        {(service.desc ?? '').trim() ? (
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <ServiceDescriptionInline
+                              description={service.desc}
+                              title={service.name}
+                              className="m-0 text-xs sm:text-sm leading-5 text-gray-500"
+                              dialogHint="Full description (vendor-provided)"
+                            />
+                          </div>
+                        ) : null}
                         <div className="flex items-center gap-2 mt-1">
                           <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-gray-400" />
                           <span className="text-xs sm:text-sm text-gray-500">{service.duration} mins</span>

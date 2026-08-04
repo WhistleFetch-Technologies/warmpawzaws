@@ -15,6 +15,7 @@ import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { RateServiceModal } from '../RateServiceModal'; // ✅ NEW: Import for rating modal
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
@@ -1110,7 +1111,16 @@ export function GroomingBookingRouter({
                       </div>
                       <div className="flex-1 text-left">
                         <h3 className="font-semibold text-gray-900">{service.name}</h3>
-                        <p className="text-sm text-gray-500">{service.desc}</p>
+                        {(service.desc ?? '').trim() ? (
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <ServiceDescriptionInline
+                              description={service.desc}
+                              title={service.name}
+                              className="m-0 text-sm leading-5 text-gray-500"
+                              dialogHint="Full description (vendor-provided)"
+                            />
+                          </div>
+                        ) : null}
                         <div className="flex items-center gap-2 mt-1">
                           <Clock className="w-3.5 h-3.5 text-gray-400" />
                           <span className="text-sm text-gray-500">{service.duration} mins</span>
