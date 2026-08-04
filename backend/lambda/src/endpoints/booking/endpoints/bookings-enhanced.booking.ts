@@ -3640,6 +3640,8 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
         vendor_timezone: (booking as any).vendor_timezone ?? null,
         total_amount: booking.total_amount,
         discount_amount: booking.discount_amount,
+        commerce_mode: (booking as any).commerce_mode ?? null,
+        service_category: (booking as any).service_category ?? null,
       };
       const preview = await previewCustomerCancellationRefundByMethod(bookingForPolicy, refundMethod);
 
@@ -3940,6 +3942,8 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
               vendor_timezone: (currentBooking as any).vendor_timezone ?? null,
               total_amount: currentBooking.total_amount,
               discount_amount: currentBooking.discount_amount,
+              commerce_mode: (currentBooking as any).commerce_mode ?? null,
+              service_category: (currentBooking as any).service_category ?? null,
             },
             refundMethod
           );

@@ -498,7 +498,7 @@ export async function previewCustomerCancellationRefundByMethod(
   booking: BookingForPolicy,
   refundMethod: CustomerCancellationRefundMethod
 ) {
-  if (refundMethod === 'wallet') {
+  if (refundMethod === 'wallet' && !usesWapptPolicyTiers(booking)) {
     return previewWalletFullCancellationRefund(booking);
   }
   return previewCustomerCancellationRefund(booking);

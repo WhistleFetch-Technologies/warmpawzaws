@@ -35,8 +35,22 @@ export function mapWapptRefundTierBodyToDb(
   const cancelledBy = body.cancelledBy ?? body.cancelled_by ?? 'pet_parent';
   const cancellationWindow = body.cancellationWindow ?? body.cancellation_window ?? null;
   const vendorCancellationReason = body.vendorCancellationReason ?? body.vendor_cancellation_reason ?? null;
+  const hasExplicitHours =
+    body.hoursBeforeService != null ||
+    body.hours_before_service != null;
+  const hasExplicitHoursRule =
+    body.hoursOperator != null ||
+    body.hours_operator != null ||
+    body.hoursThreshold != null ||
+    body.hours_threshold != null;
   let hoursBeforeService = Number(body.hoursBeforeService ?? body.hours_before_service ?? 24);
-  if (cancelledBy === 'pet_parent' && cancellationWindow && customerWindowToHours[String(cancellationWindow)] !== undefined) {
+  if (
+    !hasExplicitHours &&
+    !hasExplicitHoursRule &&
+    cancelledBy === 'pet_parent' &&
+    cancellationWindow &&
+    customerWindowToHours[String(cancellationWindow)] !== undefined
+  ) {
     hoursBeforeService = customerWindowToHours[String(cancellationWindow)];
   }
   const cancellationFee = Number(body.cancellationFee ?? body.cancellation_fee ?? 0);
@@ -76,9 +90,20 @@ export function mapWapptRefundTierBodyToDb(
   if (hoursOp != null) {
     const op = String(hoursOp).toLowerCase();
     out.hours_operator = ['gte', 'lte', 'gt', 'lt'].includes(op) ? op : null;
+  } else if (
+    cancelledBy === 'pet_parent' &&
+    (hasExplicitHours || hasExplicitHoursRule) &&
+    Number.isFinite(hoursBeforeService)
+  ) {
+    out.hours_operator = 'gte';
   }
   if (hoursThr != null) {
     out.hours_threshold = Number.isFinite(Number(hoursThr)) ? Number(hoursThr) : null;
+  } else if (out.hours_operator === 'gte' && Number.isFinite(hoursBeforeService)) {
+    out.hours_threshold = hoursBeforeService;
+  }
+  if (hasExplicitHours || hasExplicitHoursRule) {
+    out.cancellation_window = null;
   }
   const rawExt = body.policyExtensions ?? body.policy_extensions;
   if (rawExt && typeof rawExt === 'object' && !Array.isArray(rawExt)) {

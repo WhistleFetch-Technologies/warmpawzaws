@@ -2,9 +2,8 @@ import {
   isWarmpawzPayActive,
   isWarmpawzPayPricingLocked,
   isPricingLockedServiceStyle,
-  pricingLockMetaForStyle,
-  rejectVendorServicePriceChangeIfLocked,
   stripVendorServicePriceFields,
+  vendorServicePayloadHasPriceChange,
 } from '../../../commerce-switch/helpers/is-warmpawz-pay-pricing-locked';
 
 export {

@@ -24,6 +24,7 @@ import {
 import { EnhancedPackageCreationModal } from './EnhancedPackageCreationModal';
 import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
 import { canVendorEditServicePrice } from '@/lib/wappt-service-pricing-lock';
+import { getActiveCommerceModelAsync } from '@/lib/commerce-switch-client';
 
 interface VendorServiceConfigurationScreenProps {
   vendorId: string;
@@ -108,6 +109,8 @@ export function VendorServiceConfigurationScreen({
   const [showAddCustomDialog, setShowAddCustomDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState(''); // ✅ NEW: Search state
   const [pricingLocked, setPricingLocked] = useState(false);
+  /** Re-render after commerce switch prefetch so price lock reflects warmpawz_pay. */
+  const [commerceSwitchReady, setCommerceSwitchReady] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null); // ✅ Service being edited (opens Edit modal)
   const [editForm, setEditForm] = useState({ price: 0, duration: 30, description: '' }); // ✅ Edit modal form state
   const [savingEdit, setSavingEdit] = useState(false);
@@ -197,7 +200,14 @@ export function VendorServiceConfigurationScreen({
   // No platform price control — vendor-set price reflects immediately on customer web.
   const canControlPrice = roleConfig?.pricingControl?.canControlPrice ?? true;
   const canControlDuration = roleConfig?.pricingControl?.canControlDuration ?? true;
-  const canEditPricing = canVendorEditServicePrice(serviceStyle) && !pricingLocked;
+  const canEditPricing = useMemo(
+    () => canVendorEditServicePrice(serviceStyle) && !pricingLocked,
+    [serviceStyle, pricingLocked, commerceSwitchReady],
+  );
+
+  useEffect(() => {
+    void getActiveCommerceModelAsync().finally(() => setCommerceSwitchReady(true));
+  }, []);
 
   useEffect(() => {
     // Don't load services if solo provider trying to access at_center
@@ -1633,22 +1643,30 @@ export function VendorServiceConfigurationScreen({
           <DialogHeader>
             <DialogTitle>Edit Service</DialogTitle>
             <DialogDescription>
-              Update price, duration, and description. After saving, you can publish when ready.
+              {canEditPricing
+                ? 'Update price, duration, and description. After saving, you can publish when ready.'
+                : 'Update duration and description. Pricing is set by Warmpawz Appointments for this service style.'}
             </DialogDescription>
           </DialogHeader>
           {editingService && (
             <div className="space-y-4 py-4">
               <p className="text-sm font-medium text-gray-700">{editingService.name || editingService.serviceName}</p>
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-700">Price (₹) *</Label>
-                <Input
-                  type="number"
-                  value={editForm.price}
-                  onChange={(e) => setEditForm((f) => ({ ...f, price: parseInt(e.target.value, 10) || 0 }))}
-                  min={0}
-                  className="h-9"
-                />
-              </div>
+              {canEditPricing ? (
+                <div className="space-y-2">
+                  <Label className="text-xs text-gray-700">Price (₹) *</Label>
+                  <Input
+                    type="number"
+                    value={editForm.price}
+                    onChange={(e) => setEditForm((f) => ({ ...f, price: parseInt(e.target.value, 10) || 0 }))}
+                    min={0}
+                    className="h-9"
+                  />
+                </div>
+              ) : (
+                <p className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+                  Appointment pricing is managed by Warmpawz. You can still update duration and description.
+                </p>
+              )}
               <div className="space-y-2">
                 <Label className="text-xs text-gray-700">Duration (minutes) *</Label>
                 <Input

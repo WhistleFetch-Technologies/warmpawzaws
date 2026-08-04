@@ -72,6 +72,23 @@ describe('mapWapptRefundTierBodyToDb', () => {
     expect(row.service_category).toBe('grooming');
     expect(row.hours_before_service).toBe(6);
   });
+
+  it('prefers explicit hoursBeforeService over legacy cancellationWindow', () => {
+    const row = mapWapptRefundTierBodyToDb(
+      {
+        name: 'Customer 1h',
+        refundPercentage: 100,
+        cancelledBy: 'pet_parent',
+        hoursBeforeService: 1,
+        cancellationWindow: '48_plus',
+      },
+      { policyScope: 'platform' },
+    );
+    expect(row.hours_before_service).toBe(1);
+    expect(row.hours_operator).toBe('gte');
+    expect(row.hours_threshold).toBe(1);
+    expect(row.cancellation_window).toBeNull();
+  });
 });
 
 describe('computeRefundFromTier WAPPT fallback', () => {

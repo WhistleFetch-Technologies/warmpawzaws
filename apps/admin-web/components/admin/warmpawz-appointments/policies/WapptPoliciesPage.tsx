@@ -190,7 +190,12 @@ export function WapptPoliciesPage() {
                         type="number"
                         min={0}
                         value={tier.hoursBeforeService ?? 24}
-                        onChange={(e) => updateTier(idx, { hoursBeforeService: Number(e.target.value) })}
+                        onChange={(e) =>
+                          updateTier(idx, {
+                            hoursBeforeService: Number(e.target.value),
+                            cancellationWindow: undefined,
+                          })
+                        }
                       />
                     </div>
                   )}
