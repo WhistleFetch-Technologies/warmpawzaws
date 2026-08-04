@@ -116,32 +116,62 @@ export function getWarmpawzAppointmentServiceLabel(_opts?: {
   return 'Appointment';
 }
 
+export function isWarmpawzNutritionBookingRow(row: object | null | undefined): boolean {
+  if (!row) return false;
+  const r = row as Record<string, unknown>;
+  const type = String(r.serviceType ?? r.service_type ?? r.category ?? '').toLowerCase();
+  return type.includes('nutrition');
+}
+
 export function isWarmpawzAppointmentsBookingRow(
-  row: Record<string, unknown> | null | undefined,
+  row: object | null | undefined,
 ): boolean {
   if (!row) return false;
-  const commerceMode = String(row.commerceMode ?? row.commerce_mode ?? '').trim();
+  const r = row as Record<string, unknown>;
+  const commerceMode = String(r.commerceMode ?? r.commerce_mode ?? '').trim();
   if (commerceMode === WAPPT_BOOKING_MODE) return true;
-  const bookingMode = String(row.bookingMode ?? row.booking_mode ?? '').trim();
+  const bookingMode = String(r.bookingMode ?? r.booking_mode ?? '').trim();
   if (bookingMode === WAPPT_BOOKING_MODE) return true;
-  const serviceId = String(row.serviceId ?? row.service_id ?? '').trim();
-  return serviceId === WAPPT_APPOINTMENT_SERVICE_ID;
+  const serviceId = String(r.serviceId ?? r.service_id ?? '').trim();
+  if (serviceId === WAPPT_APPOINTMENT_SERVICE_ID) return true;
+  const bookingServiceName = String(r.booking_service_name ?? r.bookingServiceName ?? '').trim().toLowerCase();
+  if (bookingServiceName === 'appointment') return true;
+  const serviceName = String(r.serviceName ?? r.service_name ?? '').trim().toLowerCase();
+  return serviceName === 'appointment';
+}
+
+function catalogServiceNameFromRow(row: Record<string, unknown> | null | undefined): string {
+  const joined = String(row?.joined_service_name ?? '').trim();
+  const booking = String(row?.booking_service_name ?? row?.bookingServiceName ?? '').trim();
+  const nestedService = row?.service && typeof row.service === 'object'
+    ? String((row.service as Record<string, unknown>).name ?? '').trim()
+    : '';
+  const explicit = String(row?.serviceName ?? row?.service_name ?? '').trim();
+  return joined || booking || explicit || nestedService;
 }
 
 export function resolveCustomerBookingDisplayName(
-  row: Record<string, unknown> | null | undefined,
+  row: object | null | undefined,
   fallback = 'Service',
 ): string {
-  if (isWarmpawzAppointmentsBookingRow(row)) {
-    return getWarmpawzAppointmentServiceLabel();
+  const r = row as Record<string, unknown> | null | undefined;
+  const explicit = catalogServiceNameFromRow(r);
+  if (!isWarmpawzAppointmentsBookingRow(row)) {
+    if (explicit) return explicit;
+    return fallback;
   }
-  const explicit = String(row?.serviceName ?? row?.service_name ?? '').trim();
-  if (explicit) return explicit;
-  return fallback;
+  const serviceStyle = String(r?.serviceStyle ?? r?.service_style ?? '').toLowerCase();
+  if (serviceStyle === 'tele') {
+    return 'Tele Consultation';
+  }
+  if (isWarmpawzNutritionBookingRow(row)) {
+    return explicit || fallback;
+  }
+  return getWarmpawzAppointmentServiceLabel();
 }
 
 export function shouldHideWarmpawzAppointmentDuration(
-  row: Record<string, unknown> | null | undefined,
+  row: object | null | undefined,
 ): boolean {
   return isWarmpawzAppointmentsBookingRow(row);
 }
