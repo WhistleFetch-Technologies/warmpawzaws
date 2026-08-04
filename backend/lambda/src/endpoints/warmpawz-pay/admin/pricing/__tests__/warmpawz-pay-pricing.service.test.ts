@@ -14,6 +14,7 @@ describe('WarmpawzPayPricingService', () => {
     catalogueId: 'cat-1',
     discountType: PRICING_DISCOUNT_TYPE.PERCENTAGE,
     discountValue: 10,
+    platformWithholdPercent: 5,
     status: PRICING_STATUS.ACTIVE,
     effectiveFrom: new Date('2026-07-01T00:00:00.000Z'),
     effectiveUntil: null,
@@ -46,6 +47,7 @@ describe('WarmpawzPayPricingService', () => {
 
     expect(result?.businessName).toBe('Happy Paws');
     expect(result?.discountValue).toBe(10);
+    expect(result?.platformWithholdPercent).toBe(5);
   });
 
   it('rejects duplicate pricing on create', async () => {
@@ -62,6 +64,7 @@ describe('WarmpawzPayPricingService', () => {
           vendorId: 'vendor-1',
           discountType: PRICING_DISCOUNT_TYPE.PERCENTAGE,
           discountValue: 10,
+          platformWithholdPercent: 0,
           status: PRICING_STATUS.ACTIVE,
           effectiveFrom: '2026-07-01T00:00:00.000Z',
         },
@@ -86,6 +89,7 @@ describe('WarmpawzPayPricingService', () => {
           vendorId: 'vendor-1',
           discountType: PRICING_DISCOUNT_TYPE.PERCENTAGE,
           discountValue: 10,
+          platformWithholdPercent: 0,
           status: PRICING_STATUS.ACTIVE,
           effectiveFrom: '2026-08-01T00:00:00.000Z',
           effectiveUntil: '2026-07-01T00:00:00.000Z',

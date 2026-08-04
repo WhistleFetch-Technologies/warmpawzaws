@@ -14,6 +14,7 @@ import {
 } from '@warmpawz/ui';
 import { ChevronDown, ChevronRight, Info } from 'lucide-react';
 import type { CatalogueListItem } from '@/lib/warmpawz-pay-catalogue-admin';
+import type { WarmpawzPayPricingFormValues } from '@/lib/warmpawz-pay-pricing-admin';
 import {
   formatCatalogueDate,
   formatCatalogueDiscount,
@@ -33,15 +34,21 @@ export interface CatalogueTableProps {
   readonly items: readonly CatalogueListItem[];
   readonly rowBusyVendorId?: string | null;
   readonly disabled?: boolean;
-  readonly onSaveDiscount: (item: CatalogueListItem, discountValue: number) => Promise<void>;
-  readonly onPublish: (item: CatalogueListItem, discountValue: number) => Promise<void>;
+  readonly onSaveDiscount: (
+    item: CatalogueListItem,
+    values: WarmpawzPayPricingFormValues,
+  ) => Promise<void>;
+  readonly onPublish: (
+    item: CatalogueListItem,
+    values: WarmpawzPayPricingFormValues,
+  ) => Promise<void>;
   readonly onUnpublish: (item: CatalogueListItem) => void;
   readonly onDelete: (item: CatalogueListItem) => void;
 }
 
-function isValidDiscount(value: string): boolean {
+function isValidPercentValue(value: string, min: number, max: number): boolean {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 100;
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max;
 }
 
 function initialDiscountValue(item: CatalogueListItem): string {
@@ -49,6 +56,29 @@ function initialDiscountValue(item: CatalogueListItem): string {
     return String(item.pricing.discountValue);
   }
   return '';
+}
+
+function initialWithholdValue(item: CatalogueListItem): string {
+  if (item.pricing.configured && item.pricing.platformWithholdPercent !== undefined) {
+    return String(item.pricing.platformWithholdPercent);
+  }
+  return '0';
+}
+
+function buildPricingFormValues(
+  discountValue: string,
+  withholdValue: string,
+): WarmpawzPayPricingFormValues | null {
+  if (!isValidPercentValue(discountValue, 1, 100)) {
+    return null;
+  }
+  if (!isValidPercentValue(withholdValue, 0, 100)) {
+    return null;
+  }
+  return {
+    discountValue: Number(discountValue),
+    platformWithholdPercent: Number(withholdValue),
+  };
 }
 
 export function CatalogueTable({
@@ -62,6 +92,7 @@ export function CatalogueTable({
 }: CatalogueTableProps) {
   const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
   const [discountByVendor, setDiscountByVendor] = useState<Record<string, string>>({});
+  const [withholdByVendor, setWithholdByVendor] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setDiscountByVendor((current) => {
@@ -69,6 +100,15 @@ export function CatalogueTable({
       for (const item of items) {
         if (next[item.vendorId] === undefined) {
           next[item.vendorId] = initialDiscountValue(item);
+        }
+      }
+      return next;
+    });
+    setWithholdByVendor((current) => {
+      const next = { ...current };
+      for (const item of items) {
+        if (next[item.vendorId] === undefined) {
+          next[item.vendorId] = initialWithholdValue(item);
         }
       }
       return next;
@@ -86,6 +126,10 @@ export function CatalogueTable({
 
   const updateDiscount = (vendorId: string, value: string) => {
     setDiscountByVendor((current) => ({ ...current, [vendorId]: value }));
+  };
+
+  const updateWithhold = (vendorId: string, value: string) => {
+    setWithholdByVendor((current) => ({ ...current, [vendorId]: value }));
   };
 
   return (
@@ -111,7 +155,9 @@ export function CatalogueTable({
             const rowDisabled = disabled || (rowBusyVendorId !== null && !rowBusy);
             const expanded = expandedVendorId === item.vendorId;
             const discountValue = discountByVendor[item.vendorId] ?? '';
-            const discountValid = isValidDiscount(discountValue);
+            const withholdValue = withholdByVendor[item.vendorId] ?? '0';
+            const pricingValues = buildPricingFormValues(discountValue, withholdValue);
+            const pricingValid = pricingValues !== null;
             const canUnpublish = item.publishStatus === 'published' && item.catalogueId;
             const canDelete = item.inCatalogue && item.catalogueId;
 
@@ -158,6 +204,11 @@ export function CatalogueTable({
                       <span className="text-sm font-medium text-gray-900">
                         {formatCatalogueDiscount(item)}
                       </span>
+                      {item.pricing.platformWithholdPercent !== undefined ? (
+                        <span className="text-xs text-gray-600">
+                          Withhold {item.pricing.platformWithholdPercent}%
+                        </span>
+                      ) : null}
                       {item.pricing.status ? (
                         <PricingStatusBadge status={item.pricing.status} />
                       ) : null}
@@ -188,45 +239,81 @@ export function CatalogueTable({
                       <div className="space-y-4">
                         <ReadinessDetailPanel readiness={item.readiness} />
                         <div className="flex flex-col gap-4 border-t border-gray-200 pt-4 lg:flex-row lg:items-end lg:justify-between">
-                          <div className="max-w-xs space-y-2">
-                            <div className="flex items-center gap-1.5">
-                              <Label htmlFor={`discount-${item.vendorId}`}>
-                                Discount Percentage
-                              </Label>
-                              <Info className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+                          <div className="flex flex-col gap-4 sm:flex-row">
+                            <div className="max-w-xs space-y-2">
+                              <div className="flex items-center gap-1.5">
+                                <Label htmlFor={`discount-${item.vendorId}`}>
+                                  Discount Percentage
+                                </Label>
+                                <Info className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+                              </div>
+                              <div className="relative">
+                                <Input
+                                  id={`discount-${item.vendorId}`}
+                                  type="number"
+                                  min={1}
+                                  max={100}
+                                  step={1}
+                                  value={discountValue}
+                                  disabled={rowDisabled}
+                                  placeholder="15"
+                                  className="bg-white pr-8"
+                                  onChange={(event) =>
+                                    updateDiscount(item.vendorId, event.target.value)
+                                  }
+                                />
+                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                                  %
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500">
+                                Customer discount (1–100%). Platform-funded.
+                              </p>
                             </div>
-                            <div className="relative">
-                              <Input
-                                id={`discount-${item.vendorId}`}
-                                type="number"
-                                min={1}
-                                max={100}
-                                step={1}
-                                value={discountValue}
-                                disabled={rowDisabled}
-                                placeholder="15"
-                                className="bg-white pr-8"
-                                onChange={(event) =>
-                                  updateDiscount(item.vendorId, event.target.value)
-                                }
-                              />
-                              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
-                                %
-                              </span>
+                            <div className="max-w-xs space-y-2">
+                              <div className="flex items-center gap-1.5">
+                                <Label htmlFor={`withhold-${item.vendorId}`}>
+                                  Platform Withhold
+                                </Label>
+                                <Info className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+                              </div>
+                              <div className="relative">
+                                <Input
+                                  id={`withhold-${item.vendorId}`}
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  step={0.5}
+                                  value={withholdValue}
+                                  disabled={rowDisabled}
+                                  placeholder="5"
+                                  className="bg-white pr-8"
+                                  onChange={(event) =>
+                                    updateWithhold(item.vendorId, event.target.value)
+                                  }
+                                />
+                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                                  %
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500">
+                                Platform share of customer paid amount (0–100%).
+                              </p>
                             </div>
-                            <p className="text-xs text-gray-500">
-                              Enter discount between 1% and 100%
-                            </p>
                           </div>
                           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                             <div className="space-y-1">
                               <Button
                                 type="button"
                                 variant="outline"
-                                disabled={rowDisabled || !discountValid}
-                                onClick={() => void onSaveDiscount(item, Number(discountValue))}
+                                disabled={rowDisabled || !pricingValid}
+                                onClick={() => {
+                                  if (pricingValues) {
+                                    void onSaveDiscount(item, pricingValues);
+                                  }
+                                }}
                               >
-                                {rowBusy ? 'Saving…' : 'Save discount'}
+                                {rowBusy ? 'Saving…' : 'Save pricing'}
                               </Button>
                               <p className="text-xs text-gray-500">
                                 Creates catalogue draft if needed.
@@ -235,13 +322,17 @@ export function CatalogueTable({
                             <div className="space-y-1">
                               <Button
                                 type="button"
-                                disabled={rowDisabled || !discountValid}
-                                onClick={() => void onPublish(item, Number(discountValue))}
+                                disabled={rowDisabled || !pricingValid}
+                                onClick={() => {
+                                  if (pricingValues) {
+                                    void onPublish(item, pricingValues);
+                                  }
+                                }}
                               >
                                 {rowBusy ? 'Publishing…' : 'Publish'}
                               </Button>
                               <p className="text-xs text-gray-500">
-                                Saves discount and publishes to Pay Bill.
+                                Saves pricing and publishes to Pay Bill.
                               </p>
                             </div>
                             {canUnpublish ? (

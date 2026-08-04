@@ -14,6 +14,16 @@ describe('warmpawz-pay-pricing-admin', () => {
     ).toMatch(/between 0 and 100/);
   });
 
+  it('rejects withhold values outside 0-100', () => {
+    expect(
+      validatePricingForm({
+        discountValue: 10,
+        platformWithholdPercent: 101,
+        effectiveFrom: '2026-07-01T00:00:00.000Z',
+      }),
+    ).toMatch(/Platform withhold/);
+  });
+
   it('rejects effective until before effective from', () => {
     expect(
       validatePricingForm({

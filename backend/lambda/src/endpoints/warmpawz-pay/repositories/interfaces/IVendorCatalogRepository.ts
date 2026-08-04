@@ -47,6 +47,7 @@ export interface CatalogueAdminListRow {
   readonly pricingId: string | null;
   readonly pricingDiscountType: string | null;
   readonly pricingDiscountValue: number | null;
+  readonly pricingPlatformWithholdPercent: number | null;
   readonly pricingStatus: string | null;
   readonly pricingEffectiveFrom: Date | null;
   readonly pricingEffectiveUntil: Date | null;
@@ -73,6 +74,7 @@ export interface CatalogueRowWithVendor extends CatalogueRow {
   readonly pricingId: string | null;
   readonly pricingDiscountType: string | null;
   readonly pricingDiscountValue: number | null;
+  readonly pricingPlatformWithholdPercent: number | null;
   readonly pricingStatus: string | null;
   readonly pricingEffectiveFrom: Date | null;
   readonly pricingEffectiveUntil: Date | null;

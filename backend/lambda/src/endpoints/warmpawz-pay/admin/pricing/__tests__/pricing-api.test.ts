@@ -30,6 +30,7 @@ function createPricingService(
       category: 'Grooming',
       discountType: PRICING_DISCOUNT_TYPE.PERCENTAGE,
       discountValue: 10,
+      platformWithholdPercent: 5,
       status: PRICING_STATUS.ACTIVE,
       effectiveFrom: '2026-07-01T00:00:00.000Z',
       effectiveUntil: null,

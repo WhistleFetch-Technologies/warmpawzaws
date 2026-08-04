@@ -88,6 +88,7 @@ export class WarmpawzPayPricingService {
       vendorId: input.vendorId,
       discountType: input.discountType,
       discountValue: input.discountValue,
+      platformWithholdPercent: input.platformWithholdPercent ?? 0,
       status: input.status,
       effectiveFrom,
       effectiveUntil,
@@ -148,6 +149,7 @@ export class WarmpawzPayPricingService {
     const updateInput: UpdatePricingInput = {
       discountType: input.discountType,
       discountValue: input.discountValue,
+      platformWithholdPercent: input.platformWithholdPercent,
       status: input.status,
       effectiveFrom: input.effectiveFrom ? effectiveFrom : undefined,
       effectiveUntil: input.effectiveUntil !== undefined ? effectiveUntil : undefined,
@@ -252,6 +254,7 @@ export class WarmpawzPayPricingService {
       category,
       discountType: row.discountType,
       discountValue: row.discountValue,
+      platformWithholdPercent: row.platformWithholdPercent,
       status: row.status,
       effectiveFrom: row.effectiveFrom.toISOString(),
       effectiveUntil: row.effectiveUntil ? row.effectiveUntil.toISOString() : null,

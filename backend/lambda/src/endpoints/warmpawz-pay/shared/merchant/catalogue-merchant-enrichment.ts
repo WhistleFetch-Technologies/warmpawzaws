@@ -31,6 +31,7 @@ export interface CataloguePricingSummaryDTO {
   readonly pricingId?: string;
   readonly discountType?: PricingDiscountType;
   readonly discountValue?: number;
+  readonly platformWithholdPercent?: number;
   readonly status?: PricingStatus;
   readonly effectiveFrom?: string;
   readonly effectiveUntil?: string | null;
@@ -50,6 +51,7 @@ export interface CataloguePricingRowInput {
   readonly pricingId: string;
   readonly discountType: PricingDiscountType;
   readonly discountValue: number;
+  readonly platformWithholdPercent: number;
   readonly status: PricingStatus;
   readonly effectiveFrom: Date;
   readonly effectiveUntil: Date | null;
@@ -74,6 +76,7 @@ export function buildCataloguePricingSummary(
     pricingId: pricing.pricingId,
     discountType: pricing.discountType,
     discountValue: pricing.discountValue,
+    platformWithholdPercent: pricing.platformWithholdPercent,
     status: pricing.status,
     effectiveFrom: pricing.effectiveFrom.toISOString(),
     effectiveUntil: pricing.effectiveUntil ? pricing.effectiveUntil.toISOString() : null,

@@ -16,6 +16,7 @@ export const createPricingRequestSchema = z
     vendorId: uuidSchema,
     discountType: z.enum(ALLOWED_PRICING_DISCOUNT_TYPES).default(PRICING_DISCOUNT_TYPE.PERCENTAGE),
     discountValue: z.coerce.number().min(0).max(100),
+    platformWithholdPercent: z.coerce.number().min(0).max(100).default(0),
     status: z.enum(ALLOWED_PRICING_STATUSES).default(PRICING_STATUS.ACTIVE),
     effectiveFrom: isoDateSchema,
     effectiveUntil: isoDateSchema.nullable().optional(),
@@ -41,6 +42,7 @@ export const updatePricingRequestSchema = z
   .object({
     discountType: z.enum(ALLOWED_PRICING_DISCOUNT_TYPES).optional(),
     discountValue: z.coerce.number().min(0).max(100).optional(),
+    platformWithholdPercent: z.coerce.number().min(0).max(100).optional(),
     status: z.enum(ALLOWED_PRICING_STATUSES).optional(),
     effectiveFrom: isoDateSchema.optional(),
     effectiveUntil: isoDateSchema.nullable().optional(),

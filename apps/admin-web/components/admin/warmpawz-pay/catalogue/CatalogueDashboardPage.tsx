@@ -10,6 +10,7 @@ import {
   useUnpublishCatalogueEntry,
 } from '@/hooks/warmpawz-pay/useCatalogue';
 import { useCreatePricing, useUpdatePricing } from '@/hooks/warmpawz-pay/usePricing';
+import type { WarmpawzPayPricingFormValues } from '@/lib/warmpawz-pay-pricing-admin';
 import type {
   CatalogueEligibilityFilter,
   CatalogueListItem,
@@ -121,11 +122,12 @@ export function CatalogueDashboardPage() {
     updatePricingMutation.isPending ||
     rowBusyVendorId !== null;
 
-  const savePricing = async (item: CatalogueListItem, discountValue: number) => {
+  const savePricing = async (item: CatalogueListItem, values: WarmpawzPayPricingFormValues) => {
     const catalogueId = await ensureCatalogueId(item);
     const pricingFields = {
       discountType: 'percentage' as const,
-      discountValue,
+      discountValue: values.discountValue,
+      platformWithholdPercent: values.platformWithholdPercent,
       status: 'active' as const,
       effectiveFrom: new Date().toISOString(),
       effectiveUntil: null,
@@ -146,12 +148,15 @@ export function CatalogueDashboardPage() {
     return catalogueId;
   };
 
-  const handleSaveDiscount = async (item: CatalogueListItem, discountValue: number) => {
+  const handleSaveDiscount = async (
+    item: CatalogueListItem,
+    values: WarmpawzPayPricingFormValues,
+  ) => {
     setRowBusyVendorId(item.vendorId);
     try {
-      await savePricing(item, discountValue);
+      await savePricing(item, values);
       await refetch();
-      toast.success(`Discount saved for ${item.businessName}.`);
+      toast.success(`Pricing saved for ${item.businessName}.`);
     } catch (cause) {
       const message =
         cause instanceof Error ? cause.message : 'Failed to save discount';
@@ -161,10 +166,13 @@ export function CatalogueDashboardPage() {
     }
   };
 
-  const handlePublish = async (item: CatalogueListItem, discountValue: number) => {
+  const handlePublish = async (
+    item: CatalogueListItem,
+    values: WarmpawzPayPricingFormValues,
+  ) => {
     setRowBusyVendorId(item.vendorId);
     try {
-      const catalogueId = await savePricing(item, discountValue);
+      const catalogueId = await savePricing(item, values);
       await publishMutation.mutateAsync(catalogueId);
       await refetch();
     } catch (cause) {

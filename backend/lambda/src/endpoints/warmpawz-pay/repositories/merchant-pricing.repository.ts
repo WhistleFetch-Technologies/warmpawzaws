@@ -25,6 +25,7 @@ const PRICING_COLUMNS = `
   p.catalogue_id,
   p.discount_type,
   p.discount_value,
+  p.platform_withhold_percent,
   p.status,
   p.effective_from,
   p.effective_until,
@@ -64,6 +65,7 @@ interface PricingDbRow {
   readonly catalogue_id: string | null;
   readonly discount_type: string;
   readonly discount_value: string | number;
+  readonly platform_withhold_percent: string | number;
   readonly status: string;
   readonly effective_from: Date | string;
   readonly effective_until: Date | string | null;
@@ -99,6 +101,7 @@ function mapPricingRow(row: PricingDbRow): PricingRow {
     catalogueId: row.catalogue_id,
     discountType: row.discount_type as PricingDiscountType,
     discountValue: toNumber(row.discount_value),
+    platformWithholdPercent: toNumber(row.platform_withhold_percent ?? 0),
     status: row.status as PricingStatus,
     effectiveFrom: toDate(row.effective_from),
     effectiveUntil: row.effective_until ? toDate(row.effective_until) : null,
@@ -155,6 +158,7 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
         catalogue_id,
         discount_type,
         discount_value,
+        platform_withhold_percent,
         status,
         effective_from,
         effective_until,
@@ -162,13 +166,14 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
         created_at,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
       RETURNING
         id,
         vendor_id,
         catalogue_id,
         discount_type,
         discount_value,
+        platform_withhold_percent,
         status,
         effective_from,
         effective_until,
@@ -182,6 +187,7 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
       catalogueId,
       input.discountType,
       input.discountValue,
+      input.platformWithholdPercent,
       input.status,
       input.effectiveFrom,
       input.effectiveUntil,
@@ -203,6 +209,10 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
     if (input.discountValue !== undefined) {
       params.push(input.discountValue);
       assignments.push(`discount_value = $${params.length}`);
+    }
+    if (input.platformWithholdPercent !== undefined) {
+      params.push(input.platformWithholdPercent);
+      assignments.push(`platform_withhold_percent = $${params.length}`);
     }
     if (input.status !== undefined) {
       params.push(input.status);
@@ -227,6 +237,7 @@ export class MerchantPricingRepository implements IMerchantPricingRepository {
         catalogue_id,
         discount_type,
         discount_value,
+        platform_withhold_percent,
         status,
         effective_from,
         effective_until,
