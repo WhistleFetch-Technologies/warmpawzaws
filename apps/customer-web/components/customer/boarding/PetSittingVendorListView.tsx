@@ -6,15 +6,15 @@ import { Search, Star, Home } from "lucide-react";
 import { useHubVendorDiscovery } from "@/hooks/useHubVendorDiscovery";
 import { HUB_DISCOVERY_SITTING } from "@/lib/service-hub-discovery-config";
 import { fetchPetSitterHubRows } from "@/lib/pet-sitter-hub-fetch";
-import { BoardingVendorExpandableCard } from "./BoardingVendorExpandableCard";
+import {
+  ServiceHubVendorCard,
+  resolveServiceHubVendorProfileKey,
+} from "../shared/ServiceHubVendorCard";
 import { ServiceDashboardHeader } from "../shared/ServiceDashboardHeader";
 import { StandardizedFooter } from "../shared/StandardizedFooter";
-import { minPriceForVendor } from "@/lib/boarding-vendor-booking-utils";
-import type { BoardingListVendor, BoardingPlanRow } from "@/lib/boarding-vendor-discovery-map";
+import type { BoardingListVendor } from "@/lib/boarding-vendor-discovery-map";
 import { EMPTY_SERVICE_HEADER_STATS } from "@/lib/service-header-stats";
-import { pickCustomerVendorAccountId } from "@warmpawz/shared-types";
-
-const HUB_SLUG = "all" as const;
+import { findBoardingListVendorByProfileKey } from "@/lib/boarding-vendor-discovery-map";
 
 const OPTION_TITLES: Record<string, string> = {
   overnight_sitting: "Overnight sitting",
@@ -42,10 +42,6 @@ export function PetSittingVendorListView({
     loading,
     vendors,
     relaxedFilter,
-    selectedVendorId,
-    setSelectedVendorId,
-    toggleVendor,
-    fetchingPlansFor,
   } = useHubVendorDiscovery(phone, HUB_DISCOVERY_SITTING, loadRows);
 
   const subtitle =
@@ -53,40 +49,19 @@ export function PetSittingVendorListView({
       ? `${OPTION_TITLES[sittingOptionId]} — choose a sitter`
       : "All sitters — choose a sitter";
 
-  const handleBookPlan = useCallback(
-    (v: BoardingListVendor, plan: BoardingPlanRow) => {
-      if (onNavigate) {
-        onNavigate("pet-sitter-booking", {
-          vendorId: v.id,
-          serviceType: "sitting",
-          serviceId: plan.rowId,
-          serviceName: plan.name,
-          price: plan.price,
-          sittingOptionId: sittingOptionId || undefined,
-        });
-        return;
-      }
-      router.push("/");
-    },
-    [onNavigate, router, sittingOptionId]
-  );
-
   const openSitterVendorProfile = useCallback(
-    (e: MouseEvent, v: BoardingListVendor) => {
+    (e: MouseEvent, profileKey: string) => {
       e.stopPropagation();
-      const row: Record<string, unknown> = {
-        ...(v.raw && typeof v.raw === "object" ? (v.raw as Record<string, unknown>) : {}),
-        id: v.id,
-        type: "vendor",
-      };
-      const vid = pickCustomerVendorAccountId(row) || v.id;
+      const v = findBoardingListVendorByProfileKey(vendors, profileKey);
+      if (!v) return;
+      const vid = resolveServiceHubVendorProfileKey(v);
       if (onNavigate) {
         onNavigate("pet-sitter-provider-profile", { vendorId: vid });
         return;
       }
       router.push("/");
     },
-    [onNavigate, router]
+    [onNavigate, router, vendors]
   );
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -109,7 +84,7 @@ export function PetSittingVendorListView({
           return (a.distanceKm ?? 999) - (b.distanceKm ?? 999);
         case "price": {
           const minP = (v: BoardingListVendor) =>
-            minPriceForVendor(v) ?? parseInt(String(v.price_label).replace(/[^0-9]/g, "") || "0", 10);
+            parseInt(String(v.price_label).replace(/[^0-9]/g, "") || "0", 10);
           return minP(a) - minP(b);
         }
         default:
@@ -195,31 +170,21 @@ export function PetSittingVendorListView({
         ) : (
           <div className="space-y-4">
             <p className="text-sm font-medium text-gray-700">{sortedVendors.length} sitters found</p>
-            {sortedVendors.map((v) => {
-              const expanded = selectedVendorId === v.id;
-              const minP = minPriceForVendor(v);
-              return (
-                <BoardingVendorExpandableCard
-                  key={v.id}
-                  v={v}
-                  serviceSlug={HUB_SLUG}
-                  planBadgeLabel="Sitting"
-                  expanded={expanded}
-                  fetchingPlansFor={fetchingPlansFor}
-                  minPrice={minP}
-                  onToggleHeader={() => toggleVendor(v.id)}
-                  onViewServices={(e) => {
-                    e.stopPropagation();
-                    setSelectedVendorId(v.id);
-                  }}
-                  onDetails={(e) => openSitterVendorProfile(e, v)}
-                  onBookPlan={handleBookPlan}
-                  onOpenCenterDetails={(e) => openSitterVendorProfile(e, v)}
-                  customerId={phone}
-                  serviceCategory="pet_sitting"
-                />
-              );
-            })}
+            {sortedVendors.map((v) => (
+              <ServiceHubVendorCard
+                key={v.id}
+                vendor={v}
+                category="sitting"
+                serviceKey="pet_sitting"
+                categoryLabelFallback="Sitting"
+                onSelectSlot={(vendor, e) =>
+                  openSitterVendorProfile(e, resolveServiceHubVendorProfileKey(vendor))
+                }
+                onOpenProfile={(e, vendor) =>
+                  openSitterVendorProfile(e, resolveServiceHubVendorProfileKey(vendor))
+                }
+              />
+            ))}
           </div>
         )}
       </div>

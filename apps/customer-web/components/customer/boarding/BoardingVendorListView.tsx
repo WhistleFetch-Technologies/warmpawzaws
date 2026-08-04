@@ -4,15 +4,14 @@ import { useState, useMemo, useCallback, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Star, Home, Building2 } from 'lucide-react';
 import { useBoardingVendorDiscovery } from '@/hooks/useBoardingVendorDiscovery';
-import { BoardingVendorExpandableCard } from './BoardingVendorExpandableCard';
+import {
+  ServiceHubVendorCard,
+  resolveServiceHubVendorProfileKey,
+} from '../shared/ServiceHubVendorCard';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { BOARDING_SERVICE_LABELS, normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
-import {
-  minPriceForVendor,
-  navigateBoardingPlanBooking,
-} from '@/lib/boarding-vendor-booking-utils';
-import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
+import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 
 export type { BoardingPlanRow, BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
@@ -36,24 +35,7 @@ export function BoardingVendorListView({
     loading,
     vendors,
     relaxedFilter,
-    selectedVendorId,
-    setSelectedVendorId,
-    toggleVendor,
-    fetchingPlansFor,
   } = useBoardingVendorDiscovery(phone, serviceSlug);
-
-  const handleBookPlan = useCallback(
-    (v: BoardingListVendor, plan: BoardingPlanRow) => {
-      if (!onNavigate) {
-        router.push(
-          `/pet-boarding/vendor/${encodeURIComponent(v.id)}?service=${encodeURIComponent(serviceSlug)}`
-        );
-        return;
-      }
-      navigateBoardingPlanBooking(onNavigate, v, plan);
-    },
-    [onNavigate, router, serviceSlug]
-  );
 
   const openVendorProfile = useCallback(
     (e: MouseEvent, vendorId: string) => {
@@ -89,7 +71,7 @@ export function BoardingVendorListView({
           return (a.distanceKm ?? 999) - (b.distanceKm ?? 999);
         case 'price': {
           const minP = (v: BoardingListVendor) =>
-            minPriceForVendor(v) ?? parseInt(String(v.price_label).replace(/[^0-9]/g, '') || '0', 10);
+            parseInt(String(v.price_label).replace(/[^0-9]/g, '') || '0', 10);
           return minP(a) - minP(b);
         }
         default:
@@ -177,30 +159,20 @@ export function BoardingVendorListView({
         ) : (
           <div className="space-y-4">
             <p className="text-sm font-medium text-gray-700">{sortedVendors.length} centers found</p>
-            {sortedVendors.map((v) => {
-              const expanded = selectedVendorId === v.id;
-              const minP = minPriceForVendor(v);
-              return (
-                <BoardingVendorExpandableCard
-                  key={v.id}
-                  v={v}
-                  serviceSlug={serviceSlug}
-                  expanded={expanded}
-                  fetchingPlansFor={fetchingPlansFor}
-                  minPrice={minP}
-                  onToggleHeader={() => toggleVendor(v.id)}
-                  onViewServices={(e) => {
-                    e.stopPropagation();
-                    setSelectedVendorId(v.id);
-                  }}
-                  onDetails={openVendorProfile}
-                  onBookPlan={handleBookPlan}
-                  onOpenCenterDetails={openVendorProfile}
-                  customerId={phone}
-                  serviceCategory={serviceSlug === 'all' ? undefined : serviceSlug}
-                />
-              );
-            })}
+            {sortedVendors.map((v) => (
+              <ServiceHubVendorCard
+                key={v.id}
+                vendor={v}
+                category="boarding"
+                categoryLabelFallback={BOARDING_SERVICE_LABELS[serviceSlug]}
+                onSelectSlot={(_vendor, e) =>
+                  openVendorProfile(e, resolveServiceHubVendorProfileKey(_vendor))
+                }
+                onOpenProfile={(e, vendor) =>
+                  openVendorProfile(e, resolveServiceHubVendorProfileKey(vendor))
+                }
+              />
+            ))}
           </div>
         )}
       </div>

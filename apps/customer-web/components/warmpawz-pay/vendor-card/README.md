@@ -106,9 +106,14 @@ Example (discovery appointments):
 |----------|------|--------|------|
 | Vet appointment discovery | `components/customer/vet/VetServicesByStyle.tsx` | `mapDiscoveryProviderToVendorCardProps` | `appointmentsMode === true` |
 | Grooming appointment discovery | `components/customer/grooming/GroomingServicesByStyle.tsx` | `mapDiscoveryProviderToVendorCardProps` | `appointmentsMode === true` |
+| Warmpawz Appointments list | `components/customer/warmpawz-appointments/WarmpawzAppointmentsVendorList.tsx` | `mapDiscoveryProviderToVendorCardProps` | Category vendor list |
+| Service hubs + list views | `ServiceHubVendorCard`, `WalkerHubVendorCard` | `map-boarding-list-vendor-to-vendor-card-props` | Featured vets/groomers/trainers/walkers/stays/sitters |
+| Search vendor cards | `SearchHubVendorCard`, `Search*VendorCard` | `map-boarding-list-vendor-to-vendor-card-props` | GET /search rows |
 | Warmpawz Pay Hub | `app/warmpawz-pay/page.tsx` | `mapWpayVendorCardToProps` | Vendor list rows |
 
-**Not migrated (intentionally):** Marketplace discovery inline cards, training, walking, boarding, pharmacy — keep existing UI until a dedicated integration PR.
+**Not migrated (intentionally):** Marketplace discovery inline cards in `UniversalServicesByStyle` legacy branch, nutrition-specific cards, global search `UniversalVendorCard` — keep existing UI until a dedicated integration PR.
+
+**Migrated (service hub + search):** Featured Vets, Top Groomers, Top Trainers, Available Walkers, Featured Stays, Featured sitters, Behaviorist hub, boarding/sitting list views, and search `Search*VendorCard` wrappers — all use `WarmpawzPayVendorCard` via `ServiceHubVendorCard` / `WalkerHubVendorCard` and `map-boarding-list-vendor-to-vendor-card-props`.
 
 ## 6. How future services should integrate
 

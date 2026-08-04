@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, type MouseEvent } from 'react';
+import { useCallback, type MouseEvent } from 'react';
 import { CachedImage } from '@/components/shared/CachedImage';
 import {
   Heart,
@@ -12,16 +12,14 @@ import { Card } from '@/components/ui/card';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { BEHAVIORAL_ISSUES } from './ProblemGridSection';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
-import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
+import {
+  ServiceHubVendorCard,
+  resolveServiceHubVendorProfileKey,
+} from './shared/ServiceHubVendorCard';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
-import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
-import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
-import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
-
-const BEHAVIORIST_HEADER_BANNER = '/images/home/Training/header.webp';
-const HUB_SLUG: BoardingServiceSlug = 'all';
+import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 
 interface BehavioristServiceRouterProps {
   phone: string;
@@ -46,14 +44,10 @@ export function BehavioristServiceRouter({
   const wapptHubEnabled = isWarmpawzAppointmentsHubEnabled('behaviorist');
   const wapptTile = buildWapptHubTile('behaviorist');
   const wapptDiscovery = useWapptHubFeaturedVendors('behaviorist', wapptHubEnabled);
-  const [wapptSelectedVendorId, setWapptSelectedVendorId] = useState<string | null>(null);
 
   const vendorsLoading = wapptDiscovery.loading;
   const vendors = wapptDiscovery.vendors;
   const relaxedFilter = wapptDiscovery.relaxedFilter;
-  const selectedVendorId = wapptSelectedVendorId;
-  const toggleVendor = (vendorId: string) =>
-    setWapptSelectedVendorId((prev) => (prev === vendorId ? null : vendorId));
 
   const behavioralConcerns = BEHAVIORAL_ISSUES.filter((issue) => issue.id !== 'view_all');
 
@@ -62,22 +56,6 @@ export function BehavioristServiceRouter({
       onNavigate?.('wappt-discovery', { category: 'behaviorist' });
     },
     [onNavigate],
-  );
-
-  const handleBookPlan = useCallback(
-    (v: BoardingListVendor, plan: BoardingPlanRow) => {
-      onNavigate?.('create-booking', {
-        vendorId: v.id,
-        serviceType: 'behaviorist',
-        serviceId: plan.rowId,
-        serviceName: plan.name,
-        price: plan.price,
-        duration: plan.duration,
-        serviceStyle: plan.serviceStyle || 'at_home',
-        vendorName: v.name,
-      });
-    },
-    [onNavigate]
   );
 
   const openBehavioristDetails = useCallback(
@@ -205,32 +183,24 @@ export function BehavioristServiceRouter({
                   <p className="text-sm text-gray-500">Check back soon for behavior support options!</p>
                 </Card>
               ) : (
-                vendors.map((v) => {
-                  const expanded = selectedVendorId === v.id;
-                  const minP = minPriceForVendor(v);
-                  return (
-                    <BoardingVendorExpandableCard
-                      key={v.id}
-                      v={v}
-                      serviceSlug={HUB_SLUG}
-                      planBadgeLabel="Behavior"
-                      expanded={expanded}
-                      fetchingPlansFor={null}
-                      minPrice={minP}
-                      onToggleHeader={() => toggleVendor(v.id)}
-                      onViewServices={(e) => {
-                        e.stopPropagation();
-                        setWapptSelectedVendorId(v.id);
-                      }}
-                      onDetails={openBehavioristDetails}
-                      onBookPlan={handleBookPlan}
-                      onOpenCenterDetails={openBehavioristDetails}
-                      customerId={phone}
-                      serviceCategory="behaviorist"
-                      onBookAppointment={handleWarmpawzBookAppointment}
-                    />
-                  );
-                })
+                vendors.map((v) => (
+                  <ServiceHubVendorCard
+                    key={v.id}
+                    vendor={v}
+                    category="behaviorist"
+                    categoryLabelFallback="Behaviorist"
+                    onSelectSlot={(vendor, e) => {
+                      if (wapptHubEnabled) {
+                        handleWarmpawzBookAppointment(vendor);
+                        return;
+                      }
+                      openBehavioristDetails(e, resolveServiceHubVendorProfileKey(vendor));
+                    }}
+                    onOpenProfile={(e, vendor) =>
+                      openBehavioristDetails(e, resolveServiceHubVendorProfileKey(vendor))
+                    }
+                  />
+                ))
               )}
             </div>
           </div>

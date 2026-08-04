@@ -29,17 +29,16 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
-import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
-import { useBoardingVendorDiscovery } from '@/hooks/useBoardingVendorDiscovery';
 import {
-  navigateBoardingPlanBooking,
-  minPriceForVendor,
-} from '@/lib/boarding-vendor-booking-utils';
-import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
-import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
+  ServiceHubVendorCard,
+  resolveServiceHubVendorProfileKey,
+} from './shared/ServiceHubVendorCard';
+import { useBoardingVendorDiscovery } from '@/hooks/useBoardingVendorDiscovery';
+import type { BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 import { HUB_SERVICE_ICON_WRAP } from '@/lib/hub-service-option-styles';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { isWarmpawzAppointmentsHubEnabled } from '@/lib/warmpawz-appointments-customer';
+import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { buildWapptHubTile } from '@/lib/wappt-hub-registry';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 
@@ -281,19 +280,10 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const wapptTile = buildWapptHubTile('boarding');
   const marketplaceDiscovery = useBoardingVendorDiscovery(phone, HUB_SERVICE_SLUG);
   const wapptDiscovery = useWapptHubFeaturedVendors('boarding', wapptHubEnabled);
-  const [wapptSelectedVendorId, setWapptSelectedVendorId] = useState<string | null>(null);
 
   const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
   const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
   const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
-  const selectedVendorId = wapptHubEnabled ? wapptSelectedVendorId : marketplaceDiscovery.selectedVendorId;
-  const setSelectedVendorId = wapptHubEnabled
-    ? setWapptSelectedVendorId
-    : marketplaceDiscovery.setSelectedVendorId;
-  const toggleVendor = wapptHubEnabled
-    ? (vendorId: string) => setWapptSelectedVendorId((prev) => (prev === vendorId ? null : vendorId))
-    : marketplaceDiscovery.toggleVendor;
-  const fetchingPlansFor = wapptHubEnabled ? null : marketplaceDiscovery.fetchingPlansFor;
 
   const [previousFacility, setPreviousFacility] = useState<any>(null);
 
@@ -334,19 +324,6 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   useEffect(() => {
     loadPreviousFacility();
   }, [loadPreviousFacility]);
-
-  const handleBookPlan = useCallback(
-    (v: BoardingListVendor, plan: BoardingPlanRow) => {
-      if (!onNavigate) {
-        router.push(
-          `/pet-boarding/vendor/${encodeURIComponent(v.id)}?service=${encodeURIComponent(HUB_SERVICE_SLUG)}`
-        );
-        return;
-      }
-      navigateBoardingPlanBooking(onNavigate, v, plan);
-    },
-    [onNavigate, router]
-  );
 
   const handleWarmpawzBookAppointment = useCallback(
     (_v: BoardingListVendor) => {
@@ -600,31 +577,27 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     <p className="text-gray-500 text-sm">Check back soon for boarding options!</p>
                   </Card>
                 ) : (
-                  vendors.map((v) => {
-                    const expanded = selectedVendorId === v.id;
-                    const minP = minPriceForVendor(v);
-                    return (
-                      <BoardingVendorExpandableCard
-                        key={v.id}
-                        v={v}
-                        serviceSlug={HUB_SERVICE_SLUG}
-                        expanded={expanded}
-                        fetchingPlansFor={fetchingPlansFor}
-                        minPrice={minP}
-                        onToggleHeader={() => toggleVendor(v.id)}
-                        onViewServices={(e) => {
-                          e.stopPropagation();
-                          setSelectedVendorId(v.id);
-                        }}
-                        onDetails={openVendorProfile}
-                        onBookPlan={handleBookPlan}
-                        onOpenCenterDetails={openVendorProfile}
-                        customerId={phone}
-                        serviceCategory="boarding"
-                        onBookAppointment={handleWarmpawzBookAppointment}
-                      />
-                    );
-                  })
+                  vendors.map((v) => (
+                    <ServiceHubVendorCard
+                      key={v.id}
+                      vendor={v}
+                      category="boarding"
+                      categoryLabelFallback="Boarding"
+                      onSelectSlot={(vendor, e) => {
+                        if (
+                          wapptHubEnabled ||
+                          shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
+                        ) {
+                          handleWarmpawzBookAppointment(vendor);
+                          return;
+                        }
+                        openVendorProfile(e, resolveServiceHubVendorProfileKey(vendor));
+                      }}
+                      onOpenProfile={(e, vendor) =>
+                        openVendorProfile(e, resolveServiceHubVendorProfileKey(vendor))
+                      }
+                    />
+                  ))
                 )}
               </div>
             </div>

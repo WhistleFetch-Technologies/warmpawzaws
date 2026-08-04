@@ -15,25 +15,21 @@ import { VetServiceCardBackground } from './vet/VetServiceCardBackground';
 import { VET_HEADER_BANNER, VET_IMG, VET_SERVICE_CARDS } from './vet/constants/vet-hub-assets';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from './shared/StandardizedFooter';
-import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
+import {
+  ServiceHubVendorCard,
+  resolveServiceHubVendorProfileKey,
+} from './shared/ServiceHubVendorCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useWapptHubFeaturedVendors } from '@/hooks/useWapptHubFeaturedVendors';
 import { useCategoryBootstrap } from '@/hooks/useCategoryBootstrap';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
-import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import {
   type BoardingListVendor,
-  type BoardingPlanRow,
   findBoardingListVendorByProfileKey,
 } from '@/lib/boarding-vendor-discovery-map';
 import { pickCustomerVendorAccountId, pickVetPractitionerProfileEntityId } from '@warmpawz/shared-types';
-import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
-import {
-  buildWalkerServiceDataForVendorPackagePurchase,
-  isVendorServicePackageRow,
-} from '@/lib/vendor-package-purchase-nav';
 import {
   gateServiceStyleNavigation,
   isServiceStyleComingSoon,
@@ -58,8 +54,6 @@ interface VetServiceRouterProps {
  * ✅ FIX: Added pet context validation to prevent crashes (VET-CUST-001)
  * Vet services require a pet to be selected before booking
  */
-const HUB_SLUG: BoardingServiceSlug = 'all';
-
 /** Vet hub cards that map to Dashboard service-style launch keys. */
 const VET_CARD_LAUNCH_STYLE: Record<string, string> = {
   tele: 'tele',
@@ -116,19 +110,10 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const legacyProblems = useProblemGridByRole('vet');
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_VET);
   const wapptDiscovery = useWapptHubFeaturedVendors('vet', wapptHubEnabled);
-  const [wapptSelectedVendorId, setWapptSelectedVendorId] = useState<string | null>(null);
 
   const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
   const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
   const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
-  const selectedVendorId = wapptHubEnabled ? wapptSelectedVendorId : marketplaceDiscovery.selectedVendorId;
-  const setSelectedVendorId = wapptHubEnabled
-    ? setWapptSelectedVendorId
-    : marketplaceDiscovery.setSelectedVendorId;
-  const toggleVendor = wapptHubEnabled
-    ? (vendorId: string) => setWapptSelectedVendorId((prev) => (prev === vendorId ? null : vendorId))
-    : marketplaceDiscovery.toggleVendor;
-  const fetchingPlansFor = wapptHubEnabled ? null : marketplaceDiscovery.fetchingPlansFor;
   const [spotlightDeals, setSpotlightDeals] = useState<any[]>([]);
   const [allowedServiceStyles, setAllowedServiceStyles] = useState<string[]>([]);
   const [pets, setPets] = useState<any[]>([]);
@@ -378,100 +363,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       console.error('❌ [VetServiceRouter] Navigation error:', err);
       toast.error('Failed to navigate. Please try again.');
     }
-  };
-
-  const handleVetBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
-    const raw = (v.raw || {}) as Record<string, unknown>;
-    if (shouldHideDiscoveryPricing(raw)) {
-      const vendorId =
-        pickCustomerVendorAccountId(raw) || String(raw.vendorId || raw.vendor_id || v.id || '').trim();
-      handleNavigate(WAPPT_VENDOR_PROFILE_SCREEN, {
-        ...buildWarmpawzAppointmentsProfileNav({
-          vendorId,
-          category: 'vet',
-          serviceStyle: String(plan.serviceStyle || 'at_center'),
-          vendorName: v.name,
-        }),
-        profileBackScreen: 'wappt-discovery',
-      });
-      return;
-    }
-    const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
-
-    const serviceObj: Record<string, unknown> = {
-      /** Prefer vendor_services UUID over composite row keys so package purchase resolves strict intent in prod. */
-      id: plan.vendorServiceId ?? plan.rowId,
-      vendorServiceId: plan.vendorServiceId,
-      serviceId: plan.serviceId,
-      serviceName: plan.name,
-      name: plan.name,
-      price: plan.price,
-      duration: plan.duration,
-      serviceStyle: plan.serviceStyle,
-      description: plan.description,
-      isPackage: plan.isPackage,
-      packageDetails: plan.packageDetails,
-      metadata: plan.metadata,
-    };
-
-    /** Solo / staff practitioner — doctor profile + booking */
-    if (providerType === 'staff' || providerType === 'individual') {
-      const doctorId =
-        pickVetPractitionerProfileEntityId(raw) ||
-        String(raw.providerId || raw.provider_id || v.id);
-      const vendorForPkg = String(raw.vendorId || raw.vendor_id || doctorId || '').trim();
-      if (isVendorServicePackageRow(serviceObj) && vendorForPkg) {
-        const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
-          vendorId: vendorForPkg,
-          vendorName: v.name,
-          serviceRow: serviceObj,
-          serviceTypeCategory: 'vet',
-          serviceStyle: String(plan.serviceStyle || 'at_center'),
-        });
-        if (pkgNav) {
-          handleNavigate('purchase-package', pkgNav);
-          return;
-        }
-      }
-      handleNavigate('vet-doctor-details', {
-        doctorId,
-        serviceId: plan.rowId,
-        serviceName: plan.name,
-        price: plan.price,
-      });
-      return;
-    }
-
-    /** Facility / clinic vendor */
-    const vendorId = String(
-      pickCustomerVendorAccountId(raw) || raw.vendorId || raw.vendor_id || v.id || ''
-    ).trim();
-
-    if (vendorId && isVendorServicePackageRow(serviceObj)) {
-      const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
-        vendorId,
-        vendorName: v.name,
-        serviceRow: serviceObj,
-        serviceTypeCategory: 'vet',
-        serviceStyle: String(plan.serviceStyle || 'at_center'),
-      });
-      if (pkgNav) {
-        handleNavigate('purchase-package', pkgNav);
-        return;
-      }
-    }
-
-    handleNavigate('vet-booking', {
-      vendorId,
-      vendorName: v.name,
-      serviceId: plan.rowId,
-      serviceName: plan.name,
-      price: plan.price,
-      duration: plan.duration,
-      serviceStyle: plan.serviceStyle || 'at_center',
-      serviceType: 'at_center',
-      service: serviceObj,
-    });
   };
 
   /**
@@ -766,35 +657,27 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           )}
           <div className="space-y-4">
             {vendors.length > 0 ? (
-              vendors.map((v) => {
-                const expanded = selectedVendorId === v.id;
-                const minP = minPriceForVendor(v);
-                return (
-                  <BoardingVendorExpandableCard
-                    key={v.id}
-                    v={v}
-                    serviceSlug={HUB_SLUG}
-                    planBadgeLabel="Vet"
-                    showPriceDisclaimer={true}
-                    expanded={expanded}
-                    fetchingPlansFor={fetchingPlansFor}
-                    minPrice={minP}
-                    onToggleHeader={() => toggleVendor(v.id)}
-                    onViewServices={(e) => {
-                      e.stopPropagation();
-                      setSelectedVendorId(v.id);
-                    }}
-                    onDetails={openVetDetails}
-                    onBookPlan={handleVetBookPlan}
-                    onOpenCenterDetails={openVetCenterProfile}
-                    onBookAppointment={
-                      wapptHubEnabled ? handleWarmpawzBookAppointment : undefined
+              vendors.map((v) => (
+                <ServiceHubVendorCard
+                  key={v.id}
+                  vendor={v}
+                  category="vet"
+                  categoryLabelFallback="Veterinarian"
+                  onSelectSlot={(vendor, e) => {
+                    if (
+                      wapptHubEnabled ||
+                      shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
+                    ) {
+                      handleWarmpawzBookAppointment(vendor);
+                      return;
                     }
-                    customerId={phone}
-                    serviceCategory="vet"
-                  />
-                );
-              })
+                    openVetDetails(e, resolveServiceHubVendorProfileKey(vendor));
+                  }}
+                  onOpenProfile={(e, vendor) =>
+                    openVetCenterProfile(e, resolveServiceHubVendorProfileKey(vendor))
+                  }
+                />
+              ))
             ) : (
               <Card className="p-6 text-center bg-gray-50 border border-gray-200">
                 <p className="text-gray-500 text-sm">No veterinarians available in your area yet.</p>

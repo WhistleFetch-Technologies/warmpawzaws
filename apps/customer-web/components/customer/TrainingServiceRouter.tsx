@@ -34,18 +34,18 @@ import {
   TRAINING_TYPE_CARDS,
 } from './training/constants/training-hub-assets';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
-import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
+import {
+  ServiceHubVendorCard,
+  resolveServiceHubVendorProfileKey,
+} from './shared/ServiceHubVendorCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { HUB_DISCOVERY_TRAINING } from '@/lib/service-hub-discovery-config';
-import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
 import {
   findBoardingListVendorByProfileKey,
   type BoardingListVendor,
-  type BoardingPlanRow,
 } from '@/lib/boarding-vendor-discovery-map';
-import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { isWarmpawzAppointmentsHubEnabled, shouldHideMarketplaceStyleTiles, buildWarmpawzAppointmentsProfileNav, WAPPT_VENDOR_PROFILE_SCREEN } from '@/lib/warmpawz-appointments-customer';
 import { shouldHideDiscoveryPricing } from '@/lib/wappt-discovery-ui';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
@@ -75,8 +75,6 @@ interface PetSkillProgress {
   level: number; // 0-100
   status: 'not_started' | 'in_progress' | 'mastered';
 }
-
-const HUB_SLUG: BoardingServiceSlug = 'all';
 
 const TRAINING_HEADER_ICON =
   'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none';
@@ -118,19 +116,10 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   }, [bootstrapProblems, trainingGoalsLegacy]);
   const marketplaceDiscovery = useHubVendorDiscovery(phone, HUB_DISCOVERY_TRAINING);
   const wapptDiscovery = useWapptHubFeaturedVendors('training', wapptHubEnabled);
-  const [wapptSelectedVendorId, setWapptSelectedVendorId] = useState<string | null>(null);
 
   const vendorsLoading = wapptHubEnabled ? wapptDiscovery.loading : marketplaceDiscovery.loading;
   const vendors = wapptHubEnabled ? wapptDiscovery.vendors : marketplaceDiscovery.vendors;
   const relaxedFilter = wapptHubEnabled ? wapptDiscovery.relaxedFilter : marketplaceDiscovery.relaxedFilter;
-  const selectedVendorId = wapptHubEnabled ? wapptSelectedVendorId : marketplaceDiscovery.selectedVendorId;
-  const setSelectedVendorId = wapptHubEnabled
-    ? setWapptSelectedVendorId
-    : marketplaceDiscovery.setSelectedVendorId;
-  const toggleVendor = wapptHubEnabled
-    ? (vendorId: string) => setWapptSelectedVendorId((prev) => (prev === vendorId ? null : vendorId))
-    : marketplaceDiscovery.toggleVendor;
-  const fetchingPlansFor = wapptHubEnabled ? null : marketplaceDiscovery.fetchingPlansFor;
   const {
     data: trainingCenterCount = 0,
     isLoading: trainingCenterLoading,
@@ -227,36 +216,6 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       });
     },
     [onNavigate],
-  );
-
-  const handleBookPlan = useCallback(
-    (v: BoardingListVendor, plan: BoardingPlanRow) => {
-      const rawObj = (v.raw ?? {}) as Record<string, unknown>;
-      const vendorId = pickCustomerVendorAccountId(rawObj) || v.id;
-      if (shouldHideDiscoveryPricing(rawObj)) {
-        onNavigate?.(WAPPT_VENDOR_PROFILE_SCREEN, {
-          ...buildWarmpawzAppointmentsProfileNav({
-            vendorId,
-            category: 'training',
-            serviceStyle: String(plan.serviceStyle || 'at_center'),
-            vendorName: v.name,
-          }),
-          profileBackScreen: 'wappt-discovery',
-        });
-        return;
-      }
-      onNavigate?.('create-booking', {
-        vendorId,
-        serviceType: 'training',
-        serviceId: plan.rowId,
-        serviceName: plan.name,
-        price: plan.price,
-        duration: plan.duration,
-        serviceStyle: plan.serviceStyle || 'at_center',
-        vendorName: v.name,
-      });
-    },
-    [onNavigate]
   );
 
   const openTrainerDetails = useCallback(
@@ -603,32 +562,27 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   <p className="text-gray-500 text-sm">Check back soon for training options!</p>
                 </Card>
               ) : (
-                vendors.map((v) => {
-                  const expanded = selectedVendorId === v.id;
-                  const minP = minPriceForVendor(v);
-                  return (
-                    <BoardingVendorExpandableCard
-                      key={v.id}
-                      v={v}
-                      serviceSlug={HUB_SLUG}
-                      planBadgeLabel="Training"
-                      expanded={expanded}
-                      fetchingPlansFor={fetchingPlansFor}
-                      minPrice={minP}
-                      onToggleHeader={() => toggleVendor(v.id)}
-                      onViewServices={(e) => {
-                        e.stopPropagation();
-                        setSelectedVendorId(v.id);
-                      }}
-                      onDetails={openTrainerDetails}
-                      onBookPlan={handleBookPlan}
-                      onOpenCenterDetails={openTrainerDetails}
-                      customerId={phone}
-                      serviceCategory="training"
-                      onBookAppointment={handleWarmpawzBookAppointment}
-                    />
-                  );
-                })
+                vendors.map((v) => (
+                  <ServiceHubVendorCard
+                    key={v.id}
+                    vendor={v}
+                    category="training"
+                    categoryLabelFallback="Training"
+                    onSelectSlot={(vendor, e) => {
+                      if (
+                        wapptHubEnabled ||
+                        shouldHideDiscoveryPricing((vendor.raw ?? {}) as Record<string, unknown>)
+                      ) {
+                        handleWarmpawzBookAppointment(vendor);
+                        return;
+                      }
+                      openTrainerDetails(e, resolveServiceHubVendorProfileKey(vendor));
+                    }}
+                    onOpenProfile={(e, vendor) =>
+                      openTrainerDetails(e, resolveServiceHubVendorProfileKey(vendor))
+                    }
+                  />
+                ))
               )}
             </div>
           </div>
